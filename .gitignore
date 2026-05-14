@@ -1,0 +1,11 @@
+.venv/
+build/
+dist/
+__pycache__/
+*.pyc
+.DS_Store
+*.log
+
+# Local app config / secrets
+llm_config.json
+.hiking_track_ai/
