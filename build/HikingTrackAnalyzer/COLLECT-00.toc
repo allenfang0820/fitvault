@@ -1,0 +1,4357 @@
+([('81d243bd2c585b0f4821__mypyc.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/81d243bd2c585b0f4821__mypyc.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('AppKit/_AppKit.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/AppKit/_AppKit.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('AppKit/_inlines.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/AppKit/_inlines.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('CoreFoundation/_CoreFoundation.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/CoreFoundation/_CoreFoundation.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('CoreFoundation/_inlines.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/CoreFoundation/_inlines.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('Foundation/_Foundation.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/Foundation/_Foundation.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('Foundation/_inlines.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/Foundation/_inlines.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('HikingTrackAnalyzer',
+   '/Users/fanglei/Desktop/AI '
+   'track/build/HikingTrackAnalyzer/HikingTrackAnalyzer',
+   'EXECUTABLE'),
+  ('Python3', 'Python3.framework/Versions/3.9/Python3', 'SYMLINK'),
+  ('Python3.framework/Python3', 'Versions/Current/Python3', 'SYMLINK'),
+  ('Python3.framework/Resources', 'Versions/Current/Resources', 'SYMLINK'),
+  ('Python3.framework/Versions/3.9/Python3',
+   '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/Python3',
+   'BINARY'),
+  ('Python3.framework/Versions/3.9/Resources/Info.plist',
+   '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Info.plist',
+   'DATA'),
+  ('Python3.framework/Versions/Current', '3.9', 'SYMLINK'),
+  ('WebKit/_WebKit.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/WebKit/_WebKit.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('base_library.zip',
+   '/Users/fanglei/Desktop/AI track/build/HikingTrackAnalyzer/base_library.zip',
+   'DATA'),
+  ('certifi/cacert.pem',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/certifi/cacert.pem',
+   'DATA'),
+  ('certifi/py.typed',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/certifi/py.typed',
+   'DATA'),
+  ('charset_normalizer/cd.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/charset_normalizer/cd.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('charset_normalizer/md.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/charset_normalizer/md.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('dateutil/zoneinfo/dateutil-zoneinfo.tar.gz',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/dateutil/zoneinfo/dateutil-zoneinfo.tar.gz',
+   'DATA'),
+  ('lib/Cesium.js', '/Users/fanglei/Desktop/AI track/lib/Cesium.js', 'DATA'),
+  ('lib/Cesium/Assets/IAU2006_XYS/IAU2006_XYS_0.json',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/IAU2006_XYS/IAU2006_XYS_0.json',
+   'DATA'),
+  ('lib/Cesium/Assets/IAU2006_XYS/IAU2006_XYS_1.json',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/IAU2006_XYS/IAU2006_XYS_1.json',
+   'DATA'),
+  ('lib/Cesium/Assets/IAU2006_XYS/IAU2006_XYS_10.json',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/IAU2006_XYS/IAU2006_XYS_10.json',
+   'DATA'),
+  ('lib/Cesium/Assets/IAU2006_XYS/IAU2006_XYS_11.json',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/IAU2006_XYS/IAU2006_XYS_11.json',
+   'DATA'),
+  ('lib/Cesium/Assets/IAU2006_XYS/IAU2006_XYS_12.json',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/IAU2006_XYS/IAU2006_XYS_12.json',
+   'DATA'),
+  ('lib/Cesium/Assets/IAU2006_XYS/IAU2006_XYS_13.json',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/IAU2006_XYS/IAU2006_XYS_13.json',
+   'DATA'),
+  ('lib/Cesium/Assets/IAU2006_XYS/IAU2006_XYS_14.json',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/IAU2006_XYS/IAU2006_XYS_14.json',
+   'DATA'),
+  ('lib/Cesium/Assets/IAU2006_XYS/IAU2006_XYS_15.json',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/IAU2006_XYS/IAU2006_XYS_15.json',
+   'DATA'),
+  ('lib/Cesium/Assets/IAU2006_XYS/IAU2006_XYS_16.json',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/IAU2006_XYS/IAU2006_XYS_16.json',
+   'DATA'),
+  ('lib/Cesium/Assets/IAU2006_XYS/IAU2006_XYS_17.json',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/IAU2006_XYS/IAU2006_XYS_17.json',
+   'DATA'),
+  ('lib/Cesium/Assets/IAU2006_XYS/IAU2006_XYS_18.json',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/IAU2006_XYS/IAU2006_XYS_18.json',
+   'DATA'),
+  ('lib/Cesium/Assets/IAU2006_XYS/IAU2006_XYS_19.json',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/IAU2006_XYS/IAU2006_XYS_19.json',
+   'DATA'),
+  ('lib/Cesium/Assets/IAU2006_XYS/IAU2006_XYS_2.json',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/IAU2006_XYS/IAU2006_XYS_2.json',
+   'DATA'),
+  ('lib/Cesium/Assets/IAU2006_XYS/IAU2006_XYS_20.json',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/IAU2006_XYS/IAU2006_XYS_20.json',
+   'DATA'),
+  ('lib/Cesium/Assets/IAU2006_XYS/IAU2006_XYS_21.json',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/IAU2006_XYS/IAU2006_XYS_21.json',
+   'DATA'),
+  ('lib/Cesium/Assets/IAU2006_XYS/IAU2006_XYS_22.json',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/IAU2006_XYS/IAU2006_XYS_22.json',
+   'DATA'),
+  ('lib/Cesium/Assets/IAU2006_XYS/IAU2006_XYS_23.json',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/IAU2006_XYS/IAU2006_XYS_23.json',
+   'DATA'),
+  ('lib/Cesium/Assets/IAU2006_XYS/IAU2006_XYS_24.json',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/IAU2006_XYS/IAU2006_XYS_24.json',
+   'DATA'),
+  ('lib/Cesium/Assets/IAU2006_XYS/IAU2006_XYS_25.json',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/IAU2006_XYS/IAU2006_XYS_25.json',
+   'DATA'),
+  ('lib/Cesium/Assets/IAU2006_XYS/IAU2006_XYS_26.json',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/IAU2006_XYS/IAU2006_XYS_26.json',
+   'DATA'),
+  ('lib/Cesium/Assets/IAU2006_XYS/IAU2006_XYS_27.json',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/IAU2006_XYS/IAU2006_XYS_27.json',
+   'DATA'),
+  ('lib/Cesium/Assets/IAU2006_XYS/IAU2006_XYS_3.json',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/IAU2006_XYS/IAU2006_XYS_3.json',
+   'DATA'),
+  ('lib/Cesium/Assets/IAU2006_XYS/IAU2006_XYS_4.json',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/IAU2006_XYS/IAU2006_XYS_4.json',
+   'DATA'),
+  ('lib/Cesium/Assets/IAU2006_XYS/IAU2006_XYS_5.json',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/IAU2006_XYS/IAU2006_XYS_5.json',
+   'DATA'),
+  ('lib/Cesium/Assets/IAU2006_XYS/IAU2006_XYS_6.json',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/IAU2006_XYS/IAU2006_XYS_6.json',
+   'DATA'),
+  ('lib/Cesium/Assets/IAU2006_XYS/IAU2006_XYS_7.json',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/IAU2006_XYS/IAU2006_XYS_7.json',
+   'DATA'),
+  ('lib/Cesium/Assets/IAU2006_XYS/IAU2006_XYS_8.json',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/IAU2006_XYS/IAU2006_XYS_8.json',
+   'DATA'),
+  ('lib/Cesium/Assets/IAU2006_XYS/IAU2006_XYS_9.json',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/IAU2006_XYS/IAU2006_XYS_9.json',
+   'DATA'),
+  ('lib/Cesium/Assets/Images/bing_maps_credit.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Images/bing_maps_credit.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Images/cesium_credit.png',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Assets/Images/cesium_credit.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Images/google_earth_credit.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Images/google_earth_credit.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Images/ion-credit.png',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Assets/Images/ion-credit.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/LensFlare/DirtMask.jpg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/LensFlare/DirtMask.jpg',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/LensFlare/StarBurst.jpg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/LensFlare/StarBurst.jpg',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/NaturalEarthII/0/0/0.jpg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/NaturalEarthII/0/0/0.jpg',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/NaturalEarthII/0/1/0.jpg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/NaturalEarthII/0/1/0.jpg',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/NaturalEarthII/1/0/0.jpg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/NaturalEarthII/1/0/0.jpg',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/NaturalEarthII/1/0/1.jpg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/NaturalEarthII/1/0/1.jpg',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/NaturalEarthII/1/1/0.jpg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/NaturalEarthII/1/1/0.jpg',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/NaturalEarthII/1/1/1.jpg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/NaturalEarthII/1/1/1.jpg',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/NaturalEarthII/1/2/0.jpg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/NaturalEarthII/1/2/0.jpg',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/NaturalEarthII/1/2/1.jpg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/NaturalEarthII/1/2/1.jpg',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/NaturalEarthII/1/3/0.jpg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/NaturalEarthII/1/3/0.jpg',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/NaturalEarthII/1/3/1.jpg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/NaturalEarthII/1/3/1.jpg',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/NaturalEarthII/2/0/0.jpg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/NaturalEarthII/2/0/0.jpg',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/NaturalEarthII/2/0/1.jpg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/NaturalEarthII/2/0/1.jpg',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/NaturalEarthII/2/0/2.jpg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/NaturalEarthII/2/0/2.jpg',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/NaturalEarthII/2/0/3.jpg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/NaturalEarthII/2/0/3.jpg',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/NaturalEarthII/2/1/0.jpg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/NaturalEarthII/2/1/0.jpg',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/NaturalEarthII/2/1/1.jpg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/NaturalEarthII/2/1/1.jpg',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/NaturalEarthII/2/1/2.jpg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/NaturalEarthII/2/1/2.jpg',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/NaturalEarthII/2/1/3.jpg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/NaturalEarthII/2/1/3.jpg',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/NaturalEarthII/2/2/0.jpg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/NaturalEarthII/2/2/0.jpg',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/NaturalEarthII/2/2/1.jpg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/NaturalEarthII/2/2/1.jpg',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/NaturalEarthII/2/2/2.jpg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/NaturalEarthII/2/2/2.jpg',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/NaturalEarthII/2/2/3.jpg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/NaturalEarthII/2/2/3.jpg',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/NaturalEarthII/2/3/0.jpg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/NaturalEarthII/2/3/0.jpg',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/NaturalEarthII/2/3/1.jpg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/NaturalEarthII/2/3/1.jpg',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/NaturalEarthII/2/3/2.jpg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/NaturalEarthII/2/3/2.jpg',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/NaturalEarthII/2/3/3.jpg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/NaturalEarthII/2/3/3.jpg',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/NaturalEarthII/2/4/0.jpg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/NaturalEarthII/2/4/0.jpg',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/NaturalEarthII/2/4/1.jpg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/NaturalEarthII/2/4/1.jpg',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/NaturalEarthII/2/4/2.jpg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/NaturalEarthII/2/4/2.jpg',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/NaturalEarthII/2/4/3.jpg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/NaturalEarthII/2/4/3.jpg',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/NaturalEarthII/2/5/0.jpg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/NaturalEarthII/2/5/0.jpg',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/NaturalEarthII/2/5/1.jpg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/NaturalEarthII/2/5/1.jpg',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/NaturalEarthII/2/5/2.jpg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/NaturalEarthII/2/5/2.jpg',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/NaturalEarthII/2/5/3.jpg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/NaturalEarthII/2/5/3.jpg',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/NaturalEarthII/2/6/0.jpg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/NaturalEarthII/2/6/0.jpg',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/NaturalEarthII/2/6/1.jpg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/NaturalEarthII/2/6/1.jpg',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/NaturalEarthII/2/6/2.jpg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/NaturalEarthII/2/6/2.jpg',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/NaturalEarthII/2/6/3.jpg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/NaturalEarthII/2/6/3.jpg',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/NaturalEarthII/2/7/0.jpg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/NaturalEarthII/2/7/0.jpg',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/NaturalEarthII/2/7/1.jpg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/NaturalEarthII/2/7/1.jpg',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/NaturalEarthII/2/7/2.jpg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/NaturalEarthII/2/7/2.jpg',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/NaturalEarthII/2/7/3.jpg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/NaturalEarthII/2/7/3.jpg',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/NaturalEarthII/tilemapresource.xml',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/NaturalEarthII/tilemapresource.xml',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/SkyBox/tycho2t3_80_mx.jpg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/SkyBox/tycho2t3_80_mx.jpg',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/SkyBox/tycho2t3_80_my.jpg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/SkyBox/tycho2t3_80_my.jpg',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/SkyBox/tycho2t3_80_mz.jpg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/SkyBox/tycho2t3_80_mz.jpg',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/SkyBox/tycho2t3_80_px.jpg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/SkyBox/tycho2t3_80_px.jpg',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/SkyBox/tycho2t3_80_py.jpg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/SkyBox/tycho2t3_80_py.jpg',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/SkyBox/tycho2t3_80_pz.jpg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/SkyBox/tycho2t3_80_pz.jpg',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/airfield.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/airfield.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/airport.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/airport.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/alcohol-shop.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/alcohol-shop.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/america-football.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/america-football.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/art-gallery.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/art-gallery.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/bakery.png',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Assets/Textures/maki/bakery.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/bank.png',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Assets/Textures/maki/bank.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/bar.png',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Assets/Textures/maki/bar.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/baseball.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/baseball.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/basketball.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/basketball.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/beer.png',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Assets/Textures/maki/beer.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/bicycle.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/bicycle.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/building.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/building.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/bus.png',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Assets/Textures/maki/bus.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/cafe.png',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Assets/Textures/maki/cafe.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/camera.png',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Assets/Textures/maki/camera.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/campsite.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/campsite.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/car.png',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Assets/Textures/maki/car.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/cemetery.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/cemetery.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/cesium.png',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Assets/Textures/maki/cesium.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/chemist.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/chemist.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/cinema.png',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Assets/Textures/maki/cinema.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/circle-stroked.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/circle-stroked.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/circle.png',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Assets/Textures/maki/circle.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/city.png',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Assets/Textures/maki/city.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/clothing-store.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/clothing-store.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/college.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/college.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/commercial.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/commercial.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/cricket.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/cricket.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/cross.png',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Assets/Textures/maki/cross.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/dam.png',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Assets/Textures/maki/dam.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/danger.png',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Assets/Textures/maki/danger.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/disability.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/disability.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/dog-park.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/dog-park.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/embassy.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/embassy.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/emergency-telephone.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/emergency-telephone.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/entrance.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/entrance.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/farm.png',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Assets/Textures/maki/farm.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/fast-food.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/fast-food.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/ferry.png',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Assets/Textures/maki/ferry.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/fire-station.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/fire-station.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/fuel.png',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Assets/Textures/maki/fuel.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/garden.png',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Assets/Textures/maki/garden.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/gift.png',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Assets/Textures/maki/gift.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/golf.png',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Assets/Textures/maki/golf.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/grocery.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/grocery.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/hairdresser.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/hairdresser.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/harbor.png',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Assets/Textures/maki/harbor.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/heart.png',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Assets/Textures/maki/heart.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/heliport.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/heliport.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/hospital.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/hospital.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/ice-cream.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/ice-cream.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/industrial.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/industrial.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/land-use.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/land-use.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/laundry.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/laundry.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/library.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/library.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/lighthouse.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/lighthouse.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/lodging.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/lodging.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/logging.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/logging.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/london-underground.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/london-underground.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/marker-stroked.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/marker-stroked.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/marker.png',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Assets/Textures/maki/marker.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/minefield.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/minefield.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/mobilephone.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/mobilephone.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/monument.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/monument.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/museum.png',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Assets/Textures/maki/museum.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/music.png',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Assets/Textures/maki/music.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/oil-well.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/oil-well.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/park.png',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Assets/Textures/maki/park.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/park2.png',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Assets/Textures/maki/park2.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/parking-garage.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/parking-garage.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/parking.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/parking.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/pharmacy.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/pharmacy.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/pitch.png',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Assets/Textures/maki/pitch.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/place-of-worship.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/place-of-worship.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/playground.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/playground.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/police.png',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Assets/Textures/maki/police.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/polling-place.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/polling-place.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/post.png',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Assets/Textures/maki/post.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/prison.png',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Assets/Textures/maki/prison.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/rail-above.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/rail-above.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/rail-light.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/rail-light.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/rail-metro.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/rail-metro.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/rail-underground.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/rail-underground.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/rail.png',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Assets/Textures/maki/rail.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/religious-christian.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/religious-christian.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/religious-jewish.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/religious-jewish.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/religious-muslim.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/religious-muslim.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/restaurant.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/restaurant.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/roadblock.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/roadblock.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/rocket.png',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Assets/Textures/maki/rocket.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/school.png',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Assets/Textures/maki/school.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/scooter.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/scooter.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/shop.png',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Assets/Textures/maki/shop.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/skiing.png',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Assets/Textures/maki/skiing.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/slaughterhouse.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/slaughterhouse.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/soccer.png',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Assets/Textures/maki/soccer.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/square-stroked.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/square-stroked.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/square.png',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Assets/Textures/maki/square.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/star-stroked.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/star-stroked.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/star.png',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Assets/Textures/maki/star.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/suitcase.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/suitcase.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/swimming.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/swimming.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/telephone.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/telephone.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/tennis.png',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Assets/Textures/maki/tennis.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/theatre.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/theatre.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/toilets.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/toilets.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/town-hall.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/town-hall.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/town.png',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Assets/Textures/maki/town.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/triangle-stroked.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/triangle-stroked.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/triangle.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/triangle.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/village.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/village.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/warehouse.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/warehouse.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/waste-basket.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/waste-basket.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/water.png',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Assets/Textures/maki/water.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/wetland.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/maki/wetland.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/maki/zoo.png',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Assets/Textures/maki/zoo.png',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/moonSmall.jpg',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Assets/Textures/moonSmall.jpg',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/pin.svg',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Assets/Textures/pin.svg',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/waterNormals.jpg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/waterNormals.jpg',
+   'DATA'),
+  ('lib/Cesium/Assets/Textures/waterNormalsSmall.jpg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/Textures/waterNormalsSmall.jpg',
+   'DATA'),
+  ('lib/Cesium/Assets/approximateTerrainHeights.json',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Assets/approximateTerrainHeights.json',
+   'DATA'),
+  ('lib/Cesium/Cesium.js',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Cesium.js',
+   'DATA'),
+  ('lib/Cesium/ThirdParty/Workers/basis_transcoder.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/ThirdParty/Workers/basis_transcoder.js',
+   'DATA'),
+  ('lib/Cesium/ThirdParty/Workers/draco_decoder_nodejs.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/ThirdParty/Workers/draco_decoder_nodejs.js',
+   'DATA'),
+  ('lib/Cesium/ThirdParty/Workers/package.js',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/ThirdParty/Workers/package.js',
+   'DATA'),
+  ('lib/Cesium/ThirdParty/Workers/package.json',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/ThirdParty/Workers/package.json',
+   'DATA'),
+  ('lib/Cesium/ThirdParty/Workers/pako_deflate.min.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/ThirdParty/Workers/pako_deflate.min.js',
+   'DATA'),
+  ('lib/Cesium/ThirdParty/Workers/pako_inflate.min.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/ThirdParty/Workers/pako_inflate.min.js',
+   'DATA'),
+  ('lib/Cesium/ThirdParty/Workers/z-worker-pako.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/ThirdParty/Workers/z-worker-pako.js',
+   'DATA'),
+  ('lib/Cesium/ThirdParty/basis_transcoder.wasm',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/ThirdParty/basis_transcoder.wasm',
+   'DATA'),
+  ('lib/Cesium/ThirdParty/draco_decoder.wasm',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/ThirdParty/draco_decoder.wasm',
+   'DATA'),
+  ('lib/Cesium/ThirdParty/google-earth-dbroot-parser.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/ThirdParty/google-earth-dbroot-parser.js',
+   'DATA'),
+  ('lib/Cesium/Widgets/Animation/Animation.css',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Widgets/Animation/Animation.css',
+   'DATA'),
+  ('lib/Cesium/Widgets/Animation/lighter.css',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Widgets/Animation/lighter.css',
+   'DATA'),
+  ('lib/Cesium/Widgets/BaseLayerPicker/BaseLayerPicker.css',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Widgets/BaseLayerPicker/BaseLayerPicker.css',
+   'DATA'),
+  ('lib/Cesium/Widgets/BaseLayerPicker/lighter.css',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Widgets/BaseLayerPicker/lighter.css',
+   'DATA'),
+  ('lib/Cesium/Widgets/Cesium3DTilesInspector/Cesium3DTilesInspector.css',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Widgets/Cesium3DTilesInspector/Cesium3DTilesInspector.css',
+   'DATA'),
+  ('lib/Cesium/Widgets/CesiumInspector/CesiumInspector.css',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Widgets/CesiumInspector/CesiumInspector.css',
+   'DATA'),
+  ('lib/Cesium/Widgets/CesiumWidget/CesiumWidget.css',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Widgets/CesiumWidget/CesiumWidget.css',
+   'DATA'),
+  ('lib/Cesium/Widgets/CesiumWidget/lighter.css',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Widgets/CesiumWidget/lighter.css',
+   'DATA'),
+  ('lib/Cesium/Widgets/FullscreenButton/FullscreenButton.css',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Widgets/FullscreenButton/FullscreenButton.css',
+   'DATA'),
+  ('lib/Cesium/Widgets/Geocoder/Geocoder.css',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Widgets/Geocoder/Geocoder.css',
+   'DATA'),
+  ('lib/Cesium/Widgets/Geocoder/lighter.css',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Widgets/Geocoder/lighter.css',
+   'DATA'),
+  ('lib/Cesium/Widgets/Images/ImageryProviders/ArcGisMapServiceWorldHillshade.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Widgets/Images/ImageryProviders/ArcGisMapServiceWorldHillshade.png',
+   'DATA'),
+  ('lib/Cesium/Widgets/Images/ImageryProviders/ArcGisMapServiceWorldImagery.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Widgets/Images/ImageryProviders/ArcGisMapServiceWorldImagery.png',
+   'DATA'),
+  ('lib/Cesium/Widgets/Images/ImageryProviders/ArcGisMapServiceWorldOcean.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Widgets/Images/ImageryProviders/ArcGisMapServiceWorldOcean.png',
+   'DATA'),
+  ('lib/Cesium/Widgets/Images/ImageryProviders/bingAerial.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Widgets/Images/ImageryProviders/bingAerial.png',
+   'DATA'),
+  ('lib/Cesium/Widgets/Images/ImageryProviders/bingAerialLabels.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Widgets/Images/ImageryProviders/bingAerialLabels.png',
+   'DATA'),
+  ('lib/Cesium/Widgets/Images/ImageryProviders/bingRoads.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Widgets/Images/ImageryProviders/bingRoads.png',
+   'DATA'),
+  ('lib/Cesium/Widgets/Images/ImageryProviders/blueMarble.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Widgets/Images/ImageryProviders/blueMarble.png',
+   'DATA'),
+  ('lib/Cesium/Widgets/Images/ImageryProviders/earthAtNight.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Widgets/Images/ImageryProviders/earthAtNight.png',
+   'DATA'),
+  ('lib/Cesium/Widgets/Images/ImageryProviders/mapQuestOpenStreetMap.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Widgets/Images/ImageryProviders/mapQuestOpenStreetMap.png',
+   'DATA'),
+  ('lib/Cesium/Widgets/Images/ImageryProviders/mapboxSatellite.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Widgets/Images/ImageryProviders/mapboxSatellite.png',
+   'DATA'),
+  ('lib/Cesium/Widgets/Images/ImageryProviders/mapboxStreets.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Widgets/Images/ImageryProviders/mapboxStreets.png',
+   'DATA'),
+  ('lib/Cesium/Widgets/Images/ImageryProviders/mapboxTerrain.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Widgets/Images/ImageryProviders/mapboxTerrain.png',
+   'DATA'),
+  ('lib/Cesium/Widgets/Images/ImageryProviders/naturalEarthII.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Widgets/Images/ImageryProviders/naturalEarthII.png',
+   'DATA'),
+  ('lib/Cesium/Widgets/Images/ImageryProviders/openStreetMap.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Widgets/Images/ImageryProviders/openStreetMap.png',
+   'DATA'),
+  ('lib/Cesium/Widgets/Images/ImageryProviders/sentinel-2.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Widgets/Images/ImageryProviders/sentinel-2.png',
+   'DATA'),
+  ('lib/Cesium/Widgets/Images/ImageryProviders/stamenToner.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Widgets/Images/ImageryProviders/stamenToner.png',
+   'DATA'),
+  ('lib/Cesium/Widgets/Images/ImageryProviders/stamenWatercolor.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Widgets/Images/ImageryProviders/stamenWatercolor.png',
+   'DATA'),
+  ('lib/Cesium/Widgets/Images/NavigationHelp/Mouse.svg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Widgets/Images/NavigationHelp/Mouse.svg',
+   'DATA'),
+  ('lib/Cesium/Widgets/Images/NavigationHelp/MouseLeft.svg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Widgets/Images/NavigationHelp/MouseLeft.svg',
+   'DATA'),
+  ('lib/Cesium/Widgets/Images/NavigationHelp/MouseMiddle.svg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Widgets/Images/NavigationHelp/MouseMiddle.svg',
+   'DATA'),
+  ('lib/Cesium/Widgets/Images/NavigationHelp/MouseRight.svg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Widgets/Images/NavigationHelp/MouseRight.svg',
+   'DATA'),
+  ('lib/Cesium/Widgets/Images/NavigationHelp/Touch.svg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Widgets/Images/NavigationHelp/Touch.svg',
+   'DATA'),
+  ('lib/Cesium/Widgets/Images/NavigationHelp/TouchDrag.svg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Widgets/Images/NavigationHelp/TouchDrag.svg',
+   'DATA'),
+  ('lib/Cesium/Widgets/Images/NavigationHelp/TouchRotate.svg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Widgets/Images/NavigationHelp/TouchRotate.svg',
+   'DATA'),
+  ('lib/Cesium/Widgets/Images/NavigationHelp/TouchTilt.svg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Widgets/Images/NavigationHelp/TouchTilt.svg',
+   'DATA'),
+  ('lib/Cesium/Widgets/Images/NavigationHelp/TouchZoom.svg',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Widgets/Images/NavigationHelp/TouchZoom.svg',
+   'DATA'),
+  ('lib/Cesium/Widgets/Images/TerrainProviders/CesiumWorldTerrain.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Widgets/Images/TerrainProviders/CesiumWorldTerrain.png',
+   'DATA'),
+  ('lib/Cesium/Widgets/Images/TerrainProviders/Ellipsoid.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Widgets/Images/TerrainProviders/Ellipsoid.png',
+   'DATA'),
+  ('lib/Cesium/Widgets/Images/TimelineIcons.png',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Widgets/Images/TimelineIcons.png',
+   'DATA'),
+  ('lib/Cesium/Widgets/Images/info-loading.gif',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Widgets/Images/info-loading.gif',
+   'DATA'),
+  ('lib/Cesium/Widgets/InfoBox/InfoBox.css',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Widgets/InfoBox/InfoBox.css',
+   'DATA'),
+  ('lib/Cesium/Widgets/InfoBox/InfoBoxDescription.css',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Widgets/InfoBox/InfoBoxDescription.css',
+   'DATA'),
+  ('lib/Cesium/Widgets/NavigationHelpButton/NavigationHelpButton.css',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Widgets/NavigationHelpButton/NavigationHelpButton.css',
+   'DATA'),
+  ('lib/Cesium/Widgets/NavigationHelpButton/lighter.css',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Widgets/NavigationHelpButton/lighter.css',
+   'DATA'),
+  ('lib/Cesium/Widgets/PerformanceWatchdog/PerformanceWatchdog.css',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Widgets/PerformanceWatchdog/PerformanceWatchdog.css',
+   'DATA'),
+  ('lib/Cesium/Widgets/ProjectionPicker/ProjectionPicker.css',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Widgets/ProjectionPicker/ProjectionPicker.css',
+   'DATA'),
+  ('lib/Cesium/Widgets/SceneModePicker/SceneModePicker.css',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Widgets/SceneModePicker/SceneModePicker.css',
+   'DATA'),
+  ('lib/Cesium/Widgets/SelectionIndicator/SelectionIndicator.css',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Widgets/SelectionIndicator/SelectionIndicator.css',
+   'DATA'),
+  ('lib/Cesium/Widgets/Timeline/Timeline.css',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Widgets/Timeline/Timeline.css',
+   'DATA'),
+  ('lib/Cesium/Widgets/Timeline/lighter.css',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Widgets/Timeline/lighter.css',
+   'DATA'),
+  ('lib/Cesium/Widgets/VRButton/VRButton.css',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Widgets/VRButton/VRButton.css',
+   'DATA'),
+  ('lib/Cesium/Widgets/Viewer/Viewer.css',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Widgets/Viewer/Viewer.css',
+   'DATA'),
+  ('lib/Cesium/Widgets/VoxelInspector/VoxelInspector.css',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Widgets/VoxelInspector/VoxelInspector.css',
+   'DATA'),
+  ('lib/Cesium/Widgets/lighter.css',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Widgets/lighter.css',
+   'DATA'),
+  ('lib/Cesium/Widgets/lighterShared.css',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Widgets/lighterShared.css',
+   'DATA'),
+  ('lib/Cesium/Widgets/shared.css',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Widgets/shared.css',
+   'DATA'),
+  ('lib/Cesium/Widgets/widgets.css',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Widgets/widgets.css',
+   'DATA'),
+  ('lib/Cesium/Workers/ArcType-26a3f38d.js',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Workers/ArcType-26a3f38d.js',
+   'DATA'),
+  ('lib/Cesium/Workers/AttributeCompression-0b8f7b7d.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/AttributeCompression-0b8f7b7d.js',
+   'DATA'),
+  ('lib/Cesium/Workers/AxisAlignedBoundingBox-04c1a5e3.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/AxisAlignedBoundingBox-04c1a5e3.js',
+   'DATA'),
+  ('lib/Cesium/Workers/BoundingRectangle-4ef16803.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/BoundingRectangle-4ef16803.js',
+   'DATA'),
+  ('lib/Cesium/Workers/BoxGeometry-bbe159e0.js',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Workers/BoxGeometry-bbe159e0.js',
+   'DATA'),
+  ('lib/Cesium/Workers/Color-47068a02.js',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Workers/Color-47068a02.js',
+   'DATA'),
+  ('lib/Cesium/Workers/ComponentDatatype-ab629b88.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/ComponentDatatype-ab629b88.js',
+   'DATA'),
+  ('lib/Cesium/Workers/CoplanarPolygonGeometryLibrary-c5fc6f2f.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/CoplanarPolygonGeometryLibrary-c5fc6f2f.js',
+   'DATA'),
+  ('lib/Cesium/Workers/CorridorGeometryLibrary-d09d785b.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/CorridorGeometryLibrary-d09d785b.js',
+   'DATA'),
+  ('lib/Cesium/Workers/CylinderGeometry-25b4eb3a.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/CylinderGeometry-25b4eb3a.js',
+   'DATA'),
+  ('lib/Cesium/Workers/CylinderGeometryLibrary-4d7f606d.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/CylinderGeometryLibrary-4d7f606d.js',
+   'DATA'),
+  ('lib/Cesium/Workers/EllipseGeometry-e2d7986e.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/EllipseGeometry-e2d7986e.js',
+   'DATA'),
+  ('lib/Cesium/Workers/EllipseGeometryLibrary-d93d7f63.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/EllipseGeometryLibrary-d93d7f63.js',
+   'DATA'),
+  ('lib/Cesium/Workers/EllipseOutlineGeometry-3d88fb74.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/EllipseOutlineGeometry-3d88fb74.js',
+   'DATA'),
+  ('lib/Cesium/Workers/EllipsoidGeodesic-20aaff03.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/EllipsoidGeodesic-20aaff03.js',
+   'DATA'),
+  ('lib/Cesium/Workers/EllipsoidGeometry-ad4c3540.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/EllipsoidGeometry-ad4c3540.js',
+   'DATA'),
+  ('lib/Cesium/Workers/EllipsoidOutlineGeometry-52005f3f.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/EllipsoidOutlineGeometry-52005f3f.js',
+   'DATA'),
+  ('lib/Cesium/Workers/EllipsoidRhumbLine-1289f7e8.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/EllipsoidRhumbLine-1289f7e8.js',
+   'DATA'),
+  ('lib/Cesium/Workers/EllipsoidTangentPlane-c3e9d965.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/EllipsoidTangentPlane-c3e9d965.js',
+   'DATA'),
+  ('lib/Cesium/Workers/EncodedCartesian3-abad5e8c.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/EncodedCartesian3-abad5e8c.js',
+   'DATA'),
+  ('lib/Cesium/Workers/FrustumGeometry-a659c64b.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/FrustumGeometry-a659c64b.js',
+   'DATA'),
+  ('lib/Cesium/Workers/GeometryAttribute-9c1a6bab.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/GeometryAttribute-9c1a6bab.js',
+   'DATA'),
+  ('lib/Cesium/Workers/GeometryAttributes-1e4ddcd2.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/GeometryAttributes-1e4ddcd2.js',
+   'DATA'),
+  ('lib/Cesium/Workers/GeometryInstance-c4920693.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/GeometryInstance-c4920693.js',
+   'DATA'),
+  ('lib/Cesium/Workers/GeometryOffsetAttribute-2579b8d2.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/GeometryOffsetAttribute-2579b8d2.js',
+   'DATA'),
+  ('lib/Cesium/Workers/GeometryPipeline-a9233ae3.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/GeometryPipeline-a9233ae3.js',
+   'DATA'),
+  ('lib/Cesium/Workers/IndexDatatype-a9b1bc18.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/IndexDatatype-a9b1bc18.js',
+   'DATA'),
+  ('lib/Cesium/Workers/IntersectionTests-f1b36d69.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/IntersectionTests-f1b36d69.js',
+   'DATA'),
+  ('lib/Cesium/Workers/Math-355606c6.js',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Workers/Math-355606c6.js',
+   'DATA'),
+  ('lib/Cesium/Workers/Matrix2-7a8e9daf.js',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Workers/Matrix2-7a8e9daf.js',
+   'DATA'),
+  ('lib/Cesium/Workers/Matrix3-b2351961.js',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Workers/Matrix3-b2351961.js',
+   'DATA'),
+  ('lib/Cesium/Workers/OrientedBoundingBox-c083edd8.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/OrientedBoundingBox-c083edd8.js',
+   'DATA'),
+  ('lib/Cesium/Workers/Plane-5931b53e.js',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Workers/Plane-5931b53e.js',
+   'DATA'),
+  ('lib/Cesium/Workers/PolygonGeometryLibrary-b67529a6.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/PolygonGeometryLibrary-b67529a6.js',
+   'DATA'),
+  ('lib/Cesium/Workers/PolygonPipeline-3fa47499.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/PolygonPipeline-3fa47499.js',
+   'DATA'),
+  ('lib/Cesium/Workers/PolylinePipeline-8df321dd.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/PolylinePipeline-8df321dd.js',
+   'DATA'),
+  ('lib/Cesium/Workers/PolylineVolumeGeometryLibrary-5050cb1d.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/PolylineVolumeGeometryLibrary-5050cb1d.js',
+   'DATA'),
+  ('lib/Cesium/Workers/PrimitivePipeline-72a87ada.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/PrimitivePipeline-72a87ada.js',
+   'DATA'),
+  ('lib/Cesium/Workers/RectangleGeometryLibrary-6ad7ff7a.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/RectangleGeometryLibrary-6ad7ff7a.js',
+   'DATA'),
+  ('lib/Cesium/Workers/RuntimeError-9b4ce3fb.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/RuntimeError-9b4ce3fb.js',
+   'DATA'),
+  ('lib/Cesium/Workers/TerrainEncoding-c5a10c4f.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/TerrainEncoding-c5a10c4f.js',
+   'DATA'),
+  ('lib/Cesium/Workers/Transforms-f17097e5.js',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Workers/Transforms-f17097e5.js',
+   'DATA'),
+  ('lib/Cesium/Workers/VertexFormat-fbdec922.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/VertexFormat-fbdec922.js',
+   'DATA'),
+  ('lib/Cesium/Workers/WallGeometryLibrary-12b21f08.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/WallGeometryLibrary-12b21f08.js',
+   'DATA'),
+  ('lib/Cesium/Workers/WebGLConstants-7f557f93.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/WebGLConstants-7f557f93.js',
+   'DATA'),
+  ('lib/Cesium/Workers/WebMercatorProjection-db7467f4.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/WebMercatorProjection-db7467f4.js',
+   'DATA'),
+  ('lib/Cesium/Workers/arrayRemoveDuplicates-0d8dde26.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/arrayRemoveDuplicates-0d8dde26.js',
+   'DATA'),
+  ('lib/Cesium/Workers/cesiumWorkerBootstrapper.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/cesiumWorkerBootstrapper.js',
+   'DATA'),
+  ('lib/Cesium/Workers/combine-0c102d93.js',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Workers/combine-0c102d93.js',
+   'DATA'),
+  ('lib/Cesium/Workers/combineGeometry.js',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Workers/combineGeometry.js',
+   'DATA'),
+  ('lib/Cesium/Workers/createBoxGeometry.js',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Workers/createBoxGeometry.js',
+   'DATA'),
+  ('lib/Cesium/Workers/createBoxOutlineGeometry.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/createBoxOutlineGeometry.js',
+   'DATA'),
+  ('lib/Cesium/Workers/createCircleGeometry.js',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Workers/createCircleGeometry.js',
+   'DATA'),
+  ('lib/Cesium/Workers/createCircleOutlineGeometry.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/createCircleOutlineGeometry.js',
+   'DATA'),
+  ('lib/Cesium/Workers/createCoplanarPolygonGeometry.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/createCoplanarPolygonGeometry.js',
+   'DATA'),
+  ('lib/Cesium/Workers/createCoplanarPolygonOutlineGeometry.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/createCoplanarPolygonOutlineGeometry.js',
+   'DATA'),
+  ('lib/Cesium/Workers/createCorridorGeometry.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/createCorridorGeometry.js',
+   'DATA'),
+  ('lib/Cesium/Workers/createCorridorOutlineGeometry.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/createCorridorOutlineGeometry.js',
+   'DATA'),
+  ('lib/Cesium/Workers/createCylinderGeometry.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/createCylinderGeometry.js',
+   'DATA'),
+  ('lib/Cesium/Workers/createCylinderOutlineGeometry.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/createCylinderOutlineGeometry.js',
+   'DATA'),
+  ('lib/Cesium/Workers/createEllipseGeometry.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/createEllipseGeometry.js',
+   'DATA'),
+  ('lib/Cesium/Workers/createEllipseOutlineGeometry.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/createEllipseOutlineGeometry.js',
+   'DATA'),
+  ('lib/Cesium/Workers/createEllipsoidGeometry.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/createEllipsoidGeometry.js',
+   'DATA'),
+  ('lib/Cesium/Workers/createEllipsoidOutlineGeometry.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/createEllipsoidOutlineGeometry.js',
+   'DATA'),
+  ('lib/Cesium/Workers/createFrustumGeometry.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/createFrustumGeometry.js',
+   'DATA'),
+  ('lib/Cesium/Workers/createFrustumOutlineGeometry.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/createFrustumOutlineGeometry.js',
+   'DATA'),
+  ('lib/Cesium/Workers/createGeometry.js',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Workers/createGeometry.js',
+   'DATA'),
+  ('lib/Cesium/Workers/createGroundPolylineGeometry.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/createGroundPolylineGeometry.js',
+   'DATA'),
+  ('lib/Cesium/Workers/createPlaneGeometry.js',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Workers/createPlaneGeometry.js',
+   'DATA'),
+  ('lib/Cesium/Workers/createPlaneOutlineGeometry.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/createPlaneOutlineGeometry.js',
+   'DATA'),
+  ('lib/Cesium/Workers/createPolygonGeometry.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/createPolygonGeometry.js',
+   'DATA'),
+  ('lib/Cesium/Workers/createPolygonOutlineGeometry.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/createPolygonOutlineGeometry.js',
+   'DATA'),
+  ('lib/Cesium/Workers/createPolylineGeometry.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/createPolylineGeometry.js',
+   'DATA'),
+  ('lib/Cesium/Workers/createPolylineVolumeGeometry.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/createPolylineVolumeGeometry.js',
+   'DATA'),
+  ('lib/Cesium/Workers/createPolylineVolumeOutlineGeometry.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/createPolylineVolumeOutlineGeometry.js',
+   'DATA'),
+  ('lib/Cesium/Workers/createRectangleGeometry.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/createRectangleGeometry.js',
+   'DATA'),
+  ('lib/Cesium/Workers/createRectangleOutlineGeometry.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/createRectangleOutlineGeometry.js',
+   'DATA'),
+  ('lib/Cesium/Workers/createSimplePolylineGeometry.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/createSimplePolylineGeometry.js',
+   'DATA'),
+  ('lib/Cesium/Workers/createSphereGeometry.js',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Workers/createSphereGeometry.js',
+   'DATA'),
+  ('lib/Cesium/Workers/createSphereOutlineGeometry.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/createSphereOutlineGeometry.js',
+   'DATA'),
+  ('lib/Cesium/Workers/createTaskProcessorWorker.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/createTaskProcessorWorker.js',
+   'DATA'),
+  ('lib/Cesium/Workers/createVectorTileClampedPolylines.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/createVectorTileClampedPolylines.js',
+   'DATA'),
+  ('lib/Cesium/Workers/createVectorTileGeometries.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/createVectorTileGeometries.js',
+   'DATA'),
+  ('lib/Cesium/Workers/createVectorTilePoints.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/createVectorTilePoints.js',
+   'DATA'),
+  ('lib/Cesium/Workers/createVectorTilePolygons.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/createVectorTilePolygons.js',
+   'DATA'),
+  ('lib/Cesium/Workers/createVectorTilePolylines.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/createVectorTilePolylines.js',
+   'DATA'),
+  ('lib/Cesium/Workers/createVerticesFromGoogleEarthEnterpriseBuffer.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/createVerticesFromGoogleEarthEnterpriseBuffer.js',
+   'DATA'),
+  ('lib/Cesium/Workers/createVerticesFromHeightmap.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/createVerticesFromHeightmap.js',
+   'DATA'),
+  ('lib/Cesium/Workers/createVerticesFromQuantizedTerrainMesh.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/createVerticesFromQuantizedTerrainMesh.js',
+   'DATA'),
+  ('lib/Cesium/Workers/createWallGeometry.js',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Workers/createWallGeometry.js',
+   'DATA'),
+  ('lib/Cesium/Workers/createWallOutlineGeometry.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/createWallOutlineGeometry.js',
+   'DATA'),
+  ('lib/Cesium/Workers/decodeDraco.js',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Workers/decodeDraco.js',
+   'DATA'),
+  ('lib/Cesium/Workers/decodeGoogleEarthEnterprisePacket.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/decodeGoogleEarthEnterprisePacket.js',
+   'DATA'),
+  ('lib/Cesium/Workers/decodeI3S.js',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Workers/decodeI3S.js',
+   'DATA'),
+  ('lib/Cesium/Workers/defaultValue-f6d5e6da.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/defaultValue-f6d5e6da.js',
+   'DATA'),
+  ('lib/Cesium/Workers/package.js',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Workers/package.js',
+   'DATA'),
+  ('lib/Cesium/Workers/transcodeKTX2.js',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/Workers/transcodeKTX2.js',
+   'DATA'),
+  ('lib/Cesium/Workers/transferTypedArrayTest.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/transferTypedArrayTest.js',
+   'DATA'),
+  ('lib/Cesium/Workers/upsampleQuantizedTerrainMesh.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/lib/Cesium/Workers/upsampleQuantizedTerrainMesh.js',
+   'DATA'),
+  ('lib/Cesium/index.cjs',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/index.cjs',
+   'DATA'),
+  ('lib/Cesium/index.js',
+   '/Users/fanglei/Desktop/AI track/lib/Cesium/index.js',
+   'DATA'),
+  ('lib/fit-parser.min.js',
+   '/Users/fanglei/Desktop/AI track/lib/fit-parser.min.js',
+   'DATA'),
+  ('lib/widgets.min.css',
+   '/Users/fanglei/Desktop/AI track/lib/widgets.min.css',
+   'DATA'),
+  ('numpy/_core/_multiarray_tests.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/numpy/_core/_multiarray_tests.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('numpy/_core/_multiarray_umath.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/numpy/_core/_multiarray_umath.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('numpy/fft/_pocketfft_umath.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/numpy/fft/_pocketfft_umath.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('numpy/linalg/_umath_linalg.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/numpy/linalg/_umath_linalg.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('numpy/random/_bounded_integers.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/numpy/random/_bounded_integers.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('numpy/random/_common.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/numpy/random/_common.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('numpy/random/_generator.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/numpy/random/_generator.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('numpy/random/_mt19937.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/numpy/random/_mt19937.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('numpy/random/_pcg64.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/numpy/random/_pcg64.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('numpy/random/_philox.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/numpy/random/_philox.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('numpy/random/_sfc64.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/numpy/random/_sfc64.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('numpy/random/bit_generator.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/numpy/random/bit_generator.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('numpy/random/mtrand.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/numpy/random/mtrand.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('objc/_machsignals.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/objc/_machsignals.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('objc/_objc.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/objc/_objc.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('pandas/_libs/algos.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pandas/_libs/algos.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('pandas/_libs/arrays.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pandas/_libs/arrays.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('pandas/_libs/byteswap.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pandas/_libs/byteswap.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('pandas/_libs/groupby.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pandas/_libs/groupby.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('pandas/_libs/hashing.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pandas/_libs/hashing.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('pandas/_libs/hashtable.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pandas/_libs/hashtable.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('pandas/_libs/index.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pandas/_libs/index.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('pandas/_libs/indexing.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pandas/_libs/indexing.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('pandas/_libs/internals.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pandas/_libs/internals.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('pandas/_libs/interval.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pandas/_libs/interval.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('pandas/_libs/join.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pandas/_libs/join.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('pandas/_libs/json.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pandas/_libs/json.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('pandas/_libs/lib.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pandas/_libs/lib.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('pandas/_libs/missing.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pandas/_libs/missing.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('pandas/_libs/ops.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pandas/_libs/ops.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('pandas/_libs/ops_dispatch.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pandas/_libs/ops_dispatch.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('pandas/_libs/pandas_datetime.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pandas/_libs/pandas_datetime.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('pandas/_libs/pandas_parser.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pandas/_libs/pandas_parser.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('pandas/_libs/parsers.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pandas/_libs/parsers.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('pandas/_libs/properties.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pandas/_libs/properties.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('pandas/_libs/reshape.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pandas/_libs/reshape.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('pandas/_libs/sas.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pandas/_libs/sas.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('pandas/_libs/sparse.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pandas/_libs/sparse.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('pandas/_libs/testing.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pandas/_libs/testing.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('pandas/_libs/tslib.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pandas/_libs/tslib.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('pandas/_libs/tslibs/base.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pandas/_libs/tslibs/base.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('pandas/_libs/tslibs/ccalendar.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pandas/_libs/tslibs/ccalendar.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('pandas/_libs/tslibs/conversion.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pandas/_libs/tslibs/conversion.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('pandas/_libs/tslibs/dtypes.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pandas/_libs/tslibs/dtypes.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('pandas/_libs/tslibs/fields.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pandas/_libs/tslibs/fields.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('pandas/_libs/tslibs/nattype.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pandas/_libs/tslibs/nattype.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('pandas/_libs/tslibs/np_datetime.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pandas/_libs/tslibs/np_datetime.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('pandas/_libs/tslibs/offsets.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pandas/_libs/tslibs/offsets.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('pandas/_libs/tslibs/parsing.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pandas/_libs/tslibs/parsing.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('pandas/_libs/tslibs/period.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pandas/_libs/tslibs/period.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('pandas/_libs/tslibs/strptime.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pandas/_libs/tslibs/strptime.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('pandas/_libs/tslibs/timedeltas.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pandas/_libs/tslibs/timedeltas.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('pandas/_libs/tslibs/timestamps.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pandas/_libs/tslibs/timestamps.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('pandas/_libs/tslibs/timezones.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pandas/_libs/tslibs/timezones.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('pandas/_libs/tslibs/tzconversion.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pandas/_libs/tslibs/tzconversion.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('pandas/_libs/tslibs/vectorized.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pandas/_libs/tslibs/vectorized.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('pandas/_libs/window/aggregations.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pandas/_libs/window/aggregations.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('pandas/_libs/window/indexers.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pandas/_libs/window/indexers.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('pandas/_libs/writers.cpython-39-darwin.so',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pandas/_libs/writers.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('pandas/io/formats/templates/html.tpl',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pandas/io/formats/templates/html.tpl',
+   'DATA'),
+  ('pandas/io/formats/templates/html_style.tpl',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pandas/io/formats/templates/html_style.tpl',
+   'DATA'),
+  ('pandas/io/formats/templates/html_table.tpl',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pandas/io/formats/templates/html_table.tpl',
+   'DATA'),
+  ('pandas/io/formats/templates/latex.tpl',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pandas/io/formats/templates/latex.tpl',
+   'DATA'),
+  ('pandas/io/formats/templates/latex_longtable.tpl',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pandas/io/formats/templates/latex_longtable.tpl',
+   'DATA'),
+  ('pandas/io/formats/templates/latex_table.tpl',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pandas/io/formats/templates/latex_table.tpl',
+   'DATA'),
+  ('pandas/io/formats/templates/string.tpl',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pandas/io/formats/templates/string.tpl',
+   'DATA'),
+  ('python3.9/lib-dynload/_asyncio.cpython-39-darwin.so',
+   '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/lib-dynload/_asyncio.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('python3.9/lib-dynload/_bisect.cpython-39-darwin.so',
+   '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/lib-dynload/_bisect.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('python3.9/lib-dynload/_blake2.cpython-39-darwin.so',
+   '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/lib-dynload/_blake2.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('python3.9/lib-dynload/_bz2.cpython-39-darwin.so',
+   '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/lib-dynload/_bz2.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('python3.9/lib-dynload/_codecs_cn.cpython-39-darwin.so',
+   '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/lib-dynload/_codecs_cn.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('python3.9/lib-dynload/_codecs_hk.cpython-39-darwin.so',
+   '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/lib-dynload/_codecs_hk.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('python3.9/lib-dynload/_codecs_iso2022.cpython-39-darwin.so',
+   '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/lib-dynload/_codecs_iso2022.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('python3.9/lib-dynload/_codecs_jp.cpython-39-darwin.so',
+   '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/lib-dynload/_codecs_jp.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('python3.9/lib-dynload/_codecs_kr.cpython-39-darwin.so',
+   '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/lib-dynload/_codecs_kr.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('python3.9/lib-dynload/_codecs_tw.cpython-39-darwin.so',
+   '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/lib-dynload/_codecs_tw.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('python3.9/lib-dynload/_contextvars.cpython-39-darwin.so',
+   '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/lib-dynload/_contextvars.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('python3.9/lib-dynload/_csv.cpython-39-darwin.so',
+   '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/lib-dynload/_csv.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('python3.9/lib-dynload/_ctypes.cpython-39-darwin.so',
+   '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/lib-dynload/_ctypes.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('python3.9/lib-dynload/_datetime.cpython-39-darwin.so',
+   '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/lib-dynload/_datetime.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('python3.9/lib-dynload/_decimal.cpython-39-darwin.so',
+   '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/lib-dynload/_decimal.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('python3.9/lib-dynload/_elementtree.cpython-39-darwin.so',
+   '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/lib-dynload/_elementtree.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('python3.9/lib-dynload/_hashlib.cpython-39-darwin.so',
+   '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/lib-dynload/_hashlib.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('python3.9/lib-dynload/_heapq.cpython-39-darwin.so',
+   '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/lib-dynload/_heapq.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('python3.9/lib-dynload/_json.cpython-39-darwin.so',
+   '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/lib-dynload/_json.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('python3.9/lib-dynload/_lzma.cpython-39-darwin.so',
+   '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/lib-dynload/_lzma.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('python3.9/lib-dynload/_md5.cpython-39-darwin.so',
+   '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/lib-dynload/_md5.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('python3.9/lib-dynload/_multibytecodec.cpython-39-darwin.so',
+   '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/lib-dynload/_multibytecodec.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('python3.9/lib-dynload/_multiprocessing.cpython-39-darwin.so',
+   '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/lib-dynload/_multiprocessing.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('python3.9/lib-dynload/_opcode.cpython-39-darwin.so',
+   '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/lib-dynload/_opcode.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('python3.9/lib-dynload/_pickle.cpython-39-darwin.so',
+   '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/lib-dynload/_pickle.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('python3.9/lib-dynload/_posixshmem.cpython-39-darwin.so',
+   '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/lib-dynload/_posixshmem.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('python3.9/lib-dynload/_posixsubprocess.cpython-39-darwin.so',
+   '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/lib-dynload/_posixsubprocess.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('python3.9/lib-dynload/_queue.cpython-39-darwin.so',
+   '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/lib-dynload/_queue.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('python3.9/lib-dynload/_random.cpython-39-darwin.so',
+   '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/lib-dynload/_random.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('python3.9/lib-dynload/_scproxy.cpython-39-darwin.so',
+   '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/lib-dynload/_scproxy.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('python3.9/lib-dynload/_sha1.cpython-39-darwin.so',
+   '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/lib-dynload/_sha1.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('python3.9/lib-dynload/_sha256.cpython-39-darwin.so',
+   '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/lib-dynload/_sha256.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('python3.9/lib-dynload/_sha3.cpython-39-darwin.so',
+   '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/lib-dynload/_sha3.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('python3.9/lib-dynload/_sha512.cpython-39-darwin.so',
+   '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/lib-dynload/_sha512.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('python3.9/lib-dynload/_socket.cpython-39-darwin.so',
+   '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/lib-dynload/_socket.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('python3.9/lib-dynload/_sqlite3.cpython-39-darwin.so',
+   '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/lib-dynload/_sqlite3.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('python3.9/lib-dynload/_ssl.cpython-39-darwin.so',
+   '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/lib-dynload/_ssl.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('python3.9/lib-dynload/_statistics.cpython-39-darwin.so',
+   '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/lib-dynload/_statistics.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('python3.9/lib-dynload/_struct.cpython-39-darwin.so',
+   '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/lib-dynload/_struct.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('python3.9/lib-dynload/_uuid.cpython-39-darwin.so',
+   '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/lib-dynload/_uuid.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('python3.9/lib-dynload/_zoneinfo.cpython-39-darwin.so',
+   '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/lib-dynload/_zoneinfo.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('python3.9/lib-dynload/array.cpython-39-darwin.so',
+   '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/lib-dynload/array.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('python3.9/lib-dynload/binascii.cpython-39-darwin.so',
+   '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/lib-dynload/binascii.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('python3.9/lib-dynload/cmath.cpython-39-darwin.so',
+   '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/lib-dynload/cmath.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('python3.9/lib-dynload/grp.cpython-39-darwin.so',
+   '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/lib-dynload/grp.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('python3.9/lib-dynload/math.cpython-39-darwin.so',
+   '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/lib-dynload/math.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('python3.9/lib-dynload/mmap.cpython-39-darwin.so',
+   '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/lib-dynload/mmap.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('python3.9/lib-dynload/pyexpat.cpython-39-darwin.so',
+   '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/lib-dynload/pyexpat.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('python3.9/lib-dynload/readline.cpython-39-darwin.so',
+   '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/lib-dynload/readline.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('python3.9/lib-dynload/resource.cpython-39-darwin.so',
+   '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/lib-dynload/resource.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('python3.9/lib-dynload/select.cpython-39-darwin.so',
+   '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/lib-dynload/select.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('python3.9/lib-dynload/termios.cpython-39-darwin.so',
+   '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/lib-dynload/termios.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('python3.9/lib-dynload/unicodedata.cpython-39-darwin.so',
+   '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/lib-dynload/unicodedata.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('python3.9/lib-dynload/zlib.cpython-39-darwin.so',
+   '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/lib-dynload/zlib.cpython-39-darwin.so',
+   'EXTENSION'),
+  ('pytz/zoneinfo/Africa/Abidjan',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Africa/Abidjan',
+   'DATA'),
+  ('pytz/zoneinfo/Africa/Accra',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Africa/Accra',
+   'DATA'),
+  ('pytz/zoneinfo/Africa/Addis_Ababa',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Africa/Addis_Ababa',
+   'DATA'),
+  ('pytz/zoneinfo/Africa/Algiers',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Africa/Algiers',
+   'DATA'),
+  ('pytz/zoneinfo/Africa/Asmara',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Africa/Asmara',
+   'DATA'),
+  ('pytz/zoneinfo/Africa/Asmera',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Africa/Asmera',
+   'DATA'),
+  ('pytz/zoneinfo/Africa/Bamako',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Africa/Bamako',
+   'DATA'),
+  ('pytz/zoneinfo/Africa/Bangui',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Africa/Bangui',
+   'DATA'),
+  ('pytz/zoneinfo/Africa/Banjul',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Africa/Banjul',
+   'DATA'),
+  ('pytz/zoneinfo/Africa/Bissau',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Africa/Bissau',
+   'DATA'),
+  ('pytz/zoneinfo/Africa/Blantyre',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Africa/Blantyre',
+   'DATA'),
+  ('pytz/zoneinfo/Africa/Brazzaville',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Africa/Brazzaville',
+   'DATA'),
+  ('pytz/zoneinfo/Africa/Bujumbura',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Africa/Bujumbura',
+   'DATA'),
+  ('pytz/zoneinfo/Africa/Cairo',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Africa/Cairo',
+   'DATA'),
+  ('pytz/zoneinfo/Africa/Casablanca',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Africa/Casablanca',
+   'DATA'),
+  ('pytz/zoneinfo/Africa/Ceuta',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Africa/Ceuta',
+   'DATA'),
+  ('pytz/zoneinfo/Africa/Conakry',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Africa/Conakry',
+   'DATA'),
+  ('pytz/zoneinfo/Africa/Dakar',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Africa/Dakar',
+   'DATA'),
+  ('pytz/zoneinfo/Africa/Dar_es_Salaam',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Africa/Dar_es_Salaam',
+   'DATA'),
+  ('pytz/zoneinfo/Africa/Djibouti',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Africa/Djibouti',
+   'DATA'),
+  ('pytz/zoneinfo/Africa/Douala',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Africa/Douala',
+   'DATA'),
+  ('pytz/zoneinfo/Africa/El_Aaiun',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Africa/El_Aaiun',
+   'DATA'),
+  ('pytz/zoneinfo/Africa/Freetown',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Africa/Freetown',
+   'DATA'),
+  ('pytz/zoneinfo/Africa/Gaborone',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Africa/Gaborone',
+   'DATA'),
+  ('pytz/zoneinfo/Africa/Harare',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Africa/Harare',
+   'DATA'),
+  ('pytz/zoneinfo/Africa/Johannesburg',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Africa/Johannesburg',
+   'DATA'),
+  ('pytz/zoneinfo/Africa/Juba',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Africa/Juba',
+   'DATA'),
+  ('pytz/zoneinfo/Africa/Kampala',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Africa/Kampala',
+   'DATA'),
+  ('pytz/zoneinfo/Africa/Khartoum',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Africa/Khartoum',
+   'DATA'),
+  ('pytz/zoneinfo/Africa/Kigali',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Africa/Kigali',
+   'DATA'),
+  ('pytz/zoneinfo/Africa/Kinshasa',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Africa/Kinshasa',
+   'DATA'),
+  ('pytz/zoneinfo/Africa/Lagos',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Africa/Lagos',
+   'DATA'),
+  ('pytz/zoneinfo/Africa/Libreville',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Africa/Libreville',
+   'DATA'),
+  ('pytz/zoneinfo/Africa/Lome',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Africa/Lome',
+   'DATA'),
+  ('pytz/zoneinfo/Africa/Luanda',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Africa/Luanda',
+   'DATA'),
+  ('pytz/zoneinfo/Africa/Lubumbashi',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Africa/Lubumbashi',
+   'DATA'),
+  ('pytz/zoneinfo/Africa/Lusaka',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Africa/Lusaka',
+   'DATA'),
+  ('pytz/zoneinfo/Africa/Malabo',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Africa/Malabo',
+   'DATA'),
+  ('pytz/zoneinfo/Africa/Maputo',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Africa/Maputo',
+   'DATA'),
+  ('pytz/zoneinfo/Africa/Maseru',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Africa/Maseru',
+   'DATA'),
+  ('pytz/zoneinfo/Africa/Mbabane',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Africa/Mbabane',
+   'DATA'),
+  ('pytz/zoneinfo/Africa/Mogadishu',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Africa/Mogadishu',
+   'DATA'),
+  ('pytz/zoneinfo/Africa/Monrovia',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Africa/Monrovia',
+   'DATA'),
+  ('pytz/zoneinfo/Africa/Nairobi',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Africa/Nairobi',
+   'DATA'),
+  ('pytz/zoneinfo/Africa/Ndjamena',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Africa/Ndjamena',
+   'DATA'),
+  ('pytz/zoneinfo/Africa/Niamey',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Africa/Niamey',
+   'DATA'),
+  ('pytz/zoneinfo/Africa/Nouakchott',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Africa/Nouakchott',
+   'DATA'),
+  ('pytz/zoneinfo/Africa/Ouagadougou',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Africa/Ouagadougou',
+   'DATA'),
+  ('pytz/zoneinfo/Africa/Porto-Novo',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Africa/Porto-Novo',
+   'DATA'),
+  ('pytz/zoneinfo/Africa/Sao_Tome',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Africa/Sao_Tome',
+   'DATA'),
+  ('pytz/zoneinfo/Africa/Timbuktu',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Africa/Timbuktu',
+   'DATA'),
+  ('pytz/zoneinfo/Africa/Tripoli',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Africa/Tripoli',
+   'DATA'),
+  ('pytz/zoneinfo/Africa/Tunis',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Africa/Tunis',
+   'DATA'),
+  ('pytz/zoneinfo/Africa/Windhoek',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Africa/Windhoek',
+   'DATA'),
+  ('pytz/zoneinfo/America/Adak',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Adak',
+   'DATA'),
+  ('pytz/zoneinfo/America/Anchorage',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Anchorage',
+   'DATA'),
+  ('pytz/zoneinfo/America/Anguilla',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Anguilla',
+   'DATA'),
+  ('pytz/zoneinfo/America/Antigua',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Antigua',
+   'DATA'),
+  ('pytz/zoneinfo/America/Araguaina',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Araguaina',
+   'DATA'),
+  ('pytz/zoneinfo/America/Argentina/Buenos_Aires',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Argentina/Buenos_Aires',
+   'DATA'),
+  ('pytz/zoneinfo/America/Argentina/Catamarca',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Argentina/Catamarca',
+   'DATA'),
+  ('pytz/zoneinfo/America/Argentina/ComodRivadavia',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Argentina/ComodRivadavia',
+   'DATA'),
+  ('pytz/zoneinfo/America/Argentina/Cordoba',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Argentina/Cordoba',
+   'DATA'),
+  ('pytz/zoneinfo/America/Argentina/Jujuy',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Argentina/Jujuy',
+   'DATA'),
+  ('pytz/zoneinfo/America/Argentina/La_Rioja',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Argentina/La_Rioja',
+   'DATA'),
+  ('pytz/zoneinfo/America/Argentina/Mendoza',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Argentina/Mendoza',
+   'DATA'),
+  ('pytz/zoneinfo/America/Argentina/Rio_Gallegos',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Argentina/Rio_Gallegos',
+   'DATA'),
+  ('pytz/zoneinfo/America/Argentina/Salta',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Argentina/Salta',
+   'DATA'),
+  ('pytz/zoneinfo/America/Argentina/San_Juan',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Argentina/San_Juan',
+   'DATA'),
+  ('pytz/zoneinfo/America/Argentina/San_Luis',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Argentina/San_Luis',
+   'DATA'),
+  ('pytz/zoneinfo/America/Argentina/Tucuman',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Argentina/Tucuman',
+   'DATA'),
+  ('pytz/zoneinfo/America/Argentina/Ushuaia',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Argentina/Ushuaia',
+   'DATA'),
+  ('pytz/zoneinfo/America/Aruba',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Aruba',
+   'DATA'),
+  ('pytz/zoneinfo/America/Asuncion',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Asuncion',
+   'DATA'),
+  ('pytz/zoneinfo/America/Atikokan',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Atikokan',
+   'DATA'),
+  ('pytz/zoneinfo/America/Atka',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Atka',
+   'DATA'),
+  ('pytz/zoneinfo/America/Bahia',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Bahia',
+   'DATA'),
+  ('pytz/zoneinfo/America/Bahia_Banderas',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Bahia_Banderas',
+   'DATA'),
+  ('pytz/zoneinfo/America/Barbados',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Barbados',
+   'DATA'),
+  ('pytz/zoneinfo/America/Belem',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Belem',
+   'DATA'),
+  ('pytz/zoneinfo/America/Belize',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Belize',
+   'DATA'),
+  ('pytz/zoneinfo/America/Blanc-Sablon',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Blanc-Sablon',
+   'DATA'),
+  ('pytz/zoneinfo/America/Boa_Vista',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Boa_Vista',
+   'DATA'),
+  ('pytz/zoneinfo/America/Bogota',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Bogota',
+   'DATA'),
+  ('pytz/zoneinfo/America/Boise',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Boise',
+   'DATA'),
+  ('pytz/zoneinfo/America/Buenos_Aires',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Buenos_Aires',
+   'DATA'),
+  ('pytz/zoneinfo/America/Cambridge_Bay',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Cambridge_Bay',
+   'DATA'),
+  ('pytz/zoneinfo/America/Campo_Grande',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Campo_Grande',
+   'DATA'),
+  ('pytz/zoneinfo/America/Cancun',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Cancun',
+   'DATA'),
+  ('pytz/zoneinfo/America/Caracas',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Caracas',
+   'DATA'),
+  ('pytz/zoneinfo/America/Catamarca',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Catamarca',
+   'DATA'),
+  ('pytz/zoneinfo/America/Cayenne',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Cayenne',
+   'DATA'),
+  ('pytz/zoneinfo/America/Cayman',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Cayman',
+   'DATA'),
+  ('pytz/zoneinfo/America/Chicago',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Chicago',
+   'DATA'),
+  ('pytz/zoneinfo/America/Chihuahua',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Chihuahua',
+   'DATA'),
+  ('pytz/zoneinfo/America/Ciudad_Juarez',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Ciudad_Juarez',
+   'DATA'),
+  ('pytz/zoneinfo/America/Coral_Harbour',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Coral_Harbour',
+   'DATA'),
+  ('pytz/zoneinfo/America/Cordoba',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Cordoba',
+   'DATA'),
+  ('pytz/zoneinfo/America/Costa_Rica',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Costa_Rica',
+   'DATA'),
+  ('pytz/zoneinfo/America/Coyhaique',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Coyhaique',
+   'DATA'),
+  ('pytz/zoneinfo/America/Creston',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Creston',
+   'DATA'),
+  ('pytz/zoneinfo/America/Cuiaba',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Cuiaba',
+   'DATA'),
+  ('pytz/zoneinfo/America/Curacao',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Curacao',
+   'DATA'),
+  ('pytz/zoneinfo/America/Danmarkshavn',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Danmarkshavn',
+   'DATA'),
+  ('pytz/zoneinfo/America/Dawson',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Dawson',
+   'DATA'),
+  ('pytz/zoneinfo/America/Dawson_Creek',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Dawson_Creek',
+   'DATA'),
+  ('pytz/zoneinfo/America/Denver',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Denver',
+   'DATA'),
+  ('pytz/zoneinfo/America/Detroit',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Detroit',
+   'DATA'),
+  ('pytz/zoneinfo/America/Dominica',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Dominica',
+   'DATA'),
+  ('pytz/zoneinfo/America/Edmonton',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Edmonton',
+   'DATA'),
+  ('pytz/zoneinfo/America/Eirunepe',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Eirunepe',
+   'DATA'),
+  ('pytz/zoneinfo/America/El_Salvador',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/El_Salvador',
+   'DATA'),
+  ('pytz/zoneinfo/America/Ensenada',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Ensenada',
+   'DATA'),
+  ('pytz/zoneinfo/America/Fort_Nelson',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Fort_Nelson',
+   'DATA'),
+  ('pytz/zoneinfo/America/Fort_Wayne',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Fort_Wayne',
+   'DATA'),
+  ('pytz/zoneinfo/America/Fortaleza',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Fortaleza',
+   'DATA'),
+  ('pytz/zoneinfo/America/Glace_Bay',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Glace_Bay',
+   'DATA'),
+  ('pytz/zoneinfo/America/Godthab',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Godthab',
+   'DATA'),
+  ('pytz/zoneinfo/America/Goose_Bay',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Goose_Bay',
+   'DATA'),
+  ('pytz/zoneinfo/America/Grand_Turk',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Grand_Turk',
+   'DATA'),
+  ('pytz/zoneinfo/America/Grenada',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Grenada',
+   'DATA'),
+  ('pytz/zoneinfo/America/Guadeloupe',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Guadeloupe',
+   'DATA'),
+  ('pytz/zoneinfo/America/Guatemala',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Guatemala',
+   'DATA'),
+  ('pytz/zoneinfo/America/Guayaquil',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Guayaquil',
+   'DATA'),
+  ('pytz/zoneinfo/America/Guyana',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Guyana',
+   'DATA'),
+  ('pytz/zoneinfo/America/Halifax',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Halifax',
+   'DATA'),
+  ('pytz/zoneinfo/America/Havana',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Havana',
+   'DATA'),
+  ('pytz/zoneinfo/America/Hermosillo',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Hermosillo',
+   'DATA'),
+  ('pytz/zoneinfo/America/Indiana/Indianapolis',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Indiana/Indianapolis',
+   'DATA'),
+  ('pytz/zoneinfo/America/Indiana/Knox',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Indiana/Knox',
+   'DATA'),
+  ('pytz/zoneinfo/America/Indiana/Marengo',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Indiana/Marengo',
+   'DATA'),
+  ('pytz/zoneinfo/America/Indiana/Petersburg',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Indiana/Petersburg',
+   'DATA'),
+  ('pytz/zoneinfo/America/Indiana/Tell_City',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Indiana/Tell_City',
+   'DATA'),
+  ('pytz/zoneinfo/America/Indiana/Vevay',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Indiana/Vevay',
+   'DATA'),
+  ('pytz/zoneinfo/America/Indiana/Vincennes',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Indiana/Vincennes',
+   'DATA'),
+  ('pytz/zoneinfo/America/Indiana/Winamac',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Indiana/Winamac',
+   'DATA'),
+  ('pytz/zoneinfo/America/Indianapolis',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Indianapolis',
+   'DATA'),
+  ('pytz/zoneinfo/America/Inuvik',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Inuvik',
+   'DATA'),
+  ('pytz/zoneinfo/America/Iqaluit',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Iqaluit',
+   'DATA'),
+  ('pytz/zoneinfo/America/Jamaica',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Jamaica',
+   'DATA'),
+  ('pytz/zoneinfo/America/Jujuy',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Jujuy',
+   'DATA'),
+  ('pytz/zoneinfo/America/Juneau',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Juneau',
+   'DATA'),
+  ('pytz/zoneinfo/America/Kentucky/Louisville',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Kentucky/Louisville',
+   'DATA'),
+  ('pytz/zoneinfo/America/Kentucky/Monticello',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Kentucky/Monticello',
+   'DATA'),
+  ('pytz/zoneinfo/America/Knox_IN',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Knox_IN',
+   'DATA'),
+  ('pytz/zoneinfo/America/Kralendijk',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Kralendijk',
+   'DATA'),
+  ('pytz/zoneinfo/America/La_Paz',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/La_Paz',
+   'DATA'),
+  ('pytz/zoneinfo/America/Lima',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Lima',
+   'DATA'),
+  ('pytz/zoneinfo/America/Los_Angeles',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Los_Angeles',
+   'DATA'),
+  ('pytz/zoneinfo/America/Louisville',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Louisville',
+   'DATA'),
+  ('pytz/zoneinfo/America/Lower_Princes',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Lower_Princes',
+   'DATA'),
+  ('pytz/zoneinfo/America/Maceio',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Maceio',
+   'DATA'),
+  ('pytz/zoneinfo/America/Managua',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Managua',
+   'DATA'),
+  ('pytz/zoneinfo/America/Manaus',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Manaus',
+   'DATA'),
+  ('pytz/zoneinfo/America/Marigot',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Marigot',
+   'DATA'),
+  ('pytz/zoneinfo/America/Martinique',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Martinique',
+   'DATA'),
+  ('pytz/zoneinfo/America/Matamoros',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Matamoros',
+   'DATA'),
+  ('pytz/zoneinfo/America/Mazatlan',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Mazatlan',
+   'DATA'),
+  ('pytz/zoneinfo/America/Mendoza',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Mendoza',
+   'DATA'),
+  ('pytz/zoneinfo/America/Menominee',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Menominee',
+   'DATA'),
+  ('pytz/zoneinfo/America/Merida',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Merida',
+   'DATA'),
+  ('pytz/zoneinfo/America/Metlakatla',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Metlakatla',
+   'DATA'),
+  ('pytz/zoneinfo/America/Mexico_City',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Mexico_City',
+   'DATA'),
+  ('pytz/zoneinfo/America/Miquelon',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Miquelon',
+   'DATA'),
+  ('pytz/zoneinfo/America/Moncton',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Moncton',
+   'DATA'),
+  ('pytz/zoneinfo/America/Monterrey',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Monterrey',
+   'DATA'),
+  ('pytz/zoneinfo/America/Montevideo',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Montevideo',
+   'DATA'),
+  ('pytz/zoneinfo/America/Montreal',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Montreal',
+   'DATA'),
+  ('pytz/zoneinfo/America/Montserrat',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Montserrat',
+   'DATA'),
+  ('pytz/zoneinfo/America/Nassau',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Nassau',
+   'DATA'),
+  ('pytz/zoneinfo/America/New_York',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/New_York',
+   'DATA'),
+  ('pytz/zoneinfo/America/Nipigon',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Nipigon',
+   'DATA'),
+  ('pytz/zoneinfo/America/Nome',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Nome',
+   'DATA'),
+  ('pytz/zoneinfo/America/Noronha',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Noronha',
+   'DATA'),
+  ('pytz/zoneinfo/America/North_Dakota/Beulah',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/North_Dakota/Beulah',
+   'DATA'),
+  ('pytz/zoneinfo/America/North_Dakota/Center',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/North_Dakota/Center',
+   'DATA'),
+  ('pytz/zoneinfo/America/North_Dakota/New_Salem',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/North_Dakota/New_Salem',
+   'DATA'),
+  ('pytz/zoneinfo/America/Nuuk',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Nuuk',
+   'DATA'),
+  ('pytz/zoneinfo/America/Ojinaga',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Ojinaga',
+   'DATA'),
+  ('pytz/zoneinfo/America/Panama',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Panama',
+   'DATA'),
+  ('pytz/zoneinfo/America/Pangnirtung',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Pangnirtung',
+   'DATA'),
+  ('pytz/zoneinfo/America/Paramaribo',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Paramaribo',
+   'DATA'),
+  ('pytz/zoneinfo/America/Phoenix',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Phoenix',
+   'DATA'),
+  ('pytz/zoneinfo/America/Port-au-Prince',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Port-au-Prince',
+   'DATA'),
+  ('pytz/zoneinfo/America/Port_of_Spain',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Port_of_Spain',
+   'DATA'),
+  ('pytz/zoneinfo/America/Porto_Acre',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Porto_Acre',
+   'DATA'),
+  ('pytz/zoneinfo/America/Porto_Velho',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Porto_Velho',
+   'DATA'),
+  ('pytz/zoneinfo/America/Puerto_Rico',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Puerto_Rico',
+   'DATA'),
+  ('pytz/zoneinfo/America/Punta_Arenas',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Punta_Arenas',
+   'DATA'),
+  ('pytz/zoneinfo/America/Rainy_River',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Rainy_River',
+   'DATA'),
+  ('pytz/zoneinfo/America/Rankin_Inlet',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Rankin_Inlet',
+   'DATA'),
+  ('pytz/zoneinfo/America/Recife',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Recife',
+   'DATA'),
+  ('pytz/zoneinfo/America/Regina',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Regina',
+   'DATA'),
+  ('pytz/zoneinfo/America/Resolute',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Resolute',
+   'DATA'),
+  ('pytz/zoneinfo/America/Rio_Branco',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Rio_Branco',
+   'DATA'),
+  ('pytz/zoneinfo/America/Rosario',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Rosario',
+   'DATA'),
+  ('pytz/zoneinfo/America/Santa_Isabel',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Santa_Isabel',
+   'DATA'),
+  ('pytz/zoneinfo/America/Santarem',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Santarem',
+   'DATA'),
+  ('pytz/zoneinfo/America/Santiago',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Santiago',
+   'DATA'),
+  ('pytz/zoneinfo/America/Santo_Domingo',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Santo_Domingo',
+   'DATA'),
+  ('pytz/zoneinfo/America/Sao_Paulo',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Sao_Paulo',
+   'DATA'),
+  ('pytz/zoneinfo/America/Scoresbysund',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Scoresbysund',
+   'DATA'),
+  ('pytz/zoneinfo/America/Shiprock',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Shiprock',
+   'DATA'),
+  ('pytz/zoneinfo/America/Sitka',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Sitka',
+   'DATA'),
+  ('pytz/zoneinfo/America/St_Barthelemy',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/St_Barthelemy',
+   'DATA'),
+  ('pytz/zoneinfo/America/St_Johns',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/St_Johns',
+   'DATA'),
+  ('pytz/zoneinfo/America/St_Kitts',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/St_Kitts',
+   'DATA'),
+  ('pytz/zoneinfo/America/St_Lucia',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/St_Lucia',
+   'DATA'),
+  ('pytz/zoneinfo/America/St_Thomas',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/St_Thomas',
+   'DATA'),
+  ('pytz/zoneinfo/America/St_Vincent',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/St_Vincent',
+   'DATA'),
+  ('pytz/zoneinfo/America/Swift_Current',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Swift_Current',
+   'DATA'),
+  ('pytz/zoneinfo/America/Tegucigalpa',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Tegucigalpa',
+   'DATA'),
+  ('pytz/zoneinfo/America/Thule',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Thule',
+   'DATA'),
+  ('pytz/zoneinfo/America/Thunder_Bay',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Thunder_Bay',
+   'DATA'),
+  ('pytz/zoneinfo/America/Tijuana',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Tijuana',
+   'DATA'),
+  ('pytz/zoneinfo/America/Toronto',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Toronto',
+   'DATA'),
+  ('pytz/zoneinfo/America/Tortola',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Tortola',
+   'DATA'),
+  ('pytz/zoneinfo/America/Vancouver',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Vancouver',
+   'DATA'),
+  ('pytz/zoneinfo/America/Virgin',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Virgin',
+   'DATA'),
+  ('pytz/zoneinfo/America/Whitehorse',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Whitehorse',
+   'DATA'),
+  ('pytz/zoneinfo/America/Winnipeg',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Winnipeg',
+   'DATA'),
+  ('pytz/zoneinfo/America/Yakutat',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Yakutat',
+   'DATA'),
+  ('pytz/zoneinfo/America/Yellowknife',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/America/Yellowknife',
+   'DATA'),
+  ('pytz/zoneinfo/Antarctica/Casey',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Antarctica/Casey',
+   'DATA'),
+  ('pytz/zoneinfo/Antarctica/Davis',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Antarctica/Davis',
+   'DATA'),
+  ('pytz/zoneinfo/Antarctica/DumontDUrville',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Antarctica/DumontDUrville',
+   'DATA'),
+  ('pytz/zoneinfo/Antarctica/Macquarie',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Antarctica/Macquarie',
+   'DATA'),
+  ('pytz/zoneinfo/Antarctica/Mawson',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Antarctica/Mawson',
+   'DATA'),
+  ('pytz/zoneinfo/Antarctica/McMurdo',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Antarctica/McMurdo',
+   'DATA'),
+  ('pytz/zoneinfo/Antarctica/Palmer',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Antarctica/Palmer',
+   'DATA'),
+  ('pytz/zoneinfo/Antarctica/Rothera',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Antarctica/Rothera',
+   'DATA'),
+  ('pytz/zoneinfo/Antarctica/South_Pole',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Antarctica/South_Pole',
+   'DATA'),
+  ('pytz/zoneinfo/Antarctica/Syowa',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Antarctica/Syowa',
+   'DATA'),
+  ('pytz/zoneinfo/Antarctica/Troll',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Antarctica/Troll',
+   'DATA'),
+  ('pytz/zoneinfo/Antarctica/Vostok',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Antarctica/Vostok',
+   'DATA'),
+  ('pytz/zoneinfo/Arctic/Longyearbyen',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Arctic/Longyearbyen',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Aden',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Aden',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Almaty',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Almaty',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Amman',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Amman',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Anadyr',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Anadyr',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Aqtau',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Aqtau',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Aqtobe',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Aqtobe',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Ashgabat',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Ashgabat',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Ashkhabad',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Ashkhabad',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Atyrau',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Atyrau',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Baghdad',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Baghdad',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Bahrain',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Bahrain',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Baku',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Baku',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Bangkok',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Bangkok',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Barnaul',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Barnaul',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Beirut',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Beirut',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Bishkek',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Bishkek',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Brunei',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Brunei',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Calcutta',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Calcutta',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Chita',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Chita',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Choibalsan',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Choibalsan',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Chongqing',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Chongqing',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Chungking',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Chungking',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Colombo',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Colombo',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Dacca',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Dacca',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Damascus',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Damascus',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Dhaka',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Dhaka',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Dili',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Dili',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Dubai',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Dubai',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Dushanbe',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Dushanbe',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Famagusta',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Famagusta',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Gaza',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Gaza',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Harbin',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Harbin',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Hebron',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Hebron',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Ho_Chi_Minh',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Ho_Chi_Minh',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Hong_Kong',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Hong_Kong',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Hovd',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Hovd',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Irkutsk',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Irkutsk',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Istanbul',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Istanbul',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Jakarta',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Jakarta',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Jayapura',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Jayapura',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Jerusalem',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Jerusalem',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Kabul',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Kabul',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Kamchatka',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Kamchatka',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Karachi',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Karachi',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Kashgar',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Kashgar',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Kathmandu',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Kathmandu',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Katmandu',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Katmandu',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Khandyga',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Khandyga',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Kolkata',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Kolkata',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Krasnoyarsk',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Krasnoyarsk',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Kuala_Lumpur',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Kuala_Lumpur',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Kuching',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Kuching',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Kuwait',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Kuwait',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Macao',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Macao',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Macau',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Macau',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Magadan',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Magadan',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Makassar',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Makassar',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Manila',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Manila',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Muscat',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Muscat',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Nicosia',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Nicosia',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Novokuznetsk',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Novokuznetsk',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Novosibirsk',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Novosibirsk',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Omsk',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Omsk',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Oral',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Oral',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Phnom_Penh',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Phnom_Penh',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Pontianak',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Pontianak',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Pyongyang',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Pyongyang',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Qatar',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Qatar',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Qostanay',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Qostanay',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Qyzylorda',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Qyzylorda',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Rangoon',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Rangoon',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Riyadh',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Riyadh',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Saigon',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Saigon',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Sakhalin',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Sakhalin',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Samarkand',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Samarkand',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Seoul',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Seoul',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Shanghai',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Shanghai',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Singapore',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Singapore',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Srednekolymsk',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Srednekolymsk',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Taipei',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Taipei',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Tashkent',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Tashkent',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Tbilisi',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Tbilisi',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Tehran',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Tehran',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Tel_Aviv',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Tel_Aviv',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Thimbu',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Thimbu',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Thimphu',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Thimphu',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Tokyo',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Tokyo',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Tomsk',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Tomsk',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Ujung_Pandang',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Ujung_Pandang',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Ulaanbaatar',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Ulaanbaatar',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Ulan_Bator',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Ulan_Bator',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Urumqi',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Urumqi',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Ust-Nera',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Ust-Nera',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Vientiane',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Vientiane',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Vladivostok',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Vladivostok',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Yakutsk',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Yakutsk',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Yangon',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Yangon',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Yekaterinburg',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Yekaterinburg',
+   'DATA'),
+  ('pytz/zoneinfo/Asia/Yerevan',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Asia/Yerevan',
+   'DATA'),
+  ('pytz/zoneinfo/Atlantic/Azores',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Atlantic/Azores',
+   'DATA'),
+  ('pytz/zoneinfo/Atlantic/Bermuda',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Atlantic/Bermuda',
+   'DATA'),
+  ('pytz/zoneinfo/Atlantic/Canary',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Atlantic/Canary',
+   'DATA'),
+  ('pytz/zoneinfo/Atlantic/Cape_Verde',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Atlantic/Cape_Verde',
+   'DATA'),
+  ('pytz/zoneinfo/Atlantic/Faeroe',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Atlantic/Faeroe',
+   'DATA'),
+  ('pytz/zoneinfo/Atlantic/Faroe',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Atlantic/Faroe',
+   'DATA'),
+  ('pytz/zoneinfo/Atlantic/Jan_Mayen',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Atlantic/Jan_Mayen',
+   'DATA'),
+  ('pytz/zoneinfo/Atlantic/Madeira',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Atlantic/Madeira',
+   'DATA'),
+  ('pytz/zoneinfo/Atlantic/Reykjavik',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Atlantic/Reykjavik',
+   'DATA'),
+  ('pytz/zoneinfo/Atlantic/South_Georgia',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Atlantic/South_Georgia',
+   'DATA'),
+  ('pytz/zoneinfo/Atlantic/St_Helena',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Atlantic/St_Helena',
+   'DATA'),
+  ('pytz/zoneinfo/Atlantic/Stanley',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Atlantic/Stanley',
+   'DATA'),
+  ('pytz/zoneinfo/Australia/ACT',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Australia/ACT',
+   'DATA'),
+  ('pytz/zoneinfo/Australia/Adelaide',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Australia/Adelaide',
+   'DATA'),
+  ('pytz/zoneinfo/Australia/Brisbane',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Australia/Brisbane',
+   'DATA'),
+  ('pytz/zoneinfo/Australia/Broken_Hill',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Australia/Broken_Hill',
+   'DATA'),
+  ('pytz/zoneinfo/Australia/Canberra',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Australia/Canberra',
+   'DATA'),
+  ('pytz/zoneinfo/Australia/Currie',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Australia/Currie',
+   'DATA'),
+  ('pytz/zoneinfo/Australia/Darwin',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Australia/Darwin',
+   'DATA'),
+  ('pytz/zoneinfo/Australia/Eucla',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Australia/Eucla',
+   'DATA'),
+  ('pytz/zoneinfo/Australia/Hobart',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Australia/Hobart',
+   'DATA'),
+  ('pytz/zoneinfo/Australia/LHI',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Australia/LHI',
+   'DATA'),
+  ('pytz/zoneinfo/Australia/Lindeman',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Australia/Lindeman',
+   'DATA'),
+  ('pytz/zoneinfo/Australia/Lord_Howe',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Australia/Lord_Howe',
+   'DATA'),
+  ('pytz/zoneinfo/Australia/Melbourne',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Australia/Melbourne',
+   'DATA'),
+  ('pytz/zoneinfo/Australia/NSW',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Australia/NSW',
+   'DATA'),
+  ('pytz/zoneinfo/Australia/North',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Australia/North',
+   'DATA'),
+  ('pytz/zoneinfo/Australia/Perth',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Australia/Perth',
+   'DATA'),
+  ('pytz/zoneinfo/Australia/Queensland',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Australia/Queensland',
+   'DATA'),
+  ('pytz/zoneinfo/Australia/South',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Australia/South',
+   'DATA'),
+  ('pytz/zoneinfo/Australia/Sydney',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Australia/Sydney',
+   'DATA'),
+  ('pytz/zoneinfo/Australia/Tasmania',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Australia/Tasmania',
+   'DATA'),
+  ('pytz/zoneinfo/Australia/Victoria',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Australia/Victoria',
+   'DATA'),
+  ('pytz/zoneinfo/Australia/West',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Australia/West',
+   'DATA'),
+  ('pytz/zoneinfo/Australia/Yancowinna',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Australia/Yancowinna',
+   'DATA'),
+  ('pytz/zoneinfo/Brazil/Acre',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Brazil/Acre',
+   'DATA'),
+  ('pytz/zoneinfo/Brazil/DeNoronha',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Brazil/DeNoronha',
+   'DATA'),
+  ('pytz/zoneinfo/Brazil/East',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Brazil/East',
+   'DATA'),
+  ('pytz/zoneinfo/Brazil/West',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Brazil/West',
+   'DATA'),
+  ('pytz/zoneinfo/CET',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/CET',
+   'DATA'),
+  ('pytz/zoneinfo/CST6CDT',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/CST6CDT',
+   'DATA'),
+  ('pytz/zoneinfo/Canada/Atlantic',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Canada/Atlantic',
+   'DATA'),
+  ('pytz/zoneinfo/Canada/Central',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Canada/Central',
+   'DATA'),
+  ('pytz/zoneinfo/Canada/Eastern',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Canada/Eastern',
+   'DATA'),
+  ('pytz/zoneinfo/Canada/Mountain',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Canada/Mountain',
+   'DATA'),
+  ('pytz/zoneinfo/Canada/Newfoundland',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Canada/Newfoundland',
+   'DATA'),
+  ('pytz/zoneinfo/Canada/Pacific',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Canada/Pacific',
+   'DATA'),
+  ('pytz/zoneinfo/Canada/Saskatchewan',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Canada/Saskatchewan',
+   'DATA'),
+  ('pytz/zoneinfo/Canada/Yukon',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Canada/Yukon',
+   'DATA'),
+  ('pytz/zoneinfo/Chile/Continental',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Chile/Continental',
+   'DATA'),
+  ('pytz/zoneinfo/Chile/EasterIsland',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Chile/EasterIsland',
+   'DATA'),
+  ('pytz/zoneinfo/Cuba',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Cuba',
+   'DATA'),
+  ('pytz/zoneinfo/EET',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/EET',
+   'DATA'),
+  ('pytz/zoneinfo/EST',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/EST',
+   'DATA'),
+  ('pytz/zoneinfo/EST5EDT',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/EST5EDT',
+   'DATA'),
+  ('pytz/zoneinfo/Egypt',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Egypt',
+   'DATA'),
+  ('pytz/zoneinfo/Eire',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Eire',
+   'DATA'),
+  ('pytz/zoneinfo/Etc/GMT',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Etc/GMT',
+   'DATA'),
+  ('pytz/zoneinfo/Etc/GMT+0',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Etc/GMT+0',
+   'DATA'),
+  ('pytz/zoneinfo/Etc/GMT+1',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Etc/GMT+1',
+   'DATA'),
+  ('pytz/zoneinfo/Etc/GMT+10',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Etc/GMT+10',
+   'DATA'),
+  ('pytz/zoneinfo/Etc/GMT+11',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Etc/GMT+11',
+   'DATA'),
+  ('pytz/zoneinfo/Etc/GMT+12',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Etc/GMT+12',
+   'DATA'),
+  ('pytz/zoneinfo/Etc/GMT+2',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Etc/GMT+2',
+   'DATA'),
+  ('pytz/zoneinfo/Etc/GMT+3',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Etc/GMT+3',
+   'DATA'),
+  ('pytz/zoneinfo/Etc/GMT+4',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Etc/GMT+4',
+   'DATA'),
+  ('pytz/zoneinfo/Etc/GMT+5',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Etc/GMT+5',
+   'DATA'),
+  ('pytz/zoneinfo/Etc/GMT+6',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Etc/GMT+6',
+   'DATA'),
+  ('pytz/zoneinfo/Etc/GMT+7',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Etc/GMT+7',
+   'DATA'),
+  ('pytz/zoneinfo/Etc/GMT+8',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Etc/GMT+8',
+   'DATA'),
+  ('pytz/zoneinfo/Etc/GMT+9',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Etc/GMT+9',
+   'DATA'),
+  ('pytz/zoneinfo/Etc/GMT-0',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Etc/GMT-0',
+   'DATA'),
+  ('pytz/zoneinfo/Etc/GMT-1',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Etc/GMT-1',
+   'DATA'),
+  ('pytz/zoneinfo/Etc/GMT-10',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Etc/GMT-10',
+   'DATA'),
+  ('pytz/zoneinfo/Etc/GMT-11',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Etc/GMT-11',
+   'DATA'),
+  ('pytz/zoneinfo/Etc/GMT-12',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Etc/GMT-12',
+   'DATA'),
+  ('pytz/zoneinfo/Etc/GMT-13',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Etc/GMT-13',
+   'DATA'),
+  ('pytz/zoneinfo/Etc/GMT-14',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Etc/GMT-14',
+   'DATA'),
+  ('pytz/zoneinfo/Etc/GMT-2',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Etc/GMT-2',
+   'DATA'),
+  ('pytz/zoneinfo/Etc/GMT-3',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Etc/GMT-3',
+   'DATA'),
+  ('pytz/zoneinfo/Etc/GMT-4',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Etc/GMT-4',
+   'DATA'),
+  ('pytz/zoneinfo/Etc/GMT-5',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Etc/GMT-5',
+   'DATA'),
+  ('pytz/zoneinfo/Etc/GMT-6',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Etc/GMT-6',
+   'DATA'),
+  ('pytz/zoneinfo/Etc/GMT-7',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Etc/GMT-7',
+   'DATA'),
+  ('pytz/zoneinfo/Etc/GMT-8',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Etc/GMT-8',
+   'DATA'),
+  ('pytz/zoneinfo/Etc/GMT-9',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Etc/GMT-9',
+   'DATA'),
+  ('pytz/zoneinfo/Etc/GMT0',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Etc/GMT0',
+   'DATA'),
+  ('pytz/zoneinfo/Etc/Greenwich',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Etc/Greenwich',
+   'DATA'),
+  ('pytz/zoneinfo/Etc/UCT',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Etc/UCT',
+   'DATA'),
+  ('pytz/zoneinfo/Etc/UTC',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Etc/UTC',
+   'DATA'),
+  ('pytz/zoneinfo/Etc/Universal',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Etc/Universal',
+   'DATA'),
+  ('pytz/zoneinfo/Etc/Zulu',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Etc/Zulu',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Amsterdam',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Amsterdam',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Andorra',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Andorra',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Astrakhan',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Astrakhan',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Athens',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Athens',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Belfast',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Belfast',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Belgrade',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Belgrade',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Berlin',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Berlin',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Bratislava',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Bratislava',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Brussels',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Brussels',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Bucharest',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Bucharest',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Budapest',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Budapest',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Busingen',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Busingen',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Chisinau',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Chisinau',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Copenhagen',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Copenhagen',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Dublin',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Dublin',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Gibraltar',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Gibraltar',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Guernsey',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Guernsey',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Helsinki',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Helsinki',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Isle_of_Man',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Isle_of_Man',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Istanbul',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Istanbul',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Jersey',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Jersey',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Kaliningrad',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Kaliningrad',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Kiev',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Kiev',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Kirov',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Kirov',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Kyiv',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Kyiv',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Lisbon',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Lisbon',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Ljubljana',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Ljubljana',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/London',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/London',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Luxembourg',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Luxembourg',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Madrid',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Madrid',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Malta',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Malta',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Mariehamn',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Mariehamn',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Minsk',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Minsk',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Monaco',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Monaco',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Moscow',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Moscow',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Nicosia',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Nicosia',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Oslo',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Oslo',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Paris',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Paris',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Podgorica',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Podgorica',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Prague',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Prague',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Riga',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Riga',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Rome',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Rome',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Samara',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Samara',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/San_Marino',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/San_Marino',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Sarajevo',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Sarajevo',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Saratov',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Saratov',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Simferopol',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Simferopol',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Skopje',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Skopje',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Sofia',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Sofia',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Stockholm',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Stockholm',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Tallinn',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Tallinn',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Tirane',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Tirane',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Tiraspol',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Tiraspol',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Ulyanovsk',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Ulyanovsk',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Uzhgorod',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Uzhgorod',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Vaduz',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Vaduz',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Vatican',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Vatican',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Vienna',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Vienna',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Vilnius',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Vilnius',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Volgograd',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Volgograd',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Warsaw',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Warsaw',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Zagreb',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Zagreb',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Zaporozhye',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Zaporozhye',
+   'DATA'),
+  ('pytz/zoneinfo/Europe/Zurich',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Europe/Zurich',
+   'DATA'),
+  ('pytz/zoneinfo/Factory',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Factory',
+   'DATA'),
+  ('pytz/zoneinfo/GB',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/GB',
+   'DATA'),
+  ('pytz/zoneinfo/GB-Eire',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/GB-Eire',
+   'DATA'),
+  ('pytz/zoneinfo/GMT',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/GMT',
+   'DATA'),
+  ('pytz/zoneinfo/GMT+0',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/GMT+0',
+   'DATA'),
+  ('pytz/zoneinfo/GMT-0',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/GMT-0',
+   'DATA'),
+  ('pytz/zoneinfo/GMT0',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/GMT0',
+   'DATA'),
+  ('pytz/zoneinfo/Greenwich',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Greenwich',
+   'DATA'),
+  ('pytz/zoneinfo/HST',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/HST',
+   'DATA'),
+  ('pytz/zoneinfo/Hongkong',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Hongkong',
+   'DATA'),
+  ('pytz/zoneinfo/Iceland',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Iceland',
+   'DATA'),
+  ('pytz/zoneinfo/Indian/Antananarivo',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Indian/Antananarivo',
+   'DATA'),
+  ('pytz/zoneinfo/Indian/Chagos',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Indian/Chagos',
+   'DATA'),
+  ('pytz/zoneinfo/Indian/Christmas',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Indian/Christmas',
+   'DATA'),
+  ('pytz/zoneinfo/Indian/Cocos',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Indian/Cocos',
+   'DATA'),
+  ('pytz/zoneinfo/Indian/Comoro',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Indian/Comoro',
+   'DATA'),
+  ('pytz/zoneinfo/Indian/Kerguelen',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Indian/Kerguelen',
+   'DATA'),
+  ('pytz/zoneinfo/Indian/Mahe',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Indian/Mahe',
+   'DATA'),
+  ('pytz/zoneinfo/Indian/Maldives',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Indian/Maldives',
+   'DATA'),
+  ('pytz/zoneinfo/Indian/Mauritius',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Indian/Mauritius',
+   'DATA'),
+  ('pytz/zoneinfo/Indian/Mayotte',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Indian/Mayotte',
+   'DATA'),
+  ('pytz/zoneinfo/Indian/Reunion',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Indian/Reunion',
+   'DATA'),
+  ('pytz/zoneinfo/Iran',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Iran',
+   'DATA'),
+  ('pytz/zoneinfo/Israel',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Israel',
+   'DATA'),
+  ('pytz/zoneinfo/Jamaica',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Jamaica',
+   'DATA'),
+  ('pytz/zoneinfo/Japan',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Japan',
+   'DATA'),
+  ('pytz/zoneinfo/Kwajalein',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Kwajalein',
+   'DATA'),
+  ('pytz/zoneinfo/Libya',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Libya',
+   'DATA'),
+  ('pytz/zoneinfo/MET',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/MET',
+   'DATA'),
+  ('pytz/zoneinfo/MST',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/MST',
+   'DATA'),
+  ('pytz/zoneinfo/MST7MDT',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/MST7MDT',
+   'DATA'),
+  ('pytz/zoneinfo/Mexico/BajaNorte',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Mexico/BajaNorte',
+   'DATA'),
+  ('pytz/zoneinfo/Mexico/BajaSur',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Mexico/BajaSur',
+   'DATA'),
+  ('pytz/zoneinfo/Mexico/General',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Mexico/General',
+   'DATA'),
+  ('pytz/zoneinfo/NZ',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/NZ',
+   'DATA'),
+  ('pytz/zoneinfo/NZ-CHAT',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/NZ-CHAT',
+   'DATA'),
+  ('pytz/zoneinfo/Navajo',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Navajo',
+   'DATA'),
+  ('pytz/zoneinfo/PRC',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/PRC',
+   'DATA'),
+  ('pytz/zoneinfo/PST8PDT',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/PST8PDT',
+   'DATA'),
+  ('pytz/zoneinfo/Pacific/Apia',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Pacific/Apia',
+   'DATA'),
+  ('pytz/zoneinfo/Pacific/Auckland',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Pacific/Auckland',
+   'DATA'),
+  ('pytz/zoneinfo/Pacific/Bougainville',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Pacific/Bougainville',
+   'DATA'),
+  ('pytz/zoneinfo/Pacific/Chatham',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Pacific/Chatham',
+   'DATA'),
+  ('pytz/zoneinfo/Pacific/Chuuk',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Pacific/Chuuk',
+   'DATA'),
+  ('pytz/zoneinfo/Pacific/Easter',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Pacific/Easter',
+   'DATA'),
+  ('pytz/zoneinfo/Pacific/Efate',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Pacific/Efate',
+   'DATA'),
+  ('pytz/zoneinfo/Pacific/Enderbury',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Pacific/Enderbury',
+   'DATA'),
+  ('pytz/zoneinfo/Pacific/Fakaofo',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Pacific/Fakaofo',
+   'DATA'),
+  ('pytz/zoneinfo/Pacific/Fiji',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Pacific/Fiji',
+   'DATA'),
+  ('pytz/zoneinfo/Pacific/Funafuti',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Pacific/Funafuti',
+   'DATA'),
+  ('pytz/zoneinfo/Pacific/Galapagos',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Pacific/Galapagos',
+   'DATA'),
+  ('pytz/zoneinfo/Pacific/Gambier',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Pacific/Gambier',
+   'DATA'),
+  ('pytz/zoneinfo/Pacific/Guadalcanal',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Pacific/Guadalcanal',
+   'DATA'),
+  ('pytz/zoneinfo/Pacific/Guam',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Pacific/Guam',
+   'DATA'),
+  ('pytz/zoneinfo/Pacific/Honolulu',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Pacific/Honolulu',
+   'DATA'),
+  ('pytz/zoneinfo/Pacific/Johnston',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Pacific/Johnston',
+   'DATA'),
+  ('pytz/zoneinfo/Pacific/Kanton',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Pacific/Kanton',
+   'DATA'),
+  ('pytz/zoneinfo/Pacific/Kiritimati',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Pacific/Kiritimati',
+   'DATA'),
+  ('pytz/zoneinfo/Pacific/Kosrae',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Pacific/Kosrae',
+   'DATA'),
+  ('pytz/zoneinfo/Pacific/Kwajalein',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Pacific/Kwajalein',
+   'DATA'),
+  ('pytz/zoneinfo/Pacific/Majuro',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Pacific/Majuro',
+   'DATA'),
+  ('pytz/zoneinfo/Pacific/Marquesas',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Pacific/Marquesas',
+   'DATA'),
+  ('pytz/zoneinfo/Pacific/Midway',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Pacific/Midway',
+   'DATA'),
+  ('pytz/zoneinfo/Pacific/Nauru',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Pacific/Nauru',
+   'DATA'),
+  ('pytz/zoneinfo/Pacific/Niue',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Pacific/Niue',
+   'DATA'),
+  ('pytz/zoneinfo/Pacific/Norfolk',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Pacific/Norfolk',
+   'DATA'),
+  ('pytz/zoneinfo/Pacific/Noumea',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Pacific/Noumea',
+   'DATA'),
+  ('pytz/zoneinfo/Pacific/Pago_Pago',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Pacific/Pago_Pago',
+   'DATA'),
+  ('pytz/zoneinfo/Pacific/Palau',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Pacific/Palau',
+   'DATA'),
+  ('pytz/zoneinfo/Pacific/Pitcairn',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Pacific/Pitcairn',
+   'DATA'),
+  ('pytz/zoneinfo/Pacific/Pohnpei',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Pacific/Pohnpei',
+   'DATA'),
+  ('pytz/zoneinfo/Pacific/Ponape',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Pacific/Ponape',
+   'DATA'),
+  ('pytz/zoneinfo/Pacific/Port_Moresby',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Pacific/Port_Moresby',
+   'DATA'),
+  ('pytz/zoneinfo/Pacific/Rarotonga',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Pacific/Rarotonga',
+   'DATA'),
+  ('pytz/zoneinfo/Pacific/Saipan',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Pacific/Saipan',
+   'DATA'),
+  ('pytz/zoneinfo/Pacific/Samoa',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Pacific/Samoa',
+   'DATA'),
+  ('pytz/zoneinfo/Pacific/Tahiti',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Pacific/Tahiti',
+   'DATA'),
+  ('pytz/zoneinfo/Pacific/Tarawa',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Pacific/Tarawa',
+   'DATA'),
+  ('pytz/zoneinfo/Pacific/Tongatapu',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Pacific/Tongatapu',
+   'DATA'),
+  ('pytz/zoneinfo/Pacific/Truk',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Pacific/Truk',
+   'DATA'),
+  ('pytz/zoneinfo/Pacific/Wake',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Pacific/Wake',
+   'DATA'),
+  ('pytz/zoneinfo/Pacific/Wallis',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Pacific/Wallis',
+   'DATA'),
+  ('pytz/zoneinfo/Pacific/Yap',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Pacific/Yap',
+   'DATA'),
+  ('pytz/zoneinfo/Poland',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Poland',
+   'DATA'),
+  ('pytz/zoneinfo/Portugal',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Portugal',
+   'DATA'),
+  ('pytz/zoneinfo/ROC',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/ROC',
+   'DATA'),
+  ('pytz/zoneinfo/ROK',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/ROK',
+   'DATA'),
+  ('pytz/zoneinfo/Singapore',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Singapore',
+   'DATA'),
+  ('pytz/zoneinfo/Turkey',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Turkey',
+   'DATA'),
+  ('pytz/zoneinfo/UCT',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/UCT',
+   'DATA'),
+  ('pytz/zoneinfo/US/Alaska',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/US/Alaska',
+   'DATA'),
+  ('pytz/zoneinfo/US/Aleutian',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/US/Aleutian',
+   'DATA'),
+  ('pytz/zoneinfo/US/Arizona',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/US/Arizona',
+   'DATA'),
+  ('pytz/zoneinfo/US/Central',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/US/Central',
+   'DATA'),
+  ('pytz/zoneinfo/US/East-Indiana',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/US/East-Indiana',
+   'DATA'),
+  ('pytz/zoneinfo/US/Eastern',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/US/Eastern',
+   'DATA'),
+  ('pytz/zoneinfo/US/Hawaii',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/US/Hawaii',
+   'DATA'),
+  ('pytz/zoneinfo/US/Indiana-Starke',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/US/Indiana-Starke',
+   'DATA'),
+  ('pytz/zoneinfo/US/Michigan',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/US/Michigan',
+   'DATA'),
+  ('pytz/zoneinfo/US/Mountain',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/US/Mountain',
+   'DATA'),
+  ('pytz/zoneinfo/US/Pacific',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/US/Pacific',
+   'DATA'),
+  ('pytz/zoneinfo/US/Samoa',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/US/Samoa',
+   'DATA'),
+  ('pytz/zoneinfo/UTC',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/UTC',
+   'DATA'),
+  ('pytz/zoneinfo/Universal',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Universal',
+   'DATA'),
+  ('pytz/zoneinfo/W-SU',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/W-SU',
+   'DATA'),
+  ('pytz/zoneinfo/WET',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/WET',
+   'DATA'),
+  ('pytz/zoneinfo/Zulu',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/Zulu',
+   'DATA'),
+  ('pytz/zoneinfo/iso3166.tab',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/iso3166.tab',
+   'DATA'),
+  ('pytz/zoneinfo/leapseconds',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/leapseconds',
+   'DATA'),
+  ('pytz/zoneinfo/tzdata.zi',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/tzdata.zi',
+   'DATA'),
+  ('pytz/zoneinfo/zone.tab',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/zone.tab',
+   'DATA'),
+  ('pytz/zoneinfo/zone1970.tab',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/zone1970.tab',
+   'DATA'),
+  ('pytz/zoneinfo/zonenow.tab',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/pytz/zoneinfo/zonenow.tab',
+   'DATA'),
+  ('webview/js/api.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/webview/js/api.js',
+   'DATA'),
+  ('webview/js/customize.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/webview/js/customize.js',
+   'DATA'),
+  ('webview/js/finish.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/webview/js/finish.js',
+   'DATA'),
+  ('webview/js/lib/dom_json.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/webview/js/lib/dom_json.js',
+   'DATA'),
+  ('webview/js/lib/polyfill.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/webview/js/lib/polyfill.js',
+   'DATA'),
+  ('webview/js/state.js',
+   '/Users/fanglei/Desktop/AI '
+   'track/.venv/lib/python3.9/site-packages/webview/js/state.js',
+   'DATA'),
+  ('徒步轨迹AI分析仪-0514.html',
+   '/Users/fanglei/Desktop/AI track/徒步轨迹AI分析仪-0514.html',
+   'DATA')],)
