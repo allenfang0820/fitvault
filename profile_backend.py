@@ -12,7 +12,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-DB_PATH = Path.home() / ".hiking_track_ai" / "user_profile.db"
+import sys
+if getattr(sys, "frozen", False):
+    DB_PATH = Path.home() / ".hiking_track_ai" / "user_profile.db"
+else:
+    DB_PATH = Path(__file__).resolve().parent / "user_profile.db"
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 
