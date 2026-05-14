@@ -10,6 +10,7 @@ from pathlib import Path
 
 import llm_backend  # noqa: F401 -- PyInstaller bundles LLM 模块
 import track_backend  # noqa: F401 -- PyInstaller bundles track_backend
+import profile_backend  # noqa: F401 -- PyInstaller bundles profile 模块
 
 HTML_FILENAME = "徒步轨迹AI分析仪-0514.html"
 
@@ -233,6 +234,30 @@ class Api:
         except OSError as e:
             return {"ok": False, "error": str(e)}
         return {"ok": True, "path": str(dest)}
+
+    def get_user_profile(self) -> dict:
+        prof = profile_backend.get_profile()
+        zones = profile_backend.compute_hrr_zones(
+            prof.resting_hr or 60, prof.max_hr or 190
+        )
+        return {"ok": True, "profile": prof.to_dict(), "hrr_zones": zones}
+
+    def save_user_profile(self, data: dict) -> dict:
+        try:
+            profile_backend.upsert_profile(data)
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+        return {"ok": True}
+
+    def fetch_mcp_persona(self, platform: str) -> dict:
+        result = profile_backend.fetch_mcp_persona(platform)
+        if result.get("ok"):
+            prof = profile_backend.get_profile()
+            zones = profile_backend.compute_hrr_zones(
+                prof.resting_hr or 60, prof.max_hr or 190
+            )
+            return {"ok": True, "profile": prof.to_dict(), "hrr_zones": zones}
+        return result
 
 
 def main() -> None:

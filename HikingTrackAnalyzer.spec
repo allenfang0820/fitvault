@@ -5,7 +5,8 @@ _hidden = (
     collect_submodules("gpxpy")
     + collect_submodules("fitparse")
     + collect_submodules("pandas")
-    + ["llm_backend", "requests", "urllib3", "certifi", "charset_normalizer", "idna"]
+    + ["llm_backend", "track_backend", "profile_backend",
+       "requests", "urllib3", "certifi", "charset_normalizer", "idna"]
 )
 
 a = Analysis(

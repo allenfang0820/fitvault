@@ -214,6 +214,18 @@
                 <div class="stat-item"><span>累计爬升</span><b id="val-gain">-- m</b></div>
                 <div class="stat-item"><span>最高海拔</span><b id="val-max">-- m</b></div>
             </div>
+            <div id="profile-card" style="margin-top:12px; padding:10px 12px; background:rgba(46,204,113,0.08); border:1px solid rgba(46,204,113,0.25); border-radius:10px; font-size:0.75rem; display:none;">
+                <div style="color:#2ecc71; font-weight:600; margin-bottom:6px; letter-spacing:1px; text-transform:uppercase;">🏃 运动画像</div>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:4px 12px;">
+                    <div><span style="color:#94a3b8;">姓名</span> <b id="vp-name">--</b></div>
+                    <div><span style="color:#94a3b8;">年龄</span> <b id="vp-age">--</b></div>
+                    <div><span style="color:#94a3b8;">HRV基准</span> <b id="vp-hrv" style="color:#2ecc71;">-- ms</b></div>
+                    <div><span style="color:#94a3b8;">VO₂max</span> <b id="vp-vo2">--</b></div>
+                    <div><span style="color:#94a3b8;">静息心率</span> <b id="vp-rhr">-- bpm</b></div>
+                    <div><span style="color:#94a3b8;">最大心率</span> <b id="vp-mhr">-- bpm</b></div>
+                </div>
+                <div id="hrr-zones-bar" style="margin-top:8px; display:flex; gap:3px; height:18px; border-radius:4px; overflow:hidden;"></div>
+            </div>
         </div>
         <div class="section-controls">
             <div class="control-group">
@@ -298,7 +310,7 @@
     </div>
     <div id="llm-custom-url-container" style="margin-bottom: 12px;">
         <label style="font-size: 0.8rem; color: #94a3b8;">接口地址 (支持本地服务/中转代理)</label>
-        <input type="text" id="llm-custom-url" class="modal-input" placeholder="http://localhost:3000/v1/chat/completions" style="margin-top: 4px;">
+        <input type="text" id="llm-custom-url" class="modal-input" placeholder="http://localhost:3000/v1/chat/completions" style="margin-top: 4px;" oninput="_markUrlModified()">
     </div>
     <div style="margin-bottom: 16px;">
         <label style="font-size: 0.8rem; color: #94a3b8;">API Key (Token) <span id="llm-api-key-hint" style="color:#f59e0b;font-size:0.7rem;">(选填)</span></label>
@@ -329,9 +341,19 @@
             <div id="ai-summary" style="color:#94a3b8; font-style:italic; font-size:0.75rem; text-align:center; padding-top:20px;">导入轨迹后自动生成分析...</div>
         </div>
         <div id="tab-chat" class="tab-content" style="display: none; flex-direction: column; height: 100%; overflow: hidden;">
-            <div id="llm-report-content" style="flex:1; overflow-y:auto; color:#e2e8f0; font-size:0.85rem; line-height:1.6; padding-right:5px; margin-bottom:10px;">
-                <!-- Chat will be here -->
+            <div id="mcp-sync-bar" style="display:flex; gap:8px; padding:8px 0 6px; border-bottom:1px solid rgba(168,85,247,0.2); flex-shrink:0;">
+                <div id="sync-loading" style="display:none; align-items:center; gap:6px; color:#a855f7; font-size:0.75rem;">
+                    <div class="spinner" style="width:14px;height:14px;border-width:2px;border-color:rgba(168,85,247,0.2);border-left-color:#a855f7;"></div>
+                    <span id="sync-loading-text">同步中...</span>
+                </div>
+                <button id="btn-sync-garmin" onclick="syncPersona('garmin')" style="background:rgba(0,149,255,0.15);border:1px solid rgba(0,149,255,0.4);border-radius:6px;color:#009dff;font-size:0.72rem;padding:4px 10px;cursor:pointer;flex:1;display:flex;align-items:center;justify-content:center;gap:4px;transition:all 0.2s;" onmouseover="this.style.background='rgba(0,149,255,0.25)'" onmouseout="this.style.background='rgba(0,149,255,0.15)'">
+                    📥 佳明
+                </button>
+                <button id="btn-sync-coros" onclick="syncPersona('coros')" style="background:rgba(255,89,0,0.15);border:1px solid rgba(255,89,0,0.4);border-radius:6px;color:#ff5900;font-size:0.72rem;padding:4px 10px;cursor:pointer;flex:1;display:flex;align-items:center;justify-content:center;gap:4px;transition:all 0.2s;" onmouseover="this.style.background='rgba(255,89,0,0.25)'" onmouseout="this.style.background='rgba(255,89,0,0.15)'">
+                    📥 高驰
+                </button>
             </div>
+            <div id="llm-report-content" style="flex:1; overflow-y:auto; color:#e2e8f0; font-size:0.85rem; line-height:1.6; padding-right:5px; margin-bottom:10px;"></div>
             <div id="llm-chat-input-area" style="display: flex; gap: 8px; flex-shrink: 0; padding-top: 10px; border-top: 1px solid rgba(168, 85, 247, 0.2);">
                 <input type="text" id="llm-chat-input" placeholder="输入 '复盘这次徒步' 或问 '这是哪'..." class="modal-input" style="margin:0; padding:8px; border-radius:6px; flex:1; font-size:0.85rem;" onkeypress="if(event.key === 'Enter') sendLLMChat()">
                 <button onclick="sendLLMChat()" class="primary-btn" style="width: auto; padding: 8px 12px; background: linear-gradient(135deg, #a855f7, #7e22ce); border: none; border-radius: 6px;">发送</button>
@@ -370,6 +392,87 @@
     const PY_REPORT_TERRAIN = '__REPORT_TERRAIN__';
     const PY_REPORT_PERSONALIZED = '__REPORT_PERSONALIZED__';
     let currentLLMConfig = { provider: 'local_mcp', model: 'openclaw', url: LLM_DEFAULT_URL, apiKey: '' };
+
+    async function loadProfileCard() {
+        if (!window.pywebview || !window.pywebview.api) return;
+        try {
+            const res = await window.pywebview.api.get_user_profile();
+            if (res && res.ok && res.profile) {
+                const p = res.profile;
+                document.getElementById('vp-name').innerText = p.name || '--';
+                document.getElementById('vp-age').innerText = p.age ? p.age + '岁' : '--';
+                document.getElementById('vp-hrv').innerText = p.hrv_baseline ? p.hrv_baseline + ' ms' : '--';
+                document.getElementById('vp-vo2').innerText = p.vo2max ? p.vo2max : '--';
+                document.getElementById('vp-rhr').innerText = p.resting_hr ? p.resting_hr + ' bpm' : '--';
+                document.getElementById('vp-mhr').innerText = p.max_hr ? p.max_hr + ' bpm' : '--';
+                const card = document.getElementById('profile-card');
+                if (card) card.style.display = 'block';
+                const bar = document.getElementById('hrr-zones-bar');
+                if (bar && res.hrr_zones && res.hrr_zones.length > 0) {
+                    bar.innerHTML = '';
+                    const colors = ['#22c55e','#84cc16','#eab308','#f97316','#ef4444'];
+                    res.hrr_zones.forEach((z, i) => {
+                        const seg = document.createElement('div');
+                        seg.style.flex = '1';
+                        seg.style.background = colors[i] || '#94a3b8';
+                        seg.style.display = 'flex';
+                        seg.style.alignItems = 'center';
+                        seg.style.justifyContent = 'center';
+                        seg.style.fontSize = '0.5rem';
+                        seg.style.color = 'rgba(0,0,0,0.7)';
+                        seg.style.fontWeight = '700';
+                        seg.title = z.zone + ': ' + z.hr_low + '–' + z.hr_high + ' bpm';
+                        seg.innerText = z.zone.split(' ')[0];
+                        bar.appendChild(seg);
+                    });
+                }
+            }
+        } catch(e) {}
+    }
+    loadProfileCard();
+
+    async function syncPersona(platform) {
+        if (!window.pywebview || !window.pywebview.api) {
+            showToast('⚠️ 请在桌面应用中同步数据');
+            return;
+        }
+        const loadEl = document.getElementById('sync-loading');
+        const loadText = document.getElementById('sync-loading-text');
+        const garminBtn = document.getElementById('btn-sync-garmin');
+        const corosBtn = document.getElementById('btn-sync-coros');
+        if (loadEl) { loadEl.style.display = 'flex'; }
+        if (loadText) loadText.innerText = '正在从' + (platform === 'garmin' ? '佳明' : '高驰') + '同步...';
+        garminBtn && (garminBtn.disabled = true);
+        corosBtn && (corosBtn.disabled = true);
+        try {
+            const res = await window.pywebview.api.fetch_mcp_persona(platform);
+            if (loadEl) loadEl.style.display = 'none';
+            garminBtn && (garminBtn.disabled = false);
+            corosBtn && (corosBtn.disabled = false);
+            if (res && res.ok && res.profile) {
+                const p = res.profile;
+                const pName = platform === 'garmin' ? '佳明' : '高驰';
+                document.getElementById('vp-name').innerText = p.name || '--';
+                document.getElementById('vp-age').innerText = p.age ? p.age + '岁' : '--';
+                document.getElementById('vp-hrv').innerText = p.hrv_baseline ? p.hrv_baseline + ' ms' : '--';
+                document.getElementById('vp-vo2').innerText = p.vo2max ? p.vo2max : '--';
+                document.getElementById('vp-rhr').innerText = p.resting_hr ? p.resting_hr + ' bpm' : '--';
+                document.getElementById('vp-mhr').innerText = p.max_hr ? p.max_hr + ' bpm' : '--';
+                const card = document.getElementById('profile-card');
+                if (card) card.style.display = 'block';
+                const msg = '✅ 已同步 ' + pName + ' 最新生理数据。AI 领队已根据您的最新状态' + (p.hrv_baseline ? '（HRV: ' + p.hrv_baseline + 'ms）' : '') + '调整复盘建议。';
+                appendChatMessage('assistant', msg);
+                loadProfileCard();
+            } else {
+                showToast('⚠️ ' + (res && res.error ? res.error : '同步失败'));
+            }
+        } catch(e) {
+            if (loadEl) loadEl.style.display = 'none';
+            garminBtn && (garminBtn.disabled = false);
+            corosBtn && (corosBtn.disabled = false);
+            showToast('⚠️ 同步异常: ' + (e && e.message ? e.message : String(e)));
+        }
+    }
 
     function showToast(msg) {
         const toast = document.getElementById('toast');
@@ -489,7 +592,7 @@
         const urlInput = document.getElementById('llm-custom-url');
         const apiKeyHint = document.getElementById('llm-api-key-hint');
         const apiKeyInput = document.getElementById('llm-api-key');
-        
+
         modelSelect.innerHTML = '';
         if (provider === 'custom' || provider === 'local_mcp') {
             modelSelect.style.display = 'none';
@@ -509,7 +612,10 @@
                 modelSelect.value = currentLLMConfig.model;
             }
         }
-        urlInput.value = currentLLMConfig.url || llmProviders[provider]?.url || '';
+
+        if (!urlInput._userModified) {
+            urlInput.value = currentLLMConfig.url || llmProviders[provider]?.url || '';
+        }
 
         if (provider === 'local_mcp') {
             apiKeyHint.innerText = '(选填/依网关配置)';
@@ -520,20 +626,25 @@
         }
     }
 
+    function _markUrlModified() {
+        const urlInput = document.getElementById('llm-custom-url');
+        if (urlInput) urlInput._userModified = true;
+    }
+
     async function openLLMConfig() {
         await initLLMConfig();
         document.getElementById('llm-provider').value = currentLLMConfig.provider || 'local_mcp';
         updateLLMModels();
-        
+
         if (currentLLMConfig.provider === 'custom' || currentLLMConfig.provider === 'local_mcp') {
             document.getElementById('llm-custom-model').value = currentLLMConfig.model;
         } else if (llmProviders[currentLLMConfig.provider] && llmProviders[currentLLMConfig.provider].models.includes(currentLLMConfig.model)) {
             document.getElementById('llm-model').value = currentLLMConfig.model;
         }
-        
+
         document.getElementById('llm-custom-url').value = currentLLMConfig.url || llmProviders[currentLLMConfig.provider]?.url || '';
         document.getElementById('llm-api-key').value = currentLLMConfig.apiKey || '';
-        
+
         document.getElementById('modal-overlay').style.display = 'block';
         document.getElementById('llm-config-modal').style.display = 'block';
     }
@@ -547,12 +658,12 @@
         if (provider === 'custom' || provider === 'local_mcp') {
             model = document.getElementById('llm-custom-model').value.trim();
             if (!model || !url) { showToast("⚠️ 自定义模式/本地网关下需填写模型名和接口地址"); return; }
-            
+
             if (provider === 'local_mcp' && model !== 'openclaw' && !model.startsWith('openclaw/')) {
                 model = 'openclaw/' + model;
             }
         } else {
-            if (!url) url = llmProviders[provider].url; 
+            if (!url) url = llmProviders[provider].url;
         }
 
         currentLLMConfig = { provider, model, url, apiKey };
