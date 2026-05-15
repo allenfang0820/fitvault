@@ -25,16 +25,9 @@ def _config_file() -> Path:
     确保分享 .app 程序时不会携带开发者的 API Key。
     """
     if getattr(sys, "frozen", False):
-        # 打包模式：始终保存在用户主目录
         d = Path.home() / ".hiking_track_ai"
     else:
-        # 开发模式：优先检查用户目录，没有则用项目本地（方便开发调试）
-        home_d = Path.home() / ".hiking_track_ai"
-        if (home_d / "llm_config.json").is_file():
-            d = home_d
-        else:
-            d = Path(__file__).resolve().parent
-            
+        d = Path(__file__).resolve().parent
     d.mkdir(parents=True, exist_ok=True)
     return d / "llm_config.json"
 
@@ -189,6 +182,7 @@ def build_chat_system_block(
     track_filename: str,
     points: list[dict[str, Any]],
     placemarks: list[dict[str, Any]],
+    report_json: str | None = None,
 ) -> str:
     sport_cn, _ = _sport_labels(sport_type)
     if not points or len(points) < 2:
@@ -203,9 +197,18 @@ def build_chat_system_block(
         points=points,
         placemarks=placemarks,
     )
+    report_instruction = ""
+    if report_json:
+        report_instruction = f"""
+
+【系统隐藏设定】以下是系统基于核心算法自动为您生成的路线深度分析报告 JSON 原稿。用户在 UI 面板上已经看到了这些核心建议（如配速、补给、预估用时）。在接下来的对话中，请严格以此报告的数据作为你的'长期记忆'和'回答基准'。如果用户问及报告中的细节（例如'为什么带3L水'），请直接基于这份 JSON 数据进行合理的延伸解释，绝不允许在后续对话中给出与此 JSON 矛盾的数据或建议。
+
+```json
+{report_json}
+```"""
     return (
         base
-        + f"\n用户计划或已完成【{sport_cn}】。若问及地理位置，可根据经纬度推断；禁止保存文件。\n"
+        + f"\n用户计划或已完成【{sport_cn}】。若问及地理位置，可根据经纬度推断；禁止保存文件。{report_instruction}\n"
     )
 
 

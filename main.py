@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """使用 pywebview 在桌面窗口中加载「徒步轨迹AI分析仪」单页 HTML。"""
 
-__version__ = "0.1"
-
 from __future__ import annotations
 
 import json

@@ -25,54 +25,51 @@
         #cesiumContainer { width: 100vw; height: 100vh; margin: 0; padding: 0; touch-action: none; }
         
         #info-panel {
-            position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
-            background: var(--panel); border-radius: 10px; backdrop-filter: blur(10px);
-            border: 1px solid rgba(255,255,255,0.12); box-shadow: 0 6px 20px rgba(0,0,0,0.4);
-            z-index: 10; width: 97%; max-width: 1100px; transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: absolute; top: 8px; left: 10px; right: 10px;
+            background: rgba(15, 23, 42, 0.75); border-radius: 8px; backdrop-filter: blur(12px);
+            border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+            z-index: 10; transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
-        #info-panel.collapsed { transform: translate(-50%, calc(-100% - 8px)); }
+        #info-panel.collapsed { transform: translateY(calc(-100% - 8px)); }
 
         .panel-inner {
-            padding: 8px 14px; border-radius: 10px;
-            display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-            justify-content: flex-start;
+            padding: 5px 10px;
+            display: flex; align-items: center; gap: 0;
             max-height: none; overflow: visible;
+            flex-wrap: nowrap;
         }
-        .panel-inner::-webkit-scrollbar { width: 0; }
+        .mini-stat { font-size: 0.72rem; color: #94a3b8; white-space: nowrap; }
+        .mini-stat b { color: #f8fafc; font-weight: 600; margin-left: 2px; }
+        .mini-stat:not(:last-child)::after { content: none; }
+        .sep { color: rgba(255,255,255,0.15); padding: 0 6px; font-size: 0.65rem; user-select: none; }
+        .flex-grow { flex: 1; min-width: 10px; }
+        .btn-row { display: flex; gap: 4px; align-items: center; flex-shrink: 0; }
 
         .toggle-panel-btn {
-            position: absolute; bottom: -22px; left: 50%; transform: translateX(-50%);
-            width: 56px; height: 22px; background: var(--panel); color: white;
-            border: 1px solid rgba(255,255,255,0.12); border-top: none; border-radius: 0 0 10px 10px;
+            position: absolute; bottom: -24px; left: 50%; transform: translateX(-50%);
+            width: 60px; height: 24px; background: var(--panel); color: white;
+            border: 1px solid rgba(255,255,255,0.15); border-top: none; border-radius: 0 0 12px 12px;
             cursor: pointer; display: flex; align-items: center; justify-content: center;
-            box-shadow: 0 3px 8px rgba(0,0,0,0.15); font-size: 12px; backdrop-filter: blur(10px);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2); font-size: 14px; backdrop-filter: blur(10px);
         }
         .toggle-panel-btn:hover { background: rgba(30, 41, 59, 0.95); }
         
-        .section-stats { display: flex; align-items: center; gap: 14px; flex: 0 1 auto; }
-        .section-controls { display: flex; align-items: center; gap: 8px; flex: 0 1 auto; }
-        .section-actions { display: flex; align-items: center; gap: 8px; flex: 0 1 auto; }
+        .section-stats { flex: 1 1 200px; min-width: 220px; }
+        .section-controls { flex: 1.5 1 280px; display: flex; flex-direction: column; gap: 15px; justify-content: center; }
+        .section-actions { flex: 1.5 1 280px; display: flex; flex-direction: column; gap: 10px; }
 
-        #track-title { margin: 0; font-size: 0.85rem; color: var(--primary); font-weight: 600; white-space: nowrap; border-bottom: none; padding-bottom: 0; }
-        .stat-grid { display: flex; gap: 10px; font-size: 0.8rem; }
-        .stat-item span { display: none; }
-        .stat-item b { font-size: 0.9rem; }
-        .stat-item::before { content: attr(data-label); display: block; color: #64748b; font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.5px; }
+        h1 { margin: 0 0 10px 0; font-size: 1.2rem; color: var(--primary); border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 8px; }
+        .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 0.9rem; margin-bottom: 0;}
+        .stat-item span { display: block; color: #94a3b8; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1px;}
+        .stat-item b { font-size: 1.2rem; }
         
-        .control-group { margin: 0; padding: 0; border: none; }
-        .control-group label { display: none; }
-        #progress-slider { width: 120px; height: 4px; }
+        .control-group { margin-top: 0; padding-top: 0; border-top: none; }
+        .control-group label { display: flex; justify-content: space-between; font-size: 0.85rem; color: #cbd5e1; margin-bottom: 6px; }
+        input[type=range] { width: 100%; cursor: pointer; accent-color: var(--primary); margin: 0; }
         
         .switch-row { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-top: 0; padding-top: 0; border-top: none; }
         .switch-label { display: flex; align-items: center; gap: 6px; font-size: 0.85rem; color: #cbd5e1; cursor: pointer; user-select: none; }
-        .switch-label input { accent-color: var(--primary); width: 16px; height: 16px; cursor: pointer; margin: 0; }
-
-        .btn-row { display: flex; gap: 6px; }
-
-        .secondary-btn, .primary-btn {
-            width: auto; padding: 5px 10px; border-radius: 6px; cursor: pointer; transition: all 0.15s;
-            font-size: 0.72rem; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 4px; border: none;
-        }
+        .switch-label input { accent-color: var(--primary); width: 16px; height: 16px; cursor: pointer; margin: 0;}
 
         #loading {
             position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -148,11 +145,18 @@
         .pace-seg-name { color: #94a3b8; }
         .pace-seg-val { color: #f8fafc; font-weight: 500; font-variant-numeric: tabular-nums; }
 
+        .secondary-btn, .primary-btn {
+            width: 100%; padding: 10px; border-radius: 8px; cursor: pointer; transition: all 0.2s;
+            font-size: 0.85rem; font-weight: bold; display: flex; align-items: center; justify-content: center; gap: 5px; border: none;
+            box-sizing: border-box; margin: 0;
+        }
         .secondary-btn { background: rgba(255,255,255,0.1); color: #f8fafc; border: 1px solid rgba(255,255,255,0.2); }
         .secondary-btn:hover { background: rgba(255,255,255,0.2); }
         
         .primary-btn { background: var(--primary); color: #0f172a; }
         .primary-btn:hover { background: var(--primary-hover); }
+        
+        .btn-row { display: flex; gap: 8px; margin-top: 0; }
 
         .modal-base {
             display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
@@ -207,42 +211,45 @@
 <div id="info-panel">
     <div class="toggle-panel-btn" onclick="togglePanel()">▲</div>
     <div class="panel-inner">
-        <div class="section-stats">
-            <span id="track-title" style="font-size:0.85rem;color:var(--primary);font-weight:600;">等待导入轨迹...</span>
-            <div class="stat-grid">
-                <div class="stat-item" data-label="里程"><b id="val-dist">--</b> <span style="color:#64748b;font-size:0.65rem;">km</span></div>
-                <div class="stat-item" data-label="耗时"><b id="val-time">--</b></div>
-                <div class="stat-item" data-label="爬升"><b id="val-gain">--</b> <span style="color:#64748b;font-size:0.65rem;">m</span></div>
-                <div class="stat-item" data-label="最高"><b id="val-max">--</b> <span style="color:#64748b;font-size:0.65rem;">m</span></div>
-            </div>
+        <span id="track-title" style="font-size:0.8rem;color:var(--primary);font-weight:700;white-space:nowrap;">等待导入轨迹...</span>
+        <span class="sep">|</span>
+        <span class="mini-stat">里程 <b id="val-dist">--</b> km</span>
+        <span class="sep">|</span>
+        <span class="mini-stat">耗时 <b id="val-time">--</b></span>
+        <span class="sep">|</span>
+        <span class="mini-stat">爬升 <b id="val-gain">--</b> m</span>
+        <span class="sep">|</span>
+        <span class="mini-stat">最高 <b id="val-max">--</b> m</span>
+        <span class="sep">·</span>
+        <div id="mini-profile" style="display:none;align-items:center;gap:5px;font-size:0.72rem;padding:2px 8px;background:rgba(46,204,113,0.07);border:1px solid rgba(46,204,113,0.2);border-radius:6px;">
+            <span id="vp-name" style="color:#2ecc71;font-weight:600;">--</span>
+            <span style="color:#94a3b8;">HRV</span><b id="vp-hrv" style="color:#2ecc71;">--</b>
+            <span style="color:#94a3b8;">VO₂</b><b id="vp-vo2">--</b>
         </div>
-        <div id="mini-profile" style="display:flex;align-items:center;gap:8px;padding:4px 10px;background:rgba(46,204,113,0.07);border:1px solid rgba(46,204,113,0.2);border-radius:8px;font-size:0.7rem;display:none;">
-            <span style="color:#2ecc71;font-weight:600;">🏃</span>
-            <span id="vp-name" style="color:#f8fafc;font-weight:500;">--</span>
-            <span style="color:#64748b;">·</span>
-            <span id="vp-age" style="color:#94a3b8;">--岁</span>
-            <span style="color:#64748b;">·</span>
-            <span style="color:#2ecc71;">HRV</span><b id="vp-hrv" style="color:#2ecc71;">--</b><span style="color:#64748b;font-size:0.6rem;">ms</span>
-            <span style="color:#64748b;">·</span>
-            <span style="color:#94a3b8;">VO₂</span><b id="vp-vo2">--</b>
+        <span class="flex-grow"></span>
+        <div class="btn-row" style="margin:0;gap:4px;flex-shrink:0;">
+            <button onclick="triggerTrackImport()" style="background:var(--primary);color:#0f172a;border:none;border-radius:6px;padding:3px 10px;font-size:0.72rem;font-weight:700;cursor:pointer;">📁</button>
+            <button onclick="setViewProfile()" style="background:rgba(255,255,255,0.1);color:#f8fafc;border:1px solid rgba(255,255,255,0.2);border-radius:6px;padding:3px 8px;font-size:0.72rem;cursor:pointer;">⛰️</button>
+            <button id="btn-auto-rotate" onclick="toggleAutoRotate()" style="background:rgba(255,255,255,0.1);color:#f8fafc;border:1px solid rgba(255,255,255,0.2);border-radius:6px;padding:3px 8px;font-size:0.72rem;cursor:pointer;">▶</button>
+            <button onclick="exportGPX()" style="background:rgba(255,255,255,0.1);color:#f8fafc;border:1px solid rgba(255,255,255,0.2);border-radius:6px;padding:3px 8px;font-size:0.72rem;cursor:pointer;">⬇️</button>
+            <button onclick="openLLMConfig()" style="background:rgba(168,85,247,0.15);color:#a855f7;border:1px solid rgba(168,85,247,0.3);border-radius:6px;padding:3px 8px;font-size:0.72rem;cursor:pointer;" title="AI 配置">⚙️</button>
         </div>
-        <div class="section-controls">
-            <input type="range" id="progress-slider" min="0" max="100" step="0.5" value="100" style="width:120px;height:4px;">
-            <span id="progress-val" style="font-size:0.7rem;color:#64748b;min-width:35px;">100%</span>
-            <button id="btn-auto-rotate" class="secondary-btn">▶漫游</button>
-            <button onclick="setViewProfile()" class="secondary-btn">⛰️剖面</button>
-            <button class="primary-btn" onclick="triggerTrackImport()">📁导入</button>
+        <span class="sep">|</span>
+        <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+            <label class="switch-label" style="font-size:0.68rem;gap:2px;"><input type="checkbox" id="toggle-cp" checked style="width:12px;height:12px;">🚩</label>
+            <label class="switch-label" style="font-size:0.68rem;gap:2px;"><input type="checkbox" id="toggle-km" checked style="width:12px;height:12px;">📏</label>
+            <label class="switch-label" style="font-size:0.68rem;gap:2px;"><input type="checkbox" id="toggle-peak" checked style="width:12px;height:12px;">⛰️</label>
         </div>
-        <div class="section-actions">
-            <button onclick="exportGPX()" class="secondary-btn">⬇️GPX</button>
-            <button onclick="exportKML()" class="secondary-btn">⬇️KML</button>
-            <label class="switch-label" style="font-size:0.7rem;white-space:nowrap;"><input type="checkbox" id="toggle-cp" checked>🚩</label>
-            <label class="switch-label" style="font-size:0.7rem;white-space:nowrap;"><input type="checkbox" id="toggle-km" checked>📏</label>
-            <label class="switch-label" style="font-size:0.7rem;white-space:nowrap;"><input type="checkbox" id="toggle-peak" checked>⛰️</label>
+        <span class="sep">|</span>
+        <div style="display:flex;align-items:center;gap:5px;flex-shrink:0;">
+            <span style="color:var(--primary);font-size:0.65rem;font-weight:600;">🏃</span>
+            <input type="range" id="progress-slider" min="0" max="100" step="0.5" value="100" style="width:80px;accent-color:var(--primary);cursor:pointer;">
+            <span id="progress-val" style="color:var(--primary);font-size:0.65rem;font-weight:600;min-width:30px;">100%</span>
         </div>
-        <input type="file" id="file-upload" accept=".fit,.gpx,.kml" style="display:none;">
     </div>
 </div>
+
+<input type="file" id="file-upload" accept=".fit,.gpx,.kml" style="display: none;">
 
 <div id="toast" style="opacity: 0;">提示信息</div>
 <div id="modal-overlay"></div>
@@ -392,10 +399,31 @@
                 const p = res.profile;
                 document.getElementById('vp-name').innerText = p.name || '--';
                 document.getElementById('vp-age').innerText = p.age ? p.age + '岁' : '--';
-                document.getElementById('vp-hrv').innerText = p.hrv_baseline || '--';
-                document.getElementById('vp-vo2').innerText = p.vo2max || '--';
-                const mini = document.getElementById('mini-profile');
-                if (mini) mini.style.display = 'flex';
+                document.getElementById('vp-hrv').innerText = p.hrv_baseline ? p.hrv_baseline + ' ms' : '--';
+                document.getElementById('vp-vo2').innerText = p.vo2max ? p.vo2max : '--';
+                document.getElementById('vp-rhr').innerText = p.resting_hr ? p.resting_hr + ' bpm' : '--';
+                document.getElementById('vp-mhr').innerText = p.max_hr ? p.max_hr + ' bpm' : '--';
+                const card = document.getElementById('profile-card');
+                if (card) card.style.display = 'block';
+                const bar = document.getElementById('hrr-zones-bar');
+                if (bar && res.hrr_zones && res.hrr_zones.length > 0) {
+                    bar.innerHTML = '';
+                    const colors = ['#22c55e','#84cc16','#eab308','#f97316','#ef4444'];
+                    res.hrr_zones.forEach((z, i) => {
+                        const seg = document.createElement('div');
+                        seg.style.flex = '1';
+                        seg.style.background = colors[i] || '#94a3b8';
+                        seg.style.display = 'flex';
+                        seg.style.alignItems = 'center';
+                        seg.style.justifyContent = 'center';
+                        seg.style.fontSize = '0.5rem';
+                        seg.style.color = 'rgba(0,0,0,0.7)';
+                        seg.style.fontWeight = '700';
+                        seg.title = z.zone + ': ' + z.hr_low + '–' + z.hr_high + ' bpm';
+                        seg.innerText = z.zone.split(' ')[0];
+                        bar.appendChild(seg);
+                    });
+                }
             }
         } catch(e) {}
     }
@@ -424,10 +452,12 @@
                 const pName = platform === 'garmin' ? '佳明' : '高驰';
                 document.getElementById('vp-name').innerText = p.name || '--';
                 document.getElementById('vp-age').innerText = p.age ? p.age + '岁' : '--';
-                document.getElementById('vp-hrv').innerText = p.hrv_baseline || '--';
-                document.getElementById('vp-vo2').innerText = p.vo2max || '--';
-                const mini = document.getElementById('mini-profile');
-                if (mini) mini.style.display = 'flex';
+                document.getElementById('vp-hrv').innerText = p.hrv_baseline ? p.hrv_baseline + ' ms' : '--';
+                document.getElementById('vp-vo2').innerText = p.vo2max ? p.vo2max : '--';
+                document.getElementById('vp-rhr').innerText = p.resting_hr ? p.resting_hr + ' bpm' : '--';
+                document.getElementById('vp-mhr').innerText = p.max_hr ? p.max_hr + ' bpm' : '--';
+                const card = document.getElementById('profile-card');
+                if (card) card.style.display = 'block';
                 const msg = '✅ 已同步 ' + pName + ' 最新生理数据。AI 领队已根据您的最新状态' + (p.hrv_baseline ? '（HRV: ' + p.hrv_baseline + 'ms）' : '') + '调整复盘建议。';
                 appendChatMessage('assistant', msg);
                 loadProfileCard();
@@ -504,7 +534,7 @@
     const progressVal = document.getElementById('progress-val');
     progressSlider.addEventListener('input', () => {
         appState.progress = parseFloat(progressSlider.value);
-        progressVal.innerText = Math.round(appState.progress) + '%';
+        progressVal.innerText = appState.progress.toFixed(1) + '%';
         drawProfileChart();
     });
 
@@ -1342,7 +1372,7 @@
 
     function applyDataAndRender(data, filename = "自定义轨迹") {
         appState.points = data.points; appState.placemarks = data.placemarks;
-        appState.progress = 100; document.getElementById('progress-slider').value = 100; document.getElementById('progress-val').innerText = '100%';
+        appState.progress = 100; document.getElementById('progress-slider').value = 100; document.getElementById('progress-val').innerText = '100.0%';
 
         const stats = calculateStats(appState.points);
         appState.kmMarkers = stats.kmMarkers; appState.peakMarkers = stats.peakMarkers; 

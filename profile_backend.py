@@ -39,6 +39,8 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             max_hr      INTEGER,
             hrv_baseline REAL,
             vo2max      REAL,
+            avg_sleep_hours REAL,
+            longest_hike_km REAL,
             updated_at  TEXT DEFAULT (datetime('now'))
         )
     """)
@@ -73,6 +75,8 @@ class UserProfile:
     max_hr: int | None
     hrv_baseline: float | None
     vo2max: float | None
+    avg_sleep_hours: float | None
+    longest_hike_km: float | None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -84,6 +88,8 @@ class UserProfile:
             "max_hr": self.max_hr,
             "hrv_baseline": self.hrv_baseline,
             "vo2max": self.vo2max,
+            "avg_sleep_hours": self.avg_sleep_hours,
+            "longest_hike_km": self.longest_hike_km,
         }
 
 
@@ -102,6 +108,8 @@ def get_profile() -> UserProfile:
         max_hr=row["max_hr"],
         hrv_baseline=row["hrv_baseline"],
         vo2max=row["vo2max"],
+        avg_sleep_hours=row["avg_sleep_hours"],
+        longest_hike_km=row["longest_hike_km"],
     )
 
 
@@ -111,8 +119,9 @@ def upsert_profile(data: dict[str, Any]) -> UserProfile:
     conn.execute(
         """
         INSERT INTO user_profile
-            (name, gender, age, weight, resting_hr, max_hr, hrv_baseline, vo2max)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            (name, gender, age, weight, resting_hr, max_hr, hrv_baseline, vo2max,
+             avg_sleep_hours, longest_hike_km)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             data.get("name"),
@@ -123,6 +132,8 @@ def upsert_profile(data: dict[str, Any]) -> UserProfile:
             data.get("max_hr"),
             data.get("hrv_baseline"),
             data.get("vo2max"),
+            data.get("avg_sleep_hours"),
+            data.get("longest_hike_km"),
         ),
     )
     conn.commit()
@@ -136,6 +147,8 @@ def upsert_profile(data: dict[str, Any]) -> UserProfile:
         max_hr=data.get("max_hr"),
         hrv_baseline=data.get("hrv_baseline"),
         vo2max=data.get("vo2max"),
+        avg_sleep_hours=data.get("avg_sleep_hours"),
+        longest_hike_km=data.get("longest_hike_km"),
     )
 
 
@@ -306,11 +319,29 @@ def _haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
+def _parse_time_to_sec(value: Any) -> int | None:
+    """将时间值转换为秒数。支持：整数秒、"HH:MM:SS"字符串、"MM:SS"字符串。"""
+    if value is None:
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        s = value.strip()
+        parts = s.split(":")
+        if len(parts) == 3:
+            return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+        elif len(parts) == 2:
+            return int(parts[0]) * 60 + int(parts[1])
+        elif len(parts) == 1 and s:
+            return int(float(parts[0]))
+    return None
+
+
 def fetch_mcp_persona(platform: str) -> dict[str, Any]:
     """
-    通过普通 /v1/chat/completions 接口，让大模型作为数据提取助手
-    依次调用高驰/佳明 MCP 工具，获取生理档案并更新本地数据库。
-    platform: 'garmin' | 'coros'
+    获取用户运动画像：通过 MCP 工具拉取生理数据 + 徒步历史。
     """
     if platform not in ("garmin", "coros"):
         return {"ok": False, "error": "不支持的平台，仅支持 garmin / coros"}
@@ -323,25 +354,61 @@ def fetch_mcp_persona(platform: str) -> dict[str, Any]:
     api_key = str(cfg.get("api_key") or "")
 
     if platform == "coros":
-        system_prompt = (
-            "你是一个严格的数据提取助手。请依次调用挂载的高驰 COROS MCP 工具："
-            "queryUserInfo、queryRestingHeartRate、queryHrvAssessment、queryFitnessAssessmentOverview。 "
-            "获取用户的年龄(age)、性别(gender)、静息心率(restingHeartRate)、最新 HRV 评估数值(hrv_baseline)以及 VO2max。 "
-            "绝对不要输出任何解释性文字，只严格输出一个纯 JSON 字符串，格式如下："
-            '{"age":整数,"gender":"男或女","resting_hr":整数,"hrv_baseline":浮点数,"vo2max":浮点数}'
+        step1_prompt = (
+            "你是一个数据分析助手，严格按顺序调用以下工具来构建用户完整画像。\n\n"
+            "【第一步】获取最长徒步距离：\n"
+            "调用 querySportRecords 工具，参数固定为：\n"
+            '{ "startDate": "20100101", "sportTypeCodes": [104, 105], "limit": 20 }\n'
+            "取返回记录中 distance 最大值（单位km，保留两位小数）作为 longest_hike_km。若无记录设为 null。\n\n"
+            "【第二步】获取体能评估：\n"
+            "调用 queryFitnessAssessmentOverview 工具，取 vo2max 字段。若无数据则设为 null。\n\n"
+            "【第三步】获取基础生理数据：\n"
+            "- 调用 queryUserInfo，取 nickname 作为 name、age 作为 age、gender 作为 gender、weight 作为 weight（kg）\n"
+            "- 调用 querySleepData，取最近一次记录的 sleepMainDuration（小时），再取多次平均值作为 avg_sleep_hours\n\n"
+            "【输出格式】输出一个完整 JSON，绝对不输出任何其他文字：\n"
+            "{\n"
+            '  "longest_hike_km": 浮点数或null,\n'
+            '  "name": "字符串或null",\n'
+            '  "age": 整数或null,\n'
+            '  "gender": "字符串或null",\n'
+            '  "weight": 浮点数或null,\n'
+            '  "vo2max": 浮点数或null,\n'
+            '  "avg_sleep_hours": 浮点数或null\n'
+            "}"
         )
+        step2_prompt = None
     else:
-        system_prompt = (
-            "你是一个严格的数据提取助手。请依次调用挂载的佳明 Garmin MCP 工具："
-            "queryUserInfo、queryRestingHeartRate、queryHrvAssessment、queryFitnessAssessmentOverview。 "
-            "获取用户的年龄(age)、性别(gender)、静息心率(restingHeartRate)、最新 HRV 评估数值(hrv_baseline)以及 VO2max。 "
-            "绝对不要输出任何解释性文字，只严格输出一个纯 JSON 字符串，格式如下："
-            '{"age":整数,"gender":"男或女","resting_hr":整数,"hrv_baseline":浮点数,"vo2max":浮点数}'
+        step1_prompt = (
+            "你是一个数据分析助手，严格按顺序调用以下工具来构建用户完整画像。\n\n"
+            "【第一步】获取最长徒步距离：\n"
+            "调用 Garmin MCP 的 querySportRecords 或等效工具，参数固定为：\n"
+            '{ "startDate": "20100101", "sportTypeCodes": [104, 105], "limit": 20 }\n'
+            "取返回记录中 distance 最大值（单位km，保留两位小数）作为 longest_hike_km。若无记录设为 null。\n\n"
+            "【第二步】获取体能评估：\n"
+            "调用 queryFitnessAssessmentOverview 工具，取 vo2max 字段。若无数据则设为 null。\n\n"
+            "【第三步】获取基础生理数据：\n"
+            "- 调用 queryUserInfo，取 name、age、gender、weight\n"
+            "- 调用 queryRestingHeartRate 取 resting_hr\n"
+            "- 调用 queryHrvAssessment 取 hrv_baseline\n"
+            "- 调用 querySleepSummary 取 avg_sleep_hours\n\n"
+            "【输出格式】输出一个完整 JSON，绝对不输出任何其他文字：\n"
+            "{\n"
+            '  "longest_hike_km": 浮点数或null,\n'
+            '  "name": "字符串或null",\n'
+            '  "age": 整数或null,\n'
+            '  "gender": "字符串或null",\n'
+            '  "weight": 浮点数或null,\n'
+            '  "resting_hr": 整数或null,\n'
+            '  "hrv_baseline": 浮点数或null,\n'
+            '  "vo2max": 浮点数或null,\n'
+            '  "avg_sleep_hours": 浮点数或null\n'
+            "}"
         )
+        step2_prompt = None
 
     messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": "请提取我的最新生理数据"},
+        {"role": "system", "content": step1_prompt},
+        {"role": "user", "content": "请立即执行上述两步数据提取和计算任务。"},
     ]
 
     try:
@@ -351,7 +418,7 @@ def fetch_mcp_persona(platform: str) -> dict[str, Any]:
             model=model,
             messages=messages,
             session_id="mcp_persona_" + platform,
-            timeout=120,
+            timeout=300,
         )
 
         json_str = text.strip()
@@ -367,9 +434,11 @@ def fetch_mcp_persona(platform: str) -> dict[str, Any]:
             "age": persona.get("age"),
             "weight": persona.get("weight"),
             "resting_hr": persona.get("resting_hr"),
-            "max_hr": persona.get("max_hr"),
+            "max_hr": None,
             "hrv_baseline": persona.get("hrv_baseline"),
             "vo2max": persona.get("vo2max"),
+            "avg_sleep_hours": persona.get("avg_sleep_hours"),
+            "longest_hike_km": persona.get("longest_hike_km"),
         }
         upsert_profile(profile_data)
         return {"ok": True, "persona": profile_data}
