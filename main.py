@@ -189,7 +189,8 @@ class Api:
             data = parse_track_file(src)
         except Exception as e:
             return {"ok": False, "error": str(e)}
-        return {"ok": True, "filename": Path(src).name, "data": data}
+        result = {"ok": True, "filename": Path(src).name, "data": data, "_src_path": src}
+        return result
 
     def parse_track_at_path(self, file_path: str) -> dict:
         from track_backend import parse_track_file
@@ -258,6 +259,35 @@ class Api:
             )
             return {"ok": True, "profile": prof.to_dict(), "hrr_zones": zones}
         return result
+
+    def get_activity_history(self) -> dict:
+        """返回按时间倒序的历史运动记录列表。"""
+        try:
+            history = profile_backend.get_activity_history(limit=50)
+            return {"ok": True, "history": history}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def load_local_track(self, file_path: str) -> dict:
+        """根据本地路径读取并解析轨迹文件，返回与 parse_track_file 一致的结构。"""
+        try:
+            return profile_backend.load_local_track(file_path)
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def save_activity(self, data: dict) -> dict:
+        """保存运动记录，自动将源文件复制到 local_tracks 目录。"""
+        try:
+            src = data.get("_src_path")
+            if src:
+                local_path = profile_backend.copy_track_to_local(src)
+                data["file_path"] = local_path
+            else:
+                data["file_path"] = None
+            profile_backend.save_activity(data)
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+        return {"ok": True}
 
 
 def main() -> None:

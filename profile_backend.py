@@ -6,18 +6,28 @@ from __future__ import annotations
 
 import json
 import math
+import shutil
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import sys
 if getattr(sys, "frozen", False):
-    DB_PATH = Path.home() / ".hiking_track_ai" / "user_profile.db"
+    _BASE = Path.home() / ".hiking_track_ai"
 else:
-    DB_PATH = Path(__file__).resolve().parent / "user_profile.db"
+    _BASE = Path(__file__).resolve().parent
+
+DB_PATH = _BASE / "user_profile.db"
+TRACKS_DIR = _BASE / "local_tracks"
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+
+def tracks_dir() -> Path:
+    """返回本地轨迹存储目录（启动时自动创建）。"""
+    TRACKS_DIR.mkdir(parents=True, exist_ok=True)
+    return TRACKS_DIR
 
 
 def _conn() -> sqlite3.Connection:
@@ -49,6 +59,7 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             id             INTEGER PRIMARY KEY AUTOINCREMENT,
             filename       TEXT,
             sport_type     TEXT,
+            sub_sport_type TEXT DEFAULT 'unknown',
             dist_km        REAL,
             duration_sec   INTEGER,
             gain_m         REAL,
@@ -59,9 +70,16 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             hr_decoupling  REAL,
             tss            REAL,
             points_json    TEXT,
+            file_path      TEXT,
             updated_at     TEXT DEFAULT (datetime('now'))
         )
     """)
+
+    for col, dtype in [("sub_sport_type", "TEXT"), ("file_path", "TEXT")]:
+        try:
+            conn.execute(f"ALTER TABLE activities ADD COLUMN {col} {dtype}")
+        except Exception:
+            pass
     conn.commit()
 
 
@@ -157,13 +175,14 @@ def save_activity(data: dict[str, Any]) -> int:
     cur = conn.execute(
         """
         INSERT INTO activities
-            (filename, sport_type, dist_km, duration_sec, gain_m, max_alt_m,
-             avg_hr, max_hr, avg_cadence, hr_decoupling, tss, points_json)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (filename, sport_type, sub_sport_type, dist_km, duration_sec, gain_m, max_alt_m,
+             avg_hr, max_hr, avg_cadence, hr_decoupling, tss, points_json, file_path)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             data.get("filename"),
             data.get("sport_type"),
+            data.get("sub_sport_type", "unknown"),
             data.get("dist_km"),
             data.get("duration_sec"),
             data.get("gain_m"),
@@ -174,6 +193,7 @@ def save_activity(data: dict[str, Any]) -> int:
             data.get("hr_decoupling"),
             data.get("tss"),
             json.dumps(data.get("points_json", [])),
+            data.get("file_path"),
         ),
     )
     conn.commit()
@@ -182,14 +202,47 @@ def save_activity(data: dict[str, Any]) -> int:
     return aid
 
 
-def get_activities(limit: int = 20) -> list[dict[str, Any]]:
+def get_activity_history(limit: int = 50) -> list[dict[str, Any]]:
+    """按时间倒序返回所有历史运动记录（包含 file_path）。"""
     conn = _conn()
     rows = conn.execute(
-        "SELECT * FROM activities ORDER BY id DESC LIMIT ?",
+        """
+        SELECT id, filename, sport_type, sub_sport_type, dist_km, duration_sec, gain_m,
+               max_alt_m, avg_hr, max_hr, file_path, updated_at
+        FROM activities ORDER BY id DESC LIMIT ?
+        """,
         (limit,),
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+def load_local_track(file_path: str) -> dict[str, Any]:
+    """根据本地路径读取并解析轨迹文件，返回与 parse_track_file 一致的结构。"""
+    import track_backend
+    p = Path(file_path)
+    if not p.is_file():
+        return {"ok": False, "error": f"文件不存在: {file_path}"}
+    try:
+        data = track_backend.parse_track_file(str(p))
+        return {"ok": True, "filename": p.name, "data": data}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def copy_track_to_local(src_path: str) -> str:
+    """将源轨迹文件复制到 local_tracks 目录，以 filename 为基础生成唯一文件名，返回本地路径。"""
+    src = Path(src_path)
+    dest_dir = tracks_dir()
+    stem = src.stem
+    suffix = src.suffix
+    dest = dest_dir / f"{stem}{suffix}"
+    n = 1
+    while dest.exists():
+        dest = dest_dir / f"{stem}_{n}{suffix}"
+        n += 1
+    shutil.copy2(src, dest)
+    return str(dest)
 
 
 def compute_hrr_zones(resting_hr: int, max_hr: int) -> list[dict[str, Any]]:

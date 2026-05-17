@@ -117,39 +117,83 @@ def parse_gpx_file(path: Path) -> dict[str, Any]:
 
 
 def parse_fit_file(path: Path) -> dict[str, Any]:
+    """解析 FIT 文件，提取位置/海拔/心率/速度/里程等核心字段，与 GPX 输出结构完全兼容。"""
     from fitparse import FitFile
 
-    min_dt = datetime.min.replace(tzinfo=timezone.utc)
-    rows: list[tuple[datetime | None, str | None, float, float, float, int | None]] = []
     fit = FitFile(str(path))
+    fit.check_crc = True
+
+    rows: list[dict[str, Any]] = []
     for msg in fit.get_messages("record"):
         vals = {d.name: d.value for d in msg.fields}
         lat = vals.get("position_lat")
         lon = vals.get("position_long")
         if lat is None or lon is None:
             continue
+
         latf, lonf = _fit_latlon_to_deg(float(lat), float(lon))
+
         ts = vals.get("timestamp")
-        if isinstance(ts, datetime) and ts.tzinfo is None:
-            ts = ts.replace(tzinfo=timezone.utc)
-        tiso = _iso(ts)
-        alt = vals.get("enhanced_altitude")
-        if alt is None:
-            alt = vals.get("altitude")
-        altf = float(alt or 0)
-        hr = vals.get("heart_rate")
-        hri = int(hr) if hr is not None else None
-        rows.append((ts if isinstance(ts, datetime) else None, tiso, latf, lonf, altf, hri))
+        if isinstance(ts, datetime):
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            tiso = _iso(ts)
+        else:
+            tiso = None
 
-    rows.sort(key=lambda r: (r[0] or min_dt,))
+        alt_raw = vals.get("enhanced_altitude") or vals.get("altitude")
+        altf = float(alt_raw) if alt_raw is not None else 0.0
 
+        hr_val = vals.get("heart_rate")
+        hr = int(hr_val) if hr_val is not None else None
+
+        dist_raw = vals.get("distance")
+        dist_m = float(dist_raw) if dist_raw is not None else None
+
+        spd_raw = vals.get("speed")
+        spd_ms = float(spd_raw) if spd_raw is not None else None
+
+        pwr_raw = vals.get("power")
+        pwr = int(pwr_raw) if pwr_raw is not None else None
+
+        cad_raw = vals.get("cadence")
+        cad = int(cad_raw) if cad_raw is not None else None
+
+        temp_raw = vals.get("temperature")
+        temp = float(temp_raw) if temp_raw is not None else None
+
+        rows.append({
+            "_ts": ts,
+            "lat": latf,
+            "lon": lonf,
+            "alt": altf,
+            "time": tiso,
+            "hr": hr,
+            "dist_m": dist_m,
+            "speed_ms": spd_ms,
+            "power": pwr,
+            "cadence": cad,
+            "temperature": temp,
+        })
+
+    rows.sort(key=lambda r: r["_ts"] or datetime.min.replace(tzinfo=timezone.utc))
+
+    min_dt = datetime.min.replace(tzinfo=timezone.utc)
     points: list[dict[str, Any]] = []
-    for _ts, tiso, la, lo, al, hr in rows:
+    for row in rows:
+        la, lo = row["lat"], row["lon"]
+        tiso = row["time"]
         if points:
             q = points[-1]
             if abs(q["lat"] - la) < 1e-7 and abs(q["lon"] - lo) < 1e-7 and q.get("time") == tiso:
                 continue
-        points.append({"lat": la, "lon": lo, "alt": al, "time": tiso, "hr": hr})
+        points.append({
+            "lat": la,
+            "lon": lo,
+            "alt": row["alt"],
+            "time": tiso,
+            "hr": row["hr"],
+        })
 
     return {"points": points, "placemarks": []}
 
@@ -212,21 +256,142 @@ def parse_kml_file(path: Path) -> dict[str, Any]:
 
 def parse_track_file(path: str | Path) -> dict[str, Any]:
     p = Path(path).expanduser().resolve()
-    if not p.is_file():
-        raise FileNotFoundError(f"文件不存在: {p}")
-
     ext = p.suffix.lower()
-    if ext == ".gpx":
-        data = parse_gpx_file(p)
-    elif ext == ".fit":
-        data = parse_fit_file(p)
-    elif ext == ".kml":
-        data = parse_kml_file(p)
-    else:
-        raise ValueError(f"不支持的扩展名: {ext}（仅 .gpx / .fit / .kml）")
+    if ext not in (".gpx", ".fit", ".kml"):
+        raise ValueError(
+            f"不支持的格式: {ext}（仅支持 .gpx / .fit / .kml）。"
+        )
+    if not p.exists():
+        raise FileNotFoundError(f"文件不存在: {p}")
+    if not p.is_file():
+        raise ValueError(f"路径不是文件: {p}")
+
+    try:
+        if ext == ".gpx":
+            data = parse_gpx_file(p)
+        elif ext == ".fit":
+            data = _parse_fit_with_error_handling(p)
+        else:
+            data = parse_kml_file(p)
+    except FileNotFoundError:
+        raise
+    except ValueError:
+        raise
+    except Exception as exc:
+        raise RuntimeError(f"解析失败 [{ext}]: {exc}") from exc
 
     if not data.get("points"):
         raise ValueError("文件中未解析到有效轨迹点（需含经纬度）。")
 
     attach_slopes(data["points"])
     return data
+
+
+def _parse_fit_with_error_handling(path: Path) -> dict[str, Any]:
+    """解析 FIT 文件，带完整异常处理。"""
+    from fitparse import FitFile, FitParseError
+
+    try:
+        fit = FitFile(str(path), check_crc=True)
+    except FitParseError as e:
+        err_str = str(e).lower()
+        if "header" in err_str or "signature" in err_str or "corrupt" in err_str:
+            raise ValueError(
+                f"FIT 文件损坏或已截断，无法解析。可能原因：文件传输不完整。"
+            ) from e
+        if "version" in err_str or "protocol" in err_str:
+            raise ValueError(
+                f"FIT 文件版本不受支持: {e}"
+            ) from e
+        raise ValueError(f"FIT 文件解析失败: {e}") from e
+    except OSError as e:
+        raise ValueError(f"无法读取 FIT 文件（权限或路径问题）: {e}") from e
+
+    rows: list[dict[str, Any]] = []
+    file_version: str | None = None
+    fit_sport: str | None = None
+    fit_sub_sport: str | None = None
+
+    for msg in fit.get_messages("file_id"):
+        if file_version is None:
+            for field in msg.fields:
+                if field.name == "type":
+                    file_version = str(field.value)
+                    break
+
+    for msg in fit.get_messages("session"):
+        if fit_sport is None or fit_sub_sport is None:
+            sport_rec = msg.get_value("sport")
+            sub_sport_rec = msg.get_value("sub_sport")
+            if sport_rec is not None:
+                fit_sport = str(sport_rec).strip().lower()
+            if sub_sport_rec is not None:
+                fit_sub_sport = str(sub_sport_rec).strip().lower()
+            break
+
+    if fit_sport is None:
+        for msg in fit.get_messages("sport"):
+            sport_rec = msg.get_value("sport")
+            if sport_rec is not None:
+                fit_sport = str(sport_rec).strip().lower()
+                break
+
+    for msg in fit.get_messages("record"):
+        vals = {d.name: d.value for d in msg.fields}
+        lat = vals.get("position_lat")
+        lon = vals.get("position_long")
+        if lat is None or lon is None:
+            continue
+
+        try:
+            latf, lonf = _fit_latlon_to_deg(float(lat), float(lon))
+        except (ValueError, TypeError):
+            continue
+
+        ts = vals.get("timestamp")
+        if isinstance(ts, datetime):
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            tiso = _iso(ts)
+        else:
+            tiso = None
+
+        alt_raw = vals.get("enhanced_altitude") or vals.get("altitude")
+        altf = float(alt_raw) if alt_raw is not None else 0.0
+
+        hr_val = vals.get("heart_rate")
+        hr = int(hr_val) if hr_val is not None else None
+
+        rows.append({
+            "_ts": ts,
+            "lat": latf,
+            "lon": lonf,
+            "alt": altf,
+            "time": tiso,
+            "hr": hr,
+        })
+
+    if not rows:
+        raise ValueError(
+            "FIT 文件中未找到有效的轨迹记录（position_lat/position_long 字段为空）。"
+            "可能原因：文件不包含 GPS 数据（如仅含健身房训练记录）。"
+        )
+
+    rows.sort(key=lambda r: r["_ts"] or datetime.min.replace(tzinfo=timezone.utc))
+
+    points: list[dict[str, Any]] = []
+    for row in rows:
+        la, lo, tiso = row["lat"], row["lon"], row["time"]
+        if points:
+            q = points[-1]
+            if abs(q["lat"] - la) < 1e-7 and abs(q["lon"] - lo) < 1e-7 and q.get("time") == tiso:
+                continue
+        points.append({
+            "lat": la,
+            "lon": lo,
+            "alt": row["alt"],
+            "time": tiso,
+            "hr": row["hr"],
+        })
+
+    return {"points": points, "placemarks": []}
