@@ -80,6 +80,22 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             conn.execute(f"ALTER TABLE activities ADD COLUMN {col} {dtype}")
         except Exception:
             pass
+            
+    for col, dtype in [
+        ("avg_sleep_hours", "REAL"),
+        ("longest_hike_km", "REAL"),
+        ("height_cm", "REAL"),
+        ("pb_5km", "TEXT"),
+        ("pb_10km", "TEXT"),
+        ("pb_half_marathon", "TEXT"),
+        ("pb_full_marathon", "TEXT"),
+        ("lactate_threshold_hr", "INTEGER"),
+        ("ftp_watts", "INTEGER"),
+    ]:
+        try:
+            conn.execute(f"ALTER TABLE user_profile ADD COLUMN {col} {dtype}")
+        except Exception:
+            pass
     conn.commit()
 
 
@@ -95,6 +111,13 @@ class UserProfile:
     vo2max: float | None
     avg_sleep_hours: float | None
     longest_hike_km: float | None
+    height_cm: float | None = None
+    pb_5km: str | None = None
+    pb_10km: str | None = None
+    pb_half_marathon: str | None = None
+    pb_full_marathon: str | None = None
+    lactate_threshold_hr: int | None = None
+    ftp_watts: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -108,6 +131,13 @@ class UserProfile:
             "vo2max": self.vo2max,
             "avg_sleep_hours": self.avg_sleep_hours,
             "longest_hike_km": self.longest_hike_km,
+            "height_cm": self.height_cm,
+            "pb_5km": self.pb_5km,
+            "pb_10km": self.pb_10km,
+            "pb_half_marathon": self.pb_half_marathon,
+            "pb_full_marathon": self.pb_full_marathon,
+            "lactate_threshold_hr": self.lactate_threshold_hr,
+            "ftp_watts": self.ftp_watts,
         }
 
 
@@ -116,7 +146,7 @@ def get_profile() -> UserProfile:
     row = conn.execute("SELECT * FROM user_profile ORDER BY id DESC LIMIT 1").fetchone()
     conn.close()
     if row is None:
-        return UserProfile(None, None, None, None, None, None, None, None)
+        return UserProfile(None, None, None, None, None, None, None, None, None, None)
     return UserProfile(
         name=row["name"],
         gender=row["gender"],
@@ -125,9 +155,16 @@ def get_profile() -> UserProfile:
         resting_hr=row["resting_hr"],
         max_hr=row["max_hr"],
         hrv_baseline=row["hrv_baseline"],
-        vo2max=row["vo2max"],
-        avg_sleep_hours=row["avg_sleep_hours"],
-        longest_hike_km=row["longest_hike_km"],
+        vo2max=row["vo2max"] if "vo2max" in row.keys() else None,
+        avg_sleep_hours=row["avg_sleep_hours"] if "avg_sleep_hours" in row.keys() else None,
+        longest_hike_km=row["longest_hike_km"] if "longest_hike_km" in row.keys() else None,
+        height_cm=row["height_cm"] if "height_cm" in row.keys() else None,
+        pb_5km=row["pb_5km"] if "pb_5km" in row.keys() else None,
+        pb_10km=row["pb_10km"] if "pb_10km" in row.keys() else None,
+        pb_half_marathon=row["pb_half_marathon"] if "pb_half_marathon" in row.keys() else None,
+        pb_full_marathon=row["pb_full_marathon"] if "pb_full_marathon" in row.keys() else None,
+        lactate_threshold_hr=row["lactate_threshold_hr"] if "lactate_threshold_hr" in row.keys() else None,
+        ftp_watts=row["ftp_watts"] if "ftp_watts" in row.keys() else None,
     )
 
 
@@ -138,8 +175,9 @@ def upsert_profile(data: dict[str, Any]) -> UserProfile:
         """
         INSERT INTO user_profile
             (name, gender, age, weight, resting_hr, max_hr, hrv_baseline, vo2max,
-             avg_sleep_hours, longest_hike_km)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             avg_sleep_hours, longest_hike_km, height_cm, pb_5km, pb_10km, pb_half_marathon,
+             pb_full_marathon, lactate_threshold_hr, ftp_watts)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             data.get("name"),
@@ -152,6 +190,13 @@ def upsert_profile(data: dict[str, Any]) -> UserProfile:
             data.get("vo2max"),
             data.get("avg_sleep_hours"),
             data.get("longest_hike_km"),
+            data.get("height_cm"),
+            data.get("pb_5km"),
+            data.get("pb_10km"),
+            data.get("pb_half_marathon"),
+            data.get("pb_full_marathon"),
+            data.get("lactate_threshold_hr"),
+            data.get("ftp_watts"),
         ),
     )
     conn.commit()
@@ -167,6 +212,13 @@ def upsert_profile(data: dict[str, Any]) -> UserProfile:
         vo2max=data.get("vo2max"),
         avg_sleep_hours=data.get("avg_sleep_hours"),
         longest_hike_km=data.get("longest_hike_km"),
+        height_cm=data.get("height_cm"),
+        pb_5km=data.get("pb_5km"),
+        pb_10km=data.get("pb_10km"),
+        pb_half_marathon=data.get("pb_half_marathon"),
+        pb_full_marathon=data.get("pb_full_marathon"),
+        lactate_threshold_hr=data.get("lactate_threshold_hr"),
+        ftp_watts=data.get("ftp_watts"),
     )
 
 
@@ -392,6 +444,39 @@ def _parse_time_to_sec(value: Any) -> int | None:
     return None
 
 
+import re
+
+def _validate_number(val: Any) -> float | None:
+    if val is None:
+        return None
+    try:
+        f = float(val)
+        return f if not math.isnan(f) else None
+    except (ValueError, TypeError):
+        return None
+
+def _validate_int(val: Any) -> int | None:
+    if val is None:
+        return None
+    try:
+        f = float(val)
+        if math.isnan(f):
+            return None
+        return int(f)
+    except (ValueError, TypeError):
+        return None
+
+def _validate_time_format(val: Any) -> str | None:
+    if val is None:
+        return None
+    s = str(val).strip()
+    if not s or s.lower() == "null":
+        return None
+    if re.match(r"^(\d{1,2}:)?\d{1,2}:\d{2}$", s):
+        return s
+    return None
+
+
 def fetch_mcp_persona(platform: str) -> dict[str, Any]:
     """
     获取用户运动画像：通过 MCP 工具拉取生理数据 + 徒步历史。
@@ -429,40 +514,14 @@ def fetch_mcp_persona(platform: str) -> dict[str, Any]:
             '  "avg_sleep_hours": 浮点数或null\n'
             "}"
         )
-        step2_prompt = None
+        messages = [
+            {"role": "system", "content": step1_prompt},
+            {"role": "user", "content": "请立即执行上述两步数据提取和计算任务。"},
+        ]
     else:
-        step1_prompt = (
-            "你是一个数据分析助手，严格按顺序调用以下工具来构建用户完整画像。\n\n"
-            "【第一步】获取最长徒步距离：\n"
-            "调用 Garmin MCP 的 querySportRecords 或等效工具，参数固定为：\n"
-            '{ "startDate": "20100101", "sportTypeCodes": [104, 105], "limit": 20 }\n'
-            "取返回记录中 distance 最大值（单位km，保留两位小数）作为 longest_hike_km。若无记录设为 null。\n\n"
-            "【第二步】获取体能评估：\n"
-            "调用 queryFitnessAssessmentOverview 工具，取 vo2max 字段。若无数据则设为 null。\n\n"
-            "【第三步】获取基础生理数据：\n"
-            "- 调用 queryUserInfo，取 name、age、gender、weight\n"
-            "- 调用 queryRestingHeartRate 取 resting_hr\n"
-            "- 调用 queryHrvAssessment 取 hrv_baseline\n"
-            "- 调用 querySleepSummary 取 avg_sleep_hours\n\n"
-            "【输出格式】输出一个完整 JSON，绝对不输出任何其他文字：\n"
-            "{\n"
-            '  "longest_hike_km": 浮点数或null,\n'
-            '  "name": "字符串或null",\n'
-            '  "age": 整数或null,\n'
-            '  "gender": "字符串或null",\n'
-            '  "weight": 浮点数或null,\n'
-            '  "resting_hr": 整数或null,\n'
-            '  "hrv_baseline": 浮点数或null,\n'
-            '  "vo2max": 浮点数或null,\n'
-            '  "avg_sleep_hours": 浮点数或null\n'
-            "}"
-        )
-        step2_prompt = None
-
-    messages = [
-        {"role": "system", "content": step1_prompt},
-        {"role": "user", "content": "请立即执行上述两步数据提取和计算任务。"},
-    ]
+        messages = [
+            {"role": "user", "content": "运行get_garmin_stats.py，并直接输出其返回的完整JSON数组。请勿输出任何其他文字，只输出JSON数组。"}
+        ]
 
     try:
         text = llm_backend.chat_completions(
@@ -479,20 +538,59 @@ def fetch_mcp_persona(platform: str) -> dict[str, Any]:
             lines = json_str.split("\n")
             json_str = "\n".join(lines[1:-1] if lines[-1].startswith("```") else lines[1:])
 
-        persona = json.loads(json_str)
+        parsed_json = json.loads(json_str)
 
-        profile_data = {
-            "name": persona.get("name"),
-            "gender": persona.get("gender"),
-            "age": persona.get("age"),
-            "weight": persona.get("weight"),
-            "resting_hr": persona.get("resting_hr"),
-            "max_hr": None,
-            "hrv_baseline": persona.get("hrv_baseline"),
-            "vo2max": persona.get("vo2max"),
-            "avg_sleep_hours": persona.get("avg_sleep_hours"),
-            "longest_hike_km": persona.get("longest_hike_km"),
-        }
+        if platform == "garmin":
+            if not isinstance(parsed_json, list):
+                return {"ok": False, "error": "Garmin 数据同步失败，返回的不是 JSON 数组。"}
+            
+            # Map array to dict
+            data_map = {}
+            for item in parsed_json:
+                if isinstance(item, dict) and "metric" in item and "value" in item:
+                    data_map[item["metric"]] = item["value"]
+            
+            profile_data = {
+                "name": str(data_map.get("username")) if data_map.get("username") is not None else None,
+                "gender": str(data_map.get("gender")) if data_map.get("gender") is not None else None,
+                "age": _validate_int(data_map.get("age")),
+                "weight": _validate_number(data_map.get("weight_kg")),
+                "resting_hr": _validate_int(data_map.get("resting_heart_rate")),
+                "max_hr": None,
+                "hrv_baseline": _validate_number(data_map.get("hrv")),
+                "vo2max": _validate_number(data_map.get("vo2_max")),
+                "avg_sleep_hours": _validate_number(data_map.get("avg_sleep_hours")),
+                "longest_hike_km": _validate_number(data_map.get("longest_hike_km")),
+                "height_cm": _validate_number(data_map.get("height_cm")),
+                "pb_5km": _validate_time_format(data_map.get("5km_pb")),
+                "pb_10km": _validate_time_format(data_map.get("10km_pb")),
+                "pb_half_marathon": _validate_time_format(data_map.get("half_marathon_pb")),
+                "pb_full_marathon": _validate_time_format(data_map.get("full_marathon_pb")),
+                "lactate_threshold_hr": _validate_int(data_map.get("lactate_threshold_hr")),
+                "ftp_watts": _validate_int(data_map.get("ftp_watts")),
+            }
+        else:
+            persona = parsed_json
+            profile_data = {
+                "name": persona.get("name"),
+                "gender": persona.get("gender"),
+                "age": _validate_int(persona.get("age")),
+                "weight": _validate_number(persona.get("weight")),
+                "resting_hr": _validate_int(persona.get("resting_hr")),
+                "max_hr": None,
+                "hrv_baseline": _validate_number(persona.get("hrv_baseline")),
+                "vo2max": _validate_number(persona.get("vo2max")),
+                "avg_sleep_hours": _validate_number(persona.get("avg_sleep_hours")),
+                "longest_hike_km": _validate_number(persona.get("longest_hike_km")),
+                "height_cm": None,
+                "pb_5km": None,
+                "pb_10km": None,
+                "pb_half_marathon": None,
+                "pb_full_marathon": None,
+                "lactate_threshold_hr": None,
+                "ftp_watts": None,
+            }
+
         upsert_profile(profile_data)
         return {"ok": True, "persona": profile_data}
 

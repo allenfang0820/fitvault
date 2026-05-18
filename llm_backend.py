@@ -17,6 +17,7 @@ import requests
 DEFAULT_URL = "http://localhost:3000/v1/chat/completions"
 DEFAULT_MODEL = "openclaw"
 DEFAULT_PROVIDER = "local_mcp"
+DEFAULT_AGENT_ID = ""
 
 
 def _config_file() -> Path:
@@ -40,6 +41,7 @@ def load_llm_config() -> dict[str, Any]:
             "url": DEFAULT_URL,
             "model": DEFAULT_MODEL,
             "api_key": "",
+            "agent_id": DEFAULT_AGENT_ID,
         }
     try:
         data = json.loads(p.read_text(encoding="utf-8"))
@@ -50,18 +52,50 @@ def load_llm_config() -> dict[str, Any]:
         "url": str(data.get("url") or DEFAULT_URL).strip() or DEFAULT_URL,
         "model": str(data.get("model") or DEFAULT_MODEL).strip() or DEFAULT_MODEL,
         "api_key": str(data.get("api_key") or ""),
+        "agent_id": str(data.get("agent_id") or DEFAULT_AGENT_ID).strip(),
+        "watch_brand": str(data.get("watch_brand") or "").strip(),
     }
 
 
-def save_llm_config(provider: str, url: str, model: str, api_key: str) -> None:
+def save_llm_config(provider: str, url: str, model: str, api_key: str, agent_id: str = "", watch_brand: str = "") -> None:
     cfg = {
         "provider": (provider or DEFAULT_PROVIDER).strip(),
         "url": (url or DEFAULT_URL).strip(),
         "model": (model or DEFAULT_MODEL).strip(),
         "api_key": (api_key or "").strip(),
+        "agent_id": (agent_id or "").strip(),
+        "watch_brand": (watch_brand or "").strip(),
     }
     p = _config_file()
     p.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def test_llm_connection(
+    *,
+    provider: str,
+    url: str,
+    model: str,
+    api_key: str,
+    agent_id: str = "",
+) -> str:
+    if not str(url or "").strip():
+        raise RuntimeError("接口地址为空")
+    if not str(model or "").strip():
+        raise RuntimeError("模型名为空")
+    text = chat_completions(
+        url=str(url).strip(),
+        api_key=api_key or "",
+        model=str(model).strip(),
+        messages=[
+            {"role": "system", "content": "你只需要用中文回复：连接成功。"},
+            {"role": "user", "content": "请回复连接成功"},
+        ],
+        session_id="llm_config_test",
+        agent_id=agent_id or "",
+        timeout=30,
+    )
+    provider_text = provider or DEFAULT_PROVIDER
+    return f"{provider_text} / {model} 连接成功：{text[:80]}"
 
 
 def points_to_dataframe_csv(points: list[dict[str, Any]], max_chars: int = 420_000) -> str:
@@ -219,11 +253,15 @@ def chat_completions(
     model: str,
     messages: list[dict[str, str]],
     session_id: str,
+    agent_id: str = "",
     timeout: int = 300,
 ) -> str:
     headers = {"Content-Type": "application/json"}
     if api_key and api_key.strip():
         headers["Authorization"] = f"Bearer {api_key.strip()}"
+    if agent_id and str(agent_id).strip():
+        headers["X-Agent-ID"] = str(agent_id).strip()
+        headers["X-Agent-Id"] = str(agent_id).strip()
 
     body: dict[str, Any] = {
         "model": model,
@@ -234,6 +272,9 @@ def chat_completions(
         "chat_id": session_id,
         "user": session_id,
     }
+    if agent_id and str(agent_id).strip():
+        body["agent_id"] = str(agent_id).strip()
+        body["agentId"] = str(agent_id).strip()
     try:
         r = requests.post(url, headers=headers, json=body, timeout=timeout)
     except requests.RequestException as e:

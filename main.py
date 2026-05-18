@@ -73,12 +73,25 @@ class Api:
         cfg = llm_backend.load_llm_config()
         return {"ok": True, **cfg}
 
-    def save_llm_config(self, provider: str, url: str, model: str, api_key: str) -> dict:
+    def save_llm_config(self, provider: str, url: str, model: str, api_key: str, agent_id: str = "", watch_brand: str = "") -> dict:
         try:
-            llm_backend.save_llm_config(provider, url, model, api_key)
+            llm_backend.save_llm_config(provider, url, model, api_key, agent_id, watch_brand)
         except OSError as e:
             return {"ok": False, "error": str(e)}
         return {"ok": True}
+
+    def test_llm_config(self, provider: str, url: str, model: str, api_key: str, agent_id: str = "") -> dict:
+        try:
+            text = llm_backend.test_llm_connection(
+                provider=provider,
+                url=url,
+                model=model,
+                api_key=api_key,
+                agent_id=agent_id,
+            )
+            return {"ok": True, "message": text}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
 
     def call_llm(self, prompt: str, sport_type: str = "hiking") -> dict:
         """对话或路书：prompt 为普通用户文本，或魔法串 __REPORT_TERRAIN__ / __REPORT_PERSONALIZED__。"""
@@ -90,6 +103,7 @@ class Api:
         provider = str(cfg.get("provider") or "local_mcp")
         model = str(cfg.get("model") or "openclaw").strip()
         api_key = str(cfg.get("api_key") or "")
+        agent_id = str(cfg.get("agent_id") or "")
         sid = self._session_id
 
         pts = self._track_points or []
@@ -113,6 +127,7 @@ class Api:
                     model=model,
                     messages=messages,
                     session_id=sid,
+                    agent_id=agent_id,
                 )
                 self._chat_messages = []
                 self._new_session_id()
@@ -134,6 +149,7 @@ class Api:
                     model=model,
                     messages=messages,
                     session_id=sid,
+                    agent_id=agent_id,
                 )
                 self._chat_messages = []
                 self._new_session_id()
@@ -157,6 +173,7 @@ class Api:
                     model=model,
                     messages=list(self._chat_messages),
                     session_id=sid,
+                    agent_id=agent_id,
                 )
             except Exception:
                 if self._chat_messages and self._chat_messages[-1].get("role") == "user":
@@ -267,6 +284,112 @@ class Api:
             return {"ok": True, "history": history}
         except Exception as e:
             return {"ok": False, "error": str(e)}
+
+    def calculate_advanced_radar_metrics(self) -> dict:
+        """计算六维个人运动能力雷达图数据。"""
+        import math
+        import json
+        import pandas as pd
+        from datetime import datetime, timedelta
+
+        default_metrics = {
+            "endurance": 50.0, "speed": 50.0, "threshold": 50.0,
+            "climbing": 50.0, "stability": 50.0, "recovery": 50.0
+        }
+
+        try:
+            prof = profile_backend.get_profile()
+            conn = profile_backend._conn()
+
+            ninety_days_ago = (datetime.now() - timedelta(days=90)).strftime('%Y-%m-%d %H:%M:%S')
+            rows = conn.execute(
+                "SELECT * FROM activities WHERE updated_at >= ? ORDER BY updated_at DESC",
+                (ninety_days_ago,)
+            ).fetchall()
+            conn.close()
+
+            acts = [dict(r) for r in rows]
+
+            # 1. 耐力容量 (Endurance)
+            total_dist = sum([a.get("dist_km") or 0.0 for a in acts])
+            endurance = min((total_dist / 500.0) * 100.0, 100.0)
+            if not acts: endurance = 50.0
+
+            # 2. 速度爆发 (Speed)
+            max_speed_kmh = 0.0
+            for a in acts:
+                pts_str = a.get("points_json")
+                if pts_str:
+                    try:
+                        pts = json.loads(pts_str)
+                        if len(pts) > 60:
+                            df = pd.DataFrame(pts)
+                            if 'speed' in df.columns:
+                                window_max = df['speed'].rolling(60).mean().max() * 3.6
+                                max_speed_kmh = max(max_speed_kmh, window_max)
+                    except Exception:
+                        pass
+                if max_speed_kmh == 0.0:
+                    dist = a.get("dist_km") or 0.0
+                    dur = a.get("duration_sec") or 0.0
+                    if dur > 0:
+                        max_speed_kmh = max(max_speed_kmh, (dist / (dur / 3600.0)) * 1.5)
+            
+            age = prof.age or 30
+            limit_speed = 22.0 - (age - 20) * 0.1 if age > 20 else 22.0
+            speed = min((max_speed_kmh / limit_speed) * 100.0, 100.0) if max_speed_kmh > 0 else 50.0
+
+            # 3. 乳酸阈值 (Threshold)
+            if prof.lactate_threshold_hr:
+                threshold = max(0.0, min(((prof.lactate_threshold_hr - 130) / 50.0) * 100.0, 100.0))
+            else:
+                lthr = (prof.max_hr * 0.85) if prof.max_hr else 165.0
+                threshold = max(0.0, min(((lthr - 130) / 50.0) * 100.0, 100.0))
+
+            # 4. 坡度爬升 (Climbing)
+            max_vam = 0.0
+            for a in acts:
+                gain = a.get("gain_m") or 0.0
+                dur = a.get("duration_sec") or 0.0
+                stype = a.get("sport_type") or ""
+                if gain > 200 or stype.lower() in ["trail", "trail_running", "hiking"]:
+                    if dur > 0:
+                        vam = gain / (dur / 3600.0)
+                        max_vam = max(max_vam, vam)
+            climbing = min((max_vam / 800.0) * 100.0, 100.0) if max_vam > 0 else 50.0
+
+            # 5. 心肺稳定 (Stability)
+            decoup_scores = []
+            for a in acts:
+                if a.get("hr_decoupling") is not None:
+                    decoup_scores.append(a.get("hr_decoupling"))
+            if decoup_scores:
+                recent_3 = decoup_scores[:3]
+                avg_decoup = sum(recent_3) / len(recent_3)
+                if avg_decoup <= 3.0:
+                    stability = 100.0
+                else:
+                    stability = max(0.0, 100.0 - (avg_decoup - 3.0) * 6.0)
+            else:
+                stability = 50.0
+
+            # 6. 恢复效能 (Recovery)
+            hrv = prof.hrv_baseline or 45.0
+            rhr = prof.resting_hr or 60.0
+            rec_score = (hrv / 70.0) * 60.0 + ((75.0 - rhr) / 25.0) * 40.0
+            recovery = max(0.0, min(rec_score, 100.0))
+
+            return {
+                "ok": True,
+                "endurance": round(endurance, 1),
+                "speed": round(speed, 1),
+                "threshold": round(threshold, 1),
+                "climbing": round(climbing, 1),
+                "stability": round(stability, 1),
+                "recovery": round(recovery, 1)
+            }
+        except Exception as e:
+            return {"ok": True, **default_metrics}
 
     def load_local_track(self, file_path: str) -> dict:
         """根据本地路径读取并解析轨迹文件，返回与 parse_track_file 一致的结构。"""

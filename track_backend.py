@@ -14,6 +14,180 @@ from typing import Any
 EARTH_R = 6371000.0
 SEMICIRCLE_SCALE = 180.0 / (1 << 31)
 
+SUPPORTED_SPORT_TYPES = {
+    "running",
+    "hiking",
+    "cycling",
+    "swimming",
+    "walking",
+    "trail_running",
+    "treadmill_running",
+    "road_cycling",
+    "mountain_biking",
+}
+
+SPORT_TYPE_ALIASES = {
+    "run": "running",
+    "running": "running",
+    "jogging": "running",
+    "runner": "running",
+    "跑步": "running",
+    "慢跑": "running",
+    "trail_run": "trail_running",
+    "trail_running": "trail_running",
+    "trail running": "trail_running",
+    "trailrun": "trail_running",
+    "越野跑": "trail_running",
+    "treadmill": "treadmill_running",
+    "treadmill_running": "treadmill_running",
+    "treadmill running": "treadmill_running",
+    "indoor_running": "treadmill_running",
+    "indoor run": "treadmill_running",
+    "室内跑步": "treadmill_running",
+    "bike": "cycling",
+    "biking": "cycling",
+    "cycling": "cycling",
+    "cycle": "cycling",
+    "骑行": "cycling",
+    "自行车": "cycling",
+    "road_biking": "road_cycling",
+    "road_bike": "road_cycling",
+    "road_cycling": "road_cycling",
+    "road cycling": "road_cycling",
+    "公路骑行": "road_cycling",
+    "mountain_biking": "mountain_biking",
+    "mountain_bike": "mountain_biking",
+    "mountain biking": "mountain_biking",
+    "mtb": "mountain_biking",
+    "山地骑行": "mountain_biking",
+    "swim": "swimming",
+    "swimming": "swimming",
+    "open_water_swimming": "swimming",
+    "lap_swimming": "swimming",
+    "游泳": "swimming",
+    "hike": "hiking",
+    "hiking": "hiking",
+    "mountaineering": "hiking",
+    "climbing": "hiking",
+    "登山": "hiking",
+    "徒步": "hiking",
+    "爬山": "hiking",
+    "walking": "walking",
+    "walk": "walking",
+    "步行": "walking",
+    "健走": "walking",
+}
+
+SPORT_TYPE_NUMERIC_ALIASES = {
+    "1": "running",
+    "2": "cycling",
+    "3": "hiking",
+    "4": "swimming",
+    "10": "walking",
+    "14": "treadmill_running",
+    "22": "trail_running",
+    "24": "mountain_biking",
+    "53": "road_cycling",
+}
+
+SPORT_TYPE_KEYWORDS = (
+    ("treadmill_running", ("treadmill", "indoor_run", "indoor running", "室内跑")),
+    ("trail_running", ("trail", "cross_country_running", "越野跑")),
+    ("road_cycling", ("road", "公路")),
+    ("mountain_biking", ("mountain", "mtb", "山地")),
+    ("swimming", ("swim", "游泳")),
+    ("cycling", ("bike", "bik", "cycl", "骑行", "自行车")),
+    ("running", ("run", "jog", "跑")),
+    ("hiking", ("hike", "hiking", "mountain", "climb", "trek", "登山", "徒步", "爬山")),
+    ("walking", ("walk", "步行", "健走")),
+)
+
+FIT_SUB_SPORT_TO_SPORT_TYPE = {
+    "trail": "trail_running",
+    "track_running": "running",
+    "street": "running",
+    "treadmill": "treadmill_running",
+    "road": "road_cycling",
+    "mountain": "mountain_biking",
+    "downhill": "mountain_biking",
+    "indoor_cycling": "cycling",
+    "spin": "cycling",
+    "lap_swimming": "swimming",
+    "open_water": "swimming",
+}
+
+GPX_TYPE_TAGS = {"type", "sport", "activity", "activitytype", "activity_type", "category"}
+
+
+def _sport_text(value: Any) -> str:
+    return str(value or "").strip().lower().replace("-", "_")
+
+
+def normalize_sport_type(value: Any, sub_value: Any = None) -> str | None:
+    raw = _sport_text(value)
+    sub_raw = _sport_text(sub_value)
+    if sub_raw in FIT_SUB_SPORT_TO_SPORT_TYPE:
+        return FIT_SUB_SPORT_TO_SPORT_TYPE[sub_raw]
+    for candidate in (sub_raw, raw, f"{raw}_{sub_raw}".strip("_"), f"{raw} {sub_raw}".strip()):
+        if not candidate or candidate in {"unknown", "none", "null"}:
+            continue
+        if candidate in SPORT_TYPE_NUMERIC_ALIASES:
+            return SPORT_TYPE_NUMERIC_ALIASES[candidate]
+        if candidate in SPORT_TYPE_ALIASES:
+            return SPORT_TYPE_ALIASES[candidate]
+    combined = " ".join(part for part in (raw, sub_raw) if part)
+    for sport_type, keywords in SPORT_TYPE_KEYWORDS:
+        if any(keyword in combined for keyword in keywords):
+            return sport_type
+    return None
+
+
+def infer_sport_type_from_points(points: list[dict[str, Any]]) -> str | None:
+    if len(points) < 2:
+        return None
+    dist_m = 0.0
+    gain_m = 0.0
+    for i in range(1, len(points)):
+        p0, p1 = points[i - 1], points[i]
+        dist_m += haversine_m(p0["lat"], p0["lon"], p1["lat"], p1["lon"])
+        alt_gain = float(p1.get("alt") or 0) - float(p0.get("alt") or 0)
+        if alt_gain > 0:
+            gain_m += alt_gain
+    timed_points = [p for p in points if p.get("time")]
+    duration_sec = 0.0
+    if len(timed_points) >= 2:
+        try:
+            first = datetime.fromisoformat(str(timed_points[0]["time"]).replace("Z", "+00:00"))
+            last = datetime.fromisoformat(str(timed_points[-1]["time"]).replace("Z", "+00:00"))
+            duration_sec = max((last - first).total_seconds(), 0.0)
+        except ValueError:
+            duration_sec = 0.0
+    if duration_sec <= 0 or dist_m <= 0:
+        return "hiking" if gain_m >= 500 else None
+    speed_kmh = dist_m / duration_sec * 3.6
+    gain_per_km = gain_m / max(dist_m / 1000.0, 0.001)
+    if speed_kmh >= 18:
+        return "cycling"
+    if speed_kmh >= 8:
+        return "trail_running" if gain_per_km >= 80 else "running"
+    if speed_kmh >= 5.5:
+        return "hiking" if gain_per_km >= 80 else "running"
+    if gain_per_km >= 80:
+        return "hiking"
+    return "walking"
+
+
+def enrich_sport_metadata(data: dict[str, Any], sport_raw: Any = None, sub_sport_raw: Any = None) -> dict[str, Any]:
+    points = data.get("points") or []
+    activity_type = normalize_sport_type(sport_raw, sub_sport_raw)
+    if activity_type is None:
+        activity_type = infer_sport_type_from_points(points)
+    data["activity_type"] = activity_type or "unknown"
+    data["sport_type"] = data["activity_type"]
+    data["fit_sport"] = sport_raw if sport_raw is not None else data["activity_type"]
+    data["fit_sub_sport"] = sub_sport_raw if sub_sport_raw is not None else "unknown"
+    return data
+
 
 def haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     p1 = math.radians(lat1)
@@ -58,6 +232,59 @@ def _gpx_hr_from_extensions(extensions: list[Any]) -> int | None:
                         return int(float(child.text))
                     except (TypeError, ValueError):
                         continue
+    return None
+
+
+def _local_name(tag: Any) -> str:
+    return (str(tag or "").split("}")[-1] or "").strip().lower().replace("-", "_")
+
+
+def _gpx_type_from_extensions(extensions: list[Any]) -> str | None:
+    for el in extensions or []:
+        nodes = list(el.iter()) if hasattr(el, "iter") else [el]
+        for node in nodes:
+            local = _local_name(getattr(node, "tag", ""))
+            text = str(getattr(node, "text", "") or "").strip()
+            if local in GPX_TYPE_TAGS and text:
+                sport_type = normalize_sport_type(text)
+                if sport_type:
+                    return sport_type
+            for attr_value in getattr(node, "attrib", {}).values():
+                sport_type = normalize_sport_type(attr_value)
+                if sport_type:
+                    return sport_type
+    return None
+
+
+def _extract_gpx_sport_type(gpx: Any) -> str | None:
+    candidates: list[Any] = []
+    for attr in ("type", "sport", "activity", "category"):
+        value = getattr(gpx, attr, None)
+        if value:
+            candidates.append(value)
+    for track in getattr(gpx, "tracks", []) or []:
+        for attr in ("type", "name", "description"):
+            value = getattr(track, attr, None)
+            if value:
+                candidates.append(value)
+        sport_type = _gpx_type_from_extensions(getattr(track, "extensions", []) or [])
+        if sport_type:
+            return sport_type
+    for route in getattr(gpx, "routes", []) or []:
+        for attr in ("type", "name", "description"):
+            value = getattr(route, attr, None)
+            if value:
+                candidates.append(value)
+        sport_type = _gpx_type_from_extensions(getattr(route, "extensions", []) or [])
+        if sport_type:
+            return sport_type
+    sport_type = _gpx_type_from_extensions(getattr(gpx, "extensions", []) or [])
+    if sport_type:
+        return sport_type
+    for candidate in candidates:
+        sport_type = normalize_sport_type(candidate)
+        if sport_type:
+            return sport_type
     return None
 
 
@@ -113,7 +340,7 @@ def parse_gpx_file(path: Path) -> dict[str, Any]:
             }
         )
 
-    return {"points": points, "placemarks": placemarks}
+    return enrich_sport_metadata({"points": points, "placemarks": placemarks}, _extract_gpx_sport_type(gpx))
 
 
 def parse_fit_file(path: Path) -> dict[str, Any]:
@@ -124,6 +351,26 @@ def parse_fit_file(path: Path) -> dict[str, Any]:
     fit.check_crc = True
 
     rows: list[dict[str, Any]] = []
+    fit_sport: str | None = None
+    fit_sub_sport: str | None = None
+
+    for msg in fit.get_messages("session"):
+        sport_rec = msg.get_value("sport")
+        sub_sport_rec = msg.get_value("sub_sport")
+        if sport_rec is not None:
+            fit_sport = str(sport_rec).strip().lower()
+        if sub_sport_rec is not None:
+            fit_sub_sport = str(sub_sport_rec).strip().lower()
+        if fit_sport is not None or fit_sub_sport is not None:
+            break
+
+    if fit_sport is None:
+        for msg in fit.get_messages("sport"):
+            sport_rec = msg.get_value("sport")
+            if sport_rec is not None:
+                fit_sport = str(sport_rec).strip().lower()
+                break
+
     for msg in fit.get_messages("record"):
         vals = {d.name: d.value for d in msg.fields}
         lat = vals.get("position_lat")
@@ -195,7 +442,7 @@ def parse_fit_file(path: Path) -> dict[str, Any]:
             "hr": row["hr"],
         })
 
-    return {"points": points, "placemarks": []}
+    return enrich_sport_metadata({"points": points, "placemarks": []}, fit_sport, fit_sub_sport)
 
 
 def _parse_kml_coord_tokens(tag_local: str, text: str) -> list[dict[str, float]]:
@@ -251,7 +498,7 @@ def parse_kml_file(path: Path) -> dict[str, Any]:
     points = [
         {"lat": p["lat"], "lon": p["lon"], "alt": p["alt"], "time": None, "hr": None} for p in raw_pts
     ]
-    return {"points": points, "placemarks": []}
+    return enrich_sport_metadata({"points": points, "placemarks": []})
 
 
 def parse_track_file(path: str | Path) -> dict[str, Any]:
@@ -394,4 +641,4 @@ def _parse_fit_with_error_handling(path: Path) -> dict[str, Any]:
             "hr": row["hr"],
         })
 
-    return {"points": points, "placemarks": []}
+    return enrich_sport_metadata({"points": points, "placemarks": []}, fit_sport, fit_sub_sport)
