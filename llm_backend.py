@@ -137,9 +137,38 @@ def _placemarks_block(placemarks: list[dict[str, Any]]) -> str:
 
 
 def _sport_labels(sport_type: str) -> tuple[str, str]:
-    if sport_type == "trail_running":
-        return "越野跑", "顶级的越野跑教练"
-    return "徒步", "资深的户外徒步领队"
+    key = str(sport_type or "").strip().lower()
+    mapping = {
+        "running": ("跑步", "资深的跑步教练"),
+        "trail_running": ("越野跑", "顶级的越野跑教练"),
+        "treadmill_running": ("室内跑步", "专业的跑步训练教练"),
+        "walking": ("步行", "专业的健走训练顾问"),
+        "hiking": ("徒步", "资深的户外徒步领队"),
+        "mountaineering": ("登山", "资深的高海拔登山向导"),
+        "cycling": ("骑行", "资深的骑行教练"),
+        "road_cycling": ("公路骑行", "资深的公路骑行教练"),
+        "mountain_biking": ("山地骑行", "资深的山地骑行教练"),
+        "swimming": ("游泳", "资深的游泳教练"),
+        "driving": ("驾车", "资深的道路驾驶安全教练"),
+    }
+    return mapping.get(key, ("综合运动", "资深的运动训练教练"))
+
+
+def _weather_context_block(weather_context: dict[str, Any] | None) -> str:
+    if not weather_context:
+        return "【环境天气】无历史天气数据。"
+    temperature = weather_context.get("temperature_c")
+    humidity = weather_context.get("humidity")
+    wind_speed = weather_context.get("wind_speed_kmh")
+    label = str(weather_context.get("weather_label") or "").strip() or "未知"
+    parts = [f"状况 {label}"]
+    if temperature is not None:
+        parts.append(f"温度 {temperature}°C")
+    if humidity is not None:
+        parts.append(f"湿度 {humidity}%")
+    if wind_speed is not None:
+        parts.append(f"风速 {wind_speed} km/h")
+    return "【环境天气】本次运动时的环境为 " + "，".join(parts) + "。请在分析配速、心率、补给与体感压力时显式考虑高温高湿、风速等环境因素。"
 
 
 def build_base_system_block(
@@ -149,6 +178,7 @@ def build_base_system_block(
     track_filename: str,
     points: list[dict[str, Any]],
     placemarks: list[dict[str, Any]],
+    weather_context: dict[str, Any] | None = None,
 ) -> str:
     sport_cn, role = _sport_labels(sport_type)
     table = points_to_dataframe_csv(points)
@@ -173,6 +203,8 @@ def build_base_system_block(
 ```json
 {wpts}
 ```
+
+{_weather_context_block(weather_context)}
 
 【界面约束】你的回复将显示在极窄侧边栏，务必极度简练；除非用户明确要求，否则不要用冗长列表。
 禁止调用或假设任何写本地文件、生成下载文件的操作。
@@ -219,6 +251,7 @@ def build_chat_system_block(
     points: list[dict[str, Any]],
     placemarks: list[dict[str, Any]],
     report_json: str | None = None,
+    weather_context: dict[str, Any] | None = None,
 ) -> str:
     sport_cn, _ = _sport_labels(sport_type)
     if not points or len(points) < 2:
@@ -232,6 +265,7 @@ def build_chat_system_block(
         track_filename=track_filename,
         points=points,
         placemarks=placemarks,
+        weather_context=weather_context,
     )
     report_instruction = ""
     if report_json:

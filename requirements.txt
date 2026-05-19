@@ -4,3 +4,4 @@ gpxpy>=1.6.0
 fitparse>=1.2.0
 requests>=2.28.0
 pandas>=2.0.0
+watchdog>=6.0.0

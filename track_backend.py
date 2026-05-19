@@ -11,15 +11,19 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from fit_engine import FITCoreEngine, FIT_PARSE_LOG_PATH
+from utils.weather_api import fetch_historical_weather
+
 EARTH_R = 6371000.0
-SEMICIRCLE_SCALE = 180.0 / (1 << 31)
 
 SUPPORTED_SPORT_TYPES = {
     "running",
     "hiking",
+    "mountaineering",
     "cycling",
     "swimming",
     "walking",
+    "driving",
     "trail_running",
     "treadmill_running",
     "road_cycling",
@@ -67,15 +71,25 @@ SPORT_TYPE_ALIASES = {
     "游泳": "swimming",
     "hike": "hiking",
     "hiking": "hiking",
-    "mountaineering": "hiking",
+    "mountaineering": "mountaineering",
+    "alpine": "mountaineering",
     "climbing": "hiking",
-    "登山": "hiking",
+    "登山": "mountaineering",
+    "高山": "mountaineering",
+    "登山运动": "mountaineering",
     "徒步": "hiking",
     "爬山": "hiking",
     "walking": "walking",
     "walk": "walking",
     "步行": "walking",
     "健走": "walking",
+    "drive": "driving",
+    "driving": "driving",
+    "car": "driving",
+    "auto": "driving",
+    "motoring": "driving",
+    "驾车": "driving",
+    "开车": "driving",
 }
 
 SPORT_TYPE_NUMERIC_ALIASES = {
@@ -88,6 +102,7 @@ SPORT_TYPE_NUMERIC_ALIASES = {
     "22": "trail_running",
     "24": "mountain_biking",
     "53": "road_cycling",
+    "57": "driving",
 }
 
 SPORT_TYPE_KEYWORDS = (
@@ -97,7 +112,9 @@ SPORT_TYPE_KEYWORDS = (
     ("mountain_biking", ("mountain", "mtb", "山地")),
     ("swimming", ("swim", "游泳")),
     ("cycling", ("bike", "bik", "cycl", "骑行", "自行车")),
+    ("driving", ("driv", "car", "auto", "motoring", "驾车", "开车")),
     ("running", ("run", "jog", "跑")),
+    ("mountaineering", ("mountaineering", "alpine", "high_mountain", "高山", "登山运动")),
     ("hiking", ("hike", "hiking", "mountain", "climb", "trek", "登山", "徒步", "爬山")),
     ("walking", ("walk", "步行", "健走")),
 )
@@ -166,12 +183,16 @@ def infer_sport_type_from_points(points: list[dict[str, Any]]) -> str | None:
         return "hiking" if gain_m >= 500 else None
     speed_kmh = dist_m / duration_sec * 3.6
     gain_per_km = gain_m / max(dist_m / 1000.0, 0.001)
+    if speed_kmh >= 35:
+        return "driving"
     if speed_kmh >= 18:
         return "cycling"
     if speed_kmh >= 8:
         return "trail_running" if gain_per_km >= 80 else "running"
     if speed_kmh >= 5.5:
         return "hiking" if gain_per_km >= 80 else "running"
+    if gain_per_km >= 180:
+        return "mountaineering"
     if gain_per_km >= 80:
         return "hiking"
     return "walking"
@@ -196,13 +217,6 @@ def haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     dlon = math.radians(lon2 - lon1)
     a = math.sin(dlat / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dlon / 2) ** 2
     return EARTH_R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-
-
-def _fit_latlon_to_deg(lat: float, lon: float) -> tuple[float, float]:
-    """FIT 中 position_lat/position_long 通常为 semicircle；若已是度则原样返回。"""
-    if abs(lat) <= 90 and abs(lon) <= 180:
-        return lat, lon
-    return lat * SEMICIRCLE_SCALE, lon * SEMICIRCLE_SCALE
 
 
 def _iso(dt: Any) -> str | None:
@@ -306,8 +320,11 @@ def attach_slopes(points: list[dict[str, Any]]) -> None:
 def parse_gpx_file(path: Path) -> dict[str, Any]:
     import gpxpy
 
-    with open(path, "rb") as f:
-        gpx = gpxpy.parse(f)
+    try:
+        with open(path, "rb") as f:
+            gpx = gpxpy.parse(f)
+    except Exception as exc:
+        raise ValueError(f"GPX 文件解析失败，可能格式损坏或不是合法的 GPX 文件: {exc}")
 
     points: list[dict[str, Any]] = []
     for track in gpx.tracks:
@@ -315,12 +332,17 @@ def parse_gpx_file(path: Path) -> dict[str, Any]:
             for p in seg.points:
                 if p.latitude is None or p.longitude is None:
                     continue
+                try:
+                    time_str = _iso(p.time)
+                except Exception as exc:
+                    raise ValueError(f"GPX 轨迹点时间解析异常: {exc}")
+                
                 points.append(
                     {
                         "lat": float(p.latitude),
                         "lon": float(p.longitude),
                         "alt": float(p.elevation) if p.elevation is not None else 0.0,
-                        "time": _iso(p.time),
+                        "time": time_str,
                         "hr": _gpx_hr_from_extensions(getattr(p, "extensions", []) or []),
                     }
                 )
@@ -344,83 +366,41 @@ def parse_gpx_file(path: Path) -> dict[str, Any]:
 
 
 def parse_fit_file(path: Path) -> dict[str, Any]:
-    """解析 FIT 文件，提取位置/海拔/心率/速度/里程等核心字段，与 GPX 输出结构完全兼容。"""
-    from fitparse import FitFile
-
-    # 禁用 check_crc 可以显著提升解析速度，因为大多数正常文件不需要重复校验 CRC
-    fit = FitFile(str(path), check_crc=False)
-
-    fit_sport: str | None = None
-    fit_sub_sport: str | None = None
-
-    for msg in fit.get_messages("session"):
-        sport_rec = msg.get_value("sport")
-        sub_sport_rec = msg.get_value("sub_sport")
-        if sport_rec is not None:
-            fit_sport = str(sport_rec).strip().lower()
-        if sub_sport_rec is not None:
-            fit_sub_sport = str(sub_sport_rec).strip().lower()
-        if fit_sport is not None or fit_sub_sport is not None:
-            break
-
-    if fit_sport is None:
-        for msg in fit.get_messages("sport"):
-            sport_rec = msg.get_value("sport")
-            if sport_rec is not None:
-                fit_sport = str(sport_rec).strip().lower()
-                break
-
-    # 优化点：直接按顺序提取有效点，避免构建庞大的中间 rows 字典数组，减少内存开销和创建字典的耗时
-    points: list[dict[str, Any]] = []
-    last_lat = None
-    last_lon = None
-    last_time = None
-    
-    # 提前获取 timezone 引用，避免在循环中重复解析
-    utc_tz = timezone.utc
-
-    for msg in fit.get_messages("record"):
-        # 优化点：避免对每条记录生成完整字典，按需取值
-        lat = msg.get_value("position_lat")
-        lon = msg.get_value("position_long")
-        if lat is None or lon is None:
-            continue
-
-        latf, lonf = _fit_latlon_to_deg(float(lat), float(lon))
-        
-        ts = msg.get_value("timestamp")
-        tiso = None
-        if isinstance(ts, datetime):
-            if ts.tzinfo is None:
-                ts = ts.replace(tzinfo=utc_tz)
-            # 内联优化 _iso 以减少函数调用开销
-            tiso = ts.astimezone(utc_tz).isoformat().replace("+00:00", "Z")
-        elif ts is not None:
-            tiso = str(ts)
-            
-        # 去重逻辑内联：如果经纬度极度接近且时间相同，则跳过（避免向 points 追加冗余点）
-        if last_lat is not None and abs(last_lat - latf) < 1e-7 and abs(last_lon - lonf) < 1e-7 and last_time == tiso:
-            continue
-            
-        alt_raw = msg.get_value("enhanced_altitude") or msg.get_value("altitude")
-        altf = float(alt_raw) if alt_raw is not None else 0.0
-
-        hr_val = msg.get_value("heart_rate")
-        hr = int(hr_val) if hr_val is not None else None
-
-        points.append({
-            "lat": latf,
-            "lon": lonf,
-            "alt": altf,
-            "time": tiso,
-            "hr": hr,
-        })
-        
-        last_lat = latf
-        last_lon = lonf
-        last_time = tiso
-
-    return enrich_sport_metadata({"points": points, "placemarks": []}, fit_sport, fit_sub_sport)
+    """通过中央 FIT 解析引擎返回标准化后的 APP 轨迹结构。"""
+    core = FITCoreEngine.parse_fit_file(path)
+    basic = dict(core.get("basic_info") or {})
+    track_data = [dict(point) for point in (core.get("track_data") or [])]
+    data = enrich_sport_metadata(
+        {
+            "points": track_data,
+            "track_data": track_data,
+            "placemarks": [],
+            "basic_info": basic,
+            "title": basic.get("title"),
+            "fit_title": basic.get("title"),
+            "title_source": basic.get("title_source"),
+            "start_time": basic.get("start_time"),
+            "start_time_utc": basic.get("start_time_utc"),
+            "avg_hr": basic.get("avg_hr"),
+            "max_hr": basic.get("max_hr"),
+            "distance_km": basic.get("total_distance_km"),
+            "duration_sec": basic.get("total_timer_time"),
+            "calories": basic.get("total_calories"),
+            "gain_m": basic.get("total_ascent"),
+            "max_alt_m": basic.get("max_altitude"),
+        },
+        basic.get("sport"),
+        basic.get("sub_sport"),
+    )
+    data["fit_sport"] = basic.get("sport")
+    data["fit_sub_sport"] = basic.get("sub_sport")
+    first_point = track_data[0] if track_data else {}
+    data["weather"] = fetch_historical_weather(
+        first_point.get("lat"),
+        first_point.get("lon"),
+        basic.get("start_time") or basic.get("start_time_utc") or first_point.get("time"),
+    )
+    return data
 
 
 def _parse_kml_coord_tokens(tag_local: str, text: str) -> list[dict[str, float]]:
@@ -495,7 +475,7 @@ def parse_track_file(path: str | Path) -> dict[str, Any]:
         if ext == ".gpx":
             data = parse_gpx_file(p)
         elif ext == ".fit":
-            data = _parse_fit_with_error_handling(p)
+            data = parse_fit_file(p)
         else:
             data = parse_kml_file(p)
     except FileNotFoundError:
@@ -510,113 +490,3 @@ def parse_track_file(path: str | Path) -> dict[str, Any]:
 
     attach_slopes(data["points"])
     return data
-
-
-def _parse_fit_with_error_handling(path: Path) -> dict[str, Any]:
-    """解析 FIT 文件，带完整异常处理。"""
-    from fitparse import FitFile, FitParseError
-
-    try:
-        fit = FitFile(str(path), check_crc=True)
-    except FitParseError as e:
-        err_str = str(e).lower()
-        if "header" in err_str or "signature" in err_str or "corrupt" in err_str:
-            raise ValueError(
-                f"FIT 文件损坏或已截断，无法解析。可能原因：文件传输不完整。"
-            ) from e
-        if "version" in err_str or "protocol" in err_str:
-            raise ValueError(
-                f"FIT 文件版本不受支持: {e}"
-            ) from e
-        raise ValueError(f"FIT 文件解析失败: {e}") from e
-    except OSError as e:
-        raise ValueError(f"无法读取 FIT 文件（权限或路径问题）: {e}") from e
-
-    rows: list[dict[str, Any]] = []
-    file_version: str | None = None
-    fit_sport: str | None = None
-    fit_sub_sport: str | None = None
-
-    for msg in fit.get_messages("file_id"):
-        if file_version is None:
-            for field in msg.fields:
-                if field.name == "type":
-                    file_version = str(field.value)
-                    break
-
-    for msg in fit.get_messages("session"):
-        if fit_sport is None or fit_sub_sport is None:
-            sport_rec = msg.get_value("sport")
-            sub_sport_rec = msg.get_value("sub_sport")
-            if sport_rec is not None:
-                fit_sport = str(sport_rec).strip().lower()
-            if sub_sport_rec is not None:
-                fit_sub_sport = str(sub_sport_rec).strip().lower()
-            break
-
-    if fit_sport is None:
-        for msg in fit.get_messages("sport"):
-            sport_rec = msg.get_value("sport")
-            if sport_rec is not None:
-                fit_sport = str(sport_rec).strip().lower()
-                break
-
-    for msg in fit.get_messages("record"):
-        vals = {d.name: d.value for d in msg.fields}
-        lat = vals.get("position_lat")
-        lon = vals.get("position_long")
-        if lat is None or lon is None:
-            continue
-
-        try:
-            latf, lonf = _fit_latlon_to_deg(float(lat), float(lon))
-        except (ValueError, TypeError):
-            continue
-
-        ts = vals.get("timestamp")
-        if isinstance(ts, datetime):
-            if ts.tzinfo is None:
-                ts = ts.replace(tzinfo=timezone.utc)
-            tiso = _iso(ts)
-        else:
-            tiso = None
-
-        alt_raw = vals.get("enhanced_altitude") or vals.get("altitude")
-        altf = float(alt_raw) if alt_raw is not None else 0.0
-
-        hr_val = vals.get("heart_rate")
-        hr = int(hr_val) if hr_val is not None else None
-
-        rows.append({
-            "_ts": ts,
-            "lat": latf,
-            "lon": lonf,
-            "alt": altf,
-            "time": tiso,
-            "hr": hr,
-        })
-
-    if not rows:
-        raise ValueError(
-            "FIT 文件中未找到有效的轨迹记录（position_lat/position_long 字段为空）。"
-            "可能原因：文件不包含 GPS 数据（如仅含健身房训练记录）。"
-        )
-
-    rows.sort(key=lambda r: r["_ts"] or datetime.min.replace(tzinfo=timezone.utc))
-
-    points: list[dict[str, Any]] = []
-    for row in rows:
-        la, lo, tiso = row["lat"], row["lon"], row["time"]
-        if points:
-            q = points[-1]
-            if abs(q["lat"] - la) < 1e-7 and abs(q["lon"] - lo) < 1e-7 and q.get("time") == tiso:
-                continue
-        points.append({
-            "lat": la,
-            "lon": lo,
-            "alt": row["alt"],
-            "time": tiso,
-            "hr": row["hr"],
-        })
-
-    return enrich_sport_metadata({"points": points, "placemarks": []}, fit_sport, fit_sub_sport)

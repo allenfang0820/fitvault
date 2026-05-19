@@ -96,17 +96,15 @@ class TestDuplicateCheck(unittest.TestCase):
 
     def test_missing_start_time(self):
         # If start time is missing, it should rely on dist and duration and points
+        # 由于我们优化了时区和时间解析逻辑，现在它能从 points_json 中提取时间并获得时间匹配分
         res = profile_backend.check_duplicate_activity(
             start_time=None,
             dist_km=10.51, # close to 10.5
             duration_sec=3602, # close to 3600
             points_json=self.points_test1
         )
-        # Score will be 20 + 20 + 30 = 70. Wait, 70 is < 80, so without start time it's hard.
-        # But wait! If it's a true duplicate GPX without start time, the score is 70. 
-        # Let's adjust the assertion to check if score > 60. Or we can just check what the actual score is.
-        self.assertFalse(res["is_duplicate"])
-        self.assertTrue(res["score"] >= 60.0)
+        self.assertTrue(res["is_duplicate"])
+        self.assertTrue(res["score"] >= 80.0)
 
     def test_spatial_match_duplicate(self):
         # Test a track with similar time but completely matching spatial points

@@ -6,8 +6,12 @@ from __future__ import annotations
 
 import json
 import math
+import os
+import requests
 import shutil
 import sqlite3
+import threading
+import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -22,6 +26,41 @@ else:
 DB_PATH = _BASE / "user_profile.db"
 TRACKS_DIR = _BASE / "local_tracks"
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+SQLITE_POOL_SIZE = 6
+SQLITE_POOL_ACQUIRE_TIMEOUT_SEC = 10.0
+SQLITE_BUSY_TIMEOUT_MS = 15000
+SQLITE_CONNECT_TIMEOUT_SEC = SQLITE_BUSY_TIMEOUT_MS / 1000.0
+SQLITE_LOCK_RETRY_ATTEMPTS = 6
+SQLITE_LOCK_RETRY_BASE_DELAY_SEC = 0.25
+GEOCODE_REQUEST_TIMEOUT_SEC = 8
+GEOCODE_LANG = "zh-CN"
+GEOCODE_USER_AGENT = "AI-track/1.0"
+
+_DB_CONN_SEMAPHORE = threading.BoundedSemaphore(SQLITE_POOL_SIZE)
+_SCHEMA_LOCK = threading.Lock()
+_SCHEMA_READY_FOR: str | None = None
+_REGION_CACHE_LOCK = threading.Lock()
+_REGION_CACHE: dict[tuple[float, float], str] = {}
+
+
+class ManagedConnection(sqlite3.Connection):
+    """在连接关闭时自动归还连接槽位。"""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._slot_released = False
+
+    def _release_slot(self) -> None:
+        if self._slot_released:
+            return
+        self._slot_released = True
+        _DB_CONN_SEMAPHORE.release()
+
+    def close(self) -> None:
+        try:
+            super().close()
+        finally:
+            self._release_slot()
 
 
 def tracks_dir() -> Path:
@@ -30,11 +69,61 @@ def tracks_dir() -> Path:
     return TRACKS_DIR
 
 
-def _conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(str(DB_PATH))
+def _db_path_str() -> str:
+    return str(Path(DB_PATH).expanduser().resolve())
+
+
+def _acquire_connection_slot() -> None:
+    acquired = _DB_CONN_SEMAPHORE.acquire(timeout=SQLITE_POOL_ACQUIRE_TIMEOUT_SEC)
+    if not acquired:
+        raise TimeoutError(
+            f"数据库连接池繁忙，请稍后重试（>{SQLITE_POOL_ACQUIRE_TIMEOUT_SEC:.0f}s 未获取到连接）"
+        )
+
+
+def _configure_connection(conn: sqlite3.Connection) -> None:
     conn.row_factory = sqlite3.Row
-    _init_schema(conn)
+    conn.execute(f"PRAGMA busy_timeout = {SQLITE_BUSY_TIMEOUT_MS}")
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA synchronous = NORMAL")
+
+
+def _raw_connect() -> sqlite3.Connection:
+    _acquire_connection_slot()
+    try:
+        conn = sqlite3.connect(
+            str(DB_PATH),
+            timeout=SQLITE_CONNECT_TIMEOUT_SEC,
+            factory=ManagedConnection,
+        )
+    except Exception:
+        _DB_CONN_SEMAPHORE.release()
+        raise
+    _configure_connection(conn)
     return conn
+
+
+def _ensure_schema_initialized() -> None:
+    global _SCHEMA_READY_FOR
+    db_path = _db_path_str()
+    if _SCHEMA_READY_FOR == db_path and Path(db_path).exists():
+        return
+
+    with _SCHEMA_LOCK:
+        if _SCHEMA_READY_FOR == db_path and Path(db_path).exists():
+            return
+
+        conn = _raw_connect()
+        try:
+            _init_schema(conn)
+        finally:
+            conn.close()
+        _SCHEMA_READY_FOR = db_path
+
+
+def _conn() -> sqlite3.Connection:
+    _ensure_schema_initialized()
+    return _raw_connect()
 
 
 def _init_schema(conn: sqlite3.Connection) -> None:
@@ -58,6 +147,8 @@ def _init_schema(conn: sqlite3.Connection) -> None:
         CREATE TABLE IF NOT EXISTS activities (
             id             INTEGER PRIMARY KEY AUTOINCREMENT,
             filename       TEXT,
+            title          TEXT,
+            title_source   TEXT,
             sport_type     TEXT,
             sub_sport_type TEXT DEFAULT 'unknown',
             dist_km        REAL,
@@ -72,11 +163,27 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             points_json    TEXT,
             file_path      TEXT,
             start_time     TEXT,
+            start_time_utc TEXT,
+            start_lat      REAL,
+            start_lon      REAL,
+            region         TEXT,
+            weather_json   TEXT,
             updated_at     TEXT DEFAULT (datetime('now'))
         )
     """)
 
-    for col, dtype in [("sub_sport_type", "TEXT"), ("file_path", "TEXT"), ("start_time", "TEXT")]:
+    for col, dtype in [
+        ("sub_sport_type", "TEXT"),
+        ("file_path", "TEXT"),
+        ("start_time", "TEXT"),
+        ("title", "TEXT"),
+        ("title_source", "TEXT"),
+        ("start_time_utc", "TEXT"),
+        ("start_lat", "REAL"),
+        ("start_lon", "REAL"),
+        ("region", "TEXT"),
+        ("weather_json", "TEXT"),
+    ]:
         try:
             conn.execute(f"ALTER TABLE activities ADD COLUMN {col} {dtype}")
         except Exception:
@@ -98,6 +205,26 @@ def _init_schema(conn: sqlite3.Connection) -> None:
         except Exception:
             pass
     conn.commit()
+
+
+def _is_locked_error(exc: Exception) -> bool:
+    return isinstance(exc, sqlite3.OperationalError) and "locked" in str(exc).lower()
+
+
+def run_with_db_retry(func, retries: int = SQLITE_LOCK_RETRY_ATTEMPTS):
+    """对 SQLite 锁冲突做指数退避重试。"""
+    last_exc = None
+    for attempt in range(retries):
+        try:
+            return func()
+        except sqlite3.OperationalError as exc:
+            last_exc = exc
+            if not _is_locked_error(exc) or attempt >= retries - 1:
+                raise
+            time.sleep(SQLITE_LOCK_RETRY_BASE_DELAY_SEC * (2**attempt))
+    if last_exc is not None:
+        raise last_exc
+    raise RuntimeError("数据库重试流程异常结束")
 
 
 @dataclass
@@ -224,50 +351,73 @@ def upsert_profile(data: dict[str, Any]) -> UserProfile:
 
 
 def save_activity(data: dict[str, Any]) -> int:
-    conn = _conn()
-    cur = conn.execute(
-        """
-        INSERT INTO activities
-            (filename, sport_type, sub_sport_type, dist_km, duration_sec, gain_m, max_alt_m,
-             avg_hr, max_hr, avg_cadence, hr_decoupling, tss, points_json, file_path, start_time)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            data.get("filename"),
-            data.get("sport_type"),
-            data.get("sub_sport_type", "unknown"),
-            data.get("dist_km"),
-            data.get("duration_sec"),
-            data.get("gain_m"),
-            data.get("max_alt_m"),
-            data.get("avg_hr"),
-            data.get("max_hr"),
-            data.get("avg_cadence"),
-            data.get("hr_decoupling"),
-            data.get("tss"),
-            json.dumps(data.get("points_json", [])),
-            data.get("file_path"),
-            data.get("start_time"),
-        ),
-    )
-    conn.commit()
-    aid = cur.lastrowid
-    conn.close()
-    return aid
+    def _write() -> int:
+        conn = _conn()
+        try:
+            cur = conn.execute(
+                """
+                INSERT INTO activities
+                    (filename, title, title_source, sport_type, sub_sport_type, dist_km, duration_sec, gain_m, max_alt_m,
+                     avg_hr, max_hr, avg_cadence, hr_decoupling, tss, points_json, file_path, start_time, start_time_utc,
+                     start_lat, start_lon, region, weather_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    data.get("filename"),
+                    data.get("title"),
+                    data.get("title_source"),
+                    data.get("sport_type"),
+                    data.get("sub_sport_type", "unknown"),
+                    data.get("dist_km"),
+                    data.get("duration_sec"),
+                    data.get("gain_m"),
+                    data.get("max_alt_m"),
+                    data.get("avg_hr"),
+                    data.get("max_hr"),
+                    data.get("avg_cadence"),
+                    data.get("hr_decoupling"),
+                    data.get("tss"),
+                    json.dumps(data.get("points_json", [])),
+                    data.get("file_path"),
+                    data.get("start_time"),
+                    data.get("start_time_utc"),
+                    data.get("start_lat"),
+                    data.get("start_lon"),
+                    data.get("region"),
+                    data.get("weather_json"),
+                ),
+            )
+            conn.commit()
+            return int(cur.lastrowid)
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+    return run_with_db_retry(_write)
 
 
 def update_activity_sport_type(activity_id: int, sport_type: str) -> None:
-    conn = _conn()
-    conn.execute(
-        """
-        UPDATE activities
-        SET sport_type = ?, updated_at = datetime('now')
-        WHERE id = ?
-        """,
-        (sport_type, activity_id),
-    )
-    conn.commit()
-    conn.close()
+    def _write() -> None:
+        conn = _conn()
+        try:
+            conn.execute(
+                """
+                UPDATE activities
+                SET sport_type = ?, updated_at = datetime('now')
+                WHERE id = ?
+                """,
+                (sport_type, activity_id),
+            )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+    run_with_db_retry(_write)
 
 
 def get_activity_history(limit: int = 50) -> list[dict[str, Any]]:
@@ -316,27 +466,107 @@ def build_activity_payload(filename: str, data: dict[str, Any], src_path: str | 
 
     points = data.get("points") or []
     dist_km, duration_sec, gain_m = _summarize_track_points(points, track_backend)
+    dist_km = float(data.get("distance_km") or dist_km or 0.0)
+    duration_sec = int(data.get("duration_sec") or duration_sec or 0)
+    gain_m = float(data.get("gain_m") or gain_m or 0.0)
 
     hr_values = [int(p["hr"]) for p in points if p.get("hr") is not None]
     alt_values = [float(p.get("alt") or 0.0) for p in points if p.get("alt") is not None]
+    title = str(data.get("title") or data.get("fit_title") or filename).strip()
+    title_source = str(data.get("title_source") or ("fit_title" if data.get("title") or data.get("fit_title") else "filename")).strip()
+    avg_hr = data.get("avg_hr")
+    max_hr = data.get("max_hr")
+    start_lat, start_lon = _extract_start_coordinates(points)
+    region = resolve_activity_region(
+        data.get("start_lat", start_lat),
+        data.get("start_lon", start_lon),
+    )
 
     return {
         "filename": filename,
+        "title": title,
+        "title_source": title_source,
         "sport_type": data.get("sport_type", "unknown"),
         "sub_sport_type": data.get("fit_sub_sport") or data.get("sub_sport_type") or "unknown",
         "dist_km": dist_km,
         "duration_sec": duration_sec,
         "gain_m": gain_m,
-        "max_alt_m": max(alt_values) if alt_values else 0.0,
-        "avg_hr": int(round(sum(hr_values) / len(hr_values))) if hr_values else None,
-        "max_hr": max(hr_values) if hr_values else None,
+        "max_alt_m": float(data.get("max_alt_m") or (max(alt_values) if alt_values else 0.0)),
+        "avg_hr": int(avg_hr) if avg_hr is not None else (int(round(sum(hr_values) / len(hr_values))) if hr_values else None),
+        "max_hr": int(max_hr) if max_hr is not None else (max(hr_values) if hr_values else None),
         "avg_cadence": None,
         "hr_decoupling": None,
         "tss": None,
         "points_json": points,
         "file_path": src_path,
-        "start_time": points[0].get("time") if points else None,
+        "start_time": data.get("start_time") or (points[0].get("time") if points else None),
+        "start_time_utc": data.get("start_time_utc"),
+        "start_lat": start_lat,
+        "start_lon": start_lon,
+        "region": region,
+        "weather_json": data.get("weather_json"),
     }
+
+
+def _extract_start_coordinates(points: list[dict[str, Any]]) -> tuple[float | None, float | None]:
+    for point in points:
+        try:
+            lat = point.get("lat")
+            lon = point.get("lon")
+            if lat is None or lon is None:
+                continue
+            return float(lat), float(lon)
+        except (TypeError, ValueError):
+            continue
+    return None, None
+
+
+def resolve_activity_region(lat: Any, lon: Any) -> str:
+    try:
+        lat_val = round(float(lat), 4)
+        lon_val = round(float(lon), 4)
+    except (TypeError, ValueError):
+        return ""
+
+    cache_key = (lat_val, lon_val)
+    with _REGION_CACHE_LOCK:
+        cached = _REGION_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+
+    region = ""
+    try:
+        response = requests.get(
+            "https://nominatim.openstreetmap.org/reverse",
+            params={
+                "format": "json",
+                "lat": lat_val,
+                "lon": lon_val,
+                "zoom": 10,
+                "accept-language": GEOCODE_LANG,
+            },
+            headers={"User-Agent": GEOCODE_USER_AGENT},
+            timeout=GEOCODE_REQUEST_TIMEOUT_SEC,
+        )
+        response.raise_for_status()
+        payload = response.json() if callable(getattr(response, "json", None)) else {}
+        address = payload.get("address") if isinstance(payload, dict) else {}
+        if isinstance(address, dict):
+            region = str(
+                address.get("city")
+                or address.get("town")
+                or address.get("county")
+                or address.get("state")
+                or address.get("province")
+                or payload.get("name")
+                or ""
+            ).strip()
+    except Exception:
+        region = ""
+
+    with _REGION_CACHE_LOCK:
+        _REGION_CACHE[cache_key] = region
+    return region
 
 
 def ingest_activity_file(
@@ -362,7 +592,8 @@ def ingest_activity_file(
         start_time=activity.get("start_time"),
         dist_km=activity.get("dist_km", 0.0),
         duration_sec=activity.get("duration_sec", 0),
-        points_json=activity.get("points_json", [])
+        points_json=activity.get("points_json", []),
+        start_time_utc=activity.get("start_time_utc")
     )
 
     if dup_res.get("is_duplicate") and duplicate_action not in ("force", "merge"):
@@ -381,10 +612,18 @@ def ingest_activity_file(
         old_id = old_record.get("id")
         old_file_path = old_record.get("file_path")
         if old_id:
-            conn = _conn()
-            conn.execute("DELETE FROM activities WHERE id = ?", (old_id,))
-            conn.commit()
-            conn.close()
+            def _delete_old_record() -> None:
+                conn = _conn()
+                try:
+                    conn.execute("DELETE FROM activities WHERE id = ?", (old_id,))
+                    conn.commit()
+                except Exception:
+                    conn.rollback()
+                    raise
+                finally:
+                    conn.close()
+
+            run_with_db_retry(_delete_old_record)
         if old_file_path and Path(old_file_path).exists():
             try:
                 Path(old_file_path).unlink()
@@ -455,7 +694,12 @@ def scan_fit_directory(local_dir: str) -> dict[str, Any]:
     skipped = 0
 
     try:
-        fit_files = sorted({*base.glob("*.fit"), *base.glob("*.FIT")}, key=lambda p: p.name.lower())
+        fit_files = []
+        for root, _dirs, files_in_dir in os.walk(str(base)):
+            for name in files_in_dir:
+                if name.lower().endswith(".fit"):
+                    fit_files.append(Path(root) / name)
+        fit_files.sort(key=lambda p: (str(p.parent).lower(), p.name.lower()))
     except PermissionError:
         return {"ok": False, "error": "无读取权限"}
 
@@ -523,7 +767,8 @@ def check_duplicate_activity(
     start_time: str | None,
     dist_km: float,
     duration_sec: int,
-    points_json: list[dict[str, Any]] | None = None
+    points_json: list[dict[str, Any]] | None = None,
+    start_time_utc: str | None = None,
 ) -> dict[str, Any]:
     """
     检查是否有重复的活动记录。
@@ -548,42 +793,72 @@ def check_duplicate_activity(
 
     conn = _conn()
     rows = conn.execute(
-        "SELECT id, filename, file_path, start_time, dist_km, duration_sec, points_json, updated_at FROM activities"
+        "SELECT id, filename, file_path, start_time, start_time_utc, dist_km, duration_sec, points_json, updated_at FROM activities"
     ).fetchall()
     conn.close()
+
+    def _parse_time(time_str: str | None) -> datetime | None:
+        if not time_str: return None
+        try:
+            from datetime import timezone
+            dt = datetime.fromisoformat(str(time_str).replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt
+        except ValueError:
+            return None
+
+    def _safe_time_diff_sec(dt1: datetime | None, dt2: datetime | None) -> float | None:
+        if dt1 is None or dt2 is None:
+            return None
+        if (dt1.tzinfo is None) == (dt2.tzinfo is None):
+            return abs((dt1 - dt2).total_seconds())
+        # 兜底：如果一个是 aware，一个是 naive，去掉时区强制比较字面时间，避免报错
+        return abs((dt1.replace(tzinfo=None) - dt2.replace(tzinfo=None)).total_seconds())
 
     best_match = None
     max_score = 0.0
     
-    target_start = None
-    if start_time:
-        try:
-            target_start = datetime.fromisoformat(start_time.replace("Z", "+00:00"))
-        except ValueError:
-            pass
+    target_local = _parse_time(start_time)
+    target_utc = _parse_time(start_time_utc)
+    if not target_utc and points_json and len(points_json) > 0:
+        target_utc = _parse_time(points_json[0].get("time"))
 
-    logger.info(f"--- 开始查重 --- 目标: start={start_time}, dist={dist_km}km, dur={duration_sec}s, points={len(points_json) if points_json else 0}")
+    logger.info(f"--- 开始查重 --- 目标: start={start_time}, utc={start_time_utc}, dist={dist_km}km, dur={duration_sec}s, points={len(points_json) if points_json else 0}")
 
     for r in rows:
         r_dict = dict(r)
         score = 0.0
         
-        db_start_str = r_dict.get("start_time")
-        db_start = None
-        if db_start_str:
+        db_local = _parse_time(r_dict.get("start_time"))
+        db_utc = _parse_time(r_dict.get("start_time_utc"))
+        
+        if not db_utc and r_dict.get("points_json"):
             try:
-                db_start = datetime.fromisoformat(db_start_str.replace("Z", "+00:00"))
-            except ValueError:
+                db_pts = json.loads(r_dict["points_json"])
+                if db_pts and isinstance(db_pts, list) and len(db_pts) > 0:
+                    db_utc = _parse_time(db_pts[0].get("time"))
+            except Exception:
                 pass
                 
-        # 1. 时间窗口粗筛 (如果两者都有 start_time)
-        if target_start and db_start:
-            time_diff_sec = abs((target_start - db_start).total_seconds())
+        # 1. 时间窗口粗筛 (优先比较 UTC，如果没有则比较 Local)
+        time_diff_sec = None
+        if target_utc and db_utc:
+            time_diff_sec = _safe_time_diff_sec(target_utc, db_utc)
+        elif target_local and db_local:
+            time_diff_sec = _safe_time_diff_sec(target_local, db_local)
+        # 如果连 local 和 utc 都交叉了，做最后兜底
+        elif target_utc and db_local:
+            time_diff_sec = _safe_time_diff_sec(target_utc, db_local)
+        elif target_local and db_utc:
+            time_diff_sec = _safe_time_diff_sec(target_local, db_utc)
+            
+        if time_diff_sec is not None:
             if time_diff_sec > 300: # 5分钟
                 logger.info(f"[{r_dict['filename']}] 排除: 开始时间相差 {time_diff_sec}s > 300s")
                 continue
-        elif target_start or db_start:
-            # 一个有一没有，扣分但不断然排除
+        else:
+            # 两个都没有时间，或者无法比较，扣分但不断然排除
             pass
 
         # 时长差异 <= 10%
@@ -636,10 +911,10 @@ def check_duplicate_activity(
 
         # 计算综合分数
         score = 0.0
-        if target_start and db_start:
-            if abs((target_start - db_start).total_seconds()) <= 60:
+        if time_diff_sec is not None:
+            if time_diff_sec <= 60:
                 score += 30.0
-            elif abs((target_start - db_start).total_seconds()) <= 300:
+            elif time_diff_sec <= 300:
                 score += 15.0
                 
         if dist_diff_ratio <= 0.05:
@@ -658,7 +933,7 @@ def check_duplicate_activity(
         elif overlap_ratio >= 0.7:
             score += 15.0
 
-        logger.info(f"[{r_dict['filename']}] 查重得分: {score} (时间差: {abs((target_start - db_start).total_seconds()) if target_start and db_start else 'N/A'}s, 里程差: {dist_diff_ratio*100:.1f}%, 时长差: {dur_diff_ratio*100 if duration_sec>0 and db_dur>0 else 'N/A'}%, 重合度: {overlap_ratio*100:.1f}%)")
+        logger.info(f"[{r_dict['filename']}] 查重得分: {score} (时间差: {time_diff_sec if time_diff_sec is not None else 'N/A'}s, 里程差: {dist_diff_ratio*100:.1f}%, 时长差: {dur_diff_ratio*100 if duration_sec>0 and db_dur>0 else 'N/A'}%, 重合度: {overlap_ratio*100:.1f}%)")
 
         if score > max_score:
             max_score = score
