@@ -1,8 +1,11 @@
-import sqlite3
-import pandas as pd
-import json
-from datetime import datetime, timedelta
+import sys
+import os
 
-def test():
-    print("Testing radar...")
-test()
+# Add current directory to path
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+from main import Api
+
+app = Api()
+res = app.calculate_advanced_radar_metrics()
+print(res)

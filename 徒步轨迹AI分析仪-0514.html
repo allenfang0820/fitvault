@@ -466,6 +466,307 @@
         .sport-card h3 { margin: 10px 0 5px 0; color: #f8fafc; font-size: 1.1rem; }
         .sport-card p { margin: 0; color: #94a3b8; font-size: 0.8rem; }
     </style>
+    <style>
+        /* 新手引导覆盖层样式 */
+        .onboarding-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+            z-index: 9999;
+            display: none;
+            justify-content: center;
+            align-items: center;
+        }
+        .onboarding-card {
+            background: #1e293b;
+            border-radius: 12px;
+            padding: 30px;
+            width: 450px;
+            max-width: 90%;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.5);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: #f8fafc;
+            position: relative;
+        }
+        .onboarding-title {
+            font-size: 1.25rem;
+            font-weight: 700;
+            margin-bottom: 20px;
+            text-align: center;
+            color: var(--primary);
+        }
+        .onboarding-step {
+            display: none;
+        }
+        .onboarding-step.active {
+            display: block;
+        }
+        .onboarding-actions {
+            margin-top: 25px;
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+        .onboarding-btn {
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            cursor: pointer;
+            border: none;
+            transition: all 0.2s;
+        }
+        .onboarding-btn.primary {
+            background: var(--primary);
+            color: #0f172a;
+            font-weight: 600;
+        }
+        .onboarding-btn.primary:hover {
+            background: #00e673;
+        }
+        .onboarding-btn.secondary {
+            background: rgba(255,255,255,0.1);
+            color: #f8fafc;
+        }
+        .onboarding-btn.secondary:hover {
+            background: rgba(255,255,255,0.2);
+        }
+        .onboarding-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .onboarding-close {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background: none;
+            border: none;
+            color: #94a3b8;
+            font-size: 1.2rem;
+            cursor: pointer;
+        }
+        .onboarding-close:hover {
+            color: #f8fafc;
+        }
+        .onboarding-desc {
+            font-size: 0.85rem;
+            color: #94a3b8;
+            margin-bottom: 15px;
+            line-height: 1.5;
+        }
+        .user-type-selector {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .user-type-option {
+            flex: 1;
+            padding: 15px;
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 8px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .user-type-option:hover {
+            background: rgba(255,255,255,0.05);
+        }
+        .user-type-option.active {
+            border-color: var(--primary);
+            background: rgba(0,255,127,0.1);
+            color: var(--primary);
+        }
+        
+        .ai-assistant-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 6px 12px;
+            background: rgba(0, 255, 127, 0.15);
+            color: var(--primary);
+            border: 1px solid var(--primary);
+            border-radius: 6px;
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-left: 10px;
+        }
+        .ai-assistant-btn:hover:not(:disabled) {
+            background: rgba(0, 255, 127, 0.25);
+        }
+        .ai-assistant-btn:disabled {
+            background: rgba(255, 255, 255, 0.05);
+            color: #64748b;
+            border-color: #334155;
+            cursor: not-allowed;
+        }
+
+        /* 查重弹窗样式 */
+        .duplicate-dialog-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.75);
+            backdrop-filter: blur(4px);
+            z-index: 10000;
+            display: none;
+            justify-content: center;
+            align-items: center;
+        }
+        .duplicate-dialog {
+            background: #1e293b;
+            border-radius: 12px;
+            width: 500px;
+            max-width: 90%;
+            box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);
+            border: 1px solid rgba(255,255,255,0.1);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+        .duplicate-dialog-header {
+            padding: 16px 20px;
+            background: rgba(255, 255, 255, 0.03);
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .duplicate-dialog-header h3 {
+            margin: 0;
+            font-size: 1.1rem;
+            color: #fca5a5;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .duplicate-dialog-body {
+            padding: 20px;
+            color: #e2e8f0;
+            font-size: 0.9rem;
+            line-height: 1.6;
+        }
+        .duplicate-record-info {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            padding: 12px;
+            margin-top: 15px;
+            border: 1px dashed rgba(255,255,255,0.1);
+        }
+        .duplicate-dialog-footer {
+            padding: 16px 20px;
+            background: rgba(0, 0, 0, 0.2);
+            border-top: 1px solid rgba(255,255,255,0.1);
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+        .dup-btn {
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            cursor: pointer;
+            border: 1px solid transparent;
+            transition: all 0.2s;
+        }
+        .dup-btn-skip {
+            background: transparent;
+            color: #94a3b8;
+            border-color: rgba(255,255,255,0.2);
+        }
+        .dup-btn-skip:hover {
+            background: rgba(255,255,255,0.1);
+            color: #f8fafc;
+        }
+        .dup-btn-force {
+            background: rgba(239, 68, 68, 0.15);
+            color: #ef4444;
+            border-color: rgba(239, 68, 68, 0.3);
+        }
+        .dup-btn-force:hover {
+            background: rgba(239, 68, 68, 0.25);
+        }
+        .dup-btn-merge {
+            background: var(--primary);
+            color: #0f172a;
+            font-weight: 600;
+        }
+        .dup-btn-merge:hover {
+            background: #00e673;
+        }
+
+        /* 配置页布局优化 */
+        .config-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-bottom: 12px;
+        }
+        @media (max-width: 640px) {
+            .config-row {
+                grid-template-columns: 1fr;
+                gap: 8px;
+            }
+        }
+        .status-indicator {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #64748b;
+            display: inline-block;
+            margin-left: 8px;
+            box-shadow: 0 0 4px rgba(0,0,0,0.3);
+            transition: background-color 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+                        box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+                        opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+                        transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            vertical-align: middle;
+            flex-shrink: 0;
+            will-change: transform, opacity, box-shadow, background-color;
+        }
+        .status-indicator.loading {
+            background: #facc15;
+            box-shadow: 0 0 10px rgba(250, 204, 21, 0.9);
+            animation: pulse-yellow 666ms ease-in-out infinite;
+        }
+        .status-indicator.success {
+            background: #2ecc71;
+            box-shadow: 0 0 10px rgba(46, 204, 113, 0.95);
+            transform: scale(1);
+            opacity: 1;
+        }
+        .status-indicator.error { background: #ef4444; box-shadow: 0 0 10px #ef4444; }
+
+        @keyframes pulse-yellow {
+            0% { transform: scale(0.94); opacity: 0.62; box-shadow: 0 0 5px rgba(250, 204, 21, 0.45); }
+            50% { transform: scale(1.14); opacity: 1; box-shadow: 0 0 12px rgba(250, 204, 21, 0.95); }
+            100% { transform: scale(0.94); opacity: 0.62; box-shadow: 0 0 5px rgba(250, 204, 21, 0.45); }
+        }
+
+        .settings-btn-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-top: 20px;
+            justify-content: flex-start;
+        }
+        .settings-btn-group .primary-btn,
+        .settings-btn-group .secondary-btn {
+            flex: 0 1 160px; /* 限制按钮最大宽度 */
+            min-width: 110px;
+            height: 38px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0 12px;
+        }
+        @media (max-width: 640px) {
+            .settings-btn-group .primary-btn,
+            .settings-btn-group .secondary-btn {
+                flex: 1 1 100%;
+            }
+        }
+    </style>
 </head>
 <body>
 
@@ -553,7 +854,7 @@
                     
                     <!-- 六维能力雷达 -->
                     <div class="section-card" style="flex: 1; min-width: 300px; margin-bottom: 0; display: flex; flex-direction: column;">
-                        <div class="section-title">🕸️ 运动能力 (Firstbeat)</div>
+                        <div class="section-title">🕸️ 运动能力</div>
                         <div id="performanceRadar" style="width: 100%; flex: 1; min-height: 320px;"></div>
                     </div>
                 </div>
@@ -655,6 +956,25 @@
                     </div>
                     <div id="track-title" style="margin-top:6px;font-size:0.72rem;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="等待导入轨迹...">等待导入轨迹...</div>
                 </div>
+                <!-- 筛选控件 -->
+                <div style="padding:10px 12px;display:flex;flex-direction:column;gap:8px;background:rgba(255,255,255,0.02);border-bottom:1px solid rgba(255,255,255,0.05);">
+                    <div style="display:flex;gap:6px;">
+                        <select id="filter-time" onchange="updateHistoryFilters()" style="flex:1;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#f8fafc;font-size:0.7rem;padding:4px;border-radius:4px;outline:none;">
+                            <option value="all">时间: 全部</option>
+                            <option value="7d">最近7天</option>
+                            <option value="30d">最近30天</option>
+                            <option value="90d">最近90天</option>
+                            <option value="this_year">今年</option>
+                            <option value="last_year">去年</option>
+                        </select>
+                        <select id="filter-type" onchange="updateHistoryFilters()" style="flex:1;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#f8fafc;font-size:0.7rem;padding:4px;border-radius:4px;outline:none;">
+                            <option value="all">类型: 全部</option>
+                        </select>
+                    </div>
+                    <select id="filter-location" onchange="updateHistoryFilters()" style="width:100%;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#f8fafc;font-size:0.7rem;padding:4px;border-radius:4px;outline:none;">
+                        <option value="all">地点: 全部</option>
+                    </select>
+                </div>
                 <div id="history-list" style="flex:1;overflow-y:auto;padding:8px 10px;display:flex;flex-direction:column;gap:6px;"></div>
             </div>
             <div id="history-overlay" onclick="toggleHistoryDrawer()" style="position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:499;display:none;"></div>
@@ -680,63 +1000,96 @@
                 <p>API 密钥、大模型参数、数据存储路径等核心配置项</p>
             </div>
             <div class="panel-body">
+                <div class="section-card" id="settings-guide-card">
+                    <div class="section-title">🧭 配置引导</div>
+                    <div id="settings-guide-text" style="font-size:0.85rem;color:#cbd5e1;line-height:1.7;">
+                        第 1 步：先选择手表品牌并完成大模型连接测试；第 2 步：选择本地 FIT 存储文件夹；第 3 步：如果您是佳明用户，再点击“告诉AI助手下载规范”。
+                    </div>
+                    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">
+                        <span id="guide-chip-llm" style="padding:6px 10px;border-radius:999px;background:rgba(255,255,255,0.08);font-size:0.75rem;color:#94a3b8;">1. 待完成连接测试</span>
+                        <span id="guide-chip-dir" style="padding:6px 10px;border-radius:999px;background:rgba(255,255,255,0.08);font-size:0.75rem;color:#94a3b8;">2. 待选择存储目录</span>
+                        <span id="guide-chip-ai" style="padding:6px 10px;border-radius:999px;background:rgba(255,255,255,0.08);font-size:0.75rem;color:#94a3b8;">3. 待确认AI助手配置</span>
+                    </div>
+                </div>
                 <div class="section-card">
                     <div class="section-title">🤖 大模型 API 配置</div>
                     <div style="margin-bottom:12px;">
                         <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:8px;">手表品牌 <span style="color:#ef4444">*</span></label>
                         <div style="display:flex; gap:16px;">
                             <label style="display:flex; align-items:center; gap:6px; font-size:0.85rem; color:#f8fafc; cursor:pointer;">
-                                <input type="radio" name="watch_brand" value="garmin" style="accent-color:var(--primary); width:16px; height:16px; margin:0;" onchange="syncLLMConfigFromFields()">
+                                <input type="radio" name="watch_brand" value="garmin" style="accent-color:var(--primary); width:16px; height:16px; margin:0;" onchange="selectUserType('garmin'); syncLLMConfigFromFields()">
                                 我是佳明用户
                             </label>
                             <label style="display:flex; align-items:center; gap:6px; font-size:0.85rem; color:#f8fafc; cursor:pointer;">
-                                <input type="radio" name="watch_brand" value="coros" style="accent-color:var(--primary); width:16px; height:16px; margin:0;" onchange="syncLLMConfigFromFields()">
+                                <input type="radio" name="watch_brand" value="coros" style="accent-color:var(--primary); width:16px; height:16px; margin:0;" onchange="selectUserType('coros'); syncLLMConfigFromFields()">
                                 我是高驰用户
                             </label>
                         </div>
                     </div>
-                    <div style="margin-bottom:12px;">
-                        <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:4px;">服务商 (Provider)</label>
-                        <select id="llm-provider" class="modal-input" onchange="updateLLMModels(); syncLLMConfigFromFields();" style="background:rgba(15,23,42,0.8);cursor:pointer;">
-                            <option value="local_mcp">本地 + MCP (如 OpenClaw / WorkBuddy)</option>
-                            <option value="openai">OpenAI</option>
-                            <option value="deepseek">DeepSeek</option>
-                            <option value="zhipu">智谱 AI</option>
-                            <option value="moonshot">Moonshot</option>
-                            <option value="qwen">通义千问</option>
-                            <option value="minimax">MiniMax</option>
-                            <option value="custom">自定义 OpenAI 兼容接口</option>
-                        </select>
+                    
+                    <div class="config-row">
+                        <div>
+                            <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:4px;">服务商 (Provider)</label>
+                            <select id="llm-provider" class="modal-input" onchange="updateLLMModels(); syncLLMConfigFromFields();" style="background:rgba(15,23,42,0.8);cursor:pointer;">
+                                <option value="local_mcp">本地 + MCP (如 OpenClaw / WorkBuddy)</option>
+                                <option value="openai">OpenAI</option>
+                                <option value="deepseek">DeepSeek</option>
+                                <option value="zhipu">智谱 AI</option>
+                                <option value="moonshot">Moonshot</option>
+                                <option value="qwen">通义千问</option>
+                                <option value="minimax">MiniMax</option>
+                                <option value="custom">自定义 OpenAI 兼容接口</option>
+                            </select>
+                        </div>
+                        <div id="llm-custom-url-container" style="display:block;">
+                            <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:4px;">自定义 API 地址</label>
+                            <input type="text" id="llm-custom-url" class="modal-input" placeholder="https://api.example.com/v1" autocomplete="off" oninput="syncLLMConfigFromFields(); _markUrlModified();" style="background:rgba(15,23,42,0.8);">
+                        </div>
                     </div>
-                    <div style="margin-bottom:12px;">
-                        <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:4px;">模型 (Model)</label>
-                        <select id="llm-model" class="modal-input" onchange="syncLLMConfigFromFields()" style="background:rgba(15,23,42,0.8);cursor:pointer;"></select>
+
+                    <div class="config-row">
+                        <div>
+                            <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:4px;">模型 (Model)</label>
+                            <select id="llm-model" class="modal-input" onchange="syncLLMConfigFromFields()" style="background:rgba(15,23,42,0.8);cursor:pointer;"></select>
+                            <div id="llm-custom-model-container" style="margin-top:8px;display:none;">
+                                <input type="text" id="llm-custom-model" class="modal-input" placeholder="自定义模型名" autocomplete="off" oninput="syncLLMConfigFromFields()" style="background:rgba(15,23,42,0.8);">
+                            </div>
+                        </div>
+                        <div>
+                            <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:4px;">Agent ID（选填）</label>
+                            <input type="text" id="llm-agent-id" class="modal-input" placeholder="网关分配的 ID" autocomplete="off" oninput="syncLLMConfigFromFields()" style="background:rgba(15,23,42,0.8);">
+                        </div>
                     </div>
-                    <div id="llm-custom-model-container" style="margin-bottom:12px;display:none;">
-                        <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:4px;">自定义模型名</label>
-                        <input type="text" id="llm-custom-model" class="modal-input" placeholder="openclaw" autocomplete="off" oninput="syncLLMConfigFromFields()" style="background:rgba(15,23,42,0.8);">
-                    </div>
-                    <div style="margin-bottom:12px;">
-                        <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:4px;">Agent ID（选填）</label>
-                        <input type="text" id="llm-agent-id" class="modal-input" placeholder="可填写 MCP / Agent 网关分配的 ID" autocomplete="off" oninput="syncLLMConfigFromFields()" style="background:rgba(15,23,42,0.8);">
-                    </div>
-                    <div id="llm-custom-url-container" style="margin-bottom:12px;display:block;">
-                        <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:4px;">自定义 API 地址</label>
-                        <input type="text" id="llm-custom-url" class="modal-input" placeholder="https://api.example.com/v1" autocomplete="off" oninput="syncLLMConfigFromFields(); _markUrlModified();" style="background:rgba(15,23,42,0.8);">
-                    </div>
+
                     <div style="margin-bottom:12px;">
                         <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:4px;">API Key</label>
                         <input type="password" id="llm-api-key" class="modal-input" placeholder="sk-..." autocomplete="off" oninput="syncLLMConfigFromFields()" style="background:rgba(15,23,42,0.8);">
                     </div>
-                    <div style="display:flex;gap:10px;">
-                        <button onclick="saveLLMConfig()" class="primary-btn" style="flex:1;">💾 保存配置</button>
-                        <button onclick="testLLMConfig()" class="secondary-btn" style="flex:1;">🧪 测试连接</button>
+
+                    <div class="settings-btn-group">
+                        <button onclick="saveLLMConfig()" class="primary-btn">💾 保存配置</button>
+                        <button onclick="testLLMConfig()" class="secondary-btn">
+                            🧪 测试连接 <span id="test-indicator" class="status-indicator"></span>
+                        </button>
                     </div>
+                    <div id="llm-test-result" style="margin-top:10px;font-size:0.8rem;color:#94a3b8;">尚未测试连接</div>
                 </div>
-                <div class="section-card">
+                <div class="section-card" id="storage-config-section">
                     <div class="section-title">🗺️ 数据存储配置</div>
+                    <div style="margin-bottom:15px;">
+                        <label style="display:block;margin-bottom:5px;color:#94a3b8;font-size:0.8rem;">本地 FIT 文件存储目录</label>
+                        <div style="display:flex;gap:10px;align-items:center;">
+                            <input type="text" id="set-local-dir" readonly placeholder="请选择本地文件夹..." style="flex:1;padding:10px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#94a3b8;border-radius:6px;outline:none;cursor:default;">
+                            <button onclick="selectLocalDirectory()" class="ctrl-btn" style="padding:8px 15px;white-space:nowrap;">选择文件夹</button>
+                        </div>
+                        <div style="margin-top:15px; display:flex; align-items:center;">
+                            <button id="btn-notify-ai" class="ai-assistant-btn" disabled onclick="notifyAIAssistant()" style="margin-left:0;">
+                                🤖 告诉AI助手下载规范
+                            </button>
+                        </div>
+                    </div>
                     <div class="stat-grid">
-                        <div class="stat-row"><span>轨迹存储路径</span><b style="font-size:0.65rem;color:#64748b;">~/.hiking_track_ai/local_tracks/</b></div>
+                        <div class="stat-row"><span>轨迹备份路径</span><b style="font-size:0.65rem;color:#64748b;">~/.hiking_track_ai/local_tracks/</b></div>
                         <div class="stat-row"><span>数据库路径</span><b style="font-size:0.65rem;color:#64748b;">~/.hiking_track_ai/user_profile.db</b></div>
                     </div>
                     <div style="margin-top:10px;display:flex;gap:10px;">
@@ -750,7 +1103,27 @@
 
 </div><!-- end #app-wrapper -->
 
-<input type="file" id="file-upload" accept=".fit,.gpx,.kml" style="display:none;">
+<!-- 查重弹窗 -->
+<div id="duplicate-dialog-overlay" class="duplicate-dialog-overlay">
+    <div class="duplicate-dialog">
+        <div class="duplicate-dialog-header">
+            <h3>⚠️ 检测到重复的轨迹文件</h3>
+        </div>
+        <div class="duplicate-dialog-body">
+            该文件与您系统内已存储的历史轨迹高度相似，可能是重复导入。
+            <div class="duplicate-record-info" id="duplicate-info-content">
+                <!-- 动态注入内容 -->
+            </div>
+        </div>
+        <div class="duplicate-dialog-footer">
+            <button class="dup-btn dup-btn-skip" id="btn-dup-skip">保留原记录</button>
+            <button class="dup-btn dup-btn-merge" id="btn-dup-merge">覆盖原记录</button>
+            <button class="dup-btn dup-btn-force" id="btn-dup-force">保留两条记录</button>
+        </div>
+    </div>
+</div>
+
+<input type="file" id="file-upload" accept=".gpx,.kml" style="display:none;">
 <div id="toast" style="opacity:0;">提示信息</div>
 <button id="ai-coach-global-btn" onclick="openAICoach()" title="全局呼出 AI私教，也可按 Ctrl/⌘ + Shift + A">AI私教</button>
 <div id="ai-coach-bubble" title="AI私教，拖拽调整位置，点击打开">私教</div>
@@ -787,7 +1160,6 @@
 </div>
 
     <script src="lib/Cesium/Cesium.js" onerror="this.src='https://cdn.jsdelivr.net/npm/cesium@1.105.1/Build/Cesium/Cesium.js'"></script>
-<script src="lib/fit-parser.min.js" onerror="this.src='https://cdn.jsdelivr.net/npm/fit-parser@1.8.0/dist/fit-parser.min.js'"></script>
 <script>
     if (!window.Cesium) {
         const failText = document.getElementById('loading-text');
@@ -806,7 +1178,14 @@
         editingCpId: null, pendingNewCp: null,
         remainingTrackEntity: null, completedTrackEntity: null, wallEntity: null,
         pointEntities: [], kmEntities: [], peakEntities: [],
-        sportType: 'hiking' 
+        sportType: 'hiking',
+        currentActivityId: null,
+        historyFilters: {
+            time: 'all',
+            type: 'all',
+            location: 'all'
+        },
+        rawHistoryFiles: []
     };
 
     let currentRange = 4500; 
@@ -816,6 +1195,13 @@
     const PY_REPORT_TERRAIN = '__REPORT_TERRAIN__';
     const PY_REPORT_PERSONALIZED = '__REPORT_PERSONALIZED__';
     let currentLLMConfig = { provider: 'local_mcp', model: 'openclaw', url: LLM_DEFAULT_URL, apiKey: '', agentId: '' };
+    let onboardingState = {
+        llmTestPassed: false,
+        llmTestState: 'idle',
+        llmTestRequestId: 0,
+        llmTestStateLock: false,
+        llmTestTransitionTimer: null
+    };
 
     const SPORT_TYPE_OPTIONS = {
         running: { label: '跑步', aliases: ['run', 'running', 'jogging', 'runner', '跑步', '慢跑'] },
@@ -922,87 +1308,95 @@
 
     let radarChartInstance = null;
     async function renderPerformanceRadar() {
+        const radarContainer = document.getElementById('performanceRadar');
+        if (!radarContainer) return;
+
+        if (!radarChartInstance) {
+            radarChartInstance = echarts.init(radarContainer);
+        }
+        
+        const option = {
+            backgroundColor: 'transparent',
+            radar: {
+                indicator: [
+                    { name: '耐力容量 (CTL)', max: 100 },
+                    { name: '速度爆发 (无氧)', max: 100 },
+                    { name: '乳酸阈值 (巡航)', max: 100 },
+                    { name: '坡度爬升 (VAM)', max: 100 },
+                    { name: '心肺稳定 (抗漂移)', max: 100 },
+                    { name: '恢复效能 (HRV)', max: 100 }
+                ],
+                shape: 'polygon',
+                splitNumber: 5,
+                axisName: {
+                    color: '#CCCCCC',
+                    fontFamily: 'monospace, "PingFang SC", "Microsoft YaHei"',
+                    fontSize: 10
+                },
+                splitLine: {
+                    lineStyle: {
+                        color: ['#333333']
+                    }
+                },
+                splitArea: {
+                    show: false
+                },
+                axisLine: {
+                    lineStyle: {
+                        color: '#333333'
+                    }
+                }
+            },
+            series: []
+        };
+        radarChartInstance.setOption(option);
+        
+        // Resize handler
+        if (!window._radarResizeBound) {
+            window.addEventListener('resize', () => {
+                if (radarChartInstance) radarChartInstance.resize();
+            });
+            window._radarResizeBound = true;
+        }
+
         if (!window.pywebview || !window.pywebview.api) return;
         try {
             const res = await window.pywebview.api.calculate_advanced_radar_metrics();
             if (!res || !res.ok) return;
             const data = res.data || res; // depending on whether data is nested
             
-            const radarContainer = document.getElementById('performanceRadar');
-            if (!radarContainer) return;
-
-            if (!radarChartInstance) {
-                radarChartInstance = echarts.init(radarContainer);
-            }
-            
-            const option = {
-                backgroundColor: 'transparent',
-                radar: {
-                    indicator: [
-                        { name: '耐力容量 (CTL)', max: 100 },
-                        { name: '速度爆发 (无氧)', max: 100 },
-                        { name: '乳酸阈值 (巡航)', max: 100 },
-                        { name: '坡度爬升 (VAM)', max: 100 },
-                        { name: '心肺稳定 (抗漂移)', max: 100 },
-                        { name: '恢复效能 (HRV)', max: 100 }
-                    ],
-                    shape: 'polygon',
-                    splitNumber: 5,
-                    axisName: {
-                        color: '#CCCCCC',
-                        fontFamily: 'monospace, "PingFang SC", "Microsoft YaHei"',
-                        fontSize: 10
-                    },
-                    splitLine: {
-                        lineStyle: {
-                            color: ['#333333']
-                        }
-                    },
-                    splitArea: {
-                        show: false
-                    },
-                    axisLine: {
-                        lineStyle: {
-                            color: '#333333'
-                        }
-                    }
-                },
-                series: [
-                    {
-                        name: '运动能力',
-                        type: 'radar',
-                        data: [
-                            {
-                                value: [
-                                    data.endurance || 50,
-                                    data.speed || 50,
-                                    data.threshold || 50,
-                                    data.climbing || 50,
-                                    data.stability || 50,
-                                    data.recovery || 50
-                                ],
-                                name: '综合评分',
-                                itemStyle: {
-                                    color: '#00FF7F'
-                                },
-                                lineStyle: {
-                                    color: '#00FF7F',
-                                    width: 2
-                                },
-                                areaStyle: {
-                                    color: 'rgba(0, 255, 127, 0.15)'
-                                }
+            // 如果后端明确返回无数据标识，或者我们判断全为默认值，可以选择不渲染或者渲染真实值
+            // 这里我们保持原有逻辑展示数据
+            option.series = [
+                {
+                    name: '运动能力',
+                    type: 'radar',
+                    data: [
+                        {
+                            value: [
+                                data.endurance || 0,
+                                data.speed || 0,
+                                data.threshold || 0,
+                                data.climbing || 0,
+                                data.stability || 0,
+                                data.recovery || 0
+                            ],
+                            name: '综合评分',
+                            itemStyle: {
+                                color: '#00FF7F'
+                            },
+                            lineStyle: {
+                                color: '#00FF7F',
+                                width: 2
+                            },
+                            areaStyle: {
+                                color: 'rgba(0, 255, 127, 0.15)'
                             }
-                        ]
-                    }
-                ]
-            };
+                        }
+                    ]
+                }
+            ];
             radarChartInstance.setOption(option);
-            
-            // Resize handler
-            window.addEventListener('resize', () => {
-                if (radarChartInstance) radarChartInstance.resize();
-            });
             
         } catch (e) {
             console.error('Failed to render radar:', e);
@@ -1010,42 +1404,46 @@
     }
 
     async function loadProfileCard() {
-        if (!window.pywebview || !window.pywebview.api) return;
         try {
-            const res = await window.pywebview.api.get_user_profile();
-            if (res && res.ok && res.profile) {
-                updateProfilePanel(res.profile);
-                const p = res.profile;
-                if (document.getElementById('vp-name')) document.getElementById('vp-name').innerText = p.name || '--';
-                if (document.getElementById('vp-age')) document.getElementById('vp-age').innerText = p.age ? p.age + '岁' : '--';
-                if (document.getElementById('vp-hrv')) document.getElementById('vp-hrv').innerText = p.hrv_baseline ? p.hrv_baseline + ' ms' : '--';
-                if (document.getElementById('vp-vo2')) document.getElementById('vp-vo2').innerText = p.vo2max ? p.vo2max : '--';
-                if (document.getElementById('vp-rhr')) document.getElementById('vp-rhr').innerText = p.resting_hr ? p.resting_hr + ' bpm' : '--';
-                if (document.getElementById('vp-mhr')) document.getElementById('vp-mhr').innerText = p.max_hr ? p.max_hr + ' bpm' : '--';
-                const card = document.getElementById('profile-card');
-                if (card) card.style.display = 'block';
-                const bar = document.getElementById('hrr-zones-bar');
-                if (bar && res.hrr_zones && res.hrr_zones.length > 0) {
-                    bar.innerHTML = '';
-                    const colors = ['#22c55e','#84cc16','#eab308','#f97316','#ef4444'];
-                    res.hrr_zones.forEach((z, i) => {
-                        const seg = document.createElement('div');
-                        seg.style.flex = '1';
-                        seg.style.background = colors[i] || '#94a3b8';
-                        seg.style.display = 'flex';
-                        seg.style.alignItems = 'center';
-                        seg.style.justifyContent = 'center';
-                        seg.style.fontSize = '0.5rem';
-                        seg.style.color = 'rgba(0,0,0,0.7)';
-                        seg.style.fontWeight = '700';
-                        seg.title = z.zone + ': ' + z.hr_low + '–' + z.hr_high + ' bpm';
-                        seg.innerText = z.zone.split(' ')[0];
-                        bar.appendChild(seg);
-                    });
+            if (window.pywebview && window.pywebview.api) {
+                const res = await window.pywebview.api.get_user_profile();
+                if (res && res.ok && res.profile) {
+                    updateProfilePanel(res.profile);
+                    const p = res.profile;
+                    if (document.getElementById('vp-name')) document.getElementById('vp-name').innerText = p.name || '--';
+                    if (document.getElementById('vp-age')) document.getElementById('vp-age').innerText = p.age ? p.age + '岁' : '--';
+                    if (document.getElementById('vp-hrv')) document.getElementById('vp-hrv').innerText = p.hrv_baseline ? p.hrv_baseline + ' ms' : '--';
+                    if (document.getElementById('vp-vo2')) document.getElementById('vp-vo2').innerText = p.vo2max ? p.vo2max : '--';
+                    if (document.getElementById('vp-rhr')) document.getElementById('vp-rhr').innerText = p.resting_hr ? p.resting_hr + ' bpm' : '--';
+                    if (document.getElementById('vp-mhr')) document.getElementById('vp-mhr').innerText = p.max_hr ? p.max_hr + ' bpm' : '--';
+                    const card = document.getElementById('profile-card');
+                    if (card) card.style.display = 'block';
+                    const bar = document.getElementById('hrr-zones-bar');
+                    if (bar && res.hrr_zones && res.hrr_zones.length > 0) {
+                        bar.innerHTML = '';
+                        const colors = ['#22c55e','#84cc16','#eab308','#f97316','#ef4444'];
+                        res.hrr_zones.forEach((z, i) => {
+                            const seg = document.createElement('div');
+                            seg.style.flex = '1';
+                            seg.style.background = colors[i] || '#94a3b8';
+                            seg.style.display = 'flex';
+                            seg.style.alignItems = 'center';
+                            seg.style.justifyContent = 'center';
+                            seg.style.fontSize = '0.5rem';
+                            seg.style.color = 'rgba(0,0,0,0.7)';
+                            seg.style.fontWeight = '700';
+                            seg.title = z.zone + ': ' + z.hr_low + '–' + z.hr_high + ' bpm';
+                            seg.innerText = z.zone.split(' ')[0];
+                            bar.appendChild(seg);
+                        });
+                    }
                 }
-                await renderPerformanceRadar();
             }
         } catch(e) {}
+        
+        // 无论是否成功获取到用户配置，都尝试渲染雷达图
+        // 这样可以确保在无数据场景下也能提前渲染空框架
+        await renderPerformanceRadar();
     }
     loadProfileCard();
 
@@ -1245,6 +1643,7 @@
         if (targetTab) targetTab.classList.add('active');
         const targetPanel = document.getElementById('panel-' + activePanel);
         if (targetPanel) targetPanel.classList.add('active');
+        localStorage.setItem('last_active_panel', activePanel);
         if (activePanel === 'trace' && typeof renderHistoryList === 'function') {
             renderHistoryList();
         }
@@ -1253,6 +1652,118 @@
         }
         if (activePanel === 'profile' && radarChartInstance) {
             setTimeout(() => radarChartInstance.resize(), 50);
+        }
+    }
+
+    function getCurrentActivePanel() {
+        const activeBtn = document.querySelector('.bookmark-tab.active');
+        return activeBtn ? activeBtn.getAttribute('data-panel') : 'profile';
+    }
+
+    function persistAppViewState(reason) {
+        const panel = getCurrentActivePanel();
+        localStorage.setItem('last_active_panel', panel);
+    }
+
+    function restoreStartupRoute() {
+        const isFirstTime = !localStorage.getItem('onboarding_completed');
+        const lastPanel = localStorage.getItem('last_active_panel');
+        const targetPanel = isFirstTime ? 'settings' : (['profile', 'trace', 'settings'].includes(lastPanel) ? lastPanel : 'profile');
+        const btn = document.querySelector('.bookmark-tab[data-panel="' + targetPanel + '"]');
+        if (btn) switchTab(btn);
+    }
+
+    function clearLLMTestTransitionTimer() {
+        if (onboardingState.llmTestTransitionTimer) {
+            clearTimeout(onboardingState.llmTestTransitionTimer);
+            onboardingState.llmTestTransitionTimer = null;
+        }
+    }
+
+    function applyLLMTestIndicatorState(indicator, nextState) {
+        if (!indicator) return;
+        indicator.className = 'status-indicator';
+        if (nextState && nextState !== 'idle') {
+            indicator.classList.add(nextState);
+        }
+    }
+
+    function setLLMTestStatus(text, passed, isTesting = false, options = {}) {
+        const requestId = typeof options.requestId === 'number' ? options.requestId : null;
+        const nextState = isTesting ? 'loading' : (passed ? 'success' : (text !== '尚未测试连接' ? 'error' : 'idle'));
+        const isLatestRequest = requestId === null || requestId === onboardingState.llmTestRequestId;
+        const stateLocked = onboardingState.llmTestStateLock && onboardingState.llmTestState === 'loading';
+
+        if (!isLatestRequest) {
+            return false;
+        }
+        if (stateLocked && requestId === null && nextState !== 'loading') {
+            return false;
+        }
+
+        const resultEl = document.getElementById('llm-test-result');
+        const indicator = document.getElementById('test-indicator');
+
+        if (resultEl) {
+            resultEl.innerText = text;
+            resultEl.style.color = isTesting ? '#facc15' : (passed ? 'var(--primary)' : (nextState === 'error' ? '#fca5a5' : '#94a3b8'));
+        }
+
+        clearLLMTestTransitionTimer();
+        onboardingState.llmTestPassed = !!passed;
+
+        if (nextState === 'loading') {
+            onboardingState.llmTestStateLock = true;
+            onboardingState.llmTestState = 'loading';
+            applyLLMTestIndicatorState(indicator, 'loading');
+        } else if (nextState === 'success' && onboardingState.llmTestState === 'loading') {
+            onboardingState.llmTestTransitionTimer = setTimeout(function() {
+                if (requestId !== null && requestId !== onboardingState.llmTestRequestId) {
+                    return;
+                }
+                onboardingState.llmTestState = 'success';
+                onboardingState.llmTestStateLock = false;
+                applyLLMTestIndicatorState(indicator, 'success');
+                onboardingState.llmTestTransitionTimer = null;
+            }, 50);
+        } else {
+            onboardingState.llmTestState = nextState;
+            onboardingState.llmTestStateLock = false;
+            applyLLMTestIndicatorState(indicator, nextState);
+        }
+        updateSettingsGuide();
+        return true;
+    }
+
+    function updateSettingsGuide() {
+        const guideText = document.getElementById('settings-guide-text');
+        const chipLlm = document.getElementById('guide-chip-llm');
+        const chipDir = document.getElementById('guide-chip-dir');
+        const chipAi = document.getElementById('guide-chip-ai');
+        const localDir = (document.getElementById('set-local-dir')?.value || '').trim();
+        const brand = currentLLMConfig.watchBrand || '';
+        const aiReady = !!onboardingState.llmTestPassed && !!localDir;
+        const applyChip = function(el, done, textDone, textTodo) {
+            if (!el) return;
+            el.innerText = done ? textDone : textTodo;
+            el.style.background = done ? 'rgba(34,197,94,0.18)' : 'rgba(255,255,255,0.08)';
+            el.style.color = done ? '#86efac' : '#94a3b8';
+        };
+        applyChip(chipLlm, onboardingState.llmTestPassed, '1. 已完成连接测试', '1. 待完成连接测试');
+        applyChip(chipDir, !!localDir, '2. 已选择存储目录', '2. 待选择存储目录');
+        applyChip(chipAi, !!aiReady, '3. 已可执行后续操作', '3. 待确认AI助手配置');
+        if (guideText) {
+            if (!onboardingState.llmTestPassed) {
+                guideText.innerHTML = '当前建议：先选择手表品牌，填写接口地址、API Key、模型后点击“测试连接”。测试成功后再进行下一步。';
+            } else if (!localDir) {
+                guideText.innerHTML = '当前建议：连接测试已通过。下一步请点击“选择文件夹”，为 FIT 文件指定本地存储目录。';
+            } else if (brand === 'garmin') {
+                guideText.innerHTML = '当前建议：您已选择佳明用户。“告诉AI助手下载规范”按钮现在应可点击，可继续完成 AI 助手配置。';
+            } else if (brand === 'coros') {
+                guideText.innerHTML = '当前建议：您已选择高驰用户。当前无需通知 AI 助手，可继续完成后续配置。';
+            } else {
+                guideText.innerHTML = '当前建议：请先确认您的设备品牌，以便系统显示正确的后续操作入口。';
+            }
         }
     }
 
@@ -1315,25 +1826,214 @@
         }
     }
 
-    async function renderHistoryList() {
+    async function getCityNameAsync(lat, lon) {
+        if (!lat || !lon) return '未知地点';
+        
+        // 尝试从本地缓存获取
+        const cacheKey = `loc_${lat.toFixed(2)}_${lon.toFixed(2)}`;
+        const cached = localStorage.getItem(cacheKey);
+        if (cached) return cached;
+        
+        try {
+            // 使用与报告模块相同的接口和逻辑
+            const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=10&accept-language=zh-CN`);
+            const data = await response.json();
+            let locName = '未知地点';
+            if (data && data.address) {
+                locName = data.address.city || data.address.town || data.address.county || data.address.state || data.address.province || data.name || '未知地点';
+            }
+            if (locName !== '未知地点') {
+                localStorage.setItem(cacheKey, locName);
+            }
+            return locName;
+        } catch (e) {
+            console.error('getCityNameAsync error:', e);
+            // 降级使用粗略的本地判断
+            return getCityName(lat, lon);
+        }
+    }
+
+    function getCityName(lat, lon) {
+        if (!lat || !lon) return '未知地点';
+        const CITY_BOUNDS = [
+            { name: '北京', lat: [39.4, 41.1], lon: [115.4, 117.5] },
+            { name: '上海', lat: [30.7, 31.5], lon: [120.8, 122.0] },
+            { name: '成都', lat: [30.1, 31.4], lon: [103.0, 104.9] },
+            { name: '杭州', lat: [29.2, 30.6], lon: [118.3, 120.7] },
+            { name: '深圳', lat: [22.4, 22.9], lon: [113.7, 114.6] },
+            { name: '广州', lat: [22.5, 23.9], lon: [112.9, 114.1] },
+        ];
+        for (const city of CITY_BOUNDS) {
+            if (lat >= city.lat[0] && lat <= city.lat[1] && lon >= city.lon[0] && lon <= city.lon[1]) {
+                return city.name;
+            }
+        }
+        return '其他地区';
+    }
+
+    function updateHistoryFilters() {
+        appState.historyFilters.time = document.getElementById('filter-time').value;
+        appState.historyFilters.type = document.getElementById('filter-type').value;
+        appState.historyFilters.location = document.getElementById('filter-location').value;
+        renderHistoryList(true); // 使用缓存数据重新渲染
+    }
+
+    let renderHistoryListTimer = null;
+    async function renderHistoryList(useCache = false) {
+        if (renderHistoryListTimer) {
+            clearTimeout(renderHistoryListTimer);
+        }
+        
+        return new Promise((resolve) => {
+            renderHistoryListTimer = setTimeout(async () => {
+                await _doRenderHistoryList(useCache);
+                resolve();
+            }, 100); // 100ms防抖
+        });
+    }
+
+    async function _doRenderHistoryList(useCache = false) {
         const listEl = document.getElementById('history-list');
         if (!listEl) return;
+        const localDir = (document.getElementById('set-local-dir')?.value || currentLLMConfig.localDir || '').trim();
+        if (!localDir) {
+            listEl.innerHTML = '<div style="color:#94a3b8;font-size:0.75rem;text-align:center;padding:20px;">请先在配置页面选择FIT文件存储目录</div>';
+            return;
+        }
+
         try {
-            const res = await window.pywebview.api.get_activity_history();
-            if (!res || !res.ok) { listEl.innerHTML = '<div style="color:#94a3b8;font-size:0.75rem;text-align:center;padding:20px;">暂无历史记录</div>'; return; }
-            const history = res.history || [];
-            if (history.length === 0) {
-                listEl.innerHTML = '<div style="color:#94a3b8;font-size:0.75rem;text-align:center;padding:20px;">暂无历史记录</div>';
+            if (!useCache || appState.rawHistoryFiles.length === 0) {
+                const res = await window.pywebview.api.scan_fit_directory(localDir);
+                if (!res || !res.ok) {
+                    listEl.innerHTML = '<div style="color:#94a3b8;font-size:0.75rem;text-align:center;padding:20px;">暂无历史记录</div>';
+                    return;
+                }
+                appState.rawHistoryFiles = (res.files || []).filter(f => f.valid);
+                
+                // 异步获取所有文件的准确地理位置
+                await Promise.all(appState.rawHistoryFiles.map(async f => {
+                    f.cityName = await getCityNameAsync(f.start_lat, f.start_lon);
+                }));
+                
+                // 更新地点下拉框
+                const locationSel = document.getElementById('filter-location');
+                if (locationSel) {
+                    const cities = new Set();
+                    appState.rawHistoryFiles.forEach(f => {
+                        if (f.cityName && f.cityName !== '未知地点' && f.cityName !== '其他地区') {
+                            cities.add(f.cityName);
+                        }
+                    });
+                    
+                    if (cities.size === 0) {
+                        locationSel.innerHTML = '<option value="all">暂无地区数据</option>';
+                        appState.historyFilters.location = 'all';
+                    } else if (cities.size === 1) {
+                        const singleCity = Array.from(cities)[0];
+                        locationSel.innerHTML = `<option value="${singleCity}">${singleCity}</option>`;
+                        appState.historyFilters.location = singleCity;
+                    } else {
+                        const currentVal = locationSel.value;
+                        const sortedCities = Array.from(cities).sort((a, b) => a.localeCompare(b, 'zh-CN'));
+                        locationSel.innerHTML = '<option value="all">地点: 全部</option>' + 
+                            sortedCities.map(c => `<option value="${c}">${c}</option>`).join('');
+                        locationSel.value = currentVal;
+                        // 如果原来的选项已经不存在了，重置为all
+                        if (locationSel.selectedIndex === -1) {
+                            locationSel.value = 'all';
+                            appState.historyFilters.location = 'all';
+                        }
+                    }
+                }
+
+                // 更新类型下拉框
+                const typeSel = document.getElementById('filter-type');
+                if (typeSel) {
+                    const types = new Set();
+                    appState.rawHistoryFiles.forEach(f => {
+                        if (f.sport_type) types.add(f.sport_type);
+                    });
+                    
+                    const sportNameMap = {running:'跑步',hiking:'徒步',cycling:'骑行',swimming:'游泳',walking:'步行',trail_running:'越野跑',treadmill_running:'室内跑',road_cycling:'公路骑行',mountain_biking:'山地骑行'};
+                    
+                    if (types.size === 0) {
+                        typeSel.innerHTML = '<option value="all">暂无活动类型</option>';
+                        appState.historyFilters.type = 'all';
+                    } else if (types.size === 1) {
+                        const singleType = Array.from(types)[0];
+                        typeSel.innerHTML = `<option value="${singleType}">${sportNameMap[singleType] || '其他'}</option>`;
+                        appState.historyFilters.type = singleType;
+                    } else {
+                        const currentVal = typeSel.value;
+                        const sortedTypes = Array.from(types).sort((a, b) => {
+                            const nameA = sportNameMap[a] || a;
+                            const nameB = sportNameMap[b] || b;
+                            return nameA.localeCompare(nameB, 'zh-CN');
+                        });
+                        typeSel.innerHTML = '<option value="all">类型: 全部</option>' + 
+                            sortedTypes.map(t => `<option value="${t}">${sportNameMap[t] || '其他'}</option>`).join('');
+                        typeSel.value = currentVal;
+                        // 如果原来的选项已经不存在了，重置为all
+                        if (typeSel.selectedIndex === -1) {
+                            typeSel.value = 'all';
+                            appState.historyFilters.type = 'all';
+                        }
+                    }
+                }
+            }
+
+            // 排序：时间倒序
+            let displayFiles = [...appState.rawHistoryFiles].sort((a, b) => {
+                const ta = a.start_time ? new Date(a.start_time).getTime() : 0;
+                const tb = b.start_time ? new Date(b.start_time).getTime() : 0;
+                return tb - ta;
+            });
+
+            // 应用筛选
+            const filters = appState.historyFilters;
+            const now = new Date();
+            displayFiles = displayFiles.filter(item => {
+                // 时间筛选
+                if (filters.time !== 'all') {
+                    const itemDate = item.start_time ? new Date(item.start_time) : null;
+                    if (!itemDate) return false;
+                    const diffDays = (now - itemDate) / (1000 * 60 * 60 * 24);
+                    if (filters.time === '7d' && diffDays > 7) return false;
+                    if (filters.time === '30d' && diffDays > 30) return false;
+                    if (filters.time === '90d' && diffDays > 90) return false;
+                    if (filters.time === 'this_year' && itemDate.getFullYear() !== now.getFullYear()) return false;
+                    if (filters.time === 'last_year' && itemDate.getFullYear() !== now.getFullYear() - 1) return false;
+                }
+                // 类型筛选
+                if (filters.type !== 'all') {
+                    const st = item.sport_type || 'unknown';
+                    if (st !== filters.type) {
+                        return false;
+                    }
+                }
+                // 地点筛选
+                if (filters.location !== 'all') {
+                    if (item.cityName !== filters.location) return false;
+                }
+                return true;
+            });
+
+            if (displayFiles.length === 0) {
+                listEl.innerHTML = '<div style="color:#94a3b8;font-size:0.75rem;text-align:center;padding:20px;">没有匹配的记录</div>';
                 return;
             }
-            listEl.innerHTML = history.map(item => {
-                const date = item.updated_at ? item.updated_at.split(' ')[0] : '--';
+
+            const sportEmoji = {running:'🏃',hiking:'🥾',cycling:'🚴',swimming:'🏊',walking:'🚶',trail_running:'🏃',treadmill_running:'🏃',road_cycling:'🛣️',mountain_biking:'🚵'};
+            const sportName = {running:'跑步',hiking:'徒步',cycling:'骑行',swimming:'游泳',walking:'步行',trail_running:'越野跑',treadmill_running:'室内跑',road_cycling:'公路骑行',mountain_biking:'山地骑行'};
+            
+            listEl.innerHTML = displayFiles.map(item => {
+                const date = item.start_time ? item.start_time.split('T')[0].split(' ')[0] : '--';
                 const dist = item.dist_km ? item.dist_km.toFixed(1) : '--';
                 const gain = item.gain_m ? Math.round(item.gain_m) : '--';
                 const dur = item.duration_sec ? formatDuration(item.duration_sec) : '--';
                 const sportType = item.sport_type || 'hiking';
-                const sportEmoji = ({running:'🏃',hiking:'🥾',cycling:'🚴',swimming:'🏊',walking:'🚶',trail_running:'🏃',treadmill_running:'🏃',road_cycling:'🛣️',mountain_biking:'🚵'})[sportType] || '⏱️';
-                const sportName = ({running:'跑步',hiking:'徒步',cycling:'骑行',swimming:'游泳',walking:'步行',trail_running:'越野跑',treadmill_running:'室内跑',road_cycling:'公路骑行',mountain_biking:'山地骑行'})[sportType] || '其他';
+                const city = item.cityName || '未知地点';
+                
                 return `<div class="history-card" data-file-path="${item.file_path || ''}" data-sport-type="${sportType}" onclick="loadHistoryItem(this)" style="
                     padding:10px 12px;background:rgba(255,255,255,0.05);
                     border:1px solid rgba(255,255,255,0.1);border-radius:8px;
@@ -1342,8 +2042,8 @@
                     onmouseout=\"this.style.background='rgba(255,255,255,0.05)';this.style.borderColor='rgba(255,255,255,0.1)'\"
                 ">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
-                        <span style="font-size:0.65rem;color:#94a3b8;">${date}</span>
-                        <span style="font-size:0.65rem;background:rgba(46,204,113,0.15);color:#2ecc71;border-radius:4px;padding:1px 6px;">${sportEmoji} ${sportName}</span>
+                        <span style="font-size:0.65rem;color:#94a3b8;">${date} · ${city}</span>
+                        <span style="font-size:0.65rem;background:rgba(46,204,113,0.15);color:#2ecc71;border-radius:4px;padding:1px 6px;">${sportEmoji[sportType] || '⏱️'} ${sportName[sportType] || '其他'}</span>
                     </div>
                     <div style="display:flex;justify-content:space-between;align-items:center;">
                         <span style="font-size:0.75rem;"><b style="color:#f8fafc;">${dist} km</b></span>
@@ -1352,7 +2052,35 @@
                 </div>`;
             }).join('');
         } catch(e) {
+            console.error('renderHistoryList error:', e);
             listEl.innerHTML = '<div style="color:#ef4444;font-size:0.75rem;text-align:center;padding:20px;">加载失败</div>';
+        }
+    }
+
+    async function loadAndRenderLocalFile(filePath, isBackground = false) {
+        if (!filePath) { if(!isBackground) showToast('⚠️ 该记录无本地文件'); return false; }
+        
+        const loader = document.getElementById('loading');
+        if (!isBackground && loader) { loader.style.display = 'flex'; setTimeout(() => loader.style.opacity = '1', 10); document.getElementById('loading-text').innerText = `正在解析本地轨迹...`; }
+        
+        try {
+            if (!(window.pywebview && window.pywebview.api && window.pywebview.api.load_local_track)) {
+                throw new Error('当前架构仅支持由桌面后端加载本地轨迹文件');
+            }
+            const res = await window.pywebview.api.load_local_track(filePath);
+            if (!res || !res.ok || !res.data || !res.data.points || !res.data.points.length) {
+                throw new Error((res && res.error) || '加载失败');
+            }
+            appState.currentActivityId = (res.activity && res.activity.id) || null;
+            applyDataAndRender(res.data, res.filename || '历史轨迹');
+            if (!isBackground) showToast('✅ 已加载: ' + (res.filename || '历史轨迹'));
+                return true;
+        } catch(e) { 
+            console.error(e); 
+            if (!isBackground) showToast('⚠️ 解析失败: ' + String(e.message || e)); 
+            return false;
+        } finally {
+            if (!isBackground && loader) { loader.style.opacity = '0'; setTimeout(() => loader.style.display = 'none', 800); }
         }
     }
 
@@ -1364,42 +2092,33 @@
             const sel = document.getElementById('sport-type-selector');
             if (sel) { sel.value = sportType; sel.style.color = '#f8fafc'; }
         }
-        if (!filePath) { showToast('⚠️ 该记录无本地文件'); return; }
-        showToast('正在加载历史轨迹...');
-        try {
-            const res = await window.pywebview.api.load_local_track(filePath);
-            if (!res || !res.ok) { showToast('⚠️ ' + (res && res.error ? res.error : '加载失败')); return; }
-            const data = res.data;
-            const filename = res.filename || '历史轨迹';
-            if (data.points && data.points.length > 0) {
-                applyDataAndRender(data.points, data, filename);
-                showToast('✅ 已加载: ' + filename);
-                toggleHistoryDrawer();
-            } else { showToast('⚠️ 数据为空'); }
-        } catch(e) { showToast('⚠️ ' + String(e)); }
+        const success = await loadAndRenderLocalFile(filePath, false);
+        if (success) {
+            toggleHistoryDrawer();
+        }
     }
 
     async function initApp() {
         try {
+            await initLLMConfig();
             const profileRes = await window.pywebview.api.get_user_profile();
             if (profileRes && profileRes.ok && profileRes.profile) {
                 updateProfileUI(profileRes.profile);
                 if (profileRes.hrr_zones) loadProfileCard(profileRes.hrr_zones);
             }
             await renderHistoryList();
-            const histRes = await window.pywebview.api.get_activity_history();
-            if (histRes && histRes.ok && histRes.history && histRes.history.length > 0) {
-                const latest = histRes.history[0];
-                if (latest && latest.file_path) {
+            const startupDir = (document.getElementById('set-local-dir')?.value || currentLLMConfig.localDir || '').trim();
+            const scanRes = startupDir ? await window.pywebview.api.scan_fit_directory(startupDir) : null;
+            if (scanRes && scanRes.ok && scanRes.files && scanRes.files.length > 0) {
+                const validFiles = scanRes.files.filter(f => f.valid);
+                if (validFiles.length > 0) {
+                    const latest = validFiles[0];
                     if (latest.sport_type) {
                         appState.sportType = latest.sport_type;
                         const sel = document.getElementById('sport-type-selector');
                         if (sel) { sel.value = latest.sport_type; sel.style.color = '#f8fafc'; }
                     }
-                    const loadRes = await window.pywebview.api.load_local_track(latest.file_path);
-                    if (loadRes && loadRes.ok && loadRes.data && loadRes.data.points && loadRes.data.points.length > 0) {
-                        applyDataAndRender(loadRes.data.points, loadRes.data, loadRes.filename || latest.filename || '轨迹');
-                    }
+                    await loadAndRenderLocalFile(latest.file_path, true);
                 }
             }
         } catch(e) { console.error('initApp error:', e); }
@@ -1498,8 +2217,11 @@
                         url: (c.url && String(c.url).trim()) ? String(c.url).trim() : LLM_DEFAULT_URL,
                         apiKey: (c.api_key !== undefined && c.api_key !== null) ? String(c.api_key) : '',
                         agentId: (c.agent_id !== undefined && c.agent_id !== null) ? String(c.agent_id) : '',
-                        watchBrand: (c.watch_brand !== undefined && c.watch_brand !== null) ? String(c.watch_brand) : ''
+                        watchBrand: (c.watch_brand !== undefined && c.watch_brand !== null) ? String(c.watch_brand) : '',
+                        localDir: (c.local_dir !== undefined && c.local_dir !== null) ? String(c.local_dir) : ''
                     };
+                    const localDirInput = document.getElementById('set-local-dir');
+                    if (localDirInput && currentLLMConfig.localDir) localDirInput.value = currentLLMConfig.localDir;
                 }
             } catch (e) { console.warn('get_llm_config', e); }
             updateSyncButtonsVisibility();
@@ -1566,6 +2288,9 @@
             agentId: agentId,
             watchBrand: brandInput ? brandInput.value : ''
         };
+        if (brandInput) selectUserType(brandInput.value);
+        updateSyncButtonsVisibility();
+        updateSettingsGuide();
     }
 
     function renderLLMConfigFields() {
@@ -1587,8 +2312,9 @@
         const corosRadio = document.querySelector('input[name="watch_brand"][value="coros"]');
         if (garminRadio) garminRadio.checked = (watchBrand === 'garmin');
         if (corosRadio) corosRadio.checked = (watchBrand === 'coros');
-        
+        if (watchBrand) selectUserType(watchBrand);
         updateSyncButtonsVisibility();
+        updateSettingsGuide();
         modelSelect.innerHTML = '';
         if (models.length > 0) {
             modelSelect.style.display = 'block';
@@ -1636,6 +2362,7 @@
     async function refreshSettingsPanel() {
         await initLLMConfig();
         renderLLMConfigFields();
+        updateSettingsGuide();
     }
 
     function updateLLMModels() {
@@ -1655,6 +2382,28 @@
         if (urlInput) urlInput._userModified = true;
     }
 
+    async function persistLocalDirSelection(localDir) {
+        const normalizedDir = String(localDir || '').trim();
+        currentLLMConfig.localDir = normalizedDir;
+        appState.rawHistoryFiles = []; // 切换目录时清除缓存
+        try {
+            localStorage.setItem('llm_config_v2', JSON.stringify({ ...currentLLMConfig, localDir: normalizedDir }));
+        } catch (e) {}
+        if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.save_llm_config === 'function') {
+            try {
+                await window.pywebview.api.save_llm_config(
+                    currentLLMConfig.provider || 'local_mcp',
+                    currentLLMConfig.url || LLM_DEFAULT_URL,
+                    normalizeAgentModel(currentLLMConfig.model || 'openclaw', currentLLMConfig.agentId || ''),
+                    currentLLMConfig.apiKey || '',
+                    currentLLMConfig.agentId || '',
+                    currentLLMConfig.watchBrand || '',
+                    normalizedDir
+                );
+            } catch (e) {}
+        }
+    }
+
     async function openLLMConfig() {
         await refreshSettingsPanel();
 
@@ -1671,6 +2420,7 @@
         let model = normalizeAgentModel(currentLLMConfig.model || 'openclaw', agentId);
         let url = currentLLMConfig.url || LLM_DEFAULT_URL;
 
+        const localDir = document.getElementById('set-local-dir')?.value?.trim() || '';
         if (!watchBrand) {
             showToast("⚠️ 请选择您的运动手表品牌");
             return;
@@ -1678,11 +2428,11 @@
 
         if (!provider || !model || !url) { showToast("⚠️ 请填写服务商、模型和接口地址"); return; }
 
-        currentLLMConfig = { provider, model, url, apiKey, agentId, watchBrand };
+        currentLLMConfig = { provider, model, url, apiKey, agentId, watchBrand, localDir };
 
         if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.save_llm_config === 'function') {
             try {
-                const res = await window.pywebview.api.save_llm_config(provider, url, model, apiKey, agentId, watchBrand);
+                const res = await window.pywebview.api.save_llm_config(provider, url, model, apiKey, agentId, watchBrand, localDir);
                 if (!res || !res.ok) { showToast('保存失败: ' + (res && res.error ? res.error : '')); return; }
             } catch (e) {
                 showToast('保存失败');
@@ -1692,6 +2442,7 @@
             try { localStorage.setItem('llm_config_v2', JSON.stringify(currentLLMConfig)); } catch (e) {}
         }
         updateSyncButtonsVisibility();
+        updateSettingsGuide();
         showToast("✅ 大模型配置已保存！");
         closeModals();
     }
@@ -1703,15 +2454,23 @@
         const url = currentLLMConfig.url || llmProviders[provider]?.url || LLM_DEFAULT_URL;
         const apiKey = currentLLMConfig.apiKey || '';
         const agentId = currentLLMConfig.agentId || '';
-        if (!model || !url) { showToast('⚠️ 请先填写模型和接口地址'); return; }
+        if (!model || !url) { setLLMTestStatus('请先填写模型和接口地址', false); showToast('⚠️ 请先填写模型和接口地址'); return; }
+        const requestId = onboardingState.llmTestRequestId + 1;
+        onboardingState.llmTestRequestId = requestId;
         showToast('🧪 正在测试连接...');
-        const testBtn = Array.from(document.querySelectorAll('button')).find(function(btn) { return btn.textContent.includes('测试连接'); });
+        setLLMTestStatus('正在测试连接...', false, true, { requestId: requestId });
+        const testBtn = document.querySelector('.settings-btn-group .secondary-btn');
         if (testBtn) { testBtn.disabled = true; testBtn.style.opacity = '0.6'; }
         try {
             if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.test_llm_config === 'function') {
                 const res = await window.pywebview.api.test_llm_config(provider, url, model, apiKey, agentId);
-                if (res && res.ok) showToast('✅ 连接成功');
-                else showToast('❌ 连接失败：' + (res && res.error ? res.error : '未知错误'));
+                if (res && res.ok) {
+                    if (!setLLMTestStatus('连接成功，可进行下一步', true, false, { requestId: requestId })) return;
+                    showToast('✅ 连接成功');
+                } else {
+                    if (!setLLMTestStatus('连接失败，请检查配置后重试', false, false, { requestId: requestId })) return;
+                    showToast('❌ 连接失败：' + (res && res.error ? res.error : '未知错误'));
+                }
             } else {
                 const headers = { 'Content-Type': 'application/json' };
                 if (apiKey) headers.Authorization = 'Bearer ' + apiKey;
@@ -1741,18 +2500,28 @@
                 clearTimeout(timer);
                 if (!resp.ok) {
                     const errText = await resp.text();
+                    if (!setLLMTestStatus('连接失败，请检查接口返回', false, false, { requestId: requestId })) return;
                     showToast('❌ 连接失败：HTTP ' + resp.status + ' ' + errText.slice(0, 120));
                     return;
                 }
                 const data = await resp.json();
-                if (data && data.choices && data.choices.length) showToast('✅ 连接成功');
-                else showToast('❌ 连接失败：响应缺少 choices 字段');
+                if (data && data.choices && data.choices.length) {
+                    if (!setLLMTestStatus('连接成功，可进行下一步', true, false, { requestId: requestId })) return;
+                    showToast('✅ 连接成功');
+                } else {
+                    if (!setLLMTestStatus('连接失败：响应缺少 choices 字段', false, false, { requestId: requestId })) return;
+                    showToast('❌ 连接失败：响应缺少 choices 字段');
+                }
             }
         } catch (e) {
             const msg = e && e.name === 'AbortError' ? '连接超时或网络不可达' : (e && e.message ? e.message : String(e));
+            if (!setLLMTestStatus('连接失败，请检查网络或接口配置', false, false, { requestId: requestId })) return;
             showToast('❌ 连接失败：' + msg);
         } finally {
-            if (testBtn) { testBtn.disabled = false; testBtn.style.opacity = '1'; }
+            if (requestId === onboardingState.llmTestRequestId && testBtn) {
+                testBtn.disabled = false;
+                testBtn.style.opacity = '1';
+            }
         }
     }
 
@@ -1824,22 +2593,10 @@
 
         if (!appState.points || appState.points.length === 0) return;
 
-        const distKm = (() => { const t = document.getElementById('val-dist').innerText; return parseFloat(t.replace(/[^\d.]/g, '')) || 0; })();
-        const durSec = (() => { const first = appState.points[0]; const last = appState.points[appState.points.length-1]; return (first && last && first.time && last.time) ? Math.round((new Date(last.time) - new Date(first.time)) / 1000) : 0; })();
-        const actData = {
-            filename: document.getElementById('track-title')?.innerText || '轨迹',
-            sport_type: type,
-            dist_km: distKm,
-            duration_sec: durSec,
-            gain_m: (appState.kmMarkers && appState.kmMarkers.gain) ? appState.kmMarkers.gain : 0,
-            max_alt_m: appState.maxAltitude || 0,
-            avg_hr: null, max_hr: null, avg_cadence: null, hr_decoupling: null, tss: null,
-            points_json: appState.points || [],
-            sub_sport_type: 'unknown',
-            _src_path: null
-        };
-        if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.save_activity === 'function') {
-            window.pywebview.api.save_activity(actData).then(function () { renderHistoryList(); }).catch(function () {});
+        if (appState.currentActivityId && window.pywebview && window.pywebview.api && typeof window.pywebview.api.update_activity_sport_type === 'function') {
+            window.pywebview.api.update_activity_sport_type(appState.currentActivityId, type)
+                .then(function () { renderHistoryList(true); })
+                .catch(function () {});
         }
 
         try {
@@ -2176,13 +2933,17 @@
             const data = await response.json();
             let locName = '未知区域';
             if (data && data.address) {
+                // 优化优先级：优先取具体的区县/乡镇，然后是城市
                 locName = data.address.city || data.address.town || data.address.county || data.address.state || data.address.province || data.name || '未知区域';
             }
             const el = document.getElementById('track-location-name');
             if (el) el.innerText = locName;
+            return locName;
         } catch (e) {
+            const locName = `${lon.toFixed(2)}, ${lat.toFixed(2)}`;
             const el = document.getElementById('track-location-name');
-            if (el) el.innerText = `${lon.toFixed(2)}, ${lat.toFixed(2)}`;
+            if (el) el.innerText = locName;
+            return locName;
         }
     }
 
@@ -2249,24 +3010,6 @@
             }
         }
         return { points, placemarks };
-    }
-
-    function parseFIT(arrayBuffer) {
-        return new Promise((resolve, reject) => {
-            if (!window.FitParser) return reject("找不到 FIT 解析库。请检查网络。");
-            const fitParser = new window.FitParser({ force: true, speedUnit: 'km/h', lengthUnit: 'km', temperatureUnit: 'celsius', elapsedRecordField: true, mode: 'list' });
-            fitParser.parse(arrayBuffer, (error, data) => {
-                if (error) return reject(error);
-                const points = [];
-                const activity_type = data.sport || data.sub_sport || data.activity_type || data.activity || '';
-                if (data.records) {
-                    data.records.forEach(r => {
-                        if (r.position_lat && r.position_long) points.push({ lat: r.position_lat, lon: r.position_long, alt: r.altitude || 0, time: r.timestamp, hr: r.heart_rate || null });
-                    });
-                }
-                resolve({ points, placemarks: [], activity_type: activity_type, fit_sport: data.sport || '', fit_sub_sport: data.sub_sport || '' }); 
-            });
-        });
     }
 
     // ==========================================
@@ -2340,7 +3083,7 @@
     // 渲染更新控制
     // ==========================================
     function updateScene() {
-        if (!appState.points.length) return;
+        if (!appState || !appState.points || !appState.points.length) return;
         const exaggeration = 2.0; 
         
         appState.fullPositions = []; appState.fullMaxHeights = []; appState.fullMinHeights = [];
@@ -2418,7 +3161,12 @@
     }
 
     function applyDataAndRender(data, filename = "自定义轨迹") {
-        appState.points = data.points; appState.placemarks = data.placemarks;
+        if (!data || !data.points || !Array.isArray(data.points) || data.points.length === 0) {
+            showToast('⚠️ 轨迹数据无效，无法渲染');
+            return;
+        }
+        appState.points = data.points;
+        appState.placemarks = data.placemarks || [];
         appState.progress = 100; document.getElementById('progress-slider').value = 100; document.getElementById('progress-val').innerText = '100.0%';
 
         const stats = calculateStats(appState.points);
@@ -2523,46 +3271,395 @@
         }
     }, { passive: false });
 
-    // 文件导入：桌面壳优先走 Python（gpxpy / fitparse + 坡度），浏览器环境仍用 <input type=file> + 前端解析
+    // ===== 新手引导逻辑 =====
+    const Onboarding = {
+        init() {
+            const isFirstTime = !localStorage.getItem('onboarding_completed');
+            
+            if (isFirstTime) {
+                // 默认切换到配置面板
+                setTimeout(() => {
+                    const btn = document.querySelector('.bookmark-tab[data-panel="settings"]');
+                    if (btn) switchTab(btn);
+                    this.show();
+                }, 500);
+            }
+        },
+
+        show() {
+            let overlay = document.getElementById('onboarding-overlay');
+            if (!overlay) {
+                overlay = document.createElement('div');
+                overlay.id = 'onboarding-overlay';
+                overlay.className = 'onboarding-overlay';
+                
+                // 获取当前本地路径，用于第二步显示
+                const currentLocalDir = document.getElementById('set-local-dir')?.value || '~/.hiking_track_ai/local_tracks/';
+                
+                overlay.innerHTML = `
+                    <div class="onboarding-card">
+                        <button class="onboarding-close" onclick="Onboarding.close()">×</button>
+                        
+                        <!-- 步骤1: 大模型配置 -->
+                        <div class="onboarding-step active" id="step-1">
+                            <div class="onboarding-title">👋 欢迎使用 AI 运动分析仪</div>
+                            <div class="onboarding-desc">
+                                欢迎使用 AI 运动分析仪！<br><br>
+                                首次使用需要进行一些初始化配置。点击「下一步」将进入配置流程。
+                            </div>
+                            <div class="onboarding-actions">
+                                <button class="onboarding-btn primary" onclick="Onboarding.verifyStep1()">下一步</button>
+                            </div>
+                        </div>
+
+                        <!-- 步骤2: 存储配置 -->
+                        <div class="onboarding-step" id="step-2">
+                            <div class="onboarding-title">📁 配置本地存储目录</div>
+                            <div class="onboarding-desc">
+                                请在背后的面板中点击<b>「选择文件夹」</b>，指定一个用于存放 FIT 轨迹文件的本地目录。<br><br>
+                                当前选择的路径：<br>
+                                <b style="color:var(--primary); word-break:break-all;" id="onboard-path-display">${currentLocalDir}</b>
+                            </div>
+                            <div class="onboarding-actions">
+                                <button class="onboarding-btn secondary" onclick="Onboarding.prevStep(1)">上一步</button>
+                                <button class="onboarding-btn primary" onclick="Onboarding.verifyStep2()">已选择，下一步</button>
+                            </div>
+                        </div>
+
+                        <!-- 步骤3: 身份选择与 AI 助手通知 -->
+                        <div class="onboarding-step" id="step-3">
+                            <div class="onboarding-title">⌚ 选择设备并告诉 AI</div>
+                            <div class="onboarding-desc">
+                                请选择您的运动手表品牌。这决定了 AI 助手如何为您处理下载的文件。
+                            </div>
+                            
+                            <div class="user-type-selector">
+                                <div class="user-type-option" id="onboard-type-garmin" onclick="Onboarding.selectType('garmin')">
+                                    <div style="font-size:1.5rem;margin-bottom:5px;">🔵</div>
+                                    <div>佳明用户</div>
+                                </div>
+                                <div class="user-type-option" id="onboard-type-coros" onclick="Onboarding.selectType('coros')">
+                                    <div style="font-size:1.5rem;margin-bottom:5px;">⚪</div>
+                                    <div>高驰用户</div>
+                                </div>
+                            </div>
+                            
+                            <div id="onboard-ai-notify" style="text-align:center; margin-bottom:15px; display:none;">
+                                <button id="onboard-notify-btn" class="ai-assistant-btn" style="margin:0; padding:10px 20px;" onclick="Onboarding.notifyAI()">
+                                    🤖 告诉AI助手下载规范
+                                </button>
+                                <div id="onboard-notify-status" style="font-size:0.75rem; color:var(--primary); margin-top:8px; display:none;">
+                                    ✅ 已成功通知 AI 助手！
+                                </div>
+                            </div>
+
+                            <div class="onboarding-actions">
+                                <button class="onboarding-btn secondary" onclick="Onboarding.prevStep(2)">上一步</button>
+                                <button class="onboarding-btn primary" id="onboard-finish-btn" onclick="Onboarding.finish()" disabled>完成配置</button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                document.body.appendChild(overlay);
+            }
+            overlay.style.display = 'flex';
+        },
+
+        close() {
+            const overlay = document.getElementById('onboarding-overlay');
+            if (overlay) overlay.style.display = 'none';
+        },
+
+        verifyStep1() {
+            this.close();
+            const settingsTabBtn = document.querySelector('.bookmark-tab[data-panel="settings"]');
+            if (settingsTabBtn) switchTab(settingsTabBtn);
+            onboardingState.currentConfigStep = 1;
+            updateSettingsGuide();
+        },
+
+        verifyStep2() {
+            const pathInput = document.getElementById('set-local-dir');
+            if (pathInput && pathInput.value && pathInput.value.trim() !== '') {
+                this.nextStep(3);
+            } else {
+                showToast('⚠️ 请先选择一个本地文件夹用于存储数据');
+            }
+        },
+
+        nextStep(step) {
+            document.querySelectorAll('.onboarding-step').forEach(el => el.classList.remove('active'));
+            document.getElementById(`step-${step}`).classList.add('active');
+            
+            if (step === 2) {
+                // 更新显示的路径
+                const pathInput = document.getElementById('set-local-dir');
+                if (pathInput) {
+                    document.getElementById('onboard-path-display').innerText = pathInput.value || '未选择';
+                }
+            }
+        },
+
+        prevStep(step) {
+            document.querySelectorAll('.onboarding-step').forEach(el => el.classList.remove('active'));
+            document.getElementById(`step-${step}`).classList.add('active');
+        },
+
+        selectType(type) {
+            this.selectedType = type;
+            document.getElementById('onboard-type-garmin').classList.toggle('active', type === 'garmin');
+            document.getElementById('onboard-type-coros').classList.toggle('active', type === 'coros');
+            
+            // 同步更新底层界面的选择
+            const radios = document.getElementsByName('watch_brand');
+            for (let i = 0; i < radios.length; i++) {
+                if (radios[i].value === type) {
+                    radios[i].checked = true;
+                    break;
+                }
+            }
+            
+            // 更新底部界面的按钮状态
+            selectUserType(type);
+
+            const notifyDiv = document.getElementById('onboard-ai-notify');
+            const notifyBtn = document.getElementById('onboard-notify-btn');
+            const finishBtn = document.getElementById('onboard-finish-btn');
+            const statusDiv = document.getElementById('onboard-notify-status');
+            
+            notifyDiv.style.display = 'block';
+            statusDiv.style.display = 'none';
+            notifyBtn.innerText = '🤖 告诉AI助手下载规范';
+            notifyBtn.disabled = false;
+            
+            if (type === 'coros') {
+                notifyBtn.disabled = true;
+                notifyBtn.style.opacity = '0.5';
+                notifyBtn.innerText = '高驰用户无需通知AI助手';
+                finishBtn.disabled = false; // 高驰直接可以完成
+            } else {
+                notifyBtn.style.opacity = '1';
+                finishBtn.disabled = true; // 佳明必须先点通知
+            }
+        },
+
+        async notifyAI() {
+            if (this.selectedType !== 'garmin') return;
+            
+            const btn = document.getElementById('onboard-notify-btn');
+            const statusDiv = document.getElementById('onboard-notify-status');
+            const finishBtn = document.getElementById('onboard-finish-btn');
+            
+            btn.innerText = '⏳ 正在通知...';
+            btn.disabled = true;
+            
+            try {
+                // 调用底层的方法
+                await notifyAIAssistant();
+                statusDiv.style.display = 'block';
+                btn.innerText = '✅ 通知成功';
+                finishBtn.disabled = false;
+            } catch (e) {
+                btn.innerText = '🤖 重新通知AI助手';
+                btn.disabled = false;
+                showToast('通知失败，请重试');
+            }
+        },
+
+        finish() {
+            localStorage.setItem('onboarding_completed', 'true');
+            this.close();
+            showToast('🎉 配置完成！欢迎使用。');
+            
+            // 引导完成后自动切到个人数据页
+            const btn = document.querySelector('.bookmark-tab[data-panel="profile"]');
+            if (btn) switchTab(btn);
+        }
+    };
+    window.Onboarding = Onboarding;
+
+    // 原有的逻辑扩展
+    function selectUserType(type) {
+        // 更新底层 UI
+        document.getElementById('type-garmin')?.classList.toggle('active', type === 'garmin');
+        document.getElementById('type-coros')?.classList.toggle('active', type === 'coros');
+        currentLLMConfig.watchBrand = type || '';
+        
+        const notifyBtn = document.getElementById('btn-notify-ai');
+        if (notifyBtn) {
+            if (type === 'garmin') {
+                notifyBtn.disabled = false;
+                notifyBtn.style.opacity = '1';
+                notifyBtn.title = '';
+            } else {
+                notifyBtn.disabled = true;
+                notifyBtn.style.opacity = '0.5';
+                notifyBtn.title = '高驰用户暂不支持此功能';
+            }
+        }
+        updateSyncButtonsVisibility();
+        updateSettingsGuide();
+    }
+
+    async function notifyAIAssistant() {
+        const localDir = document.getElementById('set-local-dir')?.value;
+        if (!localDir) {
+            showToast('⚠️ 请先选择本地 FIT 文件存储目录');
+            return;
+        }
+
+        const prompt = `从现在开始，所有从佳明(Garmin)下载的FIT文件，必须严格遵守以下规范：
+
+## FIT文件下载与存储规范
+
+1. 下载后得到的是ZIP文件（如 activity_123456.fit.zip），必须解压
+2. 解压后得到的FIT文件（如 123456_ACTIVITY.fit）必须放到以下目录：
+${localDir}
+3. 文件名格式保持为 {活动ID}_ACTIVITY.fit
+4. 解压并移动完成后，删除原始ZIP文件
+5. 如果目标目录不存在，先创建它
+
+## 示例流程
+活动ID: 592340096
+- 下载: activity_592340096.fit.zip
+- 解压: 得到 592340096_ACTIVITY.fit
+- 放置: ${localDir}/592340096_ACTIVITY.fit
+- 清理: 删除 activity_592340096.fit.zip
+
+请记住这条规范，并将它写入你的长期记忆，标题为「FIT文件下载规范」。
+以后每次下载FIT文件都严格按照这个流程执行，不要擅自改变路径或跳过解压步骤。`;
+
+        // 模拟调用 AI 接口或实际调用
+        if (window.pywebview && window.pywebview.api) {
+            try {
+                // 假设我们复用已有的 call_llm，或者直接加一条系统消息
+                const res = await window.pywebview.api.call_llm(prompt, 'system_instruction');
+                if (res && res.ok) {
+                    showToast('✅ 已成功通知大模型助手！');
+                } else {
+                    throw new Error(res.error || '未知错误');
+                }
+            } catch (e) {
+                console.error(e);
+                showToast('⚠️ 通知失败: ' + (e.message || e));
+                throw e;
+            }
+        } else {
+            // 浏览器测试环境
+            console.log("Mock notify AI:", prompt);
+            await new Promise(r => setTimeout(r, 1000));
+            showToast('✅ (Mock) 已成功通知大模型助手！');
+        }
+    }
+
+    // 修改 selectLocalDirectory 以同步更新引导面板的路径
+    const originalSelectLocalDirectory = typeof window.selectLocalDirectory === 'function'
+        ? window.selectLocalDirectory.bind(window)
+        : null;
+    window.selectLocalDirectory = async function() {
+        if (originalSelectLocalDirectory) {
+            await originalSelectLocalDirectory();
+        } else if (window.pywebview && window.pywebview.api) {
+            // 如果原本没有这个函数，这里补充一个基础实现
+            const res = await window.pywebview.api.select_directory();
+            if (res && res.ok && res.path) {
+                const el = document.getElementById('set-local-dir');
+                if (el) el.value = res.path;
+            }
+        } else {
+            // 浏览器环境 mock
+            const el = document.getElementById('set-local-dir');
+            if (el) el.value = '/Users/mock/Documents/fit_files';
+        }
+        
+        // 更新 onboarding 中的显示
+        const display = document.getElementById('onboard-path-display');
+        const input = document.getElementById('set-local-dir');
+        if (display && input) {
+            display.innerText = input.value;
+        }
+        if (input) {
+            await persistLocalDirSelection(input.value);
+        }
+        updateSettingsGuide();
+        if (getCurrentActivePanel() === 'trace') {
+            renderHistoryList().catch(function() {});
+        }
+    };
+
+    // App 初始化结束时调用
+    window.addEventListener('DOMContentLoaded', () => {
+        restoreStartupRoute();
+        setTimeout(() => {
+            Onboarding.init();
+        }, 1000);
+    });
+    window.addEventListener('pagehide', function() { persistAppViewState('pagehide'); });
+    window.addEventListener('beforeunload', function() { persistAppViewState('beforeunload'); });
+    document.addEventListener('visibilitychange', function() {
+        if (document.visibilityState === 'hidden') persistAppViewState('visibilitychange:hidden');
+    });
+
+    // ========================================
+
+    // 原有代码继续...
+    function initCesium() {
+        Cesium.Ion.defaultAccessToken = 'YOUR_CESIUM_TOKEN_HERE';
+        const viewer = new Cesium.Viewer('cesiumContainer', {
+            terrainProvider: Cesium.createWorldTerrain(),
+            imageryProvider: new Cesium.UrlTemplateImageryProvider({
+                url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+                credit: 'Esri'
+            }),
+            animation: false, timeline: false, fullscreenButton: false, geocoder: false,
+            homeButton: false, infoBox: false, selectionIndicator: false, navigationHelpButton: false,
+            baseLayerPicker: false, sceneModePicker: false
+        });
+        window.viewer = viewer;
+        // 等待加载...
+    }
+
+    // 文件导入：桌面壳统一走 Python 后端解析与入库，前端只负责展示
     async function triggerTrackImport() {
-        if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.pick_and_parse_track === 'function') {
+        if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.import_track === 'function') {
             const loader = document.getElementById('loading');
             if (loader) {
                 loader.style.display = 'flex';
                 setTimeout(function () { loader.style.opacity = '1'; }, 10);
-                document.getElementById('loading-text').innerText = '正在解析轨迹（Python）…';
+                document.getElementById('loading-text').innerText = '正在导入并解析轨迹…';
             }
             try {
-                const res = await window.pywebview.api.pick_and_parse_track();
+                let res = await window.pywebview.api.import_track();
                 if (!res || !res.ok) {
                     if (res && res.cancelled) return;
                     showToast('⚠️ 导入失败: ' + (res && res.error ? res.error : '未知错误'));
                     return;
                 }
+                if (res.duplicate) {
+                    const decision = await handleDuplicateTrack(res.duplicate_record, res.score, res.filename);
+                    if (!decision || decision.action === 'skip') {
+                        showToast('已跳过导入');
+                        return;
+                    }
+                    document.getElementById('loading-text').innerText = '正在按新策略导入轨迹…';
+                    res = await window.pywebview.api.import_track(res.file_path, decision.action, decision.newFilename || '');
+                    if (!res || !res.ok) {
+                        showToast('⚠️ 导入失败: ' + (res && res.error ? res.error : '未知错误'));
+                        return;
+                    }
+                }
                 if (!res.data || !res.data.points || res.data.points.length === 0) {
                     showToast('⚠️ 未提取到有效经纬度信息。');
                     return;
                 }
-                applyDataAndRender(res.data, res.filename || '轨迹');
-                const matchedSportType = autoMatchActivityType(res.data);
-
-                const actData = {
-                    filename: res.filename || '轨迹',
-                    sport_type: matchedSportType || appState.sportType || 'hiking',
-                    dist_km: (() => { const t = document.getElementById('val-dist').innerText; return parseFloat(t.replace(/[^\d.]/g, '')) || 0; })(),
-                    duration_sec: appState.points ? (() => { const first = appState.points[0]; const last = appState.points[appState.points.length-1]; return (first && last && first.time && last.time) ? Math.round((new Date(last.time) - new Date(first.time)) / 1000) : 0; })() : 0,
-                    gain_m: (appState.kmMarkers && appState.kmMarkers.gain) ? appState.kmMarkers.gain : 0,
-                    max_alt_m: appState.maxAltitude || 0,
-                    avg_hr: null, max_hr: null, avg_cadence: null, hr_decoupling: null, tss: null,
-                    points_json: appState.points || [],
-                    sub_sport_type: (res.data && res.data.fit_sub_sport) || 'unknown',
-                    _src_path: res._src_path || null
-                };
-                if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.save_activity === 'function') {
-                    window.pywebview.api.save_activity(actData).then(function () {
-                        renderHistoryList();
-                    }).catch(function () {});
+                appState.currentActivityId = (res.activity && res.activity.id) || null;
+                if (res.activity && res.activity.sport_type) {
+                    appState.sportType = res.activity.sport_type;
+                    const sel = document.getElementById('sport-type-selector');
+                    if (sel) { sel.value = res.activity.sport_type; sel.style.color = '#f8fafc'; }
                 }
+                applyDataAndRender(res.data, res.filename || '轨迹');
+                renderHistoryList();
             } catch (err) {
                 showToast('⚠️ 导入失败: ' + (err && err.message ? err.message : String(err)));
             } finally {
@@ -2574,6 +3671,53 @@
             return;
         }
         document.getElementById('file-upload').click();
+    }
+
+    // 处理重复文件的弹窗交互
+    function handleDuplicateTrack(dupRecord, score, filename) {
+        return new Promise((resolve) => {
+            const overlay = document.getElementById('duplicate-dialog-overlay');
+            const infoContent = document.getElementById('duplicate-info-content');
+            const btnSkip = document.getElementById('btn-dup-skip');
+            const btnForce = document.getElementById('btn-dup-force');
+            const btnMerge = document.getElementById('btn-dup-merge');
+
+            // 填充重复文件信息
+            infoContent.innerHTML = `
+                <div style="margin-bottom:8px;"><b>重复文件:</b> ${dupRecord.filename}</div>
+                <div style="margin-bottom:8px;"><b>存储路径:</b> ${dupRecord.file_path || '未知'}</div>
+                <div style="margin-bottom:8px;"><b>活动时间:</b> ${dupRecord.start_time || '未知'}</div>
+                <div style="margin-bottom:8px;"><b>特征匹配度:</b> <span style="color:var(--primary);font-weight:bold;">${score}%</span></div>
+                <div style="color:#94a3b8;font-size:0.8rem;">(距离: ${dupRecord.dist_km} km, 时长: ${dupRecord.duration_sec} 秒)</div>
+            `;
+
+            overlay.style.display = 'flex';
+
+            const cleanup = () => {
+                overlay.style.display = 'none';
+                btnSkip.onclick = null;
+                btnForce.onclick = null;
+                btnMerge.onclick = null;
+            };
+
+            btnSkip.onclick = () => {
+                cleanup();
+                resolve({ action: 'skip' });
+            };
+
+            btnForce.onclick = () => {
+                cleanup();
+                const extMatch = filename && filename.match(/\.[^/.]+$/);
+                const ext = extMatch ? extMatch[0] : '';
+                const base = filename ? filename.replace(/\.[^/.]+$/, '') : '轨迹';
+                resolve({ action: 'force', newFilename: `${base}_copy${ext}` });
+            };
+
+            btnMerge.onclick = () => {
+                cleanup();
+                resolve({ action: 'merge' });
+            };
+        });
     }
 
     function downloadFile(content, fileName, mimeType) {
@@ -2706,9 +3850,9 @@
             let result = null; const ext = file.name.split('.').pop().toLowerCase();
             if (ext === 'gpx') result = parseGPX(await file.text());
             else if (ext === 'kml') result = parseKML(new DOMParser().parseFromString(await file.text(), "text/xml"));
-            else if (ext === 'fit') result = await parseFIT(await file.arrayBuffer());
-            else throw new Error("格式不支持！请选择 .fit, .gpx, 或 .kml");
+            else throw new Error("当前架构不支持前端直接解析该格式，请在桌面端通过后端导入。");
             if (result && result.points.length > 0) {
+                appState.currentActivityId = null;
                 applyDataAndRender(result, file.name);
                 autoMatchActivityType(result);
             }
@@ -2759,8 +3903,20 @@
     const loadingText = document.getElementById('loading-text');
     if (loadingText) loadingText.innerText = '正在初始化 3D 地球...';
 
+    const startupLoaderWatchdog = setTimeout(() => {
+        const loader = document.getElementById('loading');
+        const loadingTextEl = document.getElementById('loading-text');
+        if (loadingTextEl) loadingTextEl.innerText = '3D 分析仪已进入降级模式，请继续使用或重试进入该页面。';
+        if (loader) { loader.style.opacity = '0'; setTimeout(() => loader.style.display = 'none', 300); }
+    }, 5000);
+
     setTimeout(() => {
-        viewer.camera.flyTo({ destination: Cesium.Cartesian3.fromDegrees(104.0, 35.0, 15000000), duration: 2.0 });
+        try {
+            viewer.camera.flyTo({ destination: Cesium.Cartesian3.fromDegrees(104.0, 35.0, 15000000), duration: 2.0 });
+        } catch (e) {
+            console.warn('flyTo during startup', e);
+        }
+        clearTimeout(startupLoaderWatchdog);
         const loader = document.getElementById('loading');
         if (loader) { loader.style.opacity = '0'; setTimeout(() => loader.style.display = 'none', 800); }
         showToast("💡 随时点击轨迹新增打卡点，点击已有打卡点修改或删除！");

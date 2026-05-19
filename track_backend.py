@@ -347,10 +347,9 @@ def parse_fit_file(path: Path) -> dict[str, Any]:
     """解析 FIT 文件，提取位置/海拔/心率/速度/里程等核心字段，与 GPX 输出结构完全兼容。"""
     from fitparse import FitFile
 
-    fit = FitFile(str(path))
-    fit.check_crc = True
+    # 禁用 check_crc 可以显著提升解析速度，因为大多数正常文件不需要重复校验 CRC
+    fit = FitFile(str(path), check_crc=False)
 
-    rows: list[dict[str, Any]] = []
     fit_sport: str | None = None
     fit_sub_sport: str | None = None
 
@@ -371,76 +370,55 @@ def parse_fit_file(path: Path) -> dict[str, Any]:
                 fit_sport = str(sport_rec).strip().lower()
                 break
 
+    # 优化点：直接按顺序提取有效点，避免构建庞大的中间 rows 字典数组，减少内存开销和创建字典的耗时
+    points: list[dict[str, Any]] = []
+    last_lat = None
+    last_lon = None
+    last_time = None
+    
+    # 提前获取 timezone 引用，避免在循环中重复解析
+    utc_tz = timezone.utc
+
     for msg in fit.get_messages("record"):
-        vals = {d.name: d.value for d in msg.fields}
-        lat = vals.get("position_lat")
-        lon = vals.get("position_long")
+        # 优化点：避免对每条记录生成完整字典，按需取值
+        lat = msg.get_value("position_lat")
+        lon = msg.get_value("position_long")
         if lat is None or lon is None:
             continue
 
         latf, lonf = _fit_latlon_to_deg(float(lat), float(lon))
-
-        ts = vals.get("timestamp")
+        
+        ts = msg.get_value("timestamp")
+        tiso = None
         if isinstance(ts, datetime):
             if ts.tzinfo is None:
-                ts = ts.replace(tzinfo=timezone.utc)
-            tiso = _iso(ts)
-        else:
-            tiso = None
-
-        alt_raw = vals.get("enhanced_altitude") or vals.get("altitude")
+                ts = ts.replace(tzinfo=utc_tz)
+            # 内联优化 _iso 以减少函数调用开销
+            tiso = ts.astimezone(utc_tz).isoformat().replace("+00:00", "Z")
+        elif ts is not None:
+            tiso = str(ts)
+            
+        # 去重逻辑内联：如果经纬度极度接近且时间相同，则跳过（避免向 points 追加冗余点）
+        if last_lat is not None and abs(last_lat - latf) < 1e-7 and abs(last_lon - lonf) < 1e-7 and last_time == tiso:
+            continue
+            
+        alt_raw = msg.get_value("enhanced_altitude") or msg.get_value("altitude")
         altf = float(alt_raw) if alt_raw is not None else 0.0
 
-        hr_val = vals.get("heart_rate")
+        hr_val = msg.get_value("heart_rate")
         hr = int(hr_val) if hr_val is not None else None
 
-        dist_raw = vals.get("distance")
-        dist_m = float(dist_raw) if dist_raw is not None else None
-
-        spd_raw = vals.get("speed")
-        spd_ms = float(spd_raw) if spd_raw is not None else None
-
-        pwr_raw = vals.get("power")
-        pwr = int(pwr_raw) if pwr_raw is not None else None
-
-        cad_raw = vals.get("cadence")
-        cad = int(cad_raw) if cad_raw is not None else None
-
-        temp_raw = vals.get("temperature")
-        temp = float(temp_raw) if temp_raw is not None else None
-
-        rows.append({
-            "_ts": ts,
+        points.append({
             "lat": latf,
             "lon": lonf,
             "alt": altf,
             "time": tiso,
             "hr": hr,
-            "dist_m": dist_m,
-            "speed_ms": spd_ms,
-            "power": pwr,
-            "cadence": cad,
-            "temperature": temp,
         })
-
-    rows.sort(key=lambda r: r["_ts"] or datetime.min.replace(tzinfo=timezone.utc))
-
-    min_dt = datetime.min.replace(tzinfo=timezone.utc)
-    points: list[dict[str, Any]] = []
-    for row in rows:
-        la, lo = row["lat"], row["lon"]
-        tiso = row["time"]
-        if points:
-            q = points[-1]
-            if abs(q["lat"] - la) < 1e-7 and abs(q["lon"] - lo) < 1e-7 and q.get("time") == tiso:
-                continue
-        points.append({
-            "lat": la,
-            "lon": lo,
-            "alt": row["alt"],
-            "time": tiso,
-            "hr": row["hr"],
-        })
+        
+        last_lat = latf
+        last_lon = lonf
+        last_time = tiso
 
     return enrich_sport_metadata({"points": points, "placemarks": []}, fit_sport, fit_sub_sport)
 

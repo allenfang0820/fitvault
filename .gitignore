@@ -1,11 +1,23 @@
 .venv/
-build/
-dist/
 __pycache__/
 *.pyc
+*.pyo
+*.db
 .DS_Store
 *.log
 
 # Local app config / secrets
 llm_config.json
 .hiking_track_ai/
+user_profile.db
+
+# Build artifacts
+build/
+dist/
+*.spec
+
+# Local tracks (user data)
+local_tracks/
+
+# Test artifacts
+temp_*.sqlite

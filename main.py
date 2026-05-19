@@ -73,9 +73,9 @@ class Api:
         cfg = llm_backend.load_llm_config()
         return {"ok": True, **cfg}
 
-    def save_llm_config(self, provider: str, url: str, model: str, api_key: str, agent_id: str = "", watch_brand: str = "") -> dict:
+    def save_llm_config(self, provider: str, url: str, model: str, api_key: str, agent_id: str = "", watch_brand: str = "", local_dir: str = "") -> dict:
         try:
-            llm_backend.save_llm_config(provider, url, model, api_key, agent_id, watch_brand)
+            llm_backend.save_llm_config(provider, url, model, api_key, agent_id, watch_brand, local_dir)
         except OSError as e:
             return {"ok": False, "error": str(e)}
         return {"ok": True}
@@ -218,6 +218,24 @@ class Api:
             return {"ok": False, "error": str(e)}
         return {"ok": True, "filename": Path(file_path).name, "data": data}
 
+    def select_directory(self) -> dict:
+        import webview
+        from webview import FileDialog
+
+        if not webview.windows:
+            return {"ok": False, "error": "窗口未就绪"}
+
+        try:
+            paths = webview.windows[0].create_file_dialog(FileDialog.FOLDER)
+        except OSError as e:
+            return {"ok": False, "error": str(e)}
+
+        if not paths:
+            return {"ok": False, "cancelled": True}
+
+        path = paths[0] if isinstance(paths, (list, tuple)) else paths
+        return {"ok": True, "path": str(path)}
+
     def save_text_file(self, suggested_filename: str, content: str) -> dict:
         import webview
         from webview import FileDialog
@@ -293,8 +311,8 @@ class Api:
         from datetime import datetime, timedelta
 
         default_metrics = {
-            "endurance": 50.0, "speed": 50.0, "threshold": 50.0,
-            "climbing": 50.0, "stability": 50.0, "recovery": 50.0
+            "endurance": 0.0, "speed": 0.0, "threshold": 0.0,
+            "climbing": 0.0, "stability": 0.0, "recovery": 0.0
         }
 
         try:
@@ -313,7 +331,7 @@ class Api:
             # 1. 耐力容量 (Endurance)
             total_dist = sum([a.get("dist_km") or 0.0 for a in acts])
             endurance = min((total_dist / 500.0) * 100.0, 100.0)
-            if not acts: endurance = 50.0
+            if not acts: endurance = 0.0
 
             # 2. 速度爆发 (Speed)
             max_speed_kmh = 0.0
@@ -337,7 +355,7 @@ class Api:
             
             age = prof.age or 30
             limit_speed = 22.0 - (age - 20) * 0.1 if age > 20 else 22.0
-            speed = min((max_speed_kmh / limit_speed) * 100.0, 100.0) if max_speed_kmh > 0 else 50.0
+            speed = min((max_speed_kmh / limit_speed) * 100.0, 100.0) if max_speed_kmh > 0 else 0.0
 
             # 3. 乳酸阈值 (Threshold)
             if prof.lactate_threshold_hr:
@@ -356,7 +374,7 @@ class Api:
                     if dur > 0:
                         vam = gain / (dur / 3600.0)
                         max_vam = max(max_vam, vam)
-            climbing = min((max_vam / 800.0) * 100.0, 100.0) if max_vam > 0 else 50.0
+            climbing = min((max_vam / 800.0) * 100.0, 100.0) if max_vam > 0 else 0.0
 
             # 5. 心肺稳定 (Stability)
             decoup_scores = []
@@ -371,7 +389,7 @@ class Api:
                 else:
                     stability = max(0.0, 100.0 - (avg_decoup - 3.0) * 6.0)
             else:
-                stability = 50.0
+                stability = 0.0
 
             # 6. 恢复效能 (Recovery)
             hrv = prof.hrv_baseline or 45.0
@@ -398,15 +416,89 @@ class Api:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    def import_track(self, file_path: str = "", duplicate_action: str = "", new_filename: str = "") -> dict:
+        """统一导入并入库轨迹文件，由 Python 后端完成解析和持久化。"""
+        import webview
+        from webview import FileDialog
+
+        target_path = (file_path or "").strip()
+        if not target_path:
+            if not webview.windows:
+                return {"ok": False, "error": "窗口未就绪"}
+            paths = webview.windows[0].create_file_dialog(
+                FileDialog.OPEN,
+                file_types=("Track files (*.fit;*.gpx;*.kml)",),
+            )
+            if not paths:
+                return {"ok": False, "cancelled": True}
+            target_path = paths[0] if isinstance(paths, (list, tuple)) else paths
+
+        try:
+            return profile_backend.ingest_activity_file(
+                target_path,
+                duplicate_action=duplicate_action,
+                new_filename=new_filename or None,
+            )
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def update_activity_sport_type(self, activity_id: int, sport_type: str) -> dict:
+        try:
+            profile_backend.update_activity_sport_type(activity_id, sport_type)
+            return {"ok": True}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def scan_fit_directory(self, local_dir: str = "") -> dict:
+        """从配置文件夹扫描所有 fit 文件，解析后返回带 GPS 有效性标记的轨迹列表。"""
+        try:
+            import llm_backend
+            cfg = llm_backend.load_llm_config()
+            target_dir = (local_dir or cfg.get("local_dir") or "").strip()
+            if not target_dir:
+                return {"ok": True, "files": [], "total": 0, "valid": 0, "skipped": 0}
+            import profile_backend as pb
+            return pb.scan_fit_directory(target_dir)
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def check_duplicate_track(self, act_data: dict) -> dict:
+        """检查轨迹是否重复"""
+        try:
+            start_time = None
+            if act_data.get("points_json") and len(act_data["points_json"]) > 0:
+                start_time = act_data["points_json"][0].get("time")
+            
+            res = profile_backend.check_duplicate_activity(
+                start_time=start_time,
+                dist_km=act_data.get("dist_km", 0.0),
+                duration_sec=act_data.get("duration_sec", 0),
+                points_json=act_data.get("points_json", [])
+            )
+            return {"ok": True, **res}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     def save_activity(self, data: dict) -> dict:
         """保存运动记录，自动将源文件复制到 local_tracks 目录。"""
         try:
+            # Check for duplicate action
+            dup_action = data.get("_duplicate_action")
+            if dup_action == "skip":
+                return {"ok": True, "skipped": True}
+
             src = data.get("_src_path")
+            new_filename = data.get("_new_filename")
+            
             if src:
-                local_path = profile_backend.copy_track_to_local(src)
+                local_path = profile_backend.copy_track_to_local(src, new_filename)
                 data["file_path"] = local_path
             else:
                 data["file_path"] = None
+                
+            if data.get("points_json") and len(data["points_json"]) > 0:
+                data["start_time"] = data["points_json"][0].get("time")
+                
             profile_backend.save_activity(data)
         except Exception as e:
             return {"ok": False, "error": str(e)}

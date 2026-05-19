@@ -54,10 +54,11 @@ def load_llm_config() -> dict[str, Any]:
         "api_key": str(data.get("api_key") or ""),
         "agent_id": str(data.get("agent_id") or DEFAULT_AGENT_ID).strip(),
         "watch_brand": str(data.get("watch_brand") or "").strip(),
+        "local_dir": str(data.get("local_dir") or "").strip(),
     }
 
 
-def save_llm_config(provider: str, url: str, model: str, api_key: str, agent_id: str = "", watch_brand: str = "") -> None:
+def save_llm_config(provider: str, url: str, model: str, api_key: str, agent_id: str = "", watch_brand: str = "", local_dir: str = "") -> None:
     cfg = {
         "provider": (provider or DEFAULT_PROVIDER).strip(),
         "url": (url or DEFAULT_URL).strip(),
@@ -65,6 +66,7 @@ def save_llm_config(provider: str, url: str, model: str, api_key: str, agent_id:
         "api_key": (api_key or "").strip(),
         "agent_id": (agent_id or "").strip(),
         "watch_brand": (watch_brand or "").strip(),
+        "local_dir": (local_dir or "").strip(),
     }
     p = _config_file()
     p.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")

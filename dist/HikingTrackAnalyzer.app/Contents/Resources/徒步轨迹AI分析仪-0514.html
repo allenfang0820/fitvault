@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>3D 轨迹分析仪 - AI 增强版</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
     <!-- 本地优先，减少首屏等待；若本地资源缺失再回退到 CDN -->
     <script>
         window.CESIUM_BASE_URL = 'lib/Cesium/';
@@ -22,24 +23,223 @@
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             color: var(--text); touch-action: none; overscroll-behavior: none;
         }
-        #cesiumContainer { width: 100vw; height: 100vh; margin: 0; padding: 0; touch-action: none; }
-        
-        #info-panel {
-            position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
-            background: var(--panel); border-radius: 12px; backdrop-filter: blur(10px);
-            border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 10px 25px rgba(0,0,0,0.5);
-            z-index: 10; width: 96%; max-width: 1000px; transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+
+        #app-wrapper {
+            display: flex; width: 100vw; height: 100vh; overflow: hidden;
+            position: relative;
         }
-        #info-panel.collapsed { transform: translate(-50%, calc(-100% - 10px)); }
+
+        /* === 左侧立体书签标签栏 === */
+        #sidebar-tabs {
+            width: 60px; flex-shrink: 0;
+            background: linear-gradient(135deg, #0d1b2a 0%, #1b2838 60%, #0f172a 100%);
+            display: flex; flex-direction: column; align-items: center;
+            padding: 12px 0; gap: 0;
+            box-shadow: 4px 0 20px rgba(0,0,0,0.5);
+            z-index: 200; position: relative;
+            border-right: 1px solid rgba(255,255,255,0.06);
+        }
+
+        .bookmark-tab {
+            width: 54px; min-height: 86px;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            gap: 5px; padding: 10px 4px;
+            background: linear-gradient(180deg, #172536 0%, #101a28 100%);
+            border: 1px solid rgba(255,255,255,0.05); border-right: 0; border-radius: 6px 0 0 6px;
+            cursor: pointer; position: relative; user-select: none;
+            color: #7f8fa5; font-size: 0.6rem; font-weight: 600; line-height: 1.3;
+            text-align: center; writing-mode: vertical-rl; letter-spacing: 1px;
+            transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1), background 0.22s ease, color 0.22s ease, box-shadow 0.22s ease, filter 0.22s ease;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.05), inset 0 -2px 4px rgba(0,0,0,0.28), -1px 0 3px rgba(0,0,0,0.28);
+            margin: -2px 0;
+            transform: translateX(0) translateY(3px) scale(0.96);
+            z-index: 1;
+            filter: brightness(0.9) saturate(0.85);
+        }
+        .bookmark-tab:hover {
+            background: linear-gradient(180deg, #203549 0%, #17283a 100%);
+            color: #e2e8f0;
+            filter: brightness(1);
+            transform: translateX(-2px) translateY(1px) scale(0.98);
+        }
+        .bookmark-tab.active {
+            background: linear-gradient(180deg, #0e3448 0%, #0b2639 100%);
+            color: var(--primary); font-weight: 700;
+            transform: translateX(-8px) translateY(-7px) scale(1.04);
+            box-shadow: -7px -8px 18px rgba(46,204,113,0.18), -9px 0 16px rgba(0,0,0,0.58), inset 0 2px 0 rgba(255,255,255,0.18), inset 2px 0 0 rgba(46,204,113,0.32), inset 0 -1px 0 rgba(0,0,0,0.22);
+            border-left: 2px solid var(--primary);
+            border-top: 1px solid rgba(46,204,113,0.36);
+            z-index: 5;
+            filter: brightness(1.12) saturate(1.15);
+        }
+        .bookmark-tab .tab-icon { font-size: 1.12rem; }
+        .bookmark-tab .tab-label { font-size: 0.62rem; }
+        .bookmark-tab .tab-arrow { font-size: 0.52rem; opacity: 0.5; }
+        .bookmark-tab.active .tab-arrow { opacity: 0.9; }
+
+        .bookmark-spacer { flex: 0 0 8px; min-height: 8px; }
+
+        /* === 主内容区（3个面板切换） === */
+        #main-content {
+            flex: 1; position: relative; overflow: hidden;
+        }
+
+        .tab-panel {
+            display: none; position: absolute; inset: 0;
+            flex-direction: column; overflow: hidden;
+        }
+        .tab-panel.active { display: flex; }
+
+        /* === 【个人运动数据】面板 === */
+        #panel-profile {
+            background: var(--bg);
+            display: flex; flex-direction: column;
+        }
+        .panel-header {
+            padding: 16px 20px 12px; border-bottom: 1px solid rgba(255,255,255,0.08);
+            background: rgba(15,23,42,0.9); backdrop-filter: blur(10px);
+            flex-shrink: 0;
+        }
+        .panel-header h2 { margin: 0 0 4px; font-size: 1rem; color: var(--primary); }
+        .panel-header p { margin: 0; font-size: 0.72rem; color: #64748b; }
+
+        .panel-body { flex: 1; overflow-y: auto; padding: 16px 20px; }
+
+        .sync-row {
+            display: flex; gap: 10px; margin-bottom: 16px; justify-content: flex-start;
+        }
+        .sync-btn {
+            padding: 6px 16px; border-radius: 6px; font-weight: 500;
+            font-size: 0.75rem; cursor: pointer; border: 1px solid rgba(255,255,255,0.15);
+            background: rgba(255,255,255,0.08); color: #f8fafc;
+            display: flex; align-items: center; justify-content: center; gap: 4px;
+            transition: background 0.2s, border-color 0.2s;
+            white-space: nowrap; line-height: 1.2; width: auto; min-width: 140px;
+        }
+        .sync-btn:hover { background: rgba(255,255,255,0.15); border-color: rgba(255,255,255,0.3); }
+        .sync-btn.garmin { border-color: rgba(0,140,200,0.4); }
+        .sync-btn.garmin:hover { background: rgba(0,140,200,0.15); border-color: rgba(0,140,200,0.6); }
+        .sync-btn.coros { border-color: rgba(46,204,113,0.4); }
+        .sync-btn.coros:hover { background: rgba(46,204,113,0.1); border-color: rgba(46,204,113,0.6); }
+
+        .section-card {
+            background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 12px; padding: 14px 16px; margin-bottom: 12px;
+        }
+        .section-title {
+            font-size: 0.72rem; font-weight: 700; color: var(--primary);
+            letter-spacing: 1px; margin-bottom: 10px; text-transform: uppercase;
+        }
+
+        .stat-grid {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 6px 16px;
+        }
+        .stat-row {
+            display: flex; justify-content: space-between; align-items: center;
+            font-size: 0.75rem;
+        }
+        .stat-row span { color: #94a3b8; }
+        .stat-row b { color: #f8fafc; font-weight: 600; }
+        .stat-row b.hrv-high { color: #ef4444; }
+        .stat-row b.hrv-low { color: #2ecc71; }
+
+        .activity-list { display: flex; flex-direction: column; gap: 6px; }
+        .activity-item {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 8px 10px; background: rgba(255,255,255,0.04); border-radius: 8px; font-size: 0.72rem;
+        }
+        .activity-item .act-date { color: #94a3b8; min-width: 70px; }
+        .activity-item .act-dist { color: #f8fafc; font-weight: 600; }
+        .activity-item .act-meta { color: #64748b; font-size: 0.68rem; }
+        .activity-item .act-decouple { font-weight: 700; }
+        .activity-item .act-decouple.high { color: #ef4444; }
+        .activity-item .act-decouple.low { color: #2ecc71; }
+
+        .device-row {
+            display: flex; align-items: center; gap: 8px; font-size: 0.75rem; color: #94a3b8;
+        }
+        .device-row b { color: #f8fafc; }
+
+        .ai-chat-section {
+            flex: 1; min-height: 200px; display: flex; flex-direction: column;
+            margin-top: 4px;
+        }
+        .ai-chat-title {
+            font-size: 0.72rem; font-weight: 700; color: #a855f7; letter-spacing: 1px;
+            margin-bottom: 8px; text-transform: uppercase;
+        }
+        #ai-chat-container { flex: 1; display: flex; flex-direction: column; gap: 6px; }
+        #ai-chat-messages { flex: 1; overflow-y: auto; min-height: 120px; max-height: 220px; }
+        .chat-msg { padding: 6px 10px; border-radius: 8px; font-size: 0.75rem; line-height: 1.5; }
+        .chat-msg.user { background: rgba(46,204,113,0.15); color: #2ecc71; }
+        .chat-msg.ai { background: rgba(168,85,247,0.15); color: #c084fc; }
+        .ai-chat-input { display: flex; gap: 6px; margin-top: 6px; }
+        #ai-chat-input { flex: 1; background: rgba(255,255,255,0.07); border: 1px solid rgba(168,85,247,0.2); border-radius: 8px; padding: 8px 12px; color: #f8fafc; font-size: 0.75rem; }
+        #ai-chat-input:focus { outline: none; border-color: rgba(168,85,247,0.5); }
+        #ai-chat-send { background: rgba(168,85,247,0.2); border: 1px solid rgba(168,85,247,0.3); color: #a855f7; border-radius: 8px; padding: 6px 14px; font-size: 0.72rem; cursor: pointer; }
+        #ai-chat-send:hover { background: rgba(168,85,247,0.3); }
+
+        /* === 【轨迹分析工具】面板 === */
+        #panel-trace {
+            background: var(--bg);
+        }
+
+        /* === 【配置】面板 === */
+        #panel-settings {
+            background: var(--bg);
+            overflow-y: auto;
+        }
+
+        /* === Cesium 地球（始终渲染） === */
+        #cesiumContainer { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 0; touch-action: none; }
+
+        /* === 顶栏（仅【轨迹分析工具】可见） === */
+        #top-bar {
+            position: absolute; top: 0; left: 0; right: 0;
+            background: rgba(15, 23, 42, 0.78); border-radius: 0; backdrop-filter: blur(12px);
+            border: 0; border-bottom: 1px solid rgba(255,255,255,0.1); box-shadow: 0 4px 16px rgba(0,0,0,0.24);
+            z-index: 10;
+        }
+
+        /* === 全屏覆盖层（配置等） === */
+        #modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(2px); z-index: 999; }
 
         .panel-inner {
-            padding: 15px 20px; max-height: 45vh; overflow-y: auto; border-radius: 12px;
-            display: flex; flex-wrap: wrap; gap: 20px; align-items: center; justify-content: space-between;
+            padding: 4px 6px;
+            display: flex; align-items: center; gap: 0;
+            max-height: none; overflow: visible;
+            flex-wrap: nowrap;
+            overflow-x: auto;
+            scrollbar-width: none;
         }
-        .panel-inner::-webkit-scrollbar { width: 6px; }
-        .panel-inner::-webkit-scrollbar-track { background: transparent; }
-        .panel-inner::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 3px; }
+        .panel-inner::-webkit-scrollbar { display: none; }
+        .mini-stat { font-size: 0.7rem; color: #94a3b8; white-space: nowrap; flex: 0 0 auto; }
+        .mini-stat b { color: #f8fafc; font-weight: 600; margin-left: 2px; }
+        .sep { color: rgba(255,255,255,0.15); padding: 0 6px; font-size: 0.65rem; user-select: none; flex: 0 0 auto; }
+        .flex-grow { flex: 1 1 auto; min-width: 4px; }
+        .btn-group, .toggle-group, .sport-type-select, .progress-group { flex: 0 0 auto; }
 
+        .ctrl-btn {
+            display: flex; align-items: center; gap: 4px;
+            padding: 4px 8px; border-radius: 6px;
+            background: rgba(255,255,255,0.08); color: #f8fafc;
+            border: 1px solid rgba(255,255,255,0.15);
+            font-size: 0.7rem; font-weight: 500; cursor: pointer;
+            white-space: nowrap; flex-shrink: 0;
+            transition: background 0.2s, border-color 0.2s;
+        }
+        .ctrl-btn:hover { background: rgba(255,255,255,0.15); border-color: rgba(255,255,255,0.3); }
+        .ctrl-btn.primary { background: var(--primary); color: #0f172a; border-color: var(--primary); font-weight: 700; }
+        .ctrl-btn.primary:hover { background: var(--primary-hover); }
+        .ctrl-btn.purple { background: rgba(168,85,247,0.15); color: #a855f7; border-color: rgba(168,85,247,0.3); }
+        .ctrl-btn.purple:hover { background: rgba(168,85,247,0.25); }
+        .btn-label { font-size: 0.7rem; }
+
+        .toggle-label {
+            display: flex; align-items: center; gap: 4px;
+            font-size: 0.68rem; color: #94a3b8; cursor: pointer; white-space: nowrap; flex-shrink: 0;
+        }
+        .toggle-label input { accent-color: var(--primary); width: 13px; height: 13px; cursor: pointer; }
         .toggle-panel-btn {
             position: absolute; bottom: -24px; left: 50%; transform: translateX(-50%);
             width: 60px; height: 24px; background: var(--panel); color: white;
@@ -66,6 +266,43 @@
         .switch-label { display: flex; align-items: center; gap: 6px; font-size: 0.85rem; color: #cbd5e1; cursor: pointer; user-select: none; }
         .switch-label input { accent-color: var(--primary); width: 16px; height: 16px; cursor: pointer; margin: 0;}
 
+        @media (max-width: 1200px) {
+            .panel-inner { padding: 3px 4px; }
+            .mini-stat { font-size: 0.66rem; }
+            .sep { padding: 0 4px; }
+            .ctrl-btn { padding: 3px 6px; font-size: 0.66rem; gap: 3px; }
+            .btn-label { font-size: 0.66rem; }
+            .toggle-label { font-size: 0.64rem; gap: 3px; }
+            .toggle-group { gap: 5px !important; }
+            .sport-type-select select { max-width: 128px; padding: 2px 5px !important; font-size: 0.66rem !important; }
+            #progress-slider { width: 70px !important; }
+        }
+
+        @media (max-width: 900px) {
+            .panel-inner { gap: 0; }
+            .btn-label { display: none; }
+            .ctrl-btn { padding: 4px 6px; min-width: 28px; justify-content: center; }
+            .sync-btn { padding: 5px 8px; font-size: 0.7rem; min-width: auto; }
+            .mini-stat { font-size: 0.64rem; }
+            .sep { padding: 0 3px; }
+            .toggle-label { font-size: 0; gap: 0; }
+            .toggle-label input { width: 14px; height: 14px; }
+            .sport-type-select > span { display: none; }
+            .sport-type-select select { max-width: 102px; }
+            .progress-group > span:first-child { display: none; }
+            #progress-slider { width: 58px !important; }
+        }
+
+        @media (max-width: 640px) {
+            .panel-inner { padding: 2px 3px; }
+            .mini-stat:nth-of-type(n+3), .mini-stat:nth-of-type(n+3) + .sep { display: none; }
+            .flex-grow { min-width: 2px; }
+            .toggle-group { display: none !important; }
+            .sport-type-select select { max-width: 86px; font-size: 0.62rem !important; }
+            #progress-slider { width: 46px !important; }
+            #progress-val { min-width: 30px !important; font-size: 0.62rem !important; }
+        }
+
         #loading {
             position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
             background: var(--bg); z-index: 100; transition: opacity 0.8s;
@@ -78,7 +315,7 @@
 
         .cesium-viewer-bottom { display: none !important; }
 
-        /* AI 侧边栏 */
+        /* 轨迹报告侧边栏 */
         #ai-sidebar {
             position: fixed; top: 50%; right: 0; transform: translateY(-50%);
             z-index: 20; display: flex; align-items: stretch;
@@ -100,19 +337,12 @@
             border: 1px solid rgba(255,255,255,0.1); border-right: none;
             height: 85vh; padding: 12px 14px; display: flex; flex-direction: column;
         }
-
-        .tab-btn {
-            background: transparent; border: none; color: #94a3b8; font-size: 0.9rem; 
-            font-weight: bold; cursor: pointer; padding: 6px 10px; border-radius: 6px; transition: all 0.2s;
-        }
-        .tab-btn.active { background: rgba(255,255,255,0.1); color: #f8fafc; }
-        .tab-btn:hover:not(.active) { color: #e2e8f0; }
         .icon-btn { background: transparent; border: none; color: #94a3b8; font-size: 1.1rem; cursor: pointer; }
         .icon-btn:hover { color: white; }
-        .tab-content { flex: 1; overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.2) transparent; }
-        .tab-content::-webkit-scrollbar { width: 4px; }
-        .tab-content::-webkit-scrollbar-track { background: transparent; }
-        .tab-content::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 2px; }
+        #ai-summary { flex: 1; overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.2) transparent; }
+        #ai-summary::-webkit-scrollbar { width: 4px; }
+        #ai-summary::-webkit-scrollbar-track { background: transparent; }
+        #ai-summary::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 2px; }
 
         .ai-section {
             background: rgba(255,255,255,0.04); border-radius: 6px; padding: 8px 10px; margin-bottom: 6px;
@@ -127,6 +357,7 @@
         .ai-badge-moderate { background: #eab30833; color: #facc15; }
         .ai-badge-hard { background: #ef444433; color: #f87171; }
         .ai-badge-extreme { background: #dc262633; color: #fca5a5; }
+        .ai-empty { color:#94a3b8; font-size:0.78rem; text-align:center; padding:28px 10px; line-height:1.7; }
         .ai-stat { display: flex; justify-content: space-between; font-size: 0.75rem; padding: 2px 0; line-height: 1.4; }
         .ai-stat-label { color: #94a3b8; }
         .ai-stat-value { color: #f8fafc; font-weight: 500; }
@@ -150,6 +381,46 @@
         
         .primary-btn { background: var(--primary); color: #0f172a; }
         .primary-btn:hover { background: var(--primary-hover); }
+
+        #ai-coach-bubble {
+            position: fixed; right: 24px; bottom: 92px; width: 56px; height: 56px;
+            border-radius: 50%; border: 1px solid rgba(168,85,247,0.55);
+            background: linear-gradient(135deg, rgba(168,85,247,0.95), rgba(126,34,206,0.95));
+            color: #fff; z-index: 720; cursor: grab; display: flex; align-items: center; justify-content: center;
+            box-shadow: 0 12px 30px rgba(0,0,0,0.36); user-select: none; touch-action: none;
+            font-weight: 800; font-size: 1.15rem;
+        }
+        #ai-coach-bubble:active { cursor: grabbing; }
+        #ai-coach-window {
+            position: fixed; right: 24px; bottom: 160px; width: min(380px, calc(100vw - 32px)); height: min(560px, calc(100vh - 120px));
+            background: rgba(15,23,42,0.96); backdrop-filter: blur(16px); border: 1px solid rgba(168,85,247,0.35);
+            border-radius: 16px; box-shadow: 0 24px 60px rgba(0,0,0,0.45); z-index: 721; display: none; flex-direction: column;
+            overflow: hidden; touch-action: none;
+        }
+        #ai-coach-window.open { display: flex; }
+        #ai-coach-header {
+            display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 14px;
+            background: linear-gradient(135deg, rgba(168,85,247,0.22), rgba(59,130,246,0.12));
+            border-bottom: 1px solid rgba(255,255,255,0.1); cursor: grab; user-select: none;
+        }
+        #ai-coach-header:active { cursor: grabbing; }
+        #ai-coach-title { font-size: 0.9rem; font-weight: 800; color: #f8fafc; }
+        #ai-coach-subtitle { font-size: 0.66rem; color: #c4b5fd; margin-top: 2px; }
+        #ai-coach-messages { flex: 1; overflow-y: auto; padding: 12px; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.2) transparent; }
+        #ai-coach-messages::-webkit-scrollbar { width: 4px; }
+        #ai-coach-messages::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 2px; }
+        .ai-coach-msg { padding: 10px; border-radius: 10px; margin-bottom: 10px; font-size: 0.78rem; line-height: 1.55; word-break: break-word; }
+        .ai-coach-msg.user { margin-left: 28px; background: rgba(168,85,247,0.22); border: 1px solid rgba(168,85,247,0.42); color: #fff; }
+        .ai-coach-msg.assistant { margin-right: 20px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); color: #e2e8f0; }
+        #ai-coach-input-row { display: flex; gap: 8px; padding: 10px; border-top: 1px solid rgba(255,255,255,0.1); background: rgba(15,23,42,0.88); }
+        #ai-coach-input { flex: 1; min-width: 0; background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.14); color: #f8fafc; border-radius: 9px; padding: 9px; font-size: 0.78rem; outline: none; }
+        #ai-coach-input:focus { border-color: rgba(168,85,247,0.6); }
+        #ai-coach-global-btn {
+            position: fixed; right: 24px; bottom: 24px; z-index: 719;
+            background: rgba(15,23,42,0.9); color: #e9d5ff; border: 1px solid rgba(168,85,247,0.45);
+            border-radius: 999px; padding: 8px 12px; cursor: pointer; font-size: 0.75rem; box-shadow: 0 8px 20px rgba(0,0,0,0.28);
+        }
+        #ai-coach-global-btn:hover { background: rgba(168,85,247,0.22); }
         
         .btn-row { display: flex; gap: 8px; margin-top: 0; }
 
@@ -195,6 +466,235 @@
         .sport-card h3 { margin: 10px 0 5px 0; color: #f8fafc; font-size: 1.1rem; }
         .sport-card p { margin: 0; color: #94a3b8; font-size: 0.8rem; }
     </style>
+    <style>
+        /* 新手引导覆盖层样式 */
+        .onboarding-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+            z-index: 9999;
+            display: none;
+            justify-content: center;
+            align-items: center;
+        }
+        .onboarding-card {
+            background: #1e293b;
+            border-radius: 12px;
+            padding: 30px;
+            width: 450px;
+            max-width: 90%;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.5);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: #f8fafc;
+            position: relative;
+        }
+        .onboarding-title {
+            font-size: 1.25rem;
+            font-weight: 700;
+            margin-bottom: 20px;
+            text-align: center;
+            color: var(--primary);
+        }
+        .onboarding-step {
+            display: none;
+        }
+        .onboarding-step.active {
+            display: block;
+        }
+        .onboarding-actions {
+            margin-top: 25px;
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+        .onboarding-btn {
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            cursor: pointer;
+            border: none;
+            transition: all 0.2s;
+        }
+        .onboarding-btn.primary {
+            background: var(--primary);
+            color: #0f172a;
+            font-weight: 600;
+        }
+        .onboarding-btn.primary:hover {
+            background: #00e673;
+        }
+        .onboarding-btn.secondary {
+            background: rgba(255,255,255,0.1);
+            color: #f8fafc;
+        }
+        .onboarding-btn.secondary:hover {
+            background: rgba(255,255,255,0.2);
+        }
+        .onboarding-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .onboarding-close {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background: none;
+            border: none;
+            color: #94a3b8;
+            font-size: 1.2rem;
+            cursor: pointer;
+        }
+        .onboarding-close:hover {
+            color: #f8fafc;
+        }
+        .onboarding-desc {
+            font-size: 0.85rem;
+            color: #94a3b8;
+            margin-bottom: 15px;
+            line-height: 1.5;
+        }
+        .user-type-selector {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .user-type-option {
+            flex: 1;
+            padding: 15px;
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 8px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .user-type-option:hover {
+            background: rgba(255,255,255,0.05);
+        }
+        .user-type-option.active {
+            border-color: var(--primary);
+            background: rgba(0,255,127,0.1);
+            color: var(--primary);
+        }
+        
+        .ai-assistant-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 6px 12px;
+            background: rgba(0, 255, 127, 0.15);
+            color: var(--primary);
+            border: 1px solid var(--primary);
+            border-radius: 6px;
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-left: 10px;
+        }
+        .ai-assistant-btn:hover:not(:disabled) {
+            background: rgba(0, 255, 127, 0.25);
+        }
+        .ai-assistant-btn:disabled {
+            background: rgba(255, 255, 255, 0.05);
+            color: #64748b;
+            border-color: #334155;
+            cursor: not-allowed;
+        }
+
+        /* 查重弹窗样式 */
+        .duplicate-dialog-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.75);
+            backdrop-filter: blur(4px);
+            z-index: 10000;
+            display: none;
+            justify-content: center;
+            align-items: center;
+        }
+        .duplicate-dialog {
+            background: #1e293b;
+            border-radius: 12px;
+            width: 500px;
+            max-width: 90%;
+            box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);
+            border: 1px solid rgba(255,255,255,0.1);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+        .duplicate-dialog-header {
+            padding: 16px 20px;
+            background: rgba(255, 255, 255, 0.03);
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .duplicate-dialog-header h3 {
+            margin: 0;
+            font-size: 1.1rem;
+            color: #fca5a5;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .duplicate-dialog-body {
+            padding: 20px;
+            color: #e2e8f0;
+            font-size: 0.9rem;
+            line-height: 1.6;
+        }
+        .duplicate-record-info {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            padding: 12px;
+            margin-top: 15px;
+            border: 1px dashed rgba(255,255,255,0.1);
+        }
+        .duplicate-dialog-footer {
+            padding: 16px 20px;
+            background: rgba(0, 0, 0, 0.2);
+            border-top: 1px solid rgba(255,255,255,0.1);
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+        .dup-btn {
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            cursor: pointer;
+            border: 1px solid transparent;
+            transition: all 0.2s;
+        }
+        .dup-btn-skip {
+            background: transparent;
+            color: #94a3b8;
+            border-color: rgba(255,255,255,0.2);
+        }
+        .dup-btn-skip:hover {
+            background: rgba(255,255,255,0.1);
+            color: #f8fafc;
+        }
+        .dup-btn-force {
+            background: rgba(239, 68, 68, 0.15);
+            color: #ef4444;
+            border-color: rgba(239, 68, 68, 0.3);
+        }
+        .dup-btn-force:hover {
+            background: rgba(239, 68, 68, 0.25);
+        }
+        .dup-btn-merge {
+            background: var(--primary);
+            color: #0f172a;
+            font-weight: 600;
+        }
+        .dup-btn-merge:hover {
+            background: #00e673;
+        }
+    </style>
 </head>
 <body>
 
@@ -203,144 +703,351 @@
     <div id="loading-text" style="color: #94a3b8; font-size: 0.9rem;">正在启动 3D 分析仪...</div>
 </div>
 
-<div id="info-panel">
-    <div class="toggle-panel-btn" onclick="togglePanel()">▲</div>
-    <div class="panel-inner">
-        <div class="section-stats">
-            <h1 id="track-title">等待导入轨迹...</h1>
-            <div class="stat-grid">
-                <div class="stat-item"><span>里程</span><b id="val-dist">-- km</b></div>
-                <div class="stat-item"><span>耗时</span><b id="val-time">--</b></div>
-                <div class="stat-item"><span>累计爬升</span><b id="val-gain">-- m</b></div>
-                <div class="stat-item"><span>最高海拔</span><b id="val-max">-- m</b></div>
+<div id="sync-loading" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); backdrop-filter:blur(3px); z-index:9999; flex-direction:column; align-items:center; justify-content:center;">
+    <div class="spinner"></div>
+    <div id="sync-loading-text" style="color:white; font-size:1rem; font-weight:600;">数据正在同步中，请稍候...</div>
+</div>
+
+<div id="app-wrapper">
+
+    <!-- ========== 左侧立体书签标签栏 ========== -->
+    <div id="sidebar-tabs">
+        <button class="bookmark-tab active" data-panel="profile" onclick="switchTab(this)">
+            <span class="tab-icon">👤</span>
+            <span class="tab-label">个人运动数据</span>
+            <span class="tab-arrow">➜</span>
+        </button>
+        <div class="bookmark-spacer"></div>
+        <button class="bookmark-tab" data-panel="trace" onclick="switchTab(this)">
+            <span class="tab-icon">🗺️</span>
+            <span class="tab-label">轨迹分析工具</span>
+            <span class="tab-arrow">➜</span>
+        </button>
+        <div class="bookmark-spacer"></div>
+        <button class="bookmark-tab" data-panel="settings" onclick="switchTab(this)">
+            <span class="tab-icon">⚙️</span>
+            <span class="tab-label">配置</span>
+            <span class="tab-arrow">➜</span>
+        </button>
+    </div>
+
+    <!-- ========== 主内容区（3个面板） ========== -->
+    <div id="main-content">
+
+        <!-- ========== 【个人运动数据】面板 ========== -->
+        <div id="panel-profile" class="tab-panel active">
+
+            <div class="panel-header">
+                <h2>🏃 个人运动数据</h2>
+                <p>实时同步佳明 / 高驰运动数据，构建完整运动画像</p>
+            </div>
+
+            <div class="panel-body">
+
+                <!-- 一键同步区 -->
+                <div class="sync-row" id="sync-buttons-container">
+                    <button class="sync-btn garmin" id="btn-sync-garmin" onclick="syncPersona('garmin')">
+                        📥 从佳明同步数据
+                    </button>
+                    <button class="sync-btn coros" id="btn-sync-coros" onclick="syncPersona('coros')">
+                        📥 从高驰同步数据
+                    </button>
+                </div>
+
+                <!-- 运动画像容器 -->
+                <div style="display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 16px;">
+                    <!-- 生理画像 -->
+                    <div class="section-card" style="flex: 1; min-width: 300px; margin-bottom: 0;">
+                        <div class="section-title">🎯 生理画像</div>
+                        <div class="stat-grid">
+                            <div class="stat-row"><span>姓名</span><b id="pf-name">--</b></div>
+                            <div class="stat-row"><span>年龄</span><b id="pf-age">--</b></div>
+                            <div class="stat-row"><span>性别</span><b id="pf-gender">--</b></div>
+                            <div class="stat-row"><span>身高</span><b id="pf-height">-- cm</b></div>
+                            <div class="stat-row"><span>体重</span><b id="pf-weight">-- kg</b></div>
+                            <div class="stat-row"><span>静息心率</span><b id="pf-resting-hr">-- bpm</b></div>
+                            <div class="stat-row"><span>最大心率</span><b id="pf-max-hr">-- bpm</b></div>
+                            <div class="stat-row"><span>HRV基准</span><b id="pf-hrv">-- ms</b></div>
+                            <div class="stat-row"><span>VO₂max</span><b id="pf-vo2max">--</b></div>
+                            <div class="stat-row"><span>平均睡眠</span><b id="pf-sleep">-- h</b></div>
+                            <div class="stat-row"><span>乳酸阈值心率</span><b id="pf-lthr">-- bpm</b></div>
+                            <div class="stat-row"><span>FTP (骑行)</span><b id="pf-ftp">-- W</b></div>
+                            <div class="stat-row"><span>最长徒步</span><b id="pf-longest-hike">-- km</b></div>
+                            <div class="stat-row"><span>5km PB</span><b id="pf-pb-5k">--</b></div>
+                            <div class="stat-row"><span>10km PB</span><b id="pf-pb-10k">--</b></div>
+                            <div class="stat-row"><span>半马 PB</span><b id="pf-pb-hm">--</b></div>
+                            <div class="stat-row"><span>全马 PB</span><b id="pf-pb-fm">--</b></div>
+                        </div>
+                    </div>
+                    
+                    <!-- 六维能力雷达 -->
+                    <div class="section-card" style="flex: 1; min-width: 300px; margin-bottom: 0; display: flex; flex-direction: column;">
+                        <div class="section-title">🕸️ 运动能力</div>
+                        <div id="performanceRadar" style="width: 100%; flex: 1; min-height: 320px;"></div>
+                    </div>
+                </div>
+
+                <!-- 近期活动 -->
+                <div class="section-card">
+                    <div class="section-title">📊 近期活动</div>
+                    <div id="pf-activity-list" class="activity-list">
+                        <div style="color:#64748b;font-size:0.72rem;text-align:center;padding:12px 0;">同步数据后自动展示</div>
+                    </div>
+                </div>
+
+                <!-- 设备 -->
+                <div class="section-card">
+                    <div class="section-title">⌚ 已绑定设备</div>
+                    <div id="pf-device" class="device-row">
+                        <span>📱</span><b>暂无设备</b><span style="color:#64748b;font-size:0.68rem;">（同步佳明/高驰后自动更新）</span>
+                    </div>
+                </div>
+
+                <!-- AI 助手对话 -->
+                <div class="section-card ai-chat-section">
+                    <div class="ai-chat-title">✨ AI 运动助手</div>
+                    <div id="ai-chat-messages"></div>
+                    <div class="ai-chat-input">
+                        <input type="text" id="ai-chat-input" placeholder="向AI询问训练建议..." onkeydown="if(event.key==='Enter')sendAIMsg()">
+                        <button id="ai-chat-send" onclick="sendAIMsg()">发送</button>
+                    </div>
+                </div>
+
             </div>
         </div>
-        <div class="section-controls">
-            <div class="control-group">
-                <label><span style="color:var(--primary);">🏃 进度控制</span><span id="progress-val">100.0%</span></label>
-                <input type="range" id="progress-slider" min="0" max="100" step="0.5" value="100">
+
+        <!-- ========== 【轨迹分析工具】面板 ========== -->
+        <div id="panel-trace" class="tab-panel">
+
+            <!-- Cesium 3D 地球（始终渲染，不受面板切换影响） -->
+            <div id="cesiumContainer"></div>
+
+            <!-- 顶栏工具条（仅此面板可见） -->
+            <div id="top-bar">
+                <div class="panel-inner">
+                    <span class="mini-stat">里程 <b id="val-dist">--</b> km</span>
+                    <span class="sep">|</span>
+                    <span class="mini-stat">耗时 <b id="val-time">--</b></span>
+                    <span class="sep">|</span>
+                    <span class="mini-stat">爬升 <b id="val-gain">--</b> m</span>
+                    <span class="sep">|</span>
+                    <span class="mini-stat">最高 <b id="val-max">--</b> m</span>
+                    <span class="flex-grow"></span>
+                    <div class="btn-group" style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+                        <button onclick="triggerTrackImport()" class="ctrl-btn primary" title="导入轨迹文件（支持 GPX / FIT / KML）">📁 <span class="btn-label">导入</span></button>
+                        <button onclick="setViewProfile()" class="ctrl-btn" title="切换到地形剖面图视角">⛰️ <span class="btn-label">剖面</span></button>
+                        <button id="btn-auto-rotate" class="ctrl-btn" title="自动环绕旋转视角，松手停止">▶ <span class="btn-label">旋转</span></button>
+                        <button onclick="exportGPX()" class="ctrl-btn" title="导出为 GPX 文件">⬇️ <span class="btn-label">导出</span></button>
+                    </div>
+                    <span class="sep">|</span>
+                    <div class="toggle-group" style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+                        <label class="toggle-label"><input type="checkbox" id="toggle-cp" checked> 打卡点</label>
+                        <label class="toggle-label"><input type="checkbox" id="toggle-km" checked> 里程</label>
+                        <label class="toggle-label"><input type="checkbox" id="toggle-peak" checked> 坡顶</label>
+                    </div>
+                    <span class="sep">|</span>
+                    <div class="sport-type-select" style="display:flex;align-items:center;gap:5px;flex-shrink:0;">
+                        <span style="color:#94a3b8;font-size:0.65rem;">🏃</span>
+                        <select id="sport-type-selector" onchange="onSportTypeChange(this.value)" style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);color:#94a3b8;border-radius:6px;padding:3px 8px;font-size:0.7rem;cursor:pointer;outline:none;">
+                            <option value="">⚠️ 请选择运动类型</option>
+                            <option value="running">🏃 跑步</option>
+                            <option value="hiking">🥾 徒步</option>
+                            <option value="cycling">🚴 骑行</option>
+                            <option value="swimming">🏊 游泳</option>
+                            <option value="walking">🚶 步行</option>
+                            <option value="trail_running">🏃 越野跑</option>
+                            <option value="treadmill_running">🏃 室内跑步</option>
+                            <option value="road_cycling">🛣️ 公路骑行</option>
+                            <option value="mountain_biking">🚵 山地骑行</option>
+                        </select>
+                    </div>
+                    <span class="sep">|</span>
+                    <div class="progress-group" style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+                        <span style="color:var(--primary);font-size:0.65rem;font-weight:600;">进度</span>
+                        <input type="range" id="progress-slider" min="0" max="100" step="0.5" value="100" style="width:90px;accent-color:var(--primary);cursor:pointer;">
+                        <span id="progress-val" style="color:var(--primary);font-size:0.65rem;font-weight:600;min-width:36px;">100%</span>
+                    </div>
+                </div>
             </div>
-            <div style="display:flex; gap:10px;">
-                <button id="btn-auto-rotate" class="secondary-btn" style="flex:1;">▶ 漫游</button>
-                <button onclick="setViewProfile()" class="secondary-btn" style="flex:1;">⛰️ 剖面</button>
-                <button class="primary-btn" style="flex:1;" onclick="triggerTrackImport()">📁 导入</button>
+
+            <!-- 地图下方的剖面图 -->
+            <div id="profile-container">
+                <canvas id="profile-canvas"></canvas>
+            </div>
+
+            <!-- 历史轨迹抽屉 -->
+            <div id="history-drawer" style="position:absolute;top:0;left:0;bottom:0;width:300px;background:rgba(15,23,42,0.92);backdrop-filter:blur(16px);border-right:1px solid rgba(255,255,255,0.1);z-index:500;display:none;flex-direction:column;transform:translateX(-100%);transition:transform 0.3s cubic-bezier(0.4,0,0.2,1);box-shadow:4px 0 20px rgba(0,0,0,0.4);">
+                <div style="padding:10px 12px;border-bottom:1px solid rgba(255,255,255,0.1);flex-shrink:0;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+                        <span style="font-size:0.85rem;font-weight:700;color:var(--primary);">📁 历史轨迹</span>
+                        <button onclick="toggleHistoryDrawer()" style="background:none;border:none;color:#94a3b8;font-size:1.2rem;cursor:pointer;padding:0 4px;">✕</button>
+                    </div>
+                    <div id="track-title" style="margin-top:6px;font-size:0.72rem;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="等待导入轨迹...">等待导入轨迹...</div>
+                </div>
+                <div id="history-list" style="flex:1;overflow-y:auto;padding:8px 10px;display:flex;flex-direction:column;gap:6px;"></div>
+            </div>
+            <div id="history-overlay" onclick="toggleHistoryDrawer()" style="position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:499;display:none;"></div>
+            <button id="history-toggle-btn" onclick="toggleHistoryDrawer()" style="position:absolute;top:50%;left:0;transform:translateY(-50%);background:rgba(15,23,42,0.85);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,0.15);border-left:none;border-radius:0 8px 8px 0;padding:14px 8px;cursor:pointer;z-index:501;color:#94a3b8;font-size:1rem;writing-mode:vertical-rl;letter-spacing:2px;transition:left 0.3s;">📂</button>
+
+            <div id="ai-sidebar" class="collapsed">
+                <button id="ai-sidebar-btn" onclick="toggleAISidebar()">📋 报告</button>
+                <div id="ai-sidebar-body">
+                    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;flex-shrink:0;">
+                        <div style="font-size:0.9rem;font-weight:800;color:#f8fafc;">📋 轨迹报告</div>
+                        <button class="icon-btn" onclick="toggleAISidebar()" title="收起">×</button>
+                    </div>
+                    <div id="ai-summary" class="ai-empty">导入轨迹后自动生成坡度、距离、城市位置等报告。</div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- ========== 【配置】面板 ========== -->
+        <div id="panel-settings" class="tab-panel">
+            <div class="panel-header">
+                <h2>⚙️ 系统配置</h2>
+                <p>API 密钥、大模型参数、数据存储路径等核心配置项</p>
+            </div>
+            <div class="panel-body">
+                <div class="section-card">
+                    <div class="section-title">🤖 大模型 API 配置</div>
+                    <div style="margin-bottom:12px;">
+                        <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:8px;">手表品牌 <span style="color:#ef4444">*</span></label>
+                        <div style="display:flex; gap:16px;">
+                            <label style="display:flex; align-items:center; gap:6px; font-size:0.85rem; color:#f8fafc; cursor:pointer;">
+                                <input type="radio" name="watch_brand" value="garmin" style="accent-color:var(--primary); width:16px; height:16px; margin:0;" onchange="syncLLMConfigFromFields()">
+                                我是佳明用户
+                            </label>
+                            <label style="display:flex; align-items:center; gap:6px; font-size:0.85rem; color:#f8fafc; cursor:pointer;">
+                                <input type="radio" name="watch_brand" value="coros" style="accent-color:var(--primary); width:16px; height:16px; margin:0;" onchange="syncLLMConfigFromFields()">
+                                我是高驰用户
+                            </label>
+                        </div>
+                    </div>
+                    <div style="margin-bottom:12px;">
+                        <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:4px;">服务商 (Provider)</label>
+                        <select id="llm-provider" class="modal-input" onchange="updateLLMModels(); syncLLMConfigFromFields();" style="background:rgba(15,23,42,0.8);cursor:pointer;">
+                            <option value="local_mcp">本地 + MCP (如 OpenClaw / WorkBuddy)</option>
+                            <option value="openai">OpenAI</option>
+                            <option value="deepseek">DeepSeek</option>
+                            <option value="zhipu">智谱 AI</option>
+                            <option value="moonshot">Moonshot</option>
+                            <option value="qwen">通义千问</option>
+                            <option value="minimax">MiniMax</option>
+                            <option value="custom">自定义 OpenAI 兼容接口</option>
+                        </select>
+                    </div>
+                    <div style="margin-bottom:12px;">
+                        <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:4px;">模型 (Model)</label>
+                        <select id="llm-model" class="modal-input" onchange="syncLLMConfigFromFields()" style="background:rgba(15,23,42,0.8);cursor:pointer;"></select>
+                    </div>
+                    <div id="llm-custom-model-container" style="margin-bottom:12px;display:none;">
+                        <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:4px;">自定义模型名</label>
+                        <input type="text" id="llm-custom-model" class="modal-input" placeholder="openclaw" autocomplete="off" oninput="syncLLMConfigFromFields()" style="background:rgba(15,23,42,0.8);">
+                    </div>
+                    <div style="margin-bottom:12px;">
+                        <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:4px;">Agent ID（选填）</label>
+                        <input type="text" id="llm-agent-id" class="modal-input" placeholder="可填写 MCP / Agent 网关分配的 ID" autocomplete="off" oninput="syncLLMConfigFromFields()" style="background:rgba(15,23,42,0.8);">
+                    </div>
+                    <div id="llm-custom-url-container" style="margin-bottom:12px;display:block;">
+                        <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:4px;">自定义 API 地址</label>
+                        <input type="text" id="llm-custom-url" class="modal-input" placeholder="https://api.example.com/v1" autocomplete="off" oninput="syncLLMConfigFromFields(); _markUrlModified();" style="background:rgba(15,23,42,0.8);">
+                    </div>
+                    <div style="margin-bottom:12px;">
+                        <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:4px;">API Key</label>
+                        <input type="password" id="llm-api-key" class="modal-input" placeholder="sk-..." autocomplete="off" oninput="syncLLMConfigFromFields()" style="background:rgba(15,23,42,0.8);">
+                    </div>
+                    <div style="display:flex;gap:10px;">
+                        <button onclick="saveLLMConfig()" class="primary-btn" style="flex:1;">💾 保存配置</button>
+                        <button onclick="testLLMConfig()" class="secondary-btn" style="flex:1;">🧪 测试连接</button>
+                    </div>
+                </div>
+                <div class="section-card" id="storage-config-section">
+                    <div class="section-title">🗺️ 数据存储配置</div>
+                    <div style="margin-bottom:15px;">
+                        <label style="display:block;margin-bottom:5px;color:#94a3b8;font-size:0.8rem;">本地 FIT 文件存储目录</label>
+                        <div style="display:flex;gap:10px;align-items:center;">
+                            <input type="text" id="set-local-dir" readonly placeholder="请选择本地文件夹..." style="flex:1;padding:10px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#94a3b8;border-radius:6px;outline:none;cursor:default;">
+                            <button onclick="selectLocalDirectory()" class="ctrl-btn" style="padding:8px 15px;white-space:nowrap;">选择文件夹</button>
+                        </div>
+                        <div style="margin-top:15px; display:flex; align-items:center;">
+                            <button id="btn-notify-ai" class="ai-assistant-btn" disabled onclick="notifyAIAssistant()" style="margin-left:0;">
+                                🤖 告诉AI助手下载规范
+                            </button>
+                        </div>
+                    </div>
+                    <div class="stat-grid">
+                        <div class="stat-row"><span>轨迹备份路径</span><b style="font-size:0.65rem;color:#64748b;">~/.hiking_track_ai/local_tracks/</b></div>
+                        <div class="stat-row"><span>数据库路径</span><b style="font-size:0.65rem;color:#64748b;">~/.hiking_track_ai/user_profile.db</b></div>
+                    </div>
+                    <div style="margin-top:10px;display:flex;gap:10px;">
+                        <button onclick="clearHistory()" class="secondary-btn" style="flex:1;font-size:0.75rem;color:#ef4444;border-color:rgba(239,68,68,0.3);">🗑️ 清除历史轨迹</button>
+                    </div>
+                </div>
             </div>
         </div>
-        <div class="section-actions">
-            <div class="switch-row" style="justify-content: flex-start; margin-bottom: 5px;">
-                <label class="switch-label" style="width: 25%;"><input type="checkbox" id="toggle-cp" checked> 🚩 CP</label>
-                <label class="switch-label" style="width: 30%;"><input type="checkbox" id="toggle-km" checked> 📏 公里</label>
-                <label class="switch-label" style="width: 35%;"><input type="checkbox" id="toggle-peak" checked> ⛰️ 坡顶</label>
-            </div>
-            <div class="btn-row">
-                <button onclick="exportGPX()" class="secondary-btn" style="font-size: 0.75rem; flex:1;">⬇️ 保存为 GPX</button>
-                <button onclick="exportKML()" class="secondary-btn" style="font-size: 0.75rem; flex:1;">⬇️ 保存为 KML</button>
+
+    </div><!-- end #main-content -->
+
+</div><!-- end #app-wrapper -->
+
+<!-- 查重弹窗 -->
+<div id="duplicate-dialog-overlay" class="duplicate-dialog-overlay">
+    <div class="duplicate-dialog">
+        <div class="duplicate-dialog-header">
+            <h3>⚠️ 检测到重复的轨迹文件</h3>
+        </div>
+        <div class="duplicate-dialog-body">
+            该文件与您系统内已存储的历史轨迹高度相似，可能是重复导入。
+            <div class="duplicate-record-info" id="duplicate-info-content">
+                <!-- 动态注入内容 -->
             </div>
         </div>
-        <input type="file" id="file-upload" accept=".fit,.gpx,.kml" style="display: none;">
+        <div class="duplicate-dialog-footer">
+            <button class="dup-btn dup-btn-skip" id="btn-dup-skip">跳过导入</button>
+            <button class="dup-btn dup-btn-force" id="btn-dup-force">强制导入并重命名</button>
+            <button class="dup-btn dup-btn-merge" id="btn-dup-merge">合并重复文件数据</button>
+        </div>
     </div>
 </div>
 
-<div id="toast" style="opacity: 0;">提示信息</div>
-<div id="modal-overlay"></div>
-
-<!-- 运动类型选择弹窗 -->
-<div id="sport-type-modal" class="modal-base" style="max-width: 450px;">
-    <h2 style="margin:0 0 20px 0; color: white; text-align: center;">🎯 选择运动类型</h2>
-    <p style="color: #94a3b8; font-size: 0.85rem; text-align: center; margin-bottom: 20px;">为了提供准确的体能分析和成绩预测，请选择本次轨迹对应的运动。</p>
-    <div style="display: flex; gap: 15px;">
-        <div class="sport-card" onclick="confirmSportType('hiking')">
-            <div style="font-size: 2.5rem;">🥾</div>
-            <h3>徒步 / 登山</h3>
-            <p>侧重耐力与平稳心率，更关注负重与补给</p>
+<input type="file" id="file-upload" accept=".fit,.gpx,.kml" style="display:none;">
+<div id="toast" style="opacity:0;">提示信息</div>
+<button id="ai-coach-global-btn" onclick="openAICoach()" title="全局呼出 AI私教，也可按 Ctrl/⌘ + Shift + A">AI私教</button>
+<div id="ai-coach-bubble" title="AI私教，拖拽调整位置，点击打开">私教</div>
+<div id="ai-coach-window">
+    <div id="ai-coach-header">
+        <div>
+            <div id="ai-coach-title">🤖 AI私教</div>
+            <div id="ai-coach-subtitle">独立对话窗口，可拖拽停靠</div>
         </div>
-        <div class="sport-card" onclick="confirmSportType('trail_running')">
-            <div style="font-size: 2.5rem;">🏃‍♂️</div>
-            <h3>越野跑</h3>
-            <p>侧重速度与爬坡能力，配速要求与心率区间更高</p>
+        <div style="display:flex;gap:6px;align-items:center;">
+            <button class="icon-btn" onclick="collapseAICoach()" title="折叠为气泡">−</button>
+            <button class="icon-btn" onclick="closeAICoach()" title="关闭">×</button>
         </div>
     </div>
+    <div id="ai-coach-messages"></div>
+    <div id="ai-coach-input-row">
+        <input id="ai-coach-input" type="text" placeholder="向 AI私教提问，例如：这条路线怎么分配体力？" onkeydown="if(event.key==='Enter')sendAICoachMessage()">
+        <button onclick="sendAICoachMessage()" class="primary-btn" style="width:auto;padding:8px 12px;font-size:0.78rem;">发送</button>
+    </div>
 </div>
+<div id="modal-overlay" onclick="closeModals()" style="cursor:pointer;"></div>
 
+<!-- 打卡点编辑弹窗 -->
 <div id="edit-modal" class="modal-base">
     <div class="modal-header">
         <h2 id="edit-modal-title">编辑打卡点</h2>
         <button class="close-btn" onclick="closeModals()">&times;</button>
     </div>
     <input type="text" id="edit-cp-name" class="modal-input" placeholder="输入打卡点名称..." autocomplete="off">
-    <div style="display: flex; gap: 10px;">
-        <button onclick="saveCp()" class="primary-btn" style="margin-top: 0; flex: 1;">保存</button>
-        <button id="btn-delete-cp" onclick="deleteCp()" class="secondary-btn" style="margin-top: 0; color: #ef4444; border-color: rgba(239,68,68,0.3); flex: 1;">删除</button>
+    <div style="display:flex;gap:10px;margin-top:10px;">
+        <button onclick="saveCp()" class="primary-btn" style="flex:1;">保存</button>
+        <button id="btn-delete-cp" onclick="deleteCp()" class="secondary-btn" style="flex:1;color:#ef4444;border-color:rgba(239,68,68,0.3);">删除</button>
     </div>
 </div>
 
-<div id="llm-config-modal" class="modal-base" style="max-width: 400px; border: 1px solid rgba(168, 85, 247, 0.4);">
-    <div class="modal-header">
-        <h2 style="color: #c084fc;">⚙️ 大模型 API 配置</h2>
-        <button class="close-btn" onclick="closeModals()">&times;</button>
-    </div>
-    <div style="margin-bottom: 12px;">
-        <label style="font-size: 0.8rem; color: #94a3b8;">服务商 (Provider)</label>
-        <select id="llm-provider" class="modal-input" onchange="updateLLMModels()" style="margin-top: 4px; background: rgba(15,23,42,0.8); cursor:pointer;">
-            <option value="local_mcp">本地网关 + MCP (如 OpenClaw)</option>
-            <option value="deepseek">DeepSeek (深度求索)</option>
-            <option value="zhipu">智谱清言 (GLM)</option>
-            <option value="moonshot">Moonshot (Kimi)</option>
-            <option value="qwen">通义千问 (阿里云)</option>
-            <option value="minimax">MiniMax (海螺)</option>
-            <option value="custom">纯自定义 (OpenAI 兼容)</option>
-        </select>
-    </div>
-    <div style="margin-bottom: 12px;">
-        <label style="font-size: 0.8rem; color: #94a3b8;">模型 ID / Agent 名</label>
-        <select id="llm-model" class="modal-input" style="margin-top: 4px; background: rgba(15,23,42,0.8); cursor:pointer;"></select>
-        <input type="text" id="llm-custom-model" class="modal-input" placeholder="例如: openclaw 或小高" style="display:none; margin-top: 4px;">
-    </div>
-    <div id="llm-custom-url-container" style="margin-bottom: 12px;">
-        <label style="font-size: 0.8rem; color: #94a3b8;">接口地址 (支持本地服务/中转代理)</label>
-        <input type="text" id="llm-custom-url" class="modal-input" placeholder="http://localhost:3000/v1/chat/completions" style="margin-top: 4px;">
-    </div>
-    <div style="margin-bottom: 16px;">
-        <label style="font-size: 0.8rem; color: #94a3b8;">API Key (Token) <span id="llm-api-key-hint" style="color:#f59e0b;font-size:0.7rem;">(选填)</span></label>
-        <input type="password" id="llm-api-key" class="modal-input" placeholder="sk-..." style="margin-top: 4px;">
-        <div style="font-size: 0.65rem; color: #64748b; margin-top: 4px;">API Key 仅保存在浏览器本地，确保隐私安全。</div>
-    </div>
-    <button onclick="saveLLMConfig()" class="primary-btn" style="width:100%; background: linear-gradient(135deg, #a855f7, #7e22ce); color: white;">💾 保存配置</button>
-</div>
-
-<div id="profile-container">
-    <canvas id="profile-canvas"></canvas>
-</div>
-
-<div id="cesiumContainer"></div>
-
-<!-- AI 侧边栏 -->
-<div id="ai-sidebar" class="collapsed">
-    <button id="ai-sidebar-btn" onclick="toggleAISidebar()">✨&nbsp;A&nbsp;I&nbsp;智&nbsp;能</button>
-    <div id="ai-sidebar-body">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 8px;">
-            <div style="display: flex; gap: 10px;">
-                <button id="tab-btn-report" class="tab-btn active" onclick="switchAITab('report')">📊 报告</button>
-                <button id="tab-btn-chat" class="tab-btn" onclick="switchAITab('chat')">💬 对话</button>
-            </div>
-            <button class="icon-btn" onclick="openLLMConfig()" title="AI 配置">⚙️</button>
-        </div>
-        <div id="tab-report" class="tab-content active">
-            <div id="ai-summary" style="color:#94a3b8; font-style:italic; font-size:0.75rem; text-align:center; padding-top:20px;">导入轨迹后自动生成分析...</div>
-        </div>
-        <div id="tab-chat" class="tab-content" style="display: none; flex-direction: column; height: 100%; overflow: hidden;">
-            <div id="llm-report-content" style="flex:1; overflow-y:auto; color:#e2e8f0; font-size:0.85rem; line-height:1.6; padding-right:5px; margin-bottom:10px;">
-                <!-- Chat will be here -->
-            </div>
-            <div id="llm-chat-input-area" style="display: flex; gap: 8px; flex-shrink: 0; padding-top: 10px; border-top: 1px solid rgba(168, 85, 247, 0.2);">
-                <input type="text" id="llm-chat-input" placeholder="输入 '复盘这次徒步' 或问 '这是哪'..." class="modal-input" style="margin:0; padding:8px; border-radius:6px; flex:1; font-size:0.85rem;" onkeypress="if(event.key === 'Enter') sendLLMChat()">
-                <button onclick="sendLLMChat()" class="primary-btn" style="width: auto; padding: 8px 12px; background: linear-gradient(135deg, #a855f7, #7e22ce); border: none; border-radius: 6px;">发送</button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<script src="lib/Cesium/Cesium.js" onerror="this.src='https://cdn.jsdelivr.net/npm/cesium@1.105.1/Build/Cesium/Cesium.js'"></script>
+    <script src="lib/Cesium/Cesium.js" onerror="this.src='https://cdn.jsdelivr.net/npm/cesium@1.105.1/Build/Cesium/Cesium.js'"></script>
 <script src="lib/fit-parser.min.js" onerror="this.src='https://cdn.jsdelivr.net/npm/fit-parser@1.8.0/dist/fit-parser.min.js'"></script>
 <script>
     if (!window.Cesium) {
@@ -369,7 +1076,287 @@
     const LLM_DEFAULT_URL = 'http://localhost:3000/v1/chat/completions';
     const PY_REPORT_TERRAIN = '__REPORT_TERRAIN__';
     const PY_REPORT_PERSONALIZED = '__REPORT_PERSONALIZED__';
-    let currentLLMConfig = { provider: 'local_mcp', model: 'openclaw', url: LLM_DEFAULT_URL, apiKey: '' };
+    let currentLLMConfig = { provider: 'local_mcp', model: 'openclaw', url: LLM_DEFAULT_URL, apiKey: '', agentId: '' };
+
+    const SPORT_TYPE_OPTIONS = {
+        running: { label: '跑步', aliases: ['run', 'running', 'jogging', 'runner', '跑步', '慢跑'] },
+        hiking: { label: '徒步', aliases: ['hike', 'hiking', 'mountaineering', 'climbing', 'trekking', '登山', '徒步', '爬山'] },
+        cycling: { label: '骑行', aliases: ['bike', 'biking', 'cycling', 'cycle', '骑行', '自行车'] },
+        swimming: { label: '游泳', aliases: ['swim', 'swimming', 'open_water_swimming', 'lap_swimming', '游泳'] },
+        walking: { label: '步行', aliases: ['walk', 'walking', '步行', '健走'] },
+        trail_running: { label: '越野跑', aliases: ['trail_run', 'trail_running', 'trail running', 'trailrun', '越野跑'] },
+        treadmill_running: { label: '室内跑步', aliases: ['treadmill', 'treadmill_running', 'indoor_running', '室内跑步'] },
+        road_cycling: { label: '公路骑行', aliases: ['road_biking', 'road_bike', 'road_cycling', 'road cycling', '公路骑行'] },
+        mountain_biking: { label: '山地骑行', aliases: ['mountain_biking', 'mountain_bike', 'mountain biking', 'mtb', '山地骑行'] }
+    };
+    const SPORT_TYPE_NUMERIC_ALIASES = {1:'running',2:'cycling',3:'hiking',4:'swimming',10:'walking',14:'treadmill_running',22:'trail_running',24:'mountain_biking',53:'road_cycling'};
+    const aiCoachState = {
+        isOpen: false,
+        isClosed: false,
+        bubble: { right: 24, bottom: 92 },
+        window: { right: 24, bottom: 160 },
+        messages: []
+    };
+
+    let aiCoachKeyboardBound = false;
+
+    function normalizeActivityToken(value) {
+        return String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+    }
+
+    function getSportSelectorOptions() {
+        const selector = document.getElementById('sport-type-selector');
+        if (!selector) return [];
+        return Array.from(selector.options).filter(function(option) { return option.value; }).map(function(option) {
+            return { value: option.value, label: option.textContent.replace(/^[^\w\u4e00-\u9fa5]+\s*/, '').trim() };
+        });
+    }
+
+    function scoreSportOption(raw, option) {
+        const source = normalizeActivityToken(raw);
+        if (!source || !option || !option.value) return 0;
+        const target = normalizeActivityToken(option.value);
+        const label = normalizeActivityToken(option.label);
+        const aliases = ((SPORT_TYPE_OPTIONS[option.value] && SPORT_TYPE_OPTIONS[option.value].aliases) || []).map(normalizeActivityToken);
+        const tokens = [target, label].concat(aliases);
+        if (tokens.includes(source)) return 100;
+        if (tokens.some(function(token) { return source.includes(token) || token.includes(source); })) return 80;
+        const sourceParts = source.split('_').filter(Boolean);
+        let best = 0;
+        tokens.forEach(function(token) {
+            const tokenParts = token.split('_').filter(Boolean);
+            const overlap = sourceParts.filter(function(part) { return tokenParts.includes(part); }).length;
+            if (overlap > 0) best = Math.max(best, Math.round((overlap / Math.max(sourceParts.length, tokenParts.length)) * 70));
+        });
+        return best;
+    }
+
+    function matchActivityTypeToSelector(data) {
+        const selectorOptions = getSportSelectorOptions();
+        const rawValues = [data && data.activity_type, data && data.sport_type, data && data.fit_sport, data && data.fit_sub_sport].filter(function(value) {
+            return value !== null && value !== undefined && String(value).trim() !== '' && String(value).trim().toLowerCase() !== 'unknown';
+        });
+        for (const raw of rawValues) {
+            const numericMatch = SPORT_TYPE_NUMERIC_ALIASES[parseInt(raw, 10)];
+            if (numericMatch && selectorOptions.some(function(option) { return option.value === numericMatch; })) {
+                return { value: numericMatch, raw: raw, fuzzy: false };
+            }
+            const normalized = normalizeActivityToken(raw);
+            const exact = selectorOptions.find(function(option) { return normalizeActivityToken(option.value) === normalized; });
+            if (exact) return { value: exact.value, raw: raw, fuzzy: false };
+            for (const option of selectorOptions) {
+                const aliases = ((SPORT_TYPE_OPTIONS[option.value] && SPORT_TYPE_OPTIONS[option.value].aliases) || []).map(normalizeActivityToken);
+                if (aliases.includes(normalized)) return { value: option.value, raw: raw, fuzzy: false };
+            }
+        }
+        let best = null;
+        rawValues.forEach(function(raw) {
+            selectorOptions.forEach(function(option) {
+                const score = scoreSportOption(raw, option);
+                if (!best || score > best.score) best = { value: option.value, raw: raw, score: score, fuzzy: true };
+            });
+        });
+        return best && best.score >= 50 ? best : null;
+    }
+
+    function setSportSelectorValue(value) {
+        const selector = document.getElementById('sport-type-selector');
+        if (!selector) return;
+        selector.value = value || '';
+        selector.style.color = value ? '#f8fafc' : '#94a3b8';
+        appState.sportType = value || 'hiking';
+    }
+
+    function autoMatchActivityType(data, options = {}) {
+        const match = matchActivityTypeToSelector(data || {});
+        if (match && match.value) {
+            setSportSelectorValue(match.value);
+            const label = (SPORT_TYPE_OPTIONS[match.value] && SPORT_TYPE_OPTIONS[match.value].label) || match.value;
+            if (match.fuzzy) showToast('已根据“' + match.raw + '”模糊匹配为' + label + '，可手动调整');
+            else showToast('已自动识别运动类型：' + label);
+            return match.value;
+        }
+        setSportSelectorValue('');
+        if (!options.silent) showToast('⚠️ 未能自动识别运动类型，请手动选择');
+        return '';
+    }
+
+    let radarChartInstance = null;
+    async function renderPerformanceRadar() {
+        const radarContainer = document.getElementById('performanceRadar');
+        if (!radarContainer) return;
+
+        if (!radarChartInstance) {
+            radarChartInstance = echarts.init(radarContainer);
+        }
+        
+        const option = {
+            backgroundColor: 'transparent',
+            radar: {
+                indicator: [
+                    { name: '耐力容量 (CTL)', max: 100 },
+                    { name: '速度爆发 (无氧)', max: 100 },
+                    { name: '乳酸阈值 (巡航)', max: 100 },
+                    { name: '坡度爬升 (VAM)', max: 100 },
+                    { name: '心肺稳定 (抗漂移)', max: 100 },
+                    { name: '恢复效能 (HRV)', max: 100 }
+                ],
+                shape: 'polygon',
+                splitNumber: 5,
+                axisName: {
+                    color: '#CCCCCC',
+                    fontFamily: 'monospace, "PingFang SC", "Microsoft YaHei"',
+                    fontSize: 10
+                },
+                splitLine: {
+                    lineStyle: {
+                        color: ['#333333']
+                    }
+                },
+                splitArea: {
+                    show: false
+                },
+                axisLine: {
+                    lineStyle: {
+                        color: '#333333'
+                    }
+                }
+            },
+            series: []
+        };
+        radarChartInstance.setOption(option);
+        
+        // Resize handler
+        if (!window._radarResizeBound) {
+            window.addEventListener('resize', () => {
+                if (radarChartInstance) radarChartInstance.resize();
+            });
+            window._radarResizeBound = true;
+        }
+
+        if (!window.pywebview || !window.pywebview.api) return;
+        try {
+            const res = await window.pywebview.api.calculate_advanced_radar_metrics();
+            if (!res || !res.ok) return;
+            const data = res.data || res; // depending on whether data is nested
+            
+            // 如果后端明确返回无数据标识，或者我们判断全为默认值，可以选择不渲染或者渲染真实值
+            // 这里我们保持原有逻辑展示数据
+            option.series = [
+                {
+                    name: '运动能力',
+                    type: 'radar',
+                    data: [
+                        {
+                            value: [
+                                data.endurance || 0,
+                                data.speed || 0,
+                                data.threshold || 0,
+                                data.climbing || 0,
+                                data.stability || 0,
+                                data.recovery || 0
+                            ],
+                            name: '综合评分',
+                            itemStyle: {
+                                color: '#00FF7F'
+                            },
+                            lineStyle: {
+                                color: '#00FF7F',
+                                width: 2
+                            },
+                            areaStyle: {
+                                color: 'rgba(0, 255, 127, 0.15)'
+                            }
+                        }
+                    ]
+                }
+            ];
+            radarChartInstance.setOption(option);
+            
+        } catch (e) {
+            console.error('Failed to render radar:', e);
+        }
+    }
+
+    async function loadProfileCard() {
+        try {
+            if (window.pywebview && window.pywebview.api) {
+                const res = await window.pywebview.api.get_user_profile();
+                if (res && res.ok && res.profile) {
+                    updateProfilePanel(res.profile);
+                    const p = res.profile;
+                    if (document.getElementById('vp-name')) document.getElementById('vp-name').innerText = p.name || '--';
+                    if (document.getElementById('vp-age')) document.getElementById('vp-age').innerText = p.age ? p.age + '岁' : '--';
+                    if (document.getElementById('vp-hrv')) document.getElementById('vp-hrv').innerText = p.hrv_baseline ? p.hrv_baseline + ' ms' : '--';
+                    if (document.getElementById('vp-vo2')) document.getElementById('vp-vo2').innerText = p.vo2max ? p.vo2max : '--';
+                    if (document.getElementById('vp-rhr')) document.getElementById('vp-rhr').innerText = p.resting_hr ? p.resting_hr + ' bpm' : '--';
+                    if (document.getElementById('vp-mhr')) document.getElementById('vp-mhr').innerText = p.max_hr ? p.max_hr + ' bpm' : '--';
+                    const card = document.getElementById('profile-card');
+                    if (card) card.style.display = 'block';
+                    const bar = document.getElementById('hrr-zones-bar');
+                    if (bar && res.hrr_zones && res.hrr_zones.length > 0) {
+                        bar.innerHTML = '';
+                        const colors = ['#22c55e','#84cc16','#eab308','#f97316','#ef4444'];
+                        res.hrr_zones.forEach((z, i) => {
+                            const seg = document.createElement('div');
+                            seg.style.flex = '1';
+                            seg.style.background = colors[i] || '#94a3b8';
+                            seg.style.display = 'flex';
+                            seg.style.alignItems = 'center';
+                            seg.style.justifyContent = 'center';
+                            seg.style.fontSize = '0.5rem';
+                            seg.style.color = 'rgba(0,0,0,0.7)';
+                            seg.style.fontWeight = '700';
+                            seg.title = z.zone + ': ' + z.hr_low + '–' + z.hr_high + ' bpm';
+                            seg.innerText = z.zone.split(' ')[0];
+                            bar.appendChild(seg);
+                        });
+                    }
+                }
+            }
+        } catch(e) {}
+        
+        // 无论是否成功获取到用户配置，都尝试渲染雷达图
+        // 这样可以确保在无数据场景下也能提前渲染空框架
+        await renderPerformanceRadar();
+    }
+    loadProfileCard();
+
+    async function syncPersona(platform) {
+        if (!window.pywebview || !window.pywebview.api) {
+            showToast('⚠️ 请在桌面应用中同步数据');
+            return;
+        }
+        const loadEl = document.getElementById('sync-loading');
+        const loadText = document.getElementById('sync-loading-text');
+        const garminBtn = document.getElementById('btn-sync-garmin');
+        const corosBtn = document.getElementById('btn-sync-coros');
+        if (loadEl) { loadEl.style.display = 'flex'; }
+        if (loadText) loadText.innerText = '正在从' + (platform === 'garmin' ? '佳明' : '高驰') + '同步...';
+        garminBtn && (garminBtn.disabled = true);
+        corosBtn && (corosBtn.disabled = true);
+        try {
+            const res = await window.pywebview.api.fetch_mcp_persona(platform);
+            if (loadEl) loadEl.style.display = 'none';
+            garminBtn && (garminBtn.disabled = false);
+            corosBtn && (corosBtn.disabled = false);
+            if (res && res.ok && res.profile) {
+                const p = res.profile;
+                const pName = platform === 'garmin' ? '佳明' : '高驰';
+                const msg = '✅ 已同步 ' + pName + ' 最新生理数据。AI私教已根据您的最新状态' + (p.hrv_baseline ? '（HRV: ' + p.hrv_baseline + 'ms）' : '') + '调整建议。';
+                addAICoachMessage('assistant', msg);
+                await loadProfileCard();
+                showToast('✅ ' + pName + ' 数据同步完成');
+            } else {
+                showToast('⚠️ ' + (res && res.error ? res.error : '同步失败'));
+            }
+        } catch(e) {
+            if (loadEl) loadEl.style.display = 'none';
+            garminBtn && (garminBtn.disabled = false);
+            corosBtn && (corosBtn.disabled = false);
+            showToast('⚠️ 同步异常: ' + (e && e.message ? e.message : String(e)));
+        }
+    }
 
     function showToast(msg) {
         const toast = document.getElementById('toast');
@@ -387,20 +1374,328 @@
 
     function toggleAISidebar() { document.getElementById('ai-sidebar').classList.toggle('collapsed'); }
 
-    function switchAITab(tabId) {
-        document.getElementById('tab-btn-report').classList.remove('active');
-        document.getElementById('tab-btn-chat').classList.remove('active');
-        document.getElementById('tab-report').style.display = 'none';
-        document.getElementById('tab-chat').style.display = 'none';
-        
-        if (tabId === 'report') {
-            document.getElementById('tab-btn-report').classList.add('active');
-            document.getElementById('tab-report').style.display = 'block';
-        } else {
-            document.getElementById('tab-btn-chat').classList.add('active');
-            document.getElementById('tab-chat').style.display = 'flex';
+    function applyFloatingPosition(el, pos) {
+        if (!el || !pos) return;
+        el.style.left = 'auto';
+        el.style.top = 'auto';
+        el.style.right = Math.max(8, pos.right) + 'px';
+        el.style.bottom = Math.max(8, pos.bottom) + 'px';
+    }
+
+    function syncAICoachUI() {
+        const bubble = document.getElementById('ai-coach-bubble');
+        const win = document.getElementById('ai-coach-window');
+        const globalBtn = document.getElementById('ai-coach-global-btn');
+        applyFloatingPosition(bubble, aiCoachState.bubble);
+        applyFloatingPosition(win, aiCoachState.window);
+        if (bubble) bubble.style.display = aiCoachState.isClosed ? 'none' : 'flex';
+        if (globalBtn) globalBtn.style.display = aiCoachState.isClosed ? 'block' : 'none';
+        if (win) win.classList.toggle('open', aiCoachState.isOpen && !aiCoachState.isClosed);
+    }
+
+    function openAICoach() {
+        aiCoachState.isClosed = false;
+        aiCoachState.isOpen = true;
+        syncAICoachUI();
+        const input = document.getElementById('ai-coach-input');
+        if (input) setTimeout(function() { input.focus(); }, 80);
+    }
+
+    function collapseAICoach() {
+        aiCoachState.isOpen = false;
+        aiCoachState.isClosed = false;
+        syncAICoachUI();
+    }
+
+    function closeAICoach() {
+        aiCoachState.isOpen = false;
+        aiCoachState.isClosed = true;
+        syncAICoachUI();
+    }
+
+    function addAICoachMessage(role, content) {
+        aiCoachState.messages.push({ role: role, content: content });
+        const contentDiv = document.getElementById('ai-coach-messages');
+        if (!contentDiv) return;
+        const msgDiv = document.createElement('div');
+        msgDiv.className = 'ai-coach-msg ' + (role === 'user' ? 'user' : 'assistant');
+        if (role === 'user') msgDiv.innerText = content;
+        else msgDiv.innerHTML = parseMarkdown(content);
+        contentDiv.appendChild(msgDiv);
+        contentDiv.scrollTop = contentDiv.scrollHeight;
+    }
+
+    function initAICoach() {
+        const contentDiv = document.getElementById('ai-coach-messages');
+        if (contentDiv && aiCoachState.messages.length === 0) {
+            addAICoachMessage('assistant', '你好，我是 AI私教。你可以随时问我训练、配速、补给、爬升策略或当前轨迹相关问题。');
+        }
+        syncAICoachUI();
+        makeAICoachDraggable('ai-coach-bubble', aiCoachState.bubble, function() { openAICoach(); });
+        makeAICoachDraggable('ai-coach-header', aiCoachState.window);
+        if (!aiCoachKeyboardBound) {
+            aiCoachKeyboardBound = true;
+            document.addEventListener('keydown', function(e) {
+                if ((e.metaKey || e.ctrlKey) && e.shiftKey && String(e.key).toLowerCase() === 'a') {
+                    e.preventDefault();
+                    openAICoach();
+                }
+            });
         }
     }
+
+    function makeAICoachDraggable(handleId, statePos, clickCallback) {
+        const handle = document.getElementById(handleId);
+        const target = handleId === 'ai-coach-header' ? document.getElementById('ai-coach-window') : handle;
+        if (!handle || !target) return;
+        let dragging = false, moved = false, startX = 0, startY = 0, startRight = 0, startBottom = 0;
+        handle.addEventListener('pointerdown', function(e) {
+            if (e.target && e.target.closest && e.target.closest('button,input')) return;
+            dragging = true; moved = false; startX = e.clientX; startY = e.clientY; startRight = statePos.right; startBottom = statePos.bottom;
+            handle.setPointerCapture(e.pointerId);
+        });
+        handle.addEventListener('pointermove', function(e) {
+            if (!dragging) return;
+            const dx = e.clientX - startX;
+            const dy = e.clientY - startY;
+            if (Math.abs(dx) + Math.abs(dy) > 4) moved = true;
+            const maxRight = Math.max(8, window.innerWidth - target.offsetWidth - 8);
+            const maxBottom = Math.max(8, window.innerHeight - target.offsetHeight - 8);
+            statePos.right = Math.min(maxRight, Math.max(8, startRight - dx));
+            statePos.bottom = Math.min(maxBottom, Math.max(8, startBottom - dy));
+            applyFloatingPosition(target, statePos);
+        });
+        handle.addEventListener('pointerup', function(e) {
+            if (!dragging) return;
+            dragging = false;
+            try { handle.releasePointerCapture(e.pointerId); } catch (_) {}
+            const leftSpace = window.innerWidth - statePos.right - target.offsetWidth;
+            statePos.right = leftSpace < statePos.right ? Math.max(8, window.innerWidth - target.offsetWidth - 8) : 8;
+            applyFloatingPosition(target, statePos);
+            if (!moved && typeof clickCallback === 'function') clickCallback();
+        });
+    }
+
+    async function sendAICoachMessage() {
+        const inputEl = document.getElementById('ai-coach-input');
+        const text = inputEl ? inputEl.value.trim() : '';
+        if (!text) return;
+        if (inputEl) inputEl.value = '';
+        openAICoach();
+        addAICoachMessage('user', text);
+        if (!window.pywebview || !window.pywebview.api || typeof window.pywebview.api.call_llm !== 'function') {
+            addAICoachMessage('assistant', '当前 AI私教需要在桌面应用中使用。');
+            return;
+        }
+        if (!currentLLMConfig.url) { addAICoachMessage('assistant', 'API 接口地址为空，请先在配置中填写。'); return; }
+        const loadingId = 'ai-coach-loading-' + Date.now();
+        const contentDiv = document.getElementById('ai-coach-messages');
+        if (contentDiv) {
+            const loading = document.createElement('div');
+            loading.id = loadingId;
+            loading.className = 'ai-coach-msg assistant';
+            loading.innerHTML = '<div class="spinner" style="border-left-color:#a855f7;width:20px;height:20px;border-width:2px;margin:0 auto;"></div>';
+            contentDiv.appendChild(loading);
+            contentDiv.scrollTop = contentDiv.scrollHeight;
+        }
+        try {
+            const res = await window.pywebview.api.call_llm(text, appState.sportType);
+            document.getElementById(loadingId)?.remove();
+            if (!res || !res.ok) addAICoachMessage('assistant', '发送失败：' + (res && res.error ? String(res.error) : '未知错误'));
+            else addAICoachMessage('assistant', res.content || '（空回复）');
+        } catch (e) {
+            document.getElementById(loadingId)?.remove();
+            addAICoachMessage('assistant', '发送失败：' + (e && e.message ? e.message : String(e)));
+        }
+    }
+
+    function switchTab(tabBtn) {
+        const panels = ['profile', 'trace', 'settings'];
+        const activePanel = tabBtn ? tabBtn.getAttribute('data-panel') : 'profile';
+        document.querySelectorAll('.bookmark-tab').forEach(function(t) { t.classList.remove('active'); });
+        document.querySelectorAll('.tab-panel').forEach(function(p) { p.classList.remove('active'); });
+        const targetTab = tabBtn ? tabBtn : document.querySelector('[data-panel="' + activePanel + '"]');
+        if (targetTab) targetTab.classList.add('active');
+        const targetPanel = document.getElementById('panel-' + activePanel);
+        if (targetPanel) targetPanel.classList.add('active');
+        if (activePanel === 'trace' && typeof renderHistoryList === 'function') {
+            renderHistoryList();
+        }
+        if (activePanel === 'settings' && typeof refreshSettingsPanel === 'function') {
+            refreshSettingsPanel().catch(function(e) { console.warn('refreshSettingsPanel', e); });
+        }
+        if (activePanel === 'profile' && radarChartInstance) {
+            setTimeout(() => radarChartInstance.resize(), 50);
+        }
+    }
+
+    function updateProfilePanel(profile) {
+        if (!profile) return;
+        if (profile.name) document.getElementById('pf-name').innerText = profile.name;
+        if (profile.age) document.getElementById('pf-age').innerText = profile.age + '岁';
+        if (profile.gender) document.getElementById('pf-gender').innerText = profile.gender;
+        if (profile.height_cm) document.getElementById('pf-height').innerText = profile.height_cm + ' cm';
+        if (profile.weight) document.getElementById('pf-weight').innerText = profile.weight + ' kg';
+        if (profile.resting_hr) document.getElementById('pf-resting-hr').innerText = profile.resting_hr + ' bpm';
+        if (profile.max_hr) document.getElementById('pf-max-hr').innerText = profile.max_hr + ' bpm';
+        if (profile.hrv_baseline) { var el = document.getElementById('pf-hrv'); el.innerText = profile.hrv_baseline + ' ms'; el.className = profile.hrv_baseline > 65 ? 'hrv-high' : profile.hrv_baseline < 40 ? 'hrv-low' : ''; }
+        if (profile.vo2max) document.getElementById('pf-vo2max').innerText = profile.vo2max;
+        if (profile.avg_sleep_hours) document.getElementById('pf-sleep').innerText = profile.avg_sleep_hours.toFixed(1) + ' h';
+        if (profile.lactate_threshold_hr) document.getElementById('pf-lthr').innerText = profile.lactate_threshold_hr + ' bpm';
+        if (profile.ftp_watts) document.getElementById('pf-ftp').innerText = profile.ftp_watts + ' W';
+        if (profile.longest_hike_km) document.getElementById('pf-longest-hike').innerText = profile.longest_hike_km + ' km';
+        if (profile.pb_5km) document.getElementById('pf-pb-5k').innerText = profile.pb_5km;
+        if (profile.pb_10km) document.getElementById('pf-pb-10k').innerText = profile.pb_10km;
+        if (profile.pb_half_marathon) document.getElementById('pf-pb-hm').innerText = profile.pb_half_marathon;
+        if (profile.pb_full_marathon) document.getElementById('pf-pb-fm').innerText = profile.pb_full_marathon;
+    }
+
+    function sendAIMsg() {
+        var inp = document.getElementById('ai-chat-input');
+        if (!inp || !inp.value.trim()) return;
+        var msg = inp.value.trim(); inp.value = '';
+        var msgsEl = document.getElementById('ai-chat-messages');
+        if (msgsEl) { var div = document.createElement('div'); div.className = 'chat-msg user'; div.textContent = msg; msgsEl.appendChild(div); msgsEl.scrollTop = msgsEl.scrollHeight; }
+        setTimeout(function() {
+            var div = document.createElement('div'); div.className = 'chat-msg ai'; div.textContent = '正在分析您的数据，请稍候...';
+            if (msgsEl) { msgsEl.appendChild(div); msgsEl.scrollTop = msgsEl.scrollHeight; }
+            setTimeout(function() { if (div) div.textContent = '基于您当前的运动画像和轨迹数据，AI 助手正在准备回复。建议切换到「轨迹分析工具」标签导入轨迹后进行深度复盘。'; if (msgsEl) msgsEl.scrollTop = msgsEl.scrollHeight; }, 1000);
+        }, 200);
+    }
+
+    function openAIReport() {
+        toggleAISidebar();
+    }
+
+    function clearHistory() { showToast('⚠️ 清除历史轨迹功能开发中'); }
+
+    function toggleHistoryDrawer() {
+        const drawer = document.getElementById('history-drawer');
+        const overlay = document.getElementById('history-overlay');
+        const btn = document.getElementById('history-toggle-btn');
+        if (!drawer) return;
+        const isOpen = drawer.style.display === 'flex';
+        if (isOpen) {
+            drawer.style.display = 'none';
+            drawer.style.transform = 'translateX(-100%)';
+            if (overlay) overlay.style.display = 'none';
+            if (btn) { btn.style.left = '0'; btn.innerText = '📂'; }
+        } else {
+            drawer.style.display = 'flex';
+            drawer.style.transform = 'translateX(0)';
+            if (overlay) overlay.style.display = 'block';
+            if (btn) { btn.style.left = '300px'; btn.innerText = '📁'; }
+        }
+    }
+
+    async function renderHistoryList() {
+        const listEl = document.getElementById('history-list');
+        if (!listEl) return;
+        try {
+            const res = await window.pywebview.api.get_activity_history();
+            if (!res || !res.ok) { listEl.innerHTML = '<div style="color:#94a3b8;font-size:0.75rem;text-align:center;padding:20px;">暂无历史记录</div>'; return; }
+            const history = res.history || [];
+            if (history.length === 0) {
+                listEl.innerHTML = '<div style="color:#94a3b8;font-size:0.75rem;text-align:center;padding:20px;">暂无历史记录</div>';
+                return;
+            }
+            listEl.innerHTML = history.map(item => {
+                const date = item.updated_at ? item.updated_at.split(' ')[0] : '--';
+                const dist = item.dist_km ? item.dist_km.toFixed(1) : '--';
+                const gain = item.gain_m ? Math.round(item.gain_m) : '--';
+                const dur = item.duration_sec ? formatDuration(item.duration_sec) : '--';
+                const sportType = item.sport_type || 'hiking';
+                const sportEmoji = ({running:'🏃',hiking:'🥾',cycling:'🚴',swimming:'🏊',walking:'🚶',trail_running:'🏃',treadmill_running:'🏃',road_cycling:'🛣️',mountain_biking:'🚵'})[sportType] || '⏱️';
+                const sportName = ({running:'跑步',hiking:'徒步',cycling:'骑行',swimming:'游泳',walking:'步行',trail_running:'越野跑',treadmill_running:'室内跑',road_cycling:'公路骑行',mountain_biking:'山地骑行'})[sportType] || '其他';
+                return `<div class="history-card" data-file-path="${item.file_path || ''}" data-sport-type="${sportType}" onclick="loadHistoryItem(this)" style="
+                    padding:10px 12px;background:rgba(255,255,255,0.05);
+                    border:1px solid rgba(255,255,255,0.1);border-radius:8px;
+                    cursor:pointer;transition:all 0.2s;
+                    onmouseover=\"this.style.background='rgba(46,204,113,0.1)';this.style.borderColor='rgba(46,204,113,0.3)'\"
+                    onmouseout=\"this.style.background='rgba(255,255,255,0.05)';this.style.borderColor='rgba(255,255,255,0.1)'\"
+                ">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+                        <span style="font-size:0.65rem;color:#94a3b8;">${date}</span>
+                        <span style="font-size:0.65rem;background:rgba(46,204,113,0.15);color:#2ecc71;border-radius:4px;padding:1px 6px;">${sportEmoji} ${sportName}</span>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;align-items:center;">
+                        <span style="font-size:0.75rem;"><b style="color:#f8fafc;">${dist} km</b></span>
+                        <span style="font-size:0.68rem;color:#94a3b8;">⛰️+${gain}m  ⏱️${dur}</span>
+                    </div>
+                </div>`;
+            }).join('');
+        } catch(e) {
+            listEl.innerHTML = '<div style="color:#ef4444;font-size:0.75rem;text-align:center;padding:20px;">加载失败</div>';
+        }
+    }
+
+    async function loadHistoryItem(cardEl) {
+        const filePath = cardEl.getAttribute('data-file-path');
+        const sportType = cardEl.getAttribute('data-sport-type');
+        if (sportType) {
+            appState.sportType = sportType;
+            const sel = document.getElementById('sport-type-selector');
+            if (sel) { sel.value = sportType; sel.style.color = '#f8fafc'; }
+        }
+        if (!filePath) { showToast('⚠️ 该记录无本地文件'); return; }
+        showToast('正在加载历史轨迹...');
+        try {
+            const res = await window.pywebview.api.load_local_track(filePath);
+            if (!res || !res.ok) { showToast('⚠️ ' + (res && res.error ? res.error : '加载失败')); return; }
+            const data = res.data;
+            const filename = res.filename || '历史轨迹';
+            if (data.points && data.points.length > 0) {
+                applyDataAndRender(data.points, data, filename);
+                showToast('✅ 已加载: ' + filename);
+                toggleHistoryDrawer();
+            } else { showToast('⚠️ 数据为空'); }
+        } catch(e) { showToast('⚠️ ' + String(e)); }
+    }
+
+    async function initApp() {
+        try {
+            const profileRes = await window.pywebview.api.get_user_profile();
+            if (profileRes && profileRes.ok && profileRes.profile) {
+                updateProfileUI(profileRes.profile);
+                if (profileRes.hrr_zones) loadProfileCard(profileRes.hrr_zones);
+            }
+            await renderHistoryList();
+            const histRes = await window.pywebview.api.get_activity_history();
+            if (histRes && histRes.ok && histRes.history && histRes.history.length > 0) {
+                const latest = histRes.history[0];
+                if (latest && latest.file_path) {
+                    if (latest.sport_type) {
+                        appState.sportType = latest.sport_type;
+                        const sel = document.getElementById('sport-type-selector');
+                        if (sel) { sel.value = latest.sport_type; sel.style.color = '#f8fafc'; }
+                    }
+                    const loadRes = await window.pywebview.api.load_local_track(latest.file_path);
+                    if (loadRes && loadRes.ok && loadRes.data && loadRes.data.points && loadRes.data.points.length > 0) {
+                        applyDataAndRender(loadRes.data.points, loadRes.data, loadRes.filename || latest.filename || '轨迹');
+                    }
+                }
+            }
+        } catch(e) { console.error('initApp error:', e); }
+    }
+
+    function updateProfileUI(profile) {
+        if (!profile) return;
+        if (profile.name) document.getElementById('vp-name').innerText = profile.name;
+        if (profile.age) document.getElementById('vp-age').innerText = profile.age + '岁';
+        if (profile.hrv_baseline) document.getElementById('vp-hrv').innerText = profile.hrv_baseline + ' ms';
+        if (profile.vo2max) document.getElementById('vp-vo2').innerText = profile.vo2max;
+        if (profile.resting_hr) document.getElementById('vp-rhr').innerText = profile.resting_hr + ' bpm';
+        if (profile.max_hr) document.getElementById('vp-mhr').innerText = profile.max_hr + ' bpm';
+    }
+
+    function formatDuration(sec) {
+        const h = Math.floor(sec / 3600);
+        const m = Math.floor((sec % 3600) / 60);
+        if (h > 0) return h + 'h' + m + 'm';
+        return m + 'm';
+    }
+
+    function switchAITab(tabId) { toggleAISidebar(); }
 
     // ==========================================
     // Cesium 引擎初始化
@@ -429,6 +1724,10 @@
     viewer.scene.canvas.style.cursor = 'crosshair';
     viewer.camera.setView({ destination: initialDestination });
 
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') closeModals();
+    });
+
     const progressSlider = document.getElementById('progress-slider');
     const progressVal = document.getElementById('progress-val');
     progressSlider.addEventListener('input', () => {
@@ -451,7 +1750,8 @@
     // 大模型 API 配置与逻辑
     // ==========================================
     const llmProviders = {
-        'local_mcp': { url: 'http://localhost:3000/v1/chat/completions', models: [] },
+        'local_mcp': { url: 'http://localhost:3000/v1/chat/completions', models: ['openclaw', 'workbuddy'] },
+        'openai': { url: 'https://api.openai.com/v1/chat/completions', models: ['gpt-4o-mini', 'gpt-4o', 'gpt-4.1-mini'] },
         'deepseek': { url: 'https://api.deepseek.com/chat/completions', models: ['deepseek-chat', 'deepseek-reasoner'] },
         'zhipu': { url: 'https://open.bigmodel.cn/api/paas/v4/chat/completions', models: ['glm-4-flash', 'glm-4', 'glm-4-plus'] },
         'moonshot': { url: 'https://api.moonshot.cn/v1/chat/completions', models: ['moonshot-v1-8k', 'moonshot-v1-32k'] },
@@ -469,97 +1769,193 @@
                         provider: c.provider || 'local_mcp',
                         model: c.model || 'openclaw',
                         url: (c.url && String(c.url).trim()) ? String(c.url).trim() : LLM_DEFAULT_URL,
-                        apiKey: (c.api_key !== undefined && c.api_key !== null) ? String(c.api_key) : ''
+                        apiKey: (c.api_key !== undefined && c.api_key !== null) ? String(c.api_key) : '',
+                        agentId: (c.agent_id !== undefined && c.agent_id !== null) ? String(c.agent_id) : '',
+                        watchBrand: (c.watch_brand !== undefined && c.watch_brand !== null) ? String(c.watch_brand) : ''
                     };
                 }
             } catch (e) { console.warn('get_llm_config', e); }
+            updateSyncButtonsVisibility();
             return;
         }
         try {
             const saved = localStorage.getItem('llm_config_v2');
             if (saved) currentLLMConfig = { ...currentLLMConfig, ...JSON.parse(saved) };
         } catch (e) {}
+        updateSyncButtonsVisibility();
     }
     initLLMConfig().catch(function () {});
+    initAICoach();
+    initApp().catch(function () {});
 
-    function updateLLMModels() {
-        const provider = document.getElementById('llm-provider').value;
+    function normalizeAgentModel(model, agentId) {
+        const cleanAgentId = String(agentId || '').trim();
+        const cleanModel = String(model || '').trim() || 'openclaw';
+        if (!cleanAgentId) return cleanModel;
+        if (cleanAgentId.startsWith('openclaw/')) return cleanAgentId;
+        if (/^agent-[A-Za-z0-9_-]+$/.test(cleanAgentId)) return 'openclaw/' + cleanAgentId;
+        return cleanModel;
+    }
+
+    function updateSyncButtonsVisibility() {
+        const brand = currentLLMConfig.watchBrand || '';
+        const garminBtn = document.getElementById('btn-sync-garmin');
+        const corosBtn = document.getElementById('btn-sync-coros');
+        const container = document.getElementById('sync-buttons-container');
+        
+        if (!garminBtn || !corosBtn || !container) return;
+        
+        if (brand === 'garmin') {
+            container.style.display = 'flex';
+            garminBtn.style.display = 'flex';
+            corosBtn.style.display = 'none';
+        } else if (brand === 'coros') {
+            container.style.display = 'flex';
+            garminBtn.style.display = 'none';
+            corosBtn.style.display = 'flex';
+        } else {
+            container.style.display = 'none';
+        }
+    }
+
+    function syncLLMConfigFromFields() {
+        const providerInput = document.getElementById('llm-provider');
         const modelSelect = document.getElementById('llm-model');
         const customModelInput = document.getElementById('llm-custom-model');
         const urlInput = document.getElementById('llm-custom-url');
-        const apiKeyHint = document.getElementById('llm-api-key-hint');
         const apiKeyInput = document.getElementById('llm-api-key');
-        
-        modelSelect.innerHTML = '';
-        if (provider === 'custom' || provider === 'local_mcp') {
-            modelSelect.style.display = 'none';
-            customModelInput.style.display = 'block';
-            if (provider === 'local_mcp' && (!customModelInput.value || customModelInput.value === 'qclaw/pool-kimi-k2.6' || customModelInput.value === '小高' || customModelInput.value === 'local-model')) {
-                customModelInput.value = 'openclaw';
-            }
-        } else {
-            modelSelect.style.display = 'block';
-            customModelInput.style.display = 'none';
-            llmProviders[provider].models.forEach(m => {
-                const opt = document.createElement('option');
-                opt.value = m; opt.innerText = m;
-                modelSelect.appendChild(opt);
-            });
-            if (llmProviders[provider].models.includes(currentLLMConfig.model)) {
-                modelSelect.value = currentLLMConfig.model;
-            }
-        }
-        urlInput.value = currentLLMConfig.url || llmProviders[provider]?.url || '';
+        const agentIdInput = document.getElementById('llm-agent-id');
+        const brandInput = document.querySelector('input[name="watch_brand"]:checked');
+        if (!providerInput || !modelSelect || !customModelInput || !urlInput || !apiKeyInput || !agentIdInput) return;
+        const provider = providerInput.value || 'local_mcp';
+        const agentId = agentIdInput.value.trim();
+        const selectedModel = (customModelInput.style.display !== 'none' ? customModelInput.value : modelSelect.value) || currentLLMConfig.model || 'openclaw';
+        const model = normalizeAgentModel(selectedModel, agentId);
+        currentLLMConfig = {
+            provider: provider,
+            model: String(model).trim() || 'openclaw',
+            url: urlInput.value.trim() || currentLLMConfig.url || llmProviders[provider]?.url || LLM_DEFAULT_URL,
+            apiKey: apiKeyInput.value,
+            agentId: agentId,
+            watchBrand: brandInput ? brandInput.value : ''
+        };
+    }
 
-        if (provider === 'local_mcp') {
-            apiKeyHint.innerText = '(选填/依网关配置)';
+    function renderLLMConfigFields() {
+        const providerInput = document.getElementById('llm-provider');
+        const modelSelect = document.getElementById('llm-model');
+        const customModelContainer = document.getElementById('llm-custom-model-container');
+        const customModelInput = document.getElementById('llm-custom-model');
+        const urlInput = document.getElementById('llm-custom-url');
+        const apiKeyInput = document.getElementById('llm-api-key');
+        const agentIdInput = document.getElementById('llm-agent-id');
+        if (!providerInput || !modelSelect || !customModelContainer || !customModelInput || !urlInput || !apiKeyInput || !agentIdInput) return;
+        const provider = currentLLMConfig.provider || 'local_mcp';
+        providerInput.value = llmProviders[provider] ? provider : 'custom';
+        const providerConfig = llmProviders[providerInput.value] || llmProviders.custom;
+        const models = (providerConfig.models || []).filter(function(model) { return model !== 'openclaw/agent-688e8b86'; });
+        
+        const watchBrand = currentLLMConfig.watchBrand || '';
+        const garminRadio = document.querySelector('input[name="watch_brand"][value="garmin"]');
+        const corosRadio = document.querySelector('input[name="watch_brand"][value="coros"]');
+        if (garminRadio) garminRadio.checked = (watchBrand === 'garmin');
+        if (corosRadio) corosRadio.checked = (watchBrand === 'coros');
+        
+        updateSyncButtonsVisibility();
+        modelSelect.innerHTML = '';
+        if (models.length > 0) {
+            modelSelect.style.display = 'block';
+            customModelContainer.style.display = 'none';
+            models.forEach(function(model) {
+                const option = document.createElement('option');
+                option.value = model;
+                option.innerText = model;
+                modelSelect.appendChild(option);
+            });
+            if ((currentLLMConfig.model || '') && !models.includes(currentLLMConfig.model || '') && !String(currentLLMConfig.model || '').startsWith('openclaw/agent-')) {
+                const option = document.createElement('option');
+                option.value = currentLLMConfig.model || 'openclaw';
+                option.innerText = currentLLMConfig.model || 'openclaw';
+                modelSelect.appendChild(option);
+            }
+            modelSelect.value = String(currentLLMConfig.model || '').startsWith('openclaw/agent-') ? 'openclaw' : (currentLLMConfig.model || 'openclaw');
+        } else {
+            modelSelect.style.display = 'none';
+            customModelContainer.style.display = 'block';
+            customModelInput.value = currentLLMConfig.model || 'openclaw';
+        }
+        if (!urlInput._userModified || !urlInput.value.trim()) {
+            urlInput.value = currentLLMConfig.url || providerConfig.url || LLM_DEFAULT_URL;
+        }
+        apiKeyInput.value = currentLLMConfig.apiKey || '';
+        agentIdInput.value = currentLLMConfig.agentId || '';
+        providerInput.disabled = false;
+        modelSelect.disabled = false;
+        customModelInput.readOnly = false;
+        customModelInput.disabled = false;
+        urlInput.readOnly = false;
+        urlInput.disabled = false;
+        apiKeyInput.readOnly = false;
+        apiKeyInput.disabled = false;
+        agentIdInput.readOnly = false;
+        agentIdInput.disabled = false;
+        if ((providerInput.value || 'local_mcp') === 'local_mcp') {
             apiKeyInput.placeholder = '如果您的网关没加密，留空即可';
         } else {
-            apiKeyHint.innerText = '(必填)';
             apiKeyInput.placeholder = 'sk-...';
         }
     }
 
-    async function openLLMConfig() {
+    async function refreshSettingsPanel() {
         await initLLMConfig();
-        document.getElementById('llm-provider').value = currentLLMConfig.provider || 'local_mcp';
-        updateLLMModels();
-        
-        if (currentLLMConfig.provider === 'custom' || currentLLMConfig.provider === 'local_mcp') {
-            document.getElementById('llm-custom-model').value = currentLLMConfig.model;
-        } else if (llmProviders[currentLLMConfig.provider] && llmProviders[currentLLMConfig.provider].models.includes(currentLLMConfig.model)) {
-            document.getElementById('llm-model').value = currentLLMConfig.model;
+        renderLLMConfigFields();
+    }
+
+    function updateLLMModels() {
+        const providerInput = document.getElementById('llm-provider');
+        const urlInput = document.getElementById('llm-custom-url');
+        if (providerInput && urlInput) {
+            currentLLMConfig.provider = providerInput.value || 'local_mcp';
+            currentLLMConfig.model = (llmProviders[currentLLMConfig.provider]?.models || [currentLLMConfig.model || 'openclaw'])[0] || 'openclaw';
+            currentLLMConfig.url = llmProviders[currentLLMConfig.provider]?.url || currentLLMConfig.url || LLM_DEFAULT_URL;
+            urlInput._userModified = false;
         }
-        
-        document.getElementById('llm-custom-url').value = currentLLMConfig.url || llmProviders[currentLLMConfig.provider]?.url || '';
-        document.getElementById('llm-api-key').value = currentLLMConfig.apiKey || '';
-        
+        renderLLMConfigFields();
+    }
+
+    function _markUrlModified() {
+        const urlInput = document.getElementById('llm-custom-url');
+        if (urlInput) urlInput._userModified = true;
+    }
+
+    async function openLLMConfig() {
+        await refreshSettingsPanel();
+
         document.getElementById('modal-overlay').style.display = 'block';
         document.getElementById('llm-config-modal').style.display = 'block';
     }
 
     async function saveLLMConfig() {
-        const provider = document.getElementById('llm-provider').value;
-        const apiKey = document.getElementById('llm-api-key').value.trim();
-        let model = document.getElementById('llm-model').value;
-        let url = document.getElementById('llm-custom-url').value.trim();
+        syncLLMConfigFromFields();
+        const provider = currentLLMConfig.provider || 'local_mcp';
+        const apiKey = currentLLMConfig.apiKey || '';
+        const agentId = currentLLMConfig.agentId || '';
+        const watchBrand = currentLLMConfig.watchBrand || '';
+        let model = normalizeAgentModel(currentLLMConfig.model || 'openclaw', agentId);
+        let url = currentLLMConfig.url || LLM_DEFAULT_URL;
 
-        if (provider === 'custom' || provider === 'local_mcp') {
-            model = document.getElementById('llm-custom-model').value.trim();
-            if (!model || !url) { showToast("⚠️ 自定义模式/本地网关下需填写模型名和接口地址"); return; }
-            
-            if (provider === 'local_mcp' && model !== 'openclaw' && !model.startsWith('openclaw/')) {
-                model = 'openclaw/' + model;
-            }
-        } else {
-            if (!url) url = llmProviders[provider].url; 
+        if (!watchBrand) {
+            showToast("⚠️ 请选择您的运动手表品牌");
+            return;
         }
 
-        currentLLMConfig = { provider, model, url, apiKey };
+        if (!provider || !model || !url) { showToast("⚠️ 请填写服务商、模型和接口地址"); return; }
+
+        currentLLMConfig = { provider, model, url, apiKey, agentId, watchBrand };
 
         if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.save_llm_config === 'function') {
             try {
-                const res = await window.pywebview.api.save_llm_config(provider, url, model, apiKey);
+                const res = await window.pywebview.api.save_llm_config(provider, url, model, apiKey, agentId, watchBrand);
                 if (!res || !res.ok) { showToast('保存失败: ' + (res && res.error ? res.error : '')); return; }
             } catch (e) {
                 showToast('保存失败');
@@ -568,15 +1964,75 @@
         } else {
             try { localStorage.setItem('llm_config_v2', JSON.stringify(currentLLMConfig)); } catch (e) {}
         }
+        updateSyncButtonsVisibility();
         showToast("✅ 大模型配置已保存！");
         closeModals();
+    }
+
+    async function testLLMConfig() {
+        syncLLMConfigFromFields();
+        const provider = currentLLMConfig.provider || 'local_mcp';
+        const model = normalizeAgentModel(currentLLMConfig.model || 'openclaw', currentLLMConfig.agentId || '');
+        const url = currentLLMConfig.url || llmProviders[provider]?.url || LLM_DEFAULT_URL;
+        const apiKey = currentLLMConfig.apiKey || '';
+        const agentId = currentLLMConfig.agentId || '';
+        if (!model || !url) { showToast('⚠️ 请先填写模型和接口地址'); return; }
+        showToast('🧪 正在测试连接...');
+        const testBtn = Array.from(document.querySelectorAll('button')).find(function(btn) { return btn.textContent.includes('测试连接'); });
+        if (testBtn) { testBtn.disabled = true; testBtn.style.opacity = '0.6'; }
+        try {
+            if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.test_llm_config === 'function') {
+                const res = await window.pywebview.api.test_llm_config(provider, url, model, apiKey, agentId);
+                if (res && res.ok) showToast('✅ 连接成功');
+                else showToast('❌ 连接失败：' + (res && res.error ? res.error : '未知错误'));
+            } else {
+                const headers = { 'Content-Type': 'application/json' };
+                if (apiKey) headers.Authorization = 'Bearer ' + apiKey;
+                if (agentId) {
+                    headers['X-Agent-ID'] = agentId;
+                    headers['X-Agent-Id'] = agentId;
+                }
+                const body = {
+                    model: model,
+                    messages: [
+                        { role: 'system', content: '你只需要用中文回复：连接成功。' },
+                        { role: 'user', content: '请回复连接成功' }
+                    ],
+                    temperature: 0,
+                    stream: false,
+                    session_id: 'llm_config_test',
+                    chat_id: 'llm_config_test',
+                    user: 'llm_config_test'
+                };
+                if (agentId) {
+                    body.agent_id = agentId;
+                    body.agentId = agentId;
+                }
+                const controller = new AbortController();
+                const timer = setTimeout(function() { controller.abort(); }, 30000);
+                const resp = await fetch(url, { method: 'POST', headers: headers, body: JSON.stringify(body), signal: controller.signal });
+                clearTimeout(timer);
+                if (!resp.ok) {
+                    const errText = await resp.text();
+                    showToast('❌ 连接失败：HTTP ' + resp.status + ' ' + errText.slice(0, 120));
+                    return;
+                }
+                const data = await resp.json();
+                if (data && data.choices && data.choices.length) showToast('✅ 连接成功');
+                else showToast('❌ 连接失败：响应缺少 choices 字段');
+            }
+        } catch (e) {
+            const msg = e && e.name === 'AbortError' ? '连接超时或网络不可达' : (e && e.message ? e.message : String(e));
+            showToast('❌ 连接失败：' + msg);
+        } finally {
+            if (testBtn) { testBtn.disabled = false; testBtn.style.opacity = '1'; }
+        }
     }
 
     function closeModals() {
         document.getElementById('modal-overlay').style.display = 'none';
         document.getElementById('edit-modal').style.display = 'none';
         document.getElementById('llm-config-modal').style.display = 'none';
-        document.getElementById('sport-type-modal').style.display = 'none';
     }
 
     // Modal forms
@@ -631,119 +2087,53 @@
                    .replace(/- (.*)/g, '<li style="margin-left: 15px; margin-bottom: 4px;">$1</li>');
     }
     function appendChatMessage(role, content) {
-        const contentDiv = document.getElementById('llm-report-content');
-        const msgDiv = document.createElement('div');
-        msgDiv.style.padding = "10px"; msgDiv.style.borderRadius = "8px"; msgDiv.style.marginBottom = "10px"; msgDiv.style.wordBreak = "break-word";
-        
-        if (role === 'user') {
-            msgDiv.style.background = "rgba(168, 85, 247, 0.2)"; msgDiv.style.border = "1px solid rgba(168, 85, 247, 0.4)"; msgDiv.style.color = "#f8fafc";
-            msgDiv.innerText = content; 
-        } else {
-            msgDiv.style.background = "rgba(255, 255, 255, 0.05)"; msgDiv.style.border = "1px solid rgba(255, 255, 255, 0.1)";
-            msgDiv.innerHTML = parseMarkdown(content);
-        }
-        contentDiv.appendChild(msgDiv); contentDiv.scrollTop = contentDiv.scrollHeight;
+        addAICoachMessage(role, content);
     }
 
-    function confirmSportType(type) {
+    function onSportTypeChange(type) {
         appState.sportType = type;
-        closeModals();
-        
+        var sel = document.getElementById('sport-type-selector');
+        if (sel) sel.style.color = type ? '#f8fafc' : '#94a3b8';
+
+        if (!appState.points || appState.points.length === 0) return;
+
+        const distKm = (() => { const t = document.getElementById('val-dist').innerText; return parseFloat(t.replace(/[^\d.]/g, '')) || 0; })();
+        const durSec = (() => { const first = appState.points[0]; const last = appState.points[appState.points.length-1]; return (first && last && first.time && last.time) ? Math.round((new Date(last.time) - new Date(first.time)) / 1000) : 0; })();
+        const actData = {
+            filename: document.getElementById('track-title')?.innerText || '轨迹',
+            sport_type: type,
+            dist_km: distKm,
+            duration_sec: durSec,
+            gain_m: (appState.kmMarkers && appState.kmMarkers.gain) ? appState.kmMarkers.gain : 0,
+            max_alt_m: appState.maxAltitude || 0,
+            avg_hr: null, max_hr: null, avg_cadence: null, hr_decoupling: null, tss: null,
+            points_json: appState.points || [],
+            sub_sport_type: 'unknown',
+            _src_path: null
+        };
+        if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.save_activity === 'function') {
+            window.pywebview.api.save_activity(actData).then(function () { renderHistoryList(); }).catch(function () {});
+        }
+
         try {
-            var aiReport = generateAIReport(appState.points);
-            if (aiReport) { 
-                renderAIAnalysis(aiReport); 
-                switchAITab('report'); 
-            }
+            renderTrackReport({ silent: true });
         } catch(aiErr) { console.warn('AI分析报错:', aiErr); }
-        
-        resetChatUI();
+
+
     }
 
-    async function resetChatUI() {
-        if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.reset_llm_session === 'function') {
-            try { await window.pywebview.api.reset_llm_session(); } catch (e) {}
-        }
-        const chatContentDiv = document.getElementById('llm-report-content');
-        const sportName = appState.sportType === 'trail_running' ? '越野跑' : '徒步';
-        
-        if (chatContentDiv) {
-            chatContentDiv.innerHTML = `
-                <div style="color:#94a3b8;font-size:0.8rem;text-align:center;margin-top:20px;">当前模式：<strong style="color:var(--primary);">${sportName}</strong>。选择需要生成的内容：</div>
-                <div style="display:flex; flex-direction:column; gap:10px; margin-top: 15px;">
-                    <button onclick="generateLLMReport(false)" class="secondary-btn" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);">🗺️ 生成标准路书 (仅地形分析)</button>
-                    <button onclick="generateLLMReport(true)" class="primary-btn" style="background: linear-gradient(135deg, #a855f7, #7e22ce); border:none;">🏃‍♂️ 个人成绩预测 (需高驰MCP)</button>
-                </div>
-            `;
-        }
-    }
+    async function resetChatUI() {}
 
     async function generateLLMReport(isPersonalized = false) {
-        if (!window.pywebview || !window.pywebview.api || typeof window.pywebview.api.call_llm !== 'function') {
-            showToast('AI 路书需在桌面应用（Python 后端）中使用');
-            return;
-        }
-        if (!currentLLMConfig.url) { showToast("⚠️ API 接口地址为空，请检查配置"); openLLMConfig(); return; }
-        if (!appState.points || appState.points.length < 2) { showToast("⚠️ 暂无轨迹数据可供分析"); return; }
-
-        switchAITab('chat');
-        const contentDiv = document.getElementById('llm-report-content');
-        contentDiv.innerHTML = `
-            <div id="llm-loading" style="text-align: center; margin-top: 40px; color: #94a3b8;">
-                <div class="spinner" style="border-left-color: #a855f7; margin: 0 auto 15px auto;"></div>
-                正在呼叫 <b>${currentLLMConfig.model}</b>（Python 后端）分析数据，请稍候...<br>
-                <span style="font-size:0.7rem; opacity:0.6;">(大模型思考可能需要几秒到几十秒)</span>
-            </div>
-        `;
-
-        const magic = isPersonalized ? PY_REPORT_PERSONALIZED : PY_REPORT_TERRAIN;
-        try {
-            const res = await window.pywebview.api.call_llm(magic, appState.sportType);
-            if (!res || !res.ok) {
-                contentDiv.innerHTML = '<div style="color: #ef4444; padding: 20px;"><b>❌ 请求失败</b><br>' + (res && res.error ? String(res.error) : '未知错误') + '</div>';
-                return;
-            }
-            const text = res.content || '未获取到有效内容。';
-            contentDiv.innerHTML = '';
-            appendChatMessage('assistant', text);
-        } catch (e) {
-            contentDiv.innerHTML = '<div style="color: #ef4444; padding: 20px;"><b>❌ 请求失败</b><br>' + (e && e.message ? e.message : String(e)) + '</div>';
-        }
+        openAICoach();
     }
 
     async function sendLLMChat() {
-        const inputEl = document.getElementById('llm-chat-input');
-        const text = inputEl.value.trim();
-        if (!text) return;
+        openAICoach();
+    }
 
-        if (!window.pywebview || !window.pywebview.api || typeof window.pywebview.api.call_llm !== 'function') {
-            showToast('AI 对话需在桌面应用（Python 后端）中使用');
-            return;
-        }
-        if (!currentLLMConfig.url) { showToast("⚠️ API 接口地址为空"); openLLMConfig(); return; }
-
-        inputEl.value = '';
-        appendChatMessage('user', text);
-
-        const contentDiv = document.getElementById('llm-report-content');
-        const loadingDiv = document.createElement('div');
-        loadingDiv.id = 'llm-chat-loading';
-        loadingDiv.innerHTML = '<div class="spinner" style="border-left-color: #a855f7; width:20px; height:20px; border-width:2px; margin: 10px auto;"></div>';
-        contentDiv.appendChild(loadingDiv);
-        contentDiv.scrollTop = contentDiv.scrollHeight;
-
-        try {
-            const res = await window.pywebview.api.call_llm(text, appState.sportType);
-            document.getElementById('llm-chat-loading')?.remove();
-            if (!res || !res.ok) {
-                appendChatMessage('assistant', '❌ 发送失败: ' + (res && res.error ? String(res.error) : '未知错误'));
-                return;
-            }
-            appendChatMessage('assistant', res.content || '（空回复）');
-        } catch (e) {
-            document.getElementById('llm-chat-loading')?.remove();
-            appendChatMessage('assistant', '❌ 发送失败: ' + (e && e.message ? e.message : String(e)));
-        }
+    function appendChatMessage(role, content) {
+        addAICoachMessage(role, content);
     }
 
     // ==========================================
@@ -983,7 +2373,8 @@
         };
     }
 
-    function renderAIAnalysis(report) {
+    function buildAIReportHTML(report) {
+        if (!report) return '<div class="ai-empty">暂无可分析的轨迹数据</div>';
         var html = '<div class="ai-section"><h3>📋 概览 <span class="ai-badge ' + report.diffBadge + '">' + report.diffLabel + ' ' + report.diffScore + '/10</span></h3>';
         html += '<div class="ai-stat"><span class="ai-stat-label">运动时间</span><span class="ai-stat-value">' + report.startTimeStr + '</span></div>';
         html += '<div class="ai-stat"><span class="ai-stat-label">所在区域</span><span class="ai-stat-value" id="track-location-name">查询中...</span></div>';
@@ -1011,8 +2402,41 @@
             for (var j = 0; j < report.supplies.length; j++) html += '<div class="supply-item"><span>' + report.supplies[j].icon + '</span><span><b>' + report.supplies[j].name + '</b> <span style="color:#64748b;font-size:0.65rem;">' + report.supplies[j].note + '</span></span></div>';
             html += '</div>';
         }
-        document.getElementById('ai-summary').innerHTML = html;
-        document.getElementById('ai-sidebar').classList.remove('collapsed');
+        return html;
+    }
+
+    function renderTrackReport(options = {}) {
+        const summaryEl = document.getElementById('ai-summary');
+        const sidebarEl = document.getElementById('ai-sidebar');
+        if (!summaryEl || !sidebarEl) return null;
+        if (!appState.points || appState.points.length < 2) {
+            summaryEl.innerHTML = '<div class="ai-empty">请先导入包含至少 2 个轨迹点的文件</div>';
+            return null;
+        }
+        try {
+            const report = generateAIReport(appState.points);
+            summaryEl.innerHTML = buildAIReportHTML(report);
+            sidebarEl.classList.remove('collapsed');
+            switchAITab('report');
+            if (appState.points && appState.points.length > 0) {
+                fetchLocationName(appState.points[0].lat, appState.points[0].lon);
+            }
+            return report;
+        } catch (err) {
+            console.error('轨迹报告生成失败:', err);
+            summaryEl.innerHTML = '<div class="ai-empty" style="color:#fca5a5;">报告生成失败：' + (err && err.message ? err.message : String(err)) + '</div>';
+            sidebarEl.classList.remove('collapsed');
+            if (!options.silent) showToast('⚠️ 报告生成失败，请检查轨迹数据');
+            return null;
+        }
+    }
+
+    function renderAIAnalysis(report) {
+        const summaryEl = document.getElementById('ai-summary');
+        const sidebarEl = document.getElementById('ai-sidebar');
+        if (!summaryEl || !sidebarEl) return;
+        summaryEl.innerHTML = buildAIReportHTML(report);
+        sidebarEl.classList.remove('collapsed');
         
         if (appState.points && appState.points.length > 0) {
             fetchLocationName(appState.points[0].lat, appState.points[0].lon);
@@ -1039,6 +2463,10 @@
         const xml = new DOMParser().parseFromString(text, "text/xml");
         let trkpts = Array.from(xml.getElementsByTagName('trkpt'));
         if(trkpts.length === 0) trkpts = Array.from(xml.getElementsByTagNameNS('*', 'trkpt'));
+        const activityNodes = ['type', 'sport', 'activity', 'activity_type', 'category'].flatMap(function(tag) {
+            return Array.from(xml.getElementsByTagName(tag)).concat(Array.from(xml.getElementsByTagNameNS('*', tag)));
+        });
+        const activity_type = activityNodes.map(function(node) { return node.textContent; }).find(function(text) { return text && text.trim(); }) || '';
         
         const points = trkpts.map(pt => {
             let hr = null;
@@ -1061,7 +2489,7 @@
             let name = (pt.getElementsByTagName('name')[0] || pt.getElementsByTagNameNS('*', 'name')[0])?.textContent?.trim() || `打卡点 ${i + 1}`;
             return { id: 'cp_gpx_' + Date.now() + '_' + i, name: name, lat: parseFloat(pt.getAttribute('lat')), lon: parseFloat(pt.getAttribute('lon')), alt: parseFloat((pt.getElementsByTagName('ele')[0] || pt.getElementsByTagNameNS('*', 'ele')[0])?.textContent || 0) };
         });
-        return { points, placemarks };
+        return { points, placemarks, activity_type: activity_type };
     }
 
     function parseKML(xmlDoc) {
@@ -1103,12 +2531,13 @@
             fitParser.parse(arrayBuffer, (error, data) => {
                 if (error) return reject(error);
                 const points = [];
+                const activity_type = data.sport || data.sub_sport || data.activity_type || data.activity || '';
                 if (data.records) {
                     data.records.forEach(r => {
                         if (r.position_lat && r.position_long) points.push({ lat: r.position_lat, lon: r.position_long, alt: r.altitude || 0, time: r.timestamp, hr: r.heart_rate || null });
                     });
                 }
-                resolve({ points, placemarks: [] }); 
+                resolve({ points, placemarks: [], activity_type: activity_type, fit_sport: data.sport || '', fit_sub_sport: data.sub_sport || '' }); 
             });
         });
     }
@@ -1280,6 +2709,7 @@
             }
         }
         document.getElementById('track-title').innerText = displayTitle;
+        document.getElementById('track-title').title = displayTitle;
 
         // 防栈溢出
         let minAlt = Infinity, maxAlt = -Infinity, minLon = Infinity, maxLon = -Infinity, minLat = Infinity, maxLat = -Infinity;
@@ -1307,9 +2737,7 @@
             })).catch(function () {});
         }
 
-        // 导入完毕后弹出运动类型选择框
-        document.getElementById('sport-type-modal').style.display = 'block';
-        document.getElementById('modal-overlay').style.display = 'block';
+        renderTrackReport({ silent: true });
     }
 
     // ==========================================
@@ -1368,6 +2796,340 @@
         }
     }, { passive: false });
 
+    // ===== 新手引导逻辑 =====
+    const Onboarding = {
+        init() {
+            // 检查是否为新用户
+            // 这里我们通过 localStorage 检查是否已完成新手引导
+            const isFirstTime = !localStorage.getItem('onboarding_completed');
+            
+            if (isFirstTime) {
+                // 默认切换到配置面板
+                setTimeout(() => {
+                    const btn = document.querySelector('.bookmark-tab[data-panel="settings"]');
+                    if (btn) switchTab(btn);
+                    this.show();
+                }, 500);
+            }
+        },
+
+        show() {
+            let overlay = document.getElementById('onboarding-overlay');
+            if (!overlay) {
+                overlay = document.createElement('div');
+                overlay.id = 'onboarding-overlay';
+                overlay.className = 'onboarding-overlay';
+                
+                // 获取当前本地路径，用于第二步显示
+                const currentLocalDir = document.getElementById('set-local-dir')?.value || '~/.hiking_track_ai/local_tracks/';
+                
+                overlay.innerHTML = `
+                    <div class="onboarding-card">
+                        <button class="onboarding-close" onclick="Onboarding.close()">×</button>
+                        
+                        <!-- 步骤1: 大模型配置 -->
+                        <div class="onboarding-step active" id="step-1">
+                            <div class="onboarding-title">👋 欢迎使用 AI 运动分析仪</div>
+                            <div class="onboarding-desc">
+                                首次使用，请先配置您的大模型参数。<br><br>
+                                请在背后的配置面板中填写：<br>
+                                1. 选择大模型服务商<br>
+                                2. 填写对应模型的 API Key<br><br>
+                                填写完成后，请点击下方的<b>「测试链接」</b>按钮验证。
+                            </div>
+                            <div class="onboarding-actions">
+                                <button class="onboarding-btn primary" onclick="Onboarding.verifyStep1()">已配置并测试通过，下一步</button>
+                            </div>
+                        </div>
+
+                        <!-- 步骤2: 存储配置 -->
+                        <div class="onboarding-step" id="step-2">
+                            <div class="onboarding-title">📁 配置本地存储目录</div>
+                            <div class="onboarding-desc">
+                                请在背后的面板中点击<b>「选择文件夹」</b>，指定一个用于存放 FIT 轨迹文件的本地目录。<br><br>
+                                当前选择的路径：<br>
+                                <b style="color:var(--primary); word-break:break-all;" id="onboard-path-display">${currentLocalDir}</b>
+                            </div>
+                            <div class="onboarding-actions">
+                                <button class="onboarding-btn secondary" onclick="Onboarding.prevStep(1)">上一步</button>
+                                <button class="onboarding-btn primary" onclick="Onboarding.verifyStep2()">已选择，下一步</button>
+                            </div>
+                        </div>
+
+                        <!-- 步骤3: 身份选择与 AI 助手通知 -->
+                        <div class="onboarding-step" id="step-3">
+                            <div class="onboarding-title">⌚ 选择设备并告诉 AI</div>
+                            <div class="onboarding-desc">
+                                请选择您的运动手表品牌。这决定了 AI 助手如何为您处理下载的文件。
+                            </div>
+                            
+                            <div class="user-type-selector">
+                                <div class="user-type-option" id="onboard-type-garmin" onclick="Onboarding.selectType('garmin')">
+                                    <div style="font-size:1.5rem;margin-bottom:5px;">🔵</div>
+                                    <div>佳明用户</div>
+                                </div>
+                                <div class="user-type-option" id="onboard-type-coros" onclick="Onboarding.selectType('coros')">
+                                    <div style="font-size:1.5rem;margin-bottom:5px;">⚪</div>
+                                    <div>高驰用户</div>
+                                </div>
+                            </div>
+                            
+                            <div id="onboard-ai-notify" style="text-align:center; margin-bottom:15px; display:none;">
+                                <button id="onboard-notify-btn" class="ai-assistant-btn" style="margin:0; padding:10px 20px;" onclick="Onboarding.notifyAI()">
+                                    🤖 告诉AI助手下载规范
+                                </button>
+                                <div id="onboard-notify-status" style="font-size:0.75rem; color:var(--primary); margin-top:8px; display:none;">
+                                    ✅ 已成功通知 AI 助手！
+                                </div>
+                            </div>
+
+                            <div class="onboarding-actions">
+                                <button class="onboarding-btn secondary" onclick="Onboarding.prevStep(2)">上一步</button>
+                                <button class="onboarding-btn primary" id="onboard-finish-btn" onclick="Onboarding.finish()" disabled>完成配置</button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                document.body.appendChild(overlay);
+            }
+            overlay.style.display = 'flex';
+        },
+
+        close() {
+            const overlay = document.getElementById('onboarding-overlay');
+            if (overlay) overlay.style.display = 'none';
+        },
+
+        verifyStep1() {
+            // 这里可以加上严格验证，比如读取测试结果元素
+            const testResult = document.getElementById('llm-test-result');
+            if (testResult && testResult.innerText.includes('成功')) {
+                this.nextStep(2);
+            } else {
+                showToast('⚠️ 请先完成配置并在面板中点击「测试连接」验证成功后再继续');
+            }
+        },
+
+        verifyStep2() {
+            const pathInput = document.getElementById('set-local-dir');
+            if (pathInput && pathInput.value && pathInput.value.trim() !== '') {
+                this.nextStep(3);
+            } else {
+                showToast('⚠️ 请先选择一个本地文件夹用于存储数据');
+            }
+        },
+
+        nextStep(step) {
+            document.querySelectorAll('.onboarding-step').forEach(el => el.classList.remove('active'));
+            document.getElementById(`step-${step}`).classList.add('active');
+            
+            if (step === 2) {
+                // 更新显示的路径
+                const pathInput = document.getElementById('set-local-dir');
+                if (pathInput) {
+                    document.getElementById('onboard-path-display').innerText = pathInput.value || '未选择';
+                }
+            }
+        },
+
+        prevStep(step) {
+            document.querySelectorAll('.onboarding-step').forEach(el => el.classList.remove('active'));
+            document.getElementById(`step-${step}`).classList.add('active');
+        },
+
+        selectType(type) {
+            this.selectedType = type;
+            document.getElementById('onboard-type-garmin').classList.toggle('active', type === 'garmin');
+            document.getElementById('onboard-type-coros').classList.toggle('active', type === 'coros');
+            
+            // 同步更新底层界面的选择
+            const radios = document.getElementsByName('watch_brand');
+            for (let i = 0; i < radios.length; i++) {
+                if (radios[i].value === type) {
+                    radios[i].checked = true;
+                    break;
+                }
+            }
+            
+            // 更新底部界面的按钮状态
+            selectUserType(type);
+
+            const notifyDiv = document.getElementById('onboard-ai-notify');
+            const notifyBtn = document.getElementById('onboard-notify-btn');
+            const finishBtn = document.getElementById('onboard-finish-btn');
+            const statusDiv = document.getElementById('onboard-notify-status');
+            
+            notifyDiv.style.display = 'block';
+            statusDiv.style.display = 'none';
+            notifyBtn.innerText = '🤖 告诉AI助手下载规范';
+            notifyBtn.disabled = false;
+            
+            if (type === 'coros') {
+                notifyBtn.disabled = true;
+                notifyBtn.style.opacity = '0.5';
+                notifyBtn.innerText = '高驰用户无需通知AI助手';
+                finishBtn.disabled = false; // 高驰直接可以完成
+            } else {
+                notifyBtn.style.opacity = '1';
+                finishBtn.disabled = true; // 佳明必须先点通知
+            }
+        },
+
+        async notifyAI() {
+            if (this.selectedType !== 'garmin') return;
+            
+            const btn = document.getElementById('onboard-notify-btn');
+            const statusDiv = document.getElementById('onboard-notify-status');
+            const finishBtn = document.getElementById('onboard-finish-btn');
+            
+            btn.innerText = '⏳ 正在通知...';
+            btn.disabled = true;
+            
+            try {
+                // 调用底层的方法
+                await notifyAIAssistant();
+                statusDiv.style.display = 'block';
+                btn.innerText = '✅ 通知成功';
+                finishBtn.disabled = false;
+            } catch (e) {
+                btn.innerText = '🤖 重新通知AI助手';
+                btn.disabled = false;
+                showToast('通知失败，请重试');
+            }
+        },
+
+        finish() {
+            localStorage.setItem('onboarding_completed', 'true');
+            this.close();
+            showToast('🎉 配置完成！欢迎使用。');
+            
+            // 引导完成后自动切到个人数据页
+            const btn = document.querySelector('.bookmark-tab[data-panel="profile"]');
+            if (btn) switchTab(btn);
+        }
+    };
+
+    // 原有的逻辑扩展
+    function selectUserType(type) {
+        // 更新底层 UI
+        document.getElementById('type-garmin')?.classList.toggle('active', type === 'garmin');
+        document.getElementById('type-coros')?.classList.toggle('active', type === 'coros');
+        
+        const notifyBtn = document.getElementById('btn-notify-ai');
+        if (notifyBtn) {
+            if (type === 'garmin') {
+                notifyBtn.disabled = false;
+                notifyBtn.title = '';
+            } else {
+                notifyBtn.disabled = true;
+                notifyBtn.title = '高驰用户暂不支持此功能';
+            }
+        }
+    }
+
+    async function notifyAIAssistant() {
+        const localDir = document.getElementById('set-local-dir')?.value;
+        if (!localDir) {
+            showToast('⚠️ 请先选择本地 FIT 文件存储目录');
+            return;
+        }
+
+        const prompt = `从现在开始，所有从佳明(Garmin)下载的FIT文件，必须严格遵守以下规范：
+
+## FIT文件下载与存储规范
+
+1. 下载后得到的是ZIP文件（如 activity_123456.fit.zip），必须解压
+2. 解压后得到的FIT文件（如 123456_ACTIVITY.fit）必须放到以下目录：
+${localDir}
+3. 文件名格式保持为 {活动ID}_ACTIVITY.fit
+4. 解压并移动完成后，删除原始ZIP文件
+5. 如果目标目录不存在，先创建它
+
+## 示例流程
+活动ID: 592340096
+- 下载: activity_592340096.fit.zip
+- 解压: 得到 592340096_ACTIVITY.fit
+- 放置: ${localDir}/592340096_ACTIVITY.fit
+- 清理: 删除 activity_592340096.fit.zip
+
+请记住这条规范，并将它写入你的长期记忆，标题为「FIT文件下载规范」。
+以后每次下载FIT文件都严格按照这个流程执行，不要擅自改变路径或跳过解压步骤。`;
+
+        // 模拟调用 AI 接口或实际调用
+        if (window.pywebview && window.pywebview.api) {
+            try {
+                // 假设我们复用已有的 call_llm，或者直接加一条系统消息
+                const res = await window.pywebview.api.call_llm(prompt, 'system_instruction');
+                if (res && res.ok) {
+                    showToast('✅ 已成功通知大模型助手！');
+                } else {
+                    throw new Error(res.error || '未知错误');
+                }
+            } catch (e) {
+                console.error(e);
+                showToast('⚠️ 通知失败: ' + (e.message || e));
+                throw e;
+            }
+        } else {
+            // 浏览器测试环境
+            console.log("Mock notify AI:", prompt);
+            await new Promise(r => setTimeout(r, 1000));
+            showToast('✅ (Mock) 已成功通知大模型助手！');
+        }
+    }
+
+    // 修改 selectLocalDirectory 以同步更新引导面板的路径
+    const originalSelectLocalDirectory = selectLocalDirectory;
+    window.selectLocalDirectory = async function() {
+        if (typeof originalSelectLocalDirectory === 'function') {
+            await originalSelectLocalDirectory();
+        } else if (window.pywebview && window.pywebview.api) {
+            // 如果原本没有这个函数，这里补充一个基础实现
+            const res = await window.pywebview.api.select_directory();
+            if (res && res.ok && res.path) {
+                const el = document.getElementById('set-local-dir');
+                if (el) el.value = res.path;
+            }
+        } else {
+            // 浏览器环境 mock
+            const el = document.getElementById('set-local-dir');
+            if (el) el.value = '/Users/mock/Documents/fit_files';
+        }
+        
+        // 更新 onboarding 中的显示
+        const display = document.getElementById('onboard-path-display');
+        const input = document.getElementById('set-local-dir');
+        if (display && input) {
+            display.innerText = input.value;
+        }
+    };
+
+    // App 初始化结束时调用
+    window.addEventListener('DOMContentLoaded', () => {
+        setTimeout(() => {
+            Onboarding.init();
+        }, 1000);
+    });
+
+    // ========================================
+
+    // 原有代码继续...
+    function initCesium() {
+        Cesium.Ion.defaultAccessToken = 'YOUR_CESIUM_TOKEN_HERE';
+        const viewer = new Cesium.Viewer('cesiumContainer', {
+            terrainProvider: Cesium.createWorldTerrain(),
+            imageryProvider: new Cesium.UrlTemplateImageryProvider({
+                url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+                credit: 'Esri'
+            }),
+            animation: false, timeline: false, fullscreenButton: false, geocoder: false,
+            homeButton: false, infoBox: false, selectionIndicator: false, navigationHelpButton: false,
+            baseLayerPicker: false, sceneModePicker: false
+        });
+        window.viewer = viewer;
+        // 等待加载...
+    }
+
     // 文件导入：桌面壳优先走 Python（gpxpy / fitparse + 坡度），浏览器环境仍用 <input type=file> + 前端解析
     async function triggerTrackImport() {
         if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.pick_and_parse_track === 'function') {
@@ -1388,7 +3150,52 @@
                     showToast('⚠️ 未提取到有效经纬度信息。');
                     return;
                 }
-                applyDataAndRender(res.data, res.filename || '轨迹');
+                
+                // --- 查重校验逻辑 ---
+                const actData = {
+                    filename: res.filename || '轨迹',
+                    sport_type: autoMatchActivityType(res.data) || appState.sportType || 'hiking',
+                    dist_km: (res.data.points && res.data.points.length > 1) ? calculateStats(res.data.points).dist : 0,
+                    duration_sec: (res.data.points && res.data.points.length > 1) ? 
+                        Math.round((new Date(res.data.points[res.data.points.length-1].time) - new Date(res.data.points[0].time)) / 1000) : 0,
+                    gain_m: calculateStats(res.data.points).gain,
+                    max_alt_m: 0,
+                    avg_hr: null, max_hr: null, avg_cadence: null, hr_decoupling: null, tss: null,
+                    points_json: res.data.points || [],
+                    sub_sport_type: (res.data && res.data.fit_sub_sport) || 'unknown',
+                    _src_path: res._src_path || null
+                };
+
+                let shouldProceed = true;
+                if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.check_duplicate_track === 'function') {
+                    document.getElementById('loading-text').innerText = '正在进行查重校验…';
+                    const dupRes = await window.pywebview.api.check_duplicate_track(actData);
+                    if (dupRes && dupRes.ok && dupRes.is_duplicate) {
+                        shouldProceed = await handleDuplicateTrack(dupRes.duplicate_record, dupRes.score, actData);
+                    }
+                }
+
+                if (!shouldProceed) {
+                    showToast('已跳过导入');
+                    return;
+                }
+                // --- 查重校验结束 ---
+
+                applyDataAndRender(res.data, actData.filename);
+                const matchedSportType = actData.sport_type;
+                
+                // 重新获取一下最新的状态值（因为有些是基于界面元素）
+                actData.dist_km = (() => { const t = document.getElementById('val-dist').innerText; return parseFloat(t.replace(/[^\d.]/g, '')) || 0; })();
+                actData.duration_sec = appState.points ? (() => { const first = appState.points[0]; const last = appState.points[appState.points.length-1]; return (first && last && first.time && last.time) ? Math.round((new Date(last.time) - new Date(first.time)) / 1000) : 0; })() : 0;
+                actData.gain_m = (appState.kmMarkers && appState.kmMarkers.gain) ? appState.kmMarkers.gain : 0;
+                actData.max_alt_m = appState.maxAltitude || 0;
+
+                if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.save_activity === 'function') {
+                    window.pywebview.api.save_activity(actData).then(function (saveRes) {
+                        if (saveRes && saveRes.skipped) return;
+                        renderHistoryList();
+                    }).catch(function () {});
+                }
             } catch (err) {
                 showToast('⚠️ 导入失败: ' + (err && err.message ? err.message : String(err)));
             } finally {
@@ -1400,6 +3207,55 @@
             return;
         }
         document.getElementById('file-upload').click();
+    }
+
+    // 处理重复文件的弹窗交互
+    function handleDuplicateTrack(dupRecord, score, actData) {
+        return new Promise((resolve) => {
+            const overlay = document.getElementById('duplicate-dialog-overlay');
+            const infoContent = document.getElementById('duplicate-info-content');
+            const btnSkip = document.getElementById('btn-dup-skip');
+            const btnForce = document.getElementById('btn-dup-force');
+            const btnMerge = document.getElementById('btn-dup-merge');
+
+            // 填充重复文件信息
+            infoContent.innerHTML = `
+                <div style="margin-bottom:8px;"><b>重复文件:</b> ${dupRecord.filename}</div>
+                <div style="margin-bottom:8px;"><b>存储路径:</b> ${dupRecord.file_path || '未知'}</div>
+                <div style="margin-bottom:8px;"><b>活动时间:</b> ${dupRecord.start_time || '未知'}</div>
+                <div style="margin-bottom:8px;"><b>特征匹配度:</b> <span style="color:var(--primary);font-weight:bold;">${score}%</span></div>
+                <div style="color:#94a3b8;font-size:0.8rem;">(距离: ${dupRecord.dist_km} km, 时长: ${dupRecord.duration_sec} 秒)</div>
+            `;
+
+            overlay.style.display = 'flex';
+
+            const cleanup = () => {
+                overlay.style.display = 'none';
+                btnSkip.onclick = null;
+                btnForce.onclick = null;
+                btnMerge.onclick = null;
+            };
+
+            btnSkip.onclick = () => {
+                cleanup();
+                actData._duplicate_action = 'skip';
+                resolve(false);
+            };
+
+            btnForce.onclick = () => {
+                cleanup();
+                actData._duplicate_action = 'force';
+                actData._new_filename = actData.filename.replace(/\.[^/.]+$/, "") + "_copy" + actData.filename.match(/\.[^/.]+$/)[0];
+                resolve(true);
+            };
+
+            btnMerge.onclick = () => {
+                cleanup();
+                actData._duplicate_action = 'merge';
+                // 这里可以执行实际合并逻辑，这里仅标记
+                resolve(true);
+            };
+        });
     }
 
     function downloadFile(content, fileName, mimeType) {
@@ -1534,7 +3390,10 @@
             else if (ext === 'kml') result = parseKML(new DOMParser().parseFromString(await file.text(), "text/xml"));
             else if (ext === 'fit') result = await parseFIT(await file.arrayBuffer());
             else throw new Error("格式不支持！请选择 .fit, .gpx, 或 .kml");
-            if (result && result.points.length > 0) applyDataAndRender(result, file.name);
+            if (result && result.points.length > 0) {
+                applyDataAndRender(result, file.name);
+                autoMatchActivityType(result);
+            }
             else throw new Error("未提取到有效经纬度信息。");
         } catch (err) { showToast("⚠️ 解析失败: " + err.message); } 
         finally { if (loader) { loader.style.opacity = '0'; setTimeout(() => loader.style.display = 'none', 800); } e.target.value = ''; }

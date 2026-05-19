@@ -71,11 +71,12 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             tss            REAL,
             points_json    TEXT,
             file_path      TEXT,
+            start_time     TEXT,
             updated_at     TEXT DEFAULT (datetime('now'))
         )
     """)
 
-    for col, dtype in [("sub_sport_type", "TEXT"), ("file_path", "TEXT")]:
+    for col, dtype in [("sub_sport_type", "TEXT"), ("file_path", "TEXT"), ("start_time", "TEXT")]:
         try:
             conn.execute(f"ALTER TABLE activities ADD COLUMN {col} {dtype}")
         except Exception:
@@ -228,8 +229,8 @@ def save_activity(data: dict[str, Any]) -> int:
         """
         INSERT INTO activities
             (filename, sport_type, sub_sport_type, dist_km, duration_sec, gain_m, max_alt_m,
-             avg_hr, max_hr, avg_cadence, hr_decoupling, tss, points_json, file_path)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             avg_hr, max_hr, avg_cadence, hr_decoupling, tss, points_json, file_path, start_time)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             data.get("filename"),
@@ -246,6 +247,7 @@ def save_activity(data: dict[str, Any]) -> int:
             data.get("tss"),
             json.dumps(data.get("points_json", [])),
             data.get("file_path"),
+            data.get("start_time"),
         ),
     )
     conn.commit()
@@ -254,13 +256,27 @@ def save_activity(data: dict[str, Any]) -> int:
     return aid
 
 
+def update_activity_sport_type(activity_id: int, sport_type: str) -> None:
+    conn = _conn()
+    conn.execute(
+        """
+        UPDATE activities
+        SET sport_type = ?, updated_at = datetime('now')
+        WHERE id = ?
+        """,
+        (sport_type, activity_id),
+    )
+    conn.commit()
+    conn.close()
+
+
 def get_activity_history(limit: int = 50) -> list[dict[str, Any]]:
     """按时间倒序返回所有历史运动记录（包含 file_path）。"""
     conn = _conn()
     rows = conn.execute(
         """
         SELECT id, filename, sport_type, sub_sport_type, dist_km, duration_sec, gain_m,
-               max_alt_m, avg_hr, max_hr, file_path, updated_at
+               max_alt_m, avg_hr, max_hr, file_path, start_time, updated_at
         FROM activities ORDER BY id DESC LIMIT ?
         """,
         (limit,),
@@ -277,17 +293,410 @@ def load_local_track(file_path: str) -> dict[str, Any]:
         return {"ok": False, "error": f"文件不存在: {file_path}"}
     try:
         data = track_backend.parse_track_file(str(p))
-        return {"ok": True, "filename": p.name, "data": data}
+        conn = _conn()
+        row = conn.execute(
+            """
+            SELECT id, sport_type, sub_sport_type
+            FROM activities
+            WHERE file_path = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (str(p),),
+        ).fetchone()
+        conn.close()
+        activity = dict(row) if row else None
+        return {"ok": True, "filename": p.name, "data": data, "activity": activity}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
 
-def copy_track_to_local(src_path: str) -> str:
+def build_activity_payload(filename: str, data: dict[str, Any], src_path: str | None = None) -> dict[str, Any]:
+    import track_backend
+
+    points = data.get("points") or []
+    dist_km, duration_sec, gain_m = _summarize_track_points(points, track_backend)
+
+    hr_values = [int(p["hr"]) for p in points if p.get("hr") is not None]
+    alt_values = [float(p.get("alt") or 0.0) for p in points if p.get("alt") is not None]
+
+    return {
+        "filename": filename,
+        "sport_type": data.get("sport_type", "unknown"),
+        "sub_sport_type": data.get("fit_sub_sport") or data.get("sub_sport_type") or "unknown",
+        "dist_km": dist_km,
+        "duration_sec": duration_sec,
+        "gain_m": gain_m,
+        "max_alt_m": max(alt_values) if alt_values else 0.0,
+        "avg_hr": int(round(sum(hr_values) / len(hr_values))) if hr_values else None,
+        "max_hr": max(hr_values) if hr_values else None,
+        "avg_cadence": None,
+        "hr_decoupling": None,
+        "tss": None,
+        "points_json": points,
+        "file_path": src_path,
+        "start_time": points[0].get("time") if points else None,
+    }
+
+
+def ingest_activity_file(
+    src_path: str,
+    duplicate_action: str = "",
+    new_filename: str | None = None,
+) -> dict[str, Any]:
+    import track_backend
+    import logging
+
+    logger = logging.getLogger("duplicate_check")
+    p = Path(src_path).expanduser().resolve()
+    if not p.is_file():
+        return {"ok": False, "error": f"文件不存在: {src_path}"}
+
+    data = track_backend.parse_track_file(str(p))
+    activity = build_activity_payload(p.name, data, str(p))
+
+    if duplicate_action:
+        logger.info(f"--- 用户查重操作 --- 文件: {p.name}, 选择操作: {duplicate_action}, 新文件名: {new_filename}")
+
+    dup_res = check_duplicate_activity(
+        start_time=activity.get("start_time"),
+        dist_km=activity.get("dist_km", 0.0),
+        duration_sec=activity.get("duration_sec", 0),
+        points_json=activity.get("points_json", [])
+    )
+
+    if dup_res.get("is_duplicate") and duplicate_action not in ("force", "merge"):
+        return {
+            "ok": True,
+            "duplicate": True,
+            "score": dup_res.get("score"),
+            "duplicate_record": dup_res.get("duplicate_record"),
+            "file_path": str(p),
+            "filename": p.name,
+        }
+
+    # 如果是覆盖 (merge)，删除旧记录和旧文件
+    if duplicate_action == "merge" and dup_res.get("duplicate_record"):
+        old_record = dup_res.get("duplicate_record")
+        old_id = old_record.get("id")
+        old_file_path = old_record.get("file_path")
+        if old_id:
+            conn = _conn()
+            conn.execute("DELETE FROM activities WHERE id = ?", (old_id,))
+            conn.commit()
+            conn.close()
+        if old_file_path and Path(old_file_path).exists():
+            try:
+                Path(old_file_path).unlink()
+            except Exception:
+                pass
+
+    local_path = copy_track_to_local(str(p), new_filename if duplicate_action == "force" else None)
+    activity["file_path"] = local_path
+    activity["filename"] = Path(local_path).name
+    activity_id = save_activity(activity)
+
+    return {
+        "ok": True,
+        "filename": activity["filename"],
+        "data": data,
+        "activity": {
+            "id": activity_id,
+            "filename": activity["filename"],
+            "sport_type": activity["sport_type"],
+            "sub_sport_type": activity["sub_sport_type"],
+            "dist_km": activity["dist_km"],
+            "duration_sec": activity["duration_sec"],
+            "gain_m": activity["gain_m"],
+            "max_alt_m": activity["max_alt_m"],
+            "file_path": local_path,
+            "start_time": activity["start_time"],
+        },
+    }
+
+
+def _summarize_track_points(points: list[dict[str, Any]], track_backend_module: Any) -> tuple[float, int, int]:
+    dist_m = 0.0
+    gain_m = 0.0
+    for idx in range(1, len(points)):
+        p0, p1 = points[idx - 1], points[idx]
+        if p0.get("lat") is None or p0.get("lon") is None or p1.get("lat") is None or p1.get("lon") is None:
+            continue
+        dist_m += track_backend_module.haversine_m(p0["lat"], p0["lon"], p1["lat"], p1["lon"])
+        if p0.get("alt") is not None and p1.get("alt") is not None:
+            alt_gain = float(p1.get("alt") or 0.0) - float(p0.get("alt") or 0.0)
+            if alt_gain > 0:
+                gain_m += alt_gain
+
+    duration_sec = 0
+    timed_points = [p for p in points if p.get("time")]
+    if len(timed_points) >= 2:
+        try:
+            start = datetime.fromisoformat(str(timed_points[0]["time"]).replace("Z", "+00:00"))
+            end = datetime.fromisoformat(str(timed_points[-1]["time"]).replace("Z", "+00:00"))
+            duration_sec = max(int((end - start).total_seconds()), 0)
+        except ValueError:
+            duration_sec = 0
+
+    return round(dist_m / 1000.0, 2), duration_sec, int(round(gain_m))
+
+
+def scan_fit_directory(local_dir: str) -> dict[str, Any]:
+    """扫描配置文件夹中的所有 fit 文件，解析并过滤无 GPS 数据文件。"""
+    import track_backend
+    if not str(local_dir or "").strip():
+        return {"ok": False, "error": "未配置 FIT 文件目录"}
+    base = Path(local_dir).expanduser().resolve()
+    if not base.is_dir():
+        return {"ok": False, "error": f"目录不存在或不是有效文件夹: {local_dir}"}
+
+    files = []
+    valid = 0
+    skipped = 0
+
+    try:
+        fit_files = sorted({*base.glob("*.fit"), *base.glob("*.FIT")}, key=lambda p: p.name.lower())
+    except PermissionError:
+        return {"ok": False, "error": "无读取权限"}
+
+    for p in fit_files:
+        try:
+            data = track_backend.parse_track_file(str(p))
+            points = data.get("points") or []
+            dist_km, duration_sec, gain_m = _summarize_track_points(points, track_backend)
+            
+            start_lat = points[0].get("lat") if points else None
+            start_lon = points[0].get("lon") if points else None
+            
+            has_gps = any(
+                pt.get("lat") is not None and pt.get("lon") is not None
+                for pt in points
+            )
+            if not has_gps:
+                skipped += 1
+                files.append({
+                    "file_path": str(p),
+                    "filename": p.name,
+                    "valid": False,
+                    "reason": "无GPS坐标数据",
+                    "sport_type": data.get("sport_type", "unknown"),
+                    "dist_km": dist_km,
+                    "duration_sec": duration_sec,
+                    "start_time": (points[0].get("time") if points else None),
+                })
+                continue
+            valid += 1
+            start_time = None
+            if points and points[0].get("time"):
+                start_time = points[0]["time"]
+            files.append({
+                "file_path": str(p),
+                "filename": p.name,
+                "valid": True,
+                "sport_type": data.get("sport_type", "unknown"),
+                "dist_km": dist_km,
+                "duration_sec": duration_sec,
+                "gain_m": gain_m,
+                "start_time": start_time,
+                "start_lat": start_lat,
+                "start_lon": start_lon,
+            })
+        except Exception as exc:
+            skipped += 1
+            files.append({
+                "file_path": str(p),
+                "filename": p.name,
+                "valid": False,
+                "reason": "解析失败",
+            })
+
+    return {
+        "ok": True,
+        "files": files,
+        "total": len(fit_files),
+        "valid": valid,
+        "skipped": skipped,
+    }
+
+
+def check_duplicate_activity(
+    start_time: str | None,
+    dist_km: float,
+    duration_sec: int,
+    points_json: list[dict[str, Any]] | None = None
+) -> dict[str, Any]:
+    """
+    检查是否有重复的活动记录。
+    判断标准：
+    1. 时间窗口粗筛：开始时间相差 <= 5分钟，且时长差异 <= 10%。
+    2. 轨迹点空间匹配：如果提供了 points_json，计算经纬度重合度（距离<50米），阈值 90%。
+    3. 核心运动数据匹配：距离差异 < 10%。
+    """
+    import track_backend
+    import logging
+    import json
+    from datetime import datetime
+    import os
+
+    # 设置独立的查重日志记录
+    logger = logging.getLogger("duplicate_check")
+    if not logger.handlers:
+        logger.setLevel(logging.INFO)
+        fh = logging.FileHandler("duplicate_check.log", encoding="utf-8")
+        fh.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        logger.addHandler(fh)
+
+    conn = _conn()
+    rows = conn.execute(
+        "SELECT id, filename, file_path, start_time, dist_km, duration_sec, points_json, updated_at FROM activities"
+    ).fetchall()
+    conn.close()
+
+    best_match = None
+    max_score = 0.0
+    
+    target_start = None
+    if start_time:
+        try:
+            target_start = datetime.fromisoformat(start_time.replace("Z", "+00:00"))
+        except ValueError:
+            pass
+
+    logger.info(f"--- 开始查重 --- 目标: start={start_time}, dist={dist_km}km, dur={duration_sec}s, points={len(points_json) if points_json else 0}")
+
+    for r in rows:
+        r_dict = dict(r)
+        score = 0.0
+        
+        db_start_str = r_dict.get("start_time")
+        db_start = None
+        if db_start_str:
+            try:
+                db_start = datetime.fromisoformat(db_start_str.replace("Z", "+00:00"))
+            except ValueError:
+                pass
+                
+        # 1. 时间窗口粗筛 (如果两者都有 start_time)
+        if target_start and db_start:
+            time_diff_sec = abs((target_start - db_start).total_seconds())
+            if time_diff_sec > 300: # 5分钟
+                logger.info(f"[{r_dict['filename']}] 排除: 开始时间相差 {time_diff_sec}s > 300s")
+                continue
+        elif target_start or db_start:
+            # 一个有一没有，扣分但不断然排除
+            pass
+
+        # 时长差异 <= 10%
+        db_dur = r_dict.get("duration_sec") or 0
+        if duration_sec > 0 and db_dur > 0:
+            dur_diff_ratio = abs(db_dur - duration_sec) / max(duration_sec, 1)
+            if dur_diff_ratio > 0.1:
+                logger.info(f"[{r_dict['filename']}] 排除: 时长差异 {dur_diff_ratio*100:.1f}% > 10%")
+                continue
+
+        # 里程差异
+        db_dist = r_dict.get("dist_km") or 0.0
+        dist_diff_ratio = abs(db_dist - dist_km) / max(dist_km, 0.1) if dist_km > 0 else 0
+        if dist_diff_ratio > 0.15: # 放宽一点到15%作为粗筛
+             logger.info(f"[{r_dict['filename']}] 排除: 里程差异 {dist_diff_ratio*100:.1f}% > 15%")
+             continue
+
+        # 2. 空间匹配
+        overlap_ratio = 0.0
+        if points_json and r_dict.get("points_json"):
+            try:
+                db_points = json.loads(r_dict["points_json"])
+                if db_points and isinstance(db_points, list) and len(db_points) > 0 and len(points_json) > 0:
+                    # 降采样，最多取 100 个点进行比对，提高效率
+                    step1 = max(1, len(points_json) // 100)
+                    step2 = max(1, len(db_points) // 100)
+                    sample1 = points_json[::step1]
+                    sample2 = db_points[::step2]
+                    
+                    match_count = 0
+                    for p1 in sample1:
+                        if "lat" not in p1 or "lon" not in p1:
+                            continue
+                        # 寻找 sample2 中是否有距离 < 50m 的点
+                        min_dist = float('inf')
+                        for p2 in sample2:
+                            if "lat" not in p2 or "lon" not in p2:
+                                continue
+                            d = track_backend.haversine_m(p1["lat"], p1["lon"], p2["lat"], p2["lon"])
+                            if d < min_dist:
+                                min_dist = d
+                                if min_dist < 50: # 提前跳出
+                                    break
+                        if min_dist < 50:
+                            match_count += 1
+                            
+                    overlap_ratio = match_count / len(sample1) if sample1 else 0.0
+            except Exception as e:
+                logger.warning(f"[{r_dict['filename']}] 空间匹配异常: {e}")
+
+        # 计算综合分数
+        score = 0.0
+        if target_start and db_start:
+            if abs((target_start - db_start).total_seconds()) <= 60:
+                score += 30.0
+            elif abs((target_start - db_start).total_seconds()) <= 300:
+                score += 15.0
+                
+        if dist_diff_ratio <= 0.05:
+            score += 20.0
+        elif dist_diff_ratio <= 0.1:
+            score += 10.0
+            
+        if duration_sec > 0 and db_dur > 0:
+            if abs(db_dur - duration_sec) / duration_sec <= 0.05:
+                score += 20.0
+            elif abs(db_dur - duration_sec) / duration_sec <= 0.1:
+                score += 10.0
+
+        if overlap_ratio >= 0.9:
+            score += 30.0
+        elif overlap_ratio >= 0.7:
+            score += 15.0
+
+        logger.info(f"[{r_dict['filename']}] 查重得分: {score} (时间差: {abs((target_start - db_start).total_seconds()) if target_start and db_start else 'N/A'}s, 里程差: {dist_diff_ratio*100:.1f}%, 时长差: {dur_diff_ratio*100 if duration_sec>0 and db_dur>0 else 'N/A'}%, 重合度: {overlap_ratio*100:.1f}%)")
+
+        if score > max_score:
+            max_score = score
+            best_match = r_dict
+
+    # 设置阈值 80 为重复
+    if max_score >= 80.0 and best_match:
+        logger.info(f"--- 查重结果: 发现重复 --- 匹配记录: {best_match['filename']}, 分数: {max_score}")
+        # 不返回完整的 points_json 以免日志过大
+        best_match.pop("points_json", None)
+        return {
+            "is_duplicate": True,
+            "score": max_score,
+            "duplicate_record": best_match
+        }
+        
+    logger.info(f"--- 查重结果: 无重复 --- 最高分: {max_score}")
+    if best_match:
+        best_match.pop("points_json", None)
+    return {
+        "is_duplicate": False,
+        "score": max_score,
+        "duplicate_record": best_match if max_score > 0 else None
+    }
+
+
+def copy_track_to_local(src_path: str, new_filename: str = None) -> str:
     """将源轨迹文件复制到 local_tracks 目录，以 filename 为基础生成唯一文件名，返回本地路径。"""
     src = Path(src_path)
     dest_dir = tracks_dir()
-    stem = src.stem
-    suffix = src.suffix
+    
+    if new_filename:
+        stem = Path(new_filename).stem
+        suffix = Path(new_filename).suffix or src.suffix
+    else:
+        stem = src.stem
+        suffix = src.suffix
+        
     dest = dest_dir / f"{stem}{suffix}"
     n = 1
     while dest.exists():
