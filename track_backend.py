@@ -156,6 +156,11 @@ def normalize_sport_type(value: Any, sub_value: Any = None) -> str | None:
     for sport_type, keywords in SPORT_TYPE_KEYWORDS:
         if any(keyword in combined for keyword in keywords):
             return sport_type
+            
+    # Preserve the original unmapped type if it exists, rather than forcing None
+    if raw and raw not in {"unknown", "none", "null"}:
+        return raw
+        
     return None
 
 

@@ -150,8 +150,21 @@ def _sport_labels(sport_type: str) -> tuple[str, str]:
         "mountain_biking": ("山地骑行", "资深的山地骑行教练"),
         "swimming": ("游泳", "资深的游泳教练"),
         "driving": ("驾车", "资深的道路驾驶安全教练"),
+        "skiing": ("滑雪", "资深的滑雪教练"),
+        "rowing": ("划船", "资深的赛艇教练"),
     }
-    return mapping.get(key, ("综合运动", "资深的运动训练教练"))
+    if key in mapping:
+        return mapping[key]
+    
+    import re
+    if re.search(r'[\u4e00-\u9fa5]', key):
+        return (key, f"专业的{key}教练")
+        
+    if key:
+        capitalized = key.replace('_', ' ').title()
+        return (capitalized, f"Experienced {capitalized} Coach")
+        
+    return ("综合运动", "资深的运动训练教练")
 
 
 def _weather_context_block(weather_context: dict[str, Any] | None) -> str:

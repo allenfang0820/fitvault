@@ -51,10 +51,8 @@ class TestTrackHtmlSyncLogic(unittest.TestCase):
         self.assertIn("weather: appState.currentWeather", self.source)
 
     def test_ai_report_uses_dynamic_sport_labels_instead_of_fixed_hiking(self):
-        self.assertIn("function getPaceSectionLabel(type)", self.source)
-        self.assertIn("option value=\"mountaineering\"", self.source)
-        self.assertIn("option value=\"driving\"", self.source)
-        self.assertIn("getPaceSectionLabel(appState.sportType)", self.source)
+        self.assertIn("function getDynamicSportMeta(typeStr)", self.source)
+        self.assertIn("getDynamicSportMeta(appState.sportType)", self.source)
 
 
 if __name__ == "__main__":

@@ -1712,20 +1712,9 @@
                     </div>
                     <span class="sep">|</span>
                     <div class="sport-type-select" style="display:flex;align-items:center;gap:5px;flex-shrink:0;">
-                        <span style="color:#94a3b8;font-size:0.65rem;">🏃</span>
+                        <span id="sport-type-icon" style="color:#94a3b8;font-size:0.65rem;">⏱️</span>
                         <select id="sport-type-selector" onchange="onSportTypeChange(this.value)" style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);color:#94a3b8;border-radius:6px;padding:3px 8px;font-size:0.7rem;cursor:pointer;outline:none;">
                             <option value="">⚠️ 请选择运动类型</option>
-                            <option value="running">🏃 跑步</option>
-                            <option value="hiking">🥾 徒步</option>
-                            <option value="mountaineering">🧗 登山</option>
-                            <option value="cycling">🚴 骑行</option>
-                            <option value="driving">🚗 驾车</option>
-                            <option value="swimming">🏊 游泳</option>
-                            <option value="walking">🚶 步行</option>
-                            <option value="trail_running">🏃 越野跑</option>
-                            <option value="treadmill_running">🏃 室内跑步</option>
-                            <option value="road_cycling">🛣️ 公路骑行</option>
-                            <option value="mountain_biking">🚵 山地骑行</option>
                         </select>
                     </div>
                     <span class="sep">|</span>
@@ -2033,18 +2022,6 @@
         },
         rawHistoryFiles: []
     };
-    const SPORT_HUB_TYPE_META = {
-        running: { icon: '🏃', label: '跑步' },
-        trail_running: { icon: '🏔️', label: '越野跑' },
-        cycling: { icon: '🚴', label: '骑行' },
-        hiking: { icon: '🥾', label: '徒步' },
-        mountaineering: { icon: '🧗', label: '登山' },
-        walking: { icon: '🚶', label: '步行' },
-        swimming: { icon: '🏊', label: '游泳' },
-        road_cycling: { icon: '🛣️', label: '公路骑行' },
-        mountain_biking: { icon: '🚵', label: '山地骑行' },
-        driving: { icon: '🚗', label: '驾车' }
-    };
     const sportHubState = {
         activeTab: 'records',
         records: [],
@@ -2099,20 +2076,6 @@
         llmTestTransitionTimer: null
     };
 
-    const SPORT_TYPE_OPTIONS = {
-        running: { label: '跑步', aliases: ['run', 'running', 'jogging', 'runner', '跑步', '慢跑'] },
-        hiking: { label: '徒步', aliases: ['hike', 'hiking', 'trekking', '徒步', '爬山'] },
-        mountaineering: { label: '登山', aliases: ['mountaineering', 'alpine', 'climbing', '登山', '高山', '登山运动'] },
-        cycling: { label: '骑行', aliases: ['bike', 'biking', 'cycling', 'cycle', '骑行', '自行车'] },
-        swimming: { label: '游泳', aliases: ['swim', 'swimming', 'open_water_swimming', 'lap_swimming', '游泳'] },
-        walking: { label: '步行', aliases: ['walk', 'walking', '步行', '健走'] },
-        trail_running: { label: '越野跑', aliases: ['trail_run', 'trail_running', 'trail running', 'trailrun', '越野跑'] },
-        treadmill_running: { label: '室内跑步', aliases: ['treadmill', 'treadmill_running', 'indoor_running', '室内跑步'] },
-        road_cycling: { label: '公路骑行', aliases: ['road_biking', 'road_bike', 'road_cycling', 'road cycling', '公路骑行'] },
-        mountain_biking: { label: '山地骑行', aliases: ['mountain_biking', 'mountain_bike', 'mountain biking', 'mtb', '山地骑行'] },
-        driving: { label: '驾车', aliases: ['drive', 'driving', 'car', 'auto', 'motoring', '驾车', '开车'] }
-    };
-    const SPORT_TYPE_NUMERIC_ALIASES = {1:'running',2:'cycling',3:'hiking',4:'swimming',10:'walking',14:'treadmill_running',22:'trail_running',24:'mountain_biking',53:'road_cycling',57:'driving'};
     const aiCoachState = {
         isOpen: false,
         isClosed: false,
@@ -2127,90 +2090,91 @@
         return String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
     }
 
+    function getDynamicSportMeta(typeStr) {
+        const t = normalizeActivityToken(typeStr);
+        if (!t || t === 'unknown') return { icon: '⏱️', label: '综合运动', paceLabel: '配速' };
+        
+        let icon = '⏱️', label = typeStr, paceLabel = '配速';
+
+        if (t.includes('trail') && (t.includes('run') || t.includes('跑'))) { icon = '🏔️'; label = '越野跑'; paceLabel = '跑动'; }
+        else if (t.includes('treadmill') || t.includes('indoor')) { icon = '🏃'; label = '室内跑步'; paceLabel = '跑动'; }
+        else if (t.includes('run') || t.includes('跑') || t.includes('jog')) { icon = '🏃'; label = '跑步'; paceLabel = '跑动'; }
+        else if (t.includes('mountain') && (t.includes('bik') || t.includes('cycl'))) { icon = '🚵'; label = '山地骑行'; paceLabel = '骑行'; }
+        else if (t.includes('road') && (t.includes('bik') || t.includes('cycl'))) { icon = '🛣️'; label = '公路骑行'; paceLabel = '骑行'; }
+        else if (t.includes('cycl') || t.includes('bik') || t.includes('骑')) { icon = '🚴'; label = '骑行'; paceLabel = '骑行'; }
+        else if (t.includes('swim') || t.includes('游')) { icon = '🏊'; label = '游泳'; paceLabel = '游动'; }
+        else if (t.includes('walk') || t.includes('步')) { icon = '🚶'; label = '步行'; paceLabel = '步行'; }
+        else if (t.includes('hik') || t.includes('徒')) { icon = '🥾'; label = '徒步'; paceLabel = '徒步'; }
+        else if (t.includes('mount') || t.includes('climb') || t.includes('登')) { icon = '🧗'; label = '登山'; paceLabel = '攀登'; }
+        else if (t.includes('driv') || t.includes('car') || t.includes('auto') || t.includes('驾') || t.includes('车')) { icon = '🚗'; label = '驾车'; paceLabel = '车速'; }
+        else if (t.includes('ski') || t.includes('雪')) { icon = '🎿'; label = '滑雪'; paceLabel = '滑行'; }
+        else if (t.includes('row') || t.includes('boat') || t.includes('划')) { icon = '🚣'; label = '划船'; paceLabel = '划行'; }
+        
+        if (label === typeStr) {
+            label = typeStr.charAt(0).toUpperCase() + typeStr.slice(1).replace(/[_-]/g, ' ');
+        }
+        return { icon, label, paceLabel };
+    }
+
     function getSportTypeLabel(type) {
-        const key = normalizeActivityToken(type);
-        return (SPORT_TYPE_OPTIONS[key] && SPORT_TYPE_OPTIONS[key].label) || '综合运动';
+        return getDynamicSportMeta(type).label;
     }
 
     function getPaceSectionLabel(type) {
-        const key = normalizeActivityToken(type);
-        if (key === 'trail_running' || key === 'running' || key === 'treadmill_running') return '跑动';
-        if (key === 'cycling' || key === 'road_cycling' || key === 'mountain_biking') return '骑行';
-        if (key === 'driving') return '车速';
-        if (key === 'swimming') return '配速';
-        return getSportTypeLabel(key);
+        return getDynamicSportMeta(type).paceLabel;
     }
 
-    function getSportSelectorOptions() {
+    function updateSportTypeSelector(currentType) {
         const selector = document.getElementById('sport-type-selector');
-        if (!selector) return [];
-        return Array.from(selector.options).filter(function(option) { return option.value; }).map(function(option) {
-            return { value: option.value, label: option.textContent.replace(/^[^\w\u4e00-\u9fa5]+\s*/, '').trim() };
+        if (!selector) return;
+        
+        const types = new Set();
+        if (sportHubState && sportHubState.activityTypes) {
+            sportHubState.activityTypes.forEach(t => {
+                if (t && t !== 'unknown') types.add(t);
+            });
+        }
+        if (currentType && currentType !== 'unknown') types.add(currentType);
+        if (appState.sportType && appState.sportType !== 'unknown') types.add(appState.sportType);
+        
+        const sortedTypes = Array.from(types).sort();
+        let html = '<option value="">⚠️ 请选择运动类型</option>';
+        sortedTypes.forEach(t => {
+            const meta = getDynamicSportMeta(t);
+            html += `<option value="${t}">${meta.icon} ${meta.label}</option>`;
         });
-    }
-
-    function scoreSportOption(raw, option) {
-        const source = normalizeActivityToken(raw);
-        if (!source || !option || !option.value) return 0;
-        const target = normalizeActivityToken(option.value);
-        const label = normalizeActivityToken(option.label);
-        const aliases = ((SPORT_TYPE_OPTIONS[option.value] && SPORT_TYPE_OPTIONS[option.value].aliases) || []).map(normalizeActivityToken);
-        const tokens = [target, label].concat(aliases);
-        if (tokens.includes(source)) return 100;
-        if (tokens.some(function(token) { return source.includes(token) || token.includes(source); })) return 80;
-        const sourceParts = source.split('_').filter(Boolean);
-        let best = 0;
-        tokens.forEach(function(token) {
-            const tokenParts = token.split('_').filter(Boolean);
-            const overlap = sourceParts.filter(function(part) { return tokenParts.includes(part); }).length;
-            if (overlap > 0) best = Math.max(best, Math.round((overlap / Math.max(sourceParts.length, tokenParts.length)) * 70));
-        });
-        return best;
+        
+        selector.innerHTML = html;
+        selector.value = currentType || appState.sportType || '';
+        selector.style.color = selector.value ? '#f8fafc' : '#94a3b8';
+        
+        const iconSpan = document.getElementById('sport-type-icon');
+        if (iconSpan) {
+            iconSpan.innerText = selector.value ? getDynamicSportMeta(selector.value).icon : '⏱️';
+        }
     }
 
     function matchActivityTypeToSelector(data) {
-        const selectorOptions = getSportSelectorOptions();
         const rawValues = [data && data.activity_type, data && data.sport_type, data && data.fit_sport, data && data.fit_sub_sport].filter(function(value) {
             return value !== null && value !== undefined && String(value).trim() !== '' && String(value).trim().toLowerCase() !== 'unknown';
         });
-        for (const raw of rawValues) {
-            const numericMatch = SPORT_TYPE_NUMERIC_ALIASES[parseInt(raw, 10)];
-            if (numericMatch && selectorOptions.some(function(option) { return option.value === numericMatch; })) {
-                return { value: numericMatch, raw: raw, fuzzy: false };
-            }
-            const normalized = normalizeActivityToken(raw);
-            const exact = selectorOptions.find(function(option) { return normalizeActivityToken(option.value) === normalized; });
-            if (exact) return { value: exact.value, raw: raw, fuzzy: false };
-            for (const option of selectorOptions) {
-                const aliases = ((SPORT_TYPE_OPTIONS[option.value] && SPORT_TYPE_OPTIONS[option.value].aliases) || []).map(normalizeActivityToken);
-                if (aliases.includes(normalized)) return { value: option.value, raw: raw, fuzzy: false };
-            }
+        if (rawValues.length > 0) {
+            return { value: rawValues[0], raw: rawValues[0], fuzzy: false };
         }
-        let best = null;
-        rawValues.forEach(function(raw) {
-            selectorOptions.forEach(function(option) {
-                const score = scoreSportOption(raw, option);
-                if (!best || score > best.score) best = { value: option.value, raw: raw, score: score, fuzzy: true };
-            });
-        });
-        return best && best.score >= 50 ? best : null;
+        return null;
     }
 
     function setSportSelectorValue(value) {
-        const selector = document.getElementById('sport-type-selector');
-        if (!selector) return;
-        selector.value = value || '';
-        selector.style.color = value ? '#f8fafc' : '#94a3b8';
         appState.sportType = value || '';
+        updateSportTypeSelector(value);
     }
 
     function autoMatchActivityType(data, options = {}) {
         const match = matchActivityTypeToSelector(data || {});
         if (match && match.value) {
             setSportSelectorValue(match.value);
-            const label = (SPORT_TYPE_OPTIONS[match.value] && SPORT_TYPE_OPTIONS[match.value].label) || match.value;
-            if (match.fuzzy) showToast('已根据“' + match.raw + '”模糊匹配为' + label + '，可手动调整');
-            else showToast('已自动识别运动类型：' + label);
+            const label = getSportTypeLabel(match.value);
+            if (!options.silent) showToast('已自动识别运动类型：' + label);
             return match.value;
         }
         setSportSelectorValue('');
@@ -2803,11 +2767,11 @@
     }
 
     function sportHubTypeLabel(type) {
-        return (SPORT_HUB_TYPE_META[type] && SPORT_HUB_TYPE_META[type].label) || '其他';
+        return getDynamicSportMeta(type).label;
     }
 
     function sportHubTypeIcon(type) {
-        return (SPORT_HUB_TYPE_META[type] && SPORT_HUB_TYPE_META[type].icon) || '⏱️';
+        return getDynamicSportMeta(type).icon;
     }
 
     function sportHubRecordTypeKey(record) {
@@ -4782,7 +4746,7 @@
             totalCal: totalCal, energy: energy, energyLevel: energy > 80 ? '极高' : energy > 60 ? '较高' : energy > 40 ? '中等' : '较低',
             energyColor: energy > 80 ? '#ef4444' : energy > 60 ? '#f59e0b' : energy > 40 ? '#3b82f6' : '#22c55e',
             altRange: Math.round(altRange), 
-            altAnalysis: altRange < 100 ? '地形平坦，海拔变化很小。' : altRange < 300 ? '海拔有一定起伏，注意节奏。' : altRange < 600 ? '海拔变化较大，需要较好心肺能力。' : '海拔变化剧烈，需要充足的体能储备。'
+            altAnalysis: altRange < 100 ? '马路牙子可能就是全场最大的爬升了，一路坦途。主打一个气定神闲，闭着眼睛也能轻松拿捏目标配速。' : altRange < 300 ? '地形像波浪一样带点起伏，赛道开始不安分了。学会利用地形找准呼吸，在不知不觉的缓坡中稳住自己的节奏。' : altRange < 600 ? '哎哟，这海拔曲线画得跟过山车似的！你的心肺系统马上要迎来一场硬核拉练，准备好迎接大口喘气和乳酸堆积的酸爽感吧。' : '恭喜你，这是一场纯粹的重力对抗战！堪比拔地而起去冲顶四千米以上的高海拔山峰，疯狂的垂直爬升急需你调动身体里的每一丝糖原储备来硬扛。'
         };
     }
 
@@ -4820,7 +4784,8 @@
         html += '<div class="ai-stat"><span class="ai-stat-label">上坡/下坡路程比</span><span class="ai-stat-value">' + report.uphillPct + '% / ' + report.downhillPct + '%</span></div>';
         html += '<div style="font-size:0.7rem;color:#94a3b8;margin-top:3px;">' + report.altAnalysis + '</div></div>';
 
-        html += '<div class="ai-section"><h3>🏃 配速建议 (' + getPaceSectionLabel(appState.sportType) + ')</h3>';
+        const meta = getDynamicSportMeta(appState.sportType);
+        html += '<div class="ai-section"><h3>' + meta.icon + ' 配速建议 (' + meta.paceLabel + ')</h3>';
         for (var i = 0; i < report.paceSegs.length; i++) html += '<div class="pace-row"><span class="pace-seg-name">' + report.paceSegs[i].seg + '</span><span class="pace-seg-val">' + report.paceSegs[i].pace + '</span></div>';
         html += '</div>';
 
