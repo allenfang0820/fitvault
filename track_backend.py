@@ -140,9 +140,18 @@ def _sport_text(value: Any) -> str:
     return str(value or "").strip().lower().replace("-", "_")
 
 
+def _looks_like_invalid_sport_token(value: str) -> bool:
+    token = str(value or "").strip().lower()
+    return any(marker in token for marker in (".fit", ".gpx", ".kml", "/", "\\"))
+
+
 def normalize_sport_type(value: Any, sub_value: Any = None) -> str | None:
     raw = _sport_text(value)
     sub_raw = _sport_text(sub_value)
+    if _looks_like_invalid_sport_token(raw):
+        raw = ""
+    if _looks_like_invalid_sport_token(sub_raw):
+        sub_raw = ""
     if sub_raw in FIT_SUB_SPORT_TO_SPORT_TYPE:
         return FIT_SUB_SPORT_TO_SPORT_TYPE[sub_raw]
     for candidate in (sub_raw, raw, f"{raw}_{sub_raw}".strip("_"), f"{raw} {sub_raw}".strip()):

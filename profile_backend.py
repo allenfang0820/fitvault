@@ -19,12 +19,12 @@ from typing import Any
 
 import sys
 if getattr(sys, "frozen", False):
-    _BASE = Path.home() / ".hiking_track_ai"
+    _BASE = Path.home() / ".fitvault"
 else:
-    _BASE = Path(__file__).resolve().parent
+    _BASE = Path.home() / ".fitvault"
 
 DB_PATH = _BASE / "user_profile.db"
-TRACKS_DIR = _BASE / "local_tracks"
+TRACKS_DIR = _BASE / "workspace" / "tracks"
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 SQLITE_POOL_SIZE = 6
 SQLITE_POOL_ACQUIRE_TIMEOUT_SEC = 10.0
@@ -34,7 +34,7 @@ SQLITE_LOCK_RETRY_ATTEMPTS = 6
 SQLITE_LOCK_RETRY_BASE_DELAY_SEC = 0.25
 GEOCODE_REQUEST_TIMEOUT_SEC = 8
 GEOCODE_LANG = "zh-CN"
-GEOCODE_USER_AGENT = "AI-track/1.0"
+GEOCODE_USER_AGENT = "FitVault/1.0"
 
 _DB_CONN_SEMAPHORE = threading.BoundedSemaphore(SQLITE_POOL_SIZE)
 

@@ -70,6 +70,9 @@ class FakeFitFile:
 
 
 class TestFitParser(unittest.TestCase):
+    def test_filename_like_gpx_name_is_not_preserved_as_sport_type(self):
+        self.assertIsNone(track_backend.normalize_sport_type("COURSE_443798.gpx"))
+
     def test_gpx_activity_type_metadata_is_preserved_for_mountaineering(self):
         gpx_text = """<?xml version="1.0" encoding="UTF-8"?>
 <gpx version="1.1" creator="unit-test">

@@ -40,10 +40,43 @@ class TestTrackHtmlSyncLogic(unittest.TestCase):
 
     def test_local_pagination_short_circuits_without_refreshing_snapshot(self):
         body = extract_function_body(self.source, "async function loadSportHubActivityList(options = {})")
-        self.assertIn("const refreshSnapshot = !!options.refreshSnapshot || !sportHubState.recordsReady;", body)
+        self.assertIn("const refreshSnapshot = options.refreshSnapshot !== false && (!!options.refreshSnapshot || !sportHubState.recordsReady);", body)
         self.assertIn("if (!refreshSnapshot)", body)
-        self.assertIn("applySportHubRecordFilters(resetPage);", body)
+        local_branch = body[body.find("if (!refreshSnapshot)"):body.find("sportHubState.recordsLoading = true;")]
+        self.assertIn("applySportHubRecordFilters(resetPage);", local_branch)
+        self.assertIn("renderSportHubRecords();", local_branch)
+        self.assertIn("renderCurrentSportHubTab();", local_branch)
+        self.assertNotIn("recordsLoading = true", local_branch)
         self.assertIn("get_activity_list_snapshot", body)
+
+    def test_sync_job_has_failure_timeout_and_state_reset(self):
+        poll_body = extract_function_body(self.source, "async function pollSportHubSyncJob(jobId)")
+        self.assertIn("timeoutMs", poll_body)
+        self.assertIn("['failed', 'error', 'cancelled', 'timeout']", poll_body)
+        sync_body = extract_function_body(self.source, "async function syncAndLoadSportHubRecords(options = {})")
+        self.assertNotIn("if (sportHubState.activeTab === 'records') renderSportHubRecords()", sync_body)
+        self.assertIn("sportHubState.recordsSyncing = false;", sync_body)
+        self.assertIn("sportHubState.recordsLoading = false;", sync_body)
+        self.assertIn("sportHubState.syncPromise = null;", sync_body)
+
+    def test_filter_change_does_not_trigger_sync(self):
+        body = extract_function_body(self.source, "function onSportHubFilterChange()")
+        self.assertNotIn("syncAndLoadSportHubRecords", body)
+        self.assertNotIn("sync_local_fit_files", body)
+        self.assertIn("refreshSnapshot: false", body)
+        self.assertIn("loadSportHubActivityList", body)
+
+    def test_sport_type_filter_matches_display_type_key(self):
+        body = extract_function_body(self.source, "function applySportHubRecordFilters(resetPage = false)")
+        self.assertIn("sportHubRecordTypeKey(record)", body)
+        self.assertNotIn("String(record.sport_type || '') === filterType", body)
+
+    def test_snapshot_refresh_re_renders_records_after_filtering(self):
+        body = extract_function_body(self.source, "async function loadSportHubActivityList(options = {})")
+        finally_branch = body[body.find("} finally {"):body.rfind("}")]
+        self.assertIn("renderSportHubFilterOptions();", finally_branch)
+        self.assertIn("renderSportHubRecords();", finally_branch)
+        self.assertNotIn("if (sportHubState.activeTab === 'records')", finally_branch)
 
     def test_report_panel_renders_weather_card_and_syncs_weather_context(self):
         self.assertIn("历史天气环境感知", self.source)
@@ -53,6 +86,29 @@ class TestTrackHtmlSyncLogic(unittest.TestCase):
     def test_ai_report_uses_dynamic_sport_labels_instead_of_fixed_hiking(self):
         self.assertIn("function getDynamicSportMeta(typeStr)", self.source)
         self.assertIn("getDynamicSportMeta(appState.sportType)", self.source)
+
+    def test_activity_records_support_selection_and_batch_delete(self):
+        self.assertIn("selectedIds: new Set()", self.source)
+        self.assertIn("sport-records-select-all", self.source)
+        self.assertIn("function toggleSportHubRecordSelection", self.source)
+        self.assertIn("function deleteSelectedSportHubRecords", self.source)
+        self.assertIn("delete_activities", self.source)
+
+    def test_batch_delete_uses_blocker_modal_and_deletes_local_files(self):
+        body = extract_function_body(self.source, "async function deleteSelectedSportHubRecords()")
+        self.assertNotIn("confirm(", body, "不得使用浏览器原生 confirm")
+        self.assertIn("blocker-modal", body)
+        self.assertIn("确认删除运动记录", body)
+        self.assertIn("物理删除", body)
+        self.assertIn("btnEl.onclick = async function()", body)
+        self.assertIn("delete_activities(ids)", body)
+        self.assertIn("files_deleted", body)
+        self.assertIn("file_errors", body)
+        self.assertIn("loadSportHubActivityList", body)
+        self.assertIn("closeBlockerModal()", body)
+
+    def test_trace_toolbar_has_no_sport_type_selector(self):
+        self.assertNotIn('id="sport-type-selector"', self.source)
 
 
 if __name__ == "__main__":

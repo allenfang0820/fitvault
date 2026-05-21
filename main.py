@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
-"""使用 pywebview 在桌面窗口中加载「徒步轨迹AI分析仪」单页 HTML。"""
+"""使用 pywebview 在桌面窗口中加载「脉图」单页 HTML。"""
 
 from __future__ import annotations
 
 import json
 import logging
 import os
+import shutil
 import sqlite3
 import sys
 import threading
 import time
 import uuid
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -35,9 +37,18 @@ from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
 HTML_FILENAME = "track.html"
+
+# ─── Managed Workspace ───────────────────────────────────────────
+CURRENT_SCHEMA_VERSION = 2
+CURRENT_METRICS_VERSION = 3  # P1 核心资产：用于判定历史雷达算法是否需要强制清洗
+WORKSPACE_ROOT = os.path.abspath(os.path.expanduser("~/.fitvault/workspace/"))
+TRACKS_DIR = os.path.abspath(os.path.expanduser("~/.fitvault/workspace/tracks/"))
+IMPORTS_DIR = os.path.abspath(os.path.expanduser("~/.fitvault/workspace/imports/"))
+
 APP_CONFIG_PATH = os.path.expanduser("~/.trackapp_config.json")
 DEFAULT_APP_CONFIG = {
-    "workspace_track_path": "~/.qclaw/workspace/garmin_tracks/",
+    "workspace_track_path": TRACKS_DIR,
+    "workspace_track_abs_path": TRACKS_DIR,
 }
 SPORT_HUB_PAGE_SIZES = [10, 20, 50]
 APP_CONFIG_BACKUP_DIR = os.path.expanduser("~/.trackapp_config.backups")
@@ -58,8 +69,8 @@ SPORT_HUB_TYPE_ORDER = {
 _ACTIVITY_SYNC_SCHEMA_LOCK = threading.Lock()
 _ACTIVITY_SYNC_SCHEMA_READY_FOR: str | None = None
 _APP_SHUTTING_DOWN = threading.Event()
-FIT_WATCH_DEBOUNCE_SEC = 1.2
-FIT_WATCH_STABLE_WAIT_SEC = 0.5
+FIT_WATCH_STABLE_SEC = 2.0
+FIT_WATCH_POLL_INTERVAL_SEC = 1.5
 
 
 def app_base_dir() -> Path:
@@ -80,20 +91,9 @@ def _default_application_config() -> dict:
     return dict(DEFAULT_APP_CONFIG)
 
 
-def _resolve_workspace_track_path(config: dict | None = None) -> tuple[str, str]:
-    raw_path = ""
-    if isinstance(config, dict):
-        raw_path = str(config.get("workspace_track_path") or "").strip()
-    if not raw_path:
-        raw_path = DEFAULT_APP_CONFIG["workspace_track_path"]
-    abs_path = os.path.abspath(os.path.expanduser(raw_path))
-    return raw_path, abs_path
-
-
 def load_application_config() -> dict:
     config = _default_application_config()
     config_status = "loaded"
-
     try:
         with open(APP_CONFIG_PATH, "r", encoding="utf-8") as fh:
             loaded = json.load(fh)
@@ -106,12 +106,8 @@ def load_application_config() -> dict:
         print(f"[config] 读取配置失败，回退默认配置: {exc}")
         config_status = "recovered"
 
-    raw_path, abs_path = _resolve_workspace_track_path(config)
-    if not str(config.get("workspace_track_path") or "").strip() and config_status == "loaded":
-        config_status = "recovered"
-
-    config["workspace_track_path"] = raw_path
-    config["workspace_track_abs_path"] = abs_path
+    config["workspace_track_path"] = TRACKS_DIR
+    config["workspace_track_abs_path"] = TRACKS_DIR
     config["config_path"] = APP_CONFIG_PATH
     config["config_status"] = config_status
     return config
@@ -128,21 +124,18 @@ def persist_application_config(config: dict | None = None) -> dict:
                 not in {
                     "ok",
                     "error",
+                    "workspace_track_path",
                     "workspace_track_abs_path",
                     "config_path",
                     "config_status",
                 }
             }
         )
-
-    raw_path, abs_path = _resolve_workspace_track_path(payload)
-    payload["workspace_track_path"] = raw_path
-
-    os.makedirs(abs_path, exist_ok=True)
+    payload["workspace_track_path"] = TRACKS_DIR
+    payload["workspace_track_abs_path"] = TRACKS_DIR
+    os.makedirs(TRACKS_DIR, exist_ok=True)
     with open(APP_CONFIG_PATH, "w", encoding="utf-8") as fh:
         json.dump(payload, fh, ensure_ascii=False, indent=2)
-
-    payload["workspace_track_abs_path"] = abs_path
     payload["config_path"] = APP_CONFIG_PATH
     payload["config_status"] = "saved"
     return payload
@@ -182,7 +175,10 @@ def append_application_audit(event: str, payload: dict[str, Any]) -> None:
 
 
 def init_application_config() -> dict:
-    """初始化全局配置文件与轨迹目录，确保首次启动可自愈。"""
+    """初始化 Managed Workspace 目录结构，确保物理目录存在。"""
+    os.makedirs(TRACKS_DIR, exist_ok=True)
+    os.makedirs(IMPORTS_DIR, exist_ok=True)
+    logger.info("工作区已初始化: TRACKS_DIR=%s, IMPORTS_DIR=%s", TRACKS_DIR, IMPORTS_DIR)
     try:
         file_exists = os.path.exists(APP_CONFIG_PATH)
         config = load_application_config()
@@ -191,8 +187,6 @@ def init_application_config() -> dict:
         if (not file_exists) or config_status != "loaded":
             config = persist_application_config(config)
             config_status = "created" if not file_exists else "repaired"
-        else:
-            os.makedirs(str(config.get("workspace_track_abs_path") or ""), exist_ok=True)
 
         print(f"[config] config_path={APP_CONFIG_PATH}")
         print(f"[config] config_status={config_status}")
@@ -564,6 +558,7 @@ def _compute_advanced_metrics(track_data: list[dict]) -> dict:
         "vam": vam,
         "threshold_hr": threshold_hr,
         "anaerobic_peak": anaerobic_peak,
+        "metrics_version": CURRENT_METRICS_VERSION,
     }
     logger.debug("6维指标计算完成: %s", result)
     return result
@@ -944,103 +939,24 @@ def _inspect_directory_access(path: str) -> dict[str, Any]:
     }
 
 
-def _infer_activity_source_dir() -> dict[str, Any] | None:
-    ensure_activity_sync_schema()
-    conn = profile_backend._conn()
-    try:
-        rows = conn.execute(
-            """
-            SELECT file_path, COUNT(*) AS record_count
-            FROM activities
-            WHERE COALESCE(file_path, '') != ''
-            GROUP BY file_path
-            """
-        ).fetchall()
-    finally:
-        conn.close()
-
-    counter: dict[str, int] = {}
-    sample_file = None
-    for row in rows:
-        file_path = str(dict(row).get("file_path") or "").strip()
-        if not file_path:
-            continue
-        parent = str(Path(file_path).expanduser().resolve().parent)
-        if not os.path.isdir(parent):
-            continue
-        counter[parent] = counter.get(parent, 0) + _safe_int(dict(row).get("record_count"), 1)
-        sample_file = file_path
-
-    if not counter:
-        return None
-
-    best_dir = sorted(counter.items(), key=lambda item: (-item[1], item[0]))[0][0]
-    return {
-        "path": best_dir,
-        "record_count": counter[best_dir],
-        "sample_file": sample_file or "",
-    }
-
-
 def resolve_workspace_track_dir(auto_recover: bool = True) -> dict[str, Any]:
+    """受控工作区：始终返回 TRACKS_DIR 的状态，不做路径猜测。"""
     config = load_application_config()
-    configured_abs = str(config.get("workspace_track_abs_path") or "")
-    configured_raw = str(config.get("workspace_track_path") or DEFAULT_APP_CONFIG["workspace_track_path"])
-    status = _inspect_directory_access(configured_abs) if configured_abs else {
-        "path": configured_abs,
-        "exists": False,
-        "is_dir": False,
-        "readable": False,
-        "writable": False,
-        "fit_count": 0,
-    }
-    recovered = None
-
-    should_recover = auto_recover and (
-        not status["exists"]
-        or not status["is_dir"]
-        or not status["readable"]
-        or status["fit_count"] == 0
-    )
-    if should_recover:
-        inferred = _infer_activity_source_dir()
-        if inferred:
-            inferred_status = _inspect_directory_access(inferred["path"])
-            if inferred_status["exists"] and inferred_status["is_dir"] and inferred_status["fit_count"] > 0:
-                if os.path.abspath(inferred["path"]) != os.path.abspath(configured_abs or inferred["path"]):
-                    previous = {
-                        "workspace_track_path": configured_raw,
-                        "workspace_track_abs_path": configured_abs,
-                    }
-                    backup_path = backup_application_config("auto_recover_source", config)
-                    persist_application_config({"workspace_track_path": inferred["path"]})
-                    append_application_audit(
-                        "auto_recover_workspace_track_path",
-                        {
-                            "previous": previous,
-                            "recovered": inferred,
-                            "backup_path": backup_path,
-                        },
-                    )
-                    config = load_application_config()
-                    status = _inspect_directory_access(str(config.get("workspace_track_abs_path") or ""))
-                    recovered = {
-                        "previous_path": configured_abs,
-                        "recovered_path": inferred["path"],
-                        "backup_path": backup_path,
-                    }
-
+    status = _inspect_directory_access(TRACKS_DIR)
+    config["workspace_track_path"] = TRACKS_DIR
+    config["workspace_track_abs_path"] = TRACKS_DIR
     config["workspace_track_status"] = status
-    config["workspace_track_recovered"] = recovered
+    config["workspace_track_recovered"] = None
     config["ok"] = True
     return config
 
 
 def _source_scope_filter_clause(source_dir: str) -> tuple[str, list[Any]]:
-    normalized = str(source_dir or "").strip()
+    normalized = (str(source_dir) or "").strip()
     if not normalized:
         return "", []
-    return "WHERE file_path LIKE ? AND deleted_at IS NULL", [normalized.rstrip("/\\") + os.sep + "%"]
+    prefix = normalized.rstrip("/\\") + os.sep
+    return "WHERE file_path LIKE ? AND deleted_at IS NULL", [prefix + "%"]
 
 
 def _activity_row_identity(row: dict[str, Any]) -> str:
@@ -1270,54 +1186,166 @@ class FITFolderHandler(FileSystemEventHandler):
         super().__init__()
         self._schedule_callback = schedule_callback
 
+    def _is_valid_fit(self, file_path: str) -> bool:
+        return file_path.lower().endswith(".fit")
+
     def on_created(self, event) -> None:
         if getattr(event, "is_directory", False):
             return
         file_path = str(getattr(event, "src_path", "") or "").strip()
-        if not file_path.lower().endswith(".fit"):
+        if not self._is_valid_fit(file_path):
             return
+        logger.debug("FITFolderHandler.on_created: %s", file_path)
         self._schedule_callback(file_path)
+
+    def on_moved(self, event) -> None:
+        """处理文件移动/重命名事件（macOS Finder 拖拽/浏览器下载/原子写入等）。"""
+        if getattr(event, "is_directory", False):
+            return
+        dest_path = str(getattr(event, "dest_path", "") or "").strip()
+        if not self._is_valid_fit(dest_path):
+            return
+        logger.debug("FITFolderHandler.on_moved -> dest: %s", dest_path)
+        self._schedule_callback(dest_path)
 
 
 class FITFolderWatchService:
-    def __init__(
-        self,
-        api: "Api",
-        debounce_sec: float = FIT_WATCH_DEBOUNCE_SEC,
-        stable_wait_sec: float = FIT_WATCH_STABLE_WAIT_SEC,
-    ) -> None:
+    """受控工作区 FIT 目录监听服务，带文件稳定性检测（Stable Check）。"""
+
+    def __init__(self, api: "Api") -> None:
         self._api = api
         self._observer: Observer | None = None
         self._handler: FITFolderHandler | None = None
         self._watch_path = ""
         self._lock = threading.Lock()
-        self._debounce_sec = max(float(debounce_sec), float(stable_wait_sec), 0.1)
-        self._stable_wait_sec = max(float(stable_wait_sec), 0.1)
-        self._pending_files: set[str] = set()
+        # 暂存队列：{file_path: StagingEntry}
+        self._staging_queue: dict[str, dict[str, Any]] = {}
         self._synced_signatures: dict[str, tuple[int, int]] = {}
-        self._debounce_timer: threading.Timer | None = None
-        self._batch_running = False
+        self._staging_poll_active = False
+        self._staging_poll_thread: threading.Thread | None = None
+
+        # 【新增：P1 工业级加固资产】
+        self._recently_enqueued: dict[str, float] = {}  # 存放 file_path -> timestamp
+        self.suspended = False                          # 状态挂起锁
+
+    def _staging_loop(self) -> None:
+        """后台轮询线程：保持常驻，每隔 poll_interval 检查暂存队列。"""
+        logger.info("FIT staging 轮询线程已启动")
+        while not _APP_SHUTTING_DOWN.is_set():
+            try:
+                ready: list[str] = []
+                with self._lock:
+                    if self._staging_queue:
+                        now = time.time()
+                        for file_path, entry in list(self._staging_queue.items()):
+                            try:
+                                if not os.path.exists(file_path):
+                                    logger.debug("FIT staging 文件已消失，移除: %s", file_path)
+                                    self._staging_queue.pop(file_path, None)
+                                    continue
+                                current_size = os.path.getsize(file_path)
+                            except OSError:
+                                self._staging_queue.pop(file_path, None)
+                                continue
+
+                            if entry.get("last_size") is not None and entry["last_size"] == current_size:
+                                stable_since = entry.get("stable_since") or now
+                                if entry.get("stable_since") is None:
+                                    entry["stable_since"] = now
+                                elapsed = now - stable_since
+                                if elapsed >= FIT_WATCH_STABLE_SEC:
+                                    logger.debug("FIT staging 文件稳定: %s (size=%s, stable=%.1fs)", file_path, current_size, elapsed)
+                                    ready.append(file_path)
+                            else:
+                                entry["last_size"] = current_size
+                                entry["stable_since"] = now
+                                logger.debug("FIT staging 文件变化: %s (size=%s)", file_path, current_size)
+
+                        for fp in ready:
+                            self._staging_queue.pop(fp, None)
+
+                # 在锁外安全地同步和解析文件
+                for fp in ready:
+                    self._process_stable_file(fp)
+
+            except Exception as exc:
+                logger.exception("FIT staging 轮询异常: %s", exc)
+
+            time.sleep(FIT_WATCH_POLL_INTERVAL_SEC)
+
+        logger.info("FIT staging 轮询线程已退出")
+
+    def _ensure_polling_locked(self) -> None:
+        if _APP_SHUTTING_DOWN.is_set():
+            return
+        # 线程健康自愈：如果线程已死但标记为活动，重置标记后重新启动
+        if self._staging_poll_active:
+            if self._staging_poll_thread and not self._staging_poll_thread.is_alive():
+                logger.warning("FIT staging 线程已意外终止，正在自愈重启...")
+                self._staging_poll_active = False
+            else:
+                return
+        self._staging_poll_active = True
+        self._staging_poll_thread = threading.Thread(target=self._staging_loop, daemon=True, name="fit-staging-poll")
+        self._staging_poll_thread.start()
+        logger.debug("FIT staging 轮询线程已启动")
+
+    def _enqueue_created_file(self, file_path: str) -> None:
+        if self.suspended:
+            logger.debug("FIT enqueue 跳过（已挂起）: %s", file_path)
+            return
+        normalized = str(Path(file_path).expanduser().resolve())
+        now = time.time()
+
+        with self._lock:
+            # 5秒内同一个路径禁止重复入队，彻底干掉 Mac Finder 的多事件轰炸
+            last_time = self._recently_enqueued.get(normalized, 0.0)
+            if now - last_time < 5.0:
+                logger.debug("FIT enqueue 5秒去重跳过: %s (last=%.1fs ago)", normalized, now - last_time)
+                return
+            self._recently_enqueued[normalized] = now
+
+            if normalized in self._staging_queue:
+                logger.debug("FIT enqueue 已在队列中: %s", normalized)
+                return
+            self._staging_queue[normalized] = {"last_size": None, "stable_since": None}
+            logger.info("FIT enqueue 入队等待稳定: %s", normalized)
+            self._ensure_polling_locked()
+
+    def _process_stable_file(self, file_path: str) -> None:
+        """文件大小已稳定 2 秒，执行静默解析并通知前端。"""
+        try:
+            signature = self._file_signature(file_path)
+            if signature is None:
+                return
+            with self._lock:
+                if self._synced_signatures.get(file_path) == signature:
+                    return
+            logger.info("FIT 文件稳定，开始解析: %s", file_path)
+            result = _sync_single_fit_file(file_path)
+            if result and result.get("ok"):
+                activity_id = int(result.get("activity_id") or 0)
+                with self._lock:
+                    if signature:
+                        self._synced_signatures[file_path] = signature
+                if activity_id:
+                    self._api.notify_new_track_detected(file_path, activity_id)
+        except Exception as exc:
+            logger.warning("FIT 稳定文件解析失败: %s, error=%s", file_path, exc)
 
     def start(self) -> dict[str, Any]:
-        config = resolve_workspace_track_dir(auto_recover=True)
-        target_dir = str(config.get("workspace_track_abs_path") or "").strip()
-        return self.restart(target_dir)
+        return self.restart(TRACKS_DIR)
 
-    def restart(self, target_dir: str) -> dict[str, Any]:
-        target_dir = str(target_dir or "").strip()
+    def restart(self, target_dir: str | None = None) -> dict[str, Any]:
         with self._lock:
             self._stop_locked()
-            self._pending_files.clear()
+            self._staging_queue.clear()
             self._synced_signatures.clear()
-            self._batch_running = False
-            if not target_dir:
-                self._watch_path = ""
-                return {"ok": True, "watching": False, "path": ""}
-            base = Path(target_dir).expanduser().resolve()
+            base = Path(TRACKS_DIR)
             os.makedirs(str(base), exist_ok=True)
             if not base.is_dir():
+                logger.error("FIT 监听目录无效: %s", base)
                 return {"ok": False, "error": f"监听目录无效: {base}"}
-
             observer = Observer()
             handler = FITFolderHandler(self._enqueue_created_file)
             observer.schedule(handler, str(base), recursive=True)
@@ -1325,7 +1353,7 @@ class FITFolderWatchService:
             self._observer = observer
             self._handler = handler
             self._watch_path = str(base)
-            print(f"[watchdog] 开始监听 FIT 目录: {self._watch_path}")
+            logger.info("Watchdog 已启动: path=%s, observer=%s", self._watch_path, type(observer).__name__)
             return {"ok": True, "watching": True, "path": self._watch_path}
 
     def stop(self) -> None:
@@ -1338,10 +1366,6 @@ class FITFolderWatchService:
         self._handler = None
         old_path = self._watch_path
         self._watch_path = ""
-        timer = self._debounce_timer
-        self._debounce_timer = None
-        if timer is not None:
-            timer.cancel()
         if observer is None:
             return
         try:
@@ -1351,104 +1375,12 @@ class FITFolderWatchService:
         except Exception as exc:
             print(f"[watchdog] 停止监听失败: {exc}")
 
-    def _enqueue_created_file(self, file_path: str) -> None:
-        normalized = str(Path(file_path).expanduser().resolve())
-        with self._lock:
-            self._pending_files.add(normalized)
-            self._arm_debounce_timer_locked()
-
-    def _arm_debounce_timer_locked(self) -> None:
-        if _APP_SHUTTING_DOWN.is_set():
-            return
-        if self._debounce_timer is not None:
-            self._debounce_timer.cancel()
-        self._debounce_timer = threading.Timer(self._debounce_sec, self._flush_pending_files)
-        self._debounce_timer.daemon = True
-        self._debounce_timer.start()
-
-    def _flush_pending_files(self) -> None:
-        with self._lock:
-            self._debounce_timer = None
-            if self._batch_running or not self._pending_files or _APP_SHUTTING_DOWN.is_set():
-                return
-            batch_paths = sorted(self._pending_files)
-            self._pending_files.clear()
-            self._batch_running = True
-
-        worker = threading.Thread(
-            target=self._run_sync_batch,
-            args=(batch_paths,),
-            daemon=True,
-            name="fit-watch-batch-sync",
-        )
-        worker.start()
-
-    def _run_sync_batch(self, batch_paths: list[str]) -> None:
-        try:
-            time.sleep(self._stable_wait_sec)
-            candidates = self._collect_sync_candidates(batch_paths)
-            if not candidates or _APP_SHUTTING_DOWN.is_set():
-                return
-
-            start_res = self._api.start_sync_local_fit_files()
-            if not start_res or not start_res.get("ok"):
-                raise RuntimeError((start_res or {}).get("error") or "监听增量同步启动失败")
-
-            job_id = str(start_res.get("job_id") or "")
-            status = self._wait_for_sync_job(job_id)
-            result = dict(status.get("result") or {})
-            if not status.get("ok") or not result.get("ok"):
-                raise RuntimeError(status.get("error") or result.get("error") or status.get("message") or "监听增量同步失败")
-
-            for file_path, signature in candidates.items():
-                activity_id = self._lookup_activity_id(file_path)
-                if activity_id:
-                    self._api.notify_new_track_detected(file_path, activity_id)
-                with self._lock:
-                    self._synced_signatures[file_path] = signature
-        except Exception as exc:
-            print(f"[watchdog] 新 FIT 文件批处理同步失败: {exc}")
-        finally:
-            with self._lock:
-                self._batch_running = False
-                if self._pending_files and not _APP_SHUTTING_DOWN.is_set():
-                    self._arm_debounce_timer_locked()
-
-    def _collect_sync_candidates(self, batch_paths: list[str]) -> dict[str, tuple[int, int]]:
-        candidates: dict[str, tuple[int, int]] = {}
-        for file_path in batch_paths:
-            signature = self._file_signature(file_path)
-            if signature is None:
-                continue
-            with self._lock:
-                if self._synced_signatures.get(file_path) == signature:
-                    continue
-            candidates[file_path] = signature
-        return candidates
-
     def _file_signature(self, file_path: str) -> tuple[int, int] | None:
         try:
             stat = Path(file_path).stat()
         except OSError:
             return None
         return (int(stat.st_size), int(stat.st_mtime_ns))
-
-    def _wait_for_sync_job(self, job_id: str) -> dict[str, Any]:
-        while not _APP_SHUTTING_DOWN.is_set():
-            status = self._api.get_sync_local_fit_files_status(job_id)
-            if not status:
-                raise RuntimeError("监听增量同步状态为空")
-            if status.get("state") == "done":
-                return status
-            time.sleep(0.2)
-        return {"ok": False, "error": "应用正在退出，监听同步已中止"}
-
-    def _lookup_activity_id(self, file_path: str) -> int:
-        lookup = self._api.get_activity_by_file_path(file_path)
-        if not lookup or not lookup.get("ok"):
-            return 0
-        activity = dict(lookup.get("activity") or {})
-        return _safe_int(activity.get("id"))
 
 
 class FitSyncJobManager:
@@ -1612,10 +1544,10 @@ class Api:
     def set_watch_service(self, watch_service: FITFolderWatchService) -> None:
         self._watch_service = watch_service
 
-    def _restart_watch_service(self, target_dir: str) -> None:
+    def _restart_watch_service(self) -> None:
         if self._watch_service is None:
             return
-        self._watch_service.restart(target_dir)
+        self._watch_service.restart()
 
     def notify_frontend_ready(self) -> dict:
         self._frontend_ready = True
@@ -1670,31 +1602,15 @@ class Api:
 
     def get_llm_config(self) -> dict:
         cfg = llm_backend.load_llm_config()
-        app_cfg = resolve_workspace_track_dir(auto_recover=True)
-        cfg["local_dir"] = str(app_cfg.get("workspace_track_path") or "")
-        cfg["workspace_track_path"] = str(app_cfg.get("workspace_track_path") or "")
-        cfg["workspace_track_abs_path"] = str(app_cfg.get("workspace_track_abs_path") or "")
+        cfg["local_dir"] = TRACKS_DIR
+        cfg["workspace_track_path"] = TRACKS_DIR
+        cfg["workspace_track_abs_path"] = TRACKS_DIR
         return {"ok": True, **cfg}
 
     def save_llm_config(self, provider: str, url: str, model: str, api_key: str, agent_id: str = "", watch_brand: str = "", local_dir: str = "") -> dict:
-        try:
-            llm_backend.save_llm_config(provider, url, model, api_key, agent_id, watch_brand, local_dir)
-            if str(local_dir or "").strip():
-                current = load_application_config()
-                backup_path = backup_application_config("save_llm_config", current)
-                config = persist_application_config({"workspace_track_path": local_dir})
-                append_application_audit(
-                    "save_llm_config_workspace_track_path",
-                    {
-                        "previous_path": current.get("workspace_track_abs_path"),
-                        "new_path": config.get("workspace_track_abs_path"),
-                        "backup_path": backup_path,
-                    },
-                )
-                self._restart_watch_service(str(config.get("workspace_track_abs_path") or ""))
-        except OSError as e:
-            return {"ok": False, "error": str(e)}
-        return {"ok": True}
+        """【防御加锁】拒绝外部越权直调。核心持久化已全面收拢至 test_llm_config 网关中。"""
+        print("[API 警告] 外部代码尝试越权直接保存配置，已被安全网关拦截并重定向。")
+        raise RuntimeError("Deprecated: 前端保存已被废弃，请直接使用唯一验证测试通道 test_llm_config")
 
     def get_config(self) -> dict:
         """安全读取全局配置文件，供前端配置页使用。"""
@@ -1712,27 +1628,17 @@ class Api:
             return {"ok": False, "error": str(e)}
 
     def save_config(self, new_config_dict: dict) -> dict:
-        """保存全局配置，并确保轨迹目录在物理硬盘上存在。"""
+        """保存全局配置。workspace_track_path 由受控工作区锁定，不可变更。"""
         try:
             current = load_application_config()
             payload = dict(current)
             if isinstance(new_config_dict, dict):
                 payload.update(new_config_dict)
-            if str(payload.get("local_dir") or "").strip() and not str(payload.get("workspace_track_path") or "").strip():
-                payload["workspace_track_path"] = payload["local_dir"]
+            payload["workspace_track_path"] = TRACKS_DIR
+            payload["workspace_track_abs_path"] = TRACKS_DIR
             backup_path = backup_application_config("save_config", current)
             config = persist_application_config(payload)
-            status = _inspect_directory_access(str(config.get("workspace_track_abs_path") or ""))
-            if not status.get("readable"):
-                return {"ok": False, "error": "配置目录不可读取，请检查权限"}
-            append_application_audit(
-                "save_config",
-                {
-                    "previous_path": current.get("workspace_track_abs_path"),
-                    "new_path": config.get("workspace_track_abs_path"),
-                    "backup_path": backup_path,
-                },
-            )
+            append_application_audit("save_config", {"backup_path": backup_path})
             return {
                 "ok": True,
                 "config_path": config.get("config_path"),
@@ -1741,12 +1647,11 @@ class Api:
             }
         except Exception as e:
             return {"ok": False, "error": str(e)}
-        finally:
-            if 'config' in locals():
-                self._restart_watch_service(str(config.get("workspace_track_abs_path") or ""))
 
     def test_llm_config(self, provider: str, url: str, model: str, api_key: str, agent_id: str = "") -> dict:
+        """【测试即保存网关-稳定性加固版】严格实行先测试、后持久化策略，保障状态机最终一致性。"""
         try:
+            # 1. 先发起真实的接口网络活性探测（防污染核心）
             text = llm_backend.test_llm_connection(
                 provider=provider,
                 url=url,
@@ -1754,8 +1659,35 @@ class Api:
                 api_key=api_key,
                 agent_id=agent_id,
             )
+
+            # 2. 只有网络探测 100% 成功通车，才执行无感持久化落盘，硬锁隐藏轨迹工作区
+            llm_backend.save_llm_config(
+                provider=provider,
+                url=url,
+                model=model,
+                api_key=api_key,
+                agent_id=agent_id,
+                watch_brand="",
+                local_dir=TRACKS_DIR
+            )
+            print(f"[Config 治理] 验证成功，大模型存储规范已安全固化对齐: {TRACKS_DIR}")
+
+            # 3. 健全状态机：丰富持久化配置中的活性追踪字典
+            config = load_application_config()
+            config["llm_check_passed"] = True
+            config["last_gateway_ok"] = True
+            config["last_success_time"] = time.time()
+            persist_application_config(config)
+
             return {"ok": True, "message": text}
         except Exception as e:
+            # 连通失败：不破坏原有旧配置，但将当前网关可用状态即时标记为假（失效回滚）
+            try:
+                config = load_application_config()
+                config["last_gateway_ok"] = False
+                persist_application_config(config)
+            except Exception:
+                pass
             return {"ok": False, "error": str(e)}
 
     def call_llm(self, prompt: str, sport_type: str = "hiking") -> dict:
@@ -2104,25 +2036,7 @@ class Api:
         """按配置文件中的工作目录增量同步 FIT 文件到 activities 表。"""
         try:
             ensure_activity_sync_schema()
-            config = resolve_workspace_track_dir(auto_recover=True)
-            target_dir = os.path.abspath(os.path.expanduser(str(config.get("workspace_track_abs_path") or "").strip()))
-            source_status = dict(config.get("workspace_track_status") or {})
-            if not target_dir or not source_status.get("exists") or not source_status.get("is_dir"):
-                logger.warning("FIT 同步跳过：目录无效或不存在, target_dir=%s", target_dir)
-                result = {
-                    "ok": True,
-                    "source_dir": "",
-                    "scanned": 0,
-                    "inserted": 0,
-                    "updated": 0,
-                    "skipped": 0,
-                    "errors": [],
-                    "message": "未检测到有效的 FIT 数据目录，请先在配置页选择目录。",
-                }
-                _emit_sync_progress(progress_callback, stage="completed", current=0, total=0, **result)
-                return result
-
-            base = Path(target_dir)
+            base = Path(TRACKS_DIR)
             os.makedirs(str(base), exist_ok=True)
             started_at = time.perf_counter()
             fit_files = _walk_fit_files(base)
@@ -2338,6 +2252,93 @@ class Api:
             return {"ok": False, "error": str(e)}
         finally:
             conn.close()
+
+    def batch_import_tracks(self, file_paths: list[str]) -> dict:
+        """多模态批量导入：FIT 直接复制，ZIP 解压到 IMPORTS_DIR 后归集到 TRACKS_DIR。"""
+        if not file_paths:
+            return {"ok": False, "error": "未提供文件路径"}
+
+        # 临时挂起自动监听服务，防止引发双重导入灾难
+        if self._watch_service:
+            self._watch_service.suspended = True
+
+        imported: list[str] = []
+        errors: list[dict] = []
+
+        try:
+            for fp in file_paths:
+                try:
+                    src = Path(fp).expanduser().resolve()
+                    if not src.is_file():
+                        errors.append({"file": fp, "error": "文件不存在"})
+                        continue
+
+                    if src.suffix.lower() == ".fit":
+                        dst = Path(TRACKS_DIR) / src.name
+                        shutil.copy2(str(src), str(dst))
+                        # 手动调用单入口同步解析
+                        res = _sync_single_fit_file(dst)
+                        if res.get("ok"):
+                            imported.append(str(dst))
+
+                    elif src.suffix.lower() == ".zip":
+                        extract_dir = Path(IMPORTS_DIR) / src.stem
+                        extract_dir.mkdir(parents=True, exist_ok=True)
+                        with zipfile.ZipFile(str(src), "r") as zf:
+                            zf.extractall(str(extract_dir))
+                        for fit in sorted(extract_dir.rglob("*.fit")):
+                            dst = Path(TRACKS_DIR) / fit.name
+                            shutil.move(str(fit), str(dst))
+                            # 手动调用单入口同步解析
+                            res = _sync_single_fit_file(dst)
+                            if res.get("ok"):
+                                imported.append(str(dst))
+                    else:
+                        errors.append({"file": fp, "error": "不支持的文件格式，仅支持 .fit 和 .zip"})
+                except Exception as exc:
+                    errors.append({"file": fp, "error": str(exc)})
+
+            return {"ok": True, "imported": imported, "errors": errors if errors else None}
+
+        finally:
+            # 无论批量导入成功与否，无条件解除挂起锁，恢复 Watchdog 的日常静默监听
+            if self._watch_service:
+                self._watch_service.suspended = False
+
+    def api_force_rebuild_radar_data(self) -> dict:
+        """【P1 异步清洗网关】允许用户手动一键强刷全库雷达指标，安全更新至 METRICS_VERSION 3。"""
+        try:
+            def _async_run():
+                print("[API] 收到全量数据清洗指令，正在后台启动清洗 worker...")
+                res = force_rebuild_all_records()
+                print(f"[API] 后台全量清洗完成: {res}")
+
+            threading.Thread(target=_async_run, daemon=True, name="metrics-rebuild-worker").start()
+            return {"ok": True, "message": "全量雷达指标重建任务已在后台异步启动，请稍后刷新页面查看成果。"}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def check_first_run_status(self) -> dict:
+        """判定首次运行状态与网关实时活性健康状态。"""
+        try:
+            config = load_application_config()
+
+            # 首次运行强锁判定：从未成功调通过本地大模型，则属于绝对首次使用
+            is_first_run = not bool(config.get("llm_check_passed", False))
+
+            # 实时可用性判定（供前端右上角/顶部轻提示渲染，不强锁系统）
+            last_gateway_ok = bool(config.get("last_gateway_ok", False))
+            last_success_time = config.get("last_success_time", 0)
+
+            return {
+                "ok": True,
+                "is_first_run": is_first_run,
+                "last_gateway_ok": last_gateway_ok,
+                "last_success_time": last_success_time,
+                "default_tracks_dir": TRACKS_DIR
+            }
+        except Exception as e:
+            return {"ok": False, "error": str(e), "is_first_run": True, "last_gateway_ok": False}
 
     def start_sync_local_fit_files(self) -> dict:
         return FIT_SYNC_JOB_MANAGER.start(
@@ -2737,16 +2738,81 @@ def _build_record_from_row(api_self, row: dict, idx: int) -> dict:
 
     import json
 
+    # 1. 提取并安全解析 advanced_metrics
     raw_metrics_json = row.get("advanced_metrics")
+    adv_metrics = {}
+    needs_memo_rebuild = False
+
     if raw_metrics_json and isinstance(raw_metrics_json, str):
         try:
-            adv_metrics = json.loads(raw_metrics_json)
+            adv_metrics = json.loads(raw_metrics_json) or {}
         except (json.JSONDecodeError, ValueError):
             adv_metrics = {}
-    else:
-        adv_metrics = {}
+    elif isinstance(raw_metrics_json, dict):
+        adv_metrics = raw_metrics_json
 
-    radar_data = RadarScoreEngine.build_radar_profile(display_type, adv_metrics, {"max_hr": max_hr or 190})
+    # 2. 检查指标版本，如果是老数据、None 或版本不匹配，触发【内存级惰性自愈】
+    current_m_version = adv_metrics.get("metrics_version", 0) if isinstance(adv_metrics, dict) else 0
+    if not adv_metrics or current_m_version < CURRENT_METRICS_VERSION:
+        if points:
+            try:
+                adv_metrics = _compute_advanced_metrics(points) or {}
+                adv_metrics["metrics_version"] = CURRENT_METRICS_VERSION
+            except Exception as e:
+                print(f"[Radar 自愈警告] 动态补算失败: {e}")
+                adv_metrics = {"metrics_version": CURRENT_METRICS_VERSION}
+        else:
+            adv_metrics = {"metrics_version": CURRENT_METRICS_VERSION}
+
+    # 3. 【能力感知雷达网关 (Capability-Aware Radar Gateway)】
+    if display_type in ("running", "trail_running"):
+        radar_data = {
+            "type": display_type,
+            "labels": ["耐力水平", "乳酸阈值", "有氧效率", "无氧爆发", "恢复得分"],
+            "scores": [
+                min(100, max(20, int(_safe_float(adv_metrics.get("trimp")) / 1.5))) if adv_metrics.get("trimp") else 60,
+                min(100, max(20, int(_safe_float(adv_metrics.get("threshold_hr")) / 1.8))) if adv_metrics.get("threshold_hr") else 65,
+                min(100, max(20, int(100 - _safe_float(adv_metrics.get("decoupling", 0)) * 200))) if adv_metrics.get("decoupling") is not None else 70,
+                min(100, max(20, int(_safe_float(adv_metrics.get("anaerobic_peak")) * 10))) if adv_metrics.get("anaerobic_peak") else 55,
+                min(100, max(20, int(_safe_float(adv_metrics.get("hrv", 60)))))
+            ]
+        }
+    elif display_type in ("cycling", "road_cycling", "mountain_biking"):
+        radar_data = {
+            "type": display_type,
+            "labels": ["巡航输出", "有氧耐力", "心率响应", "爬升攀登", "恢复基线"],
+            "scores": [
+                min(100, max(20, int(_safe_float(adv_metrics.get("anaerobic_peak")) * 8))) if adv_metrics.get("anaerobic_peak") else 60,
+                min(100, max(20, int(_safe_float(adv_metrics.get("trimp")) / 2.0))) if adv_metrics.get("trimp") else 55,
+                min(100, max(20, int(100 - _safe_float(adv_metrics.get("decoupling", 0)) * 150))) if adv_metrics.get("decoupling") is not None else 65,
+                min(100, max(20, int(_safe_float(adv_metrics.get("vam")) / 10.0))) if adv_metrics.get("vam") else 50,
+                min(100, max(20, int(_safe_float(adv_metrics.get("hrv", 60)))))
+            ]
+        }
+    elif display_type in ("hiking", "mountaineering"):
+        radar_data = {
+            "type": display_type,
+            "labels": ["爬升效率", "长时耐力", "海拔适应", "体能负荷", "心脏恢复"],
+            "scores": [
+                min(100, max(20, int(_safe_float(adv_metrics.get("vam")) / 8.0))) if adv_metrics.get("vam") else 65,
+                min(100, max(20, int(_safe_float(adv_metrics.get("trimp")) / 1.2))) if adv_metrics.get("trimp") else 70,
+                min(100, max(20, int(_safe_float(row.get("max_alt_m", 0)) / 50.0))) if row.get("max_alt_m") else 50,
+                min(100, max(20, int(_safe_float(adv_metrics.get("trimp")) / 2.5))) if adv_metrics.get("trimp") else 60,
+                min(100, max(20, int(_safe_float(adv_metrics.get("hrv", 60)))))
+            ]
+        }
+    else:
+        radar_data = {
+            "type": display_type,
+            "labels": ["运动时长", "卡路里消耗", "心率控制", "训练负荷", "恢复指数"],
+            "scores": [
+                min(100, max(20, int(duration_sec / 60.0))) if duration_sec else 50,
+                min(100, max(20, int(calories / 10.0))) if calories else 45,
+                min(100, max(20, int((avg_hr or 120) / 1.8))),
+                min(100, max(20, int(_safe_float(adv_metrics.get("trimp", 30))))),
+                min(100, max(20, int(_safe_float(adv_metrics.get("hrv", 60)))))
+            ]
+        }
 
     raw_for_engine = {
         "distance_km": dist_km,
@@ -3083,26 +3149,57 @@ def _build_record_from_row(api_self, row: dict, idx: int) -> dict:
         return {"ok": True}
 
 
-def _migrate_advanced_metrics() -> dict[str, Any]:
-    """启动迁移：为所有缺少 advanced_metrics 的活动记录重新计算并填充。"""
+def _get_schema_version() -> int:
+    """从数据库中读取当前 schema 版本号。"""
+    conn = profile_backend._conn()
+    try:
+        conn.execute("CREATE TABLE IF NOT EXISTS _schema_meta (key TEXT PRIMARY KEY, value TEXT)")
+        row = conn.execute("SELECT value FROM _schema_meta WHERE key = 'schema_version'").fetchone()
+        if row:
+            return int(dict(row).get("value", 0))
+        return 0
+    except Exception:
+        return 0
+    finally:
+        conn.close()
+
+
+def _set_schema_version(version: int) -> None:
+    """将 schema 版本号写入数据库。"""
+    conn = profile_backend._conn()
+    try:
+        conn.execute("CREATE TABLE IF NOT EXISTS _schema_meta (key TEXT PRIMARY KEY, value TEXT)")
+        conn.execute(
+            "INSERT OR REPLACE INTO _schema_meta (key, value) VALUES ('schema_version', ?)",
+            (str(version),),
+        )
+        conn.commit()
+    except Exception as exc:
+        logger.warning("写入 schema_version 失败: %s", exc)
+    finally:
+        conn.close()
+
+
+def force_rebuild_all_records() -> dict[str, Any]:
+    """强制重建所有活动记录的 advanced_metrics。"""
     ensure_activity_sync_schema()
     conn = profile_backend._conn()
     try:
         rows = conn.execute(
             """
-            SELECT id, track_json, points_json, sport_type
+            SELECT id, track_json, points_json
             FROM activities
             WHERE deleted_at IS NULL
-              AND (advanced_metrics IS NULL OR advanced_metrics = '')
               AND (track_json IS NOT NULL AND track_json != '')
             ORDER BY id ASC
             """
         ).fetchall()
         if not rows:
-            logger.info("数据迁移: 所有记录均已包含 advanced_metrics，无需迁移")
+            logger.info("全量重建: 无活动记录需要处理")
+            _set_schema_version(CURRENT_SCHEMA_VERSION)
             return {"ok": True, "migrated": 0}
 
-        logger.info("数据迁移: 发现 %s 条记录缺少 advanced_metrics，开始重新计算...", len(rows))
+        logger.info("全量重建: 开始处理 %s 条记录...", len(rows))
         migrated = 0
         for row in rows:
             try:
@@ -3115,6 +3212,7 @@ def _migrate_advanced_metrics() -> dict[str, Any]:
                     continue
                 advanced = _compute_advanced_metrics(track_data)
                 if advanced:
+                    advanced["metrics_version"] = CURRENT_METRICS_VERSION
                     advanced_json = json.dumps(advanced, ensure_ascii=False)
                     conn.execute(
                         "UPDATE activities SET advanced_metrics = ?, updated_at = datetime('now') WHERE id = ?",
@@ -3124,14 +3222,15 @@ def _migrate_advanced_metrics() -> dict[str, Any]:
                     if migrated % 10 == 0:
                         conn.commit()
             except Exception as exc:
-                logger.warning("数据迁移: 记录 id=%s 计算失败: %s", row.get("id"), exc)
+                logger.warning("全量重建: 记录 id=%s 计算失败: %s", row.get("id"), exc)
                 continue
         conn.commit()
-        logger.info("数据迁移完成: 成功迁移 %s / %s 条记录", migrated, len(rows))
+        logger.info("全量重建完成: 成功重建 %s / %s 条记录", migrated, len(rows))
+        _set_schema_version(CURRENT_SCHEMA_VERSION)
         return {"ok": True, "migrated": migrated, "total": len(rows)}
     except Exception as e:
         conn.rollback()
-        logger.exception("数据迁移失败: %s", e)
+        logger.exception("全量重建失败: %s", e)
         return {"ok": False, "error": str(e), "migrated": 0}
     finally:
         conn.close()
@@ -3140,11 +3239,16 @@ def _migrate_advanced_metrics() -> dict[str, Any]:
 def main() -> None:
     import webview
 
-    _migrate_advanced_metrics()
+    local_version = _get_schema_version()
+    if local_version < CURRENT_SCHEMA_VERSION:
+        logger.info("Schema 版本升级: %s -> %s，触发增量数据清洗", local_version, CURRENT_SCHEMA_VERSION)
+        force_rebuild_all_records()
+    else:
+        logger.info("Schema 版本一致 (v=%s)，跳过数据清洗", local_version)
     url = str(html_file().resolve())
     api = Api()
     window = webview.create_window(
-        "3D 轨迹分析仪 - AI 增强版",
+        "脉图 - fit vault",
         url=url,
         js_api=api,
         width=1280,

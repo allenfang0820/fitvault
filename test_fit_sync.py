@@ -238,7 +238,9 @@ class TestFitSync(unittest.TestCase):
         self.assertEqual(snapshot["records"][0]["region"], "成都市")
         self.assertTrue(detail["ok"], detail)
         self.assertEqual(detail["record"]["region"], "成都市")
-        self.assertEqual(detail["record"]["detail"]["summary"]["region"], "成都市")
+        self.assertIn("display_metrics", detail["record"]["detail"])
+        self.assertIn("layout", detail["record"]["detail"])
+        self.assertIn("capabilities", detail["record"]["detail"])
 
     def test_fetch_historical_weather_uses_archive_api_and_hour_index(self):
         fake_response = mock.Mock()
@@ -375,6 +377,166 @@ class TestFitSync(unittest.TestCase):
         self.assertIn("本次运动时的环境为", prompt)
         self.assertIn("温度 28°C", prompt)
         self.assertIn("湿度 85%", prompt)
+
+    def test_check_daily_sync_status_basic(self):
+        api = main.Api()
+        profile_backend.mark_sync_done()
+        status = api.check_daily_sync_status()
+        self.assertFalse(status["needs_sync"])
+
+    def test_bypass_daily_sync_limit_via_api_endpoints(self):
+        api = main.Api()
+        # 默认关闭
+        res = api.get_test_bypass_daily_sync_limit()
+        self.assertTrue(res["ok"])
+        self.assertFalse(res["enabled"])
+
+        # 开启
+        res = api.set_test_bypass_daily_sync_limit(True)
+        self.assertTrue(res["ok"])
+        self.assertTrue(res["enabled"])
+        self.assertTrue(profile_backend.get_test_bypass_daily_sync_limit())
+
+        # 关闭
+        res = api.set_test_bypass_daily_sync_limit(False)
+        self.assertTrue(res["ok"])
+        self.assertFalse(res["enabled"])
+        self.assertFalse(profile_backend.get_test_bypass_daily_sync_limit())
+
+    def test_bypass_makes_sync_needed_even_after_mark_done(self):
+        profile_backend.set_test_bypass_daily_sync_limit(True)
+        try:
+            profile_backend.mark_sync_done()
+            self.assertTrue(profile_backend.is_sync_needed_today(),
+                "绕过开启时，即使标记为已同步，is_sync_needed_today 也应返回 True")
+        finally:
+            profile_backend.set_test_bypass_daily_sync_limit(False)
+
+    def test_bypass_off_restores_sync_limit(self):
+        profile_backend.set_test_bypass_daily_sync_limit(True)
+        profile_backend.mark_sync_done()
+        profile_backend.set_test_bypass_daily_sync_limit(False)
+        self.assertFalse(profile_backend.is_sync_needed_today(),
+            "绕过关闭后，已同步状态应恢复限制")
+
+    def test_bypass_check_daily_sync_status_reflects_switch(self):
+        api = main.Api()
+        profile_backend.mark_sync_done()
+        profile_backend.set_test_bypass_daily_sync_limit(True)
+        try:
+            status = api.check_daily_sync_status()
+            self.assertTrue(status["needs_sync"],
+                "API check_daily_sync_status 应反映绕过开关状态")
+            self.assertTrue(status["ok"])
+        finally:
+            profile_backend.set_test_bypass_daily_sync_limit(False)
+
+    def test_bypass_silent_fetch_respects_switch(self):
+        profile_backend.mark_sync_done()
+        profile_backend.set_test_bypass_daily_sync_limit(True)
+        try:
+            result = main.Api().silent_fetch_mcp_persona("garmin")
+            self.assertFalse(result.get("already_synced", True),
+                "绕过开启时 silent_fetch_mcp_persona 不应标记 already_synced")
+        finally:
+            profile_backend.set_test_bypass_daily_sync_limit(False)
+
+    def test_bypass_off_silent_fetch_returns_already_synced(self):
+        profile_backend.mark_sync_done()
+        profile_backend.set_test_bypass_daily_sync_limit(False)
+        result = main.Api().silent_fetch_mcp_persona("garmin")
+        self.assertTrue(result.get("already_synced", False),
+            "绕过关闭时 silent_fetch_mcp_persona 应返回 already_synced=True")
+
+    # 验证增量同步预检机制：已入库未变更文件被跳过，新增文件被解析
+    def test_incremental_sync_skips_unchanged_files_and_parses_new_only(self):
+        main.ensure_activity_sync_schema()
+
+        fit_files = []
+        for name in ("old_a.fit", "old_b.fit", "new_c.fit"):
+            path = self.temp_dir / name
+            path.write_bytes(b"fit")
+            fit_files.append(path)
+
+        for f in fit_files[:2]:
+            stat = f.stat()
+            conn = profile_backend._conn()
+            try:
+                conn.execute(
+                    "INSERT INTO activities "
+                    "(file_name, filename, file_path, title, sport_type, sub_sport_type, "
+                    "dist_km, duration_sec, avg_hr, file_mtime, file_size, points_json, "
+                    "start_time, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))",
+                    (f.name, f.name, str(f.resolve()), f.name, "running", "unknown",
+                     5.0, 1800, 140, stat.st_mtime, stat.st_size, "[]"),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+        conn = profile_backend._conn()
+        try:
+            index = main._load_existing_file_index(conn)
+        finally:
+            conn.close()
+
+        self.assertEqual(len(index), 2)
+        for f in fit_files[:2]:
+            resolved = str(f.resolve())
+            self.assertIn(resolved, index)
+            self.assertTrue(main._is_file_unchanged(f, index[resolved]))
+        self.assertNotIn(str(fit_files[2].resolve()), index)
+
+        pending_files = []
+        pre_skipped = 0
+        for fit_path in fit_files:
+            resolved = str(fit_path.resolve())
+            existing = index.get(resolved)
+            if existing and main._is_file_unchanged(fit_path, existing):
+                pre_skipped += 1
+            else:
+                pending_files.append(fit_path)
+
+        self.assertEqual(pre_skipped, 2)
+        self.assertEqual(len(pending_files), 1)
+        self.assertEqual(pending_files[0].name, "new_c.fit")
+
+    def test_incremental_sync_detects_changed_files(self):
+        main.ensure_activity_sync_schema()
+
+        f = self.temp_dir / "changed.fit"
+        f.write_bytes(b"old_content")
+        stat = f.stat()
+
+        conn = profile_backend._conn()
+        try:
+            conn.execute(
+                "INSERT INTO activities "
+                "(file_name, filename, file_path, title, sport_type, sub_sport_type, "
+                "dist_km, duration_sec, avg_hr, file_mtime, file_size, points_json, "
+                "start_time, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))",
+                (f.name, f.name, str(f.resolve()), f.name, "running", "unknown",
+                 5.0, 1800, 140, stat.st_mtime, stat.st_size, "[]"),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        conn = profile_backend._conn()
+        try:
+            index = main._load_existing_file_index(conn)
+        finally:
+            conn.close()
+        resolved = str(f.resolve())
+        self.assertIn(resolved, index)
+        self.assertTrue(main._is_file_unchanged(f, index[resolved]))
+
+        import time as _time
+        _time.sleep(0.05)
+        f.write_bytes(b"new_content_that_changes_file_size_and_mtime")
+        self.assertFalse(main._is_file_unchanged(f, index[resolved]))
 
 
 if __name__ == "__main__":

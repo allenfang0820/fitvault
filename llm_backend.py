@@ -26,7 +26,7 @@ def _config_file() -> Path:
     确保分享 .app 程序时不会携带开发者的 API Key。
     """
     if getattr(sys, "frozen", False):
-        d = Path.home() / ".hiking_track_ai"
+        d = Path.home() / ".fitvault"
     else:
         d = Path(__file__).resolve().parent
     d.mkdir(parents=True, exist_ok=True)
