@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sqlite3
 import sys
@@ -18,6 +19,17 @@ import llm_backend  # noqa: F401 -- PyInstaller bundles LLM 模块
 import track_backend  # noqa: F401 -- PyInstaller bundles track_backend
 import profile_backend  # noqa: F401 -- PyInstaller bundles profile 模块
 from fit_engine import FITCoreEngine
+
+DEBUG_MODE = False
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger(__name__)
+if DEBUG_MODE:
+    logger.setLevel(logging.DEBUG)
 from utils.weather_api import fetch_historical_weather
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
@@ -221,6 +233,8 @@ def _sqlite_table_columns(conn: sqlite3.Connection, table_name: str) -> set[str]
 
 def _normalize_activity_token(value: Any, fallback: str = "unknown") -> str:
     token = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+    if any(marker in token for marker in (".fit", ".gpx", ".kml", "/", "\\")):
+        return fallback
     aliases = {
         "run": "running",
         "road_running": "running",
@@ -339,6 +353,10 @@ def ensure_activity_sync_schema() -> None:
                 "start_lon": "REAL",
                 "region": "TEXT",
                 "weather_json": "TEXT",
+                "file_mtime": "REAL",
+                "file_size": "INTEGER",
+                "deleted_at": "TEXT",
+                "advanced_metrics": "TEXT",
             }
             for col, dtype in required_columns.items():
                 if col not in columns:
@@ -462,6 +480,229 @@ def ensure_activity_sync_schema() -> None:
             conn.close()
 
 
+import track_backend
+from utils.metrics_calc import AdvancedMetricsCalc, RadarScoreEngine
+
+
+def _convert_track_to_algorithm_records(track_data: list[dict]) -> list[dict]:
+    """将 FIT 引擎输出的标准轨迹点转换为 AdvancedMetricsCalc 需要的记录格式。"""
+    if not track_data:
+        return []
+    from datetime import datetime
+    records = []
+    cumulative_dist = 0.0
+    prev_lat, prev_lon = None, None
+    for pt in track_data:
+        ts = None
+        raw_time = pt.get("time")
+        if raw_time:
+            try:
+                ts = datetime.fromisoformat(raw_time.replace("Z", "+00:00"))
+            except (ValueError, TypeError):
+                pass
+        if ts is None:
+            continue
+
+        if "speed" not in pt and "enhanced_speed" in pt:
+            pt["speed"] = pt["enhanced_speed"]
+        if "altitude" not in pt and "enhanced_altitude" in pt:
+            pt["altitude"] = pt["enhanced_altitude"]
+        if "hr" not in pt and "heart_rate" in pt:
+            pt["hr"] = pt["heart_rate"]
+
+        lat = pt.get("lat")
+        lon = pt.get("lon")
+        dist_segment = 0.0
+        if lat is not None and lon is not None and prev_lat is not None and prev_lon is not None:
+            dist_segment = track_backend.haversine_m(prev_lat, prev_lon, lat, lon)
+        cumulative_dist += dist_segment
+        prev_lat, prev_lon = lat, lon
+
+        raw_speed = pt.get("speed")
+        pace = pt.get("pace")
+        calc_speed = (1000.0 / pace) if pace and pace > 0 else 0.0
+        final_speed = raw_speed if raw_speed is not None and raw_speed >= 0 else calc_speed
+
+        records.append({
+            "timestamp": ts,
+            "heart_rate": pt.get("hr"),
+            "speed": final_speed,
+            "altitude": pt.get("altitude") or pt.get("alt"),
+            "distance": cumulative_dist,
+            "power": pt.get("power"),
+        })
+    return records
+
+
+def _compute_advanced_metrics(track_data: list[dict]) -> dict:
+    """从 user_profile 读取当前用户生理画像，对轨迹数据执行 6 维雷达算法。"""
+    records = _convert_track_to_algorithm_records(track_data)
+    if not records or len(records) < 2:
+        return {}
+    prof = profile_backend.get_profile()
+    user_profile_dict = prof.to_dict() if prof else {}
+    user_profile_dict = {k: v for k, v in user_profile_dict.items() if v is not None}
+    calc = AdvancedMetricsCalc
+    logger.debug("准备计算高级指标，总数据点数: %s", len(records))
+    if records:
+        mid_idx = len(records) // 2
+        logger.debug("首条数据采样: %s", records[0])
+        logger.debug("中段数据采样: %s", records[mid_idx])
+    trimp = calc.calculate_trimp(records, user_profile_dict)
+    hrv_score = calc.score_hrv_efficiency(
+        None,  # 修复 Bug：当前单次运动中没有真实 HRV，直接传 None，避免 baseline vs baseline
+        user_profile_dict.get("hrv_baseline"),
+    )
+    decoupling = calc.calculate_aerobic_decoupling(records)
+    vam = calc.calculate_vam(records)
+    threshold_hr = calc.calculate_threshold_hr(records)
+    anaerobic_peak = calc.calculate_anaerobic_peak(records)
+    result = {
+        "trimp": trimp,
+        "hrv": hrv_score,
+        "decoupling": decoupling,
+        "vam": vam,
+        "threshold_hr": threshold_hr,
+        "anaerobic_peak": anaerobic_peak,
+    }
+    logger.debug("6维指标计算完成: %s", result)
+    return result
+
+
+def _rolling_aggregate_radar_metrics(sport_type: str | None = None) -> dict:
+    """
+    滚动极值与近期均值聚合（Rolling Aggregation）+ PMC 长期负荷衰减模型
+    """
+    import math
+
+    now = datetime.now(timezone.utc)
+
+    prof = profile_backend.get_profile()
+    hrv_from_profile = prof.hrv_baseline if prof else None
+
+    conn = profile_backend._conn()
+    try:
+        if sport_type:
+            rows = conn.execute(
+                """
+                SELECT id, start_time_utc, start_time, advanced_metrics
+                FROM activities
+                WHERE deleted_at IS NULL
+                  AND sport_type = ?
+                  AND advanced_metrics IS NOT NULL
+                  AND advanced_metrics != ''
+                ORDER BY COALESCE(start_time_utc, start_time) ASC
+                """,
+                (sport_type,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """
+                SELECT id, start_time_utc, start_time, advanced_metrics
+                FROM activities
+                WHERE deleted_at IS NULL
+                  AND advanced_metrics IS NOT NULL
+                  AND advanced_metrics != ''
+                ORDER BY COALESCE(start_time_utc, start_time) ASC
+                """
+            ).fetchall()
+    finally:
+        conn.close()
+
+    vam_values = []
+    threshold_hr_values = []
+    anaerobic_peak_values = []
+    decoupling_values = []
+
+    ctl = 0.0
+    atl = 0.0
+    last_date: datetime | None = None
+
+    for row in rows:
+        row = dict(row)
+        try:
+            time_str = row.get("start_time_utc") or row.get("start_time")
+            if not time_str:
+                continue
+            dt = datetime.fromisoformat(str(time_str).replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+
+            age_days = (now - dt).total_seconds() / 86400.0
+
+            if age_days > 90:
+                continue
+
+            metrics_str = row.get("advanced_metrics")
+            if not metrics_str:
+                continue
+            metrics = json.loads(metrics_str)
+            if not isinstance(metrics, dict):
+                continue
+
+            if "vam" in metrics and metrics["vam"] is not None:
+                vam_values.append(float(metrics["vam"]))
+            if "threshold_hr" in metrics and metrics["threshold_hr"] is not None:
+                threshold_hr_values.append(float(metrics["threshold_hr"]))
+            if "anaerobic_peak" in metrics and metrics["anaerobic_peak"] is not None:
+                anaerobic_peak_values.append(float(metrics["anaerobic_peak"]))
+
+            if "decoupling" in metrics and metrics["decoupling"] is not None:
+                decoupling_values.append(float(metrics["decoupling"]))
+
+            trimp = float(metrics.get("trimp") or 0.0)
+            if trimp > 0:
+                if last_date is None:
+                    ctl = trimp / 42.0
+                    atl = trimp / 7.0
+                else:
+                    delta_days = max((dt - last_date).total_seconds() / 86400.0, 0)
+                    ctl = ctl * math.exp(-delta_days / 42.0) + trimp * (1 - math.exp(-1 / 42.0))
+                    atl = atl * math.exp(-delta_days / 7.0) + trimp * (1 - math.exp(-1 / 7.0))
+                last_date = dt
+
+        except (ValueError, TypeError, json.JSONDecodeError):
+            continue
+
+    if last_date:
+        delta_days_to_now = max((now - last_date).total_seconds() / 86400.0, 0)
+        ctl = ctl * math.exp(-delta_days_to_now / 42.0)
+        atl = atl * math.exp(-delta_days_to_now / 7.0)
+
+    tsb = ctl - atl
+
+    vam_max = max(vam_values) if vam_values else 0.0
+    threshold_hr_max = max(threshold_hr_values) if threshold_hr_values else 0.0
+    anaerobic_peak_max = max(anaerobic_peak_values) if anaerobic_peak_values else 0.0
+
+    last_5_decoupling = decoupling_values[-5:] if decoupling_values else []
+    decoupling_avg = sum(last_5_decoupling) / len(last_5_decoupling) if last_5_decoupling else 0.0
+
+    hrv = float(hrv_from_profile) if hrv_from_profile is not None else 60.0
+
+    max_hr = prof.max_hr if prof and prof.max_hr else 190
+    radar_profile = RadarScoreEngine.build_radar_profile(sport_type or "running", {
+        "trimp": ctl,
+        "hrv": hrv,
+        "decoupling": decoupling_avg,
+        "vam": vam_max,
+        "threshold_hr": threshold_hr_max,
+        "anaerobic_peak": anaerobic_peak_max,
+    }, {"max_hr": max_hr})
+
+    return {
+        "ctl": round(ctl, 1),
+        "atl": round(atl, 1),
+        "tsb": round(tsb, 1),
+        "hrv": round(hrv, 1),
+        "decoupling": round(decoupling_avg, 2),
+        "vam": round(vam_max, 1),
+        "threshold_hr": round(threshold_hr_max, 1),
+        "anaerobic_peak": round(anaerobic_peak_max, 2),
+        "radar": radar_profile,
+    }
+
+
 def _parse_fit_activity_for_sync(file_path: Path) -> dict[str, Any]:
     resolved_path = str(file_path.expanduser().resolve())
     core = FITCoreEngine.parse_fit_file(resolved_path)
@@ -500,6 +741,8 @@ def _parse_fit_activity_for_sync(file_path: Path) -> dict[str, Any]:
         payload.get("start_lon"),
         payload.get("start_time") or payload.get("start_time_utc"),
     )
+    stat = file_path.stat()
+    advanced_metrics = _compute_advanced_metrics(track_data)
     return {
         "file_name": file_path.name,
         "filename": payload.get("filename") or file_path.name,
@@ -526,6 +769,9 @@ def _parse_fit_activity_for_sync(file_path: Path) -> dict[str, Any]:
         "start_lon": _safe_float(payload.get("start_lon")) or None,
         "region": str(payload.get("region") or "").strip(),
         "weather_json": json.dumps(weather, ensure_ascii=False) if weather else None,
+        "file_mtime": float(stat.st_mtime),
+        "file_size": int(stat.st_size),
+        "advanced_metrics": json.dumps(advanced_metrics, ensure_ascii=False) if advanced_metrics else None,
     }
 
 
@@ -535,8 +781,9 @@ def _insert_activity_sync_row(conn: sqlite3.Connection, activity: dict[str, Any]
         INSERT INTO activities
             (file_name, filename, title, title_source, start_time, start_time_utc, sport_type, sub_sport_type,
              distance, dist_km, duration, duration_sec, avg_pace, avg_hr, max_hr,
-             calories, track_json, points_json, file_path, gain_m, max_alt_m, start_lat, start_lon, region, weather_json, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+             calories, track_json, points_json, file_path, gain_m, max_alt_m, start_lat, start_lon, region,
+             weather_json, file_mtime, file_size, advanced_metrics, deleted_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, datetime('now'))
         """,
         (
             activity.get("file_name"),
@@ -564,6 +811,9 @@ def _insert_activity_sync_row(conn: sqlite3.Connection, activity: dict[str, Any]
             activity.get("start_lon"),
             activity.get("region"),
             activity.get("weather_json"),
+            activity.get("file_mtime"),
+            activity.get("file_size"),
+            activity.get("advanced_metrics"),
         ),
     )
     return int(cur.lastrowid)
@@ -576,7 +826,8 @@ def _update_activity_sync_row(conn: sqlite3.Connection, activity_id: int, activi
         SET file_name = ?, filename = ?, title = ?, title_source = ?, start_time = ?, start_time_utc = ?,
             sport_type = ?, sub_sport_type = ?, distance = ?, dist_km = ?, duration = ?, duration_sec = ?,
             avg_pace = ?, avg_hr = ?, max_hr = ?, calories = ?, track_json = ?, points_json = ?,
-            file_path = ?, gain_m = ?, max_alt_m = ?, start_lat = ?, start_lon = ?, region = ?, weather_json = ?, updated_at = datetime('now')
+            file_path = ?, gain_m = ?, max_alt_m = ?, start_lat = ?, start_lon = ?, region = ?,
+            weather_json = ?, file_mtime = ?, file_size = ?, advanced_metrics = ?, deleted_at = NULL, updated_at = datetime('now')
         WHERE id = ?
         """,
         (
@@ -605,6 +856,9 @@ def _update_activity_sync_row(conn: sqlite3.Connection, activity_id: int, activi
             activity.get("start_lon"),
             activity.get("region"),
             activity.get("weather_json"),
+            activity.get("file_mtime"),
+            activity.get("file_size"),
+            activity.get("advanced_metrics"),
             activity_id,
         ),
     )
@@ -620,6 +874,44 @@ def _activity_display_sql() -> str:
     )
 
 
+def _cleanup_invalid_activity_types(conn: sqlite3.Connection) -> None:
+    invalid_patterns = ("%.fit%", "%.gpx%", "%.kml%", "%/%", "%\\%")
+    conn.execute(
+        """
+        UPDATE activities
+        SET sport_type = 'unknown',
+            updated_at = datetime('now')
+        WHERE deleted_at IS NULL
+          AND COALESCE(sport_type, '') != ''
+          AND (
+              lower(sport_type) LIKE ? OR
+              lower(sport_type) LIKE ? OR
+              lower(sport_type) LIKE ? OR
+              sport_type LIKE ? OR
+              sport_type LIKE ?
+          )
+        """,
+        invalid_patterns,
+    )
+    conn.execute(
+        """
+        UPDATE activities
+        SET sub_sport_type = 'unknown',
+            updated_at = datetime('now')
+        WHERE deleted_at IS NULL
+          AND COALESCE(sub_sport_type, '') != ''
+          AND (
+              lower(sub_sport_type) LIKE ? OR
+              lower(sub_sport_type) LIKE ? OR
+              lower(sub_sport_type) LIKE ? OR
+              sub_sport_type LIKE ? OR
+              sub_sport_type LIKE ?
+          )
+        """,
+        invalid_patterns,
+    )
+
+
 def _walk_fit_files(base: Path) -> list[Path]:
     fit_files: list[Path] = []
     for root, _dirs, files in os.walk(str(base)):
@@ -627,6 +919,10 @@ def _walk_fit_files(base: Path) -> list[Path]:
             if name.lower().endswith(".fit"):
                 fit_files.append(Path(root) / name)
     fit_files.sort(key=lambda item: (str(item.parent).lower(), item.name.lower()))
+    abs_path = str(base.resolve()) if base.exists() else str(base)
+    logger.info("FIT 扫描目录: %s, 发现文件数: %s", abs_path, len(fit_files))
+    if len(fit_files) == 0:
+        logger.warning("FIT 文件数为 0，请确认路径是否正确: %s", abs_path)
     return fit_files
 
 
@@ -744,7 +1040,7 @@ def _source_scope_filter_clause(source_dir: str) -> tuple[str, list[Any]]:
     normalized = str(source_dir or "").strip()
     if not normalized:
         return "", []
-    return "WHERE file_path LIKE ?", [normalized.rstrip("/\\") + os.sep + "%"]
+    return "WHERE file_path LIKE ? AND deleted_at IS NULL", [normalized.rstrip("/\\") + os.sep + "%"]
 
 
 def _activity_row_identity(row: dict[str, Any]) -> str:
@@ -831,7 +1127,7 @@ def _find_activity_by_file_name(conn: sqlite3.Connection, file_name: str) -> dic
         """
         SELECT id, file_name, filename, file_path
         FROM activities
-        WHERE COALESCE(file_name, filename) = ?
+        WHERE COALESCE(file_name, filename) = ? AND deleted_at IS NULL
         ORDER BY id DESC
         LIMIT 1
         """,
@@ -843,9 +1139,9 @@ def _find_activity_by_file_name(conn: sqlite3.Connection, file_name: str) -> dic
 def _find_activity_by_file_path(conn: sqlite3.Connection, file_path: str) -> dict[str, Any] | None:
     row = conn.execute(
         """
-        SELECT id, file_name, filename, file_path, title, sport_type, sub_sport_type, start_time, updated_at
+        SELECT id, file_name, filename, file_path, title, sport_type, sub_sport_type, start_time, updated_at, file_mtime, file_size
         FROM activities
-        WHERE file_path = ?
+        WHERE file_path = ? AND deleted_at IS NULL
         ORDER BY id DESC
         LIMIT 1
         """,
@@ -854,14 +1150,74 @@ def _find_activity_by_file_path(conn: sqlite3.Connection, file_path: str) -> dic
     return dict(row) if row else None
 
 
+def _load_existing_file_index(conn: sqlite3.Connection) -> dict[str, dict[str, Any]]:
+    """快速加载 DB 中所有已入库文件的 file_path → {file_mtime, file_size, id} 索引。
+    用于在解析 FIT 文件前预判是否需要入库，避免无效解析。
+    """
+    rows = conn.execute(
+        """
+        SELECT id, file_path, file_mtime, file_size
+        FROM activities
+        WHERE deleted_at IS NULL
+          AND COALESCE(file_path, '') != ''
+        """
+    ).fetchall()
+    index: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        path = str(row["file_path"] or "").strip()
+        if not path:
+            continue
+        resolved = str(Path(path).expanduser().resolve())
+        existing = index.get(resolved)
+        if existing is None or int(row["id"] or 0) > int(existing.get("id") or 0):
+            index[resolved] = {
+                "id": int(row["id"] or 0),
+                "file_mtime": row["file_mtime"],
+                "file_size": row["file_size"],
+            }
+    return index
+
+
+def _is_file_unchanged(disk_path: Path, existing: dict[str, Any]) -> bool:
+    """判断磁盘文件与 DB 记录是否一致（mtime 和 size 均匹配）。"""
+    existing_mtime = existing.get("file_mtime")
+    existing_size = existing.get("file_size")
+    if existing_mtime is None or existing_size is None:
+        return False
+    try:
+        stat = disk_path.stat()
+        disk_mtime = stat.st_mtime
+        disk_size = stat.st_size
+    except OSError:
+        return False
+    return (
+        abs(float(existing_mtime) - disk_mtime) < 0.001
+        and int(existing_size) == disk_size
+    )
+
+
 def _persist_sync_activity(activity: dict[str, Any]) -> dict[str, Any]:
     file_name = str(activity.get("file_name") or activity.get("filename") or "").strip()
     file_path = str(activity.get("file_path") or "").strip()
+    activity["sport_type"] = _normalize_activity_token(activity.get("sport_type"))
+    activity["sub_sport_type"] = _normalize_activity_token(activity.get("sub_sport_type"))
 
     def _write() -> dict[str, Any]:
         conn = profile_backend._conn()
         try:
             existing = _find_activity_by_file_path(conn, file_path) if file_path else None
+            if existing:
+                file_mtime = activity.get("file_mtime")
+                file_size = activity.get("file_size")
+                if (
+                    file_mtime is not None
+                    and file_size is not None
+                    and existing.get("file_mtime") is not None
+                    and existing.get("file_size") is not None
+                    and abs(float(existing.get("file_mtime") or 0) - float(file_mtime)) < 0.001
+                    and int(existing.get("file_size") or 0) == int(file_size)
+                ):
+                    return {"op": "skipped", "id": int(existing["id"])}
             if not existing and file_name:
                 existing = _find_activity_by_file_name(conn, file_name)
             if existing:
@@ -1591,7 +1947,36 @@ class Api:
         zones = profile_backend.compute_hrr_zones(
             prof.resting_hr or 60, prof.max_hr or 190
         )
-        return {"ok": True, "profile": prof.to_dict(), "hrr_zones": zones}
+        cached = profile_backend.read_local_profile()
+        return {
+            "ok": True,
+            "profile": prof.to_dict(),
+            "hrr_zones": zones,
+            "cache_info": {
+                "has_cached": cached is not None,
+            },
+        }
+
+    def get_rolling_radar_metrics(self, sport_type: str = "running") -> dict:
+        """滚动聚合雷达指标：90天极值 + 最近5次均值 + 42天累积 + HRV基线 + RadarScoreEngine 评分。"""
+        try:
+            metrics = _rolling_aggregate_radar_metrics(sport_type)
+            return {"ok": True, "metrics": metrics}
+        except Exception as e:
+            logger.exception("滚动聚合雷达指标失败")
+            return {
+                "ok": False,
+                "error": str(e),
+                "metrics": {
+                    "ctl": 0,
+                    "hrv": 60,
+                    "decoupling": 0,
+                    "vam": 0,
+                    "threshold_hr": 0,
+                    "anaerobic_peak": 0,
+                    "radar": {"type": sport_type, "dimensions": []},
+                },
+            }
 
     def save_user_profile(self, data: dict) -> dict:
         try:
@@ -1617,6 +2002,34 @@ class Api:
             return {"ok": True, "history": history}
         except Exception as e:
             return {"ok": False, "error": str(e)}
+
+    def get_test_bypass_daily_sync_limit(self) -> dict:
+        return {"ok": True, "enabled": profile_backend.get_test_bypass_daily_sync_limit()}
+
+    def set_test_bypass_daily_sync_limit(self, enabled: bool) -> dict:
+        profile_backend.set_test_bypass_daily_sync_limit(enabled)
+        return {"ok": True, "enabled": profile_backend.get_test_bypass_daily_sync_limit()}
+
+    def check_daily_sync_status(self) -> dict:
+        needs = profile_backend.is_sync_needed_today()
+        state = profile_backend.read_sync_state()
+        return {
+            "ok": True,
+            "needs_sync": needs,
+            "last_sync_date": state.get("last_sync_date"),
+            "last_sync_time": state.get("last_sync_time"),
+        }
+
+    def silent_fetch_mcp_persona(self, platform: str) -> dict:
+        needs = profile_backend.is_sync_needed_today()
+        if not needs:
+            cached = profile_backend.read_local_profile()
+            return {"ok": True, "already_synced": True, "has_cached": cached is not None}
+        result = profile_backend.fetch_mcp_persona(platform)
+        if result.get("ok"):
+            prof = profile_backend.get_profile()
+            return {"ok": True, "already_synced": False, "profile": prof.to_dict(), "has_cached": True}
+        return {"ok": True, "already_synced": False, "error": result.get("error"), "has_cached": False}
 
     def _workspace_track_dir(self) -> str:
         config = init_application_config()
@@ -1660,6 +2073,7 @@ class Api:
             "avg_pace_sec": avg_pace_sec,
             "avg_hr": avg_hr,
             "calories": _safe_int(calories),
+            "gain_m": round(_safe_float(row.get("gain_m")), 1),
             "file_path": str(row.get("file_path") or ""),
             "region": str(row.get("region") or "").strip(),
             "start_lat": _safe_float(row.get("start_lat")) or None,
@@ -1678,7 +2092,7 @@ class Api:
                 SELECT *,
                        COALESCE(track_json, points_json) AS merged_track_json
                 FROM activities
-                WHERE id = ?
+                WHERE id = ? AND deleted_at IS NULL
                 """,
                 (activity_id,),
             ).fetchone()
@@ -1691,9 +2105,10 @@ class Api:
         try:
             ensure_activity_sync_schema()
             config = resolve_workspace_track_dir(auto_recover=True)
-            target_dir = str(config.get("workspace_track_abs_path") or "").strip()
+            target_dir = os.path.abspath(os.path.expanduser(str(config.get("workspace_track_abs_path") or "").strip()))
             source_status = dict(config.get("workspace_track_status") or {})
             if not target_dir or not source_status.get("exists") or not source_status.get("is_dir"):
+                logger.warning("FIT 同步跳过：目录无效或不存在, target_dir=%s", target_dir)
                 result = {
                     "ok": True,
                     "source_dir": "",
@@ -1707,11 +2122,32 @@ class Api:
                 _emit_sync_progress(progress_callback, stage="completed", current=0, total=0, **result)
                 return result
 
-            base = Path(target_dir).expanduser().resolve()
+            base = Path(target_dir)
             os.makedirs(str(base), exist_ok=True)
             started_at = time.perf_counter()
             fit_files = _walk_fit_files(base)
+            disk_paths = {str(path.expanduser().resolve()) for path in fit_files}
             total = len(fit_files)
+            logger.info("FIT 同步开始: base=%s, 有效文件数=%s", str(base), total)
+
+            # 预加载 DB 中已入库文件索引，用于快速跳过未变更文件
+            conn = profile_backend._conn()
+            try:
+                existing_index = _load_existing_file_index(conn)
+            finally:
+                conn.close()
+
+            # 提前过滤出真正需要处理的新增/变更文件
+            pending_files: list[Path] = []
+            pre_skipped = 0
+            for fit_path in fit_files:
+                resolved = str(fit_path.expanduser().resolve())
+                existing = existing_index.get(resolved)
+                if existing and _is_file_unchanged(fit_path, existing):
+                    pre_skipped += 1
+                else:
+                    pending_files.append(fit_path)
+
             inserted = 0
             updated = 0
             skipped = 0
@@ -1724,24 +2160,24 @@ class Api:
                 total=total,
                 inserted=inserted,
                 updated=updated,
-                skipped=skipped,
+                skipped=pre_skipped,
                 current_file="",
-                message=f"已找到 {total} 个 FIT 文件，开始后台同步...",
+                message=f"已找到 {total} 个 FIT 文件，其中 {len(pending_files)} 个需要同步...",
                 errors=[],
             )
 
-            for index, fit_path in enumerate(fit_files, start=1):
+            for index, fit_path in enumerate(pending_files, start=1):
                 file_name = fit_path.name
                 _emit_sync_progress(
                     progress_callback,
                     stage="parsing",
-                    current=index - 1,
-                    total=total,
+                    current=index,
+                    total=len(pending_files),
                     inserted=inserted,
                     updated=updated,
-                    skipped=skipped,
+                    skipped=skipped + pre_skipped,
                     current_file=file_name,
-                    message=f"正在解析 {index}/{total}: {file_name}",
+                    message=f"正在解析 {index}/{len(pending_files)}: {file_name}",
                     errors=errors[-5:],
                 )
                 try:
@@ -1749,21 +2185,24 @@ class Api:
                     _emit_sync_progress(
                         progress_callback,
                         stage="writing",
-                        current=index - 1,
-                        total=total,
+                        current=index,
+                        total=len(pending_files),
                         inserted=inserted,
                         updated=updated,
-                        skipped=skipped,
+                        skipped=skipped + pre_skipped,
                         current_file=file_name,
-                        message=f"正在写入数据库 {index}/{total}: {file_name}",
+                        message=f"正在写入数据库 {index}/{len(pending_files)}: {file_name}",
                         errors=errors[-5:],
                     )
                     write_res = _persist_sync_activity(activity)
                     if write_res.get("op") == "updated":
                         updated += 1
+                    elif write_res.get("op") == "skipped":
+                        skipped += 1
                     else:
                         inserted += 1
                 except Exception as exc:
+                    logger.exception("解析/写入 FIT 文件异常: %s", file_name)
                     skipped += 1
                     errors.append(
                         {
@@ -1776,16 +2215,17 @@ class Api:
                     progress_callback,
                     stage="running",
                     current=index,
-                    total=total,
+                    total=len(pending_files),
                     inserted=inserted,
                     updated=updated,
-                    skipped=skipped,
+                    skipped=skipped + pre_skipped,
                     current_file=file_name,
-                    message=f"已处理 {index}/{total} 个 FIT 文件",
+                    message=f"已处理 {index}/{len(pending_files)} 个 FIT 文件",
                     errors=errors[-5:],
                 )
 
             elapsed_sec = round(time.perf_counter() - started_at, 2)
+            removed = self._mark_missing_activity_files_deleted(str(base), disk_paths)
             result = {
                 "ok": True,
                 "source_dir": str(base),
@@ -1794,10 +2234,11 @@ class Api:
                 "scanned": total,
                 "inserted": inserted,
                 "updated": updated,
-                "skipped": skipped,
+                "skipped": skipped + pre_skipped,
+                "removed": removed,
                 "errors": errors,
                 "elapsed_sec": elapsed_sec,
-                "message": f"同步完成：扫描 {total} 个 FIT 文件，新增 {inserted} 条，更新 {updated} 条，跳过 {skipped} 条，用时 {elapsed_sec:.2f} 秒。",
+                "message": f"同步完成：扫描 {total} 个 FIT 文件（跳过 {pre_skipped} 个未变更），新增 {inserted} 条，更新 {updated} 条，跳过 {skipped} 条，标记删除 {removed} 条，用时 {elapsed_sec:.2f} 秒。",
             }
             _emit_sync_progress(
                 progress_callback,
@@ -1806,7 +2247,7 @@ class Api:
                 total=total,
                 inserted=inserted,
                 updated=updated,
-                skipped=skipped,
+                skipped=skipped + pre_skipped,
                 current_file="",
                 message=result["message"],
                 errors=errors[-5:],
@@ -1814,6 +2255,7 @@ class Api:
             return result
         except Exception as exc:
             friendly_error = _format_sync_error_message(exc)
+            logger.exception("FIT 同步失败: %s", friendly_error)
             _emit_sync_progress(
                 progress_callback,
                 stage="error",
@@ -1830,6 +2272,72 @@ class Api:
 
     def sync_local_fit_files(self) -> dict:
         return self._sync_local_fit_files_impl()
+
+    def _mark_missing_activity_files_deleted(self, source_dir: str, disk_paths: set[str]) -> int:
+        source_dir = str(source_dir or "").rstrip("/\\")
+        if not source_dir:
+            return 0
+        ensure_activity_sync_schema()
+        conn = profile_backend._conn()
+        try:
+            rows = conn.execute(
+                """
+                SELECT id, file_path
+                FROM activities
+                WHERE deleted_at IS NULL
+                  AND COALESCE(file_path, '') != ''
+                  AND file_path LIKE ?
+                """,
+                (source_dir + os.sep + "%",),
+            ).fetchall()
+            missing_ids = [int(row["id"]) for row in rows if str(row["file_path"] or "") not in disk_paths]
+            if not missing_ids:
+                return 0
+            placeholders = ",".join("?" * len(missing_ids))
+            conn.execute(
+                f"UPDATE activities SET deleted_at = datetime('now'), updated_at = datetime('now') WHERE id IN ({placeholders})",
+                missing_ids,
+            )
+            conn.commit()
+            return len(missing_ids)
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+    def delete_activities(self, activity_ids: list[int] | None = None) -> dict:
+        """批量硬删除：强制确保 FIT 文件与数据库同步。"""
+        ensure_activity_sync_schema()
+        raw_ids = [int(item) for item in (activity_ids or []) if _safe_int(item)]
+        if not raw_ids:
+            return {"ok": False, "error": "未选择记录"}
+        ids = list(set(raw_ids))
+        conn = profile_backend._conn()
+        try:
+            rows = conn.execute(
+                "SELECT id, file_path FROM activities WHERE id IN ({})".format(",".join("?" * len(ids))),
+                ids,
+            ).fetchall()
+            if not rows:
+                return {"ok": False, "error": "未找到记录"}
+
+            for row in rows:
+                fp = row.get("file_path")
+                if fp and os.path.exists(fp):
+                    os.remove(fp)
+
+            conn.execute(
+                "DELETE FROM activities WHERE id IN ({})".format(",".join("?" * len(ids))),
+                ids,
+            )
+            conn.commit()
+            return {"ok": True, "deleted": len(ids)}
+        except Exception as e:
+            conn.rollback()
+            return {"ok": False, "error": str(e)}
+        finally:
+            conn.close()
 
     def start_sync_local_fit_files(self) -> dict:
         return FIT_SYNC_JOB_MANAGER.start(
@@ -1860,6 +2368,8 @@ class Api:
 
             conn = profile_backend._conn()
             try:
+                _cleanup_invalid_activity_types(conn)
+                conn.commit()
                 all_rows = conn.execute(
                     f"""
                     SELECT id,
@@ -1876,6 +2386,7 @@ class Api:
                            avg_pace,
                            avg_hr,
                            calories,
+                           gain_m,
                            file_path,
                            start_lat,
                            start_lon,
@@ -1894,7 +2405,7 @@ class Api:
                     """
                     SELECT sport_type, sub_sport_type
                     FROM activities
-                    WHERE COALESCE(sport_type, '') != ''
+                    WHERE COALESCE(sport_type, '') != '' AND deleted_at IS NULL
                     """
                 ).fetchall()
             finally:
@@ -1961,7 +2472,7 @@ class Api:
             row = self._fetch_activity_row(_safe_int(activity_id))
             if not row:
                 return {"ok": False, "error": "未找到该活动记录"}
-            record = self._build_record_from_row(row, 0)
+            record = _build_record_from_row(self, row, 0)
             return {"ok": True, "record": record}
         except Exception as e:
             return {"ok": False, "error": str(e)}
@@ -1977,9 +2488,12 @@ class Api:
             if points:
                 filename = str(row.get("filename") or row.get("file_name") or "历史轨迹")
                 weather = _decode_weather_json(row.get("weather_json"))
+                raw_metrics = row.get("advanced_metrics")
+                advanced_metrics = _decode_weather_json(raw_metrics) if isinstance(raw_metrics, str) else (raw_metrics or {})
                 return {
                     "ok": True,
                     "filename": filename,
+                    "advanced_metrics": advanced_metrics,
                     "activity": {
                         "id": _safe_int(row.get("id")),
                         "sport_type": str(row.get("sport_type") or "unknown"),
@@ -1992,6 +2506,7 @@ class Api:
                         "placemarks": [],
                         "region": str(row.get("region") or "").strip(),
                         "weather": weather,
+                        "advanced_metrics": advanced_metrics,
                     },
                 }
 
@@ -2010,73 +2525,23 @@ class Api:
             return {"ok": False, "error": str(e)}
 
     def get_trace_activity_history(self) -> dict:
-        """返回轨迹分析工具使用的活动记录列表，并与个人运动数据页保持同源一致。"""
+        """返回轨迹分析工具使用的活动记录列表，与个人运动数据页保持同源一致。
+        与 get_activity_list_snapshot 共用 SQLite 数据源，不触发 FIT 同步。
+        """
         try:
-            sync_res = self.sync_local_fit_files()
-            integrity = check_activity_data_integrity()
-            config = resolve_workspace_track_dir(auto_recover=True)
-            source_dir = str(config.get("workspace_track_abs_path") or "")
-            where_sql, params = _source_scope_filter_clause(source_dir)
+            source_dir, records, _ = self._query_activity_list_records("all")
 
-            conn = profile_backend._conn()
-            try:
-                rows = conn.execute(
-                    f"""
-                    SELECT id, COALESCE(file_name, filename) AS file_name, filename,
-                           title, title_source, start_time_utc,
-                           sport_type, sub_sport_type, COALESCE(distance, dist_km) AS distance,
-                           COALESCE(duration, duration_sec) AS duration, avg_pace, avg_hr, calories,
-                           gain_m, start_time, updated_at, file_path, start_lat, start_lon, region,
-                           weather_json, COALESCE(track_json, points_json) AS track_json
-                    FROM activities
-                    {where_sql}
-                    ORDER BY COALESCE(start_time, updated_at) DESC, id DESC
-                    """,
-                    tuple(params),
-                ).fetchall()
-            finally:
-                conn.close()
-
-            records = []
-            for row_dict in _dedupe_activity_rows([dict(row) for row in rows]):
-                points = self._decode_points_json(row_dict.get("track_json"))
-                first_point = points[0] if points else {}
-                display_type = _resolve_display_sport_type(row_dict.get("sport_type"), row_dict.get("sub_sport_type"))
-                records.append(
-                    {
-                        "id": _safe_int(row_dict.get("id")),
-                        "file_name": row_dict.get("filename") or row_dict.get("file_name") or "",
-                        "filename": row_dict.get("filename") or row_dict.get("file_name") or "",
-                        "title": str(row_dict.get("title") or row_dict.get("filename") or row_dict.get("file_name") or ""),
-                        "title_source": str(row_dict.get("title_source") or ""),
-                        "file_path": str(row_dict.get("file_path") or ""),
-                        "sport_type": str(row_dict.get("sport_type") or "unknown"),
-                        "sub_sport_type": str(row_dict.get("sub_sport_type") or "unknown"),
-                        "display_sport_type": display_type,
-                        "dist_km": round(_safe_float(row_dict.get("distance")), 2),
-                        "duration_sec": _safe_int(row_dict.get("duration")),
-                        "avg_pace_sec": _safe_int(row_dict.get("avg_pace")) if row_dict.get("avg_pace") is not None else None,
-                        "avg_hr": _safe_int(row_dict.get("avg_hr")) or None,
-                        "calories": _safe_int(row_dict.get("calories")),
-                        "gain_m": round(_safe_float(row_dict.get("gain_m")), 1),
-                        "region": str(row_dict.get("region") or "").strip(),
-                        "weather": _decode_weather_json(row_dict.get("weather_json")),
-                        "start_time": row_dict.get("start_time"),
-                        "start_time_utc": row_dict.get("start_time_utc"),
-                        "start_lat": row_dict.get("start_lat") if row_dict.get("start_lat") is not None else first_point.get("lat"),
-                        "start_lon": row_dict.get("start_lon") if row_dict.get("start_lon") is not None else first_point.get("lon"),
-                        "valid": bool(points),
-                        "has_local_file": bool(str(row_dict.get("file_path") or "").strip() and os.path.isfile(str(row_dict.get("file_path") or "").strip())),
-                    }
-                )
+            for rec in records:
+                rec["dist_km"] = rec.pop("distance_km", rec.get("dist_km"))
+                rec["valid"] = bool(rec.get("has_track"))
+                rec["cityName"] = (rec.get("region") or "").strip() or "未知地点"
+                rec["has_local_file"] = bool(str(rec.get("file_path") or "").strip())
 
             return {
                 "ok": True,
                 "source_dir": source_dir,
                 "records": records,
                 "total": len(records),
-                "sync": sync_res,
-                "integrity": integrity,
             }
         except Exception as e:
             return {"ok": False, "error": str(e)}
@@ -2158,75 +2623,189 @@ class Api:
         }
         return race_names[idx % len(race_names)] if idx < len(race_names) else sport_map.get(sport_type, "综合训练记录")
 
-    def _build_record_from_row(self, row: dict, idx: int) -> dict:
-        points = self._decode_points_json(row.get("track_json") or row.get("points_json") or row.get("merged_track_json"))
-        dist_km = _safe_float(row.get("distance") if row.get("distance") is not None else row.get("dist_km"))
-        duration_sec = _safe_int(row.get("duration") if row.get("duration") is not None else row.get("duration_sec"))
-        avg_hr = _safe_int(row.get("avg_hr")) or None
-        max_hr = _safe_int(row.get("max_hr")) or (avg_hr + 12 if avg_hr else None)
-        avg_pace = row.get("avg_pace")
-        pace_sec = _safe_int(avg_pace) if avg_pace is not None else (int(duration_sec / dist_km) if dist_km > 0 and duration_sec > 0 else None)
-        calories = _safe_int(row.get("calories")) or _estimate_calories(dist_km, duration_sec, avg_hr)
-        display_type = _resolve_display_sport_type(row.get("sport_type"), row.get("sub_sport_type"))
-        title = str(row.get("title") or "").strip() or self._guess_record_title(display_type, dist_km, row.get("start_time"), idx)
-        base_power = 245 + (idx % 5) * 8
-        timestamp = row.get("start_time") or row.get("updated_at")
 
+class SemanticSportsEngine:
+    METRICS = {
+        "distance": {"label": "距离", "unit": "km"},
+        "duration": {"label": "时长", "unit": ""},
+        "avg_pace": {"label": "平均配速", "unit": "/km"},
+        "avg_speed": {"label": "平均速度", "unit": "km/h"},
+        "avg_hr": {"label": "平均心率", "unit": "bpm"},
+        "max_hr": {"label": "最大心率", "unit": "bpm"},
+        "elevation": {"label": "总爬升", "unit": "m"},
+        "calories": {"label": "热量", "unit": "Kcal"}
+    }
+
+    SPORT_PROFILES = {
+        "running": {
+            "summary_keys": ["distance", "avg_pace", "duration", "avg_hr"],
+            "cards": [{"type": "summary_grid"}, {"type": "pace_hr_chart"}, {"type": "elevation_chart"}]
+        },
+        "trail_running": {
+            "summary_keys": ["distance", "elevation", "duration", "avg_pace"],
+            "cards": [{"type": "summary_grid"}, {"type": "elevation_chart"}, {"type": "pace_hr_chart"}]
+        },
+        "cycling": {
+            "summary_keys": ["distance", "avg_speed", "duration", "avg_hr"],
+            "cards": [{"type": "summary_grid"}, {"type": "speed_hr_power_chart"}, {"type": "elevation_chart"}]
+        },
+        "swimming": {
+            "summary_keys": ["distance", "avg_pace", "duration", "avg_hr"],
+            "cards": [{"type": "summary_grid"}, {"type": "pace_hr_chart"}]
+        },
+        "strength": {
+            "summary_keys": ["duration", "calories", "avg_hr", "max_hr"],
+            "cards": [{"type": "summary_grid"}, {"type": "hr_zones_chart"}]
+        },
+        "hiking": {
+            "summary_keys": ["distance", "duration", "elevation", "avg_hr"],
+            "cards": [{"type": "summary_grid"}, {"type": "elevation_chart"}]
+        }
+    }
+
+    @staticmethod
+    def format_duration(seconds):
+        if not seconds or seconds < 0:
+            return "--"
+        h = seconds // 3600
+        m = (seconds % 3600) // 60
+        s = seconds % 60
+        if h > 0:
+            return f"{h}:{m:02d}:{s:02d}"
+        return f"{m:02d}:{s:02d}"
+
+    @staticmethod
+    def format_pace(pace_sec):
+        if not pace_sec or pace_sec <= 0:
+            return "--"
+        return f"{pace_sec // 60}'{pace_sec % 60:02d}\""
+
+    @classmethod
+    def build_display_metrics(cls, sport_type, raw_data):
+        profile = cls.SPORT_PROFILES.get(sport_type, cls.SPORT_PROFILES["running"])
+        display_list = []
+        for key in profile["summary_keys"]:
+            meta = cls.METRICS.get(key, {"label": key, "unit": ""})
+            val_str = "--"
+            if key == "distance":
+                val_str = f"{raw_data.get('distance_km', 0):.2f}"
+            elif key == "duration":
+                val_str = cls.format_duration(raw_data.get('duration_sec', 0))
+            elif key == "avg_pace":
+                val_str = cls.format_pace(raw_data.get('avg_pace_sec', 0))
+            elif key == "avg_speed":
+                dist = raw_data.get('distance_km', 0)
+                sec = raw_data.get('duration_sec', 0)
+                val_str = f"{(dist / sec * 3600):.1f}" if sec > 0 else "--"
+            elif key in ("avg_hr", "max_hr", "calories", "elevation"):
+                val = raw_data.get(key)
+                val_str = str(val) if val else "--"
+            display_list.append({
+                "key": key,
+                "label": meta["label"],
+                "value": val_str,
+                "unit": meta["unit"]
+            })
+        return display_list
+
+    @classmethod
+    def get_layout(cls, sport_type: str) -> dict:
+        return {"cards": cls.SPORT_PROFILES.get(sport_type, cls.SPORT_PROFILES["running"])["cards"]}
+
+
+def _build_record_from_row(api_self, row: dict, idx: int) -> dict:
+    points = api_self._decode_points_json(row.get("track_json") or row.get("points_json") or row.get("merged_track_json"))
+    dist_km = _safe_float(row.get("distance") if row.get("distance") is not None else row.get("dist_km"))
+    duration_sec = _safe_int(row.get("duration") if row.get("duration") is not None else row.get("duration_sec"))
+    avg_hr = _safe_int(row.get("avg_hr")) or None
+    max_hr = _safe_int(row.get("max_hr")) or (avg_hr + 12 if avg_hr else None)
+    avg_pace = row.get("avg_pace")
+    pace_sec = _safe_int(avg_pace) if avg_pace is not None else (int(duration_sec / dist_km) if dist_km > 0 and duration_sec > 0 else None)
+    calories = _safe_int(row.get("calories")) or _estimate_calories(dist_km, duration_sec, avg_hr)
+    display_type = _resolve_display_sport_type(row.get("sport_type"), row.get("sub_sport_type"))
+    title = str(row.get("title") or "").strip() or api_self._guess_record_title(display_type, dist_km, row.get("start_time"), idx)
+    base_power = 245 + (idx % 5) * 8
+    timestamp = row.get("start_time") or row.get("updated_at")
+
+    try:
+        dt = datetime.fromisoformat(str(timestamp).replace("Z", "+00:00")) if timestamp else None
+        month_key = dt.strftime("%Y-%m") if dt else "--"
+        date_label = dt.strftime("%Y-%m-%d %H:%M") if dt else "--"
+    except Exception:
+        month_key = "--"
+        date_label = str(timestamp or "--")
+
+    import json
+
+    raw_metrics_json = row.get("advanced_metrics")
+    if raw_metrics_json and isinstance(raw_metrics_json, str):
         try:
-            dt = datetime.fromisoformat(str(timestamp).replace("Z", "+00:00")) if timestamp else None
-            month_key = dt.strftime("%Y-%m") if dt else "--"
-            date_label = dt.strftime("%Y-%m-%d %H:%M") if dt else "--"
-        except Exception:
-            month_key = "--"
-            date_label = str(timestamp or "--")
+            adv_metrics = json.loads(raw_metrics_json)
+        except (json.JSONDecodeError, ValueError):
+            adv_metrics = {}
+    else:
+        adv_metrics = {}
 
-        detail = {
-            "summary": {
-                "distance_km": round(dist_km, 2),
-                "duration_sec": duration_sec,
-                "calories": calories,
-                "avg_hr": avg_hr,
-                "max_hr": max_hr,
-                "max_power": base_power + 38,
-                "aerobic_effect": round(3.2 + (idx % 4) * 0.3, 1),
-                "anaerobic_effect": round(1.1 + (idx % 3) * 0.2, 1),
-                "gain_m": int(row.get("gain_m") or 0),
-                "region": str(row.get("region") or "").strip(),
-            },
-            "laps": self._build_lap_rows(dist_km, duration_sec, avg_hr, base_power),
-            "thumbnail_points": self._sample_thumbnail_points(points),
-        }
+    radar_data = RadarScoreEngine.build_radar_profile(display_type, adv_metrics, {"max_hr": max_hr or 190})
 
-        return {
-            "id": int(row.get("id") or idx + 1),
-            "sport_type": str(row.get("sport_type") or "running"),
-            "sub_sport_type": str(row.get("sub_sport_type") or "unknown"),
-            "display_sport_type": display_type,
-            "title": title,
-            "title_source": str(row.get("title_source") or ""),
-            "file_name": row.get("filename") or row.get("file_name") or title,
-            "filename": row.get("filename") or row.get("file_name") or title,
-            "start_time": row.get("start_time"),
-            "start_time_utc": row.get("start_time_utc"),
-            "date_label": date_label,
-            "month_key": month_key,
-            "distance_km": round(dist_km, 2),
-            "duration_sec": duration_sec,
-            "avg_pace_sec": pace_sec,
-            "avg_hr": avg_hr,
-            "max_hr": max_hr,
-            "calories": calories,
-            "gain_m": int(row.get("gain_m") or 0),
-            "region": str(row.get("region") or "").strip(),
-            "start_lat": _safe_float(row.get("start_lat")) or None,
-            "start_lon": _safe_float(row.get("start_lon")) or None,
-            "weather": _decode_weather_json(row.get("weather_json")),
-            "file_path": row.get("file_path") or "",
-            "has_track": bool(points),
-            "has_local_file": bool(str(row.get("file_path") or "").strip() and os.path.isfile(str(row.get("file_path") or "").strip())),
-            "thumbnail_points": detail["thumbnail_points"],
-            "detail": detail,
-        }
+    raw_for_engine = {
+        "distance_km": dist_km,
+        "duration_sec": duration_sec,
+        "avg_pace_sec": pace_sec,
+        "avg_hr": avg_hr,
+        "max_hr": max_hr,
+        "calories": calories,
+        "elevation": int(row.get("gain_m") or 0),
+    }
+
+    capabilities = {
+        "has_gps": bool(points),
+        "has_hr": bool(avg_hr),
+        "has_elevation": bool(row.get("gain_m") and float(row.get("gain_m")) > 0),
+        "has_power": False,
+    }
+
+    detail = {
+        "display_metrics": SemanticSportsEngine.build_display_metrics(display_type, raw_for_engine),
+        "layout": SemanticSportsEngine.get_layout(display_type),
+        "capabilities": capabilities,
+        "radar": radar_data,
+        "summary": raw_for_engine,
+        "laps": api_self._build_lap_rows(dist_km, duration_sec, avg_hr, base_power),
+        "thumbnail_points": api_self._sample_thumbnail_points(points),
+    }
+
+    return {
+        "id": int(row.get("id") or idx + 1),
+        "sport_type": str(row.get("sport_type") or "running"),
+        "sub_sport_type": str(row.get("sub_sport_type") or "unknown"),
+        "display_sport_type": display_type,
+        "title": title,
+        "title_source": str(row.get("title_source") or ""),
+        "file_name": row.get("filename") or row.get("file_name") or title,
+        "filename": row.get("filename") or row.get("file_name") or title,
+        "start_time": row.get("start_time"),
+        "start_time_utc": row.get("start_time_utc"),
+        "date_label": date_label,
+        "month_key": month_key,
+        "distance_km": round(dist_km, 2),
+        "duration_sec": duration_sec,
+        "avg_pace_sec": pace_sec,
+        "avg_hr": avg_hr,
+        "max_hr": max_hr,
+        "calories": calories,
+        "gain_m": int(row.get("gain_m") or 0),
+        "region": str(row.get("region") or "").strip(),
+        "start_lat": _safe_float(row.get("start_lat")) or None,
+        "start_lon": _safe_float(row.get("start_lon")) or None,
+        "weather": _decode_weather_json(row.get("weather_json")),
+        "file_path": row.get("file_path") or "",
+        "has_track": bool(points),
+        "has_local_file": bool(str(row.get("file_path") or "").strip() and os.path.isfile(str(row.get("file_path") or "").strip())),
+        "thumbnail_points": detail["thumbnail_points"],
+        "detail": detail,
+    }
+
 
     def _mock_person_records(self) -> list[dict]:
         mock_rows = [
@@ -2235,7 +2814,8 @@ class Api:
             {"id": 9003, "filename": "qingcheng_trail.fit", "sport_type": "trail_running", "dist_km": 18.4, "duration_sec": 8100, "gain_m": 968, "avg_hr": 154, "max_hr": 172, "file_path": "", "start_time": "2026-01-12T06:45:00Z", "points_json": json.dumps([{"lat": 30.90 + i * 0.0009, "lon": 103.55 + i * 0.001} for i in range(28)])},
             {"id": 9004, "filename": "long_ride.fit", "sport_type": "cycling", "dist_km": 86.5, "duration_sec": 11340, "gain_m": 540, "avg_hr": 146, "max_hr": 168, "file_path": "", "start_time": "2025-12-08T08:10:00Z", "points_json": json.dumps([{"lat": 30.58 + i * 0.0006, "lon": 104.18 + i * 0.0009} for i in range(32)])},
         ]
-        return [self._build_record_from_row(row, idx) for idx, row in enumerate(mock_rows)]
+        return [_build_record_from_row(self, row, idx) for idx, row in enumerate(mock_rows)]
+
 
     def _build_results_payload(self, records: list[dict]) -> dict:
         result_entries = []
@@ -2315,26 +2895,30 @@ class Api:
             source_dir = str(config.get("workspace_track_abs_path") or "")
             where_sql, params = _source_scope_filter_clause(source_dir)
             conn = profile_backend._conn()
-            rows = conn.execute(
-                f"""
-                SELECT id, COALESCE(file_name, filename) AS file_name, filename,
-                       title, title_source, start_time_utc,
-                       sport_type, sub_sport_type, COALESCE(distance, dist_km) AS distance,
-                       COALESCE(duration, duration_sec) AS duration, gain_m, max_alt_m,
-                       avg_pace, avg_hr, max_hr, calories,
-                       COALESCE(track_json, points_json) AS track_json,
-                       file_path, start_time, updated_at
-                FROM activities
-                {where_sql}
-                ORDER BY COALESCE(start_time, updated_at) DESC, id DESC
-                LIMIT 200
-                """,
-                tuple(params),
-            ).fetchall()
-            conn.close()
+            try:
+                _cleanup_invalid_activity_types(conn)
+                conn.commit()
+                rows = conn.execute(
+                    f"""
+                    SELECT id, COALESCE(file_name, filename) AS file_name, filename,
+                           title, title_source, start_time_utc,
+                           sport_type, sub_sport_type, COALESCE(distance, dist_km) AS distance,
+                           COALESCE(duration, duration_sec) AS duration, gain_m, max_alt_m,
+                           avg_pace, avg_hr, max_hr, calories,
+                           COALESCE(track_json, points_json) AS track_json,
+                           file_path, start_time, updated_at
+                    FROM activities
+                    {where_sql}
+                    ORDER BY COALESCE(start_time, updated_at) DESC, id DESC
+                    LIMIT 200
+                    """,
+                    tuple(params),
+                ).fetchall()
+            finally:
+                conn.close()
 
             deduped_rows = _dedupe_activity_rows([dict(row) for row in rows])
-            records = [self._build_record_from_row(row, idx) for idx, row in enumerate(deduped_rows)]
+            records = [_build_record_from_row(self, row, idx) for idx, row in enumerate(deduped_rows)]
             if not records:
                 records = self._mock_person_records()
 
@@ -2353,112 +2937,6 @@ class Api:
             }
         except Exception as e:
             return {"ok": False, "error": str(e)}
-
-    def calculate_advanced_radar_metrics(self) -> dict:
-        """计算六维个人运动能力雷达图数据。"""
-        import math
-        import json
-        import pandas as pd
-        from datetime import datetime, timedelta
-
-        default_metrics = {
-            "endurance": 0.0, "speed": 0.0, "threshold": 0.0,
-            "climbing": 0.0, "stability": 0.0, "recovery": 0.0
-        }
-
-        try:
-            prof = profile_backend.get_profile()
-            conn = profile_backend._conn()
-
-            ninety_days_ago = (datetime.now() - timedelta(days=90)).strftime('%Y-%m-%d %H:%M:%S')
-            rows = conn.execute(
-                "SELECT * FROM activities WHERE updated_at >= ? ORDER BY updated_at DESC",
-                (ninety_days_ago,)
-            ).fetchall()
-            conn.close()
-
-            acts = [dict(r) for r in rows]
-
-            # 1. 耐力容量 (Endurance)
-            total_dist = sum([a.get("dist_km") or 0.0 for a in acts])
-            endurance = min((total_dist / 500.0) * 100.0, 100.0)
-            if not acts: endurance = 0.0
-
-            # 2. 速度爆发 (Speed)
-            max_speed_kmh = 0.0
-            for a in acts:
-                pts_str = a.get("points_json")
-                if pts_str:
-                    try:
-                        pts = json.loads(pts_str)
-                        if len(pts) > 60:
-                            df = pd.DataFrame(pts)
-                            if 'speed' in df.columns:
-                                window_max = df['speed'].rolling(60).mean().max() * 3.6
-                                max_speed_kmh = max(max_speed_kmh, window_max)
-                    except Exception:
-                        pass
-                if max_speed_kmh == 0.0:
-                    dist = a.get("dist_km") or 0.0
-                    dur = a.get("duration_sec") or 0.0
-                    if dur > 0:
-                        max_speed_kmh = max(max_speed_kmh, (dist / (dur / 3600.0)) * 1.5)
-            
-            age = prof.age or 30
-            limit_speed = 22.0 - (age - 20) * 0.1 if age > 20 else 22.0
-            speed = min((max_speed_kmh / limit_speed) * 100.0, 100.0) if max_speed_kmh > 0 else 0.0
-
-            # 3. 乳酸阈值 (Threshold)
-            if prof.lactate_threshold_hr:
-                threshold = max(0.0, min(((prof.lactate_threshold_hr - 130) / 50.0) * 100.0, 100.0))
-            else:
-                lthr = (prof.max_hr * 0.85) if prof.max_hr else 165.0
-                threshold = max(0.0, min(((lthr - 130) / 50.0) * 100.0, 100.0))
-
-            # 4. 坡度爬升 (Climbing)
-            max_vam = 0.0
-            for a in acts:
-                gain = a.get("gain_m") or 0.0
-                dur = a.get("duration_sec") or 0.0
-                stype = a.get("sport_type") or ""
-                if gain > 200 or stype.lower() in ["trail", "trail_running", "hiking"]:
-                    if dur > 0:
-                        vam = gain / (dur / 3600.0)
-                        max_vam = max(max_vam, vam)
-            climbing = min((max_vam / 800.0) * 100.0, 100.0) if max_vam > 0 else 0.0
-
-            # 5. 心肺稳定 (Stability)
-            decoup_scores = []
-            for a in acts:
-                if a.get("hr_decoupling") is not None:
-                    decoup_scores.append(a.get("hr_decoupling"))
-            if decoup_scores:
-                recent_3 = decoup_scores[:3]
-                avg_decoup = sum(recent_3) / len(recent_3)
-                if avg_decoup <= 3.0:
-                    stability = 100.0
-                else:
-                    stability = max(0.0, 100.0 - (avg_decoup - 3.0) * 6.0)
-            else:
-                stability = 0.0
-
-            # 6. 恢复效能 (Recovery)
-            hrv = prof.hrv_baseline or 45.0
-            rhr = prof.resting_hr or 60.0
-            rec_score = (hrv / 70.0) * 60.0 + ((75.0 - rhr) / 25.0) * 40.0
-            recovery = max(0.0, min(rec_score, 100.0))
-
-            return {
-                "ok": True,
-                "endurance": round(endurance, 1),
-                "speed": round(speed, 1),
-                "threshold": round(threshold, 1),
-                "climbing": round(climbing, 1),
-                "stability": round(stability, 1),
-                "recovery": round(recovery, 1)
-            }
-        except Exception as e:
-            return {"ok": True, **default_metrics}
 
     def load_local_track(self, file_path: str) -> dict:
         """根据本地路径读取并解析轨迹文件，返回与 parse_track_file 一致的结构。"""
@@ -2527,6 +3005,23 @@ class Api:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    def validate_fit_directory(self, local_dir: str) -> dict:
+        """验证本地 FIT 目录的有效性（存在、可读写），不扫描文件内容。"""
+        try:
+            raw = str(local_dir or "").strip()
+            if not raw:
+                return {"ok": False, "error": "目录不能为空"}
+            path = os.path.abspath(os.path.expanduser(raw))
+            if not os.path.isdir(path):
+                return {"ok": False, "error": f"目录不存在: {path}"}
+            if not os.access(path, os.R_OK):
+                return {"ok": False, "error": "目录不可读"}
+            if not os.access(path, os.W_OK):
+                return {"ok": False, "error": "目录不可写"}
+            return {"ok": True, "path": path}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     def scan_fit_directory(self, local_dir: str = "") -> dict:
         """从配置文件夹扫描所有 fit 文件，解析后返回带 GPS 有效性标记的轨迹列表。"""
         try:
@@ -2588,9 +3083,64 @@ class Api:
         return {"ok": True}
 
 
+def _migrate_advanced_metrics() -> dict[str, Any]:
+    """启动迁移：为所有缺少 advanced_metrics 的活动记录重新计算并填充。"""
+    ensure_activity_sync_schema()
+    conn = profile_backend._conn()
+    try:
+        rows = conn.execute(
+            """
+            SELECT id, track_json, points_json, sport_type
+            FROM activities
+            WHERE deleted_at IS NULL
+              AND (advanced_metrics IS NULL OR advanced_metrics = '')
+              AND (track_json IS NOT NULL AND track_json != '')
+            ORDER BY id ASC
+            """
+        ).fetchall()
+        if not rows:
+            logger.info("数据迁移: 所有记录均已包含 advanced_metrics，无需迁移")
+            return {"ok": True, "migrated": 0}
+
+        logger.info("数据迁移: 发现 %s 条记录缺少 advanced_metrics，开始重新计算...", len(rows))
+        migrated = 0
+        for row in rows:
+            try:
+                row = dict(row)
+                track_json = row.get("track_json") or row.get("points_json")
+                if not track_json:
+                    continue
+                track_data = json.loads(track_json) if isinstance(track_json, str) else track_json
+                if not isinstance(track_data, list) or len(track_data) < 2:
+                    continue
+                advanced = _compute_advanced_metrics(track_data)
+                if advanced:
+                    advanced_json = json.dumps(advanced, ensure_ascii=False)
+                    conn.execute(
+                        "UPDATE activities SET advanced_metrics = ?, updated_at = datetime('now') WHERE id = ?",
+                        (advanced_json, int(row["id"])),
+                    )
+                    migrated += 1
+                    if migrated % 10 == 0:
+                        conn.commit()
+            except Exception as exc:
+                logger.warning("数据迁移: 记录 id=%s 计算失败: %s", row.get("id"), exc)
+                continue
+        conn.commit()
+        logger.info("数据迁移完成: 成功迁移 %s / %s 条记录", migrated, len(rows))
+        return {"ok": True, "migrated": migrated, "total": len(rows)}
+    except Exception as e:
+        conn.rollback()
+        logger.exception("数据迁移失败: %s", e)
+        return {"ok": False, "error": str(e), "migrated": 0}
+    finally:
+        conn.close()
+
+
 def main() -> None:
     import webview
 
+    _migrate_advanced_metrics()
     url = str(html_file().resolve())
     api = Api()
     window = webview.create_window(

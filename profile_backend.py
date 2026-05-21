@@ -37,6 +37,108 @@ GEOCODE_LANG = "zh-CN"
 GEOCODE_USER_AGENT = "AI-track/1.0"
 
 _DB_CONN_SEMAPHORE = threading.BoundedSemaphore(SQLITE_POOL_SIZE)
+
+SYNC_STATE_DIR = os.path.expanduser("~/.trackapp")
+SYNC_STATE_PATH = os.path.join(SYNC_STATE_DIR, "sync_state.json")
+PROFILE_CACHE_PATH = os.path.join(SYNC_STATE_DIR, "user_profile_cache.json")
+
+
+def _ensure_sync_state_dir() -> None:
+    os.makedirs(SYNC_STATE_DIR, exist_ok=True)
+
+
+def read_sync_state() -> dict:
+    _ensure_sync_state_dir()
+    try:
+        with open(SYNC_STATE_PATH, "r") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def write_sync_state(state: dict) -> None:
+    _ensure_sync_state_dir()
+    with open(SYNC_STATE_PATH, "w") as f:
+        json.dump(state, f)
+
+
+def mark_sync_done() -> None:
+    from datetime import datetime
+    now = datetime.now()
+    write_sync_state({
+        "last_sync_date": now.strftime("%Y-%m-%d"),
+        "last_sync_time": now.isoformat(),
+        "synced_today": True,
+    })
+
+
+def is_sync_needed_today() -> bool:
+    if _TEST_BYPASS_DAILY_SYNC_LIMIT:
+        return True
+    from datetime import date
+    state = read_sync_state()
+    today = date.today().isoformat()
+    return not (state.get("synced_today") and state.get("last_sync_date") == today)
+
+
+# 内部测试开关：绕过单日同步次数限制，仅限开发调试使用
+_TEST_BYPASS_DAILY_SYNC_LIMIT = False
+
+
+def get_test_bypass_daily_sync_limit() -> bool:
+    return _TEST_BYPASS_DAILY_SYNC_LIMIT
+
+
+def set_test_bypass_daily_sync_limit(enabled: bool) -> None:
+    global _TEST_BYPASS_DAILY_SYNC_LIMIT
+    _TEST_BYPASS_DAILY_SYNC_LIMIT = bool(enabled)
+
+
+# ─── 用户画像本地缓存文件（读/写/校验） ────────────────────────────────
+PROFILE_CACHE_MAX_AGE_SEC = 7 * 24 * 3600  # 7 天
+
+
+def write_local_profile(data: dict) -> None:
+    """将用户画像数据写入本地缓存文件，含时间戳。"""
+    _ensure_sync_state_dir()
+    payload = {
+        "cached_at": datetime.utcnow().isoformat() + "Z",
+        "data": {k: v for k, v in data.items() if v is not None},
+    }
+    try:
+        with open(PROFILE_CACHE_PATH, "w") as f:
+            json.dump(payload, f, ensure_ascii=False, default=str)
+    except Exception:
+        pass
+
+
+def _is_profile_data_valid(data: dict) -> bool:
+    """校验用户画像数据是否具备最基本的有效字段。"""
+    required_keys = {"name", "gender", "age", "weight", "resting_hr", "max_hr"}
+    return any(k in data and data[k] is not None for k in required_keys)
+
+
+def read_local_profile() -> dict | None:
+    """读取本地缓存文件，校验时效性和数据完整性，返回 data 字典或 None。"""
+    try:
+        with open(PROFILE_CACHE_PATH, "r") as f:
+            payload = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError, ValueError):
+        return None
+    cached_at = payload.get("cached_at")
+    if not cached_at:
+        return None
+    try:
+        cached_ts = datetime.fromisoformat(cached_at.replace("Z", "+00:00"))
+        age_sec = (datetime.utcnow().replace(tzinfo=None) - cached_ts.replace(tzinfo=None)).total_seconds()
+        if age_sec > PROFILE_CACHE_MAX_AGE_SEC:
+            return None
+    except (ValueError, TypeError):
+        return None
+    data = payload.get("data") or {}
+    if not _is_profile_data_valid(data):
+        return None
+    return data
 _SCHEMA_LOCK = threading.Lock()
 _SCHEMA_READY_FOR: str | None = None
 _REGION_CACHE_LOCK = threading.Lock()
@@ -168,6 +270,9 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             start_lon      REAL,
             region         TEXT,
             weather_json   TEXT,
+            file_mtime     REAL,
+            file_size      INTEGER,
+            deleted_at     TEXT,
             updated_at     TEXT DEFAULT (datetime('now'))
         )
     """)
@@ -183,6 +288,9 @@ def _init_schema(conn: sqlite3.Connection) -> None:
         ("start_lon", "REAL"),
         ("region", "TEXT"),
         ("weather_json", "TEXT"),
+        ("file_mtime", "REAL"),
+        ("file_size", "INTEGER"),
+        ("deleted_at", "TEXT"),
     ]:
         try:
             conn.execute(f"ALTER TABLE activities ADD COLUMN {col} {dtype}")
@@ -199,6 +307,15 @@ def _init_schema(conn: sqlite3.Connection) -> None:
         ("pb_full_marathon", "TEXT"),
         ("lactate_threshold_hr", "INTEGER"),
         ("ftp_watts", "INTEGER"),
+        ("lactate_threshold_pace", "TEXT"),
+        ("pb_1km", "TEXT"),
+        ("longest_run_km", "REAL"),
+        ("longest_ride_time", "TEXT"),
+        ("cycling_40km_time", "TEXT"),
+        ("cycling_80km_time", "TEXT"),
+        ("longest_cycle_km", "REAL"),
+        ("longest_swim_distance_m", "REAL"),
+        ("swimming_100m_pb", "TEXT"),
     ]:
         try:
             conn.execute(f"ALTER TABLE user_profile ADD COLUMN {col} {dtype}")
@@ -246,17 +363,32 @@ class UserProfile:
     pb_full_marathon: str | None = None
     lactate_threshold_hr: int | None = None
     ftp_watts: int | None = None
+    lactate_threshold_pace: str | None = None
+    pb_1km: str | None = None
+    longest_run_km: float | None = None
+    longest_ride_time: str | None = None
+    cycling_40km_time: str | None = None
+    cycling_80km_time: str | None = None
+    longest_cycle_km: float | None = None
+    longest_swim_distance_m: float | None = None
+    swimming_100m_pb: str | None = None
+    last_updated: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "name": self.name,
+            "username": self.name,
             "gender": self.gender,
             "age": self.age,
             "weight": self.weight,
+            "weight_kg": self.weight,
             "resting_hr": self.resting_hr,
+            "resting_heart_rate": self.resting_hr,
             "max_hr": self.max_hr,
             "hrv_baseline": self.hrv_baseline,
+            "hrv": self.hrv_baseline,
             "vo2max": self.vo2max,
+            "vo2_max": self.vo2max,
             "avg_sleep_hours": self.avg_sleep_hours,
             "longest_hike_km": self.longest_hike_km,
             "height_cm": self.height_cm,
@@ -266,6 +398,16 @@ class UserProfile:
             "pb_full_marathon": self.pb_full_marathon,
             "lactate_threshold_hr": self.lactate_threshold_hr,
             "ftp_watts": self.ftp_watts,
+            "lactate_threshold_pace": self.lactate_threshold_pace,
+            "pb_1km": self.pb_1km,
+            "longest_run_km": self.longest_run_km,
+            "longest_ride_time": self.longest_ride_time,
+            "cycling_40km_time": self.cycling_40km_time,
+            "cycling_80km_time": self.cycling_80km_time,
+            "longest_cycle_km": self.longest_cycle_km,
+            "longest_swim_distance_m": self.longest_swim_distance_m,
+            "swimming_100m_pb": self.swimming_100m_pb,
+            "last_updated": self.last_updated,
         }
 
 
@@ -273,6 +415,13 @@ def get_profile() -> UserProfile:
     conn = _conn()
     row = conn.execute("SELECT * FROM user_profile ORDER BY id DESC LIMIT 1").fetchone()
     conn.close()
+    if row is None:
+        cached = read_local_profile()
+        if cached:
+            upsert_profile(cached)
+            conn = _conn()
+            row = conn.execute("SELECT * FROM user_profile ORDER BY id DESC LIMIT 1").fetchone()
+            conn.close()
     if row is None:
         return UserProfile(None, None, None, None, None, None, None, None, None, None)
     return UserProfile(
@@ -293,6 +442,16 @@ def get_profile() -> UserProfile:
         pb_full_marathon=row["pb_full_marathon"] if "pb_full_marathon" in row.keys() else None,
         lactate_threshold_hr=row["lactate_threshold_hr"] if "lactate_threshold_hr" in row.keys() else None,
         ftp_watts=row["ftp_watts"] if "ftp_watts" in row.keys() else None,
+        lactate_threshold_pace=row["lactate_threshold_pace"] if "lactate_threshold_pace" in row.keys() else None,
+        pb_1km=row["pb_1km"] if "pb_1km" in row.keys() else None,
+        longest_run_km=row["longest_run_km"] if "longest_run_km" in row.keys() else None,
+        longest_ride_time=row["longest_ride_time"] if "longest_ride_time" in row.keys() else None,
+        cycling_40km_time=row["cycling_40km_time"] if "cycling_40km_time" in row.keys() else None,
+        cycling_80km_time=row["cycling_80km_time"] if "cycling_80km_time" in row.keys() else None,
+        longest_cycle_km=row["longest_cycle_km"] if "longest_cycle_km" in row.keys() else None,
+        longest_swim_distance_m=row["longest_swim_distance_m"] if "longest_swim_distance_m" in row.keys() else None,
+        swimming_100m_pb=row["swimming_100m_pb"] if "swimming_100m_pb" in row.keys() else None,
+        last_updated=row["updated_at"] if "updated_at" in row.keys() else None,
     )
 
 
@@ -304,8 +463,12 @@ def upsert_profile(data: dict[str, Any]) -> UserProfile:
         INSERT INTO user_profile
             (name, gender, age, weight, resting_hr, max_hr, hrv_baseline, vo2max,
              avg_sleep_hours, longest_hike_km, height_cm, pb_5km, pb_10km, pb_half_marathon,
-             pb_full_marathon, lactate_threshold_hr, ftp_watts)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             pb_full_marathon, lactate_threshold_hr, ftp_watts,
+             lactate_threshold_pace, pb_1km, longest_run_km,
+             longest_ride_time, cycling_40km_time, cycling_80km_time, longest_cycle_km,
+             longest_swim_distance_m, swimming_100m_pb)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             data.get("name"),
@@ -325,10 +488,21 @@ def upsert_profile(data: dict[str, Any]) -> UserProfile:
             data.get("pb_full_marathon"),
             data.get("lactate_threshold_hr"),
             data.get("ftp_watts"),
+            data.get("lactate_threshold_pace"),
+            data.get("pb_1km"),
+            data.get("longest_run_km"),
+            data.get("longest_ride_time"),
+            data.get("cycling_40km_time"),
+            data.get("cycling_80km_time"),
+            data.get("longest_cycle_km"),
+            data.get("longest_swim_distance_m"),
+            data.get("swimming_100m_pb"),
         ),
     )
     conn.commit()
+    last_updated = conn.execute("SELECT updated_at FROM user_profile ORDER BY id DESC LIMIT 1").fetchone()
     conn.close()
+    write_local_profile(data)
     return UserProfile(
         name=data.get("name"),
         gender=data.get("gender"),
@@ -347,6 +521,16 @@ def upsert_profile(data: dict[str, Any]) -> UserProfile:
         pb_full_marathon=data.get("pb_full_marathon"),
         lactate_threshold_hr=data.get("lactate_threshold_hr"),
         ftp_watts=data.get("ftp_watts"),
+        lactate_threshold_pace=data.get("lactate_threshold_pace"),
+        pb_1km=data.get("pb_1km"),
+        longest_run_km=data.get("longest_run_km"),
+        longest_ride_time=data.get("longest_ride_time"),
+        cycling_40km_time=data.get("cycling_40km_time"),
+        cycling_80km_time=data.get("cycling_80km_time"),
+        longest_cycle_km=data.get("longest_cycle_km"),
+        longest_swim_distance_m=data.get("longest_swim_distance_m"),
+        swimming_100m_pb=data.get("swimming_100m_pb"),
+        last_updated=last_updated["updated_at"] if last_updated else None,
     )
 
 
@@ -1187,6 +1371,21 @@ def fetch_mcp_persona(platform: str) -> dict[str, Any]:
             "【第三步】获取基础生理数据：\n"
             "- 调用 queryUserInfo，取 nickname 作为 name、age 作为 age、gender 作为 gender、weight 作为 weight（kg）\n"
             "- 调用 querySleepData，取最近一次记录的 sleepMainDuration（小时），再取多次平均值作为 avg_sleep_hours\n\n"
+            "【第四步】获取跑步记录：\n"
+            "调用 querySportRecords 工具，参数为：\n"
+            '{ "startDate": "20100101", "sportTypeCodes": [101, 102, 103], "limit": 20 }\n'
+            "取返回记录中 distance 最大值（单位km，保留两位小数）作为 longest_run_km。若无记录设为 null。\n"
+            "此外，若返回记录中包含跑步时长信息，取最大值作为 longest_running_duration（格式 mm:ss 或 h:mm:ss）。若无则设为 null。\n\n"
+            "【第五步】获取骑行记录：\n"
+            "调用 querySportRecords 工具，参数为：\n"
+            '{ "startDate": "20100101", "sportTypeCodes": [201, 202], "limit": 20 }\n'
+            "取返回记录中 distance 最大值（单位km，保留两位小数）作为 longest_cycle_km。若无记录设为 null。\n"
+            "取返回记录中时长最大值（格式 h:mm:ss）作为 longest_ride_time。若无则设为 null。\n\n"
+            "【第六步】获取游泳记录：\n"
+            "调用 querySportRecords 工具，参数为：\n"
+            '{ "startDate": "20100101", "sportTypeCodes": [301, 302], "limit": 20 }\n'
+            "取返回记录中 distance 最大值（单位m）作为 longest_swim_distance_m。若无记录设为 null。\n"
+            "若存在 100m 游泳记录，取其用时（格式 mm:ss）作为 swimming_100m_pb。若无则设为 null。\n\n"
             "【输出格式】输出一个完整 JSON，绝对不输出任何其他文字：\n"
             "{\n"
             '  "longest_hike_km": 浮点数或null,\n'
@@ -1195,7 +1394,14 @@ def fetch_mcp_persona(platform: str) -> dict[str, Any]:
             '  "gender": "字符串或null",\n'
             '  "weight": 浮点数或null,\n'
             '  "vo2max": 浮点数或null,\n'
-            '  "avg_sleep_hours": 浮点数或null\n'
+            '  "avg_sleep_hours": 浮点数或null,\n'
+            '  "lactate_threshold_pace": "字符串或null",\n'
+            '  "longest_run_km": 浮点数或null,\n'
+            '  "pb_1km": "字符串或null",\n'
+            '  "longest_ride_time": "字符串或null",\n'
+            '  "longest_cycle_km": 浮点数或null,\n'
+            '  "swimming_100m_pb": "字符串或null",\n'
+            '  "longest_swim_distance_m": 整数或null\n'
             "}"
         )
         messages = [
@@ -1204,7 +1410,7 @@ def fetch_mcp_persona(platform: str) -> dict[str, Any]:
         ]
     else:
         messages = [
-            {"role": "user", "content": "运行get_garmin_stats.py，并直接输出其返回的完整JSON数组。请勿输出任何其他文字，只输出JSON数组。"}
+            {"role": "user", "content": "同步用户画像"}
         ]
 
     try:
@@ -1252,6 +1458,13 @@ def fetch_mcp_persona(platform: str) -> dict[str, Any]:
                 "pb_full_marathon": _validate_time_format(data_map.get("full_marathon_pb")),
                 "lactate_threshold_hr": _validate_int(data_map.get("lactate_threshold_hr")),
                 "ftp_watts": _validate_int(data_map.get("ftp_watts")),
+                "lactate_threshold_pace": _validate_time_format(data_map.get("lactate_threshold_pace")),
+                "longest_run_km": _validate_number(data_map.get("longest_run_km")),
+                "pb_1km": _validate_time_format(data_map.get("1km_pb")),
+                "longest_ride_time": _validate_time_format(data_map.get("longest_ride_time")),
+                "longest_cycle_km": _validate_number(data_map.get("longest_cycle_km")),
+                "swimming_100m_pb": _validate_time_format(data_map.get("swimming_100m_pb")),
+                "longest_swim_distance_m": _validate_number(data_map.get("longest_swim_distance_m")),
             }
         else:
             persona = parsed_json
@@ -1273,9 +1486,17 @@ def fetch_mcp_persona(platform: str) -> dict[str, Any]:
                 "pb_full_marathon": None,
                 "lactate_threshold_hr": None,
                 "ftp_watts": None,
+                "lactate_threshold_pace": _validate_time_format(persona.get("lactate_threshold_pace")),
+                "longest_run_km": _validate_number(persona.get("longest_run_km")),
+                "pb_1km": _validate_time_format(persona.get("pb_1km")),
+                "longest_ride_time": _validate_time_format(persona.get("longest_ride_time")),
+                "longest_cycle_km": _validate_number(persona.get("longest_cycle_km")),
+                "swimming_100m_pb": _validate_time_format(persona.get("swimming_100m_pb")),
+                "longest_swim_distance_m": _validate_number(persona.get("longest_swim_distance_m")),
             }
 
         upsert_profile(profile_data)
+        mark_sync_done()
         return {"ok": True, "persona": profile_data}
 
     except json.JSONDecodeError as e:

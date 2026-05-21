@@ -127,21 +127,44 @@
         .sync-btn.coros { border-color: rgba(46,204,113,0.4); }
         .sync-btn.coros:hover { background: rgba(46,204,113,0.1); border-color: rgba(46,204,113,0.6); }
 
+        /* ===== TEST ONLY: 测试开关样式（打包发布前必须移除） ===== */
+        .test-toggle-switch {
+            position: relative; display: inline-block; width: 44px; height: 24px; flex-shrink: 0;
+        }
+        .test-toggle-switch input { opacity: 0; width: 0; height: 0; }
+        .test-toggle-slider {
+            position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+            background-color: rgba(100,116,139,0.4); border-radius: 24px;
+            transition: 0.3s;
+        }
+        .test-toggle-slider::before {
+            content: ""; position: absolute; height: 18px; width: 18px;
+            left: 3px; bottom: 3px; background-color: #e2e8f0; border-radius: 50%;
+            transition: 0.3s;
+        }
+        .test-toggle-switch input:checked + .test-toggle-slider {
+            background-color: #f59e0b;
+        }
+        .test-toggle-switch input:checked + .test-toggle-slider::before {
+            transform: translateX(20px);
+        }
+        /* ===== END TEST ONLY ===== */
+
         .section-card {
             background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
-            border-radius: 12px; padding: 14px 16px; margin-bottom: 12px;
+            border-radius: 8px; padding: 8px 10px; margin-bottom: 6px;
         }
         .section-title {
-            font-size: 0.72rem; font-weight: 700; color: var(--primary);
-            letter-spacing: 1px; margin-bottom: 10px; text-transform: uppercase;
+            font-size: 0.65rem; font-weight: 700; color: var(--primary);
+            letter-spacing: 0.8px; margin-bottom: 4px; text-transform: uppercase;
         }
 
         .stat-grid {
-            display: grid; grid-template-columns: 1fr 1fr; gap: 6px 16px;
+            display: grid; grid-template-columns: 1fr 1fr; gap: 3px 10px;
         }
         .stat-row {
             display: flex; justify-content: space-between; align-items: center;
-            font-size: 0.75rem;
+            font-size: 0.65rem;
         }
         .stat-row span { color: #94a3b8; }
         .stat-row b { color: #f8fafc; font-weight: 600; }
@@ -168,18 +191,18 @@
         .profile-shell {
             display: flex;
             flex-direction: column;
-            gap: 16px;
+            gap: 8px;
             min-height: 100%;
         }
         .profile-top-fixed {
             display: grid;
-            grid-template-columns: minmax(340px, 1.1fr) minmax(320px, 0.9fr);
-            gap: 16px;
+            grid-template-columns: minmax(260px, 1.1fr) minmax(220px, 0.9fr);
+            gap: 8px;
             align-items: stretch;
         }
         .profile-summary-card,
         .profile-radar-card {
-            min-height: 320px;
+            min-height: 220px;
             margin-bottom: 0;
             display: flex;
             flex-direction: column;
@@ -187,15 +210,15 @@
         }
         .profile-summary-head {
             display: flex;
-            gap: 16px;
+            gap: 10px;
             align-items: stretch;
-            margin-bottom: 14px;
+            margin-bottom: 6px;
         }
         .profile-avatar {
-            width: 88px;
-            min-width: 88px;
-            height: 88px;
-            border-radius: 24px;
+            width: 52px;
+            min-width: 52px;
+            height: 52px;
+            border-radius: 14px;
             border: 1px solid rgba(255,255,255,0.12);
             background:
                 radial-gradient(circle at 30% 30%, rgba(46,204,113,0.35), transparent 45%),
@@ -204,15 +227,15 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 2rem;
+            font-size: 1.6rem;
             color: #f8fafc;
             position: relative;
         }
         .profile-avatar::after {
             content: '';
             position: absolute;
-            inset: 8px;
-            border-radius: 18px;
+            inset: 5px;
+            border-radius: 10px;
             border: 1px solid rgba(255,255,255,0.08);
         }
         .profile-summary-main {
@@ -220,82 +243,123 @@
             display: flex;
             flex-direction: column;
             justify-content: space-between;
-            gap: 10px;
+            gap: 4px;
             min-width: 0;
         }
         .profile-hero-title {
             display: flex;
             justify-content: space-between;
             align-items: flex-start;
-            gap: 12px;
+            gap: 6px;
         }
         .profile-hero-name {
-            font-size: 1.15rem;
+            font-size: 0.88rem;
             font-weight: 800;
             color: #f8fafc;
             letter-spacing: 0.02em;
         }
         .profile-hero-meta {
-            margin-top: 3px;
-            font-size: 0.72rem;
+            margin-top: 1px;
+            font-size: 0.6rem;
             color: #94a3b8;
         }
         .profile-status-chip {
-            padding: 6px 10px;
+            padding: 3px 7px;
             border-radius: 999px;
             background: linear-gradient(135deg, rgba(46,204,113,0.22), rgba(22,163,74,0.12));
             border: 1px solid rgba(46,204,113,0.28);
             color: #86efac;
-            font-size: 0.68rem;
+            font-size: 0.58rem;
             white-space: nowrap;
             box-shadow: 0 8px 20px rgba(16,185,129,0.14);
         }
         .profile-highlight-grid {
             display: grid;
             grid-template-columns: repeat(3, minmax(0, 1fr));
-            gap: 10px;
+            gap: 4px;
         }
         .profile-highlight-item {
-            border-radius: 14px;
+            border-radius: 8px;
             border: 1px solid rgba(255,255,255,0.08);
             background: linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.03));
-            padding: 12px;
+            padding: 6px 6px;
             box-shadow: inset 0 1px 0 rgba(255,255,255,0.06);
         }
         .profile-highlight-item span {
             display: block;
             color: #94a3b8;
-            font-size: 0.68rem;
-            margin-bottom: 6px;
+            font-size: 0.58rem;
+            margin-bottom: 2px;
         }
         .profile-highlight-item b {
             display: block;
             color: #f8fafc;
-            font-size: 1rem;
+            font-size: 0.78rem;
             font-weight: 800;
         }
         .profile-detail-grid {
             display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 8px 16px;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 3px 10px;
             margin-top: auto;
         }
         .profile-detail-grid .stat-row {
-            font-size: 0.72rem;
+            font-size: 0.6rem;
             min-width: 0;
+        }
+        .profile-metric-tabs {
+            display: flex; gap: 4px; flex-wrap: wrap;
+            margin: 6px 0 4px;
+        }
+        .pf-metric-tab {
+            flex: 1; min-width: 0;
+            border: 1px solid rgba(255,255,255,0.08);
+            background: rgba(255,255,255,0.04);
+            color: #94a3b8;
+            border-radius: 6px;
+            padding: 4px 2px;
+            font-size: 0.6rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.18s ease;
+            text-align: center;
+        }
+        .pf-metric-tab:hover {
+            color: #e2e8f0;
+            border-color: rgba(255,255,255,0.16);
+        }
+        .pf-metric-tab.active {
+            color: #f8fafc;
+            background: linear-gradient(135deg, rgba(46,204,113,0.24), rgba(12,74,110,0.32));
+            border-color: rgba(46,204,113,0.30);
+        }
+        .pf-metric-panels {
+            position: relative;
+        }
+        .pf-metric-panel {
+            display: none;
+        }
+        .pf-metric-panel.active {
+            display: block;
+        }
+        .pf-metric-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 3px 10px;
+            padding-top: 2px;
         }
         .profile-bottom-workspace {
             flex: 1;
-            min-height: 420px;
+            min-height: 300px;
             display: flex;
             flex-direction: column;
-            gap: 12px;
+            gap: 6px;
         }
         .profile-tab-bar {
             display: flex;
-            gap: 10px;
-            padding: 6px;
-            border-radius: 16px;
+            gap: 4px;
+            padding: 3px;
+            border-radius: 10px;
             background: rgba(255,255,255,0.03);
             border: 1px solid rgba(255,255,255,0.08);
             backdrop-filter: blur(14px);
@@ -306,9 +370,9 @@
             border: 1px solid rgba(255,255,255,0.08);
             background: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.03));
             color: #94a3b8;
-            border-radius: 12px;
-            padding: 10px 16px;
-            font-size: 0.78rem;
+            border-radius: 7px;
+            padding: 4px 10px;
+            font-size: 0.68rem;
             font-weight: 700;
             cursor: pointer;
             transition: all 0.2s ease;
@@ -329,7 +393,7 @@
         .profile-tab-content-wrap {
             flex: 1;
             min-height: 0;
-            border-radius: 18px;
+            border-radius: 10px;
             background: rgba(255,255,255,0.04);
             border: 1px solid rgba(255,255,255,0.08);
             backdrop-filter: blur(14px);
@@ -339,8 +403,8 @@
         .profile-tab-panel {
             display: none;
             height: 100%;
-            min-height: 420px;
-            padding: 16px;
+            min-height: 300px;
+            padding: 8px;
         }
         .profile-tab-panel.active {
             display: flex;
@@ -348,16 +412,16 @@
         }
         .sport-hub-toolbar {
             display: flex;
-            gap: 10px;
+            gap: 6px;
             align-items: center;
             justify-content: space-between;
-            margin-bottom: 12px;
+            margin-bottom: 8px;
             flex-wrap: wrap;
         }
         .sport-hub-toolbar-left,
         .sport-hub-toolbar-right {
             display: flex;
-            gap: 10px;
+            gap: 6px;
             align-items: center;
             flex-wrap: wrap;
         }
@@ -365,9 +429,9 @@
             border: 1px solid rgba(56, 189, 248, 0.22);
             background: linear-gradient(135deg, rgba(15, 23, 42, 0.92), rgba(12, 74, 110, 0.76));
             color: #e0f2fe;
-            border-radius: 12px;
-            padding: 8px 14px;
-            font-size: 0.74rem;
+            border-radius: 8px;
+            padding: 6px 10px;
+            font-size: 0.68rem;
             font-weight: 700;
             cursor: pointer;
             transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease;
@@ -390,9 +454,9 @@
             background: rgba(15,23,42,0.7);
             border: 1px solid rgba(255,255,255,0.1);
             color: #f8fafc;
-            border-radius: 10px;
-            padding: 8px 12px;
-            font-size: 0.74rem;
+            border-radius: 8px;
+            padding: 6px 10px;
+            font-size: 0.68rem;
             outline: none;
         }
         .hub-records-table-wrap {
@@ -406,7 +470,7 @@
         .hub-records-table {
             width: 100%;
             border-collapse: collapse;
-            font-size: 0.75rem;
+            font-size: 0.68rem;
         }
         .hub-records-table thead th {
             position: sticky;
@@ -415,7 +479,7 @@
             background: rgba(15,23,42,0.92);
             color: #94a3b8;
             text-align: left;
-            padding: 12px 10px;
+            padding: 8px 8px;
             font-weight: 700;
             border-bottom: 1px solid rgba(255,255,255,0.08);
         }
@@ -427,7 +491,7 @@
             background: rgba(46,204,113,0.08);
         }
         .hub-records-table td {
-            padding: 12px 10px;
+            padding: 8px 8px;
             color: #e2e8f0;
             border-bottom: 1px solid rgba(255,255,255,0.05);
             vertical-align: middle;
@@ -461,12 +525,12 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding-top: 12px;
-            gap: 10px;
+            padding-top: 8px;
+            gap: 8px;
             flex-wrap: wrap;
         }
         .hub-pagination-info {
-            font-size: 0.72rem;
+            font-size: 0.68rem;
             color: #94a3b8;
         }
         .hub-pagination-actions {
@@ -758,6 +822,9 @@
             .activity-detail-grid {
                 grid-template-columns: 1fr;
             }
+            .pf-metric-grid {
+                grid-template-columns: 1fr 1fr;
+            }
             .detail-metric-grid,
             .reserve-analysis {
                 grid-template-columns: 1fr 1fr;
@@ -765,17 +832,15 @@
         }
         @media (max-width: 720px) {
             .profile-highlight-grid,
+            .pf-metric-grid,
             .detail-metric-grid,
             .reserve-analysis {
                 grid-template-columns: 1fr;
             }
-            .profile-detail-grid {
-                grid-template-columns: 1fr;
-            }
             .profile-avatar {
-                width: 72px;
-                min-width: 72px;
-                height: 72px;
+                width: 56px;
+                min-width: 56px;
+                height: 56px;
             }
         }
 
@@ -809,6 +874,88 @@
             overflow-y: auto;
         }
 
+        /* === 配置引导—三模块居中胶囊 === */
+        #settings-guide-card {
+            text-align: center;
+        }
+        .setup-steps {
+            display: inline-flex;
+            gap: 8px;
+            padding: 0;
+        }
+        .setup-step {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            gap: 3px;
+            padding: 10px 18px;
+            min-width: 120px;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 999px;
+            transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+        .setup-step.completed {
+            background: rgba(34,197,94,0.08);
+            border-color: rgba(34,197,94,0.28);
+            box-shadow: inset 0 0 0 1px rgba(34,197,94,0.06);
+        }
+        .setup-step-dot {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.6rem;
+            font-weight: 800;
+            flex-shrink: 0;
+            background: rgba(148,163,184,0.14);
+            color: #94a3b8;
+            transition: all 0.25s ease;
+        }
+        .setup-step.completed .setup-step-dot {
+            background: #22c55e;
+            color: #052e16;
+        }
+        .setup-step-body {
+            min-width: 0;
+        }
+        .setup-step-title {
+            font-size: 0.68rem;
+            line-height: 1.2;
+            color: #e2e8f0;
+            font-weight: 700;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .setup-step.completed .setup-step-title {
+            color: #bbf7d0;
+        }
+        .setup-step-desc {
+            font-size: 0.52rem;
+            color: #64748b;
+            line-height: 1.2;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .setup-step-status {
+            font-size: 0.5rem;
+            line-height: 1;
+            padding: 2px 6px;
+            border-radius: 999px;
+            background: rgba(148,163,184,0.10);
+            color: #94a3b8;
+            transition: all 0.25s ease;
+        }
+        .setup-step.completed .setup-step-status {
+            background: rgba(34,197,94,0.18);
+            color: #86efac;
+        }
+
         /* === Cesium 地球（始终渲染） === */
         #cesiumContainer { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 0; touch-action: none; }
 
@@ -836,7 +983,7 @@
         .mini-stat b { color: #f8fafc; font-weight: 600; margin-left: 2px; }
         .sep { color: rgba(255,255,255,0.15); padding: 0 6px; font-size: 0.65rem; user-select: none; flex: 0 0 auto; }
         .flex-grow { flex: 1 1 auto; min-width: 4px; }
-        .btn-group, .toggle-group, .sport-type-select, .progress-group { flex: 0 0 auto; }
+        .btn-group, .toggle-group, .progress-group { flex: 0 0 auto; }
 
         .ctrl-btn {
             display: flex; align-items: center; gap: 4px;
@@ -893,7 +1040,6 @@
             .btn-label { font-size: 0.66rem; }
             .toggle-label { font-size: 0.64rem; gap: 3px; }
             .toggle-group { gap: 5px !important; }
-            .sport-type-select select { max-width: 128px; padding: 2px 5px !important; font-size: 0.66rem !important; }
             #progress-slider { width: 70px !important; }
         }
 
@@ -906,8 +1052,6 @@
             .sep { padding: 0 3px; }
             .toggle-label { font-size: 0; gap: 0; }
             .toggle-label input { width: 14px; height: 14px; }
-            .sport-type-select > span { display: none; }
-            .sport-type-select select { max-width: 102px; }
             .progress-group > span:first-child { display: none; }
             #progress-slider { width: 58px !important; }
         }
@@ -917,7 +1061,6 @@
             .mini-stat:nth-of-type(n+3), .mini-stat:nth-of-type(n+3) + .sep { display: none; }
             .flex-grow { min-width: 2px; }
             .toggle-group { display: none !important; }
-            .sport-type-select select { max-width: 86px; font-size: 0.62rem !important; }
             #progress-slider { width: 46px !important; }
             #progress-val { min-width: 30px !important; font-size: 0.62rem !important; }
         }
@@ -1009,6 +1152,11 @@
         .pace-row { display: flex; justify-content: space-between; align-items: center; font-size: 0.75rem; padding: 2px 0; }
         .pace-seg-name { color: #94a3b8; }
         .pace-seg-val { color: #f8fafc; font-weight: 500; font-variant-numeric: tabular-nums; }
+        .alt-keyword { font-weight: 800; letter-spacing: 0.01em; }
+        .alt-keyword-lv1 { color: #22c55e; font-size: calc(0.75rem + 3px); }
+        .alt-keyword-lv2 { color: #38bdf8; font-size: calc(0.75rem + 3px); }
+        .alt-keyword-lv3 { color: #f59e0b; font-size: calc(0.75rem + 3px); }
+        .alt-keyword-lv4 { color: #ef4444; font-size: calc(0.75rem + 3px); }
 
         .secondary-btn, .primary-btn {
             width: 100%; padding: 10px; border-radius: 8px; cursor: pointer; transition: all 0.2s;
@@ -1087,6 +1235,67 @@
             position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); background: rgba(15, 23, 42, 0.9);
             color: #94a3b8; padding: 10px 20px; border-radius: 20px; font-size: 0.85rem; pointer-events: none;
             border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 4px 6px rgba(0,0,0,0.1); z-index: 50; transition: opacity 0.3s;
+        }
+
+        /* === 模态拦截弹窗 === */
+        .blocker-overlay {
+            position: fixed; inset: 0; z-index: 9999;
+            background: rgba(0,0,0,0.65); backdrop-filter: blur(6px);
+            display: flex; align-items: center; justify-content: center;
+            animation: blockerFadeIn 0.2s ease;
+        }
+        @keyframes blockerFadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        .blocker-modal-box {
+            background: linear-gradient(145deg, #1e293b 0%, #0f172a 100%);
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 16px;
+            padding: 36px 32px 28px;
+            max-width: 400px;
+            width: calc(100% - 40px);
+            text-align: center;
+            box-shadow: 0 24px 80px rgba(0,0,0,0.5);
+            animation: blockerSlideUp 0.3s ease;
+        }
+        @keyframes blockerSlideUp {
+            from { transform: translateY(30px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        .blocker-modal-icon {
+            font-size: 3rem;
+            margin-bottom: 12px;
+        }
+        .blocker-modal-title {
+            font-size: 1.15rem;
+            font-weight: 600;
+            color: #f8fafc;
+            margin-bottom: 10px;
+        }
+        .blocker-modal-desc {
+            font-size: 0.85rem;
+            color: #94a3b8;
+            line-height: 1.7;
+            margin-bottom: 22px;
+        }
+        .blocker-modal-btn {
+            padding: 10px 32px;
+            border: none;
+            border-radius: 8px;
+            background: linear-gradient(135deg, #3b82f6, #2563eb);
+            color: #fff;
+            font-size: 0.9rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: opacity 0.2s, transform 0.15s;
+        }
+        .blocker-modal-btn:hover {
+            opacity: 0.9;
+            transform: scale(1.02);
+        }
+        .blocker-modal-btn:active {
+            transform: scale(0.98);
         }
         #track-detected-toast {
             position: fixed;
@@ -1188,6 +1397,22 @@
         .sport-card:hover { background: rgba(255,255,255,0.1); transform: translateY(-2px); }
         .sport-card h3 { margin: 10px 0 5px 0; color: #f8fafc; font-size: 1.1rem; }
         .sport-card p { margin: 0; color: #94a3b8; font-size: 0.8rem; }
+        .radar-sport-tabs {
+            display: inline-flex; gap: 3px; margin-left: 8px;
+            vertical-align: middle;
+        }
+        .radar-sport-tab {
+            padding: 2px 8px; font-size: 0.65rem; color: #94a3b8;
+            background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 999px; cursor: pointer;
+            transition: all 0.2s; font-family: inherit;
+        }
+        .radar-sport-tab:hover {
+            background: rgba(0,255,127,0.08); border-color: rgba(0,255,127,0.2); color: #e2e8f0;
+        }
+        .radar-sport-tab.active {
+            background: rgba(0,255,127,0.15); border-color: rgba(0,255,127,0.3); color: #00FF7F;
+        }
     </style>
     <style>
         /* 新手引导覆盖层样式 */
@@ -1315,14 +1540,63 @@
             transition: all 0.2s;
             margin-left: 10px;
         }
+        .ai-assistant-btn:not(:disabled) {
+            animation: aiBtnPulse 2s ease-in-out infinite;
+        }
+        @keyframes aiBtnPulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(0,255,127,0.15); }
+            50% { box-shadow: 0 0 0 6px rgba(0,255,127,0.05); }
+        }
         .ai-assistant-btn:hover:not(:disabled) {
             background: rgba(0, 255, 127, 0.25);
+            animation: none;
+            box-shadow: 0 0 14px rgba(0,255,127,0.2);
         }
         .ai-assistant-btn:disabled {
             background: rgba(255, 255, 255, 0.05);
             color: #64748b;
             border-color: #334155;
             cursor: not-allowed;
+            animation: none;
+            box-shadow: none;
+        }
+        .ai-assistant-btn.notified {
+            background: rgba(34,197,94,0.18);
+            border-color: #22c55e;
+            color: #86efac;
+            animation: none;
+        }
+
+        /* === AI 通知按钮状态指示灯 === */
+        .ai-btn-indicator {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            flex-shrink: 0;
+            background: #475569;
+            transition: background 0.3s ease, box-shadow 0.3s ease;
+        }
+        .ai-btn-indicator.idle {
+            background: #475569;
+        }
+        .ai-btn-indicator.communicating {
+            background: #f59e0b;
+            box-shadow: 0 0 6px rgba(245,158,11,0.5);
+            animation: indicatorBlink 0.8s ease-in-out infinite;
+        }
+        @keyframes indicatorBlink {
+            0%, 100% { opacity: 0.4; }
+            50% { opacity: 1; }
+        }
+        .ai-btn-indicator.success {
+            background: #22c55e;
+            box-shadow: 0 0 6px rgba(34,197,94,0.5);
+            animation: none;
+        }
+        .ai-btn-indicator.failed {
+            background: #ef4444;
+            box-shadow: 0 0 6px rgba(239,68,68,0.5);
+            animation: none;
         }
 
         /* 查重弹窗样式 */
@@ -1552,7 +1826,12 @@
                 <div class="profile-shell">
                     <div class="profile-top-fixed">
                         <div class="section-card profile-summary-card">
-                            <div class="section-title">🎯 生理画像</div>
+                            <div class="section-title">🏃 运动画像</div>
+                            <div id="pf-loading" style="display:none; text-align:center; padding:16px 0; color:#64748b; font-size:0.75rem;">⏳ 加载运动画像...</div>
+                            <div id="pf-empty" style="display:none; text-align:center; padding:16px 0; color:#64748b; font-size:0.75rem;">
+                                📋 暂无画像数据，请点击「同步用户画像」从运动设备获取
+                                <div style="margin-top:8px;"><button class="sync-btn" onclick="document.getElementById('btn-sync-garmin').click()" style="padding:4px 12px;font-size:0.7rem;">同步用户画像</button></div>
+                            </div>
                             <div class="profile-summary-head">
                                 <div class="profile-avatar" id="pf-avatar">🏃</div>
                                 <div class="profile-summary-main">
@@ -1560,6 +1839,7 @@
                                         <div>
                                             <div class="profile-hero-name" id="pf-name">--</div>
                                             <div class="profile-hero-meta" id="pf-hero-meta">运动状态待同步</div>
+                                            <div class="profile-hero-meta" id="pf-last-updated" style="font-size:0.55rem;color:#64748b;margin-top:2px;"></div>
                                         </div>
                                         <div class="profile-status-chip" id="pf-status-chip">待同步设备数据</div>
                                     </div>
@@ -1570,26 +1850,63 @@
                                     </div>
                                 </div>
                             </div>
-                            <div class="profile-detail-grid">
-                                <div class="stat-row"><span>年龄</span><b id="pf-age">--</b></div>
-                                <div class="stat-row"><span>性别</span><b id="pf-gender">--</b></div>
-                                <div class="stat-row"><span>身高</span><b id="pf-height">-- cm</b></div>
-                                <div class="stat-row"><span>体重</span><b id="pf-weight">-- kg</b></div>
-                                <div class="stat-row"><span>最大心率</span><b id="pf-max-hr">-- bpm</b></div>
-                                <div class="stat-row"><span>平均睡眠</span><b id="pf-sleep">-- h</b></div>
-                                <div class="stat-row"><span>乳酸阈值心率</span><b id="pf-lthr">-- bpm</b></div>
-                                <div class="stat-row"><span>FTP (骑行)</span><b id="pf-ftp">-- W</b></div>
-                                <div class="stat-row"><span>最长徒步</span><b id="pf-longest-hike">-- km</b></div>
-                                <div class="stat-row"><span>5km PB</span><b id="pf-pb-5k">--</b></div>
-                                <div class="stat-row"><span>10km PB</span><b id="pf-pb-10k">--</b></div>
-                                <div class="stat-row"><span>半马 PB</span><b id="pf-pb-hm">--</b></div>
-                                <div class="stat-row"><span>全马 PB</span><b id="pf-pb-fm">--</b></div>
-                                <div class="stat-row"><span>设备状态</span><b id="pf-device-brief">暂无设备</b></div>
+                            <div class="profile-metric-tabs">
+                                <button class="pf-metric-tab active" data-group="physiological" onclick="switchMetricGroup('physiological', this)">生理数据</button>
+                                <button class="pf-metric-tab" data-group="running" onclick="switchMetricGroup('running', this)">跑步／徒步</button>
+                                <button class="pf-metric-tab" data-group="cycling" onclick="switchMetricGroup('cycling', this)">骑行</button>
+                                <button class="pf-metric-tab" data-group="swimming" onclick="switchMetricGroup('swimming', this)">游泳</button>
+                            </div>
+                            <div class="pf-metric-panels">
+                                <div class="pf-metric-panel active" data-group="physiological">
+                                    <div class="pf-metric-grid">
+                                        <div class="stat-row"><span>年龄</span><b id="pf-age">--</b></div>
+                                        <div class="stat-row"><span>性别</span><b id="pf-gender">--</b></div>
+                                        <div class="stat-row"><span>身高</span><b id="pf-height">-- cm</b></div>
+                                        <div class="stat-row"><span>体重</span><b id="pf-weight">-- kg</b></div>
+                                        <div class="stat-row"><span>平均睡眠</span><b id="pf-sleep">-- h</b></div>
+                                        <div class="stat-row"><span>乳酸阈值心率</span><b id="pf-lthr">-- bpm</b></div>
+                                        <div class="stat-row"><span>乳酸阈值配速</span><b id="pf-lt-pace">--</b></div>
+                                    </div>
+                                </div>
+                                <div class="pf-metric-panel" data-group="running">
+                                    <div class="pf-metric-grid">
+                                        <div class="stat-row"><span>1km PB</span><b id="pf-pb-1km">--</b></div>
+                                        <div class="stat-row"><span>5km PB</span><b id="pf-pb-5k">--</b></div>
+                                        <div class="stat-row"><span>10km PB</span><b id="pf-pb-10k">--</b></div>
+                                        <div class="stat-row"><span>半马 PB</span><b id="pf-pb-hm">--</b></div>
+                                        <div class="stat-row"><span>全马 PB</span><b id="pf-pb-fm">--</b></div>
+                                        <div class="stat-row"><span>最长跑步</span><b id="pf-longest-run">-- km</b></div>
+                                        <div class="stat-row"><span>最长徒步</span><b id="pf-longest-hike">-- km</b></div>
+                                    </div>
+                                </div>
+                                <div class="pf-metric-panel" data-group="cycling">
+                                    <div class="pf-metric-grid">
+                                        <div class="stat-row"><span>最长骑行时间</span><b id="pf-longest-ride-time">--</b></div>
+                                        <div class="stat-row"><span>40km 骑行时间</span><b id="pf-cycling-40k">--</b></div>
+                                        <div class="stat-row"><span>80km 骑行时间</span><b id="pf-cycling-80k">--</b></div>
+                                        <div class="stat-row"><span>最长骑行距离</span><b id="pf-longest-cycle">-- km</b></div>
+                                        <div class="stat-row"><span>FTP (骑行)</span><b id="pf-ftp">-- W</b></div>
+                                    </div>
+                                </div>
+                                <div class="pf-metric-panel" data-group="swimming">
+                                    <div class="pf-metric-grid">
+                                        <div class="stat-row"><span>最长游泳距离</span><b id="pf-longest-swim">-- m</b></div>
+                                        <div class="stat-row"><span>100m 游泳 PB</span><b id="pf-swim-100m">--</b></div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                         <div class="section-card profile-radar-card">
-                            <div class="section-title">🕸️ 运动能力</div>
-                            <div id="performanceRadar" style="width: 100%; flex: 1; min-height: 320px;"></div>
+                            <div class="section-title">🕸️ 运动能力
+                                <span class="radar-sport-tabs">
+                                    <button class="radar-sport-tab active" data-radar-sport="running" onclick="switchRadarSportType('running', this)">🏃 跑步</button>
+                                    <button class="radar-sport-tab" data-radar-sport="trail_running" onclick="switchRadarSportType('trail_running', this)">⛰️ 越野跑</button>
+                                    <button class="radar-sport-tab" data-radar-sport="hiking" onclick="switchRadarSportType('hiking', this)">🥾 徒步</button>
+                                    <button class="radar-sport-tab" data-radar-sport="cycling" onclick="switchRadarSportType('cycling', this)">🚴 骑行</button>
+                                    <button class="radar-sport-tab" data-radar-sport="swimming" onclick="switchRadarSportType('swimming', this)">🏊 游泳</button>
+                                </span>
+                            </div>
+                            <div id="performanceRadar" style="width: 100%; flex: 1; min-height: 180px;"></div>
                         </div>
                     </div>
 
@@ -1608,6 +1925,7 @@
                                             <option value="all">全部活动类型</option>
                                         </select>
                                         <button class="hub-sync-btn" id="sport-records-sync-btn" onclick="forceRefreshMovementRecords()">🔄 同步本地数据</button>
+                                        <button class="hub-sync-btn" id="sport-records-delete-btn" onclick="deleteSelectedSportHubRecords()">🗑️ 删除选中</button>
                                     </div>
                                     <div class="sport-hub-toolbar-right">
                                         <select id="sport-record-page-size" class="hub-page-size" onchange="onSportHubPageSizeChange()">
@@ -1621,6 +1939,7 @@
                                     <table class="hub-records-table">
                                         <thead>
                                             <tr>
+                                                <th><input type="checkbox" id="sport-records-select-all" onchange="toggleAllSportHubRecords(this.checked)"></th>
                                                 <th>活动类型</th>
                                                 <th>时间</th>
                                                 <th>标题</th>
@@ -1711,13 +2030,6 @@
                         <label class="toggle-label"><input type="checkbox" id="toggle-peak" checked> 坡顶</label>
                     </div>
                     <span class="sep">|</span>
-                    <div class="sport-type-select" style="display:flex;align-items:center;gap:5px;flex-shrink:0;">
-                        <span id="sport-type-icon" style="color:#94a3b8;font-size:0.65rem;">⏱️</span>
-                        <select id="sport-type-selector" onchange="onSportTypeChange(this.value)" style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);color:#94a3b8;border-radius:6px;padding:3px 8px;font-size:0.7rem;cursor:pointer;outline:none;">
-                            <option value="">⚠️ 请选择运动类型</option>
-                        </select>
-                    </div>
-                    <span class="sep">|</span>
                     <div class="progress-group" style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
                         <span style="color:var(--primary);font-size:0.65rem;font-weight:600;">进度</span>
                         <input type="range" id="progress-slider" min="0" max="100" step="0.5" value="100" style="width:90px;accent-color:var(--primary);cursor:pointer;">
@@ -1786,13 +2098,34 @@
             <div class="panel-body">
                 <div class="section-card" id="settings-guide-card">
                     <div class="section-title">🧭 配置引导</div>
-                    <div id="settings-guide-text" style="font-size:0.85rem;color:#cbd5e1;line-height:1.7;">
-                        第 1 步：先选择手表品牌并完成大模型连接测试；第 2 步：选择本地 FIT 存储文件夹；第 3 步：如果您是佳明用户，再点击“告诉AI助手下载规范”。
+                    <div id="settings-guide-text" style="font-size:0.85rem;color:#cbd5e1;line-height:1.7;margin-bottom:14px;">
+                        依次完成以下 3 个步骤后，即可解锁「个人运动数据」和「轨迹分析工具」功能。
                     </div>
-                    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">
-                        <span id="guide-chip-llm" style="padding:6px 10px;border-radius:999px;background:rgba(255,255,255,0.08);font-size:0.75rem;color:#94a3b8;">1. 待完成连接测试</span>
-                        <span id="guide-chip-dir" style="padding:6px 10px;border-radius:999px;background:rgba(255,255,255,0.08);font-size:0.75rem;color:#94a3b8;">2. 待选择存储目录</span>
-                        <span id="guide-chip-ai" style="padding:6px 10px;border-radius:999px;background:rgba(255,255,255,0.08);font-size:0.75rem;color:#94a3b8;">3. 待确认AI助手配置</span>
+                    <div class="setup-steps" id="setup-steps-container">
+                        <div class="setup-step" id="setup-step-1" data-step="1">
+                            <div class="setup-step-dot" id="setup-dot-1">1</div>
+                            <div class="setup-step-body">
+                                <div class="setup-step-title">大模型连接测试</div>
+                                <div class="setup-step-desc" id="setup-desc-1">选择手表品牌并完成连接测试</div>
+                            </div>
+                            <div class="setup-step-status" id="setup-status-1">未完成</div>
+                        </div>
+                        <div class="setup-step" id="setup-step-2" data-step="2">
+                            <div class="setup-step-dot" id="setup-dot-2">2</div>
+                            <div class="setup-step-body">
+                                <div class="setup-step-title">选择存储目录</div>
+                                <div class="setup-step-desc" id="setup-desc-2">指定本地 FIT 文件存放路径</div>
+                            </div>
+                            <div class="setup-step-status" id="setup-status-2">未完成</div>
+                        </div>
+                        <div class="setup-step" id="setup-step-3" data-step="3">
+                            <div class="setup-step-dot" id="setup-dot-3">3</div>
+                            <div class="setup-step-body">
+                                <div class="setup-step-title">AI 助手配置确认</div>
+                                <div class="setup-step-desc" id="setup-desc-3">通知 AI 助手存储规范（佳明用户）</div>
+                            </div>
+                            <div class="setup-step-status" id="setup-status-3">未完成</div>
+                        </div>
                     </div>
                 </div>
                 <div class="section-card">
@@ -1863,12 +2196,14 @@
                     <div style="margin-bottom:15px;">
                         <label style="display:block;margin-bottom:5px;color:#94a3b8;font-size:0.8rem;">本地 FIT 文件存储目录</label>
                         <div style="display:flex;gap:10px;align-items:center;">
-                            <input type="text" id="set-local-dir" readonly placeholder="请选择本地文件夹..." style="flex:1;padding:10px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#94a3b8;border-radius:6px;outline:none;cursor:default;">
+                            <input type="text" id="set-local-dir" placeholder="请选择或输入本地文件夹路径..." style="flex:1;padding:10px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#e2e8f0;border-radius:6px;outline:none;">
                             <button onclick="selectLocalDirectory()" class="ctrl-btn" style="padding:8px 15px;white-space:nowrap;">选择文件夹</button>
                         </div>
-                        <div style="margin-top:15px; display:flex; align-items:center;">
+                        <div id="dir-validation-msg" style="margin-top:4px;font-size:0.72rem;color:#64748b;min-height:1.2em;"></div>
+                        <div style="margin-top:15px; display:flex; align-items:center; gap:8px;">
+                            <span class="ai-btn-indicator" id="btn-notify-indicator"></span>
                             <button id="btn-notify-ai" class="ai-assistant-btn" disabled onclick="notifyAIAssistant()" style="margin-left:0;">
-                                🤖 告诉AI助手下载规范
+                                🤖 告诉AI助手存储规范
                             </button>
                         </div>
                     </div>
@@ -1880,6 +2215,27 @@
                         <button onclick="clearHistory()" class="secondary-btn" style="flex:1;font-size:0.75rem;color:#ef4444;border-color:rgba(239,68,68,0.3);">🗑️ 清除历史轨迹</button>
                     </div>
                 </div>
+
+                <!-- ===== TEST ONLY: 测试配置区（打包发布前必须移除） ===== -->
+                <div class="section-card" id="test-config-section" style="border-color: rgba(255, 165, 0, 0.3);">
+                    <div class="section-title">🧪 测试配置（开发环境专用）</div>
+                    <div style="margin-bottom:8px;font-size:0.75rem;color:#f59e0b;">
+                        ⚠️ 以下开关仅用于开发调试，正式打包发布前必须删除本区块
+                    </div>
+                    <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;">
+                        <div>
+                            <div style="font-size:0.85rem;color:#e2e8f0;">绕过单日同步次数限制</div>
+                            <div style="font-size:0.7rem;color:#94a3b8;">开启后可连续多次执行用户画像同步</div>
+                        </div>
+                        <label class="test-toggle-switch">
+                            <input type="checkbox" id="test-bypass-daily-sync" onchange="onTestBypassDailySyncChange()">
+                            <span class="test-toggle-slider"></span>
+                        </label>
+                    </div>
+                    <div id="test-bypass-status" style="font-size:0.7rem;color:#94a3b8;margin-top:4px;">状态: 读取中...</div>
+                </div>
+                <!-- ===== END TEST ONLY ===== -->
+
             </div>
         </div>
 
@@ -1920,7 +2276,9 @@
             <div class="detail-section-card">
                 <div class="section-title">📌 活动总结</div>
                 <div class="detail-metric-grid" id="activity-detail-metrics"></div>
-                <div id="activity-detail-track-container"></div>
+                <div id="activity-detail-track-section">
+                    <div id="activity-detail-track-container"></div>
+                </div>
             </div>
             <div class="detail-section-card">
                 <div class="section-title">📈 圈速统计</div>
@@ -1946,6 +2304,15 @@
 
 <input type="file" id="file-upload" accept=".gpx,.kml" style="display:none;">
 <div id="toast" style="opacity:0;">提示信息</div>
+
+<div class="blocker-overlay" id="blocker-modal" style="display:none;">
+    <div class="blocker-modal-box">
+        <div class="blocker-modal-icon">🔒</div>
+        <div class="blocker-modal-title">配置尚未完成</div>
+        <div class="blocker-modal-desc">请先完成全部 3 项配置后再访问「个人运动数据」和「轨迹分析工具」功能。</div>
+        <button class="blocker-modal-btn" onclick="closeBlockerModal()">前往配置</button>
+    </div>
+</div>
 <div id="track-detected-toast">
     <div class="track-toast-header">
         <div class="track-toast-title">📡 雷达检测到新轨迹落盘！</div>
@@ -2015,6 +2382,7 @@
         sportType: '',
         currentActivityId: null,
         currentWeather: null,
+        advancedMetrics: null,
         historyFilters: {
             time: 'all',
             type: 'all',
@@ -2047,7 +2415,8 @@
         syncProgress: 0,
         syncMessage: '',
         syncCurrentFile: '',
-        syncStats: { inserted: 0, updated: 0, skipped: 0, total: 0, current: 0 },
+        syncStats: { inserted: 0, updated: 0, skipped: 0, removed: 0, total: 0, current: 0 },
+        selectedIds: new Set(),
         syncPromise: null
     };
     let isMovementRecordsInitialized = false;
@@ -2068,12 +2437,18 @@
     const PY_REPORT_TERRAIN = '__REPORT_TERRAIN__';
     const PY_REPORT_PERSONALIZED = '__REPORT_PERSONALIZED__';
     let currentLLMConfig = { provider: 'local_mcp', model: 'openclaw', url: LLM_DEFAULT_URL, apiKey: '', agentId: '' };
+
+    let _currentRadarSportType = 'running';
+
     let onboardingState = {
         llmTestPassed: false,
         llmTestState: 'idle',
         llmTestRequestId: 0,
         llmTestStateLock: false,
-        llmTestTransitionTimer: null
+        llmTestTransitionTimer: null,
+        aiNotified: false,
+        dirValidated: false,
+        dirValidationRequestId: 0
     };
 
     const aiCoachState = {
@@ -2183,25 +2558,35 @@
     }
 
     let radarChartInstance = null;
-    async function renderPerformanceRadar() {
-        const radarContainer = document.getElementById('performanceRadar');
+
+    function renderRadarChart(activityType, metricsData) {
+        var radarContainer = document.getElementById('performanceRadar');
         if (!radarContainer) return;
+
+        var radarData = (metricsData && metricsData.radar) || null;
+        var dimensions = (radarData && radarData.dimensions) || [];
+
+        if (!dimensions.length) {
+            radarContainer.style.display = 'none';
+            return;
+        }
+        radarContainer.style.display = '';
 
         if (!radarChartInstance) {
             radarChartInstance = echarts.init(radarContainer);
         }
-        
-        const option = {
+
+        var dynamicIndicators = dimensions.map(function(dim) {
+            return { name: dim.label, max: 100 };
+        });
+        var dynamicScores = dimensions.map(function(dim) {
+            return dim.score;
+        });
+
+        var option = {
             backgroundColor: 'transparent',
             radar: {
-                indicator: [
-                    { name: '耐力容量 (CTL)', max: 100 },
-                    { name: '速度爆发 (无氧)', max: 100 },
-                    { name: '乳酸阈值 (巡航)', max: 100 },
-                    { name: '坡度爬升 (VAM)', max: 100 },
-                    { name: '心肺稳定 (抗漂移)', max: 100 },
-                    { name: '恢复效能 (HRV)', max: 100 }
-                ],
+                indicator: dynamicIndicators,
                 shape: 'polygon',
                 splitNumber: 5,
                 axisName: {
@@ -2210,76 +2595,81 @@
                     fontSize: 10
                 },
                 splitLine: {
-                    lineStyle: {
-                        color: ['#333333']
-                    }
+                    lineStyle: { color: ['#333333'] }
                 },
-                splitArea: {
-                    show: false
-                },
+                splitArea: { show: false },
                 axisLine: {
-                    lineStyle: {
-                        color: '#333333'
-                    }
+                    lineStyle: { color: '#333333' }
                 }
             },
-            series: []
-        };
-        radarChartInstance.setOption(option);
-        
-        // Resize handler
-        if (!window._radarResizeBound) {
-            window.addEventListener('resize', () => {
-                if (radarChartInstance) radarChartInstance.resize();
-            });
-            window._radarResizeBound = true;
-        }
-
-        if (!window.pywebview || !window.pywebview.api) return;
-        try {
-            const res = await window.pywebview.api.calculate_advanced_radar_metrics();
-            if (!res || !res.ok) return;
-            const data = res.data || res; // depending on whether data is nested
-            
-            // 如果后端明确返回无数据标识，或者我们判断全为默认值，可以选择不渲染或者渲染真实值
-            // 这里我们保持原有逻辑展示数据
-            option.series = [
+            series: [
                 {
                     name: '运动能力',
                     type: 'radar',
                     data: [
                         {
-                            value: [
-                                data.endurance || 0,
-                                data.speed || 0,
-                                data.threshold || 0,
-                                data.climbing || 0,
-                                data.stability || 0,
-                                data.recovery || 0
-                            ],
-                            name: '综合评分',
-                            itemStyle: {
-                                color: '#00FF7F'
-                            },
-                            lineStyle: {
-                                color: '#00FF7F',
-                                width: 2
-                            },
-                            areaStyle: {
-                                color: 'rgba(0, 255, 127, 0.15)'
-                            }
+                            value: dynamicScores,
+                            name: '能力画像',
+                            itemStyle: { color: '#00FF7F' },
+                            lineStyle: { color: '#00FF7F', width: 2 },
+                            areaStyle: { color: 'rgba(0, 255, 127, 0.15)' }
                         }
                     ]
                 }
-            ];
-            radarChartInstance.setOption(option);
-            
-        } catch (e) {
-            console.error('Failed to render radar:', e);
+            ]
+        };
+        radarChartInstance.setOption(option, true);
+
+        if (!window._radarResizeBound) {
+            window.addEventListener('resize', function() {
+                if (radarChartInstance) radarChartInstance.resize();
+            });
+            window._radarResizeBound = true;
         }
     }
 
+    async function renderPerformanceRadar() {
+        var radarContainer = document.getElementById('performanceRadar');
+        if (!radarContainer) return;
+
+        var metrics = {};
+        try {
+            if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.get_rolling_radar_metrics === 'function') {
+                var rollingRes = await window.pywebview.api.get_rolling_radar_metrics(_currentRadarSportType);
+                if (rollingRes && rollingRes.ok && rollingRes.metrics) {
+                    metrics = rollingRes.metrics;
+                }
+            }
+        } catch (e) {
+            console.warn("滚动聚合雷达 API 调用失败", e);
+        }
+
+        renderRadarChart(_currentRadarSportType, metrics);
+    }
+
+    function switchRadarSportType(type, btn) {
+        _currentRadarSportType = type;
+        var parent = btn.closest('.radar-sport-tabs');
+        if (parent) {
+            parent.querySelectorAll('.radar-sport-tab').forEach(function(t) {
+                t.classList.remove('active');
+            });
+        }
+        btn.classList.add('active');
+        renderPerformanceRadar();
+    }
+
     async function loadProfileCard() {
+        var loadingEl = document.getElementById('pf-loading');
+        var emptyEl = document.getElementById('pf-empty');
+        var summaryHead = document.querySelector('.profile-summary-card .profile-summary-head');
+        var metricTabs = document.querySelector('.profile-summary-card .profile-metric-tabs');
+        var metricPanels = document.querySelector('.profile-summary-card .pf-metric-panels');
+        if (loadingEl) loadingEl.style.display = '';
+        if (emptyEl) emptyEl.style.display = 'none';
+        if (summaryHead) summaryHead.style.display = 'none';
+        if (metricTabs) metricTabs.style.display = 'none';
+        if (metricPanels) metricPanels.style.display = 'none';
         try {
             if (window.pywebview && window.pywebview.api) {
                 const res = await window.pywebview.api.get_user_profile();
@@ -2292,6 +2682,22 @@
                     if (document.getElementById('vp-vo2')) document.getElementById('vp-vo2').innerText = p.vo2max ? p.vo2max : '--';
                     if (document.getElementById('vp-rhr')) document.getElementById('vp-rhr').innerText = p.resting_hr ? p.resting_hr + ' bpm' : '--';
                     if (document.getElementById('vp-mhr')) document.getElementById('vp-mhr').innerText = p.max_hr ? p.max_hr + ' bpm' : '--';
+                    const lastUpdatedEl = document.getElementById('pf-last-updated');
+                    if (lastUpdatedEl) {
+                        if (p.last_updated) {
+                            try {
+                                var d = new Date(p.last_updated);
+                                var y = d.getFullYear();
+                                var mo = String(d.getMonth()+1).padStart(2,'0');
+                                var da = String(d.getDate()).padStart(2,'0');
+                                var hh = String(d.getHours()).padStart(2,'0');
+                                var mm = String(d.getMinutes()).padStart(2,'0');
+                                lastUpdatedEl.innerText = '更新于 ' + y + '-' + mo + '-' + da + ' ' + hh + ':' + mm;
+                            } catch(e) { lastUpdatedEl.innerText = ''; }
+                        } else {
+                            lastUpdatedEl.innerText = '';
+                        }
+                    }
                     const card = document.getElementById('profile-card');
                     if (card) card.style.display = 'block';
                     const bar = document.getElementById('hrr-zones-bar');
@@ -2313,18 +2719,73 @@
                             bar.appendChild(seg);
                         });
                     }
+                    if (loadingEl) loadingEl.style.display = 'none';
+                    if (summaryHead) summaryHead.style.display = '';
+                    if (metricTabs) metricTabs.style.display = '';
+                    if (metricPanels) metricPanels.style.display = '';
+                } else {
+                    if (loadingEl) loadingEl.style.display = 'none';
+                    if (emptyEl) emptyEl.style.display = '';
                 }
+            } else {
+                if (loadingEl) loadingEl.style.display = 'none';
+                if (emptyEl) emptyEl.style.display = '';
             }
-        } catch(e) {}
-        
-        // 个人画像相关内容常驻当前页，保持一次渲染即可。
+        } catch(e) {
+            if (loadingEl) loadingEl.style.display = 'none';
+            if (emptyEl) emptyEl.style.display = '';
+        }
+
         await renderPerformanceRadar();
     }
-    loadProfileCard();
+
+    /* ===== TEST ONLY: 测试开关逻辑（打包发布前必须移除） ===== */
+
+    // TEST ONLY: 页面加载时读取开关状态
+    async function loadTestBypassDailySyncLimit() {
+        try {
+            if (!window.pywebview || !window.pywebview.api || typeof window.pywebview.api.get_test_bypass_daily_sync_limit !== 'function') return;
+            const res = await window.pywebview.api.get_test_bypass_daily_sync_limit();
+            if (res && res.ok) {
+                const cb = document.getElementById('test-bypass-daily-sync');
+                const statusEl = document.getElementById('test-bypass-status');
+                if (cb) cb.checked = res.enabled;
+                if (statusEl) statusEl.textContent = '状态: ' + (res.enabled ? '已开启（已绕过限制）' : '已关闭（限制生效中）');
+            }
+        } catch (e) {
+            console.warn('[TEST] 读取测试开关状态失败:', e);
+        }
+    }
+
+    // TEST ONLY: 开关值变化时同步到后端
+    async function onTestBypassDailySyncChange() {
+        try {
+            if (!window.pywebview || !window.pywebview.api || typeof window.pywebview.api.set_test_bypass_daily_sync_limit !== 'function') return;
+            const cb = document.getElementById('test-bypass-daily-sync');
+            if (!cb) return;
+            const res = await window.pywebview.api.set_test_bypass_daily_sync_limit(cb.checked);
+            if (res && res.ok) {
+                const statusEl = document.getElementById('test-bypass-status');
+                if (statusEl) statusEl.textContent = '状态: ' + (res.enabled ? '已开启（已绕过限制）' : '已关闭（限制生效中）');
+                showToast(res.enabled ? '🧪 已绕过单日同步限制，可连续多次同步' : '🧪 已恢复单日同步限制');
+            }
+        } catch (e) {
+            console.warn('[TEST] 设置测试开关状态失败:', e);
+        }
+    }
+    /* ===== END TEST ONLY ===== */
+
+    // TEST ONLY: 页面加载时初始化测试开关状态
+    loadTestBypassDailySyncLimit();
 
     async function syncPersona(platform) {
         if (!window.pywebview || !window.pywebview.api) {
             showToast('⚠️ 请在桌面应用中同步数据');
+            return;
+        }
+        const statusRes = await window.pywebview.api.check_daily_sync_status();
+        if (statusRes && statusRes.ok && !statusRes.needs_sync) {
+            showToast('⚠️ 今日已同步过数据，请明天再试');
             return;
         }
         const loadEl = document.getElementById('sync-loading');
@@ -2365,6 +2826,15 @@
         toastTimeout = setTimeout(() => { toast.style.opacity = '0'; }, 3500);
     }
 
+    function showBlockerModal() {
+        const modal = document.getElementById('blocker-modal');
+        if (modal) modal.style.display = 'flex';
+    }
+
+    function closeBlockerModal() {
+        const modal = document.getElementById('blocker-modal');
+        if (modal) modal.style.display = 'none';
+    }
     function hideTrackDetectedToast() {
         const toast = document.getElementById('track-detected-toast');
         if (!toast) return;
@@ -2592,6 +3062,32 @@
     function switchTab(tabBtn) {
         const panels = ['profile', 'trace', 'settings'];
         const activePanel = tabBtn ? tabBtn.getAttribute('data-panel') : 'profile';
+
+        const blockedPanels = ['profile', 'trace'];
+        if (blockedPanels.indexOf(activePanel) !== -1) {
+            const localDir = (document.getElementById('set-local-dir')?.value || '').trim();
+            const brand = currentLLMConfig.watchBrand || '';
+            const step1Done = onboardingState.llmTestPassed;
+            const step2Done = !!localDir && onboardingState.dirValidated;
+            const step3Done = brand === 'coros' ? true : onboardingState.aiNotified;
+            if (!step1Done || !step2Done || !step3Done) {
+                showBlockerModal();
+                const settingsBtn = document.querySelector('[data-panel="settings"]');
+                if (settingsBtn) {
+                    document.querySelectorAll('.bookmark-tab').forEach(function(t) { t.classList.remove('active'); });
+                    document.querySelectorAll('.tab-panel').forEach(function(p) { p.classList.remove('active'); });
+                    settingsBtn.classList.add('active');
+                    const settingsPanel = document.getElementById('panel-settings');
+                    if (settingsPanel) settingsPanel.classList.add('active');
+                    localStorage.setItem('last_active_panel', 'settings');
+                    if (typeof refreshSettingsPanel === 'function') {
+                        refreshSettingsPanel().catch(function(e) { console.warn('refreshSettingsPanel', e); });
+                    }
+                }
+                return;
+            }
+        }
+
         document.querySelectorAll('.bookmark-tab').forEach(function(t) { t.classList.remove('active'); });
         document.querySelectorAll('.tab-panel').forEach(function(p) { p.classList.remove('active'); });
         const targetTab = tabBtn ? tabBtn : document.querySelector('[data-panel="' + activePanel + '"]');
@@ -2698,30 +3194,48 @@
 
     function updateSettingsGuide() {
         const guideText = document.getElementById('settings-guide-text');
-        const chipLlm = document.getElementById('guide-chip-llm');
-        const chipDir = document.getElementById('guide-chip-dir');
-        const chipAi = document.getElementById('guide-chip-ai');
         const localDir = (document.getElementById('set-local-dir')?.value || '').trim();
         const brand = currentLLMConfig.watchBrand || '';
-        const aiReady = !!onboardingState.llmTestPassed && !!localDir;
-        const applyChip = function(el, done, textDone, textTodo) {
+
+        const step1Done = onboardingState.llmTestPassed;
+        const step2Done = !!localDir && onboardingState.dirValidated;
+        const step3Done = brand === 'coros' ? true : onboardingState.aiNotified;
+        const allDone = step1Done && step2Done && step3Done;
+
+        function applyStep(idx, done, titleDone, descDone, descTodo) {
+            const el = document.getElementById('setup-step-' + idx);
+            const dot = document.getElementById('setup-dot-' + idx);
+            const statusEl = document.getElementById('setup-status-' + idx);
+            const descEl = document.getElementById('setup-desc-' + idx);
             if (!el) return;
-            el.innerText = done ? textDone : textTodo;
-            el.style.background = done ? 'rgba(34,197,94,0.18)' : 'rgba(255,255,255,0.08)';
-            el.style.color = done ? '#86efac' : '#94a3b8';
-        };
-        applyChip(chipLlm, onboardingState.llmTestPassed, '1. 已完成连接测试', '1. 待完成连接测试');
-        applyChip(chipDir, !!localDir, '2. 已选择存储目录', '2. 待选择存储目录');
-        applyChip(chipAi, !!aiReady, '3. 已可执行后续操作', '3. 待确认AI助手配置');
+            if (done) {
+                el.classList.add('completed');
+                if (dot) dot.innerText = '✓';
+                if (statusEl) statusEl.innerText = '已完成';
+                if (descEl) descEl.innerText = descDone;
+            } else {
+                el.classList.remove('completed');
+                if (dot) dot.innerText = String(idx);
+                if (statusEl) statusEl.innerText = '未完成';
+                if (descEl) descEl.innerText = descTodo;
+            }
+        }
+
+        applyStep(1, step1Done, '连接测试已通过', '连接测试已通过', '选择手表品牌并完成连接测试');
+        applyStep(2, step2Done, '存储目录已选择', '目录已选择：' + (localDir || ''), '指定本地 FIT 文件存放路径');
+        applyStep(3, step3Done, 'AI 助手已就绪', brand === 'coros' ? '高驰用户无需通知' : '已通知存储规范', '通知 AI 助手存储规范（佳明用户）');
+
         if (guideText) {
-            if (!onboardingState.llmTestPassed) {
+            if (allDone) {
+                guideText.innerHTML = '✅ 全部配置已完成，现在可以访问「个人运动数据」和「轨迹分析工具」功能。';
+            } else if (!step1Done) {
                 guideText.innerHTML = '当前建议：先选择手表品牌，填写接口地址、API Key、模型后点击“测试连接”。测试成功后再进行下一步。';
-            } else if (!localDir) {
+            } else if (!step2Done) {
                 guideText.innerHTML = '当前建议：连接测试已通过。下一步请点击“选择文件夹”，为 FIT 文件指定本地存储目录。';
-            } else if (brand === 'garmin') {
-                guideText.innerHTML = '当前建议：您已选择佳明用户。“告诉AI助手下载规范”按钮现在应可点击，可继续完成 AI 助手配置。';
-            } else if (brand === 'coros') {
-                guideText.innerHTML = '当前建议：您已选择高驰用户。当前无需通知 AI 助手，可继续完成后续配置。';
+            } else if (!step3Done && brand === 'garmin') {
+                guideText.innerHTML = '当前建议：目录已选择。点击“告诉AI助手存储规范”按钮完成配置。';
+            } else if (!step3Done && brand === 'coros') {
+                guideText.innerHTML = '当前建议：高驰用户无需通知 AI 助手，配置已全部就绪。';
             } else {
                 guideText.innerHTML = '当前建议：请先确认您的设备品牌，以便系统显示正确的后续操作入口。';
             }
@@ -2730,40 +3244,61 @@
 
     function updateProfilePanel(profile) {
         if (!profile) return;
-        if (profile.name) document.getElementById('pf-name').innerText = profile.name;
+        const username = profile.username || profile.name;
+        const weightKg = profile.weight_kg || profile.weight;
+        const restingHr = profile.resting_heart_rate || profile.resting_hr;
+        const hrv = profile.hrv || profile.hrv_baseline;
+        const vo2Max = profile.vo2_max || profile.vo2max;
+        if (username) document.getElementById('pf-name').innerText = username;
         if (profile.age) document.getElementById('pf-age').innerText = profile.age + '岁';
         if (profile.gender) document.getElementById('pf-gender').innerText = profile.gender;
         if (profile.height_cm) document.getElementById('pf-height').innerText = profile.height_cm + ' cm';
-        if (profile.weight) document.getElementById('pf-weight').innerText = profile.weight + ' kg';
-        if (profile.resting_hr) document.getElementById('pf-resting-hr').innerText = profile.resting_hr + ' bpm';
-        if (profile.max_hr) document.getElementById('pf-max-hr').innerText = profile.max_hr + ' bpm';
-        if (profile.hrv_baseline) { var el = document.getElementById('pf-hrv'); el.innerText = profile.hrv_baseline + ' ms'; el.className = profile.hrv_baseline > 65 ? 'hrv-high' : profile.hrv_baseline < 40 ? 'hrv-low' : ''; }
-        if (profile.vo2max) document.getElementById('pf-vo2max').innerText = profile.vo2max;
+        if (weightKg) document.getElementById('pf-weight').innerText = weightKg + ' kg';
+        if (restingHr) document.getElementById('pf-resting-hr').innerText = restingHr + ' bpm';
+        if (hrv) { var el = document.getElementById('pf-hrv'); el.innerText = hrv + ' ms'; el.className = hrv > 65 ? 'hrv-high' : hrv < 40 ? 'hrv-low' : ''; }
+        if (vo2Max) document.getElementById('pf-vo2max').innerText = vo2Max;
         if (profile.avg_sleep_hours) document.getElementById('pf-sleep').innerText = profile.avg_sleep_hours.toFixed(1) + ' h';
         if (profile.lactate_threshold_hr) document.getElementById('pf-lthr').innerText = profile.lactate_threshold_hr + ' bpm';
+        if (profile.lactate_threshold_pace) document.getElementById('pf-lt-pace').innerText = profile.lactate_threshold_pace;
         if (profile.ftp_watts) document.getElementById('pf-ftp').innerText = profile.ftp_watts + ' W';
         if (profile.longest_hike_km) document.getElementById('pf-longest-hike').innerText = profile.longest_hike_km + ' km';
+        if (profile.longest_run_km) document.getElementById('pf-longest-run').innerText = profile.longest_run_km + ' km';
+        if (profile.pb_1km) document.getElementById('pf-pb-1km').innerText = profile.pb_1km;
         if (profile.pb_5km) document.getElementById('pf-pb-5k').innerText = profile.pb_5km;
         if (profile.pb_10km) document.getElementById('pf-pb-10k').innerText = profile.pb_10km;
         if (profile.pb_half_marathon) document.getElementById('pf-pb-hm').innerText = profile.pb_half_marathon;
         if (profile.pb_full_marathon) document.getElementById('pf-pb-fm').innerText = profile.pb_full_marathon;
+        if (profile.longest_ride_time) document.getElementById('pf-longest-ride-time').innerText = profile.longest_ride_time;
+        if (profile.cycling_40km_time) document.getElementById('pf-cycling-40k').innerText = profile.cycling_40km_time;
+        if (profile.cycling_80km_time) document.getElementById('pf-cycling-80k').innerText = profile.cycling_80km_time;
+        if (profile.longest_cycle_km) document.getElementById('pf-longest-cycle').innerText = profile.longest_cycle_km + ' km';
+        if (profile.longest_swim_distance_m) document.getElementById('pf-longest-swim').innerText = profile.longest_swim_distance_m + ' m';
+        if (profile.swimming_100m_pb) document.getElementById('pf-swim-100m').innerText = profile.swimming_100m_pb;
         const heroMeta = document.getElementById('pf-hero-meta');
         if (heroMeta) {
             const bits = [];
             if (profile.gender) bits.push(profile.gender);
             if (profile.age) bits.push(profile.age + ' 岁');
             if (profile.height_cm) bits.push(profile.height_cm + ' cm');
-            if (profile.weight) bits.push(profile.weight + ' kg');
+            if (weightKg) bits.push(weightKg + ' kg');
             heroMeta.innerText = bits.length ? bits.join(' · ') : '运动状态待同步';
         }
         const statusChip = document.getElementById('pf-status-chip');
         if (statusChip) {
-            statusChip.innerText = profile.vo2max ? '画像已同步' : '待同步设备数据';
+            statusChip.innerText = vo2Max ? '画像已同步' : '待同步设备数据';
         }
-        const deviceBrief = document.getElementById('pf-device-brief');
-        if (deviceBrief) {
-            deviceBrief.innerText = profile.vo2max || profile.resting_hr ? '已建立运动画像' : '暂无设备';
-        }
+    }
+
+    function switchMetricGroup(group, btn) {
+        var parent = btn.closest('.section-card');
+        if (!parent) return;
+        var tabs = parent.querySelectorAll('.pf-metric-tab');
+        var panels = parent.querySelectorAll('.pf-metric-panel');
+        tabs.forEach(function(t) { t.classList.remove('active'); });
+        panels.forEach(function(p) { p.classList.remove('active'); });
+        btn.classList.add('active');
+        var panel = parent.querySelector('.pf-metric-panel[data-group="' + group + '"]');
+        if (panel) panel.classList.add('active');
     }
 
     function sportHubTypeLabel(type) {
@@ -2821,7 +3356,7 @@
                     distance_km: 21.1, duration_sec: 6420, avg_pace_sec: 304, avg_hr: 158, max_hr: 176, calories: 1380,
                     gain_m: 82, file_path: '', has_track: false,
                     thumbnail_points: [{lat:30.99,lon:103.65},{lat:31.00,lon:103.66},{lat:31.01,lon:103.675}],
-                    detail: { summary: { distance_km: 21.1, duration_sec: 6420, calories: 1380, avg_hr: 158, max_hr: 176, max_power: 312, aerobic_effect: 4.1, anaerobic_effect: 1.4, gain_m: 82 }, laps: [], thumbnail_points: [{lat:30.99,lon:103.65},{lat:31.00,lon:103.66},{lat:31.01,lon:103.675}] }
+                    detail: { display_metrics: [{key:"distance",label:"距离",value:"21.10",unit:"km"},{key:"avg_pace",label:"平均配速",value:"5'04\"",unit:"/km"},{key:"duration",label:"时长",value:"1:47:00",unit:""},{key:"avg_hr",label:"平均心率",value:"158",unit:"bpm"}], layout: {cards:[{type:"summary_grid"},{type:"pace_hr_chart"},{type:"elevation_chart"}]}, capabilities: {has_gps:false,has_hr:true,has_elevation:true,has_power:false}, summary:{distance_km:21.1,duration_sec:6420,avg_pace_sec:304,avg_hr:158,max_hr:176,calories:1380,elevation:82}, laps: [], thumbnail_points: [{lat:30.99,lon:103.65},{lat:31.00,lon:103.66},{lat:31.01,lon:103.675}] }
                 }
             ],
             results: {
@@ -2856,7 +3391,7 @@
         }
         sportHubState.filteredRecords = filterType === 'all'
             ? allRecords.slice()
-            : allRecords.filter((record) => String(record.sport_type || '') === filterType);
+            : allRecords.filter((record) => String(sportHubRecordTypeKey(record) || 'unknown') === filterType);
         sportHubState.total = sportHubState.filteredRecords.length;
         sportHubState.totalPages = Math.max(1, Math.ceil(sportHubState.total / pageSize));
         sportHubState.filters.page = Math.min(
@@ -2917,18 +3452,22 @@
 
     async function loadSportHubActivityList(options = {}) {
         const resetPage = !!options.resetPage;
-        const refreshSnapshot = !!options.refreshSnapshot || !sportHubState.recordsReady;
+        const refreshSnapshot = options.refreshSnapshot !== false && (!!options.refreshSnapshot || !sportHubState.recordsReady);
+        if (!refreshSnapshot) {
+            if (resetPage) sportHubState.filters.page = 1;
+            applySportHubRecordFilters(resetPage);
+            sportHubState.recordsReady = true;
+            renderSportHubFilterOptions();
+            renderSportHubRecords();
+            renderCurrentSportHubTab();
+            return;
+        }
         if (resetPage) sportHubState.filters.page = 1;
         sportHubState.recordsLoading = true;
         sportHubState.recordsError = '';
         const requestId = ++sportHubState.requestSeq;
         renderSportHubRecords();
         try {
-            if (!refreshSnapshot) {
-                applySportHubRecordFilters(resetPage);
-                sportHubState.recordsReady = true;
-                return;
-            }
             if (!(window.pywebview && window.pywebview.api && typeof window.pywebview.api.get_activity_list_snapshot === 'function')) {
                 const fallback = getLocalSportHubFallback();
                 populateSportHubState(fallback);
@@ -2940,6 +3479,10 @@
             if (requestId !== sportHubState.requestSeq) return;
             if (!res || !res.ok) throw new Error((res && res.error) || '运动记录加载失败');
             setSportHubRecordSnapshot(Array.isArray(res.records) ? res.records : []);
+            if (sportHubState.selectedIds && sportHubState.selectedIds.size) {
+                const validIds = new Set((Array.isArray(res.records) ? res.records : []).map(item => item && item.id).filter(Boolean));
+                sportHubState.selectedIds.forEach(id => { if (!validIds.has(id)) sportHubState.selectedIds.delete(id); });
+            }
             sportHubState.activityTypes = Array.isArray(res.activity_types) ? res.activity_types : [];
             sportHubState.pageSizes = Array.isArray(res.page_sizes) && res.page_sizes.length ? res.page_sizes : [10, 20, 50];
             if (!sportHubState.pageSizes.includes(sportHubState.filters.pageSize)) {
@@ -2960,6 +3503,7 @@
             if (requestId === sportHubState.requestSeq) {
                 sportHubState.recordsLoading = false;
                 renderSportHubFilterOptions();
+                renderSportHubRecords();
                 renderCurrentSportHubTab();
             }
         }
@@ -2975,6 +3519,7 @@
             inserted: Number(status.inserted) || 0,
             updated: Number(status.updated) || 0,
             skipped: Number(status.skipped) || 0,
+            removed: Number(status.removed) || 0,
             total: Number(status.total) || 0,
             current: Number(status.current) || 0
         };
@@ -2988,13 +3533,15 @@
         sportHubState.syncProgress = 0;
         sportHubState.syncMessage = '';
         sportHubState.syncCurrentFile = '';
-        sportHubState.syncStats = { inserted: 0, updated: 0, skipped: 0, total: 0, current: 0 };
+        sportHubState.syncStats = { inserted: 0, updated: 0, skipped: 0, removed: 0, total: 0, current: 0 };
     }
 
     async function pollSportHubSyncJob(jobId) {
         if (!(window.pywebview && window.pywebview.api && typeof window.pywebview.api.get_sync_local_fit_files_status === 'function')) {
             throw new Error('当前版本不支持同步进度查询');
         }
+        const startedAt = Date.now();
+        const timeoutMs = 120000;
         while (true) {
             const status = await window.pywebview.api.get_sync_local_fit_files_status(jobId);
             if (!status || status.ok === false && !status.job_id) {
@@ -3004,6 +3551,12 @@
             renderSportHubRecords();
             if (status.state === 'done') {
                 return status;
+            }
+            if (['failed', 'error', 'cancelled', 'timeout'].includes(String(status.state || '').toLowerCase())) {
+                throw new Error(status.error || status.message || '同步任务异常结束');
+            }
+            if (Date.now() - startedAt > timeoutMs) {
+                throw new Error('同步任务超时，请稍后重试');
             }
             await new Promise((resolve) => setTimeout(resolve, 500));
         }
@@ -3056,10 +3609,13 @@
         } catch (e) {
             console.error('syncAndLoadSportHubRecords error:', e);
             sportHubState.recordsError = String((e && e.message) || e || '运动记录同步失败');
-            if (sportHubState.activeTab === 'records') renderSportHubRecords();
+            sportHubState.syncMessage = sportHubState.recordsError;
+            renderSportHubRecords();
         } finally {
             sportHubState.recordsSyncing = false;
-            if (sportHubState.activeTab === 'records') renderSportHubRecords();
+            sportHubState.recordsLoading = false;
+            sportHubState.syncPromise = null;
+            renderSportHubRecords();
         }
     }
 
@@ -3139,21 +3695,23 @@
                     progressText,
                     `新增 ${stats.inserted || 0}`,
                     `更新 ${stats.updated || 0}`,
-                    `跳过 ${stats.skipped || 0}`
+                    `跳过 ${stats.skipped || 0}`,
+                    `删除 ${stats.removed || 0}`
                 ];
                 if (sportHubState.syncCurrentFile) {
                     detailParts.push(`当前文件：${sportHubState.syncCurrentFile}`);
                 }
                 loadingText = detailParts.join(' · ');
             }
-            tbody.innerHTML = `<tr><td colspan="9"><div class="hub-empty-state">${safeHtml(loadingText)}</div></td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="10"><div class="hub-empty-state">${safeHtml(loadingText)}</div></td></tr>`;
         } else if (sportHubState.recordsError) {
-            tbody.innerHTML = `<tr><td colspan="9"><div class="hub-empty-state" style="color:#fca5a5;">${safeHtml(sportHubState.recordsError)}</div></td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="10"><div class="hub-empty-state" style="color:#fca5a5;">${safeHtml(sportHubState.recordsError)}</div></td></tr>`;
         } else if (!pageItems.length) {
-            tbody.innerHTML = `<tr><td colspan="9"><div class="hub-empty-state">当前数据库中暂无可展示的运动记录</div></td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="10"><div class="hub-empty-state">当前数据库中暂无可展示的运动记录</div></td></tr>`;
         } else {
             tbody.innerHTML = pageItems.map((item) => `
                 <tr onclick="openActivityDetailModal(${item.id})">
+                    <td onclick="event.stopPropagation();"><input type="checkbox" class="sport-record-select" data-id="${item.id}" ${sportHubState.selectedIds.has(item.id) ? 'checked' : ''} onchange="toggleSportHubRecordSelection(${item.id}, this.checked)"></td>
                     <td><span class="hub-pill">${sportHubRecordTypeIcon(item)} ${sportHubRecordTypeLabel(item)}</span></td>
                     <td>${safeHtml(item.date_label || '--')}</td>
                     <td><div class="hub-record-title"><b>${safeHtml(item.title || item.file_name || item.filename || '未命名活动')}</b><span>${safeHtml(item.file_name || item.filename || '')}</span></div></td>
@@ -3180,6 +3738,80 @@
         }
         if (prevBtn) prevBtn.disabled = page <= 1 || sportHubState.recordsLoading || sportHubState.recordsSyncing;
         if (nextBtn) nextBtn.disabled = page >= totalPages || sportHubState.recordsLoading || sportHubState.recordsSyncing;
+        const selectAll = document.getElementById('sport-records-select-all');
+        if (selectAll) {
+            selectAll.checked = pageItems.length > 0 && pageItems.every(item => sportHubState.selectedIds.has(item.id));
+        }
+        const deleteBtn = document.getElementById('sport-records-delete-btn');
+        if (deleteBtn) {
+            deleteBtn.disabled = sportHubState.selectedIds.size === 0 || sportHubState.recordsLoading || sportHubState.recordsSyncing;
+            deleteBtn.innerText = sportHubState.selectedIds.size ? `🗑️ 删除选中(${sportHubState.selectedIds.size})` : '🗑️ 删除选中';
+        }
+    }
+
+    function toggleSportHubRecordSelection(id, checked) {
+        const recordId = Number(id) || 0;
+        if (!recordId) return;
+        if (checked) sportHubState.selectedIds.add(recordId);
+        else sportHubState.selectedIds.delete(recordId);
+        renderSportHubRecords();
+    }
+
+    function toggleAllSportHubRecords(checked) {
+        const pageItems = Array.isArray(sportHubState.records) ? sportHubState.records : [];
+        pageItems.forEach(item => {
+            if (!item || !item.id) return;
+            if (checked) sportHubState.selectedIds.add(item.id);
+            else sportHubState.selectedIds.delete(item.id);
+        });
+        renderSportHubRecords();
+    }
+
+    async function deleteSelectedSportHubRecords() {
+        const ids = Array.from(sportHubState.selectedIds || []);
+        if (!ids.length) {
+            showToast('请先勾选要删除的运动记录');
+            return;
+        }
+        const modal = document.getElementById('blocker-modal');
+        const titleEl = modal ? modal.querySelector('.blocker-modal-title') : null;
+        const descEl = modal ? modal.querySelector('.blocker-modal-desc') : null;
+        const btnEl = modal ? modal.querySelector('.blocker-modal-btn') : null;
+        const iconEl = modal ? modal.querySelector('.blocker-modal-icon') : null;
+        if (modal) modal.style.display = '';
+        if (iconEl) iconEl.innerText = '⚠️';
+        if (titleEl) titleEl.innerText = '确认删除运动记录';
+        if (descEl) descEl.innerText = `确定永久删除选中的 ${ids.length} 条运动记录吗？\n对应的本地 FIT 文件也将被物理删除，此操作不可恢复。`;
+        if (btnEl) {
+            btnEl.innerText = '确认删除';
+            btnEl.onclick = async function() {
+                btnEl.disabled = true;
+                btnEl.innerText = '删除中...';
+                const deleteBtn = document.getElementById('sport-records-delete-btn');
+                if (deleteBtn) deleteBtn.disabled = true;
+                try {
+                    const res = await window.pywebview.api.delete_activities(ids);
+                    if (!res || !res.ok) throw new Error((res && res.error) || '删除失败');
+                    sportHubState.selectedIds.clear();
+                    await loadSportHubActivityList({ resetPage: true, refreshSnapshot: true });
+                    let msg = `已删除 ${res.deleted} 条运动记录`;
+                    if (typeof res.files_deleted === 'number') {
+                        msg += `，已移除 ${res.files_deleted} 个本地文件`;
+                    }
+                    if (res.file_errors && res.file_errors.length) {
+                        msg += `，${res.file_errors.length} 个文件删除异常（已跳过）`;
+                        console.warn('文件删除异常:', res.file_errors);
+                    }
+                    showToast(msg);
+                    closeBlockerModal();
+                    if (btnEl) btnEl.onclick = closeBlockerModal;
+                } catch (e) {
+                    showToast('删除失败：' + ((e && e.message) || e));
+                    if (btnEl) { btnEl.disabled = false; btnEl.innerText = '确认删除'; }
+                    if (deleteBtn) deleteBtn.disabled = false;
+                }
+            };
+        }
     }
 
     function buildTrackThumbnailSvg(points) {
@@ -3219,43 +3851,46 @@
         const subtitle = document.getElementById('activity-detail-subtitle');
         if (!record || !metrics || !lapsBody || !trackContainer) return;
 
-        const summary = (record.detail && record.detail.summary) || {};
+        var detail = record.detail || {};
+        var caps = detail.capabilities || {};
+        var layoutCards = (detail.layout && detail.layout.cards) || [];
+        var cardTypes = layoutCards.map(function(c) { return c.type; });
+
         title.innerText = record.title || record.filename || '活动详情';
-        subtitle.innerText = `${record.date_label || '--'} · ${sportHubRecordTypeLabel(record)} · ${record.region || '地区待解析'} · 点击轨迹缩略图可跳转到轨迹分析工具`;
+        subtitle.innerText = (record.date_label || '--') + ' · ' + sportHubRecordTypeLabel(record) + ' · ' + (record.region || '地区待解析') + ' · 点击轨迹缩略图可跳转到轨迹分析工具';
 
-        const metricItems = [
-            ['地区', record.region || summary.region || '--'],
-            ['距离', `${(summary.distance_km || 0).toFixed(1)} km`],
-            ['时长', formatRaceTime(summary.duration_sec || 0)],
-            ['消耗', `${summary.calories || '--'} kcal`],
-            ['平均心率', summary.avg_hr ? `${summary.avg_hr} bpm` : '--'],
-            ['最大心率', summary.max_hr ? `${summary.max_hr} bpm` : '--'],
-            ['最大功率', summary.max_power ? `${summary.max_power} W` : '--'],
-            ['有氧效果', summary.aerobic_effect != null ? summary.aerobic_effect : '--'],
-            ['无氧效果', summary.anaerobic_effect != null ? summary.anaerobic_effect : '--'],
-            ['累计爬升', summary.gain_m != null ? `${summary.gain_m} m` : '--']
-        ];
-        metrics.innerHTML = metricItems.map(([label, value]) => `<div class="detail-metric"><span>${label}</span><b>${value}</b></div>`).join('');
+        var displayMetrics = detail.display_metrics;
+        if (displayMetrics && Array.isArray(displayMetrics) && displayMetrics.length) {
+            metrics.innerHTML = displayMetrics.map(function(m) {
+                var unitHtml = m.unit ? '<span class="stat-unit">' + m.unit + '</span>' : '';
+                return '<div class="detail-metric"><span>' + m.label + '</span><b>' + m.value + ' ' + unitHtml + '</b></div>';
+            }).join('');
+        } else {
+            metrics.innerHTML = '<div class="detail-metric"><span>数据</span><b>--</b></div>';
+        }
 
-        const laps = (record.detail && record.detail.laps) || [];
-        lapsBody.innerHTML = laps.length ? laps.map((lap) => `
-            <tr>
-                <td>${lap.lap_no}</td>
-                <td>${formatPace(lap.pace_sec)}</td>
-                <td>${lap.hr || '--'}</td>
-                <td>${lap.cadence || '--'}</td>
-                <td>${lap.gct_ms || '--'} ms</td>
-                <td>${lap.power_w || '--'} W</td>
-            </tr>
-        `).join('') : '<tr><td colspan="6" style="color:#64748b;">暂无圈速统计数据</td></tr>';
+        var trackSection = document.getElementById('activity-detail-track-section');
+        if (trackSection) {
+            trackSection.style.display = (!caps.has_gps) ? 'none' : '';
+        }
 
-        if (record.has_track && record.thumbnail_points && record.thumbnail_points.length) {
-            trackContainer.innerHTML = `
-                <div class="detail-track-thumb" onclick="jumpToTraceFromActivityDetail(${record.id})">
-                    ${buildTrackThumbnailSvg(record.thumbnail_points)}
-                    <div class="detail-track-tip">点击此轨迹缩略图，自动切换到左侧【轨迹分析工具】并加载该条活动进行 3D 渲染</div>
-                </div>
-            `;
+        var elevationSection = document.getElementById('activity-detail-elevation-section');
+        if (elevationSection) {
+            elevationSection.style.display = (!caps.has_elevation || cardTypes.indexOf('elevation_chart') === -1) ? 'none' : '';
+        }
+
+        var powerSection = document.getElementById('activity-detail-power-section');
+        if (powerSection) {
+            powerSection.style.display = (!caps.has_power) ? 'none' : '';
+        }
+
+        var laps = (detail.laps) || [];
+        lapsBody.innerHTML = laps.length ? laps.map(function(lap) {
+            return '<tr><td>' + lap.lap_no + '</td><td>' + formatPace(lap.pace_sec) + '</td><td>' + (lap.hr || '--') + '</td><td>' + (lap.cadence || '--') + '</td><td>' + (lap.gct_ms || '--') + ' ms</td><td>' + (lap.power_w || '--') + ' W</td></tr>';
+        }).join('') : '<tr><td colspan="6" style="color:#64748b;">暂无圈速统计数据</td></tr>';
+
+        if (caps.has_gps && record.thumbnail_points && record.thumbnail_points.length) {
+            trackContainer.innerHTML = '<div class="detail-track-thumb" onclick="jumpToTraceFromActivityDetail(' + record.id + ')">' + buildTrackThumbnailSvg(record.thumbnail_points) + '<div class="detail-track-tip">点击此轨迹缩略图，自动切换到左侧【轨迹分析工具】并加载该条活动进行 3D 渲染</div></div>';
         } else {
             trackContainer.innerHTML = '<div class="detail-track-tip" style="margin-top:14px;border-radius:16px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.06);">当前活动无可用轨迹文件，无法生成轨迹缩略图。</div>';
         }
@@ -3501,23 +4136,49 @@
         }
         if (forceRefresh) {
             isMovementRecordsRefreshing = true;
+            showSportHubLoadingSpinner('正在同步本地 FIT 数据并刷新运动记录...');
         } else {
             isMovementRecordsInitializing = true;
         }
-        showSportHubLoadingSpinner(forceRefresh ? '正在同步本地 FIT 数据并刷新运动记录...' : '首次加载运动记录并同步本地 FIT 数据...');
-        try {
-            await syncAndLoadSportHubRecords({ sync: true, resetPage: true });
-            isMovementRecordsInitialized = true;
-            renderSportHubFilterOptions();
-            renderSportHubRecords();
-        } finally {
-            if (forceRefresh) {
+
+        if (forceRefresh) {
+            // 强制刷新：先同步再加载
+            try {
+                await syncAndLoadSportHubRecords({ sync: true, resetPage: true });
+                isMovementRecordsInitialized = true;
+                renderSportHubFilterOptions();
+                renderSportHubRecords();
+            } finally {
                 isMovementRecordsRefreshing = false;
-            } else {
-                isMovementRecordsInitializing = false;
+                hideSportHubLoadingSpinner();
+                updateMovementRecordsSyncButton();
             }
+        } else {
+            // 首次进入：先加载 DB 数据（无等待），再后台静默同步新增文件
+            try {
+                await loadSportHubActivityList({ resetPage: true, refreshSnapshot: true });
+                isMovementRecordsInitialized = true;
+                renderSportHubFilterOptions();
+                renderSportHubRecords();
+            } catch (e) {
+                console.error('onSwitchToMovementRecords initial load error:', e);
+            }
+            isMovementRecordsInitializing = false;
             hideSportHubLoadingSpinner();
             updateMovementRecordsSyncButton();
+
+            if (window.pywebview && window.pywebview.api) {
+                try {
+                    const syncRes = await runSportHubSyncJob();
+                    if (syncRes && (syncRes.inserted > 0 || syncRes.updated > 0)) {
+                        await loadSportHubActivityList({ resetPage: false, refreshSnapshot: true });
+                        renderSportHubFilterOptions();
+                        renderSportHubRecords();
+                    }
+                } catch (e) {
+                    console.warn('onSwitchToMovementRecords background sync error:', e);
+                }
+            }
         }
     }
 
@@ -3590,10 +4251,14 @@
     }
 
     async function onSportHubFilterChange() {
-        const typeSel = document.getElementById('sport-record-type-filter');
-        sportHubState.filters.type = typeSel ? typeSel.value : 'all';
-        sportHubState.filters.page = 1;
-        await loadSportHubActivityList({ resetPage: true, refreshSnapshot: false });
+        try {
+            const typeSel = document.getElementById('sport-record-type-filter');
+            sportHubState.filters.type = typeSel ? typeSel.value : 'all';
+            sportHubState.filters.page = 1;
+            await loadSportHubActivityList({ resetPage: true, refreshSnapshot: false });
+        } catch (e) {
+            console.error('onSportHubFilterChange error:', e);
+        }
     }
 
     async function onSportHubPageSizeChange() {
@@ -3739,15 +4404,10 @@
                 appState.rawHistoryFiles = Array.isArray(res.records)
                     ? (res.records || []).filter(f => f.valid !== false)
                     : (res.files || []).filter(f => f.valid);
-                if (res.integrity && res.integrity.has_diff) {
-                    console.warn('history integrity diff:', res.integrity);
-                    showToast('⚠️ 检测到轨迹目录与数据库条目存在差异，系统已尝试自动修复');
-                }
                 
-                // 异步获取所有文件的准确地理位置
-                await Promise.all(appState.rawHistoryFiles.map(async f => {
-                    f.cityName = await getCityNameAsync(f.start_lat, f.start_lon);
-                }));
+                appState.rawHistoryFiles.forEach(f => {
+                    f.cityName = (f.region || '').trim() || '未知地点';
+                });
                 
                 // 更新地点下拉框
                 const locationSel = document.getElementById('filter-location');
@@ -4255,7 +4915,19 @@
     async function refreshSettingsPanel() {
         await initLLMConfig();
         renderLLMConfigFields();
-        updateSettingsGuide();
+        const localDir = (document.getElementById('set-local-dir')?.value || '').trim();
+        if (localDir) {
+            await revalidateDirectory(localDir);
+            if (onboardingState.dirValidated && onboardingState.aiNotified) {
+                setAIStorageNotifyButtonState('success');
+            } else if (onboardingState.dirValidated) {
+                setAIStorageNotifyButtonState('enabled');
+            } else {
+                setAIStorageNotifyButtonState('idle');
+            }
+        } else {
+            updateSettingsGuide();
+        }
     }
 
     function updateLLMModels() {
@@ -4293,8 +4965,13 @@
                     currentLLMConfig.watchBrand || '',
                     normalizedDir
                 );
-            } catch (e) {}
+                return true;
+            } catch (e) {
+                showToast('⚠️ 目录配置保存失败');
+                return false;
+            }
         }
+        return true;
     }
 
     async function openLLMConfig() {
@@ -4494,6 +5171,7 @@
 
         try {
             renderTrackReport({ silent: true });
+            renderPerformanceRadar();
         } catch(aiErr) { console.warn('AI分析报错:', aiErr); }
 
 
@@ -4746,7 +5424,7 @@
             totalCal: totalCal, energy: energy, energyLevel: energy > 80 ? '极高' : energy > 60 ? '较高' : energy > 40 ? '中等' : '较低',
             energyColor: energy > 80 ? '#ef4444' : energy > 60 ? '#f59e0b' : energy > 40 ? '#3b82f6' : '#22c55e',
             altRange: Math.round(altRange), 
-            altAnalysis: altRange < 100 ? '马路牙子可能就是全场最大的爬升了，一路坦途。主打一个气定神闲，闭着眼睛也能轻松拿捏目标配速。' : altRange < 300 ? '地形像波浪一样带点起伏，赛道开始不安分了。学会利用地形找准呼吸，在不知不觉的缓坡中稳住自己的节奏。' : altRange < 600 ? '哎哟，这海拔曲线画得跟过山车似的！你的心肺系统马上要迎来一场硬核拉练，准备好迎接大口喘气和乳酸堆积的酸爽感吧。' : '恭喜你，这是一场纯粹的重力对抗战！堪比拔地而起去冲顶四千米以上的高海拔山峰，疯狂的垂直爬升急需你调动身体里的每一丝糖原储备来硬扛。'
+            altAnalysis: altRange < 100 ? '<span class="alt-keyword alt-keyword-lv1">马路牙子</span>可能就是全场最大的爬升了，一路坦途。主打一个气定神闲，闭着眼睛也能轻松拿捏目标配速。' : altRange < 300 ? '地形像波浪一样带点起伏，赛道开始不安分了。学会利用地形找准呼吸，在不知不觉的缓坡中稳住自己的<span class="alt-keyword alt-keyword-lv2">节奏</span>。' : altRange < 600 ? '哎哟，这海拔曲线画得跟过山车似的！你的心肺系统马上要迎来一场<span class="alt-keyword alt-keyword-lv3">硬核拉练</span>，准备好迎接大口喘气和乳酸堆积的酸爽感吧。' : '恭喜你，这是一场纯粹的重力对抗战！堪比拔地而起去冲顶四千米以上的高海拔山峰，疯狂的垂直爬升急需你调动身体里的每一丝<span class="alt-keyword alt-keyword-lv4">糖原储备</span>来硬扛。'
         };
     }
 
@@ -5091,6 +5769,7 @@
             return;
         }
         setCurrentWeather(data.weather || null);
+        appState.advancedMetrics = data.advanced_metrics || null;
         appState.points = data.points;
         appState.placemarks = data.placemarks || [];
         appState.progress = 100; document.getElementById('progress-slider').value = 100; document.getElementById('progress-val').innerText = '100.0%';
@@ -5140,6 +5819,7 @@
         }
 
         renderTrackReport({ silent: true });
+        renderPerformanceRadar();
     }
 
     // ==========================================
@@ -5273,7 +5953,7 @@
                             
                             <div id="onboard-ai-notify" style="text-align:center; margin-bottom:15px; display:none;">
                                 <button id="onboard-notify-btn" class="ai-assistant-btn" style="margin:0; padding:10px 20px;" onclick="Onboarding.notifyAI()">
-                                    🤖 告诉AI助手下载规范
+                                    🤖 告诉AI助手存储规范
                                 </button>
                                 <div id="onboard-notify-status" style="font-size:0.75rem; color:var(--primary); margin-top:8px; display:none;">
                                     ✅ 已成功通知 AI 助手！
@@ -5356,7 +6036,7 @@
             
             notifyDiv.style.display = 'block';
             statusDiv.style.display = 'none';
-            notifyBtn.innerText = '🤖 告诉AI助手下载规范';
+            notifyBtn.innerText = '🤖 告诉AI助手存储规范';
             notifyBtn.disabled = false;
             
             if (type === 'coros') {
@@ -5380,13 +6060,14 @@
             btn.innerText = '⏳ 正在通知...';
             btn.disabled = true;
             
-            try {
-                // 调用底层的方法
-                await notifyAIAssistant();
+            await notifyAIAssistant();
+            
+            if (onboardingState.aiNotified) {
                 statusDiv.style.display = 'block';
                 btn.innerText = '✅ 通知成功';
+                btn.classList.add('notified');
                 finishBtn.disabled = false;
-            } catch (e) {
+            } else {
                 btn.innerText = '🤖 重新通知AI助手';
                 btn.disabled = false;
                 showToast('通知失败，请重试');
@@ -5428,6 +6109,73 @@
         updateSettingsGuide();
     }
 
+    function setNotifyIndicator(state) {
+        const ind = document.getElementById('btn-notify-indicator');
+        if (!ind) return;
+        ind.className = 'ai-btn-indicator ' + state;
+    }
+
+    function resetDirectoryValidationState() {
+        onboardingState.dirValidated = false;
+        onboardingState.aiNotified = false;
+        setNotifyIndicator('idle');
+        const btn = document.getElementById('btn-notify-ai');
+        if (btn) {
+            btn.innerText = BTN_AI_TEXT_IDLE;
+            btn.classList.remove('notified');
+            btn.disabled = true;
+        }
+        const msgEl = document.getElementById('dir-validation-msg');
+        if (msgEl) { msgEl.innerText = '⏳ 等待确认...'; msgEl.style.color = '#64748b'; }
+        updateSettingsGuide();
+    }
+
+    function isLLMOkConfirmation(res) {
+        if (!res || !res.ok) return false;
+        const text = String(res.content || res.text || res.message || '').trim()
+            .replace(/^["""''「」《》【】\s]+/, '')
+            .replace(/["""''「」《》【】。，!！?？\s]+$/, '');
+        return text.toLowerCase() === 'ok';
+    }
+
+    function setAIStorageNotifyButtonState(state) {
+        const btn = document.getElementById('btn-notify-ai');
+        const ind = document.getElementById('btn-notify-indicator');
+        switch (state) {
+            case 'idle':
+                if (btn) { btn.innerText = BTN_AI_TEXT_IDLE; btn.disabled = true; btn.classList.remove('notified'); }
+                if (ind) ind.className = 'ai-btn-indicator idle';
+                break;
+            case 'enabled':
+                if (btn) { btn.innerText = BTN_AI_TEXT_IDLE; btn.disabled = false; btn.classList.remove('notified'); }
+                if (ind) ind.className = 'ai-btn-indicator idle';
+                break;
+            case 'syncing':
+                if (btn) { btn.innerText = '存储规范同步中...'; btn.disabled = true; }
+                if (ind) ind.className = 'ai-btn-indicator communicating';
+                break;
+            case 'success':
+                if (btn) { btn.innerText = '✅存储目录有效'; btn.disabled = true; btn.classList.add('notified'); }
+                if (ind) ind.className = 'ai-btn-indicator success';
+                break;
+            case 'failed':
+                if (btn) { btn.innerText = BTN_AI_TEXT_IDLE; btn.disabled = false; btn.classList.remove('notified'); }
+                if (ind) ind.className = 'ai-btn-indicator failed';
+                break;
+        }
+    }
+
+    function withTimeout(promise, ms) {
+        return Promise.race([
+            promise,
+            new Promise(function(_, reject) {
+                setTimeout(function() { reject(new Error('沟通超时，请重试')); }, ms);
+            })
+        ]);
+    }
+
+    const BTN_AI_TEXT_IDLE = '🤖 告诉AI助手存储规范';
+
     async function notifyAIAssistant() {
         const localDir = document.getElementById('set-local-dir')?.value;
         if (!localDir) {
@@ -5435,47 +6183,83 @@
             return;
         }
 
+        setAIStorageNotifyButtonState('syncing');
+
         const prompt = `从现在开始，所有从佳明(Garmin)下载的FIT文件，必须严格遵守以下规范：
 
-## FIT文件下载与存储规范
-
-1. 下载后得到的是ZIP文件（如 activity_123456.fit.zip），必须解压
-2. 解压后得到的FIT文件（如 123456_ACTIVITY.fit）必须放到以下目录：
+FIT文件存放路径规范
+下载后得到的是ZIP文件，必须解压
+解压后得到的FIT文件必须放到以下目录：
 ${localDir}
-3. 文件名格式保持为 {活动ID}_ACTIVITY.fit
-4. 解压并移动完成后，删除原始ZIP文件
-5. 如果目标目录不存在，先创建它
+文件名由 Garmin-stats skill 的 download_fit.py 自动命名为 {活动标题}_{活动ID}.fit
+解压并移动完成后，删除原始ZIP文件
+如果目标目录不存在，先创建它
+切勿擅自改变路径或跳过解压步骤
+请记住这条规范，并将它写入你的长期记忆，标题为「FIT文件存放路径规范」。
+以后每次下载FIT文件都严格按照这个路径存放，不要擅自改变路径或跳过解压步骤。
+确认后，仅回复"OK"`;
 
-## 示例流程
-活动ID: 592340096
-- 下载: activity_592340096.fit.zip
-- 解压: 得到 592340096_ACTIVITY.fit
-- 放置: ${localDir}/592340096_ACTIVITY.fit
-- 清理: 删除 activity_592340096.fit.zip
-
-请记住这条规范，并将它写入你的长期记忆，标题为「FIT文件下载规范」。
-以后每次下载FIT文件都严格按照这个流程执行，不要擅自改变路径或跳过解压步骤。`;
-
-        // 模拟调用 AI 接口或实际调用
-        if (window.pywebview && window.pywebview.api) {
-            try {
-                // 假设我们复用已有的 call_llm，或者直接加一条系统消息
-                const res = await window.pywebview.api.call_llm(prompt, 'system_instruction');
-                if (res && res.ok) {
-                    showToast('✅ 已成功通知大模型助手！');
-                } else {
-                    throw new Error(res.error || '未知错误');
-                }
-            } catch (e) {
-                console.error(e);
-                showToast('⚠️ 通知失败: ' + (e.message || e));
-                throw e;
+        try {
+            let success = false;
+            if (window.pywebview && window.pywebview.api) {
+                const res = await withTimeout(window.pywebview.api.call_llm(prompt, 'system_instruction'), 30000);
+                success = isLLMOkConfirmation(res);
+            } else {
+                console.log("Mock notify AI:", prompt);
+                await new Promise(function(r) { setTimeout(r, 1000); });
+                success = true;
             }
-        } else {
-            // 浏览器测试环境
-            console.log("Mock notify AI:", prompt);
-            await new Promise(r => setTimeout(r, 1000));
-            showToast('✅ (Mock) 已成功通知大模型助手！');
+
+            if (success) {
+                showToast('✅ 已成功告知 AI 助手存储规范！');
+                onboardingState.aiNotified = true;
+                updateSettingsGuide();
+                setAIStorageNotifyButtonState('success');
+            } else {
+                showToast('⚠️ 通知失败，请重试');
+                setAIStorageNotifyButtonState('failed');
+            }
+        } catch (e) {
+            console.error('AI 通知异常:', e);
+            showToast('⚠️ 通知失败: ' + (e.message || e));
+            setAIStorageNotifyButtonState('failed');
+        }
+    }
+
+    // 目录修改重新校验（使用专用 validate_fit_directory API + 请求ID 防并发覆盖）
+    async function revalidateDirectory(path) {
+        const requestId = ++onboardingState.dirValidationRequestId;
+        const msgEl = document.getElementById('dir-validation-msg');
+        onboardingState.dirValidated = false;
+        if (!path) {
+            if (msgEl) { msgEl.innerText = ''; msgEl.style.color = ''; }
+            updateSettingsGuide();
+            return false;
+        }
+        if (msgEl) { msgEl.innerText = '⏳ 正在验证目录...'; msgEl.style.color = '#64748b'; }
+        try {
+            let ok = false;
+            if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.validate_fit_directory === 'function') {
+                const res = await window.pywebview.api.validate_fit_directory(path);
+                if (requestId !== onboardingState.dirValidationRequestId) return false;
+                ok = res && res.ok;
+            } else {
+                ok = true;
+            }
+            if (ok) {
+                onboardingState.dirValidated = true;
+                if (msgEl) { msgEl.innerText = '✅ 目录有效'; msgEl.style.color = '#86efac'; }
+            } else {
+                if (msgEl) { msgEl.innerText = '⚠️ 目录无效或无法访问，请重新选择'; msgEl.style.color = '#f87171'; }
+            }
+            updateSettingsGuide();
+            return ok;
+        } catch (e) {
+            if (requestId !== onboardingState.dirValidationRequestId) return false;
+            console.warn('目录验证失败:', e);
+            if (msgEl) { msgEl.innerText = '⚠️ 目录验证失败: ' + (e.message || e); msgEl.style.color = '#f87171'; }
+            updateSettingsGuide();
+            return false;
         }
     }
 
@@ -5487,51 +6271,80 @@ ${localDir}
         if (originalSelectLocalDirectory) {
             await originalSelectLocalDirectory();
         } else if (window.pywebview && window.pywebview.api) {
-            // 如果原本没有这个函数，这里补充一个基础实现
             const res = await window.pywebview.api.select_directory();
             if (res && res.ok && res.path) {
                 const el = document.getElementById('set-local-dir');
                 if (el) el.value = res.path;
             }
         } else {
-            // 浏览器环境 mock
             const el = document.getElementById('set-local-dir');
             if (el) el.value = '/Users/mock/Documents/fit_files';
         }
         
-        // 更新 onboarding 中的显示
         const display = document.getElementById('onboard-path-display');
         const input = document.getElementById('set-local-dir');
         if (display && input) {
             display.innerText = input.value;
         }
         if (input) {
-            await persistLocalDirSelection(input.value);
+            resetDirectoryValidationState();
+            const ok = await revalidateDirectory(input.value);
+            if (ok) {
+                const saved = await persistLocalDirSelection(input.value);
+                if (saved) {
+                    setAIStorageNotifyButtonState('enabled');
+                }
+            }
         }
-        updateSettingsGuide();
         if (getCurrentActivePanel() === 'trace') {
             renderHistoryList().catch(function() {});
         }
     };
 
+    // 监听目录输入框手工修改
+    document.addEventListener('DOMContentLoaded', function() {
+        const dirInput = document.getElementById('set-local-dir');
+        if (dirInput) {
+            dirInput.addEventListener('input', function() {
+                resetDirectoryValidationState();
+            });
+            dirInput.addEventListener('change', async function() {
+                const dirPath = this.value;
+                resetDirectoryValidationState();
+                const ok = await revalidateDirectory(dirPath);
+                if (ok) {
+                    const saved = await persistLocalDirSelection(dirPath);
+                    if (saved) {
+                        setAIStorageNotifyButtonState('enabled');
+                    }
+                }
+            });
+        }
+    });
+
     // App 初始化结束时调用
-    window.addEventListener('DOMContentLoaded', () => {
+    window.addEventListener('DOMContentLoaded', async () => {
         const notifyBackendReady = async (retry = 0) => {
             try {
                 if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.notify_frontend_ready === 'function') {
                     await window.pywebview.api.notify_frontend_ready();
-                    return;
+                    return true;
                 }
             } catch (e) {
                 console.warn('notify_frontend_ready error:', e);
-                return;
+                return true;
             }
             if (retry < 20) {
-                setTimeout(() => { notifyBackendReady(retry + 1); }, 250);
+                await new Promise(r => setTimeout(r, 250));
+                return notifyBackendReady(retry + 1);
             }
+            return false;
         };
-        notifyBackendReady();
+        const bridgeReady = await notifyBackendReady();
         restoreStartupRoute();
+        if (bridgeReady) {
+            await loadProfileCard();
+        }
         if (getCurrentActivePanel() === 'profile') {
             handleSportHubTabActivation(sportHubState.activeTab).catch(function(e) {
                 console.error('DOMContentLoaded handleSportHubTabActivation', e);
@@ -5540,6 +6353,18 @@ ${localDir}
         setTimeout(() => {
             Onboarding.init();
         }, 1000);
+        setTimeout(async () => {
+            try {
+                if (!window.pywebview || !window.pywebview.api || typeof window.pywebview.api.check_daily_sync_status !== 'function') return;
+                const status = await window.pywebview.api.check_daily_sync_status();
+                if (status && status.ok && status.needs_sync) {
+                    await window.pywebview.api.silent_fetch_mcp_persona('garmin');
+                    await loadProfileCard();
+                }
+            } catch (e) {
+                console.warn('silent daily sync skipped:', e);
+            }
+        }, 60000);
     });
     window.addEventListener('pagehide', function() { persistAppViewState('pagehide'); });
     window.addEventListener('beforeunload', function() { persistAppViewState('beforeunload'); });
