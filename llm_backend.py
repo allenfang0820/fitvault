@@ -360,3 +360,238 @@ def chat_completions(
     if not content:
         raise RuntimeError("模型未返回内容")
     return str(content)
+
+
+# ═══════════════════════════════════════════════════════
+# Insight Engine — Schema-Driven AI Sports Analysis
+# Task 3.3: 将 AI 从"被动问答"升级为"结构化运动洞察引擎"
+# ═══════════════════════════════════════════════════════
+
+import re
+
+INSIGHT_SCHEMA_DESCRIPTION = """{
+  "summary": "一段中文总结，50字以内",
+  "performance_grade": "S|A|B|C|D 五级之一",
+  "key_metrics": {
+    "pace_efficiency": "excellent|good|fair|poor — 配速稳定性评价",
+    "hr_efficiency": "excellent|good|fair|poor — 心率经济性评价",
+    "endurance": "excellent|good|fair|poor — 耐力表现评价",
+    "climbing_ability": "excellent|good|fair|poor|N/A — 爬坡能力评价"
+  },
+  "anomalies": ["异常发现列表，如心率异常区间、配速崩塌段等，无则空数组"],
+  "strengths": ["本次运动亮点列表"],
+  "risks": ["需要关注的风险点列表，如过度疲劳迹象、心率过高等"],
+  "training_load": "high|moderate|low — 本次训练负荷评估",
+  "fatigue_index": 0-100 整数，0=极轻松 100=极度疲劳,
+  "efficiency_index": 0-100 整数，0=低效 100=极高效率,
+  "recommendation": "针对该次运动的训练建议，80字以内",
+  "sport_mode": "running|cycling|swimming|general"
+}"""
+
+
+def _insight_mode_sport(sport_type: str) -> str:
+    key = str(sport_type or "").strip().lower()
+    if key in ("running", "trail_running", "treadmill_running", "walking", "hiking", "mountaineering"):
+        return "running"
+    if key in ("cycling", "road_cycling", "mountain_biking"):
+        return "cycling"
+    if key in ("swimming", "lap_swimming", "open_water"):
+        return "swimming"
+    return "general"
+
+
+def _build_insight_system_prompt(
+    snapshot: dict[str, Any] | None,
+    mode: str,
+    history_block: str = "",
+) -> str:
+    if not snapshot:
+        return "无可用运动数据，无法生成分析。"
+
+    sport_cn = str(snapshot.get("sport_type") or "综合运动")
+    dist_display = snapshot.get("distance_display") or "--"
+    duration_sec = snapshot.get("duration_sec") or 0
+    dur_min = int(duration_sec // 60) if duration_sec else 0
+    avg_hr = snapshot.get("avg_hr") or "--"
+    max_hr = snapshot.get("max_hr") or "--"
+    pace_display = snapshot.get("avg_pace_display") or "--"
+    elevation = snapshot.get("elevation_gain_m") or 0
+    calories = snapshot.get("calories") or "--"
+    tss = snapshot.get("tss")
+    np_val = snapshot.get("normalized_power")
+
+    mode_specific = ""
+    if mode == "running":
+        mode_specific = f"""【跑步专项分析指令】
+- 评估配速结构：前/中/后半程配速是否稳定，是否有明显衰减
+- 评估心率效率：在给定配速下心率是否经济（低心率+稳定配速 = good）
+- 评估后半程衰减：对比前50%与后50%的平均配速差异超过10%记为风险
+- 结合爬升 {elevation}m 评估爬坡对配速/心率的影响"""
+    elif mode == "cycling":
+        mode_specific = f"""【骑行专项分析指令】
+- 评估功率区间分布（如存在 NP={np_val}W）
+- 评估心率漂移：长时间稳定输出下心率是否可控
+- 评估节奏稳定性：变速频繁程度
+- 结合爬升 {elevation}m 评估爬坡段输出"""
+    elif mode == "swimming":
+        mode_specific = """【游泳专项分析指令】
+- 评估划水效率（如存在 SWOLF 数据）
+- 评估耐力持续性
+- 评估速度稳定性"""
+
+    hist = f"\n{history_block}\n" if history_block else ""
+
+    return f"""你是一位资深运动表现分析师，专长于{sport_cn}数据分析。
+
+【当前运动数据 — 系统真值（禁止重新计算）】
+- 运动类型: {sport_cn}
+- 距离: {dist_display}
+- 用时: {dur_min} 分钟
+- 平均配速: {pace_display}
+- 平均心率: {avg_hr} bpm / 最大心率: {max_hr} bpm
+- 卡路里: {calories}
+- 累计爬升: {elevation} m
+- TSS: {tss if tss is not None else 'N/A'}
+{hist}
+{mode_specific}
+
+【输出格式 — 严格 JSON】
+你必须返回一个合法 JSON 对象，格式如下：
+{INSIGHT_SCHEMA_DESCRIPTION}
+
+【评分细则】
+- S: 精英级（心率极低、配速稳定、效率极高）
+- A: 优秀（配速心率均衡、无明显衰减）
+- B: 良好（整体可接受、存在局部优化空间）
+- C: 一般（有明显疲劳、心率偏高或配速不稳）
+- D: 需关注（严重疲劳、多项指标异常）
+
+【铁律】
+1. 只使用上方【当前运动数据】中的数值，禁止重新计算
+2. 禁止使用轨迹点做推断
+3. 输出必须是纯 JSON，不要包含 markdown 代码块标记
+4. 所有数值字段必须填数字，文本字段填中文
+5. 无相关能力的指标填 "N/A"
+"""
+
+
+def _build_insight_user_prompt() -> str:
+    return "请根据系统指令中提供的运动数据，生成结构化 JSON 分析报告。不要输出 markdown 标记，只输出纯 JSON。"
+
+
+def normalize_insight_json(raw_text: str) -> dict[str, Any]:
+    """将 LLM 返回的原始文本标准化为 insight schema。"""
+    if not raw_text:
+        return _empty_insight("LLM 未返回内容")
+
+    text = raw_text.strip()
+
+    # 去除可能的 markdown 代码块包裹
+    m = re.search(r"```(?:json)?\s*\n?(.*?)\n?\s*```", text, re.DOTALL)
+    if m:
+        text = m.group(1).strip()
+
+    # 找到第一个 { 到最后一个 } 之间的 JSON
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        text = text[start:end + 1]
+
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        return _empty_insight(f"JSON 解析失败: {text[:100]}")
+
+    schema = {
+        "summary": "",
+        "performance_grade": "C",
+        "key_metrics": {
+            "pace_efficiency": "fair",
+            "hr_efficiency": "fair",
+            "endurance": "fair",
+            "climbing_ability": "N/A",
+        },
+        "anomalies": [],
+        "strengths": [],
+        "risks": [],
+        "training_load": "moderate",
+        "fatigue_index": 50,
+        "efficiency_index": 50,
+        "recommendation": "",
+        "sport_mode": "general",
+    }
+
+    def _str(v: Any) -> str:
+        return str(v) if v is not None else ""
+
+    def _int_range(v: Any, default: int = 50) -> int:
+        try:
+            val = int(float(str(v)))
+            return max(0, min(100, val))
+        except (TypeError, ValueError):
+            return default
+
+    schema["summary"] = _str(data.get("summary") or data.get("总结") or "")
+    grade = _str(data.get("performance_grade") or data.get("grade") or "C").upper()
+    schema["performance_grade"] = grade if grade in ("S", "A", "B", "C", "D") else "C"
+
+    km = data.get("key_metrics") or {}
+    schema["key_metrics"]["pace_efficiency"] = _str(
+        km.get("pace_efficiency") or km.get("配速效率") or "fair"
+    )
+    schema["key_metrics"]["hr_efficiency"] = _str(
+        km.get("hr_efficiency") or km.get("心率效率") or "fair"
+    )
+    schema["key_metrics"]["endurance"] = _str(
+        km.get("endurance") or km.get("耐力") or "fair"
+    )
+    schema["key_metrics"]["climbing_ability"] = _str(
+        km.get("climbing_ability") or km.get("爬坡能力") or "N/A"
+    )
+
+    for key in ("anomalies", "strengths", "risks"):
+        val = data.get(key) or data.get(
+            {"anomalies": "异常", "strengths": "亮点", "risks": "风险"}.get(key, key)
+        ) or []
+        if isinstance(val, list):
+            schema[key] = [str(x) for x in val[:8]]
+        elif isinstance(val, str):
+            schema[key] = [val] if val else []
+
+    load = _str(data.get("training_load") or data.get("训练负荷") or "moderate")
+    schema["training_load"] = load if load in ("high", "moderate", "low") else "moderate"
+
+    schema["fatigue_index"] = _int_range(
+        data.get("fatigue_index") or data.get("疲劳指数"), 50
+    )
+    schema["efficiency_index"] = _int_range(
+        data.get("efficiency_index") or data.get("效率指数"), 50
+    )
+    schema["recommendation"] = _str(
+        data.get("recommendation") or data.get("建议") or ""
+    )
+    mode = _str(data.get("sport_mode") or data.get("运动模式") or "general")
+    schema["sport_mode"] = mode if mode in ("running", "cycling", "swimming", "general") else "general"
+
+    return schema
+
+
+def _empty_insight(error: str = "") -> dict[str, Any]:
+    return {
+        "summary": error or "无可用数据",
+        "performance_grade": "C",
+        "key_metrics": {
+            "pace_efficiency": "N/A",
+            "hr_efficiency": "N/A",
+            "endurance": "N/A",
+            "climbing_ability": "N/A",
+        },
+        "anomalies": [],
+        "strengths": [],
+        "risks": [],
+        "training_load": "low",
+        "fatigue_index": 0,
+        "efficiency_index": 0,
+        "recommendation": error or "当前无法生成分析",
+        "sport_mode": "general",
+    }

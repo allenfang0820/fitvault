@@ -1842,11 +1842,104 @@ def _build_ai_snapshot_block(snapshot: dict[str, Any] | None) -> str:
     return "\n".join(lines)
 
 
+# ═══════════════════════════════════════════════════════
+# Insight Engine — Insight Builder + History Window
+# Task 3.3: Schema-Driven AI Sports Insight
+# ═══════════════════════════════════════════════════════
+
+def _get_history_window(activity_id: int, sport_type: str, limit: int = 10) -> list[dict[str, Any]]:
+    """获取同类型运动最近 N 条历史记录摘要，用于趋势对比。"""
+    try:
+        con_status = f"id != {activity_id} AND deleted_at IS NULL"
+        conn = sqlite3.connect(profile_backend._DB_PATH)
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            f"""SELECT id, sport_type, sub_sport_type, dist_km, duration_sec,
+                avg_hr, max_hr, avg_pace, gain_m, start_time
+            FROM activities
+            WHERE {con_status}
+              AND sport_type = ?
+            ORDER BY start_time DESC
+            LIMIT ?""",
+            (sport_type, limit),
+        ).fetchall()
+        conn.close()
+        history = []
+        for r in rows:
+            d = dict(r)
+            dur_sec = d.get("duration_sec") or 0
+            dur_min = int(dur_sec // 60) if dur_sec else 0
+            dist = d.get("dist_km") or 0
+            avg_pace = d.get("avg_pace")
+            pace_str = ""
+            if avg_pace and avg_pace > 0:
+                pm = int(avg_pace // 60)
+                ps = int(avg_pace % 60)
+                pace_str = f"{pm}'{ps:02d}\"/km"
+            history.append({
+                "id": d.get("id"),
+                "dist_km": round(float(dist), 2) if dist else 0,
+                "duration_min": dur_min,
+                "avg_hr": d.get("avg_hr"),
+                "max_hr": d.get("max_hr"),
+                "avg_pace_display": pace_str or "--",
+                "gain_m": round(float(d.get("gain_m") or 0)),
+                "start_time": str(d.get("start_time") or ""),
+            })
+        return history
+    except Exception:
+        return []
+
+
+def _build_history_block(history: list[dict[str, Any]]) -> str:
+    """将历史记录格式化为 prompt 可嵌入文本。"""
+    if not history:
+        return ""
+    lines = ["【历史同类运动对比窗口】"]
+    for i, h in enumerate(history[:8]):
+        lines.append(
+            f"  #{i + 1}: {h.get('dist_km')}km / {h.get('duration_min')}min / "
+            f"配速 {h.get('avg_pace_display')} / HR {h.get('avg_hr')}-{h.get('max_hr')} / "
+            f"爬升 {h.get('gain_m')}m ({h.get('start_time')})"
+        )
+    lines.append("  请结合上述历史趋势，评估当前运动是否呈现进步/退步/持平。")
+    return "\n".join(lines)
+
+
+def _build_ai_insight(activity_id: int) -> dict[str, Any]:
+    """AI 运动洞察构建器。
+    链路: DB → Snapshot → Prompt → LLM → normalize → UI
+    """
+    snapshot = _build_ai_snapshot(activity_id)
+    if not snapshot:
+        return llm_backend._empty_insight("未找到活动记录")
+
+    sport_type = str(snapshot.get("sport_type") or "unknown")
+    mode = llm_backend._insight_mode_sport(sport_type)
+
+    # 历史对比窗口
+    history = _get_history_window(activity_id, sport_type, limit=10)
+    history_block = _build_history_block(history)
+
+    # 构建 prompt
+    system_prompt = llm_backend._build_insight_system_prompt(snapshot, mode, history_block)
+    user_prompt = llm_backend._build_insight_user_prompt()
+
+    return {
+        "snapshot": snapshot,
+        "mode": mode,
+        "history": history,
+        "system_prompt": system_prompt,
+        "user_prompt": user_prompt,
+    }
+
+
 class Api:
     """pywebview js_api：轨迹文件、导出、大模型（OpenAI 兼容）等。"""
 
     REPORT_TERRAIN = "__REPORT_TERRAIN__"
     REPORT_PERSONALIZED = "__REPORT_PERSONALIZED__"
+    REPORT_INSIGHT = "__REPORT_INSIGHT__"
 
     def __init__(self) -> None:
         self._track_points: list | None = None
@@ -2094,6 +2187,31 @@ class Api:
                 self._chat_messages = []
                 self._new_session_id()
                 return {"ok": True, "content": text}
+
+            if prompt == self.REPORT_INSIGHT:
+                if not self._ai_snapshot:
+                    return {"ok": True, "insight": llm_backend._empty_insight("请先加载活动轨迹")}
+                insight_data = _build_ai_insight(self._ai_snapshot.get("activity_id"))
+                sys_b = insight_data["system_prompt"]
+                usr = insight_data["user_prompt"]
+                messages = [{"role": "system", "content": sys_b}, {"role": "user", "content": usr}]
+                text = llm_backend.chat_completions(
+                    url=url,
+                    api_key=api_key,
+                    model=model,
+                    messages=messages,
+                    session_id=sid,
+                    agent_id=agent_id,
+                )
+                self._chat_messages = []
+                self._new_session_id()
+                insight = llm_backend.normalize_insight_json(text)
+                return {
+                    "ok": True,
+                    "insight": insight,
+                    "history": insight_data.get("history") or [],
+                    "snapshot": insight_data.get("snapshot") or {},
+                }
 
             user_text = prompt
             if not self._chat_messages:
