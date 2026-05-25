@@ -1116,33 +1116,40 @@
         .alt-keyword-lv2 { color: #38bdf8; font-size: calc(0.75rem + 3px); }
         .alt-keyword-lv3 { color: #f59e0b; font-size: calc(0.75rem + 3px); }
         .alt-keyword-lv4 { color: #ef4444; font-size: calc(0.75rem + 3px); }
-        /* ── Insight Engine Card Styles (Task 3.3) ── */
-        .insight-card { background: rgba(15,23,42,0.6); border: 1px solid rgba(124,58,237,0.3); border-radius: 10px; padding: 14px; margin-bottom: 10px; }
-        .insight-header { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
-        .insight-grade { font-size: 1.6rem; font-weight: 900; min-width: 36px; text-align: center; }
-        .insight-grade-label { font-size: 0.8rem; font-weight: 700; }
-        .insight-summary { font-size: 0.78rem; color: #cbd5e1; line-height: 1.5; flex: 1; }
-        .insight-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 12px; }
+        /* ── Insight Card System (Task 4.2 — 5张结构化卡片) ── */
+        .insight-cards-container { display: flex; flex-direction: column; gap: 10px; }
+        .ic-card { background: rgba(15,23,42,0.55); border: 1px solid rgba(124,58,237,0.25); border-radius: 10px; padding: 14px; }
+        .ic-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+        .ic-card-title { font-size: 0.82rem; font-weight: 700; color: #f1f5f9; }
+        .ic-card-grade { font-size: 0.78rem; font-weight: 800; padding: 2px 10px; border-radius: 20px; }
+        .ic-card-grade[data-grade="S"] { color: #ffd700; background: rgba(255,215,0,0.08); }
+        .ic-card-grade[data-grade="A"] { color: #22c55e; background: rgba(34,197,94,0.08); }
+        .ic-card-grade[data-grade="B"] { color: #3b82f6; background: rgba(59,130,246,0.08); }
+        .ic-card-grade[data-grade="C"] { color: #f59e0b; background: rgba(245,158,11,0.08); }
+        .ic-card-grade[data-grade="D"] { color: #ef4444; background: rgba(239,68,68,0.08); }
+        .ic-card-body { font-size: 0.75rem; color: #cbd5e1; line-height: 1.6; }
+        .ic-card-footer { font-size: 0.62rem; color: #475569; margin-top: 8px; text-align: right; font-family: monospace; }
+        /* metrics grid (reused in performance_summary card) */
+        .insight-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 8px; }
         .im-item { background: rgba(255,255,255,0.03); border-radius: 6px; padding: 8px 10px; display: flex; flex-direction: column; gap: 2px; }
         .im-label { font-size: 0.65rem; color: #64748b; text-transform: uppercase; }
         .im-val { font-size: 0.82rem; font-weight: 700; }
         .im-excellent { color: #22c55e; } .im-good { color: #3b82f6; } .im-fair { color: #f59e0b; } .im-poor { color: #ef4444; }
-        .insight-indices { margin-bottom: 12px; }
+        /* index bars (reused) */
         .ii-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
         .ii-label { font-size: 0.7rem; color: #94a3b8; min-width: 52px; }
         .ii-track { flex: 1; height: 6px; background: rgba(255,255,255,0.08); border-radius: 3px; overflow: hidden; }
         .ii-fill { height: 100%; border-radius: 3px; transition: width 0.6s ease; }
         .ii-val { font-size: 0.75rem; font-weight: 700; color: #f8fafc; min-width: 28px; text-align: right; }
-        .insight-load { font-size: 0.78rem; padding: 6px 10px; background: rgba(255,255,255,0.03); border-radius: 6px; margin-bottom: 12px; }
-        .insight-section { margin-bottom: 10px; }
-        .is-title { display: block; font-size: 0.72rem; font-weight: 700; color: #94a3b8; margin-bottom: 6px; }
+        /* tag chips (reused) */
         .is-tag { display: inline-block; font-size: 0.72rem; padding: 3px 8px; border-radius: 4px; margin: 2px 4px 2px 0; }
-        .is-tag.good { background: rgba(34,197,94,0.1); color: #4ade80; }
-        .is-tag.warn { background: rgba(245,158,11,0.1); color: #fbbf24; }
-        .is-tag.risk { background: rgba(239,68,68,0.1); color: #f87171; }
-        .insight-recommend { font-size: 0.75rem; color: #cbd5e1; line-height: 1.6; background: rgba(124,58,237,0.06); border-radius: 6px; padding: 8px 10px; }
-        .insight-history { max-height: 140px; overflow-y: auto; }
-        .insight-card .progress-bar { height: 4px; background: rgba(255,255,255,0.08); border-radius: 2px; margin: 4px 0; }
+        .is-tag.good { background: rgba(34,197,94,0.12); color: #4ade80; }
+        .is-tag.warn { background: rgba(245,158,11,0.12); color: #fbbf24; }
+        .is-tag.risk { background: rgba(239,68,68,0.12); color: #f87171; }
+        .insight-recommend { font-size: 0.75rem; color: #cbd5e1; line-height: 1.6; background: rgba(124,58,237,0.06); border-radius: 6px; padding: 8px 10px; margin-top: 4px; }
+        .insight-history { max-height: 140px; overflow-y: auto; margin-top: 6px; }
+        .ih-row{display:flex;align-items:center;gap:6px;padding:4px 0;font-size:0.75rem;color:#94a3b8;border-bottom:1px solid rgba(255,255,255,0.04)}
+        .ih-dist{font-weight:600;color:#e2e8f0;min-width:45px}.ih-pace{min-width:60px}.ih-hr{color:#a5b4fc}
 
         .secondary-btn, .primary-btn {
             width: 100%; padding: 10px; border-radius: 8px; cursor: pointer; transition: all 0.2s;
@@ -5484,98 +5491,99 @@
         const sidebarEl = document.getElementById('ai-sidebar');
         if (!summaryEl || !sidebarEl) return;
         sidebarEl.classList.remove('collapsed');
+        summaryEl.innerHTML = _buildInsightCardsHTML(insight, history);
+    }
 
+    function _buildInsightCardsHTML(insight, history) {
         var g = insight || {};
         var grade = g.performance_grade || 'C';
-        var gradeColor = grade === 'S' ? '#ffd700' : grade === 'A' ? '#22c55e' : grade === 'B' ? '#3b82f6' : grade === 'C' ? '#f59e0b' : '#ef4444';
         var gradeLabel = grade === 'S' ? '精英' : grade === 'A' ? '优秀' : grade === 'B' ? '良好' : grade === 'C' ? '一般' : '需关注';
-
         var km = g.key_metrics || {};
         var metricLabel = { "excellent": "出色", "good": "良好", "fair": "一般", "poor": "较差", "N/A": "N/A" };
+        var fatigueIdx = g.fatigue_index != null ? Number(g.fatigue_index) : 50;
+        var fatigueColor = fatigueIdx > 70 ? '#ef4444' : fatigueIdx > 40 ? '#f59e0b' : '#22c55e';
+        var effIdx = g.efficiency_index != null ? Number(g.efficiency_index) : 50;
+        var effColor = effIdx >= 70 ? '#22c55e' : effIdx >= 40 ? '#f59e0b' : '#ef4444';
+        var load = g.training_load || 'moderate';
+        var loadColor = load === 'high' ? '#ef4444' : load === 'moderate' ? '#f59e0b' : '#22c55e';
+        var loadLabel = load === 'high' ? '高强度' : load === 'moderate' ? '中等强度' : '低强度';
 
-        var html = '<div class="insight-card">';
+        var html = '<div class="insight-cards-container">';
 
-        html += '<div class="insight-header">';
-        html += '<span class="insight-grade" style="color:' + gradeColor + '">' + grade + '</span>';
-        html += '<span class="insight-grade-label" style="color:' + gradeColor + '">' + gradeLabel + '</span>';
-        html += '<span class="insight-summary">' + escHtml(g.summary || '') + '</span>';
-        html += '</div>';
-
-        html += '<div class="insight-metrics row-4">';
+        // Card 1: 表现总结
+        html += '<div class="ic-card">';
+        html += '<div class="ic-card-header"><span class="ic-card-title">📊 表现总结</span><span class="ic-card-grade" data-grade="' + grade + '">' + grade + ' ' + gradeLabel + '</span></div>';
+        html += '<div class="ic-card-body">' + escHtml(g.summary || '暂无总结') + '</div>';
+        html += '<div class="insight-metrics">';
         html += '<div class="im-item"><span class="im-label">配速效率</span><span class="im-val im-' + (km.pace_efficiency || 'fair') + '">' + (metricLabel[km.pace_efficiency] || km.pace_efficiency || 'N/A') + '</span></div>';
         html += '<div class="im-item"><span class="im-label">心率效率</span><span class="im-val im-' + (km.hr_efficiency || 'fair') + '">' + (metricLabel[km.hr_efficiency] || km.hr_efficiency || 'N/A') + '</span></div>';
         html += '<div class="im-item"><span class="im-label">耐力</span><span class="im-val im-' + (km.endurance || 'fair') + '">' + (metricLabel[km.endurance] || km.endurance || 'N/A') + '</span></div>';
         html += '<div class="im-item"><span class="im-label">爬坡能力</span><span class="im-val im-' + (km.climbing_ability || 'N/A') + '">' + (metricLabel[km.climbing_ability] || km.climbing_ability || 'N/A') + '</span></div>';
         html += '</div>';
-
-        var fatigueIdx = g.fatigue_index != null ? Number(g.fatigue_index) : 50;
-        var effIdx = g.efficiency_index != null ? Number(g.efficiency_index) : 50;
-        var fatigueColor = fatigueIdx > 70 ? '#ef4444' : fatigueIdx > 40 ? '#f59e0b' : '#22c55e';
-        var effColor = effIdx >= 70 ? '#22c55e' : effIdx >= 40 ? '#f59e0b' : '#ef4444';
-
-        html += '<div class="insight-indices">';
-        html += '<div class="ii-bar"><span class="ii-label">疲劳指数</span><div class="ii-track"><div class="ii-fill" style="width:' + fatigueIdx + '%;background:' + fatigueColor + '"></div></div><span class="ii-val">' + fatigueIdx + '</span></div>';
-        html += '<div class="ii-bar"><span class="ii-label">效率指数</span><div class="ii-track"><div class="ii-fill" style="width:' + effIdx + '%;background:' + effColor + '"></div></div><span class="ii-val">' + effIdx + '</span></div>';
+        html += '<div class="ic-card-footer">Snapshot v1.0</div>';
         html += '</div>';
 
-        var load = g.training_load || 'moderate';
-        var loadColor = load === 'high' ? '#ef4444' : load === 'moderate' ? '#f59e0b' : '#22c55e';
-        var loadLabel = load === 'high' ? '高强度' : load === 'moderate' ? '中等强度' : '低强度';
-        html += '<div class="insight-load" style="color:' + loadColor + '">训练负荷：<strong>' + loadLabel + '</strong></div>';
+        // Card 2: 身体负荷
+        html += '<div class="ic-card">';
+        html += '<div class="ic-card-header"><span class="ic-card-title">💪 身体负荷</span><span class="ic-card-grade" data-grade="' + grade + '">训练负荷：' + loadLabel + '</span></div>';
+        html += '<div class="ic-card-body" style="color:' + loadColor + '">本次运动强度评估为 <strong>' + loadLabel + '</strong>。';
+        html += '<div style="margin-top:6px;"><div class="ii-bar"><span class="ii-label">疲劳指数</span><div class="ii-track"><div class="ii-fill" style="width:' + fatigueIdx + '%;background:' + fatigueColor + '"></div></div><span class="ii-val">' + fatigueIdx + '</span></div></div>';
+        html += '</div>';
+        html += '<div class="ic-card-footer">Snapshot v1.0</div>';
+        html += '</div>';
 
+        // Card 3: 效率分析
+        html += '<div class="ic-card">';
+        html += '<div class="ic-card-header"><span class="ic-card-title">⚡ 效率分析</span><span class="ic-card-grade" data-grade="' + grade + '">' + grade + '</span></div>';
+        html += '<div class="ic-card-body">';
+        html += '<div style="margin-bottom:6px;">配速效率 <strong>' + (metricLabel[km.pace_efficiency] || 'N/A') + '</strong> / 心率效率 <strong>' + (metricLabel[km.hr_efficiency] || 'N/A') + '</strong></div>';
+        html += '<div class="ii-bar"><span class="ii-label">效率指数</span><div class="ii-track"><div class="ii-fill" style="width:' + effIdx + '%;background:' + effColor + '"></div></div><span class="ii-val">' + effIdx + '</span></div>';
+        html += '</div>';
+        html += '<div class="ic-card-footer">Snapshot v1.0</div>';
+        html += '</div>';
+
+        // Card 4: 风险与亮点
+        html += '<div class="ic-card">';
+        html += '<div class="ic-card-header"><span class="ic-card-title">⚠️ 风险与亮点</span><span class="ic-card-grade" data-grade="' + grade + '">' + grade + '</span></div>';
+        html += '<div class="ic-card-body">';
         if ((g.strengths || []).length) {
-            html += '<div class="insight-section"><span class="is-title">💪 亮点</span>';
-            for (var si = 0; si < g.strengths.length; si++) {
-                html += '<div class="is-tag good">' + escHtml(g.strengths[si]) + '</div>';
-            }
+            html += '<div style="margin-bottom:6px;"><strong style="color:#4ade80;">💪 亮点</strong> ';
+            for (var si = 0; si < g.strengths.length; si++) html += '<span class="is-tag good">' + escHtml(g.strengths[si]) + '</span>';
             html += '</div>';
         }
-
         if ((g.anomalies || []).length) {
-            html += '<div class="insight-section"><span class="is-title">⚠️ 异常发现</span>';
-            for (var ai = 0; ai < g.anomalies.length; ai++) {
-                html += '<div class="is-tag warn">' + escHtml(g.anomalies[ai]) + '</div>';
-            }
+            html += '<div style="margin-bottom:6px;"><strong style="color:#fbbf24;">⚠️ 异常</strong> ';
+            for (var ai = 0; ai < g.anomalies.length; ai++) html += '<span class="is-tag warn">' + escHtml(g.anomalies[ai]) + '</span>';
             html += '</div>';
         }
-
         if ((g.risks || []).length) {
-            html += '<div class="insight-section"><span class="is-title">🔴 风险关注</span>';
-            for (var ri = 0; ri < g.risks.length; ri++) {
-                html += '<div class="is-tag risk">' + escHtml(g.risks[ri]) + '</div>';
-            }
+            html += '<div style="margin-bottom:6px;"><strong style="color:#f87171;">🔴 风险</strong> ';
+            for (var ri = 0; ri < g.risks.length; ri++) html += '<span class="is-tag risk">' + escHtml(g.risks[ri]) + '</span>';
             html += '</div>';
         }
-
         if (g.recommendation) {
-            html += '<div class="insight-section"><span class="is-title">📝 训练建议</span>';
-            html += '<div class="insight-recommend">' + escHtml(g.recommendation) + '</div>';
-            html += '</div>';
+            html += '<div class="insight-recommend">📝 ' + escHtml(g.recommendation) + '</div>';
         }
+        html += '</div>';
+        html += '<div class="ic-card-footer">Snapshot v1.0</div>';
+        html += '</div>';
 
+        // Card 5: 历史对比
         if (history && history.length) {
-            html += '<div class="insight-section"><span class="is-title">📈 历史对比（近' + history.length + '次同类运动）</span>';
-            html += '<div class="insight-history">';
+            html += '<div class="ic-card">';
+            html += '<div class="ic-card-header"><span class="ic-card-title">📈 历史对比</span><span class="ic-card-grade" data-grade="' + grade + '">近' + history.length + '次</span></div>';
+            html += '<div class="ic-card-body"><div class="insight-history">';
             for (var hi = 0; hi < Math.min(history.length, 6); hi++) {
                 var h = history[hi];
                 html += '<div class="ih-row"><span class="ih-dist">' + (h.dist_km || 0).toFixed(1) + 'km</span><span class="ih-pace">' + escHtml(h.avg_pace_display || '--') + '</span><span class="ih-hr">HR ' + (h.avg_hr || '--') + '</span></div>';
             }
             html += '</div></div>';
+            html += '<div class="ic-card-footer">Snapshot v1.0</div>';
+            html += '</div>';
         }
 
         html += '</div>';
-
-        summaryEl.innerHTML = html;
-
-        if (history && history.length) {
-            var styleId = 'insight-history-style';
-            if (!document.getElementById(styleId)) {
-                var styleEl = document.createElement('style');
-                styleEl.id = styleId;
-                styleEl.textContent = '.ih-row{display:flex;align-items:center;gap:6px;padding:4px 0;font-size:0.75rem;color:#94a3b8;border-bottom:1px solid rgba(255,255,255,0.04)}.ih-dist{font-weight:600;color:#e2e8f0;min-width:45px}.ih-pace{min-width:60px}.ih-hr{color:#a5b4fc}';
-                document.head.appendChild(styleEl);
-            }
-        }
+        return html;
     }
 
     // ═══════════════════════════════════════════════════

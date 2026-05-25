@@ -388,6 +388,15 @@ INSIGHT_SCHEMA_DESCRIPTION = """{
   "sport_mode": "running|cycling|swimming|general"
 }"""
 
+# Task 4.2: Insight 展示字段顺序（仅声明渲染顺序，不改 schema / prompt / value）
+INSIGHT_FIELD_ORDER = [
+    "performance_summary",
+    "body_load",
+    "efficiency_analysis",
+    "risk_warning",
+    "history_comparison",
+]
+
 
 def _insight_mode_sport(sport_type: str) -> str:
     key = str(sport_type or "").strip().lower()
