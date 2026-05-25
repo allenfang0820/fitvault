@@ -1888,6 +1888,7 @@
                                                 <th>时间</th>
                                                 <th>标题</th>
                                                 <th>地区</th>
+                                                <th>设备型号</th>
                                                 <th>距离</th>
                                                 <th>时长</th>
                                                 <th>平均配速</th>
@@ -2134,6 +2135,25 @@
                     </div>
                     <div id="llm-test-result" style="margin-top:10px;font-size:0.8rem;color:#94a3b8;">尚未测试连接</div>
                 </div>
+                <div class="section-card" id="storage-config-section">
+                    <div class="section-title">🗺️ 数据存储配置</div>
+                    <div style="margin-bottom:15px;">
+                        <label style="display:block;margin-bottom:5px;color:#94a3b8;font-size:0.8rem;">本地 FIT 文件存储目录（系统固定路径，无需手动选择）</label>
+                        <div id="storage-dir-display" style="padding:10px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);color:#86efac;border-radius:6px;font-size:0.85rem;word-break:break-all;">
+                            ~/.fitvault/workspace/tracks/
+                        </div>
+                        <div style="margin-top:15px; display:flex; align-items:center; gap:8px;">
+                            <span class="ai-btn-indicator" id="btn-notify-indicator"></span>
+                            <button id="btn-notify-ai" class="ai-assistant-btn" onclick="notifyAIAssistant()" style="margin-left:0;">
+                                🤖 告诉AI助手存储规范
+                            </button>
+                        </div>
+                    </div>
+                    <div class="stat-grid">
+                        <div class="stat-row"><span>设备文件路径</span><b style="font-size:0.65rem;color:#64748b;">~/.fitvault/workspace/tracks/</b></div>
+                        <div class="stat-row"><span>数据库路径</span><b style="font-size:0.65rem;color:#64748b;">~/.fitvault/user_profile.db</b></div>
+                    </div>
+                </div>
 
                 <!-- ===== TEST ONLY: 测试配置区（打包发布前必须移除） ===== -->
                 <div class="section-card" id="test-config-section" style="border-color: rgba(255, 165, 0, 0.3);">
@@ -2305,6 +2325,8 @@
         currentActivityId: null,
         currentWeather: null,
         advancedMetrics: null,
+        activityMetrics: null,
+        DEBUG_MODE: false,
         historyFilters: {
             time: 'all',
             type: 'all',
@@ -2369,7 +2391,7 @@
         llmTestStateLock: false,
         llmTestTransitionTimer: null,
         aiNotified: false,
-        dirValidated: false,
+        dirValidated: true,
         dirValidationRequestId: 0
     };
 
@@ -2792,7 +2814,7 @@
                     if (sel) { sel.value = res.activity.sport_type; sel.style.color = '#f8fafc'; }
                     appState.sportType = res.activity.sport_type;
                 }
-                applyDataAndRender(res.data, res.filename || '新轨迹');
+                applyDataAndRender(res.data, res.filename || '新轨迹', res.activity || null);
                 return true;
             }
         }
@@ -2986,7 +3008,7 @@
 
         const blockedPanels = ['profile', 'trace'];
         if (blockedPanels.indexOf(activePanel) !== -1) {
-            const localDir = (document.getElementById('set-local-dir')?.value || '').trim();
+            const localDir = getFitTracksDir();
             const brand = currentLLMConfig.watchBrand || '';
             const step1Done = onboardingState.llmTestPassed;
             const step2Done = !!localDir && onboardingState.dirValidated;
@@ -3115,7 +3137,7 @@
 
     function updateSettingsGuide() {
         const guideText = document.getElementById('settings-guide-text');
-        const localDir = (document.getElementById('set-local-dir')?.value || '').trim();
+        const localDir = getFitTracksDir();
         const brand = currentLLMConfig.watchBrand || '';
 
         const step1Done = onboardingState.llmTestPassed;
@@ -3257,30 +3279,13 @@
             .replace(/'/g, '&#39;');
     }
 
-    function getLocalSportHubFallback() {
+    function getEmptySportHubData() {
         return {
-            activity_types: ['running', 'trail_running', 'cycling'],
+            activity_types: [],
             page_sizes: [10, 20, 50],
-            records: [
-                {
-                    id: 9001, sport_type: 'running', title: '都江堰双遗半程马拉松', filename: 'dujiangyan_hm.fit',
-                    start_time: '2026-03-22T07:30:00Z', date_label: '2026-03-22 07:30', month_key: '2026-03',
-                    distance_km: 21.1, duration_sec: 6420, avg_pace_sec: 304, avg_hr: 158, max_hr: 176, calories: 1380,
-                    gain_m: 82, file_path: '', has_track: false,
-                    thumbnail_points: [{lat:30.99,lon:103.65},{lat:31.00,lon:103.66},{lat:31.01,lon:103.675}],
-                    detail: { display_metrics: [{key:"distance",label:"距离",value:"21.10",unit:"km"},{key:"avg_pace",label:"平均配速",value:"5'04\"",unit:"/km"},{key:"duration",label:"时长",value:"1:47:00",unit:""},{key:"avg_hr",label:"平均心率",value:"158",unit:"bpm"}], layout: {cards:[{type:"summary_grid"},{type:"pace_hr_chart"},{type:"elevation_chart"}]}, capabilities: {has_gps:false,has_hr:true,has_elevation:true,has_power:false}, summary:{distance_km:21.1,duration_sec:6420,avg_pace_sec:304,avg_hr:158,max_hr:176,calories:1380,elevation:82}, laps: [], thumbnail_points: [{lat:30.99,lon:103.65},{lat:31.00,lon:103.66},{lat:31.01,lon:103.675}] }
-                }
-            ],
-            results: {
-                entries: [
-                    { activity_id: 9001, month: '2025-03', title: '都江堰双遗半程马拉松', category: 'half_marathon', finish_time_sec: 6580, avg_hr: 156 },
-                    { activity_id: 9002, month: '2025-10', title: '成都马拉松', category: 'full_marathon', finish_time_sec: 14280, avg_hr: 163 },
-                    { activity_id: 9001, month: '2026-03', title: '都江堰双遗半程马拉松', category: 'half_marathon', finish_time_sec: 6420, avg_hr: 158 }
-                ]
-            },
-            honors: [
-                { year: '2026', months: [{ month: '03', cards: [{ activity_id: 9001, title: '都江堰双遗半程马拉松', subtitle: '半程马拉松 PB', photo_label: '赛事照片占位' }] }] }
-            ]
+            records: [],
+            results: { entries: [] },
+            honors: []
         };
     }
 
@@ -3315,7 +3320,7 @@
     }
 
     function populateSportHubState(payload, options = {}) {
-        const data = payload || getLocalSportHubFallback();
+        const data = payload || getEmptySportHubData();
         const applyRecords = options.applyRecords !== false;
         const applyInsights = options.applyInsights !== false;
         if (applyRecords) {
@@ -3333,7 +3338,7 @@
 
     async function loadPersonSportHubData(options = {}) {
         try {
-            let payload = getLocalSportHubFallback();
+            let payload = getEmptySportHubData();
             if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.get_person_sport_hub_data === 'function') {
                 const res = await window.pywebview.api.get_person_sport_hub_data();
                 if (res && res.ok) payload = res;
@@ -3342,7 +3347,7 @@
             if (options.applyRecords !== false) renderSportHubFilterOptions();
         } catch (e) {
             console.error('loadPersonSportHubData error:', e);
-            populateSportHubState(getLocalSportHubFallback(), options);
+            populateSportHubState(getEmptySportHubData(), options);
             if (options.applyRecords !== false) renderSportHubFilterOptions();
         }
     }
@@ -3359,36 +3364,40 @@
     }
 
     async function loadSportHubActivityList(options = {}) {
+        const refreshSnapshot = options.refreshSnapshot !== false && (!!options.refreshSnapshot || !sportHubState.recordsReady);
         const resetPage = !!options.resetPage;
         const page = resetPage ? 1 : Math.max(1, Number(sportHubState.filters.page) || 1);
         const pageSize = Number(sportHubState.filters.pageSize) || 10;
         const filterType = String(sportHubState.filters.type || 'all');
+
+        if (!refreshSnapshot) {
+            applySportHubRecordFilters(resetPage);
+            renderSportHubRecords();
+            renderCurrentSportHubTab();
+            return;
+        }
 
         sportHubState.recordsLoading = true;
         sportHubState.recordsError = '';
         const requestId = ++sportHubState.requestSeq;
         renderSportHubRecords();
         try {
-            if (!(window.pywebview && window.pywebview.api && typeof window.pywebview.api.get_sport_hub_activity_page === 'function')) {
+            if (!(window.pywebview && window.pywebview.api && typeof window.pywebview.api.get_activity_list_snapshot === 'function')) {
                 sportHubState.records = [];
                 sportHubState.recordsReady = true;
                 return;
             }
-            const res = await window.pywebview.api.get_sport_hub_activity_page(page, pageSize, filterType);
+            const res = await window.pywebview.api.get_activity_list_snapshot(filterType);
             if (requestId !== sportHubState.requestSeq) return;
             if (!res || !res.ok) throw new Error((res && res.error) || '运动记录加载失败');
 
-            sportHubState.records = Array.isArray(res.records) ? res.records : [];
-            sportHubState.total = _safeInt(res.total, 0);
-            sportHubState.totalPages = Math.max(1, Number(res.total_pages) || 1);
-            sportHubState.filters.page = Number(res.page) || 1;
-            sportHubState.filters.pageSize = Number(res.page_size) || 10;
             sportHubState.activityTypes = Array.isArray(res.activity_types) ? res.activity_types : [];
             sportHubState.pageSizes = Array.isArray(res.page_sizes) && res.page_sizes.length ? res.page_sizes : [10, 20, 50];
-            if (!sportHubState.pageSizes.includes(sportHubState.filters.pageSize)) {
-                sportHubState.filters.pageSize = sportHubState.pageSizes[0];
-            }
+            sportHubState.total = _safeInt(res.total, 0);
+            sportHubState.totalPages = Math.max(1, Math.ceil(sportHubState.total / pageSize));
+            setSportHubRecordSnapshot(Array.isArray(res.records) ? res.records : []);
             sportHubState.recordsReady = true;
+            applySportHubRecordFilters(resetPage);
         } catch (e) {
             console.error('loadSportHubActivityList error:', e);
             sportHubState.recordsError = String((e && e.message) || e || '运动记录加载失败');
@@ -3600,11 +3609,11 @@
                 }
                 loadingText = detailParts.join(' · ');
             }
-            tbody.innerHTML = `<tr><td colspan="10"><div class="hub-empty-state">${safeHtml(loadingText)}</div></td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="11"><div class="hub-empty-state">${safeHtml(loadingText)}</div></td></tr>`;
         } else if (sportHubState.recordsError) {
-            tbody.innerHTML = `<tr><td colspan="10"><div class="hub-empty-state" style="color:#fca5a5;">${safeHtml(sportHubState.recordsError)}</div></td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="11"><div class="hub-empty-state" style="color:#fca5a5;">${safeHtml(sportHubState.recordsError)}</div></td></tr>`;
         } else if (!pageItems.length) {
-            tbody.innerHTML = `<tr><td colspan="10"><div class="hub-empty-state">当前数据库中暂无可展示的运动记录</div></td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="11"><div class="hub-empty-state">当前数据库中暂无可展示的运动记录</div></td></tr>`;
         } else {
             tbody.innerHTML = pageItems.map((item) => `
                 <tr onclick="openActivityDetailModal(${item.id})">
@@ -3613,9 +3622,10 @@
                     <td>${safeHtml(item.date_label || '--')}</td>
                     <td><div class="hub-record-title"><b>${safeHtml(item.title || item.file_name || item.filename || '未命名活动')}</b><span>${safeHtml(item.file_name || item.filename || '')}</span></div></td>
                     <td>${safeHtml(item.region || '--')}</td>
-                    <td>${item.distance_km != null ? item.distance_km.toFixed(1) + ' km' : '--'}</td>
+                    <td>${safeHtml(item.device_name || '--')}</td>
+                    <td>${safeHtml(item.distance_display || '--')}</td>
                     <td>${formatRaceTime(item.duration_sec || 0)}</td>
-                    <td>${formatPace(item.avg_pace_sec)} /km</td>
+                    <td>${safeHtml(item.avg_pace_display || '--')}</td>
                     <td>${item.avg_hr ? item.avg_hr + ' bpm' : '--'}</td>
                     <td>${item.calories ? item.calories + ' kcal' : '--'}</td>
                 </tr>
@@ -3849,7 +3859,7 @@
                 if (res && res.ok && res.data && Array.isArray(res.data.points) && res.data.points.length) {
                     appState.currentActivityId = (res.activity && res.activity.id) || activityId;
                     setCurrentWeather((res.data && res.data.weather) || (res.activity && res.activity.weather) || null);
-                    applyDataAndRender(res.data, res.filename || (record && (record.file_name || record.filename || record.title)) || '历史轨迹');
+                    applyDataAndRender(res.data, res.filename || (record && (record.file_name || record.filename || record.title)) || '历史轨迹', res.activity || null);
                     showToast('✅ 已从数据库加载该活动轨迹');
                     return;
                 }
@@ -4152,7 +4162,7 @@
             const typeSel = document.getElementById('sport-record-type-filter');
             sportHubState.filters.type = typeSel ? typeSel.value : 'all';
             sportHubState.filters.page = 1;
-            await loadSportHubActivityList({ resetPage: true });
+            await loadSportHubActivityList({ refreshSnapshot: false, resetPage: true });
         } catch (e) {
             console.error('onSportHubFilterChange error:', e);
         }
@@ -4162,7 +4172,7 @@
         const pageSel = document.getElementById('sport-record-page-size');
         sportHubState.filters.pageSize = pageSel ? Number(pageSel.value) : 10;
         sportHubState.filters.page = 1;
-        await loadSportHubActivityList({ resetPage: true });
+        await loadSportHubActivityList({ refreshSnapshot: false, resetPage: true });
     }
 
     async function changeSportHubPage(delta) {
@@ -4434,7 +4444,7 @@
             }
             appState.currentActivityId = (res.activity && res.activity.id) || null;
             setCurrentWeather((res.data && res.data.weather) || (res.activity && res.activity.weather) || null);
-            applyDataAndRender(res.data, res.filename || '历史轨迹');
+            applyDataAndRender(res.data, res.filename || '历史轨迹', res.activity || null);
             if (!isBackground) showToast('✅ 已加载: ' + (res.filename || '历史轨迹'));
                 return true;
         } catch(e) { 
@@ -4462,7 +4472,7 @@
                 if (res && res.ok && res.data && Array.isArray(res.data.points) && res.data.points.length) {
                     appState.currentActivityId = (res.activity && res.activity.id) || activityId;
                     setCurrentWeather((res.data && res.data.weather) || (res.activity && res.activity.weather) || null);
-                    applyDataAndRender(res.data, res.filename || '历史轨迹');
+                    applyDataAndRender(res.data, res.filename || '历史轨迹', res.activity || null);
                     showToast('✅ 已加载: ' + (res.filename || '历史轨迹'));
                     success = true;
                 }
@@ -4533,7 +4543,7 @@
                     if (res && res.ok && res.data && res.data.points && res.data.points.length > 0) {
                         appState.currentActivityId = (res.activity && res.activity.id) || latest.id;
                         setCurrentWeather((res.data && res.data.weather) || (res.activity && res.activity.weather) || null);
-                        applyDataAndRender(res.data, res.filename || latest.file_name || latest.filename || '历史轨迹');
+                        applyDataAndRender(res.data, res.filename || latest.file_name || latest.filename || '历史轨迹', res.activity || null);
                     }
                 } else if (latest.file_path) {
                     await loadAndRenderLocalFile(latest.file_path, true);
@@ -4756,7 +4766,7 @@
     async function refreshSettingsPanel() {
         await initLLMConfig();
         renderLLMConfigFields();
-        const localDir = (document.getElementById('set-local-dir')?.value || '').trim();
+        const localDir = getFitTracksDir();
         if (localDir) {
             await revalidateDirectory(localDir);
             if (onboardingState.dirValidated && onboardingState.aiNotified) {
@@ -4786,6 +4796,33 @@
     function _markUrlModified() {
         const urlInput = document.getElementById('llm-custom-url');
         if (urlInput) urlInput._userModified = true;
+    }
+
+    async function persistLocalDirSelection(localDir) {
+        const normalizedDir = String(localDir || '').trim();
+        currentLLMConfig.localDir = normalizedDir;
+        appState.rawHistoryFiles = [];
+        try {
+            localStorage.setItem('llm_config_v2', JSON.stringify({ ...currentLLMConfig, localDir: normalizedDir }));
+        } catch (e) {}
+        if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.save_llm_config === 'function') {
+            try {
+                await window.pywebview.api.save_llm_config(
+                    currentLLMConfig.provider || 'local_mcp',
+                    currentLLMConfig.url || LLM_DEFAULT_URL,
+                    normalizeAgentModel(currentLLMConfig.model || 'openclaw', currentLLMConfig.agentId || ''),
+                    currentLLMConfig.apiKey || '',
+                    currentLLMConfig.agentId || '',
+                    currentLLMConfig.watchBrand || '',
+                    normalizedDir
+                );
+                return true;
+            } catch (e) {
+                showToast('⚠️ 目录配置保存失败');
+                return false;
+            }
+        }
+        return true;
     }
 
     async function openLLMConfig() {
@@ -4979,198 +5016,256 @@
         return 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
     }
 
-    function calculateStats(points) {
-        if (!points || points.length === 0) return { dist: 0, gain: 0, max: 0, time: 'N/A', kmMarkers: [], peakMarkers: [] };
-        let dist = 0, gain = 0, maxAlt = -Infinity; let lastAlt = points[0].alt;
-        const kmMarkers = []; let nextKm = 1;
+    // LEGACY UI CALCULATION
+    // DO NOT EXTEND - migration target: backend resolver
+    function calculateStats(points, activityMetrics) {
+        if (!points || points.length === 0) return { dist: '0 km', gain: '0 m', max: '0 m', time: 'N/A', kmMarkers: [], peakMarkers: [] };
 
-        points[0].dist = 0; 
-        
-        for (let i = 1; i < points.length; i++) {
-            const p1 = points[i - 1], p2 = points[i];
-            const d = haversine(p1, p2) / 1000; 
+        // Task 3.2: UI Adapter — 权威数据路径
+        if (activityMetrics) {
+            return _buildStatsFromCanonical(points, activityMetrics);
+        }
+        // 仅文件拖拽/直接解析场景使用 fallback（禁止依赖此路径的计算值作为 AI 输入）
+        return _calculateStatsFallback(points);
+    }
+
+    function _buildStatsFromCanonical(points, m) {
+        // 距离 / 爬升 / 时间均来自 DB，前端仅做格式化
+        var distKm = (m.dist_km != null) ? Number(m.dist_km) : 0;
+        appState.totalDist = distKm;
+        var gainM = (m.gain_m != null) ? Math.round(Number(m.gain_m)) : 0;
+        var maxAlt = (m.max_alt_m != null) ? Math.round(Number(m.max_alt_m)) : 0;
+
+        // 向后兼容：确保每个点有 .dist 字段（profile chart 依赖）
+        for (var i = 0; i < points.length; i++) {
+            points[i].dist = points[i].dist_km != null ? points[i].dist_km : (i === 0 ? 0 : (points[i-1].dist || 0));
+        }
+
+        var distDisplay = m.distance_display || (distKm > 0 ? distKm.toFixed(2) + ' km' : '0 km');
+        var gainDisplay = gainM + ' m';
+
+        var timeStr = 'N/A';
+        if (m.duration_sec && m.duration_sec > 0) {
+            var ds = Number(m.duration_sec);
+            timeStr = Math.floor(ds / 3600) + 'h ' + Math.floor((ds % 3600) / 60) + 'm';
+        }
+
+        // km markers: 使用后端附加的 per-point dist_km
+        var kmMarkers = [];
+        if (points.length > 1 && points[0].dist_km != null) {
+            var nextKm = 1;
+            for (var i = 0; i < points.length; i++) {
+                var p = points[i];
+                if (p.dist_km >= nextKm) {
+                    kmMarkers.push({ km: nextKm, lon: p.lon, lat: p.lat, alt: p.alt });
+                    nextKm++;
+                }
+            }
+        }
+
+        // peak markers: 视觉标注（非计算类指标）
+        var peakMarkers = _detectPeakMarkers(points);
+
+        // max altitude fallback: 如果 DB 没有值，从点中取
+        if (maxAlt <= 0 && points.length > 0) {
+            var maxFromPoints = points[0].alt || 0;
+            for (var j = 1; j < points.length; j++) {
+                if ((points[j].alt || 0) > maxFromPoints) maxFromPoints = points[j].alt;
+            }
+            maxAlt = Math.round(maxFromPoints);
+        }
+
+        return { dist: distDisplay, gain: gainDisplay, max: Math.round(maxAlt) + ' m', time: timeStr, kmMarkers: kmMarkers, peakMarkers: peakMarkers };
+    }
+
+    function _calculateStatsFallback(points) {
+        // LEGACY FALLBACK — 仅用于拖拽/直接解析文件场景
+        // 一旦入库，必须通过 API 走权威数据路径
+        var dist = 0, gain = 0, maxAlt = -Infinity;
+        var lastAlt = points[0].alt;
+        var kmMarkers = [];
+        var nextKm = 1;
+
+        points[0].dist = 0;
+        points[0].dist_km = 0;
+        for (var i = 1; i < points.length; i++) {
+            var p1 = points[i - 1], p2 = points[i];
+            var d = haversine(p1, p2) / 1000;
             dist += d;
-            points[i].dist = dist; 
-
-            if (dist >= nextKm) { kmMarkers.push({ km: nextKm, lon: p2.lon, lat: p2.lat, alt: p2.alt }); nextKm++; }
+            points[i].dist = dist;
+            points[i].dist_km = dist;
+            if (dist >= nextKm) {
+                kmMarkers.push({ km: nextKm, lon: p2.lon, lat: p2.lat, alt: p2.alt });
+                nextKm++;
+            }
             if (p2.alt > maxAlt) maxAlt = p2.alt;
-            const diffAlt = p2.alt - lastAlt;
-            if (diffAlt > 1.5) { gain += diffAlt; lastAlt = p2.alt; } else if (diffAlt < -1.5) { lastAlt = p2.alt; }
+            var diffAlt = p2.alt - lastAlt;
+            if (diffAlt > 1.5) { gain += diffAlt; lastAlt = p2.alt; }
+            else if (diffAlt < -1.5) { lastAlt = p2.alt; }
         }
         if (points[0].alt > maxAlt) maxAlt = points[0].alt;
         appState.totalDist = dist;
-        
-        let timeStr = 'N/A';
+
+        var timeStr = 'N/A';
         if (points[0].time && points[points.length - 1].time) {
-            const ms = new Date(points[points.length - 1].time) - new Date(points[0].time);
-            if (ms > 0) timeStr = `${Math.floor(ms / 3600000)}h ${Math.floor((ms % 3600000) / 60000)}m`;
+            var ms = new Date(points[points.length - 1].time) - new Date(points[0].time);
+            if (ms > 0) timeStr = Math.floor(ms / 3600000) + 'h ' + Math.floor((ms % 3600000) / 60000) + 'm';
         }
 
-        const peakMarkers = []; let maxPt = points[0];
-        for (let i = 0; i < points.length; i++) {
+        var peakMarkers = _detectPeakMarkers(points);
+        return { dist: dist.toFixed(2) + ' km', gain: Math.round(gain) + ' m', max: Math.round(maxAlt) + ' m', time: timeStr, kmMarkers: kmMarkers, peakMarkers: peakMarkers };
+    }
+
+    function _detectPeakMarkers(points) {
+        var peakMarkers = [];
+        var maxPt = points[0];
+        for (var i = 0; i < points.length; i++) {
             if (points[i].alt > maxPt.alt) maxPt = points[i];
-            if (peakMarkers.length > 0 && haversine(peakMarkers[peakMarkers.length - 1], points[i]) < 250) continue; 
-            
-            let isPeak = true; let localMin = points[i].alt;
-            for (let j = i - 1; j >= 0; j--) {
+            if (peakMarkers.length > 0 && haversine(peakMarkers[peakMarkers.length - 1], points[i]) < 250) continue;
+
+            var isPeak = true;
+            var localMin = points[i].alt;
+            for (var j = i - 1; j >= 0; j--) {
                 if (haversine(points[i], points[j]) > 300) break;
                 if (points[j].alt > points[i].alt) { isPeak = false; break; }
                 if (points[j].alt < localMin) localMin = points[j].alt;
             }
             if (!isPeak) continue;
-            for (let j = i + 1; j < points.length; j++) {
+            for (var j = i + 1; j < points.length; j++) {
                 if (haversine(points[i], points[j]) > 300) break;
                 if (points[j].alt > points[i].alt) { isPeak = false; break; }
                 if (points[j].alt < localMin) localMin = points[j].alt;
             }
-            if (isPeak && (points[i].alt - localMin) >= 12) { 
-                peakMarkers.push({ lon: points[i].lon, lat: points[i].lat, alt: points[i].alt, name: `⛰️ ${Math.round(points[i].alt)}m`, isHighest: false });
+            if (isPeak && (points[i].alt - localMin) >= 12) {
+                peakMarkers.push({ lon: points[i].lon, lat: points[i].lat, alt: points[i].alt, name: '\u26F0\uFE0F ' + Math.round(points[i].alt) + 'm', isHighest: false });
             }
         }
 
         if (maxPt) {
-            let upgraded = false;
-            for (let p of peakMarkers) {
+            var upgraded = false;
+            for (var pk = 0; pk < peakMarkers.length; pk++) {
+                var p = peakMarkers[pk];
                 if (haversine(p, maxPt) < 300) {
-                    p.name = `👑 最高点 ${Math.round(maxPt.alt)}m`; p.isHighest = true; p.lon = maxPt.lon; p.lat = maxPt.lat; p.alt = maxPt.alt;
-                    upgraded = true; break;
+                    p.name = '\uD83D\uDC51 \u6700\u9AD8\u70B9 ' + Math.round(maxPt.alt) + 'm';
+                    p.isHighest = true;
+                    p.lon = maxPt.lon;
+                    p.lat = maxPt.lat;
+                    p.alt = maxPt.alt;
+                    upgraded = true;
+                    break;
                 }
             }
-            if (!upgraded) peakMarkers.push({ lon: maxPt.lon, lat: maxPt.lat, alt: maxPt.alt, name: `👑 最高点 ${Math.round(maxPt.alt)}m`, isHighest: true });
+            if (!upgraded) {
+                peakMarkers.push({ lon: maxPt.lon, lat: maxPt.lat, alt: maxPt.alt, name: '\uD83D\uDC51 \u6700\u9AD8\u70B9 ' + Math.round(maxPt.alt) + 'm', isHighest: true });
+            }
         }
-
-        return { dist: dist.toFixed(2), gain: Math.round(gain), max: Math.round(maxAlt), time: timeStr, kmMarkers: kmMarkers, peakMarkers: peakMarkers };
+        return peakMarkers;
     }
 
-    function generateAIReport(points) {
+    function generateAIReport(points, activityMetrics) {
         if (!points || points.length < 2) return null;
-        var totalDistKm = parseFloat(document.getElementById('val-dist').innerText) || 0;
-        var totalAscent = parseInt(document.getElementById('val-gain').innerText) || 0;
-        var maxAlt = parseInt(document.getElementById('val-max').innerText) || 0;
+        var m = activityMetrics || {};
 
-        let startTimeStr = '未知时间';
-        if (points[0] && points[0].time) {
-            const d = new Date(points[0].time);
-            startTimeStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+        // Task 3.2: 权威数据来自 DB / Resolver，前端不再做二次计算
+        var totalDistKm = (m.dist_km != null) ? Number(m.dist_km) : (parseFloat(document.getElementById('val-dist').innerText) || 0);
+        var totalAscent = (m.gain_m != null) ? Math.round(Number(m.gain_m)) : (parseInt(document.getElementById('val-gain').innerText) || 0);
+        var maxAlt = (m.max_alt_m != null) ? Math.round(Number(m.max_alt_m)) : (parseInt(document.getElementById('val-max').innerText) || 0);
+        var avgPaceSec = (m.avg_pace != null) ? Number(m.avg_pace) : 0;
+        var avgPaceMin = avgPaceSec > 0 ? avgPaceSec / 60 : 0;
+
+        var startTimeStr = m.start_time || '未知时间';
+        if (startTimeStr === '未知时间' && points[0] && points[0].time) {
+            var d = new Date(points[0].time);
+            startTimeStr = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0') + ' ' + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
         }
 
-        var totalDescent = 0, slopes = [], speeds = [], minAlt = Infinity, lastAlt = points[0].alt;
-
+        // 海拔扫描（仅用于 UI 报告展示）
+        var minAlt = Infinity, totalDescent = 0, lastAlt = points[0].alt;
         for (var i = 0; i < points.length; i++) {
             var p = points[i];
             if (p.alt < minAlt) minAlt = p.alt;
             if (i > 0) {
-                var prev = points[i-1];
-                var dist = haversine(prev, p);
-                var dAlt = p.alt - prev.alt;
-
+                var dAlt = p.alt - lastAlt;
                 if (dAlt < -1.5) totalDescent += Math.abs(dAlt);
-                if (dist > 5) {
-                    var sp = (typeof p.slope_pct === 'number' && !isNaN(p.slope_pct)) ? p.slope_pct : (dAlt / dist * 100);
-                    slopes.push(sp);
-                }
-
-                if (p.time && prev.time && dist > 0) {
-                    var dt = (new Date(p.time) - new Date(prev.time)) / 1000;
-                    if (dt > 0) speeds.push(dist / dt);
-                }
+                lastAlt = p.alt;
             }
         }
 
-        var upCount = 0, downCount = 0, maxSingleClimb = 0, hillState = 0; 
+        // 起伏分析（仅用海拔数据，不做距离/坡度计算）
+        var upCount = 0, downCount = 0, maxSingleClimb = 0, hillState = 0;
         var hillRefAlt = points[0].alt, hillPeak = points[0].alt, hillValley = points[0].alt;
-        var hillThreshold = 15; 
+        var hillThreshold = 15;
 
-        for (var i = 1; i < points.length; i++) {
-            var alt = points[i].alt;
-            if (hillState === 1) { 
-                if (alt > hillPeak) { hillPeak = alt; } 
+        for (var hi = 1; hi < points.length; hi++) {
+            var alt = points[hi].alt;
+            if (hillState === 1) {
+                if (alt > hillPeak) { hillPeak = alt; }
                 else if (hillPeak - alt >= hillThreshold) {
                     var climb = hillPeak - hillValley;
                     if (climb >= hillThreshold) { upCount++; if (climb > maxSingleClimb) maxSingleClimb = climb; }
                     hillState = -1; hillValley = alt;
                 }
-            } else if (hillState === -1) { 
-                if (alt < hillValley) { hillValley = alt; } 
+            } else if (hillState === -1) {
+                if (alt < hillValley) { hillValley = alt; }
                 else if (alt - hillValley >= hillThreshold) {
                     if (hillPeak - hillValley >= hillThreshold) { downCount++; }
                     hillState = 1; hillPeak = alt;
                 }
-            } else { 
-                if (alt - hillRefAlt >= hillThreshold) { hillState = 1; hillValley = hillRefAlt; hillPeak = alt; } 
+            } else {
+                if (alt - hillRefAlt >= hillThreshold) { hillState = 1; hillValley = hillRefAlt; hillPeak = alt; }
                 else if (hillRefAlt - alt >= hillThreshold) { hillState = -1; hillPeak = hillRefAlt; hillValley = alt; }
             }
         }
-        if (hillState === 1) { var climb = hillPeak - hillValley; if (climb >= hillThreshold) { upCount++; if (climb > maxSingleClimb) maxSingleClimb = climb; } } 
+        if (hillState === 1) { var climb2 = hillPeak - hillValley; if (climb2 >= hillThreshold) { upCount++; if (climb2 > maxSingleClimb) maxSingleClimb = climb2; } }
         else if (hillState === -1) { if (hillPeak - hillValley >= hillThreshold) downCount++; }
 
-        var avgSpeed = speeds.length > 0 ? speeds.reduce((a,b)=>a+b,0)/speeds.length : 0;
-        var avgPaceMin = avgSpeed > 0 ? 1000 / 60 / avgSpeed : 0;
-
-        var sortedSlopes = slopes.slice().sort((a,b)=>a-b);
-        var trimN = Math.max(1, Math.floor(sortedSlopes.length * 0.05));
-        var trimmedSlopes = sortedSlopes.slice(trimN, sortedSlopes.length - trimN);
-        var maxSlope = 0, minSlope = 0;
-        if (trimmedSlopes.length > 0) {
-            maxSlope = trimmedSlopes[0]; minSlope = trimmedSlopes[0];
-            for (var si = 1; si < trimmedSlopes.length; si++) {
-                if (trimmedSlopes[si] > maxSlope) maxSlope = trimmedSlopes[si];
-                if (trimmedSlopes[si] < minSlope) minSlope = trimmedSlopes[si];
-            }
-        }
-        
-        var uphillCount = 0, downhillCount = 0;
-        for (var si = 0; si < trimmedSlopes.length; si++) {
-            if (trimmedSlopes[si] > 3) uphillCount++;
-            if (trimmedSlopes[si] < -3) downhillCount++;
-        }
-        var totalSlopePts = trimmedSlopes.length || 1;
-        var uphillPct = Math.round(uphillCount / totalSlopePts * 100);
-        var downhillPct = Math.round(downhillCount / totalSlopePts * 100);
-
+        // 难度评分（基于权威数据的解释层）
         var diffScore = 0;
         if (totalDistKm > 5)  diffScore += 1; if (totalDistKm > 10) diffScore += 1; if (totalDistKm > 15) diffScore += 1;
         if (totalAscent > 200) diffScore += 1; if (totalAscent > 500) diffScore += 1; if (totalAscent > 800) diffScore += 1;
-        if (maxSlope > 15) diffScore += 1; if (maxSlope > 25) diffScore += 1;
-        if (uphillPct > 30) diffScore += 1; if (uphillPct > 50) diffScore += 1;
+        if (maxSingleClimb > 100) diffScore += 1; if (maxSingleClimb > 300) diffScore += 1;
+        if (upCount > 3) diffScore += 1; if (upCount > 8) diffScore += 1;
 
         var diffLabel = diffScore <= 2 ? '轻松' : diffScore <= 4 ? '中等' : diffScore <= 7 ? '困难' : '极限';
         var diffBadge = diffScore <= 2 ? 'ai-badge-easy' : diffScore <= 4 ? 'ai-badge-moderate' : diffScore <= 7 ? 'ai-badge-hard' : 'ai-badge-extreme';
 
+        // 预估用时（解释层）
         var estMinutes;
         var isTrailRunning = appState.sportType === 'trail_running';
-        
         if (isTrailRunning) {
-            let basePace = avgPaceMin > 0 ? Math.min(avgPaceMin, 12) : 7.5; 
-            estMinutes = totalDistKm * basePace + (totalAscent / 100) * 12; 
+            var basePace = avgPaceMin > 0 ? Math.min(avgPaceMin, 12) : 7.5;
+            estMinutes = totalDistKm * basePace + (totalAscent / 100) * 12;
         } else {
-            let basePace = avgPaceMin > 0 ? Math.max(avgPaceMin, 10) : 17; 
-            estMinutes = totalDistKm * basePace + (totalAscent / 100) * 15; 
+            var basePaceH = avgPaceMin > 0 ? Math.max(avgPaceMin, 10) : 17;
+            estMinutes = totalDistKm * basePaceH + (totalAscent / 100) * 15;
         }
-
         var estH = Math.floor(estMinutes / 60), estM = Math.round(estMinutes % 60);
 
+        // 配速分段（使用后端 per-point dist_km，不重复 Haversine）
         var totalDistM = totalDistKm * 1000, paceSegs = [];
-        var segCount = Math.min(5, Math.max(1, Math.floor(totalDistKm / 2)));
-        var segDistTarget = totalDistM / segCount, segEnd = 0, accumulatedDist = 0;
-
-        for (var pi = 0; pi < segCount && segEnd < points.length - 1; pi++) {
-            var segAccum = 0, segStart = segEnd, startAlt = points[segStart].alt;
-            while (segEnd < points.length - 1 && segAccum < segDistTarget) {
-                var d = haversine(points[segEnd], points[segEnd+1]); segAccum += d; segEnd++;
+        if (points[0].dist_km != null && totalDistM > 0) {
+            var segCount = Math.min(5, Math.max(1, Math.floor(totalDistKm / 2)));
+            var segDistTarget = totalDistKm / segCount;
+            var segEndIdx = 0, accumulatedDistKm = 0;
+            for (var pi = 0; pi < segCount && segEndIdx < points.length - 1; pi++) {
+                var segStartIdx = segEndIdx, startAlt = points[segStartIdx].alt;
+                var targetKm = accumulatedDistKm + segDistTarget;
+                while (segEndIdx < points.length - 1 && (points[segEndIdx].dist_km || 0) < targetKm) segEndIdx++;
+                if (segEndIdx === segStartIdx) { segEndIdx = Math.min(segStartIdx + 1, points.length - 1); }
+                var segDistM = (points[segEndIdx].dist_km - points[segStartIdx].dist_km) * 1000;
+                if (segDistM < 50) continue;
+                var segSlope = ((points[segEndIdx].alt - startAlt) / segDistM) * 100;
+                var startKmStr = accumulatedDistKm.toFixed(1);
+                accumulatedDistKm = points[segEndIdx].dist_km;
+                var endKmStr = accumulatedDistKm.toFixed(1);
+                var baseSegPace2 = isTrailRunning ? 7.5 : 17;
+                var segPaceVal = segSlope > 15 ? baseSegPace2 * 1.8 : segSlope > 10 ? baseSegPace2 * 1.5 : segSlope > 5 ? baseSegPace2 * 1.25 : segSlope > 2 ? baseSegPace2 * 1.1 : segSlope > -2 ? baseSegPace2 * 1.0 : segSlope > -8 ? baseSegPace2 * 0.9 : baseSegPace2 * 1.15;
+                var paceLabel = segSlope > 5 ? '上坡' : segSlope > 2 ? '微上' : segSlope < -8 ? '陡下' : segSlope < -2 ? '下坡' : '平路';
+                paceSegs.push({ seg: paceLabel + ' ' + startKmStr + '-' + endKmStr + 'km', pace: Math.floor(segPaceVal) + ':' + String(Math.floor((segPaceVal%1)*60)).padStart(2,'0') + '/km' });
             }
-            if (segAccum < 50) continue; 
-            var segSlope = ((points[segEnd].alt - startAlt) / segAccum) * 100; 
-            var startKmStr = (accumulatedDist / 1000).toFixed(1);
-            accumulatedDist += segAccum;
-            var endKmStr = (accumulatedDist / 1000).toFixed(1);
-            
-            var baseSegPace = isTrailRunning ? 7.5 : 17;
-            var segPaceVal = segSlope > 15 ? baseSegPace * 1.8 : segSlope > 10 ? baseSegPace * 1.5 : segSlope > 5 ? baseSegPace * 1.25 : segSlope > 2 ? baseSegPace * 1.1 : segSlope > -2 ? baseSegPace * 1.0 : segSlope > -8 ? baseSegPace * 0.9 : baseSegPace * 1.15; 
-            var paceLabel = segSlope > 5 ? '上坡' : segSlope > 2 ? '微上' : segSlope < -8 ? '陡下' : segSlope < -2 ? '下坡' : '平路';
-            paceSegs.push({ seg: paceLabel + ' ' + startKmStr + '-' + endKmStr + 'km', pace: Math.floor(segPaceVal) + ':' + String(Math.floor((segPaceVal%1)*60)).padStart(2,'0') + '/km' });
         }
 
+        // 补给建议（解释层）
         var supplies = [];
         if (totalDistKm > 3)  supplies.push({icon:'💧', name:'水 500ml', note:'基本补水'});
         if (totalDistKm > 5)  supplies.push({icon:'💧', name:'水 1.5L', note:'定时补充'});
@@ -5179,29 +5274,35 @@
         if (totalDistKm > 12) supplies.push({icon:'🔋', name:'电解质', note:'防止抽筋'});
         if (totalAscent > 500) supplies.push({icon:'🧂', name:'盐丸', note:'出汗补充'});
 
-        var restPoints = [], restCount = Math.min(4, Math.max(1, Math.floor(totalDistKm / 3))), restDistTarget = totalDistM / (restCount + 1), rAccum = 0;
-        for (var r = 1; r < points.length && restPoints.length < restCount; r++) {
-            rAccum += haversine(points[r-1], points[r]);
-            if (rAccum >= restDistTarget * (restPoints.length + 1)) {
-                restPoints.push({ name: (rAccum / 1000).toFixed(1) + 'km 处', distance: '海拔 ' + Math.round(points[r].alt) + 'm', altitude: Math.round(points[r].alt), duration: isTrailRunning ? '1-3分钟' : '5-10分钟', suggestion: isTrailRunning ? '快补水、调整呼吸' : '补水、拉伸、进食' });
+        // 休息点建议（使用后端 per-point dist_km）
+        var restPoints = [];
+        if (points[0].dist_km != null && totalDistKm > 0) {
+            var restCount = Math.min(4, Math.max(1, Math.floor(totalDistKm / 3)));
+            var restDistTargetKm = totalDistKm / (restCount + 1);
+            for (var r = 1; r < points.length && restPoints.length < restCount; r++) {
+                var dkm = points[r].dist_km || 0;
+                if (dkm >= restDistTargetKm * (restPoints.length + 1)) {
+                    restPoints.push({ name: dkm.toFixed(1) + 'km 处', distance: '海拔 ' + Math.round(points[r].alt) + 'm', altitude: Math.round(points[r].alt), duration: isTrailRunning ? '1-3分钟' : '5-10分钟', suggestion: isTrailRunning ? '快补水、调整呼吸' : '补水、拉伸、进食' });
+                }
             }
         }
 
         var met = isTrailRunning ? (8.0 + totalAscent / 100 * 1.5) : (4.0 + totalAscent / 100 * 1.0);
         var totalCal = Math.round(met * 72 * (estMinutes / 60 || totalDistKm / 4));
         var energy = Math.min(100, Math.round(totalDistKm * 3 + totalAscent / 20));
-        var altRange = maxAlt - minAlt;
+        var altRange = maxAlt - Math.round(minAlt);
 
         return {
             startTimeStr: startTimeStr,
             totalDist: totalDistKm, totalAscent: totalAscent, totalDescent: Math.round(totalDescent),
-            upCount: upCount, downCount: downCount, maxSingleClimb: maxSingleClimb, avgPace: avgPaceMin,
-            maxAlt: maxAlt, minAlt: Math.round(minAlt), maxSlope: maxSlope, minSlope: minSlope,
-            uphillPct: uphillPct, downhillPct: downhillPct, diffLabel: diffLabel, diffBadge: diffBadge, diffScore: diffScore,
+            upCount: upCount, downCount: downCount, maxSingleClimb: Math.round(maxSingleClimb), avgPace: avgPaceMin,
+            maxAlt: maxAlt, minAlt: Math.round(minAlt),
+            maxSlope: 0, minSlope: 0, uphillPct: 0, downhillPct: 0,
+            diffLabel: diffLabel, diffBadge: diffBadge, diffScore: diffScore,
             estTime: estH + '小时' + estM + '分钟', paceSegs: paceSegs, supplies: supplies, restPoints: restPoints,
             totalCal: totalCal, energy: energy, energyLevel: energy > 80 ? '极高' : energy > 60 ? '较高' : energy > 40 ? '中等' : '较低',
             energyColor: energy > 80 ? '#ef4444' : energy > 60 ? '#f59e0b' : energy > 40 ? '#3b82f6' : '#22c55e',
-            altRange: Math.round(altRange), 
+            altRange: Math.round(altRange),
             altAnalysis: altRange < 100 ? '<span class="alt-keyword alt-keyword-lv1">马路牙子</span>可能就是全场最大的爬升了，一路坦途。主打一个气定神闲，闭着眼睛也能轻松拿捏目标配速。' : altRange < 300 ? '地形像波浪一样带点起伏，赛道开始不安分了。学会利用地形找准呼吸，在不知不觉的缓坡中稳住自己的<span class="alt-keyword alt-keyword-lv2">节奏</span>。' : altRange < 600 ? '哎哟，这海拔曲线画得跟过山车似的！你的心肺系统马上要迎来一场<span class="alt-keyword alt-keyword-lv3">硬核拉练</span>，准备好迎接大口喘气和乳酸堆积的酸爽感吧。' : '恭喜你，这是一场纯粹的重力对抗战！堪比拔地而起去冲顶四千米以上的高海拔山峰，疯狂的垂直爬升急需你调动身体里的每一丝<span class="alt-keyword alt-keyword-lv4">糖原储备</span>来硬扛。'
         };
     }
@@ -5236,8 +5337,8 @@
         html += '<div class="ai-section"><h3>📊 坡度与起伏</h3>';
         html += '<div class="ai-stat"><span class="ai-stat-label">最大连续爬坡</span><span class="ai-stat-value" style="color:#fca5a5; font-weight:bold;">↑ ' + Math.round(report.maxSingleClimb) + ' m</span></div>';
         html += '<div class="ai-stat"><span class="ai-stat-label">显著起伏</span><span class="ai-stat-value">' + report.upCount + '上 / ' + report.downCount + '下</span></div>';
-        html += '<div class="ai-stat"><span class="ai-stat-label">坡度范围</span><span class="ai-stat-value">' + report.minSlope.toFixed(1) + '% ~ ' + report.maxSlope.toFixed(1) + '%</span></div>';
-        html += '<div class="ai-stat"><span class="ai-stat-label">上坡/下坡路程比</span><span class="ai-stat-value">' + report.uphillPct + '% / ' + report.downhillPct + '%</span></div>';
+        html += '<div class="ai-stat"><span class="ai-stat-label">坡度范围</span><span class="ai-stat-value">' + (report.maxSlope ? report.minSlope.toFixed(1) + '% ~ ' + report.maxSlope.toFixed(1) + '%' : '由后端 Resolver 提供') + '</span></div>';
+        html += '<div class="ai-stat"><span class="ai-stat-label">上坡/下坡路程比</span><span class="ai-stat-value">' + (report.uphillPct ? report.uphillPct + '% / ' + report.downhillPct + '%' : '由后端 Resolver 提供') + '</span></div>';
         html += '<div style="font-size:0.7rem;color:#94a3b8;margin-top:3px;">' + report.altAnalysis + '</div></div>';
 
         const meta = getDynamicSportMeta(appState.sportType);
@@ -5279,13 +5380,10 @@
             return null;
         }
         try {
-            const report = generateAIReport(appState.points);
+            const report = generateAIReport(appState.points, appState.activityMetrics);
             summaryEl.innerHTML = buildAIReportHTML(report);
             sidebarEl.classList.remove('collapsed');
             switchAITab('report');
-            if (appState.points && appState.points.length > 0) {
-                fetchLocationName(appState.points[0].lat, appState.points[0].lon);
-            }
             return report;
         } catch (err) {
             console.error('轨迹报告生成失败:', err);
@@ -5302,30 +5400,6 @@
         if (!summaryEl || !sidebarEl) return;
         summaryEl.innerHTML = buildAIReportHTML(report);
         sidebarEl.classList.remove('collapsed');
-        
-        if (appState.points && appState.points.length > 0) {
-            fetchLocationName(appState.points[0].lat, appState.points[0].lon);
-        }
-    }
-
-    async function fetchLocationName(lat, lon) {
-        try {
-            const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=10&accept-language=zh-CN`);
-            const data = await response.json();
-            let locName = '未知区域';
-            if (data && data.address) {
-                // 优化优先级：优先取具体的区县/乡镇，然后是城市
-                locName = data.address.city || data.address.town || data.address.county || data.address.state || data.address.province || data.name || '未知区域';
-            }
-            const el = document.getElementById('track-location-name');
-            if (el) el.innerText = locName;
-            return locName;
-        } catch (e) {
-            const locName = `${lon.toFixed(2)}, ${lat.toFixed(2)}`;
-            const el = document.getElementById('track-location-name');
-            if (el) el.innerText = locName;
-            return locName;
-        }
     }
 
     function parseGPX(text) {
@@ -5541,7 +5615,7 @@
         });
     }
 
-    function applyDataAndRender(data, filename = "自定义轨迹") {
+    function applyDataAndRender(data, filename = "自定义轨迹", activity = null) {
         if (!data || !data.points || !Array.isArray(data.points) || data.points.length === 0) {
             showToast('⚠️ 轨迹数据无效，无法渲染');
             return;
@@ -5552,10 +5626,13 @@
         appState.placemarks = data.placemarks || [];
         appState.progress = 100; document.getElementById('progress-slider').value = 100; document.getElementById('progress-val').innerText = '100.0%';
 
-        const stats = calculateStats(appState.points);
+        // Task 3.2: 捕获后端权威 metrics，前端不再计算 distance/pace/elevation
+        appState.activityMetrics = activity || null;
+
+        const stats = calculateStats(appState.points, appState.activityMetrics);
         appState.kmMarkers = stats.kmMarkers; appState.peakMarkers = stats.peakMarkers; 
 
-        document.getElementById('val-dist').innerText = stats.dist + ' km'; document.getElementById('val-gain').innerText = stats.gain + ' m';
+        document.getElementById('val-dist').innerText = stats.dist; document.getElementById('val-gain').innerText = stats.gain;
         document.getElementById('val-time').innerText = stats.time; 
         
         // 智能化更新标题 (如果原始名称太通用)
@@ -5563,7 +5640,7 @@
         if (filename === '轨迹' || filename === '自定义轨迹' || filename === 'Untitled') {
             if (appState.points.length > 0 && appState.points[0].time) {
                 const d = new Date(appState.points[0].time);
-                displayTitle = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}_${stats.dist}km`;
+                displayTitle = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}_${stats.dist}`;
             }
         }
         document.getElementById('track-title').innerText = displayTitle;
@@ -5592,12 +5669,29 @@
                 points: appState.points,
                 placemarks: appState.placemarks,
                 filename: filename,
-                weather: appState.currentWeather
+                weather: appState.currentWeather,
+                activityId: appState.currentActivityId || null
             })).catch(function () {});
         }
 
         renderTrackReport({ silent: true });
         renderPerformanceRadar();
+
+        // Task 3.2: UI vs DB 对齐校验（开发模式）
+        if (appState.DEBUG_MODE && appState.activityMetrics) {
+            (function() {
+                var m = appState.activityMetrics;
+                var drift = [];
+                var uiDistKm = appState.totalDist;
+                if (uiDistKm != null && m.dist_km != null && Math.abs(uiDistKm - Number(m.dist_km)) > 0.1)
+                    drift.push('dist: UI=' + uiDistKm.toFixed(2) + ' DB=' + Number(m.dist_km).toFixed(2));
+                var uiMaxAlt = Math.round(appState.maxAltitude);
+                if (m.max_alt_m != null && Math.abs(uiMaxAlt - Number(m.max_alt_m)) > 10)
+                    drift.push('maxAlt: UI=' + uiMaxAlt + ' DB=' + Number(m.max_alt_m));
+                if (drift.length) console.warn('[Task3.2 DRIFT]', drift.join(' | '));
+                else console.log('[Task3.2 DRIFT] UI ↔ DB 对齐 OK');
+            })();
+        }
     }
 
     // ==========================================
@@ -5679,7 +5773,7 @@
                 overlay.className = 'onboarding-overlay';
                 
                 // 获取当前本地路径，用于第二步显示
-                const currentLocalDir = document.getElementById('set-local-dir')?.value || '~/.fitvault/workspace/tracks/';
+                const currentLocalDir = getFitTracksDir();
                 
                 overlay.innerHTML = `
                     <div class="onboarding-card">
@@ -5699,11 +5793,11 @@
 
                         <!-- 步骤2: 存储配置 -->
                         <div class="onboarding-step" id="step-2">
-                            <div class="onboarding-title">📁 配置本地存储目录</div>
+                            <div class="onboarding-title">📁 存储目录说明</div>
                             <div class="onboarding-desc">
-                                请在背后的面板中点击<b>「选择文件夹」</b>，指定一个用于存放 FIT 轨迹文件的本地目录。<br><br>
-                                当前选择的路径：<br>
-                                <b style="color:var(--primary); word-break:break-all;" id="onboard-path-display">${currentLocalDir}</b>
+                                系统已在本地自动创建 FIT 文件存储目录，您只需点击「下一步」确认即可。<br><br>
+                                存储路径：<br>
+                                <b style="color:var(--primary); word-break:break-all;">${currentLocalDir}</b>
                             </div>
                             <div class="onboarding-actions">
                                 <button class="onboarding-btn secondary" onclick="Onboarding.prevStep(1)">上一步</button>
@@ -5764,25 +5858,12 @@
         },
 
         verifyStep2() {
-            const pathInput = document.getElementById('set-local-dir');
-            if (pathInput && pathInput.value && pathInput.value.trim() !== '') {
-                this.nextStep(3);
-            } else {
-                showToast('⚠️ 请先选择一个本地文件夹用于存储数据');
-            }
+            this.nextStep(3);
         },
 
         nextStep(step) {
             document.querySelectorAll('.onboarding-step').forEach(el => el.classList.remove('active'));
             document.getElementById(`step-${step}`).classList.add('active');
-            
-            if (step === 2) {
-                // 更新显示的路径
-                const pathInput = document.getElementById('set-local-dir');
-                if (pathInput) {
-                    document.getElementById('onboard-path-display').innerText = pathInput.value || '未选择';
-                }
-            }
         },
 
         prevStep(step) {
@@ -5886,6 +5967,7 @@
         updateSyncButtonsVisibility();
         updateSettingsGuide();
     }
+</script>
 
 <!-- ===== FIT Vault 首次运行配置引导层 ===== -->
 <div id="first-run-overlay" class="hidden fixed inset-0 bg-slate-950/95 z-[9999] flex items-center justify-center backdrop-blur-sm">
@@ -5932,6 +6014,159 @@ function hideBootLoading() {
     else { window.addEventListener('load', _watchdogClear); }
 })();
 
+const BTN_AI_TEXT_IDLE = '🤖 告诉AI助手存储规范';
+
+function setNotifyIndicator(state) {
+    const ind = document.getElementById('btn-notify-indicator');
+    if (!ind) return;
+    ind.className = 'ai-btn-indicator ' + state;
+}
+
+function resetDirectoryValidationState() {
+    onboardingState.dirValidated = false;
+    onboardingState.aiNotified = false;
+    setNotifyIndicator('idle');
+    const btn = document.getElementById('btn-notify-ai');
+    if (btn) {
+        btn.innerText = BTN_AI_TEXT_IDLE;
+        btn.classList.remove('notified');
+        btn.disabled = true;
+    }
+    const msgEl = document.getElementById('dir-validation-msg');
+    if (msgEl) { msgEl.innerText = '⏳ 等待确认...'; msgEl.style.color = '#64748b'; }
+    updateSettingsGuide();
+}
+
+function isLLMOkConfirmation(res) {
+    if (!res || !res.ok) return false;
+    const text = String(res.content || res.text || res.message || '').trim()
+        .replace(/^["""''「」《》【】\s]+/, '')
+        .replace(/["""''「」《》【】。，!！?？\s]+$/, '');
+    return text.toLowerCase() === 'ok';
+}
+
+function setAIStorageNotifyButtonState(state) {
+    const btn = document.getElementById('btn-notify-ai');
+    const ind = document.getElementById('btn-notify-indicator');
+    switch (state) {
+        case 'idle':
+            if (btn) { btn.innerText = BTN_AI_TEXT_IDLE; btn.disabled = true; btn.classList.remove('notified'); }
+            if (ind) ind.className = 'ai-btn-indicator idle';
+            break;
+        case 'enabled':
+            if (btn) { btn.innerText = BTN_AI_TEXT_IDLE; btn.disabled = false; btn.classList.remove('notified'); }
+            if (ind) ind.className = 'ai-btn-indicator idle';
+            break;
+        case 'syncing':
+            if (btn) { btn.innerText = '存储规范同步中...'; btn.disabled = true; }
+            if (ind) ind.className = 'ai-btn-indicator communicating';
+            break;
+        case 'success':
+            if (btn) { btn.innerText = '✅存储目录有效'; btn.disabled = true; btn.classList.add('notified'); }
+            if (ind) ind.className = 'ai-btn-indicator success';
+            break;
+        case 'failed':
+            if (btn) { btn.innerText = BTN_AI_TEXT_IDLE; btn.disabled = false; btn.classList.remove('notified'); }
+            if (ind) ind.className = 'ai-btn-indicator failed';
+            break;
+    }
+}
+
+function withTimeout(promise, ms) {
+    return Promise.race([
+        promise,
+        new Promise(function(_, reject) {
+            setTimeout(function() { reject(new Error('沟通超时，请重试')); }, ms);
+        })
+    ]);
+}
+
+async function notifyAIAssistant() {
+    const localDir = getFitTracksDir();
+    setAIStorageNotifyButtonState('syncing');
+
+    const prompt = `从现在开始，所有从佳明(Garmin)下载的FIT文件，必须严格遵守以下规范：
+
+FIT文件存放路径规范
+下载后得到的是ZIP文件，必须解压
+解压后得到的FIT文件必须放到以下目录：
+${localDir}
+文件名由 Garmin-stats skill 的 download_fit.py 自动命名为 {活动标题}_{活动ID}.fit
+解压并移动完成后，删除原始ZIP文件
+如果目标目录不存在，先创建它
+切勿擅自改变路径或跳过解压步骤
+请记住这条规范，并将它写入你的长期记忆，标题为「FIT文件存放路径规范」。
+以后每次下载FIT文件都严格按照这个路径存放，不要擅自改变路径或跳过解压步骤。
+确认后，仅回复"OK"`;
+
+    try {
+        let success = false;
+        if (window.pywebview && window.pywebview.api) {
+            const res = await withTimeout(window.pywebview.api.call_llm(prompt, 'system_instruction'), 30000);
+            success = isLLMOkConfirmation(res);
+        }
+
+        if (success) {
+            showToast('✅ 已成功告知 AI 助手存储规范！');
+            onboardingState.aiNotified = true;
+            updateSettingsGuide();
+            setAIStorageNotifyButtonState('success');
+        } else {
+            showToast('⚠️ 通知失败，请重试');
+            setAIStorageNotifyButtonState('failed');
+        }
+    } catch (e) {
+        console.error('AI 通知异常:', e);
+        showToast('⚠️ 通知失败: ' + (e.message || e));
+        setAIStorageNotifyButtonState('failed');
+    }
+}
+
+async function revalidateDirectory(path) {
+    const requestId = ++onboardingState.dirValidationRequestId;
+    const msgEl = document.getElementById('dir-validation-msg');
+    onboardingState.dirValidated = false;
+    if (!path) {
+        if (msgEl) { msgEl.innerText = ''; msgEl.style.color = ''; }
+        updateSettingsGuide();
+        return false;
+    }
+    if (msgEl) { msgEl.innerText = '⏳ 正在验证目录...'; msgEl.style.color = '#64748b'; }
+    try {
+        let ok = false;
+        if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.validate_fit_directory === 'function') {
+            const res = await window.pywebview.api.validate_fit_directory(path);
+            if (requestId !== onboardingState.dirValidationRequestId) return false;
+            ok = res && res.ok;
+        } else {
+            ok = true;
+        }
+        if (ok) {
+            onboardingState.dirValidated = true;
+            if (msgEl) { msgEl.innerText = '✅ 目录有效'; msgEl.style.color = '#86efac'; }
+        } else {
+            if (msgEl) { msgEl.innerText = '⚠️ 目录无效或无法访问，请重新选择'; msgEl.style.color = '#f87171'; }
+        }
+        updateSettingsGuide();
+        return ok;
+    } catch (e) {
+        if (requestId !== onboardingState.dirValidationRequestId) return false;
+        console.warn('目录验证失败:', e);
+        if (msgEl) { msgEl.innerText = '⚠️ 目录验证失败: ' + (e.message || e); msgEl.style.color = '#f87171'; }
+        updateSettingsGuide();
+        return false;
+    }
+}
+
+const _FIT_TRACKS_DIR_FALLBACK = '~/.fitvault/workspace/tracks/';
+var _fitTracksDirCached = '';
+
+function getFitTracksDir() {
+    if (_fitTracksDirCached) return _fitTracksDirCached;
+    // bootstrap 未完成时用约定兜底路径
+    return _FIT_TRACKS_DIR_FALLBACK;
+}
+
 document.addEventListener('DOMContentLoaded', function () {
     if (window.pywebview && window.pywebview.api) {
         bootstrapApplication();
@@ -5944,6 +6179,13 @@ async function bootstrapApplication() {
     initCesiumViewer();
     try {
         var res = await pywebview.api.check_first_run_status();
+        // 从后端获取跨平台动态路径，不再硬编码
+        if (res && res.default_tracks_dir) {
+            _fitTracksDirCached = res.default_tracks_dir;
+            // 更新设置面板中的路径显示
+            var display = document.getElementById('storage-dir-display');
+            if (display) display.innerText = _fitTracksDirCached;
+        }
         if (res.ok && res.is_first_run) {
             hideBootLoading();
             document.getElementById('first-run-overlay').classList.remove('hidden');
@@ -6098,7 +6340,7 @@ function openConfigModalFromWarning() {
                     const sel = document.getElementById('sport-type-selector');
                     if (sel) { sel.value = res.activity.sport_type; sel.style.color = '#f8fafc'; }
                 }
-                applyDataAndRender(res.data, res.filename || '轨迹');
+                applyDataAndRender(res.data, res.filename || '轨迹', res.activity || null);
                 renderHistoryList();
             } catch (err) {
                 showToast('⚠️ 导入失败: ' + (err && err.message ? err.message : String(err)));

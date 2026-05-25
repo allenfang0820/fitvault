@@ -107,7 +107,7 @@ def points_to_dataframe_csv(points: list[dict[str, Any]], max_chars: int = 420_0
     if not points:
         return "(无轨迹点数据)"
     df = pd.DataFrame(points)
-    preferred = ["dist", "lat", "lon", "alt", "time", "hr", "slope_pct"]
+    preferred = ["lat", "lon", "alt", "time", "hr", "cadence"]
     cols = [c for c in preferred if c in df.columns]
     rest = [c for c in df.columns if c not in cols]
     df = df[cols + rest]
@@ -192,6 +192,7 @@ def build_base_system_block(
     points: list[dict[str, Any]],
     placemarks: list[dict[str, Any]],
     weather_context: dict[str, Any] | None = None,
+    ai_snapshot_block: str = "",
 ) -> str:
     sport_cn, role = _sport_labels(sport_type)
     table = points_to_dataframe_csv(points)
@@ -203,11 +204,13 @@ def build_base_system_block(
             "你应通过当前网关可用的运动数据 MCP 工具获取用户最近若干次真实运动记录作为基准；"
             "切勿向用户罗列原始历史记录全文，结论务必简短。\n"
         )
+    snapshot = f"\n{ai_snapshot_block}\n" if ai_snapshot_block else ""
     return f"""你是一位{role}与 AI 户外领队。用户活动类型：【{sport_cn}】。
 当前轨迹文件：{track_filename}
 {mcp_note}
+{snapshot}
 【高密度轨迹明细表】
-以下为 pandas 导出 CSV（含 dist 累计距离 km、lat、lon、alt、time、hr、slope_pct 等列，索引为点序号）：
+以下为 pandas 导出 CSV（含 lat、lon、alt、time、hr、cadence 等列，索引为点序号）：
 ```
 {table}
 ```
@@ -265,6 +268,7 @@ def build_chat_system_block(
     placemarks: list[dict[str, Any]],
     report_json: str | None = None,
     weather_context: dict[str, Any] | None = None,
+    ai_snapshot_block: str = "",
 ) -> str:
     sport_cn, _ = _sport_labels(sport_type)
     if not points or len(points) < 2:
@@ -279,6 +283,7 @@ def build_chat_system_block(
         points=points,
         placemarks=placemarks,
         weather_context=weather_context,
+        ai_snapshot_block=ai_snapshot_block,
     )
     report_instruction = ""
     if report_json:
