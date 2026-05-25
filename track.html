@@ -2383,6 +2383,11 @@
 
     let aiCoachKeyboardBound = false;
 
+    function _safeInt(value, defaultValue = 0) {
+        const num = Number(value);
+        return Number.isFinite(num) ? Math.round(num) : defaultValue;
+    }
+
     function normalizeActivityToken(value) {
         return String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
     }
@@ -2814,7 +2819,7 @@
     async function refreshRecordsAfterDetection() {
         try {
             if (getCurrentActivePanel() === 'profile' && sportHubState.activeTab === 'records') {
-                await loadSportHubActivityList({ resetPage: true, refreshSnapshot: true });
+                await loadSportHubActivityList({ resetPage: true });
             }
         } catch (e) {
             console.warn('refreshRecordsAfterDetection error:', e);
@@ -3314,10 +3319,6 @@
         const applyRecords = options.applyRecords !== false;
         const applyInsights = options.applyInsights !== false;
         if (applyRecords) {
-            if (!sportHubState.recordsReady) {
-                setSportHubRecordSnapshot(Array.isArray(data.records) ? data.records : []);
-                applySportHubRecordFilters(false);
-            }
             sportHubState.activityTypes = Array.isArray(data.activity_types) ? data.activity_types : [];
             sportHubState.pageSizes = Array.isArray(data.page_sizes) && data.page_sizes.length ? data.page_sizes : [10, 20, 50];
             if (!sportHubState.pageSizes.includes(sportHubState.filters.pageSize)) {
@@ -3359,52 +3360,41 @@
 
     async function loadSportHubActivityList(options = {}) {
         const resetPage = !!options.resetPage;
-        const refreshSnapshot = options.refreshSnapshot !== false && (!!options.refreshSnapshot || !sportHubState.recordsReady);
-        if (!refreshSnapshot) {
-            if (resetPage) sportHubState.filters.page = 1;
-            applySportHubRecordFilters(resetPage);
-            sportHubState.recordsReady = true;
-            renderSportHubFilterOptions();
-            renderSportHubRecords();
-            renderCurrentSportHubTab();
-            return;
-        }
-        if (resetPage) sportHubState.filters.page = 1;
+        const page = resetPage ? 1 : Math.max(1, Number(sportHubState.filters.page) || 1);
+        const pageSize = Number(sportHubState.filters.pageSize) || 10;
+        const filterType = String(sportHubState.filters.type || 'all');
+
         sportHubState.recordsLoading = true;
         sportHubState.recordsError = '';
         const requestId = ++sportHubState.requestSeq;
         renderSportHubRecords();
         try {
-            if (!(window.pywebview && window.pywebview.api && typeof window.pywebview.api.get_activity_list_snapshot === 'function')) {
-                const fallback = getLocalSportHubFallback();
-                populateSportHubState(fallback);
+            if (!(window.pywebview && window.pywebview.api && typeof window.pywebview.api.get_sport_hub_activity_page === 'function')) {
+                sportHubState.records = [];
                 sportHubState.recordsReady = true;
-                applySportHubRecordFilters(resetPage);
                 return;
             }
-            const res = await window.pywebview.api.get_activity_list_snapshot('all');
+            const res = await window.pywebview.api.get_sport_hub_activity_page(page, pageSize, filterType);
             if (requestId !== sportHubState.requestSeq) return;
             if (!res || !res.ok) throw new Error((res && res.error) || '运动记录加载失败');
-            setSportHubRecordSnapshot(Array.isArray(res.records) ? res.records : []);
-            if (sportHubState.selectedIds && sportHubState.selectedIds.size) {
-                const validIds = new Set((Array.isArray(res.records) ? res.records : []).map(item => item && item.id).filter(Boolean));
-                sportHubState.selectedIds.forEach(id => { if (!validIds.has(id)) sportHubState.selectedIds.delete(id); });
-            }
+
+            sportHubState.records = Array.isArray(res.records) ? res.records : [];
+            sportHubState.total = _safeInt(res.total, 0);
+            sportHubState.totalPages = Math.max(1, Number(res.total_pages) || 1);
+            sportHubState.filters.page = Number(res.page) || 1;
+            sportHubState.filters.pageSize = Number(res.page_size) || 10;
             sportHubState.activityTypes = Array.isArray(res.activity_types) ? res.activity_types : [];
             sportHubState.pageSizes = Array.isArray(res.page_sizes) && res.page_sizes.length ? res.page_sizes : [10, 20, 50];
             if (!sportHubState.pageSizes.includes(sportHubState.filters.pageSize)) {
                 sportHubState.filters.pageSize = sportHubState.pageSizes[0];
             }
-            applySportHubRecordFilters(resetPage);
             sportHubState.recordsReady = true;
         } catch (e) {
             console.error('loadSportHubActivityList error:', e);
             sportHubState.recordsError = String((e && e.message) || e || '运动记录加载失败');
             if (!sportHubState.recordsReady) {
-                const fallback = getLocalSportHubFallback();
-                populateSportHubState(fallback);
+                sportHubState.records = [];
                 sportHubState.recordsReady = true;
-                applySportHubRecordFilters(resetPage);
             }
         } finally {
             if (requestId === sportHubState.requestSeq) {
@@ -3512,7 +3502,7 @@
                 }
                 sportHubState.lastSyncSummary = await sportHubState.syncPromise;
             }
-            await loadSportHubActivityList({ resetPage, refreshSnapshot: true });
+            await loadSportHubActivityList({ resetPage });
         } catch (e) {
             console.error('syncAndLoadSportHubRecords error:', e);
             sportHubState.recordsError = String((e && e.message) || e || '运动记录同步失败');
@@ -3700,7 +3690,7 @@
                     const res = await window.pywebview.api.delete_activities(ids);
                     if (!res || !res.ok) throw new Error((res && res.error) || '删除失败');
                     sportHubState.selectedIds.clear();
-                    await loadSportHubActivityList({ resetPage: true, refreshSnapshot: true });
+                    await loadSportHubActivityList({ resetPage: true });
                     let msg = `已删除 ${res.deleted} 条运动记录`;
                     if (typeof res.files_deleted === 'number') {
                         msg += `，已移除 ${res.files_deleted} 个本地文件`;
@@ -4063,7 +4053,7 @@
         } else {
             // 首次进入：先加载 DB 数据（无等待），再后台静默同步新增文件
             try {
-                await loadSportHubActivityList({ resetPage: true, refreshSnapshot: true });
+                await loadSportHubActivityList({ resetPage: true });
                 isMovementRecordsInitialized = true;
                 renderSportHubFilterOptions();
                 renderSportHubRecords();
@@ -4078,7 +4068,7 @@
                 try {
                     const syncRes = await runSportHubSyncJob();
                     if (syncRes && (syncRes.inserted > 0 || syncRes.updated > 0)) {
-                        await loadSportHubActivityList({ resetPage: false, refreshSnapshot: true });
+                        await loadSportHubActivityList({ resetPage: false });
                         renderSportHubFilterOptions();
                         renderSportHubRecords();
                     }
@@ -4162,7 +4152,7 @@
             const typeSel = document.getElementById('sport-record-type-filter');
             sportHubState.filters.type = typeSel ? typeSel.value : 'all';
             sportHubState.filters.page = 1;
-            await loadSportHubActivityList({ resetPage: true, refreshSnapshot: false });
+            await loadSportHubActivityList({ resetPage: true });
         } catch (e) {
             console.error('onSportHubFilterChange error:', e);
         }
@@ -4172,12 +4162,12 @@
         const pageSel = document.getElementById('sport-record-page-size');
         sportHubState.filters.pageSize = pageSel ? Number(pageSel.value) : 10;
         sportHubState.filters.page = 1;
-        await loadSportHubActivityList({ resetPage: true, refreshSnapshot: false });
+        await loadSportHubActivityList({ resetPage: true });
     }
 
     async function changeSportHubPage(delta) {
         sportHubState.filters.page = Math.max(1, sportHubState.filters.page + delta);
-        await loadSportHubActivityList({ resetPage: false, refreshSnapshot: false });
+        await loadSportHubActivityList({ resetPage: false });
     }
 
     function sendAIMsg() {
@@ -4267,7 +4257,8 @@
         appState.historyFilters.time = document.getElementById('filter-time').value;
         appState.historyFilters.type = document.getElementById('filter-type').value;
         appState.historyFilters.location = document.getElementById('filter-location').value;
-        renderHistoryList(true); // 使用缓存数据重新渲染
+        appState.historyPagination.currentPage = 1;
+        renderHistoryList(false);
     }
 
     let renderHistoryListTimer = null;
@@ -4295,20 +4286,26 @@
 
         try {
             if (!useCache || appState.rawHistoryFiles.length === 0) {
-                const res = await window.pywebview.api.get_trace_activity_history();
+                const sportFilter = String(appState.historyFilters.type || 'all');
+                const page = Math.max(1, Number(appState.historyPagination.currentPage) || 1);
+                const pageSize = Number(appState.historyPagination.pageSize) || 30;
+
+                const res = await window.pywebview.api.get_trace_activity_history(page, pageSize, sportFilter);
                 if (!res || !res.ok) {
                     listEl.innerHTML = '<div style="color:#94a3b8;font-size:0.75rem;text-align:center;padding:20px;">暂无历史记录</div>';
                     return;
                 }
                 appState.rawHistoryFiles = Array.isArray(res.records)
                     ? (res.records || []).filter(f => f.valid !== false)
-                    : (res.files || []).filter(f => f.valid);
-                
+                    : [];
+                appState.historyPagination.totalPages = Math.max(1, Number(res.total_pages) || 1);
+                appState.historyPagination.currentPage = Math.max(1, Number(res.page) || 1);
+                appState.historyPagination.backendTotal = Number(res.total) || 0;
+
                 appState.rawHistoryFiles.forEach(f => {
                     f.cityName = (f.region || '').trim() || '未知地点';
                 });
-                
-                // 更新地点下拉框
+
                 const locationSel = document.getElementById('filter-location');
                 if (locationSel) {
                     const cities = new Set();
@@ -4317,60 +4314,31 @@
                             cities.add(f.cityName);
                         }
                     });
-                    
-                    if (cities.size === 0) {
-                        locationSel.innerHTML = '<option value="all">暂无地区数据</option>';
-                        appState.historyFilters.location = 'all';
-                    } else if (cities.size === 1) {
-                        const singleCity = Array.from(cities)[0];
-                        locationSel.innerHTML = `<option value="${singleCity}">${singleCity}</option>`;
-                        appState.historyFilters.location = singleCity;
+                    if (cities.size <= 1) {
+                        locationSel.innerHTML = cities.size === 0 ? '<option value="all">暂无地区数据</option>' : `<option value="${Array.from(cities)[0]}">${Array.from(cities)[0]}</option>`;
                     } else {
-                        const currentVal = locationSel.value;
+                        const currentLocVal = locationSel.value;
                         const sortedCities = Array.from(cities).sort((a, b) => a.localeCompare(b, 'zh-CN'));
-                        locationSel.innerHTML = '<option value="all">地点: 全部</option>' + 
-                            sortedCities.map(c => `<option value="${c}">${c}</option>`).join('');
-                        locationSel.value = currentVal;
-                        // 如果原来的选项已经不存在了，重置为all
-                        if (locationSel.selectedIndex === -1) {
-                            locationSel.value = 'all';
-                            appState.historyFilters.location = 'all';
-                        }
+                        locationSel.innerHTML = '<option value="all">地点: 全部</option>' + sortedCities.map(c => `<option value="${c}">${c}</option>`).join('');
+                        locationSel.value = sortedCities.includes(currentLocVal) ? currentLocVal : 'all';
+                        if (locationSel.selectedIndex === -1) locationSel.value = 'all';
                     }
                 }
 
-                // 更新类型下拉框
                 const typeSel = document.getElementById('filter-type');
-                if (typeSel) {
-                    const types = new Set();
-                    appState.rawHistoryFiles.forEach(f => {
-                        if (f.sport_type) types.add(f.sport_type);
-                    });
-                    
+                if (typeSel && Array.isArray(res.activity_types)) {
                     const sportNameMap = {running:'跑步',hiking:'徒步',mountaineering:'登山',cycling:'骑行',swimming:'游泳',walking:'步行',trail_running:'越野跑',treadmill_running:'室内跑',road_cycling:'公路骑行',mountain_biking:'山地骑行',driving:'驾车'};
-                    
-                    if (types.size === 0) {
+                    const types = res.activity_types;
+                    if (types.length === 0) {
                         typeSel.innerHTML = '<option value="all">暂无活动类型</option>';
-                        appState.historyFilters.type = 'all';
-                    } else if (types.size === 1) {
-                        const singleType = Array.from(types)[0];
-                        typeSel.innerHTML = `<option value="${singleType}">${sportNameMap[singleType] || '其他'}</option>`;
-                        appState.historyFilters.type = singleType;
+                    } else if (types.length === 1) {
+                        typeSel.innerHTML = `<option value="${types[0]}">${sportNameMap[types[0]] || '其他'}</option>`;
                     } else {
                         const currentVal = typeSel.value;
-                        const sortedTypes = Array.from(types).sort((a, b) => {
-                            const nameA = sportNameMap[a] || a;
-                            const nameB = sportNameMap[b] || b;
-                            return nameA.localeCompare(nameB, 'zh-CN');
-                        });
-                        typeSel.innerHTML = '<option value="all">类型: 全部</option>' + 
-                            sortedTypes.map(t => `<option value="${t}">${sportNameMap[t] || '其他'}</option>`).join('');
-                        typeSel.value = currentVal;
-                        // 如果原来的选项已经不存在了，重置为all
-                        if (typeSel.selectedIndex === -1) {
-                            typeSel.value = 'all';
-                            appState.historyFilters.type = 'all';
-                        }
+                        const sortedTypes = [...types].sort((a, b) => (sportNameMap[a] || a).localeCompare(sportNameMap[b] || b, 'zh-CN'));
+                        typeSel.innerHTML = '<option value="all">类型: 全部</option>' + sortedTypes.map(t => `<option value="${t}">${sportNameMap[t] || '其他'}</option>`).join('');
+                        typeSel.value = sortedTypes.includes(currentVal) ? currentVal : 'all';
+                        if (typeSel.selectedIndex === -1) typeSel.value = 'all';
                     }
                 }
             }

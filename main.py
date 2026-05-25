@@ -23,6 +23,7 @@ import profile_backend  # noqa: F401 -- PyInstaller bundles profile 模块
 from fit_engine import FITCoreEngine
 
 DEBUG_MODE = False
+APP_VERSION = "v0.6.0"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -2442,23 +2443,95 @@ class Api:
             return {"ok": False, "error": str(e)}
 
     def get_activity_list(self, page: int = 1, page_size: int = 20, sport_filter: str = "all") -> dict:
-        """分页返回活动记录基础字段，不返回 track_json 以提升列表响应速度。"""
+        """后端分页返回活动记录基础字段。"""
         try:
             page = max(1, _safe_int(page, 1))
             requested_page_size = _safe_int(page_size, 20)
             page_size = requested_page_size if requested_page_size in SPORT_HUB_PAGE_SIZES else 20
-            source_dir, all_records, activity_types = self._query_activity_list_records(sport_filter)
-            total = len(all_records)
-            total_pages = max(1, (total + page_size - 1) // page_size)
-            page = min(page, total_pages)
             offset = (page - 1) * page_size
-            records = all_records[offset: offset + page_size]
+            db_rows, total_count = profile_backend.get_activity_list_filtered(offset, page_size, sport_filter)
+            deduped_rows = _dedupe_activity_rows(db_rows)
+            records = [self._build_activity_list_item(row) for row in deduped_rows]
+            total_pages = max(1, (total_count + page_size - 1) // page_size)
+            page = min(page, total_pages)
+
+            conn = profile_backend._conn()
+            try:
+                type_rows = conn.execute(
+                    """
+                    SELECT sport_type, sub_sport_type
+                    FROM activities
+                    WHERE COALESCE(sport_type, '') != ''
+                      AND deleted_at IS NULL
+                      AND COALESCE(source_type, 'fit_sdk') = 'fit_sdk'
+                      AND COALESCE(is_mock, 0) = 0
+                    """
+                ).fetchall()
+            finally:
+                conn.close()
+            activity_types = sorted(
+                {
+                    _resolve_display_sport_type(row["sport_type"], row["sub_sport_type"])
+                    for row in type_rows
+                    if _resolve_display_sport_type(row["sport_type"], row["sub_sport_type"]) != "unknown"
+                },
+                key=lambda item: (SPORT_HUB_TYPE_ORDER.get(item, 99), item),
+            )
+
             return {
                 "ok": True,
-                "source_dir": source_dir,
                 "page": page,
                 "page_size": page_size,
-                "total": total,
+                "total": total_count,
+                "total_pages": total_pages,
+                "activity_types": activity_types,
+                "page_sizes": SPORT_HUB_PAGE_SIZES,
+                "records": records,
+            }
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def get_sport_hub_activity_page(self, page: int = 1, page_size: int = 10, sport_filter: str = "all") -> dict:
+        """个人运动数据 - 后端分页活动记录。"""
+        try:
+            page = max(1, _safe_int(page, 1))
+            requested_page_size = _safe_int(page_size, 10)
+            page_size = requested_page_size if requested_page_size in SPORT_HUB_PAGE_SIZES else 10
+            offset = (page - 1) * page_size
+            db_rows, total_count = profile_backend.get_activity_list_filtered(offset, page_size, sport_filter)
+            deduped_rows = _dedupe_activity_rows(db_rows)
+            records = [self._build_activity_list_item(row) for row in deduped_rows]
+            total_pages = max(1, (total_count + page_size - 1) // page_size)
+            page = min(page, total_pages)
+
+            conn = profile_backend._conn()
+            try:
+                type_rows = conn.execute(
+                    """
+                    SELECT sport_type, sub_sport_type
+                    FROM activities
+                    WHERE COALESCE(sport_type, '') != ''
+                      AND deleted_at IS NULL
+                      AND COALESCE(source_type, 'fit_sdk') = 'fit_sdk'
+                      AND COALESCE(is_mock, 0) = 0
+                    """
+                ).fetchall()
+            finally:
+                conn.close()
+            activity_types = sorted(
+                {
+                    _resolve_display_sport_type(row["sport_type"], row["sub_sport_type"])
+                    for row in type_rows
+                    if _resolve_display_sport_type(row["sport_type"], row["sub_sport_type"]) != "unknown"
+                },
+                key=lambda item: (SPORT_HUB_TYPE_ORDER.get(item, 99), item),
+            )
+
+            return {
+                "ok": True,
+                "page": page,
+                "page_size": page_size,
+                "total": total_count,
                 "total_pages": total_pages,
                 "activity_types": activity_types,
                 "page_sizes": SPORT_HUB_PAGE_SIZES,
@@ -2525,24 +2598,56 @@ class Api:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
-    def get_trace_activity_history(self) -> dict:
-        """返回轨迹分析工具使用的活动记录列表，与个人运动数据页保持同源一致。
-        与 get_activity_list_snapshot 共用 SQLite 数据源，不触发 FIT 同步。
-        """
+    def get_trace_activity_history(self, page: int = 1, page_size: int = 30, sport_filter: str = "all") -> dict:
+        """返回轨迹分析工具使用的分页活动记录列表，后端驱动分页。"""
         try:
-            source_dir, records, _ = self._query_activity_list_records("all")
+            page = max(1, _safe_int(page, 1))
+            page_size = max(1, min(_safe_int(page_size, 30), 100))
+            offset = (page - 1) * page_size
+            db_rows, total_count = profile_backend.get_activity_list_filtered(offset, page_size, sport_filter)
+            deduped_rows = _dedupe_activity_rows(db_rows)
+            records = [self._build_activity_list_item(row) for row in deduped_rows]
 
             for rec in records:
-                rec["dist_km"] = rec.pop("distance_km", rec.get("dist_km"))
+                rec["dist_km"] = rec.pop("distance_km", rec.get("distance_km_clean", 0))
                 rec["valid"] = bool(rec.get("has_track"))
                 rec["cityName"] = (rec.get("region") or "").strip() or "未知地点"
                 rec["has_local_file"] = bool(str(rec.get("file_path") or "").strip())
 
+            total_pages = max(1, (total_count + page_size - 1) // page_size)
+            page = min(page, total_pages)
+
+            conn = profile_backend._conn()
+            try:
+                type_rows = conn.execute(
+                    """
+                    SELECT sport_type, sub_sport_type
+                    FROM activities
+                    WHERE COALESCE(sport_type, '') != ''
+                      AND deleted_at IS NULL
+                      AND COALESCE(source_type, 'fit_sdk') = 'fit_sdk'
+                      AND COALESCE(is_mock, 0) = 0
+                    """
+                ).fetchall()
+            finally:
+                conn.close()
+            activity_types = sorted(
+                {
+                    _resolve_display_sport_type(row["sport_type"], row["sub_sport_type"])
+                    for row in type_rows
+                    if _resolve_display_sport_type(row["sport_type"], row["sub_sport_type"]) != "unknown"
+                },
+                key=lambda item: (SPORT_HUB_TYPE_ORDER.get(item, 99), item),
+            )
+
             return {
                 "ok": True,
-                "source_dir": source_dir,
                 "records": records,
-                "total": len(records),
+                "total": total_count,
+                "page": page,
+                "page_size": page_size,
+                "total_pages": total_pages,
+                "activity_types": activity_types,
             }
         except Exception as e:
             return {"ok": False, "error": str(e)}

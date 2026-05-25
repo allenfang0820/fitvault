@@ -619,6 +619,84 @@ def get_activity_history(limit: int = 50) -> list[dict[str, Any]]:
     return [dict(r) for r in rows]
 
 
+def get_activity_list_filtered(offset: int, limit: int, sport_filter: str) -> tuple[list[dict[str, Any]], int]:
+    display_sql = (
+        "CASE "
+        "WHEN COALESCE(NULLIF(sub_sport_type, ''), 'unknown') IN ('trail_running', 'road_cycling', 'mountain_biking') THEN sub_sport_type "
+        "WHEN COALESCE(NULLIF(sport_type, ''), 'unknown') IN ('trail_running', 'road_cycling', 'mountain_biking') THEN sport_type "
+        "ELSE COALESCE(NULLIF(sport_type, ''), 'unknown') "
+        "END"
+    )
+
+    where_parts = [
+        "COALESCE(source_type, 'fit_sdk') = 'fit_sdk'",
+        "COALESCE(is_mock, 0) = 0",
+        "deleted_at IS NULL",
+    ]
+    params: list[Any] = []
+
+    if sport_filter and sport_filter != "all":
+        where_parts.append(f"{display_sql} = ?")
+        params.append(sport_filter)
+
+    where_sql = "WHERE " + " AND ".join(where_parts)
+
+    select_fields = (
+        "id, "
+        "COALESCE(file_name, filename) AS file_name, "
+        "filename, "
+        "title, "
+        "title_source, "
+        "start_time, "
+        "start_time_utc, "
+        "sport_type, "
+        "sub_sport_type, "
+        "distance, "
+        "COALESCE(dist_km, ROUND(distance / 1000.0, 2)) AS distance_km_clean, "
+        "COALESCE(duration, duration_sec) AS duration, "
+        "avg_pace, "
+        "avg_hr, "
+        "max_hr, "
+        "calories, "
+        "gain_m, "
+        "normalized_power, "
+        "swolf, "
+        "device_name, "
+        "file_path, "
+        "start_lat, "
+        "start_lon, "
+        "region, "
+        "weather_json, "
+        "source_type, "
+        "is_mock, "
+        "updated_at, "
+        "CASE WHEN COALESCE(track_json, points_json, '') != '' THEN 1 ELSE 0 END AS has_track"
+    )
+
+    conn = _conn()
+    try:
+        count_row = conn.execute(
+            f"SELECT COUNT(*) FROM activities {where_sql}",
+            tuple(params),
+        ).fetchone()
+        total_count = int(count_row[0]) if count_row else 0
+
+        rows = conn.execute(
+            f"""
+            SELECT {select_fields}
+            FROM activities
+            {where_sql}
+            ORDER BY COALESCE(start_time, updated_at) DESC, id DESC
+            LIMIT ? OFFSET ?
+            """,
+            tuple(params + [limit, offset]),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    return [dict(r) for r in rows], total_count
+
+
 def load_local_track(file_path: str) -> dict[str, Any]:
     """根据本地路径读取并解析轨迹文件，返回与 parse_track_file 一致的结构。"""
     import track_backend
