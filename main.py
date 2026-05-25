@@ -2307,6 +2307,26 @@ class Api:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    def debug_snapshot(self, activity_id: int) -> dict:
+        """Task 4.1: Snapshot Viewer Debug API。
+           返回 AI 实际消费的唯一数据源 —— 与 _build_ai_snapshot() 完全一致。
+           禁止额外计算、禁止修改 MetricsResolver、禁止返回前端计算字段。"""
+        try:
+            snapshot = _build_ai_snapshot(int(activity_id))
+            if not snapshot:
+                return {"ok": False, "error": "未找到活动记录"}
+            return {
+                "ok": True,
+                "snapshot": snapshot,
+                "meta": {
+                    "version": "1.0",
+                    "source": "_build_ai_snapshot (resolver truth + DB canonical)",
+                    "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                },
+            }
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     def pick_and_parse_track(self) -> dict:
         import webview
         from webview import FileDialog

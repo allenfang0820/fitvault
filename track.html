@@ -2055,6 +2055,7 @@
                         <div style="font-size:0.9rem;font-weight:800;color:#f8fafc;">📋 轨迹报告</div>
                         <div style="display:flex;gap:6px;">
                             <button class="icon-btn" onclick="requestInsight()" title="AI 运动洞察" style="font-size:0.75rem;background:linear-gradient(135deg,#7c3aed,#a855f7);color:#fff;padding:3px 8px;border-radius:6px;">🧠 洞察</button>
+                            <button class="icon-btn" onclick="toggleDebugPanel()" title="查看 AI 消费的数据快照" style="font-size:0.75rem;color:#94a3b8;padding:3px 6px;border-radius:6px;">🐛</button>
                             <button class="icon-btn" onclick="toggleAISidebar()" title="收起">×</button>
                         </div>
                     </div>
@@ -2062,6 +2063,18 @@
                 </div>
             </div>
 
+        </div>
+
+        <!-- Debug Panel (Task 4.1 Snapshot Viewer — 默认隐藏) -->
+        <div id="debug-panel" style="display:none; margin-top:12px; border:1px dashed rgba(148,163,184,0.3); padding:12px; border-radius:8px; background:rgba(15,23,42,0.5);">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                <div style="font-size:11px; color:#94a3b8;">
+                    🐛 AI Snapshot Viewer
+                    <span style="color:#64748b; margin-left:6px;font-family:monospace;">v1.0</span>
+                </div>
+                <button onclick="toggleDebugPanel()" style="border:none; background:none; cursor:pointer; color:#64748b; font-size:14px;">✕</button>
+            </div>
+            <pre id="snapshot-debug-content" style="font-size:11px; background:rgba(0,0,0,0.2); padding:10px; border:1px solid rgba(255,255,255,0.05); border-radius:6px; max-height:360px; overflow:auto; white-space:pre-wrap; color:#cbd5e1; margin:0;">点击 🐛 按钮加载 AI 消费的数据快照</pre>
         </div>
 
         <!-- ========== 【配置】面板 ========== -->
@@ -5565,6 +5578,43 @@
         }
     }
 
+    // ═══════════════════════════════════════════════════
+    // Snapshot Viewer (Task 4.1 — 调试面板)
+    // ═══════════════════════════════════════════════════
+
+    var debugVisible = false;
+
+    function toggleDebugPanel() {
+        var panel = document.getElementById('debug-panel');
+        if (!panel) return;
+        debugVisible = !debugVisible;
+        panel.style.display = debugVisible ? 'block' : 'none';
+        if (debugVisible && appState.currentActivityId) {
+            loadSnapshotDebug(appState.currentActivityId);
+        }
+    }
+
+    async function loadSnapshotDebug(activityId) {
+        var el = document.getElementById('snapshot-debug-content');
+        if (!el) return;
+        el.textContent = 'loading...';
+        var aid = parseInt(activityId);
+        if (!aid || aid <= 0) {
+            el.textContent = '（无有效 activity id）';
+            return;
+        }
+        try {
+            if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.debug_snapshot === 'function') {
+                var res = await window.pywebview.api.debug_snapshot(aid);
+                el.textContent = JSON.stringify(res, null, 2);
+            } else {
+                el.textContent = '⚠️ 仅桌面应用中可用（需 pywebview API）';
+            }
+        } catch (e) {
+            el.textContent = '加载失败: ' + (e && e.message ? e.message : String(e));
+        }
+    }
+
     function parseGPX(text) {
         const xml = new DOMParser().parseFromString(text, "text/xml");
         let trkpts = Array.from(xml.getElementsByTagName('trkpt'));
@@ -5839,6 +5889,11 @@
 
         renderTrackReport({ silent: true });
         renderPerformanceRadar();
+
+        // Task 4.1: 自动刷新 Debug Panel
+        if (debugVisible && appState.currentActivityId) {
+            loadSnapshotDebug(appState.currentActivityId);
+        }
 
         // Task 3.2: UI vs DB 对齐校验（开发模式）
         if (appState.DEBUG_MODE && appState.activityMetrics) {
