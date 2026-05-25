@@ -443,6 +443,12 @@ def _build_insight_system_prompt(
 
     return f"""你是一位资深运动表现分析师，专长于{sport_cn}数据分析。
 
+{hist}
+{mode_specific}
+
+【数据边界 — DATA BOUNDARY（不可逾越）】
+以下运动数据由系统预计算，**绝对权威**。你只允许解释（interpret），禁止任何形式的重新推导。
+
 【当前运动数据 — 系统真值（禁止重新计算）】
 - 运动类型: {sport_cn}
 - 距离: {dist_display}
@@ -452,8 +458,16 @@ def _build_insight_system_prompt(
 - 卡路里: {calories}
 - 累计爬升: {elevation} m
 - TSS: {tss if tss is not None else 'N/A'}
-{hist}
-{mode_specific}
+
+【强行约束 — 绝对禁止行为】
+你 MUST NOT：
+- 重新计算距离（recompute distance）
+- 推断配速（estimate pace）
+- 还原坡度（infer slope）
+- 重建 per-point 数据（reconstruct per-point data）
+- 使用任何外部假设（use any external assumptions）
+- 生成训练负荷/疲劳模型等推理结构（no training_load model / fatigue model）
+- 将历史数据作为分析引擎输入（history is context reference ONLY）
 
 【输出格式 — 严格 JSON】
 你必须返回一个合法 JSON 对象，格式如下：
@@ -472,6 +486,7 @@ def _build_insight_system_prompt(
 3. 输出必须是纯 JSON，不要包含 markdown 代码块标记
 4. 所有数值字段必须填数字，文本字段填中文
 5. 无相关能力的指标填 "N/A"
+6. 训练负荷/疲劳指数/效率指数仅基于上述数值做定性评估
 """
 
 

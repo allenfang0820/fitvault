@@ -1738,10 +1738,56 @@ def _attach_per_point_distance(points: list[dict[str, Any]]) -> None:
         points[i]["dist_km"] = accum
 
 
+# ═══════════════════════════════════════════════════════
+# AI Snapshot Contract — PURE FACT LAYER (Finalized)
+#
+# Task 3.4: 不可计算 / 不可扩展 / 不引入推理结构
+#
+# AI Snapshot 三不原则:
+#   1. No reasoning fields
+#   2. No derived analytics
+#   3. No frontend computed values
+#
+# 仅允许 DB / resolver 字段。禁止:
+#   - track.html calculateStats() 输出
+#   - slope_pct / per-point distance / slope
+#   - frontend fallback metrics
+#   - AI 推理链 / training_load / fatigue model
+# ═══════════════════════════════════════════════════════
+
+FORBIDDEN_SNAPSHOT_FIELDS: set[str] = {
+    "slope_pct", "pace_calc", "frontend_distance", "ui_only_metric",
+    "reasoning_chain", "fatigue_model", "per_point_slope", "derived_grade",
+}
+
+_MAX_SNAPSHOT_KEYS = 24
+
+
+def validate_ai_snapshot(snapshot: dict[str, Any]) -> None:
+    """AI Snapshot Contract Guard — 防污染护栏。
+    确保 snapshot 不含任何前端计算字段或推理结构。"""
+    for f in FORBIDDEN_SNAPSHOT_FIELDS:
+        assert f not in snapshot, f"AI Snapshot pollution detected: {f}"
+    assert len(snapshot.keys()) <= _MAX_SNAPSHOT_KEYS, (
+        f"AI Snapshot keys exceeded: {len(snapshot.keys())} > {_MAX_SNAPSHOT_KEYS}"
+    )
+
+
+def debug_ai_snapshot(snapshot: dict[str, Any]) -> None:
+    """开发模式：输出 snapshot 结构校验。确保 keys ≤ {_MAX_SNAPSHOT_KEYS}、无数组、无嵌套。"""
+    import sys
+    keys = list(snapshot.keys())
+    nested = [k for k, v in snapshot.items() if isinstance(v, (list, dict))]
+    print(f"[AI SNAPSHOT CONTRACT] keys={keys} count={len(keys)} nested={nested or 'none'}",
+          file=sys.stderr, flush=True)
+
+
 # ── AI Snapshot Builder (唯一合法 AI 输入源) ──
 
 def _build_ai_snapshot(activity_id: int) -> dict[str, Any] | None:
-    """AI 语义快照构建器。只从 DB/resolver truth 取值，禁止前端计算数据进入。"""
+    """AI 语义快照构建器 — 唯一合法 AI 输入源。
+    PURE FACT CONTRACT: 所有字段来自 DB/resolver truth。
+    禁止前端计算数据、推理结构、per-point 指标进入。"""
     if not activity_id:
         return None
     try:
@@ -1750,7 +1796,7 @@ def _build_ai_snapshot(activity_id: int) -> dict[str, Any] | None:
         row = conn.execute(
             "SELECT sport_type, sub_sport_type, dist_km, duration_sec, avg_hr, max_hr,"
             " gain_m, max_alt_m, avg_pace, distance, duration,"
-            " calories, avg_cadence, normalized_power,"
+            " calories, avg_cadence, normalized_power, swolf,"
             " tss, start_time, start_lat, start_lon, region, file_path, filename"
             " FROM activities WHERE id = ? AND deleted_at IS NULL",
             (activity_id,),
@@ -1763,6 +1809,7 @@ def _build_ai_snapshot(activity_id: int) -> dict[str, Any] | None:
         sub_sport = str(d.get("sub_sport_type") or "").lower()
         pace_unit = "/100m" if sub_sport in ("lap_swimming", "open_water") else "/km"
 
+        # ── Display Fields (纯格式化，不重新计算) ──
         raw_dist_km = d.get("dist_km")
         if raw_dist_km is not None:
             dist_km = _safe_float(raw_dist_km)
@@ -1787,7 +1834,7 @@ def _build_ai_snapshot(activity_id: int) -> dict[str, Any] | None:
         else:
             avg_pace_display = f"-- {pace_unit}"
 
-        return {
+        snapshot = {
             "activity_id": activity_id,
             "sport_type": d.get("sport_type"),
             "sub_sport_type": d.get("sub_sport_type"),
@@ -1804,6 +1851,7 @@ def _build_ai_snapshot(activity_id: int) -> dict[str, Any] | None:
             "max_alt_m": d.get("max_alt_m"),
             "avg_cadence": d.get("avg_cadence"),
             "normalized_power": d.get("normalized_power"),
+            "swolf": d.get("swolf"),
             "tss": d.get("tss"),
             "start_time": d.get("start_time"),
             "start_lat": d.get("start_lat"),
@@ -1811,6 +1859,10 @@ def _build_ai_snapshot(activity_id: int) -> dict[str, Any] | None:
             "region": d.get("region"),
             "source": "DB Canonical / Resolver Truth",
         }
+
+        validate_ai_snapshot(snapshot)
+        debug_ai_snapshot(snapshot)
+        return snapshot
     except Exception:
         return None
 
@@ -1831,6 +1883,8 @@ def _build_ai_snapshot_block(snapshot: dict[str, Any] | None) -> str:
     ]
     if snapshot.get("normalized_power") is not None:
         lines.append(f"- NP: {snapshot.get('normalized_power')} W")
+    if snapshot.get("swolf") is not None:
+        lines.append(f"- SWOLF: {snapshot.get('swolf')}")
     if snapshot.get("avg_cadence") is not None:
         lines.append(f"- 平均步频/踏频: {snapshot.get('avg_cadence')}")
     if snapshot.get("tss") is not None:
@@ -1892,17 +1946,18 @@ def _get_history_window(activity_id: int, sport_type: str, limit: int = 10) -> l
 
 
 def _build_history_block(history: list[dict[str, Any]]) -> str:
-    """将历史记录格式化为 prompt 可嵌入文本。"""
+    """将历史记录格式化为 prompt 可嵌入文本。
+       HISTORY IS CONTEXT REFERENCE ONLY — 非分析数据源。AI 不得基于历史做趋势建模。"""
     if not history:
         return ""
-    lines = ["【历史同类运动对比窗口】"]
+    lines = ["【历史同类运动 — 背景参考（context reference only，非分析数据源）】"]
     for i, h in enumerate(history[:8]):
         lines.append(
             f"  #{i + 1}: {h.get('dist_km')}km / {h.get('duration_min')}min / "
             f"配速 {h.get('avg_pace_display')} / HR {h.get('avg_hr')}-{h.get('max_hr')} / "
             f"爬升 {h.get('gain_m')}m ({h.get('start_time')})"
         )
-    lines.append("  请结合上述历史趋势，评估当前运动是否呈现进步/退步/持平。")
+    lines.append("  以上为背景信息，仅用于理解运动习惯，不得用于建模或趋势推导。")
     return "\n".join(lines)
 
 
@@ -2005,19 +2060,23 @@ class Api:
         self._session_id = "session_" + uuid.uuid4().hex[:16]
 
     def sync_track_context(self, payload_json: str) -> dict:
-        """前端完成渲染与 calculateStats 后同步轨迹，供 call_llm 拼表。
-           activity_id 用于从 DB 构建 AI snapshot（唯一合法 AI 输入源）。"""
+        """前端完成渲染后同步轨迹上下文。
+           AI Input Governance (Task 3.4 finalized):
+           - 仅 activity_id 进入 AI snapshot，前端 points/placemarks 仅用于轨迹详情表
+           - snapshot 由 _build_ai_snapshot() 从 DB 构建，不依赖任何前端计算值
+           - 前端 track.html 角色: Visualization Layer ONLY"""
         try:
             obj = json.loads(payload_json)
         except json.JSONDecodeError as e:
             return {"ok": False, "error": f"JSON 无效: {e}"}
-        self._track_points = obj.get("points") or []
-        self._track_placemarks = obj.get("placemarks") or []
+        self._track_points = obj.get("points") or []       # 仅用于轨迹详情表，不进入 AI
+        self._track_placemarks = obj.get("placemarks") or []  # 仅用于轨迹详情表，不进入 AI
         self._track_filename = str(obj.get("filename") or "轨迹")
         self._track_weather = obj.get("weather") if isinstance(obj.get("weather"), dict) else None
         self._chat_messages = []
         self._new_session_id()
         # AI Input Governance: 从 DB 构建语义快照，取代前端计算数据
+        # CONTRACT: _ai_snapshot 是 call_llm 中 AI 相关请求的唯一合法数据源
         activity_id = obj.get("activity_id") or obj.get("activityId")
         if activity_id:
             self._ai_snapshot = _build_ai_snapshot(int(activity_id))
@@ -2121,7 +2180,10 @@ class Api:
             return {"ok": False, "error": str(e)}
 
     def call_llm(self, prompt: str, sport_type: str = "hiking") -> dict:
-        """对话或路书：prompt 为普通用户文本，或魔法串 __REPORT_TERRAIN__ / __REPORT_PERSONALIZED__。"""
+        """对话或路书。AI 数据边界 (Task 3.4):
+           - AI 输入: _ai_snapshot (DB truth) → ai_block (system prompt)
+           - 轨迹详情表: _track_points (仅作为 CSV table 供参考，不参与 AI 分析)
+           - 禁止: 前端 calculateStats 输出、per-point slope、request.get_json() metrics"""
         cfg = llm_backend.load_llm_config()
         url = (cfg.get("url") or "").strip()
         if not url:
