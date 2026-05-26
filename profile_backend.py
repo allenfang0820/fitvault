@@ -17,6 +17,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import llm_backend
 import sys
 if getattr(sys, "frozen", False):
     _BASE = Path.home() / ".fitvault"
@@ -141,8 +142,6 @@ def read_local_profile() -> dict | None:
     return data
 _SCHEMA_LOCK = threading.Lock()
 _SCHEMA_READY_FOR: str | None = None
-_REGION_CACHE_LOCK = threading.Lock()
-_REGION_CACHE: dict[tuple[float, float], str] = {}
 
 
 class ManagedConnection(sqlite3.Connection):
@@ -273,7 +272,12 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             file_mtime     REAL,
             file_size      INTEGER,
             deleted_at     TEXT,
-            updated_at     TEXT DEFAULT (datetime('now'))
+            updated_at     TEXT DEFAULT (datetime('now')),
+            avg_pace REAL,
+            calories INTEGER,
+            normalized_power REAL,
+            swolf REAL,
+            device_name TEXT
         )
     """)
 
@@ -543,8 +547,8 @@ def save_activity(data: dict[str, Any]) -> int:
                 INSERT INTO activities
                     (filename, title, title_source, sport_type, sub_sport_type, dist_km, duration_sec, gain_m, max_alt_m,
                      avg_hr, max_hr, avg_cadence, hr_decoupling, tss, points_json, file_path, start_time, start_time_utc,
-                     start_lat, start_lon, region, weather_json)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     start_lat, start_lon, region, weather_json, avg_pace, calories, normalized_power, swolf)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     data.get("filename"),
@@ -569,6 +573,10 @@ def save_activity(data: dict[str, Any]) -> int:
                     data.get("start_lon"),
                     data.get("region"),
                     data.get("weather_json"),
+                    data.get("avg_pace"),
+                    data.get("calories"),
+                    data.get("normalized_power"),
+                    data.get("swolf"),
                 ),
             )
             conn.commit()
@@ -767,6 +775,13 @@ def build_activity_payload(filename: str, data: dict[str, Any], src_path: str | 
         "start_lon": start_lon,
         "region": region,
         "weather_json": data.get("weather_json"),
+        "device_name": data.get("device_name") or "",
+        "avg_pace": round(duration_sec / dist_km, 2) if dist_km > 0 and duration_sec > 0 else None,
+        "calories": data.get("calories"),
+        "normalized_power": None,
+        "swolf": None,
+        "source_type": "fit_sdk",
+        "is_mock": 0,
     }
 
 
@@ -1430,10 +1445,10 @@ def fetch_mcp_persona(platform: str) -> dict[str, Any]:
     if platform not in ("garmin", "coros"):
         return {"ok": False, "error": "不支持的平台，仅支持 garmin / coros"}
 
-    import llm_backend
-
     cfg = llm_backend.load_llm_config()
-    url = (cfg.get("url") or "").strip() or "http://localhost:3000/v1/chat/completions"
+    url = cfg.get("url", "").strip()
+    if not url:
+        return {"ok": False, "error": "LLM URL 未配置，请在设置页填写"}
     model = (cfg.get("model") or "openclaw").strip()
     api_key = str(cfg.get("api_key") or "")
 

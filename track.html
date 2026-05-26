@@ -5060,6 +5060,11 @@
     // ==========================================
     // 轨迹解析与核心算法
     // ==========================================
+    /**
+     * VISUALIZATION ONLY — 仅用于 _detectPeakMarkers 的 3D 可视化标注
+     * 契约表 v1 §四.3: 禁止用于业务计算（距离/配速/爬升）
+     * 业务距离仅由 DB 字段 distance_m / dist_km 提供
+     */
     function haversine(p1, p2) {
         var dLat = (p2.lat - p1.lat) * Math.PI / 180;
         var dLon = (p2.lon - p1.lon) * Math.PI / 180;
@@ -5117,7 +5122,8 @@
         // peak markers: 视觉标注（非计算类指标）
         var peakMarkers = _detectPeakMarkers(points);
 
-        // max altitude fallback: 如果 DB 没有值，从点中取
+        // VISUALIZATION ONLY — DB 缺最大海拔时，从 points 取近似值做可视化
+        // 契约束定：此回退值不进入 AI snapshot，不写入 DB
         if (maxAlt <= 0 && points.length > 0) {
             var maxFromPoints = points[0].alt || 0;
             for (var j = 1; j < points.length; j++) {
@@ -5130,8 +5136,12 @@
     }
 
     function _calculateStatsFallback(points) {
-        // LEGACY FALLBACK — 仅用于拖拽/直接解析文件场景
-        // 一旦入库，必须通过 API 走权威数据路径
+        // ⚠️ LEGACY FALLBACK（契约表 v1 §四.3 禁止范围）
+        //   仅用于拖拽/直接解析文件场景 — 未入库时无可避免
+        // ⚠️ 约束：
+        //   1. 禁止此函数的输出进入 AI snapshot / llm_backend
+        //   2. 一旦入库必须由 _buildStatsFromCanonical 接管
+        //   3. 禁止在此函数中新增任何业务计算逻辑
         var dist = 0, gain = 0, maxAlt = -Infinity;
         var lastAlt = points[0].alt;
         var kmMarkers = [];

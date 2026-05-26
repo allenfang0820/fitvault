@@ -909,6 +909,18 @@ def _parse_fit_activity_for_sync(file_path: Path) -> dict[str, Any]:
             legacy_distance_display=legacy_distance_display,
             resolved_sm=sm,
         )
+        # Shadow Layer diff 持久化日志（不阻塞生产路径）
+        try:
+            import json as _json
+            _shadow = logging.getLogger("metrics_resolver.shadow")
+            _shadow.info(
+                "[shadow] diff=%s | activity=%s",
+                _json.dumps(result.get("diff"), ensure_ascii=False, default=str),
+                resolved_path,
+            )
+        except Exception:
+            pass  # 日志失败不阻塞同步流程
+
         # ═══════════════════════════════════════════════
         # RESOLVER FIRST OVERWRITE BLOCK
         # Task 2.1-2.3: single overwrite region, no second block
@@ -2195,11 +2207,11 @@ class Api:
         agent_id = str(cfg.get("agent_id") or "")
         sid = self._session_id
 
-        pts = self._track_points or []
-        pms = self._track_placemarks or []
-        fn = self._track_filename or "轨迹"
-        weather = self._track_weather
+        # AI 数据边界（契约总纲 §2.4）：
+        #   AI 输入仅来自 _ai_snapshot (DB truth)
+        #   _track_points / _track_placemarks 仅用于 UI 可视化，不进入 AI
         ai_block = _build_ai_snapshot_block(self._ai_snapshot)
+        fn = self._track_filename or "轨迹"
 
         try:
             if prompt == self.REPORT_TERRAIN:
@@ -2207,9 +2219,9 @@ class Api:
                     sport_type=sport_type,
                     provider=provider,
                     track_filename=fn,
-                    points=pts,
-                    placemarks=pms,
-                    weather_context=weather,
+                    points=[],          # 契约束定: AI 不消费前端 points
+                    placemarks=[],      # 契约束定: AI 不消费前端 placemarks
+                    weather_context=None,  # 契约束定: 气象数据由 snapshot 提供
                     ai_snapshot_block=ai_block,
                 )
                 usr = llm_backend.build_report_user_prompt_terrain(sport_type)
@@ -2231,9 +2243,9 @@ class Api:
                     sport_type=sport_type,
                     provider=provider,
                     track_filename=fn,
-                    points=pts,
-                    placemarks=pms,
-                    weather_context=weather,
+                    points=[],          # 契约束定: AI 不消费前端 points
+                    placemarks=[],      # 契约束定: AI 不消费前端 placemarks
+                    weather_context=None,  # 契约束定: 气象数据由 snapshot 提供
                     ai_snapshot_block=ai_block,
                 )
                 usr = llm_backend.build_report_user_prompt_personalized(sport_type, provider)
@@ -3586,12 +3598,7 @@ def _build_record_from_row(api_self, row: dict, idx: int) -> dict:
                 })
 
         if not result_entries:
-            result_entries = [
-                {"activity_id": 9001, "month": "2025-03", "title": "都江堰双遗半程马拉松", "category": "half_marathon", "finish_time_sec": 6580, "avg_hr": 156},
-                {"activity_id": 9002, "month": "2025-10", "title": "成都马拉松", "category": "full_marathon", "finish_time_sec": 14280, "avg_hr": 163},
-                {"activity_id": 9005, "month": "2026-03", "title": "都江堰双遗半程马拉松", "category": "half_marathon", "finish_time_sec": 6420, "avg_hr": 158},
-                {"activity_id": 9006, "month": "2026-10", "title": "成都马拉松", "category": "full_marathon", "finish_time_sec": 13920, "avg_hr": 162},
-            ]
+            result_entries = []
 
         result_entries.sort(key=lambda item: item["month"])
         return {"entries": result_entries}
@@ -3615,10 +3622,7 @@ def _build_record_from_row(api_self, row: dict, idx: int) -> dict:
             })
 
         if not honor_items:
-            honor_items = [
-                {"year": "2026", "month": "03", "activity_id": 9001, "title": "都江堰双遗半程马拉松", "subtitle": "半程马拉松 PB", "photo_label": "赛事照片占位"},
-                {"year": "2025", "month": "10", "activity_id": 9002, "title": "成都马拉松", "subtitle": "全马完赛", "photo_label": "赛事照片占位"},
-            ]
+            honor_items = []
 
         grouped: dict[str, dict[str, list[dict]]] = {}
         for item in honor_items:
