@@ -79,6 +79,24 @@
 
         .bookmark-spacer { flex: 0 0 8px; min-height: 8px; }
 
+        .compass-badge {
+            position: absolute;
+            top: -4px;
+            right: -4px;
+            font-size: 0.82rem;
+            line-height: 1;
+            animation: compass-pulse 1.6s ease-in-out infinite;
+            filter: drop-shadow(0 0 6px rgba(46, 204, 113, 0.8));
+            pointer-events: none;
+        }
+        @keyframes compass-pulse {
+            0%, 100% { transform: scale(1); opacity: 0.8; }
+            50% { transform: scale(1.35); opacity: 1; }
+        }
+        .bookmark-tab.active .compass-badge {
+            filter: drop-shadow(0 0 10px rgba(46, 204, 113, 1));
+        }
+
         /* === 主内容区（3个面板切换） === */
         #main-content {
             flex: 1; position: relative; overflow: hidden;
@@ -152,8 +170,15 @@
             display: grid; grid-template-columns: 1fr 1fr; gap: 3px 10px;
         }
         .stat-row {
-            display: flex; justify-content: space-between; align-items: center;
-            font-size: 0.65rem;
+            display: flex; align-items: center; justify-content: space-between;
+            font-size: 0.72rem;
+            padding: 1px 4px;
+        }
+        .pf-metric-grid .stat-row:nth-child(odd) {
+            padding-right: 16px;
+        }
+        .pf-metric-grid .stat-row:nth-child(even) {
+            padding-left: 16px;
         }
         .stat-row span { color: #94a3b8; }
         .stat-row b { color: #f8fafc; font-weight: 600; }
@@ -196,6 +221,9 @@
             display: flex;
             flex-direction: column;
             overflow: hidden;
+        }
+        .profile-summary-card {
+            position: relative;
         }
         .profile-summary-head {
             display: flex;
@@ -278,7 +306,7 @@
             color: #94a3b8;
             border-radius: 6px;
             padding: 4px 2px;
-            font-size: 0.6rem;
+            font-size: 0.72rem;
             font-weight: 700;
             cursor: pointer;
             transition: all 0.18s ease;
@@ -295,18 +323,49 @@
         }
         .pf-metric-panels {
             position: relative;
+            flex: 1;
+            min-height: 0;
+            padding-bottom: 18px;
         }
         .pf-metric-panel {
             display: none;
+            position: static;
         }
         .pf-metric-panel.active {
             display: block;
         }
+        .pf-metric-panel[data-group="running"] .pf-legend {
+            position: absolute;
+            right: 10px;
+            bottom: 6px;
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            font-size: 11px;
+            color: #94a3b8;
+            pointer-events: none;
+        }
+        .pf-legend-item {
+            display: inline-flex;
+            align-items: center;
+            gap: 3px;
+        }
         .pf-metric-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 3px 10px;
-            padding-top: 2px;
+            gap: 2px 0;
+            padding-top: 4px;
+            position: relative;
+        }
+        .pf-metric-grid::before {
+            content: '';
+            position: absolute;
+            top: 4px;
+            bottom: 0;
+            left: 50%;
+            width: 1px;
+            background: rgba(255,255,255,0.10);
+            pointer-events: none;
         }
         .profile-bottom-workspace {
             flex: 1;
@@ -510,6 +569,27 @@
             opacity: 0.45;
             cursor: not-allowed;
         }
+        .hub-page-numbers {
+            display: flex;
+            gap: 3px;
+            align-items: center;
+        }
+        .hub-page-num {
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: #cbd5e1;
+            font-size: 0.68rem;
+            padding: 3px 7px;
+            border-radius: 4px;
+            cursor: pointer;
+            min-width: 28px;
+            text-align: center;
+        }
+        .hub-page-num:hover { background: rgba(255,255,255,0.12); color: #f8fafc; }
+        .hub-page-num.active { background: rgba(99,102,241,0.5); border-color: rgba(99,102,241,0.7); color: #f8fafc; font-weight: 700; }
+        .hub-page-ellipsis { color: #64748b; font-size: 0.7rem; padding: 0 3px; user-select: none; }
+        .hub-page-jump { color: #94a3b8; font-size: 0.65rem; display: flex; align-items: center; gap: 3px; margin-left: 6px; }
+        .hub-page-jump input:focus { outline: 1px solid rgba(99,102,241,0.6); }
         .hub-empty-state {
             flex: 1;
             display: flex;
@@ -1778,6 +1858,7 @@
             <span class="tab-icon">👤</span>
             <span class="tab-label">个人运动数据</span>
             <span class="tab-arrow">➜</span>
+            <span class="compass-badge" id="compass-badge" style="display:none;">🧭</span>
         </button>
         <div class="bookmark-spacer"></div>
         <button class="bookmark-tab" data-panel="trace" onclick="switchTab(this)">
@@ -1827,6 +1908,7 @@
                             </div>
                             <div class="profile-metric-tabs">
                                 <button class="pf-metric-tab active" data-group="physiological" onclick="switchMetricGroup('physiological', this)">生理数据</button>
+                                <button class="pf-metric-tab" data-group="body-composition" onclick="switchMetricGroup('body-composition', this)">身体成分</button>
                                 <button class="pf-metric-tab" data-group="running" onclick="switchMetricGroup('running', this)">跑步／徒步</button>
                                 <button class="pf-metric-tab" data-group="cycling" onclick="switchMetricGroup('cycling', this)">骑行</button>
                                 <button class="pf-metric-tab" data-group="swimming" onclick="switchMetricGroup('swimming', this)">游泳</button>
@@ -1844,17 +1926,32 @@
                                         <div class="stat-row"><span>乳酸阈值配速</span><b id="pf-lt-pace">--</b></div>
                                         <div class="stat-row"><span>HRV 基准</span><b id="pf-hrv">-- ms</b></div>
                                         <div class="stat-row"><span>平均睡眠</span><b id="pf-sleep">-- h</b></div>
+                                        <div class="stat-row"><span>平均入睡时间</span><b id="pf-avg-bedtime">--</b></div>
                                     </div>
                                 </div>
                                 <div class="pf-metric-panel" data-group="running">
                                     <div class="pf-metric-grid">
-                                        <div class="stat-row"><span>1km PB</span><b id="pf-pb-1km">--</b></div>
-                                        <div class="stat-row"><span>5km PB</span><b id="pf-pb-5k">--</b></div>
-                                        <div class="stat-row"><span>10km PB</span><b id="pf-pb-10k">--</b></div>
-                                        <div class="stat-row"><span>半马 PB</span><b id="pf-pb-hm">--</b></div>
-                                        <div class="stat-row"><span>全马 PB</span><b id="pf-pb-fm">--</b></div>
+                                        <div class="stat-row"><span>1KM成绩</span><b id="pf-pb-1km">--</b></div>
+                                        <div class="stat-row"><span>5KM成绩</span><b id="pf-pb-5k">--</b></div>
+                                        <div class="stat-row"><span>10KM成绩</span><b id="pf-pb-10k">--</b></div>
+                                        <div class="stat-row"><span>半马成绩</span><b id="pf-pb-hm">--</b></div>
+                                        <div class="stat-row"><span>全马成绩</span><b id="pf-pb-fm">--</b></div>
                                         <div class="stat-row"><span>最长跑步</span><b id="pf-longest-run">-- km</b></div>
                                         <div class="stat-row"><span>最长徒步</span><b id="pf-longest-hike">-- km</b></div>
+                                    </div>
+                                    <div class="pf-legend">
+                                        <span class="pf-legend-item">🏆 PB</span>
+                                        <span class="pf-legend-item">📈 预测成绩</span>
+                                    </div>
+                                </div>
+                                <div class="pf-metric-panel" data-group="body-composition">
+                                    <div class="pf-metric-grid">
+                                        <div class="stat-row"><span>体重</span><b id="pf-weight-bc">-- kg</b></div>
+                                        <div class="stat-row"><span>BMI</span><b id="pf-bmi">--</b></div>
+                                        <div class="stat-row"><span>体脂率</span><b id="pf-body-fat">-- %</b></div>
+                                        <div class="stat-row"><span>身体水分</span><b id="pf-body-water">-- %</b></div>
+                                        <div class="stat-row"><span>骨重</span><b id="pf-bone-mass">-- kg</b></div>
+                                        <div class="stat-row"><span>骨骼肌</span><b id="pf-muscle-mass">-- kg</b></div>
                                     </div>
                                 </div>
                                 <div class="pf-metric-panel" data-group="cycling">
@@ -1916,7 +2013,7 @@
                                 <div class="hub-records-table-wrap">
                                     <table class="hub-records-table">
                                         <thead>
-                                            <tr>
+                                            <tr id="sport-records-header-row">
                                                 <th><input type="checkbox" id="sport-records-select-all" onchange="toggleAllSportHubRecords(this.checked)"></th>
                                                 <th>活动类型</th>
                                                 <th>时间</th>
@@ -1926,7 +2023,8 @@
                                                 <th>距离</th>
                                                 <th>时长</th>
                                                 <th>平均配速</th>
-                                                <th>平均心率</th>
+                                                <th>心率(平均/最大)</th>
+                                                <th>归一化功率</th>
                                                 <th>热量</th>
                                             </tr>
                                         </thead>
@@ -1937,7 +2035,13 @@
                                     <div class="hub-pagination-info" id="sport-records-pagination-info">等待加载运动记录</div>
                                     <div class="hub-pagination-actions">
                                         <button class="hub-page-btn" id="sport-records-prev" onclick="changeSportHubPage(-1)">上一页</button>
+                                        <div class="hub-page-numbers" id="sport-records-page-numbers"></div>
                                         <button class="hub-page-btn" id="sport-records-next" onclick="changeSportHubPage(1)">下一页</button>
+                                        <span class="hub-page-jump">跳至
+                                            <input type="number" id="sport-records-page-jump" min="1" value="1" style="width:48px;text-align:center;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:#f8fafc;font-size:0.7rem;padding:2px 4px;">
+                                            页
+                                        </span>
+                                        <button class="hub-page-btn" onclick="jumpSportHubPage()" style="padding:2px 8px;font-size:0.65rem;">跳转</button>
                                     </div>
                                 </div>
                             </div>
@@ -2051,6 +2155,20 @@
                     </select>
                 </div>
                 <div id="history-list" style="flex:1;overflow-y:auto;padding:8px 10px;display:flex;flex-direction:column;gap:6px;"></div>
+                <!-- 分页栏 -->
+                <div class="hub-pagination" id="history-pagination" style="padding:8px 10px;border-top:1px solid rgba(255,255,255,0.05);flex-shrink:0;">
+                    <div class="hub-pagination-info" id="history-pagination-info">第 1/1 页，共 0 条</div>
+                    <div class="hub-pagination-actions">
+                        <button class="hub-page-btn" id="history-prev" onclick="changeHistoryPage(-1)">上一页</button>
+                        <div class="hub-page-numbers" id="history-page-numbers"></div>
+                        <button class="hub-page-btn" id="history-next" onclick="changeHistoryPage(1)">下一页</button>
+                        <span class="hub-page-jump">跳至
+                            <input type="number" id="history-page-jump" min="1" value="1" style="width:48px;text-align:center;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:#f8fafc;font-size:0.7rem;padding:2px 4px;">
+                            页
+                        </span>
+                        <button class="hub-page-btn" onclick="jumpHistoryPage()" style="padding:2px 8px;font-size:0.65rem;">跳转</button>
+                    </div>
+                </div>
             </div>
             <div id="history-overlay" onclick="toggleHistoryDrawer()" style="position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:499;display:none;"></div>
             <button id="history-toggle-btn" onclick="toggleHistoryDrawer()" style="position:absolute;top:50%;left:0;transform:translateY(-50%);background:rgba(15,23,42,0.85);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,0.15);border-left:none;border-radius:0 8px 8px 0;padding:14px 8px;cursor:pointer;z-index:501;color:#94a3b8;font-size:1rem;writing-mode:vertical-rl;letter-spacing:2px;transition:left 0.3s;">📂</button>
@@ -2382,7 +2500,13 @@
             type: 'all',
             location: 'all'
         },
-        rawHistoryFiles: []
+        rawHistoryFiles: [],
+        historyPagination: {
+            currentPage: 1,
+            pageSize: 30,
+            totalPages: 1,
+            backendTotal: 0
+        }
     };
     const sportHubState = {
         activeTab: 'records',
@@ -2411,7 +2535,9 @@
         syncCurrentFile: '',
         syncStats: { inserted: 0, updated: 0, skipped: 0, removed: 0, total: 0, current: 0 },
         selectedIds: new Set(),
-        syncPromise: null
+        syncPromise: null,
+        dynamicColumns: [],
+        needsRefresh: false
     };
     let isMovementRecordsInitialized = false;
     let isMovementRecordsInitializing = false;
@@ -2481,9 +2607,17 @@
         else if (t.includes('walk') || t.includes('步')) { icon = '🚶'; label = '步行'; paceLabel = '步行'; }
         else if (t.includes('hik') || t.includes('徒')) { icon = '🥾'; label = '徒步'; paceLabel = '徒步'; }
         else if (t.includes('mount') || t.includes('climb') || t.includes('登')) { icon = '🧗'; label = '登山'; paceLabel = '攀登'; }
+        else if (t.includes('strength') || t.includes('力量')) { icon = '💪'; label = '力量训练'; paceLabel = '训练'; }
+        else if (t.includes('yoga') || t.includes('瑜伽')) { icon = '🧘'; label = '瑜伽'; paceLabel = '训练'; }
+        else if (t.includes('pilates') || t.includes('普拉提')) { icon = '🧎'; label = '普拉提'; paceLabel = '训练'; }
+        else if (t.includes('hiit') || t.includes('间歇')) { icon = '🔥'; label = '高强度间歇'; paceLabel = '训练'; }
+        else if (t.includes('breath') || t.includes('呼吸')) { icon = '🫁'; label = '呼吸训练'; paceLabel = '训练'; }
+        else if (t.includes('flex') || t.includes('柔韧')) { icon = '🤸'; label = '柔韧训练'; paceLabel = '训练'; }
+        else if (t.includes('cardio') || t.includes('aerobic')) { icon = '💓'; label = '有氧运动'; paceLabel = '配速'; }
         else if (t.includes('driv') || t.includes('car') || t.includes('auto') || t.includes('驾') || t.includes('车')) { icon = '🚗'; label = '驾车'; paceLabel = '车速'; }
         else if (t.includes('ski') || t.includes('雪')) { icon = '🎿'; label = '滑雪'; paceLabel = '滑行'; }
         else if (t.includes('row') || t.includes('boat') || t.includes('划')) { icon = '🚣'; label = '划船'; paceLabel = '划行'; }
+        else if (t.includes('paddle') || t.includes('板')) { icon = '🏄'; label = '桨板'; paceLabel = '划行'; }
         
         if (label === typeStr) {
             label = typeStr.charAt(0).toUpperCase() + typeStr.slice(1).replace(/[_-]/g, ' ');
@@ -2829,6 +2963,24 @@
         const modal = document.getElementById('blocker-modal');
         if (modal) modal.style.display = 'none';
     }
+
+    function resetBlockerModalContent() {
+        const modal = document.getElementById('blocker-modal');
+        if (!modal) return;
+        const iconEl = modal.querySelector('.blocker-modal-icon');
+        const titleEl = modal.querySelector('.blocker-modal-title');
+        const descEl = modal.querySelector('.blocker-modal-desc');
+        const btnEl = modal.querySelector('.blocker-modal-btn');
+        if (iconEl) iconEl.innerText = '🔒';
+        if (titleEl) titleEl.innerText = '配置尚未完成';
+        if (descEl) descEl.innerText = '请先完成全部 3 项配置后再访问「个人运动数据」和「轨迹分析工具」功能。';
+        if (btnEl) {
+            btnEl.innerText = '前往配置';
+            btnEl.disabled = false;
+            btnEl.onclick = closeBlockerModal;
+        }
+    }
+
     function hideTrackDetectedToast() {
         const toast = document.getElementById('track-detected-toast');
         if (!toast) return;
@@ -2837,6 +2989,16 @@
             clearTimeout(detectedTrackToastTimer);
             detectedTrackToastTimer = null;
         }
+    }
+
+    function showCompassBadge() {
+        const badge = document.getElementById('compass-badge');
+        if (badge) badge.style.display = 'inline-block';
+    }
+
+    function hideCompassBadge() {
+        const badge = document.getElementById('compass-badge');
+        if (badge) badge.style.display = 'none';
     }
 
     function showTrackDetectedToast(filePath) {
@@ -2891,22 +3053,31 @@
 
     async function refreshRecordsAfterDetection() {
         try {
+            sportHubState.recordsReady = false;
+            isMovementRecordsInitialized = false;
             if (getCurrentActivePanel() === 'profile' && sportHubState.activeTab === 'records') {
-                await loadSportHubActivityList({ resetPage: true });
+                await loadSportHubActivityList({ resetPage: true, refreshSnapshot: true });
+            } else {
+                sportHubState.needsRefresh = true;
             }
         } catch (e) {
-            console.warn('refreshRecordsAfterDetection error:', e);
+            console.error('refreshRecordsAfterDetection error:', e);
         }
     }
 
     window.onNewTrackDetected = async function(filePath, activityId = 0) {
-        latestDetectedTrack = {
-            filePath: String(filePath || ''),
-            activityId: Number(activityId) || 0
-        };
-        showTrackDetectedToast(latestDetectedTrack.filePath);
-        showToast('📡 雷达检测到新轨迹落盘！');
-        await refreshRecordsAfterDetection();
+        try {
+            latestDetectedTrack = {
+                filePath: String(filePath || ''),
+                activityId: Number(activityId) || 0
+            };
+            showCompassBadge();
+            showTrackDetectedToast(latestDetectedTrack.filePath);
+            showToast('📡 雷达检测到新轨迹落盘！');
+            await refreshRecordsAfterDetection();
+        } catch (e) {
+            console.error('[onNewTrackDetected] error:', e);
+        }
     };
 
     function togglePanel() {
@@ -3057,31 +3228,6 @@
         const panels = ['profile', 'trace', 'settings'];
         const activePanel = tabBtn ? tabBtn.getAttribute('data-panel') : 'profile';
 
-        const blockedPanels = ['profile', 'trace'];
-        if (blockedPanels.indexOf(activePanel) !== -1) {
-            const localDir = getFitTracksDir();
-            const brand = currentLLMConfig.watchBrand || '';
-            const step1Done = onboardingState.llmTestPassed;
-            const step2Done = !!localDir && onboardingState.dirValidated;
-            const step3Done = brand === 'coros' ? true : onboardingState.aiNotified;
-            if (!step1Done || !step2Done || !step3Done) {
-                showBlockerModal();
-                const settingsBtn = document.querySelector('[data-panel="settings"]');
-                if (settingsBtn) {
-                    document.querySelectorAll('.bookmark-tab').forEach(function(t) { t.classList.remove('active'); });
-                    document.querySelectorAll('.tab-panel').forEach(function(p) { p.classList.remove('active'); });
-                    settingsBtn.classList.add('active');
-                    const settingsPanel = document.getElementById('panel-settings');
-                    if (settingsPanel) settingsPanel.classList.add('active');
-                    localStorage.setItem('last_active_panel', 'settings');
-                    if (typeof refreshSettingsPanel === 'function') {
-                        refreshSettingsPanel().catch(function(e) { console.warn('refreshSettingsPanel', e); });
-                    }
-                }
-                return;
-            }
-        }
-
         document.querySelectorAll('.bookmark-tab').forEach(function(t) { t.classList.remove('active'); });
         document.querySelectorAll('.tab-panel').forEach(function(p) { p.classList.remove('active'); });
         const targetTab = tabBtn ? tabBtn : document.querySelector('[data-panel="' + activePanel + '"]');
@@ -3089,6 +3235,7 @@
         const targetPanel = document.getElementById('panel-' + activePanel);
         if (targetPanel) targetPanel.classList.add('active');
         localStorage.setItem('last_active_panel', activePanel);
+        if (activePanel === 'profile') hideCompassBadge();
         if (activePanel === 'trace' && typeof renderHistoryList === 'function') {
             renderHistoryList();
         }
@@ -3102,6 +3249,8 @@
         if (activePanel === 'profile') {
             handleSportHubTabActivation(sportHubState.activeTab).catch(function(e) {
                 console.error('switchTab handleSportHubTabActivation', e);
+                var settingsBtn = document.querySelector('[data-panel="settings"]');
+                if (settingsBtn) switchTab(settingsBtn);
             });
         }
     }
@@ -3117,9 +3266,8 @@
     }
 
     function restoreStartupRoute() {
-        const isFirstTime = !localStorage.getItem('onboarding_completed');
         const lastPanel = localStorage.getItem('last_active_panel');
-        const targetPanel = isFirstTime ? 'settings' : (['profile', 'trace', 'settings'].includes(lastPanel) ? lastPanel : 'profile');
+        const targetPanel = ['profile', 'trace', 'settings'].includes(lastPanel) ? lastPanel : 'profile';
         const btn = document.querySelector('.bookmark-tab[data-panel="' + targetPanel + '"]');
         if (btn) switchTab(btn);
     }
@@ -3248,26 +3396,33 @@
         if (profile.gender) document.getElementById('pf-gender').innerText = profile.gender;
         if (profile.height_cm) document.getElementById('pf-height').innerText = profile.height_cm + ' cm';
         if (weightKg) document.getElementById('pf-weight').innerText = weightKg + ' kg';
+        if (weightKg) document.getElementById('pf-weight-bc').innerText = weightKg + ' kg';
         if (restingHr) document.getElementById('pf-resting-hr').innerText = restingHr + ' bpm';
         if (hrv) { var el = document.getElementById('pf-hrv'); el.innerText = hrv + ' ms'; el.className = hrv > 65 ? 'hrv-high' : hrv < 40 ? 'hrv-low' : ''; }
         if (vo2Max) document.getElementById('pf-vo2max').innerText = vo2Max;
+        if (profile.avg_bedtime) document.getElementById('pf-avg-bedtime').innerText = profile.avg_bedtime;
         if (profile.avg_sleep_hours) document.getElementById('pf-sleep').innerText = profile.avg_sleep_hours.toFixed(1) + ' h';
         if (profile.lactate_threshold_hr) document.getElementById('pf-lthr').innerText = profile.lactate_threshold_hr + ' bpm';
         if (profile.lactate_threshold_pace) document.getElementById('pf-lt-pace').innerText = profile.lactate_threshold_pace;
-        if (profile.ftp_watts) document.getElementById('pf-ftp').innerText = profile.ftp_watts + ' W';
+        if (profile.ftp || profile.ftp_watts) document.getElementById('pf-ftp').innerText = (profile.ftp || profile.ftp_watts) + ' W';
         if (profile.longest_hike_km) document.getElementById('pf-longest-hike').innerText = profile.longest_hike_km + ' km';
         if (profile.longest_run_km) document.getElementById('pf-longest-run').innerText = profile.longest_run_km + ' km';
-        if (profile.pb_1km) document.getElementById('pf-pb-1km').innerText = profile.pb_1km;
-        if (profile.pb_5km) document.getElementById('pf-pb-5k').innerText = profile.pb_5km;
-        if (profile.pb_10km) document.getElementById('pf-pb-10k').innerText = profile.pb_10km;
-        if (profile.pb_half_marathon) document.getElementById('pf-pb-hm').innerText = profile.pb_half_marathon;
-        if (profile.pb_full_marathon) document.getElementById('pf-pb-fm').innerText = profile.pb_full_marathon;
+        if (profile.pb_1km) document.getElementById('pf-pb-1km').innerHTML = profile.pb_1km;
+        if (profile.pb_5km) document.getElementById('pf-pb-5k').innerHTML = profile.pb_5km;
+        if (profile.pb_10km) document.getElementById('pf-pb-10k').innerHTML = profile.pb_10km;
+        if (profile.pb_half_marathon) document.getElementById('pf-pb-hm').innerHTML = profile.pb_half_marathon;
+        if (profile.pb_full_marathon) document.getElementById('pf-pb-fm').innerHTML = profile.pb_full_marathon;
         if (profile.longest_ride_time) document.getElementById('pf-longest-ride-time').innerText = profile.longest_ride_time;
         if (profile.cycling_40km_time) document.getElementById('pf-cycling-40k').innerText = profile.cycling_40km_time;
         if (profile.cycling_80km_time) document.getElementById('pf-cycling-80k').innerText = profile.cycling_80km_time;
         if (profile.longest_cycle_km) document.getElementById('pf-longest-cycle').innerText = profile.longest_cycle_km + ' km';
         if (profile.longest_swim_distance_m) document.getElementById('pf-longest-swim').innerText = profile.longest_swim_distance_m + ' m';
         if (profile.swimming_100m_pb) document.getElementById('pf-swim-100m').innerText = profile.swimming_100m_pb;
+        if (profile.bmi) document.getElementById('pf-bmi').innerText = profile.bmi;
+        if (profile.body_fat_pct) document.getElementById('pf-body-fat').innerText = profile.body_fat_pct + '%';
+        if (profile.body_water_pct) document.getElementById('pf-body-water').innerText = profile.body_water_pct + '%';
+        if (profile.bone_mass) document.getElementById('pf-bone-mass').innerText = profile.bone_mass + ' kg';
+        if (profile.muscle_mass) document.getElementById('pf-muscle-mass').innerText = profile.muscle_mass + ' kg';
         const statusChip = document.getElementById('pf-status-chip');
         if (statusChip) {
             statusChip.innerText = vo2Max ? '画像已同步' : '待同步设备数据';
@@ -3444,6 +3599,7 @@
 
             sportHubState.activityTypes = Array.isArray(res.activity_types) ? res.activity_types : [];
             sportHubState.pageSizes = Array.isArray(res.page_sizes) && res.page_sizes.length ? res.page_sizes : [10, 20, 50];
+            sportHubState.dynamicColumns = Array.isArray(res.dynamic_columns) ? res.dynamic_columns : [];
             sportHubState.total = _safeInt(res.total, 0);
             sportHubState.totalPages = Math.max(1, Math.ceil(sportHubState.total / pageSize));
             setSportHubRecordSnapshot(Array.isArray(res.records) ? res.records : []);
@@ -3639,6 +3795,33 @@
         const pageSize = Number(sportHubState.filters.pageSize) || 10;
         const totalPages = Math.max(1, Number(sportHubState.totalPages) || 1);
         const pageItems = Array.isArray(sportHubState.records) ? sportHubState.records : [];
+        const dynamicCols = Array.isArray(sportHubState.dynamicColumns) ? sportHubState.dynamicColumns : [];
+        const showNp = dynamicCols.includes('np');
+        const showGain = dynamicCols.includes('gain');
+        const showSwolf = dynamicCols.includes('swolf');
+        const baseCols = 10;
+        const totalCols = baseCols + (showNp ? 1 : 0) + (showGain ? 1 : 0) + (showSwolf ? 1 : 0);
+
+        const headerRow = document.getElementById('sport-records-header-row');
+        if (headerRow) {
+            const baseHeaders = [
+                '<th><input type="checkbox" id="sport-records-select-all" onchange="toggleAllSportHubRecords(this.checked)"></th>',
+                '<th>活动类型</th>',
+                '<th>时间</th>',
+                '<th>标题</th>',
+                '<th>地区</th>',
+                '<th>设备型号</th>',
+                '<th>距离</th>',
+                '<th>时长</th>',
+                '<th>平均配速</th>',
+                '<th>心率(平均/最大)</th>',
+                '<th>热量</th>'
+            ];
+            if (showNp) baseHeaders.push('<th>标准化功率</th>');
+            if (showGain) baseHeaders.push('<th>累计爬升</th>');
+            if (showSwolf) baseHeaders.push('<th>划水</th>');
+            headerRow.innerHTML = baseHeaders.join('');
+        }
 
         if (sportHubState.recordsSyncing || sportHubState.recordsLoading) {
             let loadingText = '正在加载运动记录...';
@@ -3660,27 +3843,36 @@
                 }
                 loadingText = detailParts.join(' · ');
             }
-            tbody.innerHTML = `<tr><td colspan="11"><div class="hub-empty-state">${safeHtml(loadingText)}</div></td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="${totalCols}"><div class="hub-empty-state">${safeHtml(loadingText)}</div></td></tr>`;
         } else if (sportHubState.recordsError) {
-            tbody.innerHTML = `<tr><td colspan="11"><div class="hub-empty-state" style="color:#fca5a5;">${safeHtml(sportHubState.recordsError)}</div></td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="${totalCols}"><div class="hub-empty-state" style="color:#fca5a5;">${safeHtml(sportHubState.recordsError)}</div></td></tr>`;
         } else if (!pageItems.length) {
-            tbody.innerHTML = `<tr><td colspan="11"><div class="hub-empty-state">当前数据库中暂无可展示的运动记录</div></td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="${totalCols}"><div class="hub-empty-state">当前数据库中暂无可展示的运动记录</div></td></tr>`;
         } else {
-            tbody.innerHTML = pageItems.map((item) => `
+            tbody.innerHTML = pageItems.map((item) => {
+                const hrDisplay = (item.avg_hr || item.max_hr) ? `${item.avg_hr || '--'} / ${item.max_hr || '--'} bpm` : '/';
+                const npDisplay = item.normalized_power != null && item.normalized_power !== '' ? `${item.normalized_power} W` : '/';
+                const npCol = showNp ? `<td>${npDisplay}</td>` : '';
+                const gainCol = showGain ? `<td>${item.gain_m != null ? item.gain_m + ' m' : '/'}</td>` : '';
+                const swolfCol = showSwolf ? `<td>${item.swolf != null ? item.swolf : '/'}${item.swolf_subtitle ? '<br><small>' + item.swolf_subtitle + '</small>' : ''}</td>` : '';
+                return `
                 <tr onclick="openActivityDetailModal(${item.id})">
                     <td onclick="event.stopPropagation();"><input type="checkbox" class="sport-record-select" data-id="${item.id}" ${sportHubState.selectedIds.has(item.id) ? 'checked' : ''} onchange="toggleSportHubRecordSelection(${item.id}, this.checked)"></td>
                     <td><span class="hub-pill">${sportHubRecordTypeIcon(item)} ${sportHubRecordTypeLabel(item)}</span></td>
                     <td>${safeHtml(item.date_label || '--')}</td>
-                    <td><div class="hub-record-title"><b>${safeHtml(item.title || item.file_name || item.filename || '未命名活动')}</b><span>${safeHtml(item.file_name || item.filename || '')}</span></div></td>
+                    <td><div class="hub-record-title"><b>${safeHtml(item.title || item.file_name || item.filename || '未命名活动')}</b></div></td>
                     <td>${safeHtml(item.region || '--')}</td>
                     <td>${safeHtml(item.device_name || '--')}</td>
                     <td>${safeHtml(item.distance_display || '--')}</td>
                     <td>${formatRaceTime(item.duration_sec || 0)}</td>
                     <td>${safeHtml(item.avg_pace_display || '--')}</td>
-                    <td>${item.avg_hr ? item.avg_hr + ' bpm' : '--'}</td>
+                    <td>${hrDisplay}</td>
                     <td>${item.calories ? item.calories + ' kcal' : '--'}</td>
+                    ${npCol}
+                    ${gainCol}
+                    ${swolfCol}
                 </tr>
-            `).join('');
+            `}).join('');
         }
 
         if (info) {
@@ -3696,6 +3888,18 @@
         }
         if (prevBtn) prevBtn.disabled = page <= 1 || sportHubState.recordsLoading || sportHubState.recordsSyncing;
         if (nextBtn) nextBtn.disabled = page >= totalPages || sportHubState.recordsLoading || sportHubState.recordsSyncing;
+
+        renderPageNumbers(
+            'sport-records-page-numbers',
+            page,
+            totalPages,
+            function(p) {
+                sportHubState.filters.page = p;
+                loadSportHubActivityList({ resetPage: false });
+            }
+        );
+        var jumpInput = document.getElementById('sport-records-page-jump');
+        if (jumpInput) jumpInput.value = page;
         const selectAll = document.getElementById('sport-records-select-all');
         if (selectAll) {
             selectAll.checked = pageItems.length > 0 && pageItems.every(item => sportHubState.selectedIds.has(item.id));
@@ -3736,22 +3940,26 @@
         const descEl = modal ? modal.querySelector('.blocker-modal-desc') : null;
         const btnEl = modal ? modal.querySelector('.blocker-modal-btn') : null;
         const iconEl = modal ? modal.querySelector('.blocker-modal-icon') : null;
-        if (modal) modal.style.display = '';
+        if (modal) modal.style.display = 'flex';
         if (iconEl) iconEl.innerText = '⚠️';
         if (titleEl) titleEl.innerText = '确认删除运动记录';
         if (descEl) descEl.innerText = `确定永久删除选中的 ${ids.length} 条运动记录吗？\n对应的本地 FIT 文件也将被物理删除，此操作不可恢复。`;
         if (btnEl) {
             btnEl.innerText = '确认删除';
-            btnEl.onclick = async function() {
+            btnEl.disabled = false;
+            btnEl.onclick = async function(e) {
+                if (e) { e.preventDefault(); e.stopPropagation(); }
+                const deleteBtn = document.getElementById('sport-records-delete-btn');
                 btnEl.disabled = true;
                 btnEl.innerText = '删除中...';
-                const deleteBtn = document.getElementById('sport-records-delete-btn');
                 if (deleteBtn) deleteBtn.disabled = true;
                 try {
                     const res = await window.pywebview.api.delete_activities(ids);
                     if (!res || !res.ok) throw new Error((res && res.error) || '删除失败');
                     sportHubState.selectedIds.clear();
-                    await loadSportHubActivityList({ resetPage: true });
+                    resetBlockerModalContent();
+                    closeBlockerModal();
+                    await loadSportHubActivityList({ resetPage: true, refreshSnapshot: true });
                     let msg = `已删除 ${res.deleted} 条运动记录`;
                     if (typeof res.files_deleted === 'number') {
                         msg += `，已移除 ${res.files_deleted} 个本地文件`;
@@ -3761,12 +3969,10 @@
                         console.warn('文件删除异常:', res.file_errors);
                     }
                     showToast(msg);
-                    closeBlockerModal();
-                    if (btnEl) btnEl.onclick = closeBlockerModal;
                 } catch (e) {
+                    resetBlockerModalContent();
+                    closeBlockerModal();
                     showToast('删除失败：' + ((e && e.message) || e));
-                    if (btnEl) { btnEl.disabled = false; btnEl.innerText = '确认删除'; }
-                    if (deleteBtn) deleteBtn.disabled = false;
                 }
             };
         }
@@ -4085,7 +4291,7 @@
 
     async function onSwitchToMovementRecords(options = {}) {
         const forceRefresh = !!options.forceRefresh;
-        if (isMovementRecordsInitialized && !forceRefresh) {
+        if (isMovementRecordsInitialized && !forceRefresh && !sportHubState.needsRefresh) {
             renderSportHubRecords();
             return;
         }
@@ -4104,6 +4310,7 @@
             try {
                 await syncAndLoadSportHubRecords({ sync: true, resetPage: true });
                 isMovementRecordsInitialized = true;
+                sportHubState.needsRefresh = false;
                 renderSportHubFilterOptions();
                 renderSportHubRecords();
             } finally {
@@ -4116,8 +4323,17 @@
             try {
                 await loadSportHubActivityList({ resetPage: true });
                 isMovementRecordsInitialized = true;
+                sportHubState.needsRefresh = false;
                 renderSportHubFilterOptions();
                 renderSportHubRecords();
+
+                if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.notify_frontend_ready === 'function') {
+                    try {
+                        await window.pywebview.api.notify_frontend_ready();
+                    } catch (e) {
+                        console.warn('notify_frontend_ready error:', e);
+                    }
+                }
             } catch (e) {
                 console.error('onSwitchToMovementRecords initial load error:', e);
             }
@@ -4132,6 +4348,13 @@
                         await loadSportHubActivityList({ resetPage: false });
                         renderSportHubFilterOptions();
                         renderSportHubRecords();
+                    }
+                    if (typeof window.pywebview.api.notify_frontend_ready === 'function') {
+                        try {
+                            await window.pywebview.api.notify_frontend_ready();
+                        } catch (e) {
+                            console.warn('notify_frontend_ready after sync error:', e);
+                        }
                     }
                 } catch (e) {
                     console.warn('onSwitchToMovementRecords background sync error:', e);
@@ -4231,6 +4454,64 @@
         await loadSportHubActivityList({ resetPage: false });
     }
 
+    function renderPageNumbers(containerId, currentPage, totalPages, onPageClick) {
+        const container = document.getElementById(containerId);
+        if (!container) return;
+        if (totalPages <= 1) { container.innerHTML = ''; return; }
+
+        const pages = [];
+        const maxVisible = 7;
+        const cur = Math.max(1, Math.min(totalPages, currentPage));
+
+        if (totalPages <= maxVisible + 2) {
+            for (let i = 1; i <= totalPages; i++) pages.push(i);
+        } else {
+            pages.push(1);
+            if (cur > 4) pages.push('...');
+
+            let start = Math.max(2, cur - 2);
+            let end = Math.min(totalPages - 1, cur + 2);
+            if (cur <= 4) { start = 2; end = Math.min(totalPages - 1, maxVisible); }
+            if (cur >= totalPages - 3) { start = Math.max(2, totalPages - maxVisible + 1); end = totalPages - 1; }
+
+            for (let i = start; i <= end; i++) pages.push(i);
+            if (cur < totalPages - 3) pages.push('...');
+            pages.push(totalPages);
+        }
+
+        container.innerHTML = pages.map(p => {
+            if (p === '...') return '<span class="hub-page-ellipsis">\u2026</span>';
+            const active = (p === cur) ? ' active' : '';
+            return '<button class="hub-page-num' + active + '" data-page="' + p + '">' + p + '</button>';
+        }).join('');
+
+        container.querySelectorAll('.hub-page-num').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                onPageClick(Number(this.getAttribute('data-page')));
+            });
+        });
+    }
+
+    function jumpSportHubPage() {
+        const input = document.getElementById('sport-records-page-jump');
+        if (!input) return;
+        const page = Math.max(1, parseInt(input.value) || 1);
+        const totalPages = Math.max(1, sportHubState.totalPages || 1);
+        sportHubState.filters.page = Math.min(page, totalPages);
+        input.value = sportHubState.filters.page;
+        loadSportHubActivityList({ resetPage: false });
+    }
+
+    function jumpHistoryPage() {
+        const input = document.getElementById('history-page-jump');
+        if (!input) return;
+        const page = Math.max(1, parseInt(input.value) || 1);
+        const totalPages = Math.max(1, appState.historyPagination.totalPages || 1);
+        appState.historyPagination.currentPage = Math.min(page, totalPages);
+        input.value = appState.historyPagination.currentPage;
+        _doRenderHistoryList();
+    }
+
     function sendAIMsg() {
         var inp = document.getElementById('ai-chat-input');
         if (!inp || !inp.value.trim()) return;
@@ -4267,51 +4548,6 @@
             if (overlay) overlay.style.display = 'block';
             if (btn) { btn.style.left = '300px'; btn.innerText = '📁'; }
         }
-    }
-
-    async function getCityNameAsync(lat, lon) {
-        if (!lat || !lon) return '未知地点';
-        
-        // 尝试从本地缓存获取
-        const cacheKey = `loc_${lat.toFixed(2)}_${lon.toFixed(2)}`;
-        const cached = localStorage.getItem(cacheKey);
-        if (cached) return cached;
-        
-        try {
-            // 使用与报告模块相同的接口和逻辑
-            const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=10&accept-language=zh-CN`);
-            const data = await response.json();
-            let locName = '未知地点';
-            if (data && data.address) {
-                locName = data.address.city || data.address.town || data.address.county || data.address.state || data.address.province || data.name || '未知地点';
-            }
-            if (locName !== '未知地点') {
-                localStorage.setItem(cacheKey, locName);
-            }
-            return locName;
-        } catch (e) {
-            console.error('getCityNameAsync error:', e);
-            // 降级使用粗略的本地判断
-            return getCityName(lat, lon);
-        }
-    }
-
-    function getCityName(lat, lon) {
-        if (!lat || !lon) return '未知地点';
-        const CITY_BOUNDS = [
-            { name: '北京', lat: [39.4, 41.1], lon: [115.4, 117.5] },
-            { name: '上海', lat: [30.7, 31.5], lon: [120.8, 122.0] },
-            { name: '成都', lat: [30.1, 31.4], lon: [103.0, 104.9] },
-            { name: '杭州', lat: [29.2, 30.6], lon: [118.3, 120.7] },
-            { name: '深圳', lat: [22.4, 22.9], lon: [113.7, 114.6] },
-            { name: '广州', lat: [22.5, 23.9], lon: [112.9, 114.1] },
-        ];
-        for (const city of CITY_BOUNDS) {
-            if (lat >= city.lat[0] && lat <= city.lat[1] && lon >= city.lon[0] && lon <= city.lon[1]) {
-                return city.name;
-            }
-        }
-        return '其他地区';
     }
 
     function updateHistoryFilters() {
@@ -4411,6 +4647,16 @@
                 return tb - ta;
             });
 
+            // 只保留适合轨迹分析的 GPS 活动
+            const GPS_SPORT_WHITELIST = new Set([
+                'running', 'hiking', 'mountaineering', 'cycling', 'walking',
+                'trail_running', 'road_cycling', 'mountain_biking', 'treadmill_running'
+            ]);
+            displayFiles = displayFiles.filter(item => {
+                const st = item.display_sport_type || item.sub_sport_type || item.sport_type || '';
+                return GPS_SPORT_WHITELIST.has(st);
+            });
+
             // 应用筛选
             const filters = appState.historyFilters;
             const now = new Date();
@@ -4455,6 +4701,7 @@
                 const dur = item.duration_sec ? formatDuration(item.duration_sec) : '--';
                 const sportType = item.display_sport_type || item.sub_sport_type || item.sport_type || 'unknown';
                 const city = item.cityName || '未知地点';
+                const title = item.title || '';
                 
                 return `<div class="history-card" data-activity-id="${item.id || ''}" data-file-path="${item.file_path || ''}" data-sport-type="${sportType}" onclick="loadHistoryItem(this)" style="
                     padding:10px 12px;background:rgba(255,255,255,0.05);
@@ -4467,16 +4714,49 @@
                         <span style="font-size:0.65rem;color:#94a3b8;">${date} · ${city}</span>
                         <span style="font-size:0.65rem;background:rgba(46,204,113,0.15);color:#2ecc71;border-radius:4px;padding:1px 6px;">${sportEmoji[sportType] || '⏱️'} ${sportName[sportType] || '其他'}</span>
                     </div>
+                    ${title ? `<div style="font-size:0.75rem;color:#f8fafc;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${title}</div>` : ''}
                     <div style="display:flex;justify-content:space-between;align-items:center;">
                         <span style="font-size:0.75rem;"><b style="color:#f8fafc;">${dist} km</b></span>
                         <span style="font-size:0.68rem;color:#94a3b8;">⛰️+${gain}m  ⏱️${dur}</span>
                     </div>
                 </div>`;
             }).join('');
+            updateHistoryPaginationUI();
         } catch(e) {
             console.error('renderHistoryList error:', e);
             listEl.innerHTML = '<div style="color:#ef4444;font-size:0.75rem;text-align:center;padding:20px;">加载失败</div>';
         }
+    }
+
+    function updateHistoryPaginationUI() {
+        const info = document.getElementById('history-pagination-info');
+        const prevBtn = document.getElementById('history-prev');
+        const nextBtn = document.getElementById('history-next');
+        const page = Math.max(1, Number(appState.historyPagination.currentPage) || 1);
+        const totalPages = Math.max(1, Number(appState.historyPagination.totalPages) || 1);
+        const total = Number(appState.historyPagination.backendTotal) || 0;
+
+        if (info) info.innerText = total ? `第 ${page}/${totalPages} 页，共 ${total} 条` : '暂无活动记录';
+        if (prevBtn) prevBtn.disabled = page <= 1;
+        if (nextBtn) nextBtn.disabled = page >= totalPages;
+
+        renderPageNumbers(
+            'history-page-numbers',
+            page,
+            totalPages,
+            function(p) {
+                appState.historyPagination.currentPage = p;
+                _doRenderHistoryList();
+            }
+        );
+        var jumpInput = document.getElementById('history-page-jump');
+        if (jumpInput) jumpInput.value = page;
+    }
+
+    async function changeHistoryPage(delta) {
+        const totalPages = Math.max(1, Number(appState.historyPagination.totalPages) || 1);
+        appState.historyPagination.currentPage = Math.max(1, Math.min(totalPages, appState.historyPagination.currentPage + delta));
+        await _doRenderHistoryList();
     }
 
     async function loadAndRenderLocalFile(filePath, isBackground = false) {
@@ -5065,25 +5345,54 @@
      * 契约表 v1 §四.3: 禁止用于业务计算（距离/配速/爬升）
      * 业务距离仅由 DB 字段 distance_m / dist_km 提供
      */
+    /**
+     * @deprecated 此函数已被废弃。详见 ARCHITECTURE.md §4 前端只消费原则。
+     * 仅保留用于拖拽 FIT 预览（_previewStatsOnly）。
+     * @param {*} p1
+     * @param {*} p2
+     * @returns {number}
+     */
     function haversine(p1, p2) {
+        console.warn('[DEPRECATED] haversine() 已废弃，仅允许用于 FIT 预览场景');
         var dLat = (p2.lat - p1.lat) * Math.PI / 180;
         var dLon = (p2.lon - p1.lon) * Math.PI / 180;
         var a = Math.sin(dLat/2)*Math.sin(dLat/2) + Math.cos(p1.lat*Math.PI/180)*Math.cos(p2.lat*Math.PI/180)*Math.sin(dLon/2)*Math.sin(dLon/2);
         return 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
     }
 
+
     // LEGACY UI CALCULATION
     // DO NOT EXTEND - migration target: backend resolver
+    function _validateNotPreview(data, context) {
+        if (data && data._previewOnly) {
+            console.error(`[ARCHITECTURE BLOCKED] 禁止将预览数据(${context})传入 canonical 路径`);
+            throw new Error('PREVIEW_DATA_BLOCKED');
+        }
+        return data;
+    }
+
+    /**
+     * @deprecated 此函数已被废弃。详见 ARCHITECTURE.md §4 前端只消费原则。
+     * 仅保留用于拖拽 FIT 预览（_previewStatsOnly）。
+     * @param {*} points
+     * @param {*} activityMetrics
+     * @returns {object|null}
+     */
     function calculateStats(points, activityMetrics) {
+        console.warn('[DEPRECATED] calculateStats() 已废弃，请使用后端 canonical 数据');
         if (!points || points.length === 0) return { dist: '0 km', gain: '0 m', max: '0 m', time: 'N/A', kmMarkers: [], peakMarkers: [] };
 
-        // Task 3.2: UI Adapter — 权威数据路径
+        // 强制走 canonical 数据路径（架构原则：前端只消费，不计算）
         if (activityMetrics) {
             return _buildStatsFromCanonical(points, activityMetrics);
         }
-        // 仅文件拖拽/直接解析场景使用 fallback（禁止依赖此路径的计算值作为 AI 输入）
-        return _calculateStatsFallback(points);
+        
+        // ⚠️ FALLBACK — 未入库文件预览专用
+        // ⚠️ 输出标记 _previewOnly=true，禁止进入 AI snapshot / DB
+        console.warn('[ARCHITECTURE] 使用预览模式计算（未入库文件），此数据不进入 canonical');
+        return _previewStatsOnly(points);
     }
+
 
     function _buildStatsFromCanonical(points, m) {
         // 距离 / 爬升 / 时间均来自 DB，前端仅做格式化
@@ -5132,16 +5441,15 @@
             maxAlt = Math.round(maxFromPoints);
         }
 
-        return { dist: distDisplay, gain: gainDisplay, max: Math.round(maxAlt) + ' m', time: timeStr, kmMarkers: kmMarkers, peakMarkers: peakMarkers };
+        return { dist: distDisplay, gain: gainDisplay, max: Math.round(maxAlt) + ' m', time: timeStr, kmMarkers: kmMarkers, peakMarkers: peakMarkers, _source: 'canonical' };
     }
 
-    function _calculateStatsFallback(points) {
-        // ⚠️ LEGACY FALLBACK（契约表 v1 §四.3 禁止范围）
-        //   仅用于拖拽/直接解析文件场景 — 未入库时无可避免
-        // ⚠️ 约束：
-        //   1. 禁止此函数的输出进入 AI snapshot / llm_backend
-        //   2. 一旦入库必须由 _buildStatsFromCanonical 接管
-        //   3. 禁止在此函数中新增任何业务计算逻辑
+    function _previewStatsOnly(points) {
+        // ⚠️ ARCHITECTURE VIOLATION — 前端计算（方案 B 隔离）
+        // ⚠️ 此函数输出为 PREVIEW ONLY，禁止进入任何 canonical 路径
+        // ⚠️ 禁止进入：AI snapshot / llm_backend / DB / 任何持久化存储
+        // ⚠️ 仅用于：用户拖拽 FIT 文件预览（未入库场景）
+        // ⚠️ 一旦文件入库，必须切换至 _buildStatsFromCanonical() 消费后端数据
         var dist = 0, gain = 0, maxAlt = -Infinity;
         var lastAlt = points[0].alt;
         var kmMarkers = [];
@@ -5174,7 +5482,7 @@
         }
 
         var peakMarkers = _detectPeakMarkers(points);
-        return { dist: dist.toFixed(2) + ' km', gain: Math.round(gain) + ' m', max: Math.round(maxAlt) + ' m', time: timeStr, kmMarkers: kmMarkers, peakMarkers: peakMarkers };
+        return { dist: dist.toFixed(2) + ' km', gain: Math.round(gain) + ' m', max: Math.round(maxAlt) + ' m', time: timeStr, kmMarkers: kmMarkers, peakMarkers: peakMarkers, _previewOnly: true };
     }
 
     function _detectPeakMarkers(points) {
@@ -5861,6 +6169,7 @@
         appState.activityMetrics = activity || null;
 
         const stats = calculateStats(appState.points, appState.activityMetrics);
+        _validateNotPreview(stats, '轨迹详情面板');
         appState.kmMarkers = stats.kmMarkers; appState.peakMarkers = stats.peakMarkers; 
 
         document.getElementById('val-dist').innerText = stats.dist; document.getElementById('val-gain').innerText = stats.gain;
@@ -6155,6 +6464,7 @@
             btn.innerText = '⏳ 正在通知...';
             btn.disabled = true;
             
+            _validateNotPreview(appState.activityMetrics, 'AI助手通知');
             await notifyAIAssistant();
             
             if (onboardingState.aiNotified) {
@@ -6321,24 +6631,13 @@ async function notifyAIAssistant() {
     const localDir = getFitTracksDir();
     setAIStorageNotifyButtonState('syncing');
 
-    const prompt = `从现在开始，所有从佳明(Garmin)下载的FIT文件，必须严格遵守以下规范：
-
-FIT文件存放路径规范
-下载后得到的是ZIP文件，必须解压
-解压后得到的FIT文件必须放到以下目录：
-${localDir}
-文件名由 Garmin-stats skill 的 download_fit.py 自动命名为 {活动标题}_{活动ID}.fit
-解压并移动完成后，删除原始ZIP文件
-如果目标目录不存在，先创建它
-切勿擅自改变路径或跳过解压步骤
-请记住这条规范，并将它写入你的长期记忆，标题为「FIT文件存放路径规范」。
-以后每次下载FIT文件都严格按照这个路径存放，不要擅自改变路径或跳过解压步骤。
-确认后，仅回复"OK"`;
+    // [僵尸代码] 老提示词已迁移至 main.py SYSTEM_INSTRUCTION 分支
+    const prompt = "";
 
     try {
         let success = false;
         if (window.pywebview && window.pywebview.api) {
-            const res = await withTimeout(window.pywebview.api.call_llm(prompt, 'system_instruction'), 30000);
+            const res = await withTimeout(window.pywebview.api.call_llm('__SYSTEM_INSTRUCTION__', 'hiking'), 30000);
             success = isLLMOkConfirmation(res);
         }
 
@@ -6412,6 +6711,7 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 
 async function bootstrapApplication() {
+    console.log('[ARCHITECTURE] 方案 B 已启用：前端计算严格隔离');
     initCesiumViewer();
     try {
         var res = await pywebview.api.check_first_run_status();
@@ -6424,14 +6724,35 @@ async function bootstrapApplication() {
         }
         if (res.ok && res.is_first_run) {
             hideBootLoading();
-            document.getElementById('first-run-overlay').classList.remove('hidden');
+            switchTab(document.querySelector('[data-panel="settings"]'));
+            if (typeof refreshSettingsPanel === 'function') {
+                refreshSettingsPanel().catch(function(e) { console.warn('refreshSettingsPanel', e); });
+            }
+            if (!res.last_gateway_ok) {
+                document.getElementById('gateway-warning-bar').classList.remove('hidden');
+            }
+            runSilentGatewayValidation();
             return;
         }
         hideBootLoading();
+        restoreStartupRoute();
         if (!res.last_gateway_ok) {
             document.getElementById('gateway-warning-bar').classList.remove('hidden');
         }
         runSilentGatewayValidation();
+
+        var sportJump = document.getElementById('sport-records-page-jump');
+        if (sportJump) {
+            sportJump.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') { e.preventDefault(); jumpSportHubPage(); }
+            });
+        }
+        var histJump = document.getElementById('history-page-jump');
+        if (histJump) {
+            histJump.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') { e.preventDefault(); jumpHistoryPage(); }
+            });
+        }
     } catch (err) {
         console.error('[FIT Vault] 初始化异常，降级显示主界面', err);
         hideBootLoading();

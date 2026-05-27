@@ -13,11 +13,12 @@ import sqlite3
 import threading
 import time
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import llm_backend
+from utils.geocoding import reverse_geocode, format_region
 import sys
 if getattr(sys, "frozen", False):
     _BASE = Path.home() / ".fitvault"
@@ -36,6 +37,8 @@ SQLITE_LOCK_RETRY_BASE_DELAY_SEC = 0.25
 GEOCODE_REQUEST_TIMEOUT_SEC = 8
 GEOCODE_LANG = "zh-CN"
 GEOCODE_USER_AGENT = "FitVault/1.0"
+_REGION_CACHE_LOCK = threading.Lock()
+_REGION_CACHE: dict[tuple[float, float], str] = {}
 
 _DB_CONN_SEMAPHORE = threading.BoundedSemaphore(SQLITE_POOL_SIZE)
 
@@ -103,7 +106,7 @@ def write_local_profile(data: dict) -> None:
     """将用户画像数据写入本地缓存文件，含时间戳。"""
     _ensure_sync_state_dir()
     payload = {
-        "cached_at": datetime.utcnow().isoformat() + "Z",
+        "cached_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "data": {k: v for k, v in data.items() if v is not None},
     }
     try:
@@ -131,7 +134,7 @@ def read_local_profile() -> dict | None:
         return None
     try:
         cached_ts = datetime.fromisoformat(cached_at.replace("Z", "+00:00"))
-        age_sec = (datetime.utcnow().replace(tzinfo=None) - cached_ts.replace(tzinfo=None)).total_seconds()
+        age_sec = (datetime.now(timezone.utc).replace(tzinfo=None) - cached_ts.replace(tzinfo=None)).total_seconds()
         if age_sec > PROFILE_CACHE_MAX_AGE_SEC:
             return None
     except (ValueError, TypeError):
@@ -295,6 +298,17 @@ def _init_schema(conn: sqlite3.Connection) -> None:
         ("file_mtime", "REAL"),
         ("file_size", "INTEGER"),
         ("deleted_at", "TEXT"),
+        ("source_type", "TEXT"),
+        ("is_mock", "INTEGER"),
+    ]:
+        try:
+            conn.execute(f"ALTER TABLE activities ADD COLUMN {col} {dtype}")
+        except Exception:
+            pass
+
+    for col, dtype in [
+        ("hr_curve", "TEXT"),
+        ("speed_curve", "TEXT"),
     ]:
         try:
             conn.execute(f"ALTER TABLE activities ADD COLUMN {col} {dtype}")
@@ -302,7 +316,13 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             pass
             
     for col, dtype in [
+        ("avg_bedtime", "TEXT"),
         ("avg_sleep_hours", "REAL"),
+        ("bmi", "REAL"),
+        ("body_fat_pct", "REAL"),
+        ("body_water_pct", "REAL"),
+        ("bone_mass", "REAL"),
+        ("muscle_mass", "REAL"),
         ("longest_hike_km", "REAL"),
         ("height_cm", "REAL"),
         ("pb_5km", "TEXT"),
@@ -310,6 +330,7 @@ def _init_schema(conn: sqlite3.Connection) -> None:
         ("pb_half_marathon", "TEXT"),
         ("pb_full_marathon", "TEXT"),
         ("lactate_threshold_hr", "INTEGER"),
+        ("ftp", "INTEGER"),
         ("ftp_watts", "INTEGER"),
         ("lactate_threshold_pace", "TEXT"),
         ("pb_1km", "TEXT"),
@@ -360,12 +381,19 @@ class UserProfile:
     vo2max: float | None
     avg_sleep_hours: float | None
     longest_hike_km: float | None
+    avg_bedtime: str | None = None
+    bmi: float | None = None
+    body_fat_pct: float | None = None
+    body_water_pct: float | None = None
+    bone_mass: float | None = None
+    muscle_mass: float | None = None
     height_cm: float | None = None
     pb_5km: str | None = None
     pb_10km: str | None = None
     pb_half_marathon: str | None = None
     pb_full_marathon: str | None = None
     lactate_threshold_hr: int | None = None
+    ftp: int | None = None
     ftp_watts: int | None = None
     lactate_threshold_pace: str | None = None
     pb_1km: str | None = None
@@ -393,7 +421,13 @@ class UserProfile:
             "hrv": self.hrv_baseline,
             "vo2max": self.vo2max,
             "vo2_max": self.vo2max,
+            "avg_bedtime": self.avg_bedtime,
             "avg_sleep_hours": self.avg_sleep_hours,
+            "bmi": self.bmi,
+            "body_fat_pct": self.body_fat_pct,
+            "body_water_pct": self.body_water_pct,
+            "bone_mass": self.bone_mass,
+            "muscle_mass": self.muscle_mass,
             "longest_hike_km": self.longest_hike_km,
             "height_cm": self.height_cm,
             "pb_5km": self.pb_5km,
@@ -401,6 +435,7 @@ class UserProfile:
             "pb_half_marathon": self.pb_half_marathon,
             "pb_full_marathon": self.pb_full_marathon,
             "lactate_threshold_hr": self.lactate_threshold_hr,
+            "ftp": self.ftp,
             "ftp_watts": self.ftp_watts,
             "lactate_threshold_pace": self.lactate_threshold_pace,
             "pb_1km": self.pb_1km,
@@ -439,12 +474,19 @@ def get_profile() -> UserProfile:
         vo2max=row["vo2max"] if "vo2max" in row.keys() else None,
         avg_sleep_hours=row["avg_sleep_hours"] if "avg_sleep_hours" in row.keys() else None,
         longest_hike_km=row["longest_hike_km"] if "longest_hike_km" in row.keys() else None,
+        avg_bedtime=row["avg_bedtime"] if "avg_bedtime" in row.keys() else None,
+        bmi=row["bmi"] if "bmi" in row.keys() else None,
+        body_fat_pct=row["body_fat_pct"] if "body_fat_pct" in row.keys() else None,
+        body_water_pct=row["body_water_pct"] if "body_water_pct" in row.keys() else None,
+        bone_mass=row["bone_mass"] if "bone_mass" in row.keys() else None,
+        muscle_mass=row["muscle_mass"] if "muscle_mass" in row.keys() else None,
         height_cm=row["height_cm"] if "height_cm" in row.keys() else None,
         pb_5km=row["pb_5km"] if "pb_5km" in row.keys() else None,
         pb_10km=row["pb_10km"] if "pb_10km" in row.keys() else None,
         pb_half_marathon=row["pb_half_marathon"] if "pb_half_marathon" in row.keys() else None,
         pb_full_marathon=row["pb_full_marathon"] if "pb_full_marathon" in row.keys() else None,
         lactate_threshold_hr=row["lactate_threshold_hr"] if "lactate_threshold_hr" in row.keys() else None,
+        ftp=row["ftp"] if "ftp" in row.keys() else None,
         ftp_watts=row["ftp_watts"] if "ftp_watts" in row.keys() else None,
         lactate_threshold_pace=row["lactate_threshold_pace"] if "lactate_threshold_pace" in row.keys() else None,
         pb_1km=row["pb_1km"] if "pb_1km" in row.keys() else None,
@@ -466,13 +508,14 @@ def upsert_profile(data: dict[str, Any]) -> UserProfile:
         """
         INSERT INTO user_profile
             (name, gender, age, weight, resting_hr, max_hr, hrv_baseline, vo2max,
-             avg_sleep_hours, longest_hike_km, height_cm, pb_5km, pb_10km, pb_half_marathon,
-             pb_full_marathon, lactate_threshold_hr, ftp_watts,
+             avg_bedtime, avg_sleep_hours, bmi, body_fat_pct, body_water_pct, bone_mass,
+             muscle_mass, longest_hike_km, height_cm, pb_5km, pb_10km, pb_half_marathon,
+             pb_full_marathon, lactate_threshold_hr, ftp, ftp_watts,
              lactate_threshold_pace, pb_1km, longest_run_km,
              longest_ride_time, cycling_40km_time, cycling_80km_time, longest_cycle_km,
              longest_swim_distance_m, swimming_100m_pb)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             data.get("name"),
@@ -483,7 +526,13 @@ def upsert_profile(data: dict[str, Any]) -> UserProfile:
             data.get("max_hr"),
             data.get("hrv_baseline"),
             data.get("vo2max"),
+            data.get("avg_bedtime"),
             data.get("avg_sleep_hours"),
+            data.get("bmi"),
+            data.get("body_fat_pct"),
+            data.get("body_water_pct"),
+            data.get("bone_mass"),
+            data.get("muscle_mass"),
             data.get("longest_hike_km"),
             data.get("height_cm"),
             data.get("pb_5km"),
@@ -491,6 +540,7 @@ def upsert_profile(data: dict[str, Any]) -> UserProfile:
             data.get("pb_half_marathon"),
             data.get("pb_full_marathon"),
             data.get("lactate_threshold_hr"),
+            data.get("ftp"),
             data.get("ftp_watts"),
             data.get("lactate_threshold_pace"),
             data.get("pb_1km"),
@@ -516,7 +566,13 @@ def upsert_profile(data: dict[str, Any]) -> UserProfile:
         max_hr=data.get("max_hr"),
         hrv_baseline=data.get("hrv_baseline"),
         vo2max=data.get("vo2max"),
+        avg_bedtime=data.get("avg_bedtime"),
         avg_sleep_hours=data.get("avg_sleep_hours"),
+        bmi=data.get("bmi"),
+        body_fat_pct=data.get("body_fat_pct"),
+        body_water_pct=data.get("body_water_pct"),
+        bone_mass=data.get("bone_mass"),
+        muscle_mass=data.get("muscle_mass"),
         longest_hike_km=data.get("longest_hike_km"),
         height_cm=data.get("height_cm"),
         pb_5km=data.get("pb_5km"),
@@ -524,6 +580,7 @@ def upsert_profile(data: dict[str, Any]) -> UserProfile:
         pb_half_marathon=data.get("pb_half_marathon"),
         pb_full_marathon=data.get("pb_full_marathon"),
         lactate_threshold_hr=data.get("lactate_threshold_hr"),
+        ftp=data.get("ftp"),
         ftp_watts=data.get("ftp_watts"),
         lactate_threshold_pace=data.get("lactate_threshold_pace"),
         pb_1km=data.get("pb_1km"),
@@ -678,6 +735,8 @@ def get_activity_list_filtered(offset: int, limit: int, sport_filter: str) -> tu
         "source_type, "
         "is_mock, "
         "updated_at, "
+        "hr_curve, "
+        "speed_curve, "
         "CASE WHEN COALESCE(track_json, points_json, '') != '' THEN 1 ELSE 0 END AS has_track"
     )
 
@@ -752,6 +811,12 @@ def build_activity_payload(filename: str, data: dict[str, Any], src_path: str | 
         data.get("start_lon", start_lon),
     )
 
+    avg_stroke_distance = float(
+        data.get("avg_stroke_distance")
+        or (data.get("basic_info") or {}).get("avg_stroke_distance")
+        or 0.0
+    )
+
     return {
         "filename": filename,
         "title": title,
@@ -780,6 +845,9 @@ def build_activity_payload(filename: str, data: dict[str, Any], src_path: str | 
         "calories": data.get("calories"),
         "normalized_power": None,
         "swolf": None,
+        "avg_stroke_distance": avg_stroke_distance,
+        "hr_curve": None,
+        "speed_curve": None,
         "source_type": "fit_sdk",
         "is_mock": 0,
     }
@@ -799,6 +867,7 @@ def _extract_start_coordinates(points: list[dict[str, Any]]) -> tuple[float | No
 
 
 def resolve_activity_region(lat: Any, lon: Any) -> str:
+    """通过 Nominatim 逆地理编码获取地区名。"""
     try:
         lat_val = round(float(lat), 4)
         lon_val = round(float(lon), 4)
@@ -811,35 +880,8 @@ def resolve_activity_region(lat: Any, lon: Any) -> str:
     if cached is not None:
         return cached
 
-    region = ""
-    try:
-        response = requests.get(
-            "https://nominatim.openstreetmap.org/reverse",
-            params={
-                "format": "json",
-                "lat": lat_val,
-                "lon": lon_val,
-                "zoom": 10,
-                "accept-language": GEOCODE_LANG,
-            },
-            headers={"User-Agent": GEOCODE_USER_AGENT},
-            timeout=GEOCODE_REQUEST_TIMEOUT_SEC,
-        )
-        response.raise_for_status()
-        payload = response.json() if callable(getattr(response, "json", None)) else {}
-        address = payload.get("address") if isinstance(payload, dict) else {}
-        if isinstance(address, dict):
-            region = str(
-                address.get("city")
-                or address.get("town")
-                or address.get("county")
-                or address.get("state")
-                or address.get("province")
-                or payload.get("name")
-                or ""
-            ).strip()
-    except Exception:
-        region = ""
+    geo = reverse_geocode(lat_val, lon_val)
+    region = format_region(geo)
 
     with _REGION_CACHE_LOCK:
         _REGION_CACHE[cache_key] = region
@@ -1438,6 +1480,17 @@ def _validate_time_format(val: Any) -> str | None:
     return None
 
 
+def _merge_pb_predict(pb_value: Any, predict_value: Any) -> str | None:
+    pb = str(pb_value).strip() if pb_value and str(pb_value).strip().lower() != "null" else None
+    predict = str(predict_value).strip() if predict_value and str(predict_value).strip().lower() != "null" else None
+    parts = []
+    if pb:
+        parts.append(f"🏆 {pb}")
+    if predict:
+        parts.append(f"📈 {predict}")
+    return "｜".join(parts) if parts else None
+
+
 def fetch_mcp_persona(platform: str) -> dict[str, Any]:
     """
     获取用户运动画像：通过 MCP 工具拉取生理数据 + 徒步历史。
@@ -1532,7 +1585,10 @@ def fetch_mcp_persona(platform: str) -> dict[str, Any]:
             for item in parsed_json:
                 if isinstance(item, dict) and "metric" in item and "value" in item:
                     data_map[item["metric"]] = item["value"]
+                elif isinstance(item, dict) and "name" in item and "value" in item:
+                    data_map[item["name"]] = item["value"]
             
+            ftp = _validate_int(data_map.get("ftp_watts"))
             profile_data = {
                 "name": str(data_map.get("username")) if data_map.get("username") is not None else None,
                 "gender": str(data_map.get("gender")) if data_map.get("gender") is not None else None,
@@ -1542,19 +1598,28 @@ def fetch_mcp_persona(platform: str) -> dict[str, Any]:
                 "max_hr": None,
                 "hrv_baseline": _validate_number(data_map.get("hrv")),
                 "vo2max": _validate_number(data_map.get("vo2_max")),
+                "avg_bedtime": str(data_map.get("avg_bedtime")).strip() if data_map.get("avg_bedtime") is not None else None,
                 "avg_sleep_hours": _validate_number(data_map.get("avg_sleep_hours")),
+                "bmi": _validate_number(data_map.get("bmi")),
+                "body_fat_pct": _validate_number(data_map.get("body_fat_percent")),
+                "body_water_pct": _validate_number(data_map.get("body_water_percent")),
+                "bone_mass": _validate_number(data_map.get("bone_mass_kg")),
+                "muscle_mass": _validate_number(data_map.get("muscle_mass_kg")),
                 "longest_hike_km": _validate_number(data_map.get("longest_hike_km")),
                 "height_cm": _validate_number(data_map.get("height_cm")),
-                "pb_5km": _validate_time_format(data_map.get("5km_pb")),
-                "pb_10km": _validate_time_format(data_map.get("10km_pb")),
-                "pb_half_marathon": _validate_time_format(data_map.get("half_marathon_pb")),
-                "pb_full_marathon": _validate_time_format(data_map.get("full_marathon_pb")),
+                "pb_5km": _merge_pb_predict(data_map.get("5km_pb"), data_map.get("race_predict_5k")),
+                "pb_10km": _merge_pb_predict(data_map.get("10km_pb"), data_map.get("race_predict_10k")),
+                "pb_half_marathon": _merge_pb_predict(data_map.get("half_marathon_pb"), data_map.get("race_predict_half")),
+                "pb_full_marathon": _merge_pb_predict(data_map.get("full_marathon_pb"), data_map.get("race_predict_full")),
                 "lactate_threshold_hr": _validate_int(data_map.get("lactate_threshold_hr")),
-                "ftp_watts": _validate_int(data_map.get("ftp_watts")),
+                "ftp": ftp,
+                "ftp_watts": ftp,
                 "lactate_threshold_pace": _validate_time_format(data_map.get("lactate_threshold_pace")),
                 "longest_run_km": _validate_number(data_map.get("longest_run_km")),
-                "pb_1km": _validate_time_format(data_map.get("1km_pb")),
+                "pb_1km": _merge_pb_predict(data_map.get("1km_pb"), None),
                 "longest_ride_time": _validate_time_format(data_map.get("longest_ride_time")),
+                "cycling_40km_time": _validate_time_format(data_map.get("cycling_40km_time")),
+                "cycling_80km_time": _validate_time_format(data_map.get("cycling_80km_time")),
                 "longest_cycle_km": _validate_number(data_map.get("longest_cycle_km")),
                 "swimming_100m_pb": _validate_time_format(data_map.get("swimming_100m_pb")),
                 "longest_swim_distance_m": _validate_number(data_map.get("longest_swim_distance_m")),
