@@ -13,7 +13,7 @@ import sqlite3
 import threading
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +34,7 @@ SQLITE_BUSY_TIMEOUT_MS = 15000
 SQLITE_CONNECT_TIMEOUT_SEC = SQLITE_BUSY_TIMEOUT_MS / 1000.0
 SQLITE_LOCK_RETRY_ATTEMPTS = 6
 SQLITE_LOCK_RETRY_BASE_DELAY_SEC = 0.25
+PROFILE_SYNC_RETRY_COOLDOWN_SEC = 30 * 60
 GEOCODE_REQUEST_TIMEOUT_SEC = 8
 GEOCODE_LANG = "zh-CN"
 GEOCODE_USER_AGENT = "FitVault/1.0"
@@ -41,6 +42,7 @@ _REGION_CACHE_LOCK = threading.Lock()
 _REGION_CACHE: dict[tuple[float, float], str] = {}
 
 _DB_CONN_SEMAPHORE = threading.BoundedSemaphore(SQLITE_POOL_SIZE)
+_PROFILE_SYNC_LOCK = threading.Lock()
 
 SYNC_STATE_DIR = os.path.expanduser("~/.trackapp")
 SYNC_STATE_PATH = os.path.join(SYNC_STATE_DIR, "sync_state.json")
@@ -67,22 +69,132 @@ def write_sync_state(state: dict) -> None:
 
 
 def mark_sync_done() -> None:
-    from datetime import datetime
     now = datetime.now()
-    write_sync_state({
+    state = read_sync_state()
+    state.update({
         "last_sync_date": now.strftime("%Y-%m-%d"),
         "last_sync_time": now.isoformat(),
+        "last_attempt_at": now.isoformat(),
+        "last_attempt_status": "success",
+        "last_error": None,
+        "active_job_id": None,
+        "connection_status": "connected",
         "synced_today": True,
     })
+    write_sync_state(state)
 
 
 def is_sync_needed_today() -> bool:
     if _TEST_BYPASS_DAILY_SYNC_LIMIT:
         return True
-    from datetime import date
     state = read_sync_state()
     today = date.today().isoformat()
     return not (state.get("synced_today") and state.get("last_sync_date") == today)
+
+
+def _format_last_sync_ago(last_sync_time: str | None) -> str | None:
+    if not last_sync_time:
+        return None
+    try:
+        synced_at = datetime.fromisoformat(str(last_sync_time).replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+    delta_days = (date.today() - synced_at.date()).days
+    time_part = synced_at.strftime("%H:%M")
+    if delta_days == 0:
+        return f"今天 {time_part}"
+    if delta_days == 1:
+        return f"昨天 {time_part}"
+    if 1 < delta_days <= 3:
+        return f"{delta_days} 天前 {time_part}"
+    return synced_at.strftime("%Y-%m-%d %H:%M")
+
+
+def get_profile_sync_metadata() -> dict[str, Any]:
+    state = read_sync_state()
+    last_sync_time = state.get("last_sync_time")
+    last_sync_date = state.get("last_sync_date")
+    if not last_sync_time:
+        prof = get_profile()
+        if prof.last_updated:
+            last_sync_time = prof.last_updated
+            try:
+                last_sync_date = datetime.fromisoformat(str(prof.last_updated)).date().isoformat()
+            except (ValueError, TypeError):
+                pass
+    sync_status = state.get("last_attempt_status") or "idle"
+    if state.get("active_job_id"):
+        sync_status = "syncing"
+    elif state.get("last_sync_date") == date.today().isoformat():
+        sync_status = "success_today"
+    return {
+        "last_sync_time": last_sync_time,
+        "last_sync_date": last_sync_date,
+        "last_sync_ago": _format_last_sync_ago(last_sync_time) or "从未同步",
+        "connection_status": state.get("connection_status") or "unknown",
+        "sync_status": sync_status,
+        "last_error": state.get("last_error"),
+    }
+
+
+def check_garmin_connection() -> dict[str, Any]:
+    cfg = llm_backend.load_llm_config()
+    url = str(cfg.get("url") or "").strip()
+    model = str(cfg.get("model") or "openclaw").strip()
+    if not url:
+        return {"connected": False, "message": "Garmin 连接未配置，请前往设置检测连接"}
+    if not model:
+        return {"connected": False, "message": "模型名未配置，请前往设置检测连接"}
+    try:
+        llm_backend.test_llm_connection(
+            provider=str(cfg.get("provider") or "local_mcp"),
+            url=url,
+            model=model,
+            api_key=str(cfg.get("api_key") or ""),
+            agent_id=str(cfg.get("agent_id") or ""),
+        )
+    except Exception as exc:
+        return {"connected": False, "message": f"Garmin 连接检测失败：{exc}"}
+    return {"connected": True, "message": "Garmin 连接已就绪"}
+
+
+def should_skip_profile_sync_for_cooldown() -> bool:
+    state = read_sync_state()
+    if _TEST_BYPASS_DAILY_SYNC_LIMIT:
+        return False
+    if state.get("last_attempt_status") != "failed_retryable":
+        return False
+    last_attempt_at = state.get("last_attempt_at")
+    if not last_attempt_at:
+        return False
+    try:
+        last_attempt = datetime.fromisoformat(str(last_attempt_at).replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return False
+    return datetime.now(last_attempt.tzinfo) - last_attempt < timedelta(seconds=PROFILE_SYNC_RETRY_COOLDOWN_SEC)
+
+
+def mark_profile_sync_blocked(message: str) -> None:
+    state = read_sync_state()
+    state.update({
+        "connection_status": "disconnected",
+        "last_attempt_at": datetime.now().isoformat(),
+        "last_attempt_status": "blocked",
+        "last_error": message,
+        "active_job_id": None,
+    })
+    write_sync_state(state)
+
+
+def mark_profile_sync_failed(message: str) -> None:
+    state = read_sync_state()
+    state.update({
+        "last_attempt_at": datetime.now().isoformat(),
+        "last_attempt_status": "failed_retryable",
+        "last_error": message,
+        "active_job_id": None,
+    })
+    write_sync_state(state)
 
 
 # 内部测试开关：绕过单日同步次数限制，仅限开发调试使用
@@ -122,6 +234,19 @@ def _is_profile_data_valid(data: dict) -> bool:
     return any(k in data and data[k] is not None for k in required_keys)
 
 
+def _is_user_profile_effective(data: dict[str, Any]) -> bool:
+    keys = {
+        "name", "gender", "age", "weight", "resting_hr", "hrv_baseline", "vo2max",
+        "avg_sleep_hours", "bmi", "body_fat_pct", "body_water_pct", "bone_mass",
+        "muscle_mass", "height_cm", "longest_hike_km", "pb_5km", "pb_10km",
+        "pb_half_marathon", "pb_full_marathon", "lactate_threshold_hr", "ftp",
+        "ftp_watts", "lactate_threshold_pace", "pb_1km", "longest_run_km",
+        "longest_ride_time", "cycling_40km_time", "cycling_80km_time",
+        "longest_cycle_km", "longest_swim_distance_m", "swimming_100m_pb",
+    }
+    return any(data.get(k) is not None for k in keys)
+
+
 def read_local_profile() -> dict | None:
     """读取本地缓存文件，校验时效性和数据完整性，返回 data 字典或 None。"""
     try:
@@ -142,6 +267,32 @@ def read_local_profile() -> dict | None:
     data = payload.get("data") or {}
     if not _is_profile_data_valid(data):
         return None
+    return data
+
+
+def read_latest_profile_snapshot() -> dict | None:
+    conn = _conn()
+    try:
+        row = conn.execute(
+            """
+            SELECT normalized_json, synced_at
+            FROM user_profile_snapshots
+            WHERE source_platform = 'garmin' AND status = 'success'
+            ORDER BY synced_at DESC, id DESC
+            LIMIT 1
+            """
+        ).fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        return None
+    try:
+        data = json.loads(row["normalized_json"] or "{}")
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
+    if not isinstance(data, dict) or not _is_user_profile_effective(data):
+        return None
+    data.setdefault("last_updated", row["synced_at"])
     return data
 _SCHEMA_LOCK = threading.Lock()
 _SCHEMA_READY_FOR: str | None = None
@@ -245,6 +396,29 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             avg_sleep_hours REAL,
             longest_hike_km REAL,
             updated_at  TEXT DEFAULT (datetime('now'))
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS user_profile_snapshots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source_platform TEXT NOT NULL,
+            trigger_type TEXT NOT NULL,
+            status TEXT NOT NULL,
+            synced_at TEXT NOT NULL,
+            sync_date TEXT NOT NULL,
+            raw_payload_json TEXT,
+            normalized_json TEXT,
+            name TEXT,
+            gender TEXT,
+            age INTEGER,
+            weight REAL,
+            resting_hr INTEGER,
+            max_hr INTEGER,
+            hrv_baseline REAL,
+            vo2max REAL,
+            avg_sleep_hours REAL,
+            data_quality TEXT,
+            missing_fields TEXT
         )
     """)
     conn.execute("""
@@ -454,15 +628,21 @@ def get_profile() -> UserProfile:
     conn = _conn()
     row = conn.execute("SELECT * FROM user_profile ORDER BY id DESC LIMIT 1").fetchone()
     conn.close()
-    if row is None:
+    row_data = dict(row) if row is not None else None
+    if row_data is None or not _is_user_profile_effective(row_data):
         cached = read_local_profile()
-        if cached:
-            upsert_profile(cached)
+        snapshot = None if cached else read_latest_profile_snapshot()
+        restored = cached or snapshot
+        if restored:
+            upsert_profile(restored)
             conn = _conn()
             row = conn.execute("SELECT * FROM user_profile ORDER BY id DESC LIMIT 1").fetchone()
             conn.close()
+            row_data = dict(row) if row is not None else None
     if row is None:
         return UserProfile(None, None, None, None, None, None, None, None, None, None)
+    if row_data is not None:
+        row = row_data
     return UserProfile(
         name=row["name"],
         gender=row["gender"],
@@ -1491,16 +1671,91 @@ def _merge_pb_predict(pb_value: Any, predict_value: Any) -> str | None:
     return "｜".join(parts) if parts else None
 
 
-def fetch_mcp_persona(platform: str) -> dict[str, Any]:
+def _profile_data_quality(profile_data: dict[str, Any]) -> tuple[str, list[str]]:
+    required_fields = ["name", "gender", "age", "weight", "resting_hr", "vo2max"]
+    missing = [field for field in required_fields if profile_data.get(field) is None]
+    present_count = len(required_fields) - len(missing)
+    if present_count == len(required_fields):
+        return "complete", missing
+    if present_count >= 4:
+        return "partial", missing
+    if present_count > 0:
+        return "minimal", missing
+    return "invalid", missing
+
+
+def _insert_profile_snapshot(platform: str, trigger_type: str, raw_payload: Any, profile_data: dict[str, Any]) -> None:
+    quality, missing = _profile_data_quality(profile_data)
+    synced_at = datetime.now().isoformat()
+    conn = _conn()
+    try:
+        conn.execute(
+            """
+            INSERT INTO user_profile_snapshots (
+                source_platform, trigger_type, status, synced_at, sync_date,
+                raw_payload_json, normalized_json, name, gender, age, weight,
+                resting_hr, max_hr, hrv_baseline, vo2max, avg_sleep_hours,
+                data_quality, missing_fields
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                platform,
+                trigger_type,
+                "success",
+                synced_at,
+                synced_at[:10],
+                json.dumps(raw_payload, ensure_ascii=False, default=str),
+                json.dumps(profile_data, ensure_ascii=False, default=str),
+                profile_data.get("name"),
+                profile_data.get("gender"),
+                profile_data.get("age"),
+                profile_data.get("weight"),
+                profile_data.get("resting_hr"),
+                profile_data.get("max_hr"),
+                profile_data.get("hrv_baseline"),
+                profile_data.get("vo2max"),
+                profile_data.get("avg_sleep_hours"),
+                quality,
+                json.dumps(missing, ensure_ascii=False),
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def fetch_mcp_persona(platform: str, trigger_type: str = "manual", check_connection: bool = True) -> dict[str, Any]:
     """
     获取用户运动画像：通过 MCP 工具拉取生理数据 + 徒步历史。
     """
     if platform not in ("garmin", "coros"):
         return {"ok": False, "error": "不支持的平台，仅支持 garmin / coros"}
 
+    if check_connection and platform == "garmin":
+        conn = check_garmin_connection()
+        if not conn.get("connected"):
+            mark_profile_sync_blocked(str(conn.get("message") or "Garmin 连接未配置"))
+            return {"ok": False, "error": conn.get("message") or "Garmin 连接未配置"}
+
+    state = read_sync_state()
+    if state.get("active_job_id"):
+        return {"ok": False, "error": "正在同步中"}
+
+    job_id = os.urandom(8).hex()
+    state.update({
+        "active_job_id": job_id,
+        "last_attempt_at": datetime.now().isoformat(),
+        "last_attempt_trigger": trigger_type,
+        "last_attempt_status": "syncing",
+        "last_error": None,
+        "connection_status": "connected" if platform == "garmin" else state.get("connection_status", "unknown"),
+    })
+    write_sync_state(state)
+
     cfg = llm_backend.load_llm_config()
     url = cfg.get("url", "").strip()
     if not url:
+        mark_profile_sync_failed("LLM URL 未配置，请在设置页填写")
         return {"ok": False, "error": "LLM URL 未配置，请在设置页填写"}
     model = (cfg.get("model") or "openclaw").strip()
     api_key = str(cfg.get("api_key") or "")
@@ -1578,6 +1833,7 @@ def fetch_mcp_persona(platform: str) -> dict[str, Any]:
 
         if platform == "garmin":
             if not isinstance(parsed_json, list):
+                mark_profile_sync_failed("Garmin 数据同步失败，返回的不是 JSON 数组。")
                 return {"ok": False, "error": "Garmin 数据同步失败，返回的不是 JSON 数组。"}
             
             # Map array to dict
@@ -1654,10 +1910,15 @@ def fetch_mcp_persona(platform: str) -> dict[str, Any]:
             }
 
         upsert_profile(profile_data)
+        _insert_profile_snapshot(platform, trigger_type, parsed_json, profile_data)
         mark_sync_done()
         return {"ok": True, "persona": profile_data}
 
     except json.JSONDecodeError as e:
-        return {"ok": False, "error": f"JSON 解析失败: {e}\n原始返回: {text[:500] if 'text' in dir() else 'N/A'}"}
+        error = f"JSON 解析失败: {e}\n原始返回: {text[:500] if 'text' in dir() else 'N/A'}"
+        mark_profile_sync_failed(error)
+        return {"ok": False, "error": error}
     except Exception as e:
-        return {"ok": False, "error": f"MCP 同步失败: {e}"}
+        error = f"MCP 同步失败: {e}"
+        mark_profile_sync_failed(error)
+        return {"ok": False, "error": error}

@@ -28,10 +28,45 @@ SPORT_TYPE_ALIASES = {
     "lap_swimming": "swimming",
     "open_water": "swimming",
     "treadmill_running": "treadmill_running",
+    "cardio": "cardio",
+    "cardio_training": "cardio",
+    "strength_training": "strength_training",
+    "yoga": "yoga",
+    "pilates": "pilates",
+    "hiit": "hiit",
+    "breathing": "breathing",
+    "flexibility_training": "flexibility_training",
+    "training": "training",
 }
 
 
 class FITCoreEngine:
+    @staticmethod
+    def parse_fit_file_raw(file_path: str | Path) -> dict[str, Any]:
+        from garmin_fit_sdk import Decoder, Stream
+
+        path = str(Path(file_path).expanduser().resolve())
+        stream = Stream.from_file(path)
+        messages, meta = Decoder(stream).read()
+        if "record_mesgs" in messages:
+            messages["record_mesgs"] = FITCoreEngine._transform_record_format(messages["record_mesgs"])
+        return {"raw": messages, "meta": meta, "source": "canonical"}
+
+    @staticmethod
+    def _transform_record_format(records: list) -> list:
+        transformed = []
+        for rec in records:
+            if not isinstance(rec, dict):
+                transformed.append(rec)
+                continue
+            geo = {}
+            if "position_lat" in rec:
+                geo["lat"] = rec["position_lat"]
+            if "position_long" in rec:
+                geo["lon"] = rec["position_long"]
+            transformed.append({"raw": rec, "geo": geo})
+        return transformed
+
     @staticmethod
     def parse_fit_file(file_path: str | Path) -> dict[str, Any]:
         path = Path(file_path).expanduser().resolve()
@@ -60,11 +95,9 @@ class FITCoreEngine:
             sport_info = FITCoreEngine._read_sport_info(fit)
             activity_info = FITCoreEngine._read_activity_info(fit)
             track_data = FITCoreEngine._read_track_data(fit)
-            if not track_data:
-                raise ValueError(
-                    "FIT 文件中未找到有效的轨迹记录（position_lat/position_long 字段为空）。"
-                    "可能原因：文件不包含 GPS 数据（如仅含健身房训练记录）。"
-                )
+            has_gps = bool(track_data)
+            if not has_gps:
+                logger.info("FIT 文件未包含 GPS 轨迹，跳过轨迹解析，保留室内运动基础字段: %s", path)
 
             avg_hr, max_hr = FITCoreEngine._heart_rate_stats(
                 session_info.get("avg_heart_rate"),
@@ -102,12 +135,14 @@ class FITCoreEngine:
                 "total_calories": FITCoreEngine._int_or_none(session_info.get("total_calories")),
                 "total_ascent": FITCoreEngine._float_or_none(session_info.get("total_ascent")),
                 "max_altitude": FITCoreEngine._float_or_none(session_info.get("max_altitude")),
+                "avg_stroke_distance": FITCoreEngine._float_or_none(session_info.get("avg_stroke_distance")),
                 "avg_hr": avg_hr,
                 "max_hr": max_hr,
             }
             return {
                 "basic_info": basic_info,
                 "track_data": track_data,
+                "source": "canonical",
             }
         except ValueError:
             logger.exception("FIT 文件解析失败: %s", path)
@@ -218,6 +253,7 @@ class FITCoreEngine:
                 "total_calories": msg.get_value("total_calories"),
                 "total_ascent": msg.get_value("total_ascent"),
                 "max_altitude": msg.get_value("max_altitude") or fields.get("enhanced_max_altitude"),
+                "avg_stroke_distance": msg.get_value("avg_stroke_distance"),
                 "session_label": fields.get("unknown_110"),
             }
             break

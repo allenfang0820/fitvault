@@ -66,36 +66,7 @@ SPORT_HUB_TYPE_ORDER = {
     "mountaineering": 7,
     "walking": 8,
     "swimming": 9,
-    "stand_up_paddleboarding": 10,
-    "driving": 11,
-    "cardio": 12,
-    "strength_training": 13,
-    "yoga": 14,
-    "pilates": 15,
-    "hiit": 16,
-    "breathing": 17,
-    "flexibility_training": 18,
-}
-
-POWER_ELIGIBLE_TYPES: frozenset[str] = frozenset({
-    "running", "trail_running", "treadmill_running",
-    "cycling", "road_cycling", "mountain_biking",
-})
-
-OUTDOOR_LAND_GAIN_TYPES: frozenset[str] = frozenset({
-    "running", "trail_running", "treadmill_running",
-    "cycling", "road_cycling", "mountain_biking",
-    "hiking", "mountaineering", "walking",
-})
-
-IRRELEVANT_LIST_METRICS: dict[str, frozenset[str]] = {
-    "cardio": frozenset({"distance", "pace"}),
-    "strength_training": frozenset({"distance", "pace"}),
-    "yoga": frozenset({"distance", "pace"}),
-    "pilates": frozenset({"distance", "pace"}),
-    "hiit": frozenset({"distance", "pace"}),
-    "breathing": frozenset({"distance", "pace"}),
-    "flexibility_training": frozenset({"distance", "pace"}),
+    "driving": 10,
 }
 
 _ACTIVITY_SYNC_SCHEMA_LOCK = threading.Lock()
@@ -283,39 +254,13 @@ def _normalize_activity_token(value: Any, fallback: str = "unknown") -> str:
     return aliases.get(token, token or fallback)
 
 
-def _clean_fit_activity_title(file_name: Any, fallback: str = "") -> str:
-    name = str(file_name or fallback or "").strip()
-    if not name:
-        return fallback or ""
-    if name.lower().endswith(".fit"):
-        name = name[:-4]
-    base, _, tail = name.rpartition("_")
-    if tail.isdigit() and base.strip():
-        return base.strip()
-    return name.strip()
-
-
 def _resolve_display_sport_type(sport_type: Any, sub_sport_type: Any) -> str:
     sub_token = _normalize_activity_token(sub_sport_type, "")
+    if sub_token in {"trail_running", "road_cycling", "mountain_biking"}:
+        return sub_token
     sport_token = _normalize_activity_token(sport_type)
-    sub_display_map = {
-        "trail_running": "trail_running",
-        "road_cycling": "road_cycling",
-        "mountain_biking": "mountain_biking",
-        "treadmill_running": "treadmill_running",
-        "cardio_training": "cardio",
-        "cardio": "cardio",
-        "strength_training": "strength_training",
-        "yoga": "yoga",
-        "pilates": "pilates",
-        "hiit": "hiit",
-        "breathing": "breathing",
-        "flexibility_training": "flexibility_training",
-    }
-    if sub_token in sub_display_map:
-        return sub_display_map[sub_token]
-    if sport_token in sub_display_map:
-        return sub_display_map[sport_token]
+    if sport_token in {"trail_running", "road_cycling", "mountain_biking"}:
+        return sport_token
     return sport_token
 
 
@@ -345,18 +290,6 @@ def _decode_weather_json(value: Any) -> dict[str, Any] | None:
     return obj if isinstance(obj, dict) else None
 
 
-def _safe_json_list(value: Any) -> list | None:
-    if not value:
-        return None
-    if isinstance(value, list):
-        return value
-    try:
-        obj = json.loads(str(value))
-    except (TypeError, ValueError, json.JSONDecodeError):
-        return None
-    return obj if isinstance(obj, list) else None
-
-
 def _infer_weather_from_track_data(data: dict[str, Any]) -> dict[str, Any] | None:
     weather = _decode_weather_json(data.get("weather_json")) or _decode_weather_json(data.get("weather"))
     if weather:
@@ -374,10 +307,7 @@ def _infer_weather_from_track_data(data: dict[str, Any]) -> dict[str, Any] | Non
         lat = first_point.get("lat")
     if lon is None:
         lon = first_point.get("lon")
-    weather_result = fetch_historical_weather(lat, lon, start_time)
-    if weather_result and isinstance(weather_result, dict):
-        weather_result["source"] = "enrichment"
-    return weather_result
+    return fetch_historical_weather(lat, lon, start_time)
 
 
 
@@ -851,8 +781,6 @@ def _parse_fit_activity_for_sync(file_path: Path) -> dict[str, Any]:
     core = FITCoreEngine.parse_fit_file(resolved_path)
     basic = dict(core.get("basic_info") or {})
     track_data = [dict(point) for point in (core.get("track_data") or [])]
-    has_track_points = bool(track_data)
-    has_gps = any((pt.get("lat") is not None and pt.get("lon") is not None) for pt in track_data)
     data = track_backend.enrich_sport_metadata(
         {
             "points": track_data,
@@ -904,14 +832,11 @@ def _parse_fit_activity_for_sync(file_path: Path) -> dict[str, Any]:
     else:
         distance_display = f"{round(distance_km, 2):.2f}km" if distance_km else "-- km"
     track_json = json.dumps(payload.get("points_json") or [], ensure_ascii=False)
-    weather = None
-    if has_gps:
-        weather = fetch_historical_weather(
-            payload.get("start_lat"),
-            payload.get("start_lon"),
-            payload.get("start_time") or payload.get("start_time_utc"),
-        )
-
+    weather = fetch_historical_weather(
+        payload.get("start_lat"),
+        payload.get("start_lon"),
+        payload.get("start_time") or payload.get("start_time_utc"),
+    )
     stat = file_path.stat()
     advanced_metrics = _compute_advanced_metrics(track_data)
     result = {
@@ -935,11 +860,6 @@ def _parse_fit_activity_for_sync(file_path: Path) -> dict[str, Any]:
         "calories": _safe_int(payload.get("calories")),
         "gain_m": _safe_float(payload.get("gain_m")),
         "max_alt_m": _safe_float(payload.get("max_alt_m")),
-        "swolf": None,
-        "normalized_power": None,
-        "avg_stroke_distance": _safe_float(payload.get("avg_stroke_distance")),
-        "hr_curve": None,
-        "speed_curve": None,
         "track_json": track_json,
         "points_json": track_json,
         "file_path": resolved_path,
@@ -950,12 +870,6 @@ def _parse_fit_activity_for_sync(file_path: Path) -> dict[str, Any]:
         "file_mtime": float(stat.st_mtime),
         "file_size": int(stat.st_size),
         "advanced_metrics": json.dumps(advanced_metrics, ensure_ascii=False) if advanced_metrics else None,
-        # source 标记：canonical（FIT）+ enrichment（weather/region）
-        "source": {
-            "fit": "canonical",
-            "weather": "enrichment" if weather else "none",
-            "region": "enrichment" if payload.get("region") else ("indoor" if not has_gps else "none"),
-        },
     }
 
     # 从 FIT 文件解析设备型号
@@ -1034,88 +948,59 @@ def _parse_fit_activity_for_sync(file_path: Path) -> dict[str, Any]:
         result["avg_pace_display"] = avg_pace_display
         result["pace_unit"] = pace_unit
         result["distance_display"] = distance_display
-        # Phase 2.4 — swolf: promote resolver-computed value for pool swimming;
-        # for open water / SUP use avg_stroke_distance from FIT session;
-        # non-water sports keep swolf=None (resolver fallback 0 is invalid for land sports)
-        sub_sport_token = _normalize_activity_token(payload.get("sub_sport_type") or "", "")
-        sport_token = _normalize_activity_token(payload.get("sport_type") or "", "")
-        if sub_sport_token == "lap_swimming":
-            result["swolf"] = sm.get("swolf")
-        elif sub_sport_token in ("open_water", "open_water_swimming") or sport_token == "stand_up_paddleboarding":
-            result["swolf"] = result["avg_stroke_distance"]
-        # Phase 2.5 — normalized_power: promote resolver-computed value from storage_model
-        result["normalized_power"] = sm.get("normalized_power_w")
-        ap = resolved.get("analysis_pack") or {}
-        if ap.get("hr_curve"):
-            result["hr_curve"] = json.dumps(ap["hr_curve"], ensure_ascii=False)
-        if ap.get("speed_curve"):
-            result["speed_curve"] = json.dumps(ap["speed_curve"], ensure_ascii=False)
-    except Exception as exc:
-        logger.exception("MetricsResolver 解析失败，将使用 legacy 值兜底: %s, error=%s", resolved_path, exc)
+    except Exception:
+        pass
 
     return result
 
 
 def _insert_activity_sync_row(conn: sqlite3.Connection, activity: dict[str, Any]) -> int:
-    try:
-        cur = conn.execute(
-            """
-            INSERT INTO activities
-                (file_name, filename, title, title_source, start_time, start_time_utc, sport_type, sub_sport_type,
-                 distance, dist_km, duration, duration_sec, avg_pace, avg_hr, max_hr,
-                 calories, track_json, points_json, file_path, gain_m, max_alt_m, start_lat, start_lon, region,
-                 weather_json, file_mtime, file_size, advanced_metrics, normalized_power, swolf, device_name,
-                 source_type, is_mock, deleted_at, updated_at, hr_curve, speed_curve)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    'fit_sdk', 0, NULL, datetime('now'), ?, ?)
-            """,
-            (
-                activity.get("file_name"),
-                activity.get("filename"),
-                activity.get("title"),
-                activity.get("title_source"),
-                activity.get("start_time"),
-                activity.get("start_time_utc"),
-                activity.get("sport_type"),
-                activity.get("sub_sport_type"),
-                activity.get("distance"),
-                activity.get("dist_km"),
-                activity.get("duration"),
-                activity.get("duration_sec"),
-                activity.get("avg_pace"),
-                activity.get("avg_hr"),
-                activity.get("max_hr"),
-                activity.get("calories"),
-                activity.get("track_json"),
-                activity.get("points_json"),
-                activity.get("file_path"),
-                activity.get("gain_m"),
-                activity.get("max_alt_m"),
-                activity.get("start_lat"),
-                activity.get("start_lon"),
-                activity.get("region"),
-                activity.get("weather_json"),
-                activity.get("file_mtime"),
-                activity.get("file_size"),
-                activity.get("advanced_metrics"),
-                activity.get("normalized_power"),
-                activity.get("swolf"),
-                activity.get("device_name") or "Unknown Device",
-                activity.get("hr_curve"),
-                activity.get("speed_curve"),
-            ),
-        )
-        return int(cur.lastrowid)
-    except sqlite3.IntegrityError:
-        file_name = activity.get("file_name") or ""
-        file_path = activity.get("file_path") or ""
-        existing = _find_activity_by_file_path(conn, file_path, include_deleted=True) if file_path else None
-        if not existing and file_name:
-            existing = _find_activity_by_file_name(conn, file_name, include_deleted=True)
-        if not existing:
-            raise
-        _update_activity_sync_row(conn, int(existing["id"]), activity)
-        return int(existing["id"])
+    cur = conn.execute(
+        """
+        INSERT INTO activities
+            (file_name, filename, title, title_source, start_time, start_time_utc, sport_type, sub_sport_type,
+             distance, dist_km, duration, duration_sec, avg_pace, avg_hr, max_hr,
+             calories, track_json, points_json, file_path, gain_m, max_alt_m, start_lat, start_lon, region,
+             weather_json, file_mtime, file_size, advanced_metrics, normalized_power, swolf, device_name,
+             source_type, is_mock, deleted_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                'fit_sdk', 0, NULL, datetime('now'))
+        """,
+        (
+            activity.get("file_name"),
+            activity.get("filename"),
+            activity.get("title"),
+            activity.get("title_source"),
+            activity.get("start_time"),
+            activity.get("start_time_utc"),
+            activity.get("sport_type"),
+            activity.get("sub_sport_type"),
+            activity.get("distance"),
+            activity.get("dist_km"),
+            activity.get("duration"),
+            activity.get("duration_sec"),
+            activity.get("avg_pace"),
+            activity.get("avg_hr"),
+            activity.get("max_hr"),
+            activity.get("calories"),
+            activity.get("track_json"),
+            activity.get("points_json"),
+            activity.get("file_path"),
+            activity.get("gain_m"),
+            activity.get("max_alt_m"),
+            activity.get("start_lat"),
+            activity.get("start_lon"),
+            activity.get("region"),
+            activity.get("weather_json"),
+            activity.get("file_mtime"),
+            activity.get("file_size"),
+            activity.get("advanced_metrics"),
+            activity.get("normalized_power"),
+            activity.get("swolf"),
+            activity.get("device_name") or "Unknown Device",
+        ),
+    )
+    return int(cur.lastrowid)
 
 
 def _update_activity_sync_row(conn: sqlite3.Connection, activity_id: int, activity: dict[str, Any]) -> None:
@@ -1127,7 +1012,7 @@ def _update_activity_sync_row(conn: sqlite3.Connection, activity_id: int, activi
             avg_pace = ?, avg_hr = ?, max_hr = ?, calories = ?, track_json = ?, points_json = ?,
             file_path = ?, gain_m = ?, max_alt_m = ?, start_lat = ?, start_lon = ?, region = ?,
             weather_json = ?, file_mtime = ?, file_size = ?, advanced_metrics = ?,
-            normalized_power = ?, swolf = ?, device_name = ?, hr_curve = ?, speed_curve = ?,
+            normalized_power = ?, swolf = ?, device_name = ?,
             source_type = 'fit_sdk', is_mock = 0, deleted_at = NULL, updated_at = datetime('now')
         WHERE id = ?
         """,
@@ -1163,8 +1048,6 @@ def _update_activity_sync_row(conn: sqlite3.Connection, activity_id: int, activi
             activity.get("normalized_power"),
             activity.get("swolf"),
             activity.get("device_name") or "Unknown Device",
-            activity.get("hr_curve"),
-            activity.get("speed_curve"),
             activity_id,
         ),
     )
@@ -1349,13 +1232,12 @@ def _emit_sync_progress(progress_callback, **payload: Any) -> None:
     progress_callback(dict(payload))
 
 
-def _find_activity_by_file_name(conn: sqlite3.Connection, file_name: str, include_deleted: bool = False) -> dict[str, Any] | None:
-    deleted_clause = "" if include_deleted else "AND deleted_at IS NULL"
+def _find_activity_by_file_name(conn: sqlite3.Connection, file_name: str) -> dict[str, Any] | None:
     row = conn.execute(
-        f"""
-        SELECT id, file_name, filename, file_path, deleted_at
+        """
+        SELECT id, file_name, filename, file_path
         FROM activities
-        WHERE COALESCE(file_name, filename) = ? {deleted_clause}
+        WHERE COALESCE(file_name, filename) = ? AND deleted_at IS NULL
         ORDER BY id DESC
         LIMIT 1
         """,
@@ -1364,13 +1246,12 @@ def _find_activity_by_file_name(conn: sqlite3.Connection, file_name: str, includ
     return dict(row) if row else None
 
 
-def _find_activity_by_file_path(conn: sqlite3.Connection, file_path: str, include_deleted: bool = False) -> dict[str, Any] | None:
-    deleted_clause = "" if include_deleted else "AND deleted_at IS NULL"
+def _find_activity_by_file_path(conn: sqlite3.Connection, file_path: str) -> dict[str, Any] | None:
     row = conn.execute(
-        f"""
-        SELECT id, file_name, filename, file_path, title, sport_type, sub_sport_type, start_time, updated_at, file_mtime, file_size, deleted_at
+        """
+        SELECT id, file_name, filename, file_path, title, sport_type, sub_sport_type, start_time, updated_at, file_mtime, file_size
         FROM activities
-        WHERE file_path = ? {deleted_clause}
+        WHERE file_path = ? AND deleted_at IS NULL
         ORDER BY id DESC
         LIMIT 1
         """,
@@ -1444,8 +1325,8 @@ def _persist_sync_activity(activity: dict[str, Any]) -> dict[str, Any]:
     def _write() -> dict[str, Any]:
         conn = profile_backend._conn()
         try:
-            existing = _find_activity_by_file_path(conn, file_path, include_deleted=True) if file_path else None
-            if existing and not existing.get("deleted_at"):
+            existing = _find_activity_by_file_path(conn, file_path) if file_path else None
+            if existing:
                 file_mtime = activity.get("file_mtime")
                 file_size = activity.get("file_size")
                 existing_device = str(existing.get("device_name") or "").strip().lower()
@@ -1466,7 +1347,7 @@ def _persist_sync_activity(activity: dict[str, Any]) -> dict[str, Any]:
                 ):
                     return {"op": "skipped", "id": int(existing["id"])}
             if not existing and file_name:
-                existing = _find_activity_by_file_name(conn, file_name, include_deleted=True)
+                existing = _find_activity_by_file_name(conn, file_name)
             if existing:
                 _update_activity_sync_row(conn, int(existing["id"]), activity)
                 op = "updated"
@@ -1563,8 +1444,7 @@ class FITFolderWatchService:
 
     def _staging_loop(self) -> None:
         """后台轮询线程：保持常驻，每隔 poll_interval 检查暂存队列。"""
-        logger.info("[STAGING] 轮询线程已启动")
-        consecutive_errors = 0
+        logger.info("FIT staging 轮询线程已启动")
         while not _APP_SHUTTING_DOWN.is_set():
             try:
                 ready: list[str] = []
@@ -1602,17 +1482,12 @@ class FITFolderWatchService:
                 for fp in ready:
                     self._process_stable_file(fp)
 
-                consecutive_errors = 0
             except Exception as exc:
-                consecutive_errors += 1
-                logger.exception("[STAGING] 轮询异常 (连续 %d 次): %s", consecutive_errors, exc)
-                if consecutive_errors > 10:
-                    logger.error("[STAGING] 连续异常超过 10 次，线程退出")
-                    break
+                logger.exception("FIT staging 轮询异常: %s", exc)
 
             time.sleep(FIT_WATCH_POLL_INTERVAL_SEC)
 
-        logger.info("[STAGING] 轮询线程已退出")
+        logger.info("FIT staging 轮询线程已退出")
 
     def _ensure_polling_locked(self) -> None:
         if _APP_SHUTTING_DOWN.is_set():
@@ -1653,35 +1528,24 @@ class FITFolderWatchService:
 
     def _process_stable_file(self, file_path: str) -> None:
         """文件大小已稳定 2 秒，执行静默解析并通知前端。"""
-        logger.info("[STAGING] 开始处理稳定文件: %s", file_path)
         try:
             signature = self._file_signature(file_path)
             if signature is None:
-                logger.warning("[STAGING] 无法获取文件签名: %s", file_path)
                 return
-            logger.info("[STAGING] 文件签名: %s -> %s", file_path, signature)
             with self._lock:
-                existing_sig = self._synced_signatures.get(file_path)
-                if existing_sig == signature:
-                    logger.info("[STAGING] 签名匹配，跳过已处理文件: %s (sig=%s)", file_path, signature)
+                if self._synced_signatures.get(file_path) == signature:
                     return
-            logger.info("[STAGING] 开始解析 FIT: %s", file_path)
+            logger.info("FIT 文件稳定，开始解析: %s", file_path)
             result = _sync_single_fit_file(file_path)
-            logger.info("[STAGING] 解析结果: ok=%s, activity_id=%s, op=%s", result.get("ok"), result.get("activity_id"), result.get("op"))
             if result and result.get("ok"):
                 activity_id = int(result.get("activity_id") or 0)
                 with self._lock:
                     if signature:
                         self._synced_signatures[file_path] = signature
                 if activity_id:
-                    logger.info("[STAGING] 通知前端: file=%s, activity_id=%s", file_path, activity_id)
                     self._api.notify_new_track_detected(file_path, activity_id)
-                else:
-                    logger.warning("[STAGING] 解析成功但 activity_id 为 0: %s", file_path)
-            else:
-                logger.error("[STAGING] 解析失败: %s, result=%s", file_path, result)
         except Exception as exc:
-            logger.exception("[STAGING] 处理文件异常: %s, error=%s", file_path, exc)
+            logger.warning("FIT 稳定文件解析失败: %s, error=%s", file_path, exc)
 
     def start(self) -> dict[str, Any]:
         return self.restart(TRACKS_DIR)
@@ -1908,42 +1772,7 @@ FORBIDDEN_SNAPSHOT_FIELDS: set[str] = {
     "reasoning_chain", "fatigue_model", "per_point_slope", "derived_grade",
 }
 
-_MAX_SNAPSHOT_KEYS = 28
-
-
-def get_snapshot_field_whitelist() -> set[str]:
-    """AI Snapshot 允许字段白名单。任何不在此集合中的字段不得进入 snapshot。"""
-    return {
-        "activity_id", "sport_type", "sub_sport_type",
-        "distance_km", "distance_display",
-        "duration_sec", "duration",
-        "avg_pace", "avg_pace_display", "pace_unit",
-        "avg_hr", "max_hr",
-        "calories",
-        "elevation_gain_m", "gain_m",
-        "max_alt_m",
-        "avg_cadence",
-        "normalized_power",
-        "swolf",
-        "tss",
-        "start_time", "start_time_utc",
-        "start_lat", "start_lon",
-        "region",
-        "file_path", "filename",
-        "source",
-        # 以下为可选字段（可能为 None）
-        "resting_hr", "hrv_baseline", "vo2max",
-        "weight", "height_cm",
-        "pb_5km", "pb_10km", "pb_half_marathon", "pb_full_marathon",
-        "lactate_threshold_hr", "lactate_threshold_pace",
-        "ftp_watts",
-        "avg_sleep_hours",
-        "longest_hike_km", "longest_run_km", "longest_cycle_km",
-        "swimming_100m_pb", "longest_swim_distance_m",
-        "race_predict_5k", "race_predict_10k", "race_predict_half", "race_predict_full",
-        # v2 新增：运动生理 / 曲线 / 设备上下文
-        "hr_decoupling", "hr_curve", "speed_curve", "device_name",
-    }
+_MAX_SNAPSHOT_KEYS = 24
 
 
 def validate_ai_snapshot(snapshot: dict[str, Any]) -> None:
@@ -1954,11 +1783,6 @@ def validate_ai_snapshot(snapshot: dict[str, Any]) -> None:
     assert len(snapshot.keys()) <= _MAX_SNAPSHOT_KEYS, (
         f"AI Snapshot keys exceeded: {len(snapshot.keys())} > {_MAX_SNAPSHOT_KEYS}"
     )
-    # 白名单校验 — 防止未知字段进入 AI 输入
-    allowed = get_snapshot_field_whitelist()
-    for k in snapshot.keys():
-        if k not in allowed:
-            raise AssertionError(f"AI Snapshot unauthorized field: {k}")
 
 
 def debug_ai_snapshot(snapshot: dict[str, Any]) -> None:
@@ -1985,8 +1809,7 @@ def _build_ai_snapshot(activity_id: int) -> dict[str, Any] | None:
             "SELECT sport_type, sub_sport_type, dist_km, duration_sec, avg_hr, max_hr,"
             " gain_m, max_alt_m, avg_pace, distance, duration,"
             " calories, avg_cadence, normalized_power, swolf,"
-            " tss, start_time, start_lat, start_lon, region, file_path, filename,"
-            " hr_decoupling, hr_curve, speed_curve, device_name"
+            " tss, start_time, start_lat, start_lon, region, file_path, filename"
             " FROM activities WHERE id = ? AND deleted_at IS NULL",
             (activity_id,),
         ).fetchone()
@@ -2047,10 +1870,6 @@ def _build_ai_snapshot(activity_id: int) -> dict[str, Any] | None:
             "start_lon": d.get("start_lon"),
             "region": d.get("region"),
             "source": "DB Canonical / Resolver Truth",
-            "hr_decoupling": d.get("hr_decoupling"),
-            "hr_curve": d.get("hr_curve"),
-            "speed_curve": d.get("speed_curve"),
-            "device_name": d.get("device_name"),
         }
 
         validate_ai_snapshot(snapshot)
@@ -2182,10 +2001,41 @@ def _build_ai_insight(activity_id: int) -> dict[str, Any]:
     }
 
 
+def safe_extract_zip(zf, target_dir, password=None):
+    for member in zf.infolist():
+        entry_name = member.filename
+        resolved = os.path.realpath(os.path.join(target_dir, entry_name))
+        if not resolved.startswith(os.path.realpath(target_dir) + os.sep):
+            logging.getLogger("track_import").warning(f"拒绝路径穿越: {entry_name}")
+            continue
+        if member.is_dir():
+            os.makedirs(resolved, exist_ok=True)
+            continue
+        os.makedirs(os.path.dirname(resolved), exist_ok=True)
+        with zf.open(member) as src, open(resolved, "wb") as dst:
+            dst.write(src.read())
+        os.chmod(resolved, member.external_attr >> 16 if member.external_attr else 0o644)
+
+
+def unique_fit_path(target_dir, name):
+    safe_name = os.path.basename(name)
+    if not safe_name:
+        safe_name = "untitled.fit"
+    candidate = os.path.join(target_dir, safe_name)
+    if not os.path.exists(candidate):
+        return candidate
+    base, ext = os.path.splitext(safe_name)
+    counter = 1
+    while True:
+        candidate = os.path.join(target_dir, f"{base}-{counter}{ext}")
+        if not os.path.exists(candidate):
+            return candidate
+        counter += 1
+
+
 class Api:
     """pywebview js_api：轨迹文件、导出、大模型（OpenAI 兼容）等。"""
 
-    SYSTEM_INSTRUCTION = "__SYSTEM_INSTRUCTION__"
     REPORT_TERRAIN = "__REPORT_TERRAIN__"
     REPORT_PERSONALIZED = "__REPORT_PERSONALIZED__"
     REPORT_INSIGHT = "__REPORT_INSIGHT__"
@@ -2203,7 +2053,6 @@ class Api:
         self._notification_lock = threading.Lock()
         self._watch_service: FITFolderWatchService | None = None
         self._ai_snapshot: dict[str, Any] | None = None
-        self._profile_startup_sync_scheduled = False
 
     def on_loaded(self) -> None:
         """页面加载完成后显示窗口，解决白屏感。"""
@@ -2225,105 +2074,30 @@ class Api:
     def notify_frontend_ready(self) -> dict:
         self._frontend_ready = True
         self._flush_pending_track_notifications()
-        self._schedule_profile_startup_sync()
         return {"ok": True}
-
-    def _schedule_profile_startup_sync(self) -> None:
-        if self._profile_startup_sync_scheduled:
-            return
-        self._profile_startup_sync_scheduled = True
-        timer = threading.Timer(5, self.startup_sync_check)
-        timer.daemon = True
-        timer.start()
-
-    def _dispatch_profile_sync_event(self, event_name: str, payload: dict) -> None:
-        if not self._window:
-            return
-        js_code = f"window.onProfileSyncEvent && window.onProfileSyncEvent({json.dumps(event_name)}, {json.dumps(payload, ensure_ascii=False, default=str)})"
-        try:
-            self._window.evaluate_js(js_code)
-        except Exception as exc:
-            logger.exception("画像同步通知发送失败: %s", exc)
-
-    def startup_sync_check(self) -> dict:
-        try:
-            conn = profile_backend.check_garmin_connection()
-            if not conn.get("connected"):
-                message = str(conn.get("message") or "Garmin 连接未配置")
-                profile_backend.mark_profile_sync_blocked(message)
-                result = {"ok": False, "blocked": True, "message": message, **profile_backend.get_profile_sync_metadata()}
-                self._dispatch_profile_sync_event("profile_sync_blocked", result)
-                return result
-            if not profile_backend.is_sync_needed_today():
-                result = {"ok": True, "already_synced": True, "message": "今天已同步", **profile_backend.get_profile_sync_metadata()}
-                self._dispatch_profile_sync_event("profile_sync_complete", result)
-                return result
-            if profile_backend.should_skip_profile_sync_for_cooldown():
-                result = {"ok": False, "cooldown": True, "message": "上次同步失败，冷却中", **profile_backend.get_profile_sync_metadata()}
-                self._dispatch_profile_sync_event("profile_sync_complete", result)
-                return result
-            result = profile_backend.fetch_mcp_persona("garmin", trigger_type="startup", check_connection=False)
-            if result.get("ok"):
-                prof = profile_backend.get_profile()
-                result.update({"profile": prof.to_dict(), **profile_backend.get_profile_sync_metadata()})
-            else:
-                result.update(profile_backend.get_profile_sync_metadata())
-            self._dispatch_profile_sync_event("profile_sync_complete", result)
-            return result
-        except Exception as e:
-            logger.exception("启动画像同步检查失败")
-            message = str(e)
-            profile_backend.mark_profile_sync_failed(message)
-            result = {"ok": False, "error": message, **profile_backend.get_profile_sync_metadata()}
-            self._dispatch_profile_sync_event("profile_sync_complete", result)
-            return result
-
-    def diagnose_watch_service(self) -> dict:
-        """诊断文件监听服务状态，便于排查自动同步问题。"""
-        ws = self._watch_service
-        if not ws:
-            return {"ok": False, "error": "Watch service 未初始化"}
-        return {
-            "ok": True,
-            "watch_path": ws._watch_path,
-            "observer_alive": ws._observer.is_alive() if ws._observer else False,
-            "staging_thread_alive": ws._staging_poll_thread.is_alive() if ws._staging_poll_thread else False,
-            "staging_queue_size": len(ws._staging_queue),
-            "staging_queue": list(ws._staging_queue.keys()),
-            "synced_signatures_count": len(ws._synced_signatures),
-            "frontend_ready": self._frontend_ready,
-            "window_bound": self._window is not None,
-            "pending_notifications": len(self._pending_track_notifications),
-        }
 
     def _flush_pending_track_notifications(self) -> None:
         with self._notification_lock:
             pending = list(self._pending_track_notifications)
             self._pending_track_notifications.clear()
-        if pending:
-            logger.info("[NOTIFY] 刷新 %d 条挂起通知", len(pending))
         for file_path, activity_id in pending:
             self._dispatch_new_track_notification(file_path, activity_id)
 
     def _dispatch_new_track_notification(self, file_path: str, activity_id: int = 0) -> None:
         if not self._window:
-            logger.warning("[NOTIFY] _window 为 None，无法发送 JS 通知")
             return
         js_code = f"window.onNewTrackDetected({json.dumps(file_path)}, {int(activity_id or 0)})"
         try:
             self._window.evaluate_js(js_code)
-            logger.info("[NOTIFY] JS 通知已发送: file=%s, activity_id=%s", file_path, activity_id)
         except Exception as exc:
-            logger.exception("[NOTIFY] JS 通知发送失败: %s, error=%s", file_path, exc)
+            print(f"[watchdog] 前端通知失败: {exc}")
 
     def notify_new_track_detected(self, file_path: str, activity_id: int = 0) -> None:
         normalized = str(Path(file_path).expanduser().resolve())
         with self._notification_lock:
             if not self._frontend_ready or self._window is None:
-                logger.info("[NOTIFY] 前端未就绪，通知挂起: %s (ready=%s, window=%s)", normalized, self._frontend_ready, self._window is not None)
                 self._pending_track_notifications.append((normalized, int(activity_id or 0)))
                 return
-        logger.info("[NOTIFY] 通知前端: file=%s, activity_id=%s", normalized, activity_id)
         self._dispatch_new_track_notification(normalized, int(activity_id or 0))
 
     def _new_session_id(self) -> None:
@@ -2545,43 +2319,15 @@ class Api:
                     "snapshot": insight_data.get("snapshot") or {},
                 }
 
-            if prompt == self.SYSTEM_INSTRUCTION:
-                storage_rule = (
-                    "从现在开始，所有从佳明(Garmin)下载的FIT文件，必须严格遵守以下规范：\n\n"
-                    "FIT文件存放路径规范\n"
-                    "下载后得到的是ZIP文件，必须解压\n"
-                    "解压后得到的FIT文件必须放到以下目录：\n"
-                    f"{TRACKS_DIR}\n"
-                    "文件名由 Garmin-stats skill 的 download_fit.py 自动命名为 {活动标题}_{活动ID}.fit\n"
-                    "解压并移动完成后，删除原始ZIP文件\n"
-                    "如果目标目录不存在，先创建它\n"
-                    "切勿擅自改变路径或跳过解压步骤\n"
-                    "请记住这条规范，并将它写入你的长期记忆，标题为「FIT文件存放路径规范」。\n"
-                    "以后每次下载FIT文件都严格按照这个路径存放，不要擅自改变路径或跳过解压步骤。\n"
-                    "确认后，仅回复OK"
-                )
-                text = llm_backend.chat_completions(
-                    url=url,
-                    api_key=api_key,
-                    model=model,
-                    messages=[
-                        {"role": "system", "content": storage_rule},
-                        {"role": "user", "content": "确认收到以上指令，仅回复OK。"},
-                    ],
-                    session_id=sid,
-                    agent_id=agent_id,
-                )
-                return {"ok": True, "content": text}
-
             user_text = prompt
             if not self._chat_messages:
                 sys_c = llm_backend.build_chat_system_block(
                     sport_type=sport_type,
                     provider=provider,
                     track_filename=fn,
-                    points=self._track_points or [],
-                    placemarks=self._track_placemarks or [],
-                    weather_context=self._track_weather,
+                    points=pts,
+                    placemarks=pms,
+                    weather_context=weather,
                     ai_snapshot_block=ai_block,
                 )
                 self._chat_messages = [{"role": "system", "content": sys_c}]
@@ -2719,12 +2465,10 @@ class Api:
             prof.resting_hr or 60, prof.max_hr or 190
         )
         cached = profile_backend.read_local_profile()
-        metadata = profile_backend.get_profile_sync_metadata()
         return {
             "ok": True,
             "profile": prof.to_dict(),
             "hrr_zones": zones,
-            **metadata,
             "cache_info": {
                 "has_cached": cached is not None,
             },
@@ -2759,13 +2503,13 @@ class Api:
         return {"ok": True}
 
     def fetch_mcp_persona(self, platform: str) -> dict:
-        result = profile_backend.fetch_mcp_persona(platform, trigger_type="manual")
+        result = profile_backend.fetch_mcp_persona(platform)
         if result.get("ok"):
             prof = profile_backend.get_profile()
             zones = profile_backend.compute_hrr_zones(
                 prof.resting_hr or 60, prof.max_hr or 190
             )
-            return {"ok": True, "profile": prof.to_dict(), "hrr_zones": zones, **profile_backend.get_profile_sync_metadata()}
+            return {"ok": True, "profile": prof.to_dict(), "hrr_zones": zones}
         return result
 
     def get_activity_history(self) -> dict:
@@ -2791,19 +2535,18 @@ class Api:
             "needs_sync": needs,
             "last_sync_date": state.get("last_sync_date"),
             "last_sync_time": state.get("last_sync_time"),
-            **profile_backend.get_profile_sync_metadata(),
         }
 
     def silent_fetch_mcp_persona(self, platform: str) -> dict:
         needs = profile_backend.is_sync_needed_today()
         if not needs:
             cached = profile_backend.read_local_profile()
-            return {"ok": True, "already_synced": True, "has_cached": cached is not None, **profile_backend.get_profile_sync_metadata()}
-        result = profile_backend.fetch_mcp_persona(platform, trigger_type="background")
+            return {"ok": True, "already_synced": True, "has_cached": cached is not None}
+        result = profile_backend.fetch_mcp_persona(platform)
         if result.get("ok"):
             prof = profile_backend.get_profile()
-            return {"ok": True, "already_synced": False, "profile": prof.to_dict(), "has_cached": True, **profile_backend.get_profile_sync_metadata()}
-        return {"ok": True, "already_synced": False, "error": result.get("error"), "has_cached": False, **profile_backend.get_profile_sync_metadata()}
+            return {"ok": True, "already_synced": False, "profile": prof.to_dict(), "has_cached": True}
+        return {"ok": True, "already_synced": False, "error": result.get("error"), "has_cached": False}
 
     def _workspace_track_dir(self) -> str:
         config = init_application_config()
@@ -2836,38 +2579,15 @@ class Api:
         else:
             distance_display = f"{round(distance_km, 2):.2f}km"
         avg_hr = _safe_int(row.get("avg_hr")) or None
-        max_hr = _safe_int(row.get("max_hr")) or None
         calories = row.get("calories")
-        normalized_power = row.get("normalized_power")
-        swolf_raw = row.get("swolf")
-        swolf = None
-        swolf_subtitle = None
-        if display_type == "swimming" or display_type == "stand_up_paddleboarding":
-            if sub_sport == "lap_swimming":
-                swolf = swolf_raw
-                swolf_subtitle = "平均SWOLF"
-            else:
-                swolf = swolf_raw
-                swolf_subtitle = "平均划水距离"
         display_filename = str(row.get("filename") or row.get("file_name") or "")
-        title = _clean_fit_activity_title(row.get("file_name") or row.get("filename"), display_filename)
-        region_raw = str(row.get("region") or "").strip()
-        if region_raw and region_raw.startswith("台湾"):
-            region_raw = "台湾地区"
-        timestamp = row.get("start_time") or row.get("start_time_utc") or row.get("updated_at")
+        title = str(row.get("title") or "").strip() or display_filename
+        timestamp = row.get("start_time") or row.get("updated_at")
         try:
             dt = datetime.fromisoformat(str(timestamp).replace("Z", "+00:00")) if timestamp else None
-            date_label = dt.strftime("%Y-%m-%d") if dt else "--"
+            date_label = dt.strftime("%Y-%m-%d %H:%M") if dt else "--"
         except Exception:
             date_label = str(timestamp or "--")
-
-        suppress = IRRELEVANT_LIST_METRICS.get(display_type, frozenset())
-        if "distance" in suppress:
-            distance_km = None
-            distance_display = "/"
-        if "pace" in suppress:
-            avg_pace_sec = None
-            avg_pace_display = "/"
 
         return {
             "id": int(row.get("id") or 0),
@@ -2881,26 +2601,20 @@ class Api:
             "sport_type": str(row.get("sport_type") or "unknown"),
             "sub_sport_type": str(row.get("sub_sport_type") or "unknown"),
             "display_sport_type": display_type,
-            "distance_km": round(distance_km, 2) if distance_km is not None else None,
+            "distance_km": round(distance_km, 2),
             "duration_sec": duration_sec,
             "avg_pace_sec": avg_pace_sec,
             "avg_pace_display": avg_pace_display,
             "distance_display": distance_display,
             "avg_hr": avg_hr,
-            "max_hr": max_hr,
             "calories": _safe_int(calories),
             "gain_m": round(_safe_float(row.get("gain_m")), 1),
-            "normalized_power": _safe_float(normalized_power) if normalized_power is not None else None,
-            "swolf": round(_safe_float(swolf), 1) if swolf is not None else None,
-            "swolf_subtitle": swolf_subtitle,
             "file_path": str(row.get("file_path") or ""),
-            "region": region_raw,
+            "region": str(row.get("region") or "").strip(),
             "device_name": str(row.get("device_name") or "").strip(),
             "start_lat": _safe_float(row.get("start_lat")) or None,
             "start_lon": _safe_float(row.get("start_lon")) or None,
             "weather": _decode_weather_json(row.get("weather_json")),
-            "hr_curve": _safe_json_list(row.get("hr_curve")),
-            "speed_curve": _safe_json_list(row.get("speed_curve")),
             "has_track": bool(row.get("has_track")),
             "has_local_file": bool(str(row.get("file_path") or "").strip() and os.path.exists(str(row.get("file_path") or "").strip())),
         }
@@ -3119,10 +2833,8 @@ class Api:
         raw_ids = [int(item) for item in (activity_ids or []) if _safe_int(item)]
         if not raw_ids:
             return {"ok": False, "error": "未选择记录"}
-        ids = sorted(set(raw_ids))
+        ids = list(set(raw_ids))
         conn = profile_backend._conn()
-        file_deleted = 0
-        file_errors: list[dict[str, str]] = []
         try:
             rows = conn.execute(
                 "SELECT id, file_path FROM activities WHERE id IN ({})".format(",".join("?" * len(ids))),
@@ -3131,68 +2843,22 @@ class Api:
             if not rows:
                 return {"ok": False, "error": "未找到记录"}
 
-            existing_ids = [int(row["id"]) for row in rows]
-            missing_ids = sorted(set(ids) - set(existing_ids))
             for row in rows:
-                fp = str(row["file_path"] or "").strip()
-                if not fp:
-                    continue
-                try:
-                    path = Path(fp).expanduser().resolve()
-                    if path.exists() and path.is_file():
-                        path.unlink()
-                        file_deleted += 1
-                except Exception as exc:
-                    file_errors.append({"file_path": fp, "error": str(exc)})
+                fp = row.get("file_path")
+                if fp and os.path.exists(fp):
+                    os.remove(fp)
 
             conn.execute(
-                "DELETE FROM activities WHERE id IN ({})".format(",".join("?" * len(existing_ids))),
-                existing_ids,
+                "DELETE FROM activities WHERE id IN ({})".format(",".join("?" * len(ids))),
+                ids,
             )
             conn.commit()
-            result = {"ok": True, "deleted": len(existing_ids), "files_deleted": file_deleted}
-            if missing_ids:
-                result["missing_ids"] = missing_ids
-            if file_errors:
-                result["file_errors"] = file_errors
-            return result
+            return {"ok": True, "deleted": len(ids)}
         except Exception as e:
             conn.rollback()
-            return {"ok": False, "error": str(e), "files_deleted": file_deleted, "file_errors": file_errors}
+            return {"ok": False, "error": str(e)}
         finally:
             conn.close()
-
-    def safe_extract_zip(zf, target_dir, password=None):
-        for member in zf.infolist():
-            entry_name = member.filename
-            resolved = os.path.realpath(os.path.join(target_dir, entry_name))
-            if not resolved.startswith(os.path.realpath(target_dir) + os.sep):
-                logging.getLogger("track_import").warning(f"拒绝路径穿越: {entry_name}")
-                continue
-            if member.is_dir():
-                os.makedirs(resolved, exist_ok=True)
-                continue
-            os.makedirs(os.path.dirname(resolved), exist_ok=True)
-            with zf.open(member) as src, open(resolved, "wb") as dst:
-                dst.write(src.read())
-            os.chmod(resolved, member.external_attr >> 16 if member.external_attr else 0o644)
-
-
-    def unique_fit_path(target_dir, name):
-        safe_name = os.path.basename(name)
-        if not safe_name:
-            safe_name = "untitled.fit"
-        candidate = os.path.join(target_dir, safe_name)
-        if not os.path.exists(candidate):
-            return candidate
-        base, ext = os.path.splitext(safe_name)
-        counter = 1
-        while True:
-            candidate = os.path.join(target_dir, f"{base}-{counter}{ext}")
-            if not os.path.exists(candidate):
-                return candidate
-            counter += 1
-
 
     def batch_import_tracks(self, file_paths: list[str]) -> dict:
         """多模态批量导入：FIT 直接复制，ZIP 解压到 IMPORTS_DIR 后归集到 TRACKS_DIR。"""
@@ -3325,20 +2991,14 @@ class Api:
                            COALESCE(duration, duration_sec) AS duration,
                            avg_pace,
                            avg_hr,
-                           max_hr,
                            calories,
                            gain_m,
-                           normalized_power,
-                           swolf,
-                           device_name,
                            file_path,
                            start_lat,
                            start_lon,
                            region,
                            weather_json,
                            updated_at,
-                           hr_curve,
-                           speed_curve,
                            CASE WHEN COALESCE(track_json, points_json, '') != '' THEN 1 ELSE 0 END AS has_track
                     FROM activities
                     {where_sql}
@@ -3375,29 +3035,6 @@ class Api:
         """返回完整活动记录快照，供前端本地分页与筛选使用。"""
         try:
             source_dir, records, activity_types = self._query_activity_list_records(sport_filter)
-            gain_eligible = OUTDOOR_LAND_GAIN_TYPES - {"treadmill_running"}
-            swim_types = {"swimming", "stand_up_paddleboarding"}
-            power_types = POWER_ELIGIBLE_TYPES
-            has_gain = False
-            has_swim = False
-            has_power = False
-            for r in records:
-                st = r.get("display_sport_type") or r.get("sport_type") or ""
-                if not has_gain and st in gain_eligible:
-                    has_gain = True
-                if not has_swim and st in swim_types:
-                    has_swim = True
-                if not has_power and st in power_types:
-                    has_power = True
-                if has_gain and has_swim and has_power:
-                    break
-            dynamic_columns = []
-            if has_gain:
-                dynamic_columns.append("gain")
-            if has_swim:
-                dynamic_columns.append("swolf")
-            if has_power:
-                dynamic_columns.append("np")
             return {
                 "ok": True,
                 "source_dir": source_dir,
@@ -3405,7 +3042,6 @@ class Api:
                 "activity_types": activity_types,
                 "page_sizes": SPORT_HUB_PAGE_SIZES,
                 "records": records,
-                "dynamic_columns": dynamic_columns,
             }
         except Exception as e:
             return {"ok": False, "error": str(e)}
@@ -3721,6 +3357,238 @@ class Api:
 
 
 class SemanticSportsEngine:
+    def _build_results_payload(self, records: list[dict]) -> dict:
+        result_entries = []
+        for rec in records:
+            dist = rec.get("distance_km") or 0.0
+            if 20.5 <= dist <= 21.7:
+                result_entries.append({
+                    "activity_id": rec["id"],
+                    "month": rec["month_key"],
+                    "title": rec["title"],
+                    "category": "half_marathon",
+                    "finish_time_sec": rec["duration_sec"],
+                    "avg_hr": rec.get("avg_hr") or 0,
+                })
+            elif 41.0 <= dist <= 43.0:
+                result_entries.append({
+                    "activity_id": rec["id"],
+                    "month": rec["month_key"],
+                    "title": rec["title"],
+                    "category": "full_marathon",
+                    "finish_time_sec": rec["duration_sec"],
+                    "avg_hr": rec.get("avg_hr") or 0,
+                })
+
+        if not result_entries:
+            result_entries = []
+
+        result_entries.sort(key=lambda item: item["month"])
+        return {"entries": result_entries}
+
+    def _build_honors_payload(self, records: list[dict]) -> list[dict]:
+        honor_items = []
+        for rec in records:
+            dist = rec.get("distance_km") or 0
+            if dist < 20:
+                continue
+            month = rec.get("month_key") or "--"
+            year = month.split("-")[0] if "-" in month else "未知"
+            month_no = month.split("-")[1] if "-" in month else "--"
+            honor_items.append({
+                "year": year,
+                "month": month_no,
+                "activity_id": rec["id"],
+                "title": rec["title"],
+                "subtitle": f'{dist:.1f} km · {rec.get("sport_type", "running")}',
+                "photo_label": "赛事照片占位",
+            })
+
+        if not honor_items:
+            honor_items = []
+
+        grouped: dict[str, dict[str, list[dict]]] = {}
+        for item in honor_items:
+            grouped.setdefault(item["year"], {}).setdefault(item["month"], []).append(item)
+
+        years = []
+        for year in sorted(grouped.keys(), reverse=True):
+            months = []
+            for month in sorted(grouped[year].keys(), reverse=True):
+                months.append({"month": month, "cards": grouped[year][month]})
+            years.append({"year": year, "months": months})
+        return years
+
+    def get_person_sport_hub_data(self) -> dict:
+        """返回个人运动数据面板下半区所需的结构化 JSON。"""
+        try:
+            ensure_activity_sync_schema()
+            config = resolve_workspace_track_dir(auto_recover=True)
+            source_dir = str(config.get("workspace_track_abs_path") or "")
+            where_sql, params = _source_scope_filter_clause(source_dir)
+            conn = profile_backend._conn()
+            try:
+                _cleanup_invalid_activity_types(conn)
+                conn.commit()
+                rows = conn.execute(
+                    f"""
+                    SELECT id, COALESCE(file_name, filename) AS file_name, filename,
+                           title, title_source, start_time_utc,
+                           sport_type, sub_sport_type, COALESCE(distance, dist_km) AS distance,
+                           COALESCE(duration, duration_sec) AS duration, gain_m, max_alt_m,
+                           avg_pace, avg_hr, max_hr, calories,
+                           COALESCE(track_json, points_json) AS track_json,
+                           file_path, start_time, updated_at
+                    FROM activities
+                    {where_sql}
+                    ORDER BY COALESCE(start_time, updated_at) DESC, id DESC
+                    LIMIT 200
+                    """,
+                    tuple(params),
+                ).fetchall()
+            finally:
+                conn.close()
+
+            deduped_rows = _dedupe_activity_rows([dict(row) for row in rows])
+            records = [_build_record_from_row(self, row, idx) for idx, row in enumerate(deduped_rows)]
+
+            activity_types = sorted(
+                {rec.get("display_sport_type") for rec in records if rec.get("display_sport_type")},
+                key=lambda item: (SPORT_HUB_TYPE_ORDER.get(item, 99), item),
+            )
+
+            return {
+                "ok": True,
+                "activity_types": activity_types,
+                "page_sizes": SPORT_HUB_PAGE_SIZES,
+                "records": records,
+                "results": self._build_results_payload(records),
+                "honors": self._build_honors_payload(records),
+            }
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def load_local_track(self, file_path: str) -> dict:
+        """根据本地路径读取并解析轨迹文件，返回与 parse_track_file 一致的结构。"""
+        try:
+            return profile_backend.load_local_track(file_path)
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def get_activity_by_file_path(self, file_path: str) -> dict:
+        try:
+            resolved = str(Path(file_path).expanduser().resolve())
+            ensure_activity_sync_schema()
+            conn = profile_backend._conn()
+            try:
+                row = _find_activity_by_file_path(conn, resolved)
+            finally:
+                conn.close()
+            if not row:
+                return {"ok": False, "error": "未找到对应活动记录"}
+            return {"ok": True, "activity": row}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def load_activity_track_by_file_path(self, file_path: str) -> dict:
+        try:
+            resolved = str(Path(file_path).expanduser().resolve())
+            lookup = self.get_activity_by_file_path(resolved)
+            if lookup.get("ok") and lookup.get("activity"):
+                activity_id = _safe_int(dict(lookup["activity"]).get("id"))
+                if activity_id:
+                    return self.load_activity_track(activity_id)
+            return self.load_local_track(resolved)
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def import_track(self, file_path: str = "", duplicate_action: str = "", new_filename: str = "") -> dict:
+        """统一导入并入库轨迹文件，由 Python 后端完成解析和持久化。"""
+        import webview
+        from webview import FileDialog
+
+        target_path = (file_path or "").strip()
+        if not target_path:
+            if not webview.windows:
+                return {"ok": False, "error": "窗口未就绪"}
+            paths = webview.windows[0].create_file_dialog(
+                FileDialog.OPEN,
+                file_types=("Track files (*.fit;*.gpx;*.kml)",),
+            )
+            if not paths:
+                return {"ok": False, "cancelled": True}
+            target_path = paths[0] if isinstance(paths, (list, tuple)) else paths
+
+        try:
+            return profile_backend.ingest_activity_file(
+                target_path,
+                duplicate_action=duplicate_action,
+                new_filename=new_filename or None,
+            )
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def update_activity_sport_type(self, activity_id: int, sport_type: str) -> dict:
+        try:
+            profile_backend.update_activity_sport_type(activity_id, sport_type)
+            return {"ok": True}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def validate_fit_directory(self, local_dir: str) -> dict:
+        """验证本地 FIT 目录的有效性（存在、可读写），不扫描文件内容。"""
+        try:
+            raw = str(local_dir or "").strip()
+            if not raw:
+                return {"ok": False, "error": "目录不能为空"}
+            path = os.path.abspath(os.path.expanduser(raw))
+            if not os.path.isdir(path):
+                return {"ok": False, "error": f"目录不存在: {path}"}
+            if not os.access(path, os.R_OK):
+                return {"ok": False, "error": "目录不可读"}
+            if not os.access(path, os.W_OK):
+                return {"ok": False, "error": "目录不可写"}
+            return {"ok": True, "path": path}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def scan_fit_directory(self, local_dir: str = "") -> dict:
+        """从配置文件夹扫描所有 fit 文件，解析后返回带 GPS 有效性标记的轨迹列表。"""
+        try:
+            app_cfg = resolve_workspace_track_dir(auto_recover=True)
+            target_dir = str(app_cfg.get("workspace_track_abs_path") or "").strip()
+            if not target_dir and str(local_dir or "").strip():
+                target_dir = os.path.abspath(os.path.expanduser(str(local_dir).strip()))
+            if not target_dir:
+                return {"ok": True, "files": [], "total": 0, "valid": 0, "skipped": 0}
+            import profile_backend as pb
+            res = pb.scan_fit_directory(target_dir)
+            if isinstance(res, dict):
+                res["source_dir"] = target_dir
+                res["integrity"] = check_activity_data_integrity()
+            return res
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def check_duplicate_track(self, act_data: dict) -> dict:
+        """检查轨迹是否重复"""
+        try:
+            start_time = act_data.get("start_time")
+            start_time_utc = act_data.get("start_time_utc")
+            
+            res = profile_backend.check_duplicate_activity(
+                start_time=start_time,
+                dist_km=act_data.get("dist_km", 0.0),
+                duration_sec=act_data.get("duration_sec", 0),
+                points_json=act_data.get("points_json", []),
+                start_time_utc=start_time_utc
+            )
+            return {"ok": True, **res}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def save_activity(self, data: dict) -> dict:
+        """保存运动记录，自动将源文件复制到 local_tracks 目录。"""
     METRICS = {
         "distance": {"label": "距离", "unit": "km"},
         "duration": {"label": "时长", "unit": ""},
@@ -3969,237 +3837,6 @@ def _build_record_from_row(api_self, row: dict, idx: int) -> dict:
 
 
     def _build_results_payload(self, records: list[dict]) -> dict:
-        result_entries = []
-        for rec in records:
-            dist = rec.get("distance_km") or 0.0
-            if 20.5 <= dist <= 21.7:
-                result_entries.append({
-                    "activity_id": rec["id"],
-                    "month": rec["month_key"],
-                    "title": rec["title"],
-                    "category": "half_marathon",
-                    "finish_time_sec": rec["duration_sec"],
-                    "avg_hr": rec.get("avg_hr") or 0,
-                })
-            elif 41.0 <= dist <= 43.0:
-                result_entries.append({
-                    "activity_id": rec["id"],
-                    "month": rec["month_key"],
-                    "title": rec["title"],
-                    "category": "full_marathon",
-                    "finish_time_sec": rec["duration_sec"],
-                    "avg_hr": rec.get("avg_hr") or 0,
-                })
-
-        if not result_entries:
-            result_entries = []
-
-        result_entries.sort(key=lambda item: item["month"])
-        return {"entries": result_entries}
-
-    def _build_honors_payload(self, records: list[dict]) -> list[dict]:
-        honor_items = []
-        for rec in records:
-            dist = rec.get("distance_km") or 0
-            if dist < 20:
-                continue
-            month = rec.get("month_key") or "--"
-            year = month.split("-")[0] if "-" in month else "未知"
-            month_no = month.split("-")[1] if "-" in month else "--"
-            honor_items.append({
-                "year": year,
-                "month": month_no,
-                "activity_id": rec["id"],
-                "title": rec["title"],
-                "subtitle": f'{dist:.1f} km · {rec.get("sport_type", "running")}',
-                "photo_label": "赛事照片占位",
-            })
-
-        if not honor_items:
-            honor_items = []
-
-        grouped: dict[str, dict[str, list[dict]]] = {}
-        for item in honor_items:
-            grouped.setdefault(item["year"], {}).setdefault(item["month"], []).append(item)
-
-        years = []
-        for year in sorted(grouped.keys(), reverse=True):
-            months = []
-            for month in sorted(grouped[year].keys(), reverse=True):
-                months.append({"month": month, "cards": grouped[year][month]})
-            years.append({"year": year, "months": months})
-        return years
-
-    def get_person_sport_hub_data(self) -> dict:
-        """返回个人运动数据面板下半区所需的结构化 JSON。"""
-        try:
-            ensure_activity_sync_schema()
-            config = resolve_workspace_track_dir(auto_recover=True)
-            source_dir = str(config.get("workspace_track_abs_path") or "")
-            where_sql, params = _source_scope_filter_clause(source_dir)
-            conn = profile_backend._conn()
-            try:
-                _cleanup_invalid_activity_types(conn)
-                conn.commit()
-                rows = conn.execute(
-                    f"""
-                    SELECT id, COALESCE(file_name, filename) AS file_name, filename,
-                           title, title_source, start_time_utc,
-                           sport_type, sub_sport_type, COALESCE(distance, dist_km) AS distance,
-                           COALESCE(duration, duration_sec) AS duration, gain_m, max_alt_m,
-                           avg_pace, avg_hr, max_hr, calories,
-                           COALESCE(track_json, points_json) AS track_json,
-                           file_path, start_time, updated_at
-                    FROM activities
-                    {where_sql}
-                    ORDER BY COALESCE(start_time, updated_at) DESC, id DESC
-                    LIMIT 200
-                    """,
-                    tuple(params),
-                ).fetchall()
-            finally:
-                conn.close()
-
-            deduped_rows = _dedupe_activity_rows([dict(row) for row in rows])
-            records = [_build_record_from_row(self, row, idx) for idx, row in enumerate(deduped_rows)]
-
-            activity_types = sorted(
-                {rec.get("display_sport_type") for rec in records if rec.get("display_sport_type")},
-                key=lambda item: (SPORT_HUB_TYPE_ORDER.get(item, 99), item),
-            )
-
-            return {
-                "ok": True,
-                "activity_types": activity_types,
-                "page_sizes": SPORT_HUB_PAGE_SIZES,
-                "records": records,
-                "results": self._build_results_payload(records),
-                "honors": self._build_honors_payload(records),
-            }
-        except Exception as e:
-            return {"ok": False, "error": str(e)}
-
-    def load_local_track(self, file_path: str) -> dict:
-        """根据本地路径读取并解析轨迹文件，返回与 parse_track_file 一致的结构。"""
-        try:
-            return profile_backend.load_local_track(file_path)
-        except Exception as e:
-            return {"ok": False, "error": str(e)}
-
-    def get_activity_by_file_path(self, file_path: str) -> dict:
-        try:
-            resolved = str(Path(file_path).expanduser().resolve())
-            ensure_activity_sync_schema()
-            conn = profile_backend._conn()
-            try:
-                row = _find_activity_by_file_path(conn, resolved)
-            finally:
-                conn.close()
-            if not row:
-                return {"ok": False, "error": "未找到对应活动记录"}
-            return {"ok": True, "activity": row}
-        except Exception as e:
-            return {"ok": False, "error": str(e)}
-
-    def load_activity_track_by_file_path(self, file_path: str) -> dict:
-        try:
-            resolved = str(Path(file_path).expanduser().resolve())
-            lookup = self.get_activity_by_file_path(resolved)
-            if lookup.get("ok") and lookup.get("activity"):
-                activity_id = _safe_int(dict(lookup["activity"]).get("id"))
-                if activity_id:
-                    return self.load_activity_track(activity_id)
-            return self.load_local_track(resolved)
-        except Exception as e:
-            return {"ok": False, "error": str(e)}
-
-    def import_track(self, file_path: str = "", duplicate_action: str = "", new_filename: str = "") -> dict:
-        """统一导入并入库轨迹文件，由 Python 后端完成解析和持久化。"""
-        import webview
-        from webview import FileDialog
-
-        target_path = (file_path or "").strip()
-        if not target_path:
-            if not webview.windows:
-                return {"ok": False, "error": "窗口未就绪"}
-            paths = webview.windows[0].create_file_dialog(
-                FileDialog.OPEN,
-                file_types=("Track files (*.fit;*.gpx;*.kml)",),
-            )
-            if not paths:
-                return {"ok": False, "cancelled": True}
-            target_path = paths[0] if isinstance(paths, (list, tuple)) else paths
-
-        try:
-            return profile_backend.ingest_activity_file(
-                target_path,
-                duplicate_action=duplicate_action,
-                new_filename=new_filename or None,
-            )
-        except Exception as e:
-            return {"ok": False, "error": str(e)}
-
-    def update_activity_sport_type(self, activity_id: int, sport_type: str) -> dict:
-        try:
-            profile_backend.update_activity_sport_type(activity_id, sport_type)
-            return {"ok": True}
-        except Exception as e:
-            return {"ok": False, "error": str(e)}
-
-    def validate_fit_directory(self, local_dir: str) -> dict:
-        """验证本地 FIT 目录的有效性（存在、可读写），不扫描文件内容。"""
-        try:
-            raw = str(local_dir or "").strip()
-            if not raw:
-                return {"ok": False, "error": "目录不能为空"}
-            path = os.path.abspath(os.path.expanduser(raw))
-            if not os.path.isdir(path):
-                return {"ok": False, "error": f"目录不存在: {path}"}
-            if not os.access(path, os.R_OK):
-                return {"ok": False, "error": "目录不可读"}
-            if not os.access(path, os.W_OK):
-                return {"ok": False, "error": "目录不可写"}
-            return {"ok": True, "path": path}
-        except Exception as e:
-            return {"ok": False, "error": str(e)}
-
-    def scan_fit_directory(self, local_dir: str = "") -> dict:
-        """从配置文件夹扫描所有 fit 文件，解析后返回带 GPS 有效性标记的轨迹列表。"""
-        try:
-            app_cfg = resolve_workspace_track_dir(auto_recover=True)
-            target_dir = str(app_cfg.get("workspace_track_abs_path") or "").strip()
-            if not target_dir and str(local_dir or "").strip():
-                target_dir = os.path.abspath(os.path.expanduser(str(local_dir).strip()))
-            if not target_dir:
-                return {"ok": True, "files": [], "total": 0, "valid": 0, "skipped": 0}
-            import profile_backend as pb
-            res = pb.scan_fit_directory(target_dir)
-            if isinstance(res, dict):
-                res["source_dir"] = target_dir
-                res["integrity"] = check_activity_data_integrity()
-            return res
-        except Exception as e:
-            return {"ok": False, "error": str(e)}
-
-    def check_duplicate_track(self, act_data: dict) -> dict:
-        """检查轨迹是否重复"""
-        try:
-            start_time = act_data.get("start_time")
-            start_time_utc = act_data.get("start_time_utc")
-            
-            res = profile_backend.check_duplicate_activity(
-                start_time=start_time,
-                dist_km=act_data.get("dist_km", 0.0),
-                duration_sec=act_data.get("duration_sec", 0),
-                points_json=act_data.get("points_json", []),
-                start_time_utc=start_time_utc
-            )
-            return {"ok": True, **res}
-        except Exception as e:
-            return {"ok": False, "error": str(e)}
-
-    def save_activity(self, data: dict) -> dict:
-        """保存运动记录，自动将源文件复制到 local_tracks 目录。"""
         try:
             # Check for duplicate action
             dup_action = data.get("_duplicate_action")

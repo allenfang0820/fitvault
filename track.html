@@ -1888,9 +1888,9 @@
                             <div class="section-title">🏃 运动画像</div>
                             <div id="pf-loading" style="display:none; text-align:center; padding:16px 0; color:#64748b; font-size:0.75rem;">⏳ 加载运动画像...</div>
                             <div id="pf-empty" style="display:none; text-align:center; padding:16px 0; color:#64748b; font-size:0.75rem;">
-                                📋 暂无画像数据，请点击「同步用户画像」从运动设备获取
-                                <div style="margin-top:8px;"><button class="sync-btn" onclick="document.getElementById('btn-sync-garmin').click()" style="padding:4px 12px;font-size:0.7rem;">同步用户画像</button></div>
+                                📋 暂无画像数据，连接成功后将自动同步 Garmin 用户画像
                             </div>
+                            <div id="pf-sync-notice" style="display:none;margin:0 0 10px 0;padding:8px 10px;border-radius:10px;background:rgba(248,113,113,0.08);border:1px solid rgba(248,113,113,0.25);color:#fecaca;font-size:0.68rem;line-height:1.5;"></div>
                             <div class="profile-summary-head">
                                 <div class="profile-avatar" id="pf-avatar">🏃</div>
                                 <div class="profile-summary-main">
@@ -1900,7 +1900,7 @@
                                             <div class="profile-hero-meta" id="pf-last-updated" style="font-size:0.55rem;color:#64748b;margin-top:2px;"></div>
                                         </div>
                                         <div style="display:flex;align-items:center;gap:8px;">
-                                            <button class="sync-btn garmin" id="btn-sync-garmin" onclick="syncPersona('garmin')" style="padding:4px 10px;font-size:0.6rem;min-width:auto;">📥 佳明</button>
+                                            <button class="sync-btn garmin" id="btn-sync-garmin" onclick="syncPersona('garmin')" style="display:none;padding:4px 10px;font-size:0.6rem;min-width:auto;">📥 调试同步</button>
                                             <div class="profile-status-chip" id="pf-status-chip">待同步</div>
                                         </div>
                                     </div>
@@ -2024,7 +2024,6 @@
                                                 <th>时长</th>
                                                 <th>平均配速</th>
                                                 <th>心率(平均/最大)</th>
-                                                <th>归一化功率</th>
                                                 <th>热量</th>
                                             </tr>
                                         </thead>
@@ -2340,6 +2339,17 @@
                         </label>
                     </div>
                     <div id="test-bypass-status" style="font-size:0.7rem;color:#94a3b8;margin-top:4px;">状态: 读取中...</div>
+                    <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;margin-top:8px;border-top:1px solid rgba(255,255,255,0.08);">
+                        <div>
+                            <div style="font-size:0.85rem;color:#e2e8f0;">显示手动画像同步按钮</div>
+                            <div style="font-size:0.7rem;color:#94a3b8;">开启后在运动画像卡片显示调试同步入口</div>
+                        </div>
+                        <label class="test-toggle-switch">
+                            <input type="checkbox" id="test-show-manual-profile-sync" onchange="onTestManualProfileSyncChange()">
+                            <span class="test-toggle-slider"></span>
+                        </label>
+                    </div>
+                    <div id="test-manual-sync-status" style="font-size:0.7rem;color:#94a3b8;margin-top:4px;">状态: 读取中...</div>
                 </div>
                 <!-- ===== END TEST ONLY ===== -->
 
@@ -2796,11 +2806,13 @@
     async function loadProfileCard() {
         var loadingEl = document.getElementById('pf-loading');
         var emptyEl = document.getElementById('pf-empty');
+        var noticeEl = document.getElementById('pf-sync-notice');
         var summaryHead = document.querySelector('.profile-summary-card .profile-summary-head');
         var metricTabs = document.querySelector('.profile-summary-card .profile-metric-tabs');
         var metricPanels = document.querySelector('.profile-summary-card .pf-metric-panels');
         if (loadingEl) loadingEl.style.display = '';
         if (emptyEl) emptyEl.style.display = 'none';
+        if (noticeEl) noticeEl.style.display = 'none';
         if (summaryHead) summaryHead.style.display = 'none';
         if (metricTabs) metricTabs.style.display = 'none';
         if (metricPanels) metricPanels.style.display = 'none';
@@ -2809,6 +2821,7 @@
                 const res = await window.pywebview.api.get_user_profile();
                 if (res && res.ok && res.profile) {
                     updateProfilePanel(res.profile);
+                    updateProfileSyncMeta(res);
                     const p = res.profile;
                     if (document.getElementById('vp-name')) document.getElementById('vp-name').innerText = p.name || '--';
                     if (document.getElementById('vp-age')) document.getElementById('vp-age').innerText = p.age ? p.age + '岁' : '--';
@@ -2818,19 +2831,7 @@
                     if (document.getElementById('vp-mhr')) document.getElementById('vp-mhr').innerText = p.max_hr ? p.max_hr + ' bpm' : '--';
                     const lastUpdatedEl = document.getElementById('pf-last-updated');
                     if (lastUpdatedEl) {
-                        if (p.last_updated) {
-                            try {
-                                var d = new Date(p.last_updated);
-                                var y = d.getFullYear();
-                                var mo = String(d.getMonth()+1).padStart(2,'0');
-                                var da = String(d.getDate()).padStart(2,'0');
-                                var hh = String(d.getHours()).padStart(2,'0');
-                                var mm = String(d.getMinutes()).padStart(2,'0');
-                                lastUpdatedEl.innerText = '更新于 ' + y + '-' + mo + '-' + da + ' ' + hh + ':' + mm;
-                            } catch(e) { lastUpdatedEl.innerText = ''; }
-                        } else {
-                            lastUpdatedEl.innerText = '';
-                        }
+                        lastUpdatedEl.innerText = '🔄 最后更新：' + (res.last_sync_ago || '从未同步');
                     }
                     const card = document.getElementById('profile-card');
                     if (card) card.style.display = 'block';
@@ -2858,6 +2859,7 @@
                     if (metricTabs) metricTabs.style.display = '';
                     if (metricPanels) metricPanels.style.display = '';
                 } else {
+                    updateProfileSyncMeta(res || {});
                     if (loadingEl) loadingEl.style.display = 'none';
                     if (emptyEl) emptyEl.style.display = '';
                 }
@@ -2871,6 +2873,36 @@
         }
 
         await renderPerformanceRadar();
+    }
+
+    function updateProfileSyncMeta(meta) {
+        const statusEl = document.getElementById('pf-status-chip');
+        const noticeEl = document.getElementById('pf-sync-notice');
+        const lastUpdatedEl = document.getElementById('pf-last-updated');
+        const connection = meta && meta.connection_status ? meta.connection_status : 'unknown';
+        const syncStatus = meta && meta.sync_status ? meta.sync_status : 'idle';
+        const lastText = meta && meta.last_sync_ago ? meta.last_sync_ago : '从未同步';
+        if (lastUpdatedEl) lastUpdatedEl.innerText = '🔄 最后更新：' + lastText;
+        if (statusEl) {
+            if (connection === 'connected') {
+                statusEl.innerText = syncStatus === 'syncing' ? '同步中' : '已连接';
+            } else if (connection === 'disconnected') {
+                statusEl.innerText = '未连接';
+            } else {
+                statusEl.innerText = '检测中';
+            }
+        }
+        if (!noticeEl) return;
+        if (connection === 'disconnected') {
+            noticeEl.style.display = '';
+            noticeEl.innerText = '❌ Garmin 连接未配置\n请前往「设置」→「连接测试」检测连接状态\n连接成功后画像将自动同步\n🔄 最后更新：' + lastText + (lastText !== '从未同步' ? '（使用历史数据）' : '');
+        } else if (syncStatus === 'failed_retryable') {
+            noticeEl.style.display = '';
+            noticeEl.innerText = '⚠️ 上次同步失败\n当前继续使用最近一次成功画像\n失败原因：' + (meta.last_error || '未知错误') + '\n🔄 最后更新：' + lastText;
+        } else {
+            noticeEl.style.display = 'none';
+            noticeEl.innerText = '';
+        }
     }
 
     /* ===== TEST ONLY: 测试开关逻辑（打包发布前必须移除） ===== */
@@ -2907,10 +2939,43 @@
             console.warn('[TEST] 设置测试开关状态失败:', e);
         }
     }
+
+    function applyManualProfileSyncVisibility(enabled) {
+        const btn = document.getElementById('btn-sync-garmin');
+        const statusEl = document.getElementById('test-manual-sync-status');
+        if (btn) btn.style.display = enabled ? '' : 'none';
+        if (statusEl) statusEl.textContent = '状态: ' + (enabled ? '已开启（画像卡片显示调试同步入口）' : '已关闭（仅后台自动同步）');
+    }
+
+    function loadTestManualProfileSyncVisible() {
+        const enabled = localStorage.getItem('test_show_manual_profile_sync') === '1';
+        const cb = document.getElementById('test-show-manual-profile-sync');
+        if (cb) cb.checked = enabled;
+        applyManualProfileSyncVisibility(enabled);
+    }
+
+    function onTestManualProfileSyncChange() {
+        const cb = document.getElementById('test-show-manual-profile-sync');
+        const enabled = !!(cb && cb.checked);
+        localStorage.setItem('test_show_manual_profile_sync', enabled ? '1' : '0');
+        applyManualProfileSyncVisibility(enabled);
+        showToast(enabled ? '🧪 已显示手动画像同步入口' : '🧪 已隐藏手动画像同步入口');
+    }
     /* ===== END TEST ONLY ===== */
 
     // TEST ONLY: 页面加载时初始化测试开关状态
     loadTestBypassDailySyncLimit();
+    loadTestManualProfileSyncVisible();
+
+    window.onProfileSyncEvent = async function(eventName, payload) {
+        updateProfileSyncMeta(payload || {});
+        if (eventName === 'profile_sync_complete' && payload && payload.ok && payload.profile) {
+            await loadProfileCard();
+            showToast('✅ 用户画像已后台自动更新');
+        } else if (eventName === 'profile_sync_blocked') {
+            showToast('⚠️ Garmin 连接未配置，已继续使用历史画像');
+        }
+    };
 
     async function syncPersona(platform) {
         if (!window.pywebview || !window.pywebview.api) {
@@ -3247,6 +3312,9 @@
             if (sportHubState.resultsChart) setTimeout(() => sportHubState.resultsChart.resize(), 60);
         }
         if (activePanel === 'profile') {
+            if (typeof loadProfileCard === 'function') {
+                loadProfileCard().catch(function(e) { console.error('switchTab loadProfileCard', e); });
+            }
             handleSportHubTabActivation(sportHubState.activeTab).catch(function(e) {
                 console.error('switchTab handleSportHubTabActivation', e);
                 var settingsBtn = document.querySelector('[data-panel="settings"]');
@@ -3799,7 +3867,7 @@
         const showNp = dynamicCols.includes('np');
         const showGain = dynamicCols.includes('gain');
         const showSwolf = dynamicCols.includes('swolf');
-        const baseCols = 10;
+        const baseCols = 11;
         const totalCols = baseCols + (showNp ? 1 : 0) + (showGain ? 1 : 0) + (showSwolf ? 1 : 0);
 
         const headerRow = document.getElementById('sport-records-header-row');
@@ -6736,6 +6804,9 @@ async function bootstrapApplication() {
         }
         hideBootLoading();
         restoreStartupRoute();
+        if (getCurrentActivePanel && getCurrentActivePanel() === 'profile' && typeof loadProfileCard === 'function') {
+            loadProfileCard().catch(function(e) { console.error('bootstrap loadProfileCard', e); });
+        }
         if (!res.last_gateway_ok) {
             document.getElementById('gateway-warning-bar').classList.remove('hidden');
         }
@@ -6752,6 +6823,15 @@ async function bootstrapApplication() {
             histJump.addEventListener('keydown', function(e) {
                 if (e.key === 'Enter') { e.preventDefault(); jumpHistoryPage(); }
             });
+        }
+
+        if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.notify_frontend_ready === 'function') {
+            try {
+                await window.pywebview.api.notify_frontend_ready();
+                console.log('[BOOT] notify_frontend_ready OK — 通知通道已打开');
+            } catch (e) {
+                console.warn('[BOOT] notify_frontend_ready failed:', e);
+            }
         }
     } catch (err) {
         console.error('[FIT Vault] 初始化异常，降级显示主界面', err);

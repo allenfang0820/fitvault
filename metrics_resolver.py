@@ -42,6 +42,7 @@ class MetricsResolver:
             "view_model": vm,
             "analysis_pack": ap,
             "ai_context": ac,
+            "source": "resolver",
         }
 
     # ── storage_model ──────────────────────────────────────────
@@ -169,6 +170,7 @@ class MetricsResolver:
                 else:
                     sm["swolf"] = 0
 
+        sm["source"] = "resolver"
         return sm
 
     # ── view_model ─────────────────────────────────────────────
@@ -200,6 +202,7 @@ class MetricsResolver:
         self, laps: list[dict[str, Any]], records: list[dict[str, Any]]
     ) -> dict[str, Any]:
         pack: dict[str, Any] = {
+            "source": "resolver",
             "laps": self._normalize_laps(laps),
             "hr_curve": [],
             "pace_curve": [],
@@ -274,6 +277,7 @@ class MetricsResolver:
         }
 
         return {
+            "source": "resolver",
             "structured_metrics": structured,
             "semantic_signals": semantic,
         }
