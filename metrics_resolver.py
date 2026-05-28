@@ -5,7 +5,6 @@ from typing import Any
 
 from garmin_fit_sdk import profile as garmin_fit_profile
 from metrics_registry import METRICS_REGISTRY, SPORT_ALIASES, SPORT_DISPLAY_NAMES
-from profile_backend import resolve_activity_region
 
 SEMICIRCLE_SCALE = 180.0 / (1 << 31)
 MAX_CURVE_POINTS = 200
@@ -102,7 +101,7 @@ class MetricsResolver:
         else:
             sm["distance_display"] = f"{round(distance_m / 1000.0, 2):.2f}km"
 
-        sm["region"] = resolve_activity_region(sm["start_lat"], sm["start_lon"]) or "未知地点"
+        sm["region"] = ""
 
         avg_speed = sm["avg_speed_mps"]
         sub_sport = sm["sub_sport_type"]

@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 import llm_backend
-from utils.geocoding import reverse_geocode, format_region
+from utils.geocoding import reverse_geocode
 import sys
 if getattr(sys, "frozen", False):
     _BASE = Path.home() / ".fitvault"
@@ -35,11 +35,17 @@ SQLITE_CONNECT_TIMEOUT_SEC = SQLITE_BUSY_TIMEOUT_MS / 1000.0
 SQLITE_LOCK_RETRY_ATTEMPTS = 6
 SQLITE_LOCK_RETRY_BASE_DELAY_SEC = 0.25
 PROFILE_SYNC_RETRY_COOLDOWN_SEC = 30 * 60
+REGION_CACHE_PRECISION = 2
+REGION_ENRICH_LIMIT = 20
+REGION_ENRICH_MAX_REQUESTS = 50
+REGION_ENRICH_RETRY_COOLDOWN_MINUTES = 30
+REGION_ENRICH_REQUEST_INTERVAL_SEC = 1.8
 GEOCODE_REQUEST_TIMEOUT_SEC = 8
 GEOCODE_LANG = "zh-CN"
 GEOCODE_USER_AGENT = "FitVault/1.0"
 _REGION_CACHE_LOCK = threading.Lock()
 _REGION_CACHE: dict[tuple[float, float], str] = {}
+_REGION_ENRICH_LOCK = threading.Lock()
 
 _DB_CONN_SEMAPHORE = threading.BoundedSemaphore(SQLITE_POOL_SIZE)
 _PROFILE_SYNC_LOCK = threading.Lock()
@@ -422,6 +428,23 @@ def _init_schema(conn: sqlite3.Connection) -> None:
         )
     """)
     conn.execute("""
+        CREATE TABLE IF NOT EXISTS geocode_cache (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cache_key TEXT UNIQUE,
+            lat_round REAL,
+            lon_round REAL,
+            city TEXT,
+            country TEXT,
+            display TEXT,
+            provider TEXT,
+            status TEXT,
+            error TEXT,
+            created_at TEXT,
+            updated_at TEXT,
+            last_used_at TEXT
+        )
+    """)
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS activities (
             id             INTEGER PRIMARY KEY AUTOINCREMENT,
             filename       TEXT,
@@ -468,6 +491,13 @@ def _init_schema(conn: sqlite3.Connection) -> None:
         ("start_lat", "REAL"),
         ("start_lon", "REAL"),
         ("region", "TEXT"),
+        ("region_city", "TEXT"),
+        ("region_country", "TEXT"),
+        ("region_display", "TEXT"),
+        ("region_status", "TEXT DEFAULT 'pending'"),
+        ("region_error", "TEXT"),
+        ("region_updated_at", "TEXT"),
+        ("region_attempt_count", "INTEGER DEFAULT 0"),
         ("weather_json", "TEXT"),
         ("file_mtime", "REAL"),
         ("file_size", "INTEGER"),
@@ -784,8 +814,9 @@ def save_activity(data: dict[str, Any]) -> int:
                 INSERT INTO activities
                     (filename, title, title_source, sport_type, sub_sport_type, dist_km, duration_sec, gain_m, max_alt_m,
                      avg_hr, max_hr, avg_cadence, hr_decoupling, tss, points_json, file_path, start_time, start_time_utc,
-                     start_lat, start_lon, region, weather_json, avg_pace, calories, normalized_power, swolf)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     start_lat, start_lon, region, region_city, region_country, region_display, region_status, region_error,
+                     region_updated_at, region_attempt_count, weather_json, avg_pace, calories, normalized_power, swolf)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     data.get("filename"),
@@ -809,6 +840,13 @@ def save_activity(data: dict[str, Any]) -> int:
                     data.get("start_lat"),
                     data.get("start_lon"),
                     data.get("region"),
+                    data.get("region_city"),
+                    data.get("region_country"),
+                    data.get("region_display"),
+                    data.get("region_status"),
+                    data.get("region_error"),
+                    data.get("region_updated_at"),
+                    data.get("region_attempt_count", 0),
                     data.get("weather_json"),
                     data.get("avg_pace"),
                     data.get("calories"),
@@ -911,6 +949,13 @@ def get_activity_list_filtered(offset: int, limit: int, sport_filter: str) -> tu
         "start_lat, "
         "start_lon, "
         "region, "
+        "region_city, "
+        "region_country, "
+        "region_display, "
+        "region_status, "
+        "region_error, "
+        "region_updated_at, "
+        "region_attempt_count, "
         "weather_json, "
         "source_type, "
         "is_mock, "
@@ -986,10 +1031,9 @@ def build_activity_payload(filename: str, data: dict[str, Any], src_path: str | 
     avg_hr = data.get("avg_hr")
     max_hr = data.get("max_hr")
     start_lat, start_lon = _extract_start_coordinates(points)
-    region = resolve_activity_region(
-        data.get("start_lat", start_lat),
-        data.get("start_lon", start_lon),
-    )
+    resolved_start_lat = data.get("start_lat") if data.get("start_lat") is not None else start_lat
+    resolved_start_lon = data.get("start_lon") if data.get("start_lon") is not None else start_lon
+    region_fields = build_initial_region_fields(resolved_start_lat, resolved_start_lon)
 
     avg_stroke_distance = float(
         data.get("avg_stroke_distance")
@@ -1016,9 +1060,9 @@ def build_activity_payload(filename: str, data: dict[str, Any], src_path: str | 
         "file_path": src_path,
         "start_time": data.get("start_time") or (points[0].get("time") if points else None),
         "start_time_utc": data.get("start_time_utc"),
-        "start_lat": start_lat,
-        "start_lon": start_lon,
-        "region": region,
+        "start_lat": resolved_start_lat,
+        "start_lon": resolved_start_lon,
+        **region_fields,
         "weather_json": data.get("weather_json"),
         "device_name": data.get("device_name") or "",
         "avg_pace": round(duration_sec / dist_km, 2) if dist_km > 0 and duration_sec > 0 else None,
@@ -1046,26 +1090,245 @@ def _extract_start_coordinates(points: list[dict[str, Any]]) -> tuple[float | No
     return None, None
 
 
-def resolve_activity_region(lat: Any, lon: Any) -> str:
-    """通过 Nominatim 逆地理编码获取地区名。"""
+def _coerce_lat_lon(lat: Any, lon: Any) -> tuple[float, float] | None:
     try:
-        lat_val = round(float(lat), 4)
-        lon_val = round(float(lon), 4)
+        lat_val = float(lat)
+        lon_val = float(lon)
     except (TypeError, ValueError):
-        return ""
+        return None
+    if not (-90 <= lat_val <= 90 and -180 <= lon_val <= 180):
+        return None
+    return lat_val, lon_val
 
-    cache_key = (lat_val, lon_val)
+
+def build_initial_region_fields(lat: Any, lon: Any) -> dict[str, Any]:
+    coord = _coerce_lat_lon(lat, lon)
+    if coord is None:
+        return {
+            "region": "室内运动（无GPS）",
+            "region_city": None,
+            "region_country": None,
+            "region_display": "室内运动",
+            "region_status": "none",
+            "region_error": None,
+            "region_updated_at": datetime.now().isoformat(),
+            "region_attempt_count": 0,
+        }
+    return {
+        "region": "",
+        "region_city": None,
+        "region_country": None,
+        "region_display": None,
+        "region_status": "pending",
+        "region_error": None,
+        "region_updated_at": None,
+        "region_attempt_count": 0,
+    }
+
+
+def _region_cache_key(lat: Any, lon: Any) -> tuple[str, float, float] | None:
+    coord = _coerce_lat_lon(lat, lon)
+    if coord is None:
+        return None
+    lat_round = round(coord[0], REGION_CACHE_PRECISION)
+    lon_round = round(coord[1], REGION_CACHE_PRECISION)
+    return f"{lat_round:.2f},{lon_round:.2f}", lat_round, lon_round
+
+
+def _format_city_country(city: str | None, country: str | None) -> str:
+    city_text = str(city or "").strip()
+    country_text = str(country or "").strip()
+    if city_text and country_text:
+        return f"{city_text}，{country_text}"
+    return city_text or country_text
+
+
+def _extract_city_country(geo: dict[str, Any] | None) -> tuple[str | None, str | None, str]:
+    if not geo:
+        return None, None, ""
+    city = str(geo.get("city") or geo.get("town") or geo.get("municipality") or geo.get("state") or "").strip() or None
+    country = str(geo.get("country") or "").strip() or None
+    return city, country, _format_city_country(city, country)
+
+
+def resolve_activity_region(lat: Any, lon: Any) -> str:
+    cache_info = _region_cache_key(lat, lon)
+    if cache_info is None:
+        return "室内运动（无GPS）"
+    cache_key, lat_round, lon_round = cache_info
     with _REGION_CACHE_LOCK:
-        cached = _REGION_CACHE.get(cache_key)
+        cached = _REGION_CACHE.get((lat_round, lon_round))
     if cached is not None:
         return cached
+    conn = _conn()
+    try:
+        row = conn.execute(
+            "SELECT display FROM geocode_cache WHERE cache_key = ? AND status = 'success' LIMIT 1",
+            (cache_key,),
+        ).fetchone()
+        if row:
+            display = str(row["display"] or "").strip()
+            conn.execute("UPDATE geocode_cache SET last_used_at = ? WHERE cache_key = ?", (datetime.now().isoformat(), cache_key))
+            conn.commit()
+            with _REGION_CACHE_LOCK:
+                _REGION_CACHE[(lat_round, lon_round)] = display
+            return display
+    finally:
+        conn.close()
+    return ""
 
-    geo = reverse_geocode(lat_val, lon_val)
-    region = format_region(geo)
 
-    with _REGION_CACHE_LOCK:
-        _REGION_CACHE[cache_key] = region
-    return region
+def _write_geocode_cache(conn: sqlite3.Connection, cache_key: str, lat_round: float, lon_round: float, city: str | None, country: str | None, display: str, status: str, error: str | None) -> None:
+    now = datetime.now().isoformat()
+    conn.execute(
+        """
+        INSERT INTO geocode_cache (cache_key, lat_round, lon_round, city, country, display, provider, status, error, created_at, updated_at, last_used_at)
+        VALUES (?, ?, ?, ?, ?, ?, 'nominatim', ?, ?, ?, ?, ?)
+        ON CONFLICT(cache_key) DO UPDATE SET
+            city = excluded.city,
+            country = excluded.country,
+            display = excluded.display,
+            provider = excluded.provider,
+            status = excluded.status,
+            error = excluded.error,
+            updated_at = excluded.updated_at,
+            last_used_at = excluded.last_used_at
+        """,
+        (cache_key, lat_round, lon_round, city, country, display, status, error, now, now, now),
+    )
+
+
+def run_region_enrichment_once(limit: int = REGION_ENRICH_LIMIT, max_requests: int = REGION_ENRICH_MAX_REQUESTS) -> dict[str, Any]:
+    if not _REGION_ENRICH_LOCK.acquire(blocking=False):
+        return {"ok": True, "skipped": True, "reason": "running"}
+    processed = 0
+    success = 0
+    failed = 0
+    cache_hits = 0
+    requests_count = 0
+    consecutive_failures = 0
+    try:
+        conn = _conn()
+        try:
+            rows = conn.execute(
+                """
+                SELECT id, start_lat, start_lon, region_attempt_count
+                FROM activities
+                WHERE COALESCE(deleted_at, '') = ''
+                  AND region_status IN ('pending', 'failed')
+                  AND start_lat IS NOT NULL
+                  AND start_lon IS NOT NULL
+                  AND (
+                    COALESCE(region_attempt_count, 0) < 3
+                    OR region_updated_at IS NULL
+                    OR region_updated_at < datetime('now', ?)
+                  )
+                ORDER BY COALESCE(start_time, updated_at) DESC, id DESC
+                LIMIT ?
+                """,
+                (f"-{REGION_ENRICH_RETRY_COOLDOWN_MINUTES} minutes", int(limit)),
+            ).fetchall()
+        finally:
+            conn.close()
+
+        for row in rows:
+            if requests_count >= max_requests or consecutive_failures >= 3:
+                break
+            processed += 1
+            activity_id = int(row["id"])
+            cache_info = _region_cache_key(row["start_lat"], row["start_lon"])
+            if cache_info is None:
+                conn = _conn()
+                try:
+                    conn.execute(
+                        """
+                        UPDATE activities
+                        SET region_status = 'none', region_display = '室内运动', region = '室内运动（无GPS）', region_error = NULL, region_updated_at = ?, updated_at = updated_at
+                        WHERE id = ?
+                        """,
+                        (datetime.now().isoformat(), activity_id),
+                    )
+                    conn.commit()
+                finally:
+                    conn.close()
+                continue
+            cache_key, lat_round, lon_round = cache_info
+            conn = _conn()
+            try:
+                cached = conn.execute(
+                    "SELECT city, country, display FROM geocode_cache WHERE cache_key = ? AND status = 'success' LIMIT 1",
+                    (cache_key,),
+                ).fetchone()
+                if cached:
+                    display = str(cached["display"] or "").strip()
+                    conn.execute(
+                        """
+                        UPDATE activities
+                        SET region_city = ?, region_country = ?, region_display = ?, region = ?, region_status = 'success', region_error = NULL, region_updated_at = ?, updated_at = updated_at
+                        WHERE id = ?
+                        """,
+                        (cached["city"], cached["country"], display, display, datetime.now().isoformat(), activity_id),
+                    )
+                    conn.execute("UPDATE geocode_cache SET last_used_at = ? WHERE cache_key = ?", (datetime.now().isoformat(), cache_key))
+                    conn.commit()
+                    cache_hits += 1
+                    success += 1
+                    continue
+            finally:
+                conn.close()
+
+            if requests_count > 0:
+                time.sleep(REGION_ENRICH_REQUEST_INTERVAL_SEC)
+            requests_count += 1
+            try:
+                geo = reverse_geocode(lat_round, lon_round)
+                city, country, display = _extract_city_country(geo)
+                if not display:
+                    raise RuntimeError("未返回城市/国家")
+                conn = _conn()
+                try:
+                    _write_geocode_cache(conn, cache_key, lat_round, lon_round, city, country, display, "success", None)
+                    conn.execute(
+                        """
+                        UPDATE activities
+                        SET region_city = ?, region_country = ?, region_display = ?, region = ?, region_status = 'success', region_error = NULL, region_updated_at = ?, updated_at = updated_at
+                        WHERE id = ?
+                        """,
+                        (city, country, display, display, datetime.now().isoformat(), activity_id),
+                    )
+                    conn.commit()
+                finally:
+                    conn.close()
+                with _REGION_CACHE_LOCK:
+                    _REGION_CACHE[(lat_round, lon_round)] = display
+                success += 1
+                consecutive_failures = 0
+            except Exception as exc:
+                message = str(exc)
+                conn = _conn()
+                try:
+                    _write_geocode_cache(conn, cache_key, lat_round, lon_round, None, None, "", "failed", message)
+                    conn.execute(
+                        """
+                        UPDATE activities
+                        SET region_status = 'failed', region_error = ?, region_attempt_count = COALESCE(region_attempt_count, 0) + 1, region_updated_at = ?, updated_at = updated_at
+                        WHERE id = ?
+                        """,
+                        (message, datetime.now().isoformat(), activity_id),
+                    )
+                    conn.commit()
+                finally:
+                    conn.close()
+                failed += 1
+                consecutive_failures += 1
+        return {"ok": True, "processed": processed, "success": success, "failed": failed, "cache_hits": cache_hits, "requests": requests_count}
+    finally:
+        _REGION_ENRICH_LOCK.release()
+
+
+def start_region_enrichment_background(limit: int = REGION_ENRICH_LIMIT) -> None:
+    thread = threading.Thread(target=run_region_enrichment_once, kwargs={"limit": limit}, daemon=True)
+    thread.start()
 
 
 def ingest_activity_file(

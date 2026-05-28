@@ -411,6 +411,13 @@ def ensure_activity_sync_schema() -> None:
                 "start_lat": "REAL",
                 "start_lon": "REAL",
                 "region": "TEXT",
+                "region_city": "TEXT",
+                "region_country": "TEXT",
+                "region_display": "TEXT",
+                "region_status": "TEXT DEFAULT 'pending'",
+                "region_error": "TEXT",
+                "region_updated_at": "TEXT",
+                "region_attempt_count": "INTEGER DEFAULT 0",
                 "weather_json": "TEXT",
                 "file_mtime": "REAL",
                 "file_size": "INTEGER",
@@ -487,6 +494,27 @@ def ensure_activity_sync_schema() -> None:
                 WHERE avg_pace IS NULL
                   AND COALESCE(duration, duration_sec, 0) > 0
                   AND COALESCE(distance, dist_km, 0) > 0
+                """
+            )
+            conn.execute(
+                """
+                UPDATE activities
+                SET region_status = CASE
+                        WHEN start_lat IS NULL OR start_lon IS NULL THEN 'none'
+                        WHEN COALESCE(NULLIF(region, ''), NULLIF(region_display, '')) IS NOT NULL THEN 'success'
+                        ELSE COALESCE(NULLIF(region_status, ''), 'pending')
+                    END,
+                    region_display = CASE
+                        WHEN start_lat IS NULL OR start_lon IS NULL THEN COALESCE(NULLIF(region_display, ''), '室内运动')
+                        ELSE COALESCE(NULLIF(region_display, ''), NULLIF(region, ''))
+                    END,
+                    region = CASE
+                        WHEN start_lat IS NULL OR start_lon IS NULL THEN COALESCE(NULLIF(region, ''), '室内运动（无GPS）')
+                        ELSE region
+                    END,
+                    region_attempt_count = COALESCE(region_attempt_count, 0)
+                WHERE region_status IS NULL OR region_status = ''
+                   OR region_display IS NULL OR region_display = ''
                 """
             )
 
@@ -946,6 +974,13 @@ def _parse_fit_activity_for_sync(file_path: Path) -> dict[str, Any]:
         "start_lat": _safe_float(payload.get("start_lat")) or None,
         "start_lon": _safe_float(payload.get("start_lon")) or None,
         "region": str(payload.get("region") or "").strip(),
+        "region_city": payload.get("region_city"),
+        "region_country": payload.get("region_country"),
+        "region_display": payload.get("region_display"),
+        "region_status": payload.get("region_status"),
+        "region_error": payload.get("region_error"),
+        "region_updated_at": payload.get("region_updated_at"),
+        "region_attempt_count": payload.get("region_attempt_count", 0),
         "weather_json": json.dumps(weather, ensure_ascii=False) if weather else None,
         "file_mtime": float(stat.st_mtime),
         "file_size": int(stat.st_size),
@@ -954,7 +989,7 @@ def _parse_fit_activity_for_sync(file_path: Path) -> dict[str, Any]:
         "source": {
             "fit": "canonical",
             "weather": "enrichment" if weather else "none",
-            "region": "enrichment" if payload.get("region") else ("indoor" if not has_gps else "none"),
+            "region": "pending" if has_gps else "indoor",
         },
     }
 
@@ -1064,9 +1099,10 @@ def _insert_activity_sync_row(conn: sqlite3.Connection, activity: dict[str, Any]
                 (file_name, filename, title, title_source, start_time, start_time_utc, sport_type, sub_sport_type,
                  distance, dist_km, duration, duration_sec, avg_pace, avg_hr, max_hr,
                  calories, track_json, points_json, file_path, gain_m, max_alt_m, start_lat, start_lon, region,
+                 region_city, region_country, region_display, region_status, region_error, region_updated_at, region_attempt_count,
                  weather_json, file_mtime, file_size, advanced_metrics, normalized_power, swolf, device_name,
                  source_type, is_mock, deleted_at, updated_at, hr_curve, speed_curve)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                     'fit_sdk', 0, NULL, datetime('now'), ?, ?)
             """,
             (
@@ -1094,6 +1130,13 @@ def _insert_activity_sync_row(conn: sqlite3.Connection, activity: dict[str, Any]
                 activity.get("start_lat"),
                 activity.get("start_lon"),
                 activity.get("region"),
+                activity.get("region_city"),
+                activity.get("region_country"),
+                activity.get("region_display"),
+                activity.get("region_status"),
+                activity.get("region_error"),
+                activity.get("region_updated_at"),
+                activity.get("region_attempt_count", 0),
                 activity.get("weather_json"),
                 activity.get("file_mtime"),
                 activity.get("file_size"),
@@ -1126,6 +1169,8 @@ def _update_activity_sync_row(conn: sqlite3.Connection, activity_id: int, activi
             sport_type = ?, sub_sport_type = ?, distance = ?, dist_km = ?, duration = ?, duration_sec = ?,
             avg_pace = ?, avg_hr = ?, max_hr = ?, calories = ?, track_json = ?, points_json = ?,
             file_path = ?, gain_m = ?, max_alt_m = ?, start_lat = ?, start_lon = ?, region = ?,
+            region_city = ?, region_country = ?, region_display = ?, region_status = ?, region_error = ?,
+            region_updated_at = ?, region_attempt_count = ?,
             weather_json = ?, file_mtime = ?, file_size = ?, advanced_metrics = ?,
             normalized_power = ?, swolf = ?, device_name = ?, hr_curve = ?, speed_curve = ?,
             source_type = 'fit_sdk', is_mock = 0, deleted_at = NULL, updated_at = datetime('now')
@@ -1156,6 +1201,13 @@ def _update_activity_sync_row(conn: sqlite3.Connection, activity_id: int, activi
             activity.get("start_lat"),
             activity.get("start_lon"),
             activity.get("region"),
+            activity.get("region_city"),
+            activity.get("region_country"),
+            activity.get("region_display"),
+            activity.get("region_status"),
+            activity.get("region_error"),
+            activity.get("region_updated_at"),
+            activity.get("region_attempt_count", 0),
             activity.get("weather_json"),
             activity.get("file_mtime"),
             activity.get("file_size"),
@@ -1409,16 +1461,7 @@ def _load_existing_file_index(conn: sqlite3.Connection) -> dict[str, dict[str, A
 
 
 def _is_file_unchanged(disk_path: Path, existing: dict[str, Any]) -> bool:
-    """判断磁盘文件与 DB 记录是否一致（mtime 和 size 均匹配）。
-    如果 DB 中 device_name 为 blank/unknown/纯数字，视为需要刷新。"""
-    existing_device = str(existing.get("device_name") or "").strip().lower()
-    if (
-        not existing_device
-        or existing_device == "unknown"
-        or existing_device == "unknown device"
-        or existing_device.isdigit()
-    ):
-        return False
+    """判断磁盘文件与 DB 记录是否一致（mtime 和 size 均匹配）。"""
     existing_mtime = existing.get("file_mtime")
     existing_size = existing.get("file_size")
     if existing_mtime is None or existing_size is None:
@@ -2204,6 +2247,7 @@ class Api:
         self._watch_service: FITFolderWatchService | None = None
         self._ai_snapshot: dict[str, Any] | None = None
         self._profile_startup_sync_scheduled = False
+        self._region_enrichment_scheduled = False
 
     def on_loaded(self) -> None:
         """页面加载完成后显示窗口，解决白屏感。"""
@@ -2226,7 +2270,16 @@ class Api:
         self._frontend_ready = True
         self._flush_pending_track_notifications()
         self._schedule_profile_startup_sync()
+        self._schedule_region_enrichment()
         return {"ok": True}
+
+    def _schedule_region_enrichment(self) -> None:
+        if self._region_enrichment_scheduled:
+            return
+        self._region_enrichment_scheduled = True
+        timer = threading.Timer(3, profile_backend.start_region_enrichment_background)
+        timer.daemon = True
+        timer.start()
 
     def _schedule_profile_startup_sync(self) -> None:
         if self._profile_startup_sync_scheduled:
@@ -2851,7 +2904,15 @@ class Api:
                 swolf_subtitle = "平均划水距离"
         display_filename = str(row.get("filename") or row.get("file_name") or "")
         title = _clean_fit_activity_title(row.get("file_name") or row.get("filename"), display_filename)
-        region_raw = str(row.get("region") or "").strip()
+        region_status = str(row.get("region_status") or "").strip()
+        region_raw = str(row.get("region_display") or row.get("region") or "").strip()
+        if not region_raw:
+            if region_status == "pending":
+                region_raw = "待补全"
+            elif region_status == "none":
+                region_raw = "室内运动"
+            elif region_status == "failed":
+                region_raw = "未知地点"
         if region_raw and region_raw.startswith("台湾"):
             region_raw = "台湾地区"
         timestamp = row.get("start_time") or row.get("start_time_utc") or row.get("updated_at")
@@ -2895,6 +2956,8 @@ class Api:
             "swolf_subtitle": swolf_subtitle,
             "file_path": str(row.get("file_path") or ""),
             "region": region_raw,
+            "region_display": region_raw,
+            "region_status": region_status,
             "device_name": str(row.get("device_name") or "").strip(),
             "start_lat": _safe_float(row.get("start_lat")) or None,
             "start_lon": _safe_float(row.get("start_lon")) or None,
@@ -3335,6 +3398,13 @@ class Api:
                            start_lat,
                            start_lon,
                            region,
+                           region_city,
+                           region_country,
+                           region_display,
+                           region_status,
+                           region_error,
+                           region_updated_at,
+                           region_attempt_count,
                            weather_json,
                            updated_at,
                            hr_curve,
@@ -3935,6 +4005,16 @@ def _build_record_from_row(api_self, row: dict, idx: int) -> dict:
         "thumbnail_points": api_self._sample_thumbnail_points(points),
     }
 
+    region_status = str(row.get("region_status") or "").strip()
+    region_display = str(row.get("region_display") or row.get("region") or "").strip()
+    if not region_display:
+        if region_status == "pending":
+            region_display = "待补全"
+        elif region_status == "none":
+            region_display = "室内运动"
+        elif region_status == "failed":
+            region_display = "未知地点"
+
     return {
         "id": int(row.get("id") or idx + 1),
         "sport_type": str(row.get("sport_type") or "running"),
@@ -3955,7 +4035,9 @@ def _build_record_from_row(api_self, row: dict, idx: int) -> dict:
         "max_hr": max_hr,
         "calories": calories,
         "gain_m": int(row.get("gain_m") or 0),
-        "region": str(row.get("region") or "").strip(),
+        "region": region_display,
+        "region_display": region_display,
+        "region_status": region_status,
         "device_name": str(row.get("device_name") or "").strip(),
         "start_lat": _safe_float(row.get("start_lat")) or None,
         "start_lon": _safe_float(row.get("start_lon")) or None,

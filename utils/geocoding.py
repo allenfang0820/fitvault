@@ -1,7 +1,7 @@
 """
 地理编码模块 — 根据 GPS 坐标获取城市/区域名
 
-数据流: FIT GPS → resolve_activity_region → Nominatim API → activities.region
+数据流: activities 待补全地区 → Nominatim API → activities.region_display
 
 契约: FIELD_CONTRACT §2.1 "FIT 为唯一事实源"
 """
@@ -43,7 +43,7 @@ def _rate_limited_request(url: str) -> dict[str, Any] | None:
 def reverse_geocode(lat: float, lon: float) -> dict[str, Any] | None:
     """
     逆地理编码：坐标 → 地址信息
-    返回 {"city": "成都", "town": "高新区", "state": "四川省", "country": "中国"}
+    返回 {"city": "成都", "town": "成都", "municipality": "成都", "state": "四川省", "country": "中国"}
     """
     params = {
         "format": "json",
@@ -59,8 +59,9 @@ def reverse_geocode(lat: float, lon: float) -> dict[str, Any] | None:
         return None
     addr = data["address"]
     return {
-        "city": addr.get("city") or addr.get("town") or addr.get("county") or "",
+        "city": addr.get("city") or "",
         "town": addr.get("town") or "",
+        "municipality": addr.get("municipality") or "",
         "state": addr.get("state") or "",
         "country": addr.get("country") or "",
     }
@@ -69,15 +70,14 @@ def reverse_geocode(lat: float, lon: float) -> dict[str, Any] | None:
 def format_region(geo: dict[str, Any] | None) -> str:
     """
     将逆地理编码结果格式化为 region 字符串
-    优先级: city → town → county → state → province → ""
+    优先级: city → town → municipality → state → ""
     """
     if not geo:
         return ""
     return (
         geo.get("city")
         or geo.get("town")
-        or geo.get("county")
+        or geo.get("municipality")
         or geo.get("state")
-        or geo.get("province")
         or ""
     ).strip()

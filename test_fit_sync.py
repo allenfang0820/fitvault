@@ -190,7 +190,7 @@ class TestFitSync(unittest.TestCase):
         self.assertTrue(result["ok"], result)
         self.assertLess(result.get("elapsed_sec", 99), 1.0)
 
-    def test_parse_fit_activity_for_sync_reuses_unified_engine_for_region(self):
+    def test_parse_fit_activity_for_sync_defers_region_enrichment(self):
         fit_path = self.temp_dir / "region.fit"
         fit_path.write_bytes(b"fit")
         fake_core = {
@@ -215,13 +215,41 @@ class TestFitSync(unittest.TestCase):
             ],
         }
         with mock.patch.object(main.FITCoreEngine, "parse_fit_file", return_value=fake_core), \
-             mock.patch.object(profile_backend, "resolve_activity_region", return_value="成都市"):
+             mock.patch.object(profile_backend, "resolve_activity_region", side_effect=AssertionError("地区查询不应阻塞 FIT 入库")):
             activity = main._parse_fit_activity_for_sync(fit_path)
 
-        self.assertEqual(activity["region"], "成都市")
+        self.assertEqual(activity["region"], "")
+        self.assertEqual(activity["region_status"], "pending")
         self.assertEqual(activity["start_lat"], 30.67)
         self.assertEqual(activity["start_lon"], 104.06)
         self.assertEqual(activity["sport_type"], "running")
+
+    def test_parse_fit_activity_for_sync_marks_no_gps_as_none(self):
+        fit_path = self.temp_dir / "indoor.fit"
+        fit_path.write_bytes(b"fit")
+        fake_core = {
+            "basic_info": {
+                "title": "室内骑行",
+                "title_source": "sport_name",
+                "sport": "cycling",
+                "sub_sport": "indoor_cycling",
+                "start_time": "2026-05-19T08:00:00+08:00",
+                "start_time_utc": "2026-05-19T00:00:00Z",
+                "total_distance_km": 20.0,
+                "total_timer_time": 3600,
+            },
+            "track_data": [
+                {"time": "2026-05-19T00:00:00Z", "hr": 120},
+                {"time": "2026-05-19T00:05:00Z", "hr": 130},
+            ],
+        }
+        with mock.patch.object(main.FITCoreEngine, "parse_fit_file", return_value=fake_core), \
+             mock.patch.object(profile_backend, "resolve_activity_region", side_effect=AssertionError("无 GPS 不应查询地区")):
+            activity = main._parse_fit_activity_for_sync(fit_path)
+
+        self.assertEqual(activity["region_status"], "none")
+        self.assertEqual(activity["region_display"], "室内运动")
+        self.assertEqual(activity["region"], "室内运动（无GPS）")
 
     def test_activity_list_snapshot_returns_region_field(self):
         main.ensure_activity_sync_schema()
@@ -292,7 +320,7 @@ class TestFitSync(unittest.TestCase):
             ],
         }
         with mock.patch.object(main.FITCoreEngine, "parse_fit_file", return_value=fake_core), \
-             mock.patch.object(profile_backend, "resolve_activity_region", return_value="成都市"), \
+             mock.patch.object(profile_backend, "resolve_activity_region", side_effect=AssertionError("地区查询不应阻塞 FIT 入库")), \
              mock.patch("main.fetch_historical_weather", return_value={
                  "temperature_c": 28,
                  "humidity": 85,
@@ -329,7 +357,7 @@ class TestFitSync(unittest.TestCase):
             ],
         }
         with mock.patch.object(main.FITCoreEngine, "parse_fit_file", return_value=fake_core), \
-             mock.patch.object(profile_backend, "resolve_activity_region", return_value="成都市"), \
+             mock.patch.object(profile_backend, "resolve_activity_region", side_effect=AssertionError("地区查询不应阻塞 FIT 入库")), \
              mock.patch("main.fetch_historical_weather", return_value=None) as mocked_weather:
             main._parse_fit_activity_for_sync(fit_path)
 

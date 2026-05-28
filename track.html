@@ -3929,7 +3929,7 @@
                     <td><span class="hub-pill">${sportHubRecordTypeIcon(item)} ${sportHubRecordTypeLabel(item)}</span></td>
                     <td>${safeHtml(item.date_label || '--')}</td>
                     <td><div class="hub-record-title"><b>${safeHtml(item.title || item.file_name || item.filename || '未命名活动')}</b></div></td>
-                    <td>${safeHtml(item.region || '--')}</td>
+                    <td>${safeHtml(sportHubRegionDisplay(item))}</td>
                     <td>${safeHtml(item.device_name || '--')}</td>
                     <td>${safeHtml(item.distance_display || '--')}</td>
                     <td>${formatRaceTime(item.duration_sec || 0)}</td>
@@ -3979,6 +3979,16 @@
         }
     }
 
+    function sportHubRegionDisplay(item) {
+        const display = (item && (item.region_display || item.region) || '').trim();
+        if (display) return display;
+        const status = (item && item.region_status || '').trim();
+        if (status === 'pending') return '待补全';
+        if (status === 'none') return '室内运动';
+        if (status === 'failed') return '未知地点';
+        return '--';
+    }
+
     function toggleSportHubRecordSelection(id, checked) {
         const recordId = Number(id) || 0;
         if (!recordId) return;
@@ -4015,8 +4025,7 @@
         if (btnEl) {
             btnEl.innerText = '确认删除';
             btnEl.disabled = false;
-            btnEl.onclick = async function(e) {
-                if (e) { e.preventDefault(); e.stopPropagation(); }
+            btnEl.onclick = async function() {
                 const deleteBtn = document.getElementById('sport-records-delete-btn');
                 btnEl.disabled = true;
                 btnEl.innerText = '删除中...';
