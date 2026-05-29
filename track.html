@@ -165,6 +165,16 @@
             font-size: 0.65rem; font-weight: 700; color: var(--primary);
             letter-spacing: 0.8px; margin-bottom: 4px; text-transform: uppercase;
         }
+        .settings-section-title {
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--primary);
+            letter-spacing: 0.5px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            padding-bottom: 10px;
+            margin-bottom: 16px;
+            text-transform: none;
+        }
 
         .stat-grid {
             display: grid; grid-template-columns: 1fr 1fr; gap: 3px 10px;
@@ -996,7 +1006,147 @@
         }
 
         /* === Cesium 地球（始终渲染） === */
-        #cesiumContainer { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 0; touch-action: none; }
+        #cesiumContainer { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 0; touch-action: auto; }
+        #map-controls-widget {
+            position: absolute;
+            right: 16px;
+            top: 50%;
+            transform: translateY(-50%);
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            background: rgba(15, 23, 42, 0.8);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 8px;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px -5px rgba(0,0,0,0.5);
+        }
+        .slider-wrapper {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            min-width: 54px;
+            min-height: 148px;
+            padding: 10px 6px;
+            border-radius: 999px;
+            background: rgba(226, 232, 240, 0.72);
+            border: 1px solid rgba(255, 255, 255, 0.38);
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.42), 0 8px 18px rgba(0,0,0,0.24);
+        }
+        .slider-label {
+            color: #0f172a;
+            font-size: 0.78rem;
+            font-weight: 800;
+            line-height: 1;
+            user-select: none;
+        }
+        #map-view-slider {
+            width: 92px;
+            height: 34px;
+            margin: 26px 0;
+            transform: rotate(-90deg);
+            transform-origin: center;
+            accent-color: #0f172a;
+            cursor: pointer;
+            touch-action: none;
+            -webkit-appearance: none;
+            appearance: none;
+            background: transparent;
+        }
+        #map-view-slider::-webkit-slider-runnable-track {
+            height: 8px;
+            border-radius: 999px;
+            background: rgba(15, 23, 42, 0.36);
+            box-shadow: inset 0 1px 3px rgba(0,0,0,0.28);
+        }
+        #map-view-slider::-webkit-slider-thumb {
+            width: 24px;
+            height: 24px;
+            margin-top: -8px;
+            border-radius: 50%;
+            background: #0f172a;
+            border: 2px solid rgba(255,255,255,0.82);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.35);
+            -webkit-appearance: none;
+        }
+        #map-view-slider::-moz-range-track {
+            height: 8px;
+            border-radius: 999px;
+            background: rgba(15, 23, 42, 0.36);
+            box-shadow: inset 0 1px 3px rgba(0,0,0,0.28);
+        }
+        #map-view-slider::-moz-range-thumb {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: #0f172a;
+            border: 2px solid rgba(255,255,255,0.82);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.35);
+        }
+        #map-compass-btn {
+            width: 44px;
+            height: 44px;
+            min-width: 44px;
+            min-height: 44px;
+            align-self: center;
+            border-radius: 50%;
+            border: 1px solid rgba(255,255,255,0.48);
+            background: radial-gradient(circle at 50% 35%, rgba(248, 250, 252, 0.92), rgba(203, 213, 225, 0.78));
+            cursor: pointer;
+            box-shadow: 0 8px 18px rgba(0,0,0,0.34), inset 0 1px 0 rgba(255,255,255,0.8);
+            transition: transform 0.18s ease, box-shadow 0.18s ease;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+        }
+        #map-compass-btn::before {
+            content: '北';
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #0f172a;
+            font-size: 1rem;
+            font-weight: 900;
+        }
+        .compass-pointer {
+            position: relative;
+            width: 34px;
+            height: 34px;
+            transform-origin: 50% 50%;
+            transition: transform 0.08s linear;
+        }
+        .compass-pointer::before {
+            content: '';
+            position: absolute;
+            left: 50%;
+            top: 2px;
+            transform: translateX(-50%);
+            width: 0;
+            height: 0;
+            border-left: 4px solid transparent;
+            border-right: 4px solid transparent;
+            border-bottom: 8px solid #ef4444;
+        }
+        .compass-pointer::after {
+            content: '';
+            position: absolute;
+            left: 50%;
+            bottom: 2px;
+            transform: translateX(-50%);
+            width: 2px;
+            height: 8px;
+            border-radius: 999px;
+            background: rgba(15, 23, 42, 0.55);
+        }
+        #map-compass-btn:hover { transform: translateY(-1px); box-shadow: 0 12px 22px rgba(0,0,0,0.42), inset 0 1px 0 rgba(255,255,255,0.8); }
+        #map-compass-btn:active { transform: translateY(0) scale(0.96); }
 
         /* === 顶栏（仅【轨迹分析工具】可见） === */
         #top-bar {
@@ -1238,6 +1388,34 @@
         }
         .secondary-btn { background: rgba(255,255,255,0.1); color: #f8fafc; border: 1px solid rgba(255,255,255,0.2); }
         .secondary-btn:hover { background: rgba(255,255,255,0.2); }
+        .btn-secondary {
+            width: 100%;
+            height: 40px;
+            padding: 0 16px;
+            border-radius: 8px;
+            background: rgba(255,255,255,0.1);
+            color: #f8fafc;
+            border: 1px solid rgba(255,255,255,0.2);
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            box-sizing: border-box;
+        }
+        .btn-secondary:hover {
+            background: rgba(255,255,255,0.2);
+        }
+        .btn-secondary:disabled {
+            background: rgba(255,255,255,0.05);
+            color: #64748b;
+            border-color: #334155;
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
         
         .primary-btn { background: var(--primary); color: #0f172a; }
         .primary-btn:hover { background: var(--primary-hover); }
@@ -1836,6 +2014,23 @@
                 flex: 1 1 100%;
             }
         }
+
+        .settings-form-group {
+            margin-bottom: 16px;
+        }
+        .settings-form-group:last-child {
+            margin-bottom: 0;
+        }
+
+        .settings-label {
+            display: block;
+            font-size: 0.8rem;
+            color: #94a3b8;
+            margin-bottom: 6px;
+        }
+        .settings-label .required {
+            color: #ef4444;
+        }
     </style>
 </head>
 <body>
@@ -2087,6 +2282,16 @@
 
             <!-- Cesium 3D 地球（始终渲染，不受面板切换影响） -->
             <div id="cesiumContainer"></div>
+            <div id="map-controls-widget" aria-label="地图视角控制">
+                <div class="slider-wrapper">
+                    <span class="slider-label">3D</span>
+                    <input type="range" id="map-view-slider" min="30" max="90" step="1" value="90" aria-label="2D 和 3D 视角连续切换">
+                    <span class="slider-label">2D</span>
+                </div>
+                <button type="button" id="map-compass-btn" aria-label="归北" title="归北">
+                    <div class="compass-pointer" id="compass-pointer"></div>
+                </button>
+            </div>
 
             <!-- 顶栏工具条（仅此面板可见） -->
             <div id="top-bar">
@@ -2241,9 +2446,9 @@
                     </div>
                 </div>
                 <div class="section-card">
-                    <div class="section-title">🤖 大模型 API 配置</div>
-                    <div style="margin-bottom:12px;">
-                        <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:8px;">手表品牌 <span style="color:#ef4444">*</span></label>
+                    <div class="section-title settings-section-title">🤖 大模型 API 配置</div>
+                    <div class="settings-form-group">
+                        <label class="settings-label">手表品牌 <span class="required">*</span></label>
                         <div style="display:flex; gap:16px;">
                             <label style="display:flex; align-items:center; gap:6px; font-size:0.85rem; color:#f8fafc; cursor:pointer;">
                                 <input type="radio" name="watch_brand" value="garmin" style="accent-color:var(--primary); width:16px; height:16px; margin:0;" onchange="selectUserType('garmin'); syncLLMConfigFromFields()">
@@ -2256,69 +2461,58 @@
                         </div>
                     </div>
                     
-                    <div class="config-row">
+                    <div class="settings-form-group">
                         <div>
-                            <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:4px;">服务商 (Provider)</label>
+                            <label class="settings-label">服务商 (Provider)</label>
                             <select id="llm-provider" class="modal-input" onchange="updateLLMModels(); syncLLMConfigFromFields();" style="background:rgba(15,23,42,0.8);cursor:pointer;">
                                 <option value="local_mcp">本地 + MCP (如 OpenClaw / WorkBuddy)</option>
-                                <option value="openai">OpenAI</option>
-                                <option value="deepseek">DeepSeek</option>
-                                <option value="zhipu">智谱 AI</option>
-                                <option value="moonshot">Moonshot</option>
-                                <option value="qwen">通义千问</option>
-                                <option value="minimax">MiniMax</option>
-                                <option value="custom">自定义 OpenAI 兼容接口</option>
                             </select>
                         </div>
                         <div id="llm-custom-url-container" style="display:block;">
-                            <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:4px;">自定义 API 地址</label>
+                            <label class="settings-label">自定义 API 地址</label>
                             <input type="text" id="llm-custom-url" class="modal-input" placeholder="https://api.example.com/v1" autocomplete="off" oninput="syncLLMConfigFromFields(); _markUrlModified();" style="background:rgba(15,23,42,0.8);">
                         </div>
                     </div>
 
-                    <div class="config-row">
+                    <div class="settings-form-group">
                         <div>
-                            <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:4px;">模型 (Model)</label>
+                            <label class="settings-label">模型 (Model)</label>
                             <select id="llm-model" class="modal-input" onchange="syncLLMConfigFromFields()" style="background:rgba(15,23,42,0.8);cursor:pointer;"></select>
                             <div id="llm-custom-model-container" style="margin-top:8px;display:none;">
                                 <input type="text" id="llm-custom-model" class="modal-input" placeholder="自定义模型名" autocomplete="off" oninput="syncLLMConfigFromFields()" style="background:rgba(15,23,42,0.8);">
                             </div>
                         </div>
                         <div>
-                            <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:4px;">Agent ID（选填）</label>
+                            <label class="settings-label">Agent ID（选填）</label>
                             <input type="text" id="llm-agent-id" class="modal-input" placeholder="网关分配的 ID" autocomplete="off" oninput="syncLLMConfigFromFields()" style="background:rgba(15,23,42,0.8);">
                         </div>
                     </div>
 
-                    <div style="margin-bottom:12px;">
-                        <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:4px;">API Key</label>
+                    <div class="settings-form-group">
+                        <label class="settings-label">API Key</label>
                         <input type="password" id="llm-api-key" class="modal-input" placeholder="sk-..." autocomplete="off" oninput="syncLLMConfigFromFields()" style="background:rgba(15,23,42,0.8);">
                     </div>
 
-                    <div class="settings-btn-group">
-                        <button onclick="testLLMConfig()" class="secondary-btn" style="flex:1;">
+                    <div style="margin-top: 16px;">
+                        <button onclick="testLLMConfig()" class="btn-secondary" id="btn-test-llm">
                             🧪 测试连接 <span id="test-indicator" class="status-indicator"></span>
                         </button>
                     </div>
                     <div id="llm-test-result" style="margin-top:10px;font-size:0.8rem;color:#94a3b8;">尚未测试连接</div>
                 </div>
                 <div class="section-card" id="storage-config-section">
-                    <div class="section-title">🗺️ 数据存储配置</div>
-                    <div style="margin-bottom:15px;">
-                        <label style="display:block;margin-bottom:5px;color:#94a3b8;font-size:0.8rem;">本地 FIT 文件存储目录（系统固定路径，无需手动选择）</label>
-                        <div id="storage-dir-display" style="padding:10px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);color:#86efac;border-radius:6px;font-size:0.85rem;word-break:break-all;">
+                    <div class="section-title settings-section-title">🗺️ 数据存储配置</div>
+                    <div class="settings-form-group">
+                        <label class="settings-label">本地 FIT 文件存储目录（系统固定路径，无需手动选择）</label>
+                        <div id="storage-dir-display" class="settings-path-display" style="padding:10px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);color:#86efac;border-radius:6px;font-size:0.85rem;word-break:break-all;">
                             ~/.fitvault/workspace/tracks/
                         </div>
-                        <div style="margin-top:15px; display:flex; align-items:center; gap:8px;">
-                            <span class="ai-btn-indicator" id="btn-notify-indicator"></span>
-                            <button id="btn-notify-ai" class="ai-assistant-btn" onclick="notifyAIAssistant()" style="margin-left:0;">
-                                🤖 告诉AI助手存储规范
-                            </button>
-                        </div>
                     </div>
-                    <div class="stat-grid">
-                        <div class="stat-row"><span>设备文件路径</span><b style="font-size:0.65rem;color:#64748b;">~/.fitvault/workspace/tracks/</b></div>
-                        <div class="stat-row"><span>数据库路径</span><b style="font-size:0.65rem;color:#64748b;">~/.fitvault/user_profile.db</b></div>
+                    <div class="settings-form-group">
+                        <button id="btn-notify-ai" class="btn-secondary" onclick="notifyAIAssistant()">
+                            <span class="ai-btn-indicator" id="btn-notify-indicator"></span>
+                            🤖 告诉AI助手存储规范
+                        </button>
                     </div>
                 </div>
 
@@ -4987,6 +5181,305 @@
     function switchAITab(tabId) { toggleAISidebar(); }
 
     // ==========================================
+    // Viewer-dependent interaction setup.
+    // Called from initCesiumViewer() after viewer is initialized.
+    function setupViewerInteractions() {
+        if (!viewer || !viewer.scene) return;
+
+        if (viewer.screenSpaceEventHandler) {
+            viewer.screenSpaceEventHandler.removeInputAction(Cesium.ScreenSpaceEventType.LEFT_DOUBLE_CLICK);
+        }
+        viewer.scene.canvas.addEventListener('contextmenu', function(e) { e.preventDefault(); });
+
+        viewer.scene.canvas.addEventListener('mousemove', function(e) {
+            var rect = viewer.scene.canvas.getBoundingClientRect();
+            lastMousePosition = new Cesium.Cartesian2(e.clientX - rect.left, e.clientY - rect.top);
+        });
+        viewer.scene.canvas.addEventListener('mouseleave', function() {
+            lastMousePosition = null;
+        });
+
+        viewer.scene.canvas.addEventListener('pointerdown', function(e) {
+            activePointers[e.pointerId] = { x: e.clientX, y: e.clientY, time: Date.now() };
+            var keys = Object.keys(activePointers);
+            if (keys.length === 2) {
+                twoFingerType = null;
+                twoFingerStartMid = getTwoFingerMid();
+                twoFingerStartDist = getTwoFingerDist();
+                twoFingerStartAngle = getTwoFingerAngle();
+                twoFingerLastAngle = twoFingerStartAngle;
+                twoFingerArc = 0;
+                var now = Date.now();
+                if (now - lastTwoFingerTap < 500 && activeCameraController === null) {
+                    if (claimCameraOwnership('twist-reset')) {
+                        var fcs = getCameraFocusPoint();
+                        if (Cesium.defined(fcs)) {
+                            var rng = rangeToWorld(fcs);
+                            viewer.camera.flyToBoundingSphere(new Cesium.BoundingSphere(fcs, 0), {
+                                duration: 0.4,
+                                offset: new Cesium.HeadingPitchRange(0, viewer.camera.pitch, rng),
+                                easingFunction: Cesium.EasingFunction.SINE_IN_OUT
+                            });
+                        }
+                        setTimeout(function() { releaseCameraOwnership('twist-reset'); }, 500);
+                    }
+                    activePointers = {};
+                    twoFingerType = null;
+                    return;
+                }
+                if (keys.length === 2) lastTwoFingerTap = now;
+            }
+        });
+
+        viewer.scene.canvas.addEventListener('pointermove', function(e) {
+            if (!activePointers[e.pointerId]) return;
+            activePointers[e.pointerId].x = e.clientX;
+            activePointers[e.pointerId].y = e.clientY;
+            var keys = Object.keys(activePointers);
+            if (keys.length !== 2) return;
+            var mid = getTwoFingerMid();
+            var dx = mid.x - twoFingerStartMid.x;
+            var dy = mid.y - twoFingerStartMid.y;
+            var totalDelta = Math.hypot(dx, dy);
+            var angle = getTwoFingerAngle();
+            var angleDelta = angle - twoFingerStartAngle;
+            if (angleDelta > Math.PI) angleDelta -= 2 * Math.PI;
+            if (angleDelta < -Math.PI) angleDelta += 2 * Math.PI;
+            var absAngleDelta = Math.abs(angleDelta);
+            if (!twoFingerType && (totalDelta > 10 || absAngleDelta > 0.15)) {
+                if (absAngleDelta > 0.15 && totalDelta < 10) {
+                    twoFingerType = 'twist';
+                } else if (Math.abs(dy) > Math.abs(dx) * 0.5) {
+                    twoFingerType = 'zoom';
+                    if (!claimCameraOwnership('two-finger-zoom')) return;
+                    var rect = viewer.scene.canvas.getBoundingClientRect();
+                    var anchorScreen = new Cesium.Cartesian2(twoFingerStartMid.x - rect.left, twoFingerStartMid.y - rect.top);
+                    var anchorWorld = pickWorldAtScreen(anchorScreen);
+                    if (Cesium.defined(anchorWorld)) {
+                        twoFingerZoomAnchor = anchorWorld;
+                        twoFingerZoomBaseRange = rangeToWorld(anchorWorld);
+                    } else {
+                        twoFingerZoomAnchor = null;
+                        twoFingerZoomBaseRange = rangeToWorld(viewer.camera.positionWC || viewer.camera.position);
+                    }
+                } else {
+                    twoFingerType = 'twist';
+                }
+            }
+            if (twoFingerType === 'zoom') {
+                if (!hasCameraOwnership('two-finger-zoom')) return;
+                var currentDist = getTwoFingerDist();
+                if (currentDist < 1) return;
+                var zoomRatio = twoFingerStartDist / currentDist;
+                if (Cesium.defined(twoFingerZoomAnchor)) {
+                    var newRange = Cesium.Math.clamp(twoFingerZoomBaseRange * zoomRatio, viewer.scene.screenSpaceCameraController.minimumZoomDistance, viewer.scene.screenSpaceCameraController.maximumZoomDistance);
+                    viewer.camera.lookAt(twoFingerZoomAnchor, new Cesium.HeadingPitchRange(viewer.camera.heading, viewer.camera.pitch, newRange));
+                    resetCameraTransformSafely();
+                } else {
+                    var fallbackFocus = getCameraFocusPoint();
+                    if (Cesium.defined(fallbackFocus)) {
+                        var fallbackRange = rangeToWorld(fallbackFocus);
+                        var clampedFallbackRange = Cesium.Math.clamp(fallbackRange * zoomRatio, viewer.scene.screenSpaceCameraController.minimumZoomDistance, viewer.scene.screenSpaceCameraController.maximumZoomDistance);
+                        viewer.camera.lookAt(fallbackFocus, new Cesium.HeadingPitchRange(viewer.camera.heading, viewer.camera.pitch, clampedFallbackRange));
+                        resetCameraTransformSafely();
+                    }
+                }
+            } else if (twoFingerType === 'twist') {
+                var angle = getTwoFingerAngle();
+                var angleDelta = angle - twoFingerLastAngle;
+                if (angleDelta > Math.PI) angleDelta -= 2 * Math.PI;
+                if (angleDelta < -Math.PI) angleDelta += 2 * Math.PI;
+                twoFingerArc += angleDelta;
+                twoFingerLastAngle = angle;
+                if (Math.abs(twoFingerArc) >= Math.PI / 4) {
+                    if (!hasCameraOwnership('twist-rotate')) {
+                        if (!claimCameraOwnership('twist-rotate')) return;
+                    }
+                    viewer.camera.setView({
+                        orientation: {
+                            heading: Cesium.Math.zeroToTwoPi(viewer.camera.heading + twoFingerArc),
+                            pitch: viewer.camera.pitch,
+                            roll: viewer.camera.roll
+                        }
+                    });
+                    twoFingerArc = 0;
+                }
+            }
+        });
+
+        viewer.scene.canvas.addEventListener('pointerup', function(e) {
+            delete activePointers[e.pointerId];
+            var keys = Object.keys(activePointers);
+            if (keys.length < 2 && twoFingerType) {
+                if (twoFingerType === 'zoom') { releaseCameraOwnership('two-finger-zoom'); twoFingerZoomAnchor = null; }
+                if (twoFingerType === 'twist') releaseCameraOwnership('twist-rotate');
+                twoFingerType = null;
+                twoFingerArc = 0;
+            }
+        });
+
+        viewer.scene.canvas.addEventListener('pointercancel', function(e) {
+            delete activePointers[e.pointerId];
+            var keys = Object.keys(activePointers);
+            if (keys.length < 2 && twoFingerType) {
+                if (twoFingerType === 'zoom') { releaseCameraOwnership('two-finger-zoom'); twoFingerZoomAnchor = null; }
+                if (twoFingerType === 'twist') releaseCameraOwnership('twist-rotate');
+                twoFingerType = null;
+                twoFingerArc = 0;
+            }
+        });
+
+        gestureHandler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
+        currentHeading = viewer.camera.heading;
+        currentPitch = viewer.camera.pitch;
+        targetHeading = viewer.camera.heading;
+        targetPitch = viewer.camera.pitch;
+
+        gestureHandler.setInputAction(function(movement) {
+            stopAutoRotateForOrbit();
+            if (panInertiaFrame !== null) { cancelAnimationFrame(panInertiaFrame); panInertiaFrame = null; releaseCameraOwnership('pan'); }
+            isPanning = false;
+            panStartPosition = null;
+            if (!claimCameraOwnership('orbit')) return;
+            isOrbitingCamera = true;
+            orbitStartPosition = Cesium.Cartesian2.clone(movement.position);
+            orbitFocusPoint = pickOrbitFocusPoint();
+            orbitRange = Cesium.defined(orbitFocusPoint) ? Cesium.Cartesian3.distance(viewer.camera.positionWC || viewer.camera.position, orbitFocusPoint) : 0;
+            orbitReleaseFocusWhenSettled = false;
+            currentHeading = viewer.camera.heading;
+            currentPitch = viewer.camera.pitch;
+            targetHeading = currentHeading;
+            targetPitch = currentPitch;
+            orbitStartHeading = currentHeading;
+            orbitStartPitch = currentPitch;
+        }, Cesium.ScreenSpaceEventType.RIGHT_DOWN);
+
+        gestureHandler.setInputAction(function(movement) {
+            if (isOrbitingCamera) return;
+            if (activeCameraController !== null && activeCameraController !== 'pan') return;
+            if (!claimCameraOwnership('pan')) return;
+            isPanning = true;
+            panStartPosition = Cesium.Cartesian2.clone(movement.position);
+            panDeadzoneCrossed = false;
+            panVelocityX = 0;
+            panVelocityY = 0;
+            panLastTime = performance.now();
+            if (panInertiaFrame !== null) {
+                cancelAnimationFrame(panInertiaFrame);
+                panInertiaFrame = null;
+            }
+        }, Cesium.ScreenSpaceEventType.LEFT_DOWN);
+
+        gestureHandler.setInputAction(function(movement) {
+            if (isPanning && panStartPosition) {
+                var dx = movement.endPosition.x - panStartPosition.x;
+                var dy = movement.endPosition.y - panStartPosition.y;
+                if (!panDeadzoneCrossed && Math.hypot(dx, dy) < PAN_DEADZONE) return;
+                panDeadzoneCrossed = true;
+                var now = performance.now();
+                var dt = Math.max(1, now - panLastTime);
+                applyPanTranslation(dx, dy);
+                panVelocityX = dx / dt;
+                panVelocityY = dy / dt;
+                panLastTime = now;
+                panStartPosition = Cesium.Cartesian2.clone(movement.endPosition);
+                return;
+            }
+            if (!isOrbitingCamera || !orbitStartPosition) return;
+            var deltaX = movement.endPosition.x - orbitStartPosition.x;
+            var deltaY = movement.endPosition.y - orbitStartPosition.y;
+            if (Math.abs(deltaX) < orbitMinDeltaThreshold && Math.abs(deltaY) < orbitMinDeltaThreshold) return;
+            targetHeading = Cesium.Math.zeroToTwoPi(orbitStartHeading - deltaX * orbitRotateSpeed);
+            targetPitch = Cesium.Math.clamp(
+                orbitStartPitch - deltaY * orbitPitchSpeed,
+                Cesium.Math.toRadians(-90),
+                Cesium.Math.toRadians(-20)
+            );
+            scheduleOrbitAnimation();
+        }, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
+
+        gestureHandler.setInputAction(function() {
+            if (isPanning) {
+                isPanning = false;
+                panStartPosition = null;
+                if (panDeadzoneCrossed && (Math.abs(panVelocityX) > 0.2 || Math.abs(panVelocityY) > 0.2)) {
+                    startPanInertia();
+                } else {
+                    releaseCameraOwnership('pan');
+                }
+                return;
+            }
+        }, Cesium.ScreenSpaceEventType.LEFT_UP);
+
+        gestureHandler.setInputAction(function() {
+            isOrbitingCamera = false;
+            orbitStartPosition = null;
+            if (orbitAnimationFrame === null) {
+                orbitFocusPoint = null;
+                orbitRange = 0;
+                releaseCameraOwnership('orbit');
+            } else {
+                orbitReleaseFocusWhenSettled = true;
+            }
+        }, Cesium.ScreenSpaceEventType.RIGHT_UP);
+
+        gestureHandler.setInputAction(function(movement) {
+            if (!Cesium.defined(movement)) return;
+            var p1 = movement.startPosition || movement.position;
+            var p2 = movement.endPosition;
+            if (!Cesium.defined(p1) || !Cesium.defined(p2)) return;
+            var currentDist = Cesium.Cartesian2.distance(p1, p2);
+            if (pinchPrevDist <= 0) { pinchPrevDist = currentDist; return; }
+            var anchoredScreen = lastMousePosition;
+            if (!anchoredScreen) {
+                var c = viewer.scene.canvas;
+                anchoredScreen = new Cesium.Cartesian2(c.clientWidth / 2, c.clientHeight / 2);
+            }
+            if (!claimCameraOwnership('pinch-zoom')) { pinchPrevDist = currentDist; return; }
+            var ratio = Math.max(0.5, Math.min(2, currentDist / pinchPrevDist));
+            pinchPrevDist = currentDist;
+            zoomAtScreenPoint(anchoredScreen, ratio, 'pinch-zoom');
+            releaseCameraOwnership('pinch-zoom');
+        }, Cesium.ScreenSpaceEventType.PINCH);
+
+        gestureHandler.setInputAction(function (movement) {
+            const pickedObject = viewer.scene.pick(movement.position);
+            if (Cesium.defined(pickedObject) && pickedObject.id) {
+                const entityId = typeof pickedObject.id === 'string' ? pickedObject.id : pickedObject.id.id;
+                if (entityId && entityId.startsWith('cp_')) { openEditModal(entityId, appState.placemarks.find(p => p.id === entityId)?.name); return; }
+                if (entityId && entityId.startsWith('peak_')) return;
+            }
+            if (appState.points.length > 0) {
+                let earthPosition;
+                try { earthPosition = viewer.scene.pickPosition(movement.position); } catch(e) {}
+                if (!Cesium.defined(earthPosition)) earthPosition = viewer.camera.pickEllipsoid(movement.position, viewer.scene.globe.ellipsoid);
+                if (Cesium.defined(earthPosition)) {
+                    const cart = Cesium.Cartographic.fromCartesian(earthPosition), lon = Cesium.Math.toDegrees(cart.longitude), lat = Cesium.Math.toDegrees(cart.latitude);
+                    let nearestAlt = cart.height || 0, minDist = Infinity, nearestPoint = null;
+                    appState.points.forEach(p => {
+                        const dist = Math.pow(p.lon - lon, 2) + Math.pow(p.lat - lat, 2);
+                        if (dist < minDist) { minDist = dist; nearestAlt = p.alt; nearestPoint = p; }
+                    });
+                    if (minDist < 0.0005 && nearestPoint) openAddModal(nearestPoint.lon, nearestPoint.lat, nearestAlt);
+                }
+            }
+        }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+
+        viewer.camera.changed.addEventListener(function() {
+            const headingDeg = Cesium.Math.toDegrees(viewer.camera.heading);
+            const pointerEl = document.getElementById('compass-pointer');
+            if (pointerEl) {
+                pointerEl.style.transform = 'rotate(' + (-headingDeg) + 'deg)';
+            }
+            const currentPitchDeg = Math.abs(Cesium.Math.toDegrees(viewer.camera.pitch));
+            const sliderEl = document.getElementById('map-view-slider');
+            if (sliderEl && !isSliderDragging) {
+                sliderEl.value = Math.max(30, Math.min(90, Math.round(currentPitchDeg)));
+            }
+        });
+    }
+
+    // ==========================================
     // Cesium 引擎初始化（懒加载，不阻塞启动流程）
     var viewer = null;
     var _cesiumInitTimer = null;
@@ -5021,6 +5514,47 @@
             viewer.scene.globe.baseColor = Cesium.Color.WHITE;
             viewer.scene.canvas.style.cursor = 'crosshair';
             viewer.camera.setView({ destination: initialDestination });
+
+            // Configure camera controller AFTER viewer is initialized
+            const cameraController = viewer.scene.screenSpaceCameraController;
+            cameraController.enableRotate = false;
+            cameraController.enableTranslate = true;
+            cameraController.enableZoom = false;
+            cameraController.enableTilt = false;
+            cameraController.enableLook = false;
+            cameraController.translateEventTypes = [Cesium.CameraEventType.TOUCH_DRAG];
+            cameraController.rotateEventTypes = [];
+            cameraController.tiltEventTypes = [];
+            cameraController.lookEventTypes = [];
+            cameraController.zoomEventTypes = [];
+            cameraController.inertiaSpin = 0.85;
+            cameraController.inertiaTranslate = 0.85;
+            cameraController.minimumZoomDistance = 100;
+            cameraController.maximumZoomDistance = 20000000;
+
+            // Add wheel event listener AFTER viewer is initialized
+            viewer.scene.canvas.addEventListener('wheel', function(e) {
+                if (e.ctrlKey || e.metaKey) return;
+                if (isOrbitingCamera) return;
+                if (activeCameraController !== null && activeCameraController !== 'swipe-pitch') return;
+                var deltaY = e.deltaY;
+                if (Math.abs(deltaY) < 1) return;
+                if (swipePitchAnimFrame !== null) return;
+                if (!claimCameraOwnership('swipe-pitch')) return;
+                wheelBuffer = [];
+                var direction = deltaY > 0 ? -1 : 1;
+                var currentPitchDeg = Math.abs(Cesium.Math.toDegrees(viewer.camera.pitch));
+                var targetPitchDeg = Math.max(15, Math.min(90, currentPitchDeg + direction * 15));
+                if (Math.abs(targetPitchDeg - currentPitchDeg) < 0.5) {
+                    releaseCameraOwnership('swipe-pitch');
+                    return;
+                }
+                var targetPitchRad = -Cesium.Math.toRadians(targetPitchDeg);
+                animatePitchTo(targetPitchRad, 0.8, 'swipe-pitch');
+            }, { passive: true });
+
+            setupViewerInteractions();
+
         } catch (e) {
             console.error('[Cesium] 初始化失败，3D 渲染降级:', e);
         }
@@ -5259,7 +5793,7 @@
         onboardingState.llmTestRequestId = requestId;
         showToast('🧪 正在测试连接...');
         setLLMTestStatus('正在测试连接...', false, true, { requestId: requestId });
-        const testBtn = document.querySelector('.settings-btn-group .secondary-btn');
+        const testBtn = document.getElementById('btn-test-llm');
         if (testBtn) { testBtn.disabled = true; testBtn.style.opacity = '0.6'; }
         try {
             if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.test_llm_config === 'function') {
@@ -6285,7 +6819,7 @@
         currentRange = Math.max((maxLon - minLon) * 100000, (maxLat - minLat) * 111000, 1000) * 1.5; 
 
         updateScene(); drawProfileChart(); 
-        viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
+        resetCameraTransformSafely();
         viewer.camera.flyTo({ destination: Cesium.Cartesian3.fromDegrees((minLon + maxLon) / 2, (minLat + maxLat) / 2, currentRange), orientation: { heading: 0, pitch: Cesium.Math.toRadians(-85), roll: 0.0 }, duration: 2.5 });
 
         if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.sync_track_context === 'function') {
@@ -6331,53 +6865,375 @@
         const dist = Cesium.Cartesian3.distance(appState.centerPosition, viewer.camera.position);
         if (dist > 100 && dist < 80000) currentRange = dist;
         viewer.camera.lookAt(appState.centerPosition, new Cesium.HeadingPitchRange(Cesium.Math.toRadians(headingDeg), Cesium.Math.toRadians(pitchDeg), currentRange));
-        viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
+        resetCameraTransformSafely();
     }
     function setViewProfile() { if (appState.centerPosition) updateCamera(Cesium.Math.toDegrees(viewer.camera.heading), 0); }
+
+    function getCameraFocusPoint() {
+        if (!viewer) return appState.centerPosition;
+        const canvas = viewer.scene.canvas;
+        const center = new Cesium.Cartesian2(canvas.clientWidth / 2, canvas.clientHeight / 2);
+        const ray = viewer.camera.getPickRay(center);
+        let focus = ray ? viewer.scene.globe.pick(ray, viewer.scene) : null;
+        if (!Cesium.defined(focus)) focus = appState.centerPosition;
+        return focus;
+    }
+
+    function getCameraFocusRange(focus) {
+        if (!Cesium.defined(focus)) return currentRange;
+        const range = Cesium.Cartesian3.distance(viewer.camera.positionWC || viewer.camera.position, focus);
+        if (range > 100 && range < 20000000) currentRange = range;
+        return currentRange;
+    }
+
+    function flyCameraAroundFocus(focus, heading, pitch) {
+        if (!hasCameraOwnership('compass')) return;
+        if (!Cesium.defined(focus)) { releaseCameraOwnership('compass'); return; }
+        const range = getCameraFocusRange(focus);
+        viewer.camera.flyToBoundingSphere(new Cesium.BoundingSphere(focus, 0), {
+            duration: 0.4,
+            offset: new Cesium.HeadingPitchRange(heading, pitch, range),
+            easingFunction: Cesium.EasingFunction.SINE_IN_OUT
+        });
+        setTimeout(function() { releaseCameraOwnership('compass'); }, 450);
+    }
+
+    function resetMapNorth() {
+        if (activeCameraController !== null) return;
+        if (!claimCameraOwnership('compass')) return;
+        const focus = getCameraFocusPoint();
+        flyCameraAroundFocus(focus, 0.0, viewer.camera.pitch);
+    }
+
+    // Camera ownership system.
+    // Prevent multiple controllers from competing for camera state.
+    let activeCameraController = null;
+    const cameraControllerPriority = { autorotate: 1, compass: 2, flyto: 2, pan: 2, 'swipe-pitch': 2, 'twist-reset': 2, slider: 3, 'two-finger-zoom': 3, 'pinch-zoom': 3, orbit: 4, 'twist-rotate': 4 };
+
+    function claimCameraOwnership(controllerName) {
+        if (!controllerName) return false;
+        if (activeCameraController === null || activeCameraController === controllerName) {
+            activeCameraController = controllerName;
+            return true;
+        }
+        const currentPriority = cameraControllerPriority[activeCameraController] || 0;
+        const nextPriority = cameraControllerPriority[controllerName] || 0;
+        if (nextPriority > currentPriority) {
+            activeCameraController = controllerName;
+            return true;
+        }
+        return false;
+    }
+
+    function releaseCameraOwnership(controllerName) {
+        if (activeCameraController === controllerName) activeCameraController = null;
+    }
+
+    function hasCameraOwnership(controllerName) {
+        return activeCameraController === controllerName;
+    }
+
+    // Always release Cesium lookAt transform through unified path.
+    // Prevent transform ownership conflicts.
+    function resetCameraTransformSafely() {
+        viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
+    }
 
     let rotateInterval;
     document.getElementById('btn-auto-rotate').addEventListener('click', (e) => {
         const btn = e.target;
         if(btn.innerText.includes('▶')) {
+            if (!claimCameraOwnership('autorotate')) return;
             btn.innerText = '⏸ 暂停'; btn.style.background = 'rgba(59, 130, 246, 0.8)'; btn.style.borderColor = '#2563eb';
-            rotateInterval = setInterval(() => { updateCamera((Cesium.Math.toDegrees(viewer.camera.heading) + 0.3) % 360, Cesium.Math.toDegrees(viewer.camera.pitch)); }, 30);
+            rotateInterval = setInterval(() => {
+                if (!hasCameraOwnership('autorotate')) { clearInterval(rotateInterval); rotateInterval = null; return; }
+                updateCamera((Cesium.Math.toDegrees(viewer.camera.heading) + 0.3) % 360, Cesium.Math.toDegrees(viewer.camera.pitch));
+            }, 30);
         } else {
             btn.innerText = '▶ 漫游'; btn.style.background = 'rgba(255,255,255,0.1)'; btn.style.borderColor = 'rgba(255,255,255,0.2)';
             clearInterval(rotateInterval);
+            rotateInterval = null;
+            releaseCameraOwnership('autorotate');
         }
     });
 
-    viewer.scene.screenSpaceCameraController.enableRotate = false; viewer.scene.screenSpaceCameraController.enableTranslate = false;
-    viewer.scene.screenSpaceCameraController.enableZoom = false; viewer.scene.screenSpaceCameraController.enableTilt = false; viewer.scene.screenSpaceCameraController.enableLook = false;
-
-    let isDragging = false; const gestureHandler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
-    gestureHandler.setInputAction(function () { isDragging = true; }, Cesium.ScreenSpaceEventType.LEFT_DOWN);
-    gestureHandler.setInputAction(function () { isDragging = false; }, Cesium.ScreenSpaceEventType.LEFT_UP);
-    window.addEventListener('mouseup', () => { isDragging = false; }); window.addEventListener('touchend', (e) => { if(e.touches.length === 0) isDragging = false; });
-
-    gestureHandler.setInputAction(function (movement) {
-        if (isDragging && appState.centerPosition) {
-            const deltaX = movement.endPosition.x - movement.startPosition.x, deltaY = movement.endPosition.y - movement.startPosition.y;
-            let h = Cesium.Math.toDegrees(viewer.camera.heading) - deltaX * 0.3, p = Math.max(-85, Math.min(0, Cesium.Math.toDegrees(viewer.camera.pitch) - deltaY * 0.3));
-            updateCamera((h % 360 + 360) % 360, p);
+    function stopAutoRotateForOrbit() {
+        if (!rotateInterval) return;
+        clearInterval(rotateInterval);
+        rotateInterval = null;
+        releaseCameraOwnership('autorotate');
+        const btn = document.getElementById('btn-auto-rotate');
+        if (btn) {
+            btn.innerText = '▶ 漫游';
+            btn.style.background = 'rgba(255,255,255,0.1)';
+            btn.style.borderColor = 'rgba(255,255,255,0.2)';
         }
-    }, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
+    }
 
-    viewer.scene.canvas.addEventListener('wheel', function(e) {
-        e.preventDefault(); if (!appState.centerPosition) return;
-        if (e.ctrlKey) {
-            const zoomAmount = e.deltaY * ((viewer.camera.positionCartographic.height || 1000) / 150);
-            if (zoomAmount > 0) viewer.camera.zoomOut(zoomAmount); else viewer.camera.zoomIn(-zoomAmount);
-            currentRange = Cesium.Cartesian3.distance(appState.centerPosition, viewer.camera.position);
-        } else {
-            const metersPerPixel = (viewer.camera.positionCartographic.height || 1000) / viewer.scene.canvas.clientHeight;
-            const rightAmt = -e.deltaX * metersPerPixel * 0.8, upAmt = e.deltaY * metersPerPixel * 0.8; 
-            viewer.camera.moveRight(rightAmt); viewer.camera.moveUp(upAmt);
-            const trans = Cesium.Cartesian3.add(Cesium.Cartesian3.multiplyByScalar(viewer.camera.right, rightAmt, new Cesium.Cartesian3()), Cesium.Cartesian3.multiplyByScalar(viewer.camera.up, upAmt, new Cesium.Cartesian3()), new Cesium.Cartesian3());
-            Cesium.Cartesian3.add(appState.centerPosition, trans, appState.centerPosition);
-            viewer.scene.globe.ellipsoid.scaleToGeodeticSurface(appState.centerPosition, appState.centerPosition);
+    let lastMousePosition = null;
+
+    function pickWorldAtScreen(screenXY) {
+        var ray = viewer.camera.getPickRay(screenXY);
+        return ray ? viewer.scene.globe.pick(ray, viewer.scene) : null;
+    }
+
+    function rangeToWorld(worldPos) {
+        var pos = viewer.camera.positionWC || viewer.camera.position;
+        return Cesium.Cartesian3.distance(pos, worldPos);
+    }
+
+    // Zoom at a screen-space anchor point, keeping that world position
+    // fixed on screen throughout the zoom operation.
+    function zoomAtScreenPoint(screenXY, factor, controllerName) {
+        if (!hasCameraOwnership(controllerName)) return;
+        var anchor = pickWorldAtScreen(screenXY);
+        if (!Cesium.defined(anchor)) {
+            viewer.camera.zoomIn(factor);
+            return;
         }
-    }, { passive: false });
+        var currentRange = rangeToWorld(anchor);
+        var newRange = Cesium.Math.clamp(currentRange * factor, cameraController.minimumZoomDistance, cameraController.maximumZoomDistance);
+        viewer.camera.lookAt(anchor, new Cesium.HeadingPitchRange(viewer.camera.heading, viewer.camera.pitch, newRange));
+        resetCameraTransformSafely();
+    }
+
+    // Two-finger swipe pitch transition: wheel velocity tracking.
+    var wheelBuffer = [];
+    var swipePitchAnimFrame = null;
+
+    function animatePitchTo(targetPitchRad, durationSec, controllerName) {
+        if (swipePitchAnimFrame !== null) cancelAnimationFrame(swipePitchAnimFrame);
+        var startPitch = viewer.camera.pitch;
+        var startTime = performance.now();
+        function step() {
+            if (!hasCameraOwnership(controllerName)) {
+                swipePitchAnimFrame = null;
+                return;
+            }
+            var elapsed = (performance.now() - startTime) / 1000;
+            var t = Math.min(1, elapsed / durationSec);
+            var eased = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+            var currentPitch = startPitch + (targetPitchRad - startPitch) * eased;
+            var focus = getCameraFocusPoint();
+            if (Cesium.defined(focus)) {
+                var rng = rangeToWorld(focus);
+                viewer.camera.lookAt(focus, new Cesium.HeadingPitchRange(viewer.camera.heading, currentPitch, rng));
+                resetCameraTransformSafely();
+            }
+            if (t >= 1) {
+                swipePitchAnimFrame = null;
+                releaseCameraOwnership(controllerName);
+                return;
+            }
+            swipePitchAnimFrame = requestAnimationFrame(step);
+        }
+        swipePitchAnimFrame = requestAnimationFrame(step);
+    }
+
+
+
+    // Pointer event tracking for multi-touch gestures.
+    var activePointers = {};
+    var twoFingerType = null;
+    var twoFingerStartMid = null;
+    var twoFingerStartDist = 0;
+    var twoFingerStartAngle = 0;
+    var twoFingerLastAngle = 0;
+    var twoFingerArc = 0;
+    var twoFingerZoomBaseRange = 0;
+    var twoFingerZoomAnchor = null;
+    var lastTwoFingerTap = 0;
+
+    function getTwoFingerMid() {
+        var keys = Object.keys(activePointers);
+        if (keys.length < 2) return null;
+        var p0 = activePointers[keys[0]], p1 = activePointers[keys[1]];
+        return { x: (p0.x + p1.x) / 2, y: (p0.y + p1.y) / 2 };
+    }
+
+    function getTwoFingerDist() {
+        var keys = Object.keys(activePointers);
+        if (keys.length < 2) return 0;
+        var p0 = activePointers[keys[0]], p1 = activePointers[keys[1]];
+        return Math.hypot(p1.x - p0.x, p1.y - p0.y);
+    }
+
+    function getTwoFingerAngle() {
+        var keys = Object.keys(activePointers);
+        if (keys.length < 2) return 0;
+        var p0 = activePointers[keys[0]], p1 = activePointers[keys[1]];
+        return Math.atan2(p1.y - p0.y, p1.x - p0.x);
+    }
+
+    // Custom zoom with mouse-anchored behavior.
+    // Replaces Cesium default WHEEL and PINCH zoom.
+
+    let gestureHandler = null;
+    let isOrbitingCamera = false;
+    let orbitStartPosition = null;
+    let orbitStartHeading = 0;
+    let orbitStartPitch = 0;
+    let orbitFocusPoint = null;
+    let orbitRange = 0;
+    let orbitReleaseFocusWhenSettled = false;
+    let currentHeading = 0;
+    let currentPitch = 0;
+    let targetHeading = 0;
+    let targetPitch = 0;
+    let orbitAnimationFrame = null;
+    const orbitSmoothing = 0.15;
+    const orbitMinDeltaThreshold = 0.5;
+    const orbitRotateSpeed = 0.004;
+    const orbitPitchSpeed = 0.003;
+    const orbitSettleThreshold = 0.0001;
+
+    // Single-finger pan with deadzone and inertia.
+    let isPanning = false;
+    let panStartPosition = null;
+    let panDeadzoneCrossed = false;
+    let panLastTime = 0;
+    let panVelocityX = 0;
+    let panVelocityY = 0;
+    let panInertiaFrame = null;
+    const PAN_DEADZONE = 5;
+    const PAN_INERTIA = 0.88;
+    const PAN_SPEED = 0.8;
+
+    function shortestHeadingDelta(target, current) {
+        return Cesium.Math.negativePiToPi(target - current);
+    }
+
+    function pickOrbitFocusPoint() {
+        const canvas = viewer.scene.canvas;
+        const screenCenter = new Cesium.Cartesian2(canvas.clientWidth / 2, canvas.clientHeight / 2);
+        const ray = viewer.camera.getPickRay(screenCenter);
+        return ray ? viewer.scene.globe.pick(ray, viewer.scene) : null;
+    }
+
+    function applyOrbitCamera() {
+        if (!hasCameraOwnership('orbit')) return;
+        if (Cesium.defined(orbitFocusPoint) && orbitRange > 0) {
+            // Orbit camera around a fixed spatial anchor point.
+            // Prevent free-floating camera drift.
+            viewer.camera.lookAt(orbitFocusPoint, new Cesium.HeadingPitchRange(currentHeading, currentPitch, orbitRange));
+            resetCameraTransformSafely();
+            return;
+        }
+        viewer.camera.setView({
+            orientation: {
+                heading: currentHeading,
+                pitch: currentPitch,
+                roll: viewer.camera.roll
+            }
+        });
+    }
+
+    // Orbit Camera smoothing:
+    // current orientation gradually approaches target orientation
+    // to simulate macOS-style liquid camera motion.
+    function orbitAnimationLoop() {
+        if (!hasCameraOwnership('orbit')) {
+            orbitAnimationFrame = null;
+            orbitFocusPoint = null;
+            orbitRange = 0;
+            orbitReleaseFocusWhenSettled = false;
+            return;
+        }
+        const headingDelta = shortestHeadingDelta(targetHeading, currentHeading);
+        const pitchDelta = targetPitch - currentPitch;
+        if (Math.abs(headingDelta) < orbitSettleThreshold && Math.abs(pitchDelta) < orbitSettleThreshold) {
+            currentHeading = targetHeading;
+            currentPitch = targetPitch;
+            applyOrbitCamera();
+            orbitAnimationFrame = null;
+            if (orbitReleaseFocusWhenSettled) {
+                orbitFocusPoint = null;
+                orbitRange = 0;
+                orbitReleaseFocusWhenSettled = false;
+            }
+            releaseCameraOwnership('orbit');
+            return;
+        }
+        currentHeading = Cesium.Math.zeroToTwoPi(currentHeading + headingDelta * orbitSmoothing);
+        currentPitch += pitchDelta * orbitSmoothing;
+        applyOrbitCamera();
+        orbitAnimationFrame = requestAnimationFrame(orbitAnimationLoop);
+    }
+
+    // requestAnimationFrame-based Orbit loop.
+    // Avoid updating camera directly inside mousemove.
+    function scheduleOrbitAnimation() {
+        if (orbitAnimationFrame !== null) return;
+        orbitAnimationFrame = requestAnimationFrame(orbitAnimationLoop);
+    }
+
+    // Pan camera by screen-pixel deltas with distance-based scaling.
+    function applyPanTranslation(deltaX, deltaY) {
+        var cam = viewer.camera;
+        var canvas = viewer.scene.canvas;
+        var focus = getCameraFocusPoint();
+        var range = Cesium.defined(focus) ? rangeToWorld(focus) : 10000000;
+        var scale = range / canvas.clientHeight * PAN_SPEED;
+        cam.moveRight(-deltaX * scale);
+        cam.moveUp(deltaY * scale);
+    }
+
+    // Pan inertia loop: RAF-driven decay after mouse release.
+    function startPanInertia() {
+        if (panInertiaFrame !== null) return;
+        function inertiaLoop() {
+            panVelocityX *= PAN_INERTIA;
+            panVelocityY *= PAN_INERTIA;
+            if (Math.abs(panVelocityX) < 0.05 && Math.abs(panVelocityY) < 0.05) {
+                panInertiaFrame = null;
+                releaseCameraOwnership('pan');
+                return;
+            }
+            applyPanTranslation(panVelocityX * 16, panVelocityY * 16);
+            panInertiaFrame = requestAnimationFrame(inertiaLoop);
+        }
+        panInertiaFrame = requestAnimationFrame(inertiaLoop);
+    }
+
+    var pinchPrevDist = 0;
+
+    let isSliderDragging = false;
+    let dragTarget = null;
+    let dragRange = 0;
+    let dragHeading = 0;
+
+    function beginMapViewSliderDrag() {
+        if (!claimCameraOwnership('slider')) return;
+        stopAutoRotateForOrbit();
+        dragTarget = getCameraFocusPoint();
+        if (!Cesium.defined(dragTarget)) { releaseCameraOwnership('slider'); return; }
+        dragHeading = viewer.camera.heading;
+        dragRange = Cesium.Cartesian3.distance(viewer.camera.position, dragTarget);
+        isSliderDragging = true;
+    }
+
+    function endMapViewSliderDrag() {
+        resetCameraTransformSafely();
+        isSliderDragging = false;
+        dragTarget = null;
+        releaseCameraOwnership('slider');
+    }
+
+    const mapViewSlider = document.getElementById('map-view-slider');
+    if (mapViewSlider) {
+        mapViewSlider.addEventListener('mousedown', beginMapViewSliderDrag);
+        mapViewSlider.addEventListener('touchstart', beginMapViewSliderDrag, { passive: true });
+        mapViewSlider.addEventListener('input', function () {
+            if (!hasCameraOwnership('slider')) return;
+            if (!Cesium.defined(dragTarget)) return;
+            const targetPitchRadians = Cesium.Math.toRadians(-parseInt(this.value));
+            viewer.camera.lookAt(dragTarget, new Cesium.HeadingPitchRange(dragHeading, targetPitchRadians, dragRange));
+        });
+        window.addEventListener('mouseup', endMapViewSliderDrag);
+        window.addEventListener('touchend', endMapViewSliderDrag);
+        window.addEventListener('touchcancel', endMapViewSliderDrag);
+    }
+    document.getElementById('map-compass-btn')?.addEventListener('click', resetMapNorth);
 
     // ===== 新手引导逻辑 =====
     const Onboarding = {
@@ -6936,24 +7792,9 @@ function openConfigModalFromWarning() {
 }
     // ========================================
 
-    // 原有代码继续...
-    function initCesium() {
-        Cesium.Ion.defaultAccessToken = 'YOUR_CESIUM_TOKEN_HERE';
-        const viewer = new Cesium.Viewer('cesiumContainer', {
-            terrainProvider: Cesium.createWorldTerrain(),
-            imageryProvider: new Cesium.UrlTemplateImageryProvider({
-                url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-                credit: 'Esri'
-            }),
-            animation: false, timeline: false, fullscreenButton: false, geocoder: false,
-            homeButton: false, infoBox: false, selectionIndicator: false, navigationHelpButton: false,
-            baseLayerPicker: false, sceneModePicker: false
-        });
-        window.viewer = viewer;
-        // 等待加载...
-    }
-
-    // 文件导入：桌面壳统一走 Python 后端解析与入库，前端只负责展示
+    // ========================================
+    // 文件导入：桌面壳统一走 Python 后端解析与入库
+    // ========================================
     async function triggerTrackImport() {
         if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.import_track === 'function') {
             const loader = document.getElementById('loading');
@@ -7197,32 +8038,6 @@ function openConfigModalFromWarning() {
         } catch (err) { showToast("⚠️ 解析失败: " + err.message); } 
         finally { if (loader) { loader.style.opacity = '0'; setTimeout(() => loader.style.display = 'none', 800); } e.target.value = ''; }
     });
-
-    // ==========================================
-    // 地图与剖面图交互编辑打卡点
-    // ==========================================
-    gestureHandler.setInputAction(function (movement) {
-        const pickedObject = viewer.scene.pick(movement.position);
-        if (Cesium.defined(pickedObject) && pickedObject.id) {
-            const entityId = typeof pickedObject.id === 'string' ? pickedObject.id : pickedObject.id.id;
-            if (entityId && entityId.startsWith('cp_')) { openEditModal(entityId, appState.placemarks.find(p => p.id === entityId)?.name); return; }
-            if (entityId && entityId.startsWith('peak_')) return; 
-        }
-        if (appState.points.length > 0) {
-            let earthPosition;
-            try { earthPosition = viewer.scene.pickPosition(movement.position); } catch(e) {}
-            if (!Cesium.defined(earthPosition)) earthPosition = viewer.camera.pickEllipsoid(movement.position, viewer.scene.globe.ellipsoid);
-            if (Cesium.defined(earthPosition)) {
-                const cart = Cesium.Cartographic.fromCartesian(earthPosition), lon = Cesium.Math.toDegrees(cart.longitude), lat = Cesium.Math.toDegrees(cart.latitude);
-                let nearestAlt = cart.height || 0, minDist = Infinity, nearestPoint = null;
-                appState.points.forEach(p => {
-                    const dist = Math.pow(p.lon - lon, 2) + Math.pow(p.lat - lat, 2);
-                    if (dist < minDist) { minDist = dist; nearestAlt = p.alt; nearestPoint = p; }
-                });
-                if (minDist < 0.0005 && nearestPoint) openAddModal(nearestPoint.lon, nearestPoint.lat, nearestAlt);
-            }
-        }
-    }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
 
     document.getElementById('profile-canvas').addEventListener('click', function(e) {
         if (!appState.points || appState.points.length === 0) return;

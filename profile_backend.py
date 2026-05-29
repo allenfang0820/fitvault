@@ -482,6 +482,43 @@ def _init_schema(conn: sqlite3.Connection) -> None:
         )
     """)
 
+    activity_columns = (
+        "file_name",    "distance",    "duration",    "track_json",
+        "advanced_metrics",
+        "file_path",    "start_time",  "title",       "title_source",
+        "start_time_utc","start_lat",  "start_lon",   "region",
+        "region_city",  "region_country","region_display",
+        "region_status","region_error","region_updated_at","region_attempt_count",
+        "weather_json", "file_mtime",  "file_size",   "deleted_at",
+        "avg_pace",     "calories",    "normalized_power","swolf",
+        "device_name",  "source_type", "is_mock",     "shadow_diff_json",
+        "hr_curve",     "speed_curve",
+        "gain_m",       "max_alt_m",   "max_hr",      "avg_cadence",
+        "hr_decoupling","tss",         "points_json", "updated_at",
+        "sport_type",   "sub_sport_type",
+    )
+    activity_dtypes = (
+        "TEXT",   "REAL", "INTEGER","TEXT",
+        "TEXT",
+        "TEXT",   "TEXT", "TEXT",   "TEXT",
+        "TEXT",   "REAL", "REAL",   "TEXT",
+        "TEXT",   "TEXT", "TEXT",
+        "TEXT DEFAULT 'pending'","TEXT","TEXT","INTEGER DEFAULT 0",
+        "TEXT",   "REAL", "INTEGER","TEXT",
+        "REAL",   "INTEGER","REAL","REAL",
+        "TEXT",   "TEXT", "INTEGER","TEXT",
+        "TEXT",   "TEXT",
+        "REAL",   "REAL",  "INTEGER","REAL",
+        "REAL",   "REAL",  "TEXT",   "TEXT DEFAULT (datetime('now'))",
+        "TEXT",   "TEXT DEFAULT 'unknown'",
+    )
+    assert len(activity_columns) == len(activity_dtypes), "activity_columns/dtypes mismatch"
+    for col, dtype in zip(activity_columns, activity_dtypes):
+        try:
+            conn.execute(f"ALTER TABLE activities ADD COLUMN {col} {dtype}")
+        except Exception:
+            pass
+
     for col, dtype in [
         ("sub_sport_type", "TEXT"),
         ("file_path", "TEXT"),

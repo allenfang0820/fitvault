@@ -4,6 +4,7 @@ import threading
 import time
 import unittest
 import json
+import zipfile
 from pathlib import Path
 from unittest import mock
 
@@ -23,11 +24,17 @@ class TestFitSync(unittest.TestCase):
         self.original_main_schema = main._ACTIVITY_SYNC_SCHEMA_READY_FOR
         self.original_busy_timeout_ms = profile_backend.SQLITE_BUSY_TIMEOUT_MS
         self.original_connect_timeout_sec = profile_backend.SQLITE_CONNECT_TIMEOUT_SEC
+        self.original_tracks_dir = main.TRACKS_DIR
+        self.original_imports_dir = main.IMPORTS_DIR
 
         profile_backend.DB_PATH = self.temp_dir / "user_profile.db"
         profile_backend.DB_PATH.parent.mkdir(parents=True, exist_ok=True)
         profile_backend._SCHEMA_READY_FOR = None
         main._ACTIVITY_SYNC_SCHEMA_READY_FOR = None
+        main.TRACKS_DIR = str(self.temp_dir / "tracks")
+        main.IMPORTS_DIR = str(self.temp_dir / "imports")
+        Path(main.TRACKS_DIR).mkdir(parents=True, exist_ok=True)
+        Path(main.IMPORTS_DIR).mkdir(parents=True, exist_ok=True)
         self.api = main.Api()
 
     def tearDown(self):
@@ -36,6 +43,8 @@ class TestFitSync(unittest.TestCase):
         main._ACTIVITY_SYNC_SCHEMA_READY_FOR = self.original_main_schema
         profile_backend.SQLITE_BUSY_TIMEOUT_MS = self.original_busy_timeout_ms
         profile_backend.SQLITE_CONNECT_TIMEOUT_SEC = self.original_connect_timeout_sec
+        main.TRACKS_DIR = self.original_tracks_dir
+        main.IMPORTS_DIR = self.original_imports_dir
         self.temp_dir_obj.cleanup()
 
     def _workspace_config(self) -> dict:
@@ -252,6 +261,118 @@ class TestFitSync(unittest.TestCase):
         self.assertEqual(activity["region_display"], "室内运动")
         self.assertEqual(activity["region"], "室内运动（无GPS）")
 
+    def test_activity_inserts_with_pending_region_even_when_nominatim_down(self):
+        main.ensure_activity_sync_schema()
+        fit_path = self.temp_dir / "nom_fail.fit"
+        fit_path.write_bytes(b"fit")
+        fake_core = {
+            "basic_info": {
+                "title": "越野跑",
+                "title_source": "sport_name",
+                "sport": "running",
+                "sub_sport": "trail",
+                "start_time": "2026-05-19T08:00:00+08:00",
+                "start_time_utc": "2026-05-19T00:00:00Z",
+                "total_distance_km": 15.0,
+                "total_timer_time": 5400,
+                "total_calories": 900,
+                "total_ascent": 300.0,
+                "max_altitude": 800.0,
+                "avg_hr": 160,
+                "max_hr": 182,
+            },
+            "track_data": [
+                {"lat": 30.57, "lon": 104.04, "alt": 500.0, "time": "2026-05-19T00:00:00Z", "hr": 150},
+                {"lat": 30.58, "lon": 104.05, "alt": 520.0, "time": "2026-05-19T00:30:00Z", "hr": 165},
+            ],
+        }
+        with mock.patch.object(main.FITCoreEngine, "parse_fit_file", return_value=fake_core), \
+             mock.patch.object(profile_backend, "resolve_activity_region", return_value=""):
+            activity = main._parse_fit_activity_for_sync(fit_path)
+
+        result = main._persist_sync_activity(activity)
+        self.assertIn(result["op"], {"inserted", "updated"})
+
+        conn = profile_backend._conn()
+        try:
+            row = conn.execute(
+                "SELECT region, region_status, region_error, region_attempt_count FROM activities WHERE id = ?",
+                (result["id"],),
+            ).fetchone()
+        finally:
+            conn.close()
+
+        self.assertEqual(row["region"], "")
+        self.assertEqual(row["region_status"], "pending")
+        self.assertIsNone(row["region_error"])
+        self.assertEqual(row["region_attempt_count"], 0)
+
+    def test_region_enrichment_background_fills_region_after_cache_populated(self):
+        main.ensure_activity_sync_schema()
+        activity = self._activity("cache_fill.fit")
+        activity["region"] = ""
+        activity["region_status"] = "pending"
+        activity["start_lat"] = 30.67
+        activity["start_lon"] = 104.06
+        result = main._persist_sync_activity(activity)
+
+        display = "成都市，中国"
+        conn = profile_backend._conn()
+        try:
+            conn.execute(
+                "INSERT INTO geocode_cache (cache_key, lat_round, lon_round, city, country, display, provider, status, created_at, updated_at, last_used_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, 'nominatim', 'success', datetime('now'), datetime('now'), datetime('now'))",
+                ("30.67,104.06", 30.67, 104.06, "成都市", "中国", display),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        enrichment = profile_backend.run_region_enrichment_once(limit=5)
+        self.assertTrue(enrichment["ok"])
+        self.assertEqual(enrichment["success"], 1)
+
+        conn = profile_backend._conn()
+        try:
+            row = conn.execute(
+                "SELECT region, region_status, region_error FROM activities WHERE id = ?",
+                (result["id"],),
+            ).fetchone()
+        finally:
+            conn.close()
+
+        self.assertEqual(row["region"], display)
+        self.assertEqual(row["region_status"], "success")
+        self.assertIsNone(row["region_error"])
+
+    def test_region_enrichment_marks_failure_and_increments_attempt_count(self):
+        main.ensure_activity_sync_schema()
+        activity = self._activity("nom_retry.fit")
+        activity["region"] = ""
+        activity["region_status"] = "pending"
+        activity["start_lat"] = 31.23
+        activity["start_lon"] = 121.47
+        result = main._persist_sync_activity(activity)
+
+        with mock.patch.object(profile_backend, "reverse_geocode", side_effect=ConnectionError("Nominatim 不可达")):
+            enrichment = profile_backend.run_region_enrichment_once(limit=5)
+
+        self.assertTrue(enrichment["ok"])
+        self.assertEqual(enrichment["failed"], 1)
+
+        conn = profile_backend._conn()
+        try:
+            row = conn.execute(
+                "SELECT region, region_status, region_error, region_attempt_count FROM activities WHERE id = ?",
+                (result["id"],),
+            ).fetchone()
+        finally:
+            conn.close()
+
+        self.assertEqual(row["region_status"], "failed")
+        self.assertIn("Nominatim", str(row["region_error"] or ""))
+        self.assertEqual(row["region_attempt_count"], 1)
+
     def test_activity_list_snapshot_returns_region_field(self):
         main.ensure_activity_sync_schema()
         activity_res = main._persist_sync_activity(self._activity("with_region.fit"))
@@ -402,6 +523,69 @@ class TestFitSync(unittest.TestCase):
             main._parse_fit_activity_for_sync(fit_path)
 
         self.assertEqual(mocked_weather.call_args.args[2], "2024-03-01T23:30:00+08:00")
+
+    def test_batch_import_tracks_imports_normal_zip_fit_only(self):
+        zip_path = self.temp_dir / "normal.zip"
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr("normal.fit", b"fit")
+
+        with mock.patch.object(main, "_sync_single_fit_file", return_value={"ok": True}):
+            res = self.api.batch_import_tracks([str(zip_path)])
+
+        self.assertTrue(res["ok"], res)
+        self.assertEqual(len(res["imported"]), 1)
+        self.assertTrue(Path(res["imported"][0]).is_file())
+        self.assertEqual(Path(res["imported"][0]).parent, Path(main.TRACKS_DIR))
+
+    def test_safe_extract_zip_rejects_path_traversal(self):
+        zip_path = self.temp_dir / "traversal.zip"
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr("../evil.fit", b"fit")
+
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            report = self.api.safe_extract_zip(zf, main.IMPORTS_DIR)
+
+        self.assertFalse((self.temp_dir / "evil.fit").exists())
+        self.assertEqual(report["extracted"], [])
+        self.assertTrue(report["errors"])
+
+    def test_safe_extract_zip_rejects_too_many_members(self):
+        zip_path = self.temp_dir / "many.zip"
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr("a.fit", b"fit")
+            zf.writestr("b.fit", b"fit")
+
+        with mock.patch.object(main, "ZIP_MAX_MEMBERS", 1):
+            with zipfile.ZipFile(zip_path, "r") as zf:
+                report = self.api.safe_extract_zip(zf, main.IMPORTS_DIR)
+
+        self.assertEqual(report["extracted"], [])
+        self.assertEqual(report["errors"][0]["error"], "ZIP 成员数量超过上限")
+
+    def test_safe_extract_zip_rejects_oversized_member(self):
+        zip_path = self.temp_dir / "large.zip"
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr("large.fit", b"abcdef")
+
+        with mock.patch.object(main, "ZIP_MAX_MEMBER_UNCOMPRESSED_BYTES", 3):
+            with zipfile.ZipFile(zip_path, "r") as zf:
+                report = self.api.safe_extract_zip(zf, main.IMPORTS_DIR)
+
+        self.assertEqual(report["extracted"], [])
+        self.assertEqual(report["errors"][0]["error"], "ZIP 成员解压大小超过上限")
+
+    def test_safe_extract_zip_skips_non_fit_members(self):
+        zip_path = self.temp_dir / "mixed.zip"
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr("note.txt", b"text")
+            zf.writestr("ok.fit", b"fit")
+
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            report = self.api.safe_extract_zip(zf, main.IMPORTS_DIR)
+
+        self.assertEqual(len(report["extracted"]), 1)
+        self.assertEqual(report["skipped"][0]["reason"], "unsupported_extension")
+        self.assertFalse((Path(main.IMPORTS_DIR) / "note.txt").exists())
 
     def test_track_backend_parse_fit_file_prefers_local_start_time_for_weather(self):
         fake_core = {
@@ -605,6 +789,114 @@ class TestFitSync(unittest.TestCase):
         _time.sleep(0.05)
         f.write_bytes(b"new_content_that_changes_file_size_and_mtime")
         self.assertFalse(main._is_file_unchanged(f, index[resolved]))
+
+    def test_migration_creates_all_activity_columns_on_old_schema(self):
+        old_db = self.temp_dir / "old_user_profile.db"
+        old_conn = sqlite3.connect(str(old_db))
+        old_conn.execute("""
+            CREATE TABLE activities (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                filename TEXT,
+                sport_type TEXT,
+                dist_km REAL,
+                duration_sec INTEGER,
+                avg_hr INTEGER,
+                start_time TEXT
+            )
+        """)
+        old_conn.execute("""
+            CREATE TABLE user_profile (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT
+            )
+        """)
+        old_conn.commit()
+        old_conn.close()
+
+        with mock.patch.object(profile_backend, "DB_PATH", old_db):
+            profile_backend._SCHEMA_READY_FOR = None
+            main._ACTIVITY_SYNC_SCHEMA_READY_FOR = None
+            main.ensure_activity_sync_schema()
+
+        conn = sqlite3.connect(str(old_db))
+        conn.row_factory = sqlite3.Row
+        try:
+            existing = set()
+            for row in conn.execute("PRAGMA table_info(activities)").fetchall():
+                existing.add(str(row["name"]))
+
+            expected = {
+                "id", "filename", "sport_type", "dist_km", "duration_sec", "avg_hr", "start_time",
+                "file_name", "distance", "duration", "track_json",
+                "advanced_metrics",
+                "title", "title_source",
+                "sub_sport_type", "file_path",
+                "start_time_utc", "start_lat", "start_lon",
+                "region", "region_city", "region_country", "region_display",
+                "region_status", "region_error", "region_updated_at", "region_attempt_count",
+                "weather_json", "file_mtime", "file_size", "deleted_at",
+                "avg_pace", "calories", "normalized_power", "swolf",
+                "device_name", "source_type", "is_mock", "shadow_diff_json",
+                "hr_curve", "speed_curve",
+                "gain_m", "max_alt_m", "max_hr", "avg_cadence",
+                "hr_decoupling", "tss", "points_json", "updated_at",
+            }
+            missing = expected - existing
+            self.assertEqual(missing, set(), f"缺少列: {sorted(missing)}")
+        finally:
+            conn.close()
+
+    def test_migration_is_idempotent(self):
+        db = self.temp_dir / "idem_user_profile.db"
+        conn = sqlite3.connect(str(db))
+        conn.execute("""
+            CREATE TABLE activities (id INTEGER PRIMARY KEY AUTOINCREMENT, filename TEXT, sport_type TEXT)
+        """)
+        conn.execute("CREATE TABLE user_profile (id INTEGER PRIMARY KEY AUTOINCREMENT)")
+        conn.commit()
+        conn.close()
+
+        with mock.patch.object(profile_backend, "DB_PATH", db):
+            profile_backend._SCHEMA_READY_FOR = None
+            main._ACTIVITY_SYNC_SCHEMA_READY_FOR = None
+
+            for _ in range(3):
+                main.ensure_activity_sync_schema()
+
+        conn = sqlite3.connect(str(db))
+        conn.row_factory = sqlite3.Row
+        try:
+            col_count = len(conn.execute("PRAGMA table_info(activities)").fetchall())
+            self.assertGreater(col_count, 20)
+            conn.execute("SELECT file_name FROM activities")
+            conn.execute("SELECT shadow_diff_json FROM activities")
+        finally:
+            conn.close()
+
+    def test_user_profile_snapshots_table_exists(self):
+        db = self.temp_dir / "snap_profile.db"
+        conn = sqlite3.connect(str(db))
+        conn.execute("CREATE TABLE user_profile (id INTEGER PRIMARY KEY AUTOINCREMENT)")
+        conn.commit()
+        conn.close()
+
+        with mock.patch.object(profile_backend, "DB_PATH", db):
+            profile_backend._SCHEMA_READY_FOR = None
+            main._ACTIVITY_SYNC_SCHEMA_READY_FOR = None
+            main.ensure_activity_sync_schema()
+
+        conn = sqlite3.connect(str(db))
+        conn.row_factory = sqlite3.Row
+        try:
+            rows = conn.execute("PRAGMA table_info(user_profile_snapshots)").fetchall()
+            self.assertGreater(len(rows), 0)
+            snapshot_cols = {str(r["name"]) for r in rows}
+            required = {"id", "source_platform", "trigger_type", "status",
+                        "synced_at", "sync_date", "raw_payload_json", "normalized_json"}
+            self.assertTrue(required.issubset(snapshot_cols),
+                            f"user_profile_snapshots 缺少列: {required - snapshot_cols}")
+        finally:
+            conn.close()
 
 
 if __name__ == "__main__":

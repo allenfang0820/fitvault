@@ -103,6 +103,11 @@ _ACTIVITY_SYNC_SCHEMA_READY_FOR: str | None = None
 _APP_SHUTTING_DOWN = threading.Event()
 FIT_WATCH_STABLE_SEC = 2.0
 FIT_WATCH_POLL_INTERVAL_SEC = 1.5
+ZIP_MAX_MEMBERS = 500
+ZIP_MAX_MEMBER_UNCOMPRESSED_BYTES = 100 * 1024 * 1024
+ZIP_MAX_TOTAL_UNCOMPRESSED_BYTES = 1024 * 1024 * 1024
+ZIP_COPY_CHUNK_BYTES = 1024 * 1024
+ZIP_ALLOWED_SUFFIXES = frozenset({".fit"})
 
 
 def app_base_dir() -> Path:
@@ -430,6 +435,15 @@ def _activity_schema_cache_key() -> str:
     return str(Path(profile_backend.DB_PATH).expanduser().resolve())
 
 
+def _safe_data_migrate(conn, sql: str) -> None:
+    try:
+        conn.execute(sql)
+    except sqlite3.OperationalError as e:
+        if "no such column" in str(e).lower():
+            return
+        raise
+
+
 def ensure_activity_sync_schema() -> None:
     global _ACTIVITY_SYNC_SCHEMA_READY_FOR
     cache_key = _activity_schema_cache_key()
@@ -442,40 +456,6 @@ def ensure_activity_sync_schema() -> None:
 
         conn = profile_backend._conn()
         try:
-            columns = _sqlite_table_columns(conn, "activities")
-            required_columns = {
-                "file_name": "TEXT",
-                "title": "TEXT",
-                "title_source": "TEXT",
-                "distance": "REAL",
-                "duration": "INTEGER",
-                "avg_pace": "REAL",
-                "calories": "INTEGER",
-                "track_json": "TEXT",
-                "start_time_utc": "TEXT",
-                "start_lat": "REAL",
-                "start_lon": "REAL",
-                "region": "TEXT",
-                "region_city": "TEXT",
-                "region_country": "TEXT",
-                "region_display": "TEXT",
-                "region_status": "TEXT DEFAULT 'pending'",
-                "region_error": "TEXT",
-                "region_updated_at": "TEXT",
-                "region_attempt_count": "INTEGER DEFAULT 0",
-                "weather_json": "TEXT",
-                "file_mtime": "REAL",
-                "file_size": "INTEGER",
-                "deleted_at": "TEXT",
-                "advanced_metrics": "TEXT",
-                "normalized_power": "REAL",
-                "swolf": "INTEGER",
-                "device_name": "TEXT",
-                "shadow_diff_json": "TEXT",
-            }
-            for col, dtype in required_columns.items():
-                if col not in columns:
-                    conn.execute(f"ALTER TABLE activities ADD COLUMN {col} {dtype}")
 
             conn.execute(
                 """
@@ -491,21 +471,24 @@ def ensure_activity_sync_schema() -> None:
                 WHERE filename IS NULL OR filename = ''
                 """
             )
-            conn.execute(
+            _safe_data_migrate(
+                conn,
                 """
                 UPDATE activities
                 SET distance = COALESCE(distance, dist_km)
                 WHERE distance IS NULL
                 """
             )
-            conn.execute(
+            _safe_data_migrate(
+                conn,
                 """
                 UPDATE activities
                 SET duration = COALESCE(duration, duration_sec)
                 WHERE duration IS NULL
                 """
             )
-            conn.execute(
+            _safe_data_migrate(
+                conn,
                 """
                 UPDATE activities
                 SET track_json = COALESCE(NULLIF(track_json, ''), points_json)
@@ -526,14 +509,16 @@ def ensure_activity_sync_schema() -> None:
                 WHERE title_source IS NULL OR title_source = ''
                 """
             )
-            conn.execute(
+            _safe_data_migrate(
+                conn,
                 """
                 UPDATE activities
                 SET start_time_utc = COALESCE(NULLIF(start_time_utc, ''), CASE WHEN start_time LIKE '%Z' THEN start_time ELSE NULL END)
                 WHERE start_time_utc IS NULL OR start_time_utc = ''
                 """
             )
-            conn.execute(
+            _safe_data_migrate(
+                conn,
                 """
                 UPDATE activities
                 SET avg_pace = ROUND(COALESCE(duration, duration_sec) / COALESCE(distance, dist_km), 2)
@@ -542,7 +527,8 @@ def ensure_activity_sync_schema() -> None:
                   AND COALESCE(distance, dist_km, 0) > 0
                 """
             )
-            conn.execute(
+            _safe_data_migrate(
+                conn,
                 """
                 UPDATE activities
                 SET region_status = CASE
@@ -3333,32 +3319,65 @@ class Api:
                 API_CODE_DB,
                 "删除活动失败",
                 {
-                "audit_id": audit_id,
-                "files_deleted": file_deleted,
-                "file_errors": file_errors,
-                "skipped_unsafe_paths": skipped_unsafe_paths,
+                    "audit_id": audit_id,
+                    "files_deleted": file_deleted,
+                    "file_errors": file_errors,
+                    "skipped_unsafe_paths": skipped_unsafe_paths,
                 },
             )
         finally:
             conn.close()
 
-    def safe_extract_zip(zf, target_dir, password=None):
-        for member in zf.infolist():
+    def safe_extract_zip(self, zf, target_dir, password=None):
+        target_root = Path(target_dir).expanduser().resolve()
+        members = zf.infolist()
+        report = {"extracted": [], "skipped": [], "errors": [], "total_uncompressed": 0}
+        if len(members) > ZIP_MAX_MEMBERS:
+            report["errors"].append({"error": "ZIP 成员数量超过上限", "code": API_CODE_VALIDATION, "limit": ZIP_MAX_MEMBERS, "actual": len(members)})
+            return report
+        for member in members:
             entry_name = member.filename
-            resolved = os.path.realpath(os.path.join(target_dir, entry_name))
-            if not resolved.startswith(os.path.realpath(target_dir) + os.sep):
+            resolved = Path(target_root / entry_name).resolve()
+            if not _is_path_under_dir(resolved, target_root):
                 logging.getLogger("track_import").warning(f"拒绝路径穿越: {entry_name}")
+                report["errors"].append({"file": entry_name, "error": "拒绝路径穿越", "code": API_CODE_VALIDATION})
                 continue
             if member.is_dir():
-                os.makedirs(resolved, exist_ok=True)
+                resolved.mkdir(parents=True, exist_ok=True)
                 continue
-            os.makedirs(os.path.dirname(resolved), exist_ok=True)
-            with zf.open(member) as src, open(resolved, "wb") as dst:
-                dst.write(src.read())
-            os.chmod(resolved, member.external_attr >> 16 if member.external_attr else 0o644)
+            if Path(entry_name).suffix.lower() not in ZIP_ALLOWED_SUFFIXES:
+                report["skipped"].append({"file": entry_name, "reason": "unsupported_extension"})
+                continue
+            if member.file_size > ZIP_MAX_MEMBER_UNCOMPRESSED_BYTES:
+                report["errors"].append({"file": entry_name, "error": "ZIP 成员解压大小超过上限", "code": API_CODE_VALIDATION, "limit": ZIP_MAX_MEMBER_UNCOMPRESSED_BYTES, "actual": member.file_size})
+                continue
+            if int(report["total_uncompressed"]) + member.file_size > ZIP_MAX_TOTAL_UNCOMPRESSED_BYTES:
+                report["errors"].append({"file": entry_name, "error": "ZIP 总解压大小超过上限", "code": API_CODE_VALIDATION, "limit": ZIP_MAX_TOTAL_UNCOMPRESSED_BYTES})
+                break
+            resolved.parent.mkdir(parents=True, exist_ok=True)
+            pwd = password.encode("utf-8") if isinstance(password, str) else password
+            written = 0
+            with zf.open(member, pwd=pwd) as src, open(resolved, "wb") as dst:
+                while True:
+                    chunk = src.read(ZIP_COPY_CHUNK_BYTES)
+                    if not chunk:
+                        break
+                    written += len(chunk)
+                    if written > ZIP_MAX_MEMBER_UNCOMPRESSED_BYTES:
+                        dst.close()
+                        resolved.unlink(missing_ok=True)
+                        report["errors"].append({"file": entry_name, "error": "ZIP 成员流式读取超过上限", "code": API_CODE_VALIDATION, "limit": ZIP_MAX_MEMBER_UNCOMPRESSED_BYTES})
+                        break
+                    dst.write(chunk)
+            if written > ZIP_MAX_MEMBER_UNCOMPRESSED_BYTES:
+                continue
+            os.chmod(str(resolved), member.external_attr >> 16 if member.external_attr else 0o644)
+            report["total_uncompressed"] = int(report["total_uncompressed"]) + written
+            report["extracted"].append(str(resolved))
+        return report
 
 
-    def unique_fit_path(target_dir, name):
+    def unique_fit_path(self, target_dir, name):
         safe_name = os.path.basename(name)
         if not safe_name:
             safe_name = "untitled.fit"
@@ -3395,7 +3414,7 @@ class Api:
                         continue
 
                     if src.suffix.lower() == ".fit":
-                        dst = Path(unique_fit_path(TRACKS_DIR, src.name))
+                        dst = Path(self.unique_fit_path(TRACKS_DIR, src.name))
                         shutil.copy2(str(src), str(dst))
                         # 手动调用单入口同步解析
                         res = _sync_single_fit_file(dst)
@@ -3404,11 +3423,18 @@ class Api:
 
                     elif src.suffix.lower() == ".zip":
                         with zipfile.ZipFile(str(src), "r") as zf:
-                            safe_extract_zip(zf, IMPORTS_DIR)
-                        for fit in sorted(Path(IMPORTS_DIR).rglob("*.fit")):
-                            dst = Path(unique_fit_path(TRACKS_DIR, fit.name))
+                            extract_report = self.safe_extract_zip(zf, IMPORTS_DIR)
+                        for err in extract_report.get("errors") or []:
+                            errors.append({"file": fp, **err})
+                        for skipped in extract_report.get("skipped") or []:
+                            errors.append({"file": fp, **skipped})
+                        for fit_path in extract_report.get("extracted") or []:
+                            fit = Path(fit_path).expanduser().resolve()
+                            if fit.suffix.lower() not in ZIP_ALLOWED_SUFFIXES or not _is_path_under_dir(fit, Path(IMPORTS_DIR).expanduser().resolve()):
+                                errors.append({"file": str(fit), "error": "ZIP 解压结果不在受控导入目录或不是 FIT 文件", "code": API_CODE_VALIDATION})
+                                continue
+                            dst = Path(self.unique_fit_path(TRACKS_DIR, fit.name))
                             shutil.move(str(fit), str(dst))
-                            # 手动调用单入口同步解析
                             res = _sync_single_fit_file(dst)
                             if res.get("ok"):
                                 imported.append(str(dst))
