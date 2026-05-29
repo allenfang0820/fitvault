@@ -3,6 +3,7 @@ import tempfile
 import threading
 import time
 import unittest
+import json
 from pathlib import Path
 from unittest import mock
 
@@ -269,6 +270,45 @@ class TestFitSync(unittest.TestCase):
         self.assertIn("display_metrics", detail["record"]["detail"])
         self.assertIn("layout", detail["record"]["detail"])
         self.assertIn("capabilities", detail["record"]["detail"])
+
+    def test_shadow_diff_json_persists_updates_and_returns(self):
+        main.ensure_activity_sync_schema()
+        shadow_diff = {
+            "pace": {"legacy": 360, "resolved": 358, "match": False},
+            "_meta": {"generated_by": "MetricsResolver Shadow Layer", "trusted": False},
+        }
+        activity = self._activity("shadow.fit")
+        activity["shadow_diff_json"] = json.dumps(shadow_diff, ensure_ascii=False)
+        activity_res = main._persist_sync_activity(activity)
+
+        conn = profile_backend._conn()
+        try:
+            columns = {row[1] for row in conn.execute("PRAGMA table_info(activities)").fetchall()}
+            row = conn.execute(
+                "SELECT shadow_diff_json FROM activities WHERE id = ?",
+                (activity_res["id"],),
+            ).fetchone()
+        finally:
+            conn.close()
+
+        self.assertIn("shadow_diff_json", columns)
+        self.assertEqual(json.loads(row["shadow_diff_json"]), shadow_diff)
+
+        updated_diff = {
+            "pace": {"legacy": 360, "resolved": 360, "match": True},
+            "_meta": {"generated_by": "MetricsResolver Shadow Layer", "trusted": False},
+        }
+        activity["shadow_diff_json"] = json.dumps(updated_diff, ensure_ascii=False)
+        update_res = main._persist_sync_activity(activity)
+        self.assertEqual(update_res["op"], "updated")
+
+        list_res = self.api.get_activity_list(page=1, page_size=10, sport_filter="all")
+        detail = self.api.get_activity_detail(activity_res["id"])
+
+        self.assertTrue(list_res["ok"], list_res)
+        self.assertEqual(list_res["records"][0]["shadow_diff"], updated_diff)
+        self.assertTrue(detail["ok"], detail)
+        self.assertEqual(detail["record"]["shadow_diff"], updated_diff)
 
     def test_fetch_historical_weather_uses_archive_api_and_hour_index(self):
         fake_response = mock.Mock()

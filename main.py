@@ -333,6 +333,51 @@ def _safe_int(value: Any, default: int = 0) -> int:
         return default
 
 
+API_CODE_OK = 0
+API_CODE_VALIDATION = 1001
+API_CODE_NOT_FOUND = 1004
+API_CODE_AUTH_REQUIRED = 1401
+API_CODE_UNSUPPORTED_FILE = 2001
+API_CODE_EXTERNAL_SERVICE = 3001
+API_CODE_FILE_IO = 4001
+API_CODE_DB = 5001
+API_CODE_INTERNAL = 9001
+
+
+def _new_trace_id() -> str:
+    return uuid.uuid4().hex[:12]
+
+
+def _api_success(data: dict[str, Any] | None = None, msg: str = "ok", **legacy_fields: Any) -> dict[str, Any]:
+    payload = dict(data or {})
+    if legacy_fields:
+        payload.update(legacy_fields)
+    response = {"ok": True, "code": API_CODE_OK, "msg": msg, "data": payload, "traceId": _new_trace_id()}
+    response.update(payload)
+    return response
+
+
+def _api_error(code: int, msg: str, data: dict[str, Any] | None = None, **legacy_fields: Any) -> dict[str, Any]:
+    payload = dict(data or {})
+    if legacy_fields:
+        payload.update(legacy_fields)
+    response = {"ok": False, "code": code, "msg": msg, "data": payload, "traceId": _new_trace_id(), "error": msg}
+    response.update(payload)
+    return response
+
+
+def _delete_confirm_token(ids: list[int]) -> str:
+    return f"DELETE:{len(ids)}"
+
+
+def _is_path_under_dir(path: Path, base_dir: Path) -> bool:
+    try:
+        path.relative_to(base_dir)
+        return True
+    except ValueError:
+        return False
+
+
 def _decode_weather_json(value: Any) -> dict[str, Any] | None:
     if not value:
         return None
@@ -426,6 +471,7 @@ def ensure_activity_sync_schema() -> None:
                 "normalized_power": "REAL",
                 "swolf": "INTEGER",
                 "device_name": "TEXT",
+                "shadow_diff_json": "TEXT",
             }
             for col, dtype in required_columns.items():
                 if col not in columns:
@@ -1030,6 +1076,7 @@ def _parse_fit_activity_for_sync(file_path: Path) -> dict[str, Any]:
             legacy_distance_display=legacy_distance_display,
             resolved_sm=sm,
         )
+        result["shadow_diff_json"] = json.dumps(result.get("diff") or {}, ensure_ascii=False, default=str)
         # Shadow Layer diff 持久化日志（不阻塞生产路径）
         try:
             import json as _json
@@ -1101,9 +1148,9 @@ def _insert_activity_sync_row(conn: sqlite3.Connection, activity: dict[str, Any]
                  calories, track_json, points_json, file_path, gain_m, max_alt_m, start_lat, start_lon, region,
                  region_city, region_country, region_display, region_status, region_error, region_updated_at, region_attempt_count,
                  weather_json, file_mtime, file_size, advanced_metrics, normalized_power, swolf, device_name,
-                 source_type, is_mock, deleted_at, updated_at, hr_curve, speed_curve)
+                 shadow_diff_json, source_type, is_mock, deleted_at, updated_at, hr_curve, speed_curve)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    'fit_sdk', 0, NULL, datetime('now'), ?, ?)
+                    ?, 'fit_sdk', 0, NULL, datetime('now'), ?, ?)
             """,
             (
                 activity.get("file_name"),
@@ -1144,6 +1191,7 @@ def _insert_activity_sync_row(conn: sqlite3.Connection, activity: dict[str, Any]
                 activity.get("normalized_power"),
                 activity.get("swolf"),
                 activity.get("device_name") or "Unknown Device",
+                activity.get("shadow_diff_json"),
                 activity.get("hr_curve"),
                 activity.get("speed_curve"),
             ),
@@ -1172,7 +1220,7 @@ def _update_activity_sync_row(conn: sqlite3.Connection, activity_id: int, activi
             region_city = ?, region_country = ?, region_display = ?, region_status = ?, region_error = ?,
             region_updated_at = ?, region_attempt_count = ?,
             weather_json = ?, file_mtime = ?, file_size = ?, advanced_metrics = ?,
-            normalized_power = ?, swolf = ?, device_name = ?, hr_curve = ?, speed_curve = ?,
+            normalized_power = ?, swolf = ?, device_name = ?, shadow_diff_json = ?, hr_curve = ?, speed_curve = ?,
             source_type = 'fit_sdk', is_mock = 0, deleted_at = NULL, updated_at = datetime('now')
         WHERE id = ?
         """,
@@ -1215,6 +1263,7 @@ def _update_activity_sync_row(conn: sqlite3.Connection, activity_id: int, activi
             activity.get("normalized_power"),
             activity.get("swolf"),
             activity.get("device_name") or "Unknown Device",
+            activity.get("shadow_diff_json"),
             activity.get("hr_curve"),
             activity.get("speed_curve"),
             activity_id,
@@ -2390,8 +2439,8 @@ class Api:
            - 前端 track.html 角色: Visualization Layer ONLY"""
         try:
             obj = json.loads(payload_json)
-        except json.JSONDecodeError as e:
-            return {"ok": False, "error": f"JSON 无效: {e}"}
+        except json.JSONDecodeError:
+            return _api_error(API_CODE_VALIDATION, "JSON 无效")
         self._track_points = obj.get("points") or []       # 仅用于轨迹详情表，不进入 AI
         self._track_placemarks = obj.get("placemarks") or []  # 仅用于轨迹详情表，不进入 AI
         self._track_filename = str(obj.get("filename") or "轨迹")
@@ -2405,39 +2454,39 @@ class Api:
             self._ai_snapshot = _build_ai_snapshot(int(activity_id))
         else:
             self._ai_snapshot = None
-        return {"ok": True}
+        return _api_success()
 
     def reset_llm_session(self) -> dict:
         self._chat_messages = []
         self._new_session_id()
-        return {"ok": True}
+        return _api_success()
 
     def get_llm_config(self) -> dict:
-        cfg = llm_backend.load_llm_config()
+        cfg = llm_backend.redact_llm_config(llm_backend.load_llm_config())
         cfg["local_dir"] = TRACKS_DIR
         cfg["workspace_track_path"] = TRACKS_DIR
         cfg["workspace_track_abs_path"] = TRACKS_DIR
-        return {"ok": True, **cfg}
+        return _api_success(cfg)
 
     def save_llm_config(self, provider: str, url: str, model: str, api_key: str, agent_id: str = "", watch_brand: str = "", local_dir: str = "") -> dict:
         """【防御加锁】拒绝外部越权直调。核心持久化已全面收拢至 test_llm_config 网关中。"""
         print("[API 警告] 外部代码尝试越权直接保存配置，已被安全网关拦截并重定向。")
-        raise RuntimeError("Deprecated: 前端保存已被废弃，请直接使用唯一验证测试通道 test_llm_config")
+        return _api_error(API_CODE_AUTH_REQUIRED, "Deprecated: 前端保存已被废弃，请直接使用唯一验证测试通道 test_llm_config")
 
     def get_config(self) -> dict:
         """安全读取全局配置文件，供前端配置页使用。"""
         try:
             config = resolve_workspace_track_dir(auto_recover=True)
             if not config.get("ok"):
-                return config
-            return {
-                "ok": True,
+                return _api_error(API_CODE_FILE_IO, str(config.get("error") or "工作区配置不可用"), config)
+            return _api_success({
                 "config_path": config.get("config_path"),
                 "workspace_track_path": config.get("workspace_track_path"),
                 "workspace_track_abs_path": config.get("workspace_track_abs_path"),
-            }
-        except Exception as e:
-            return {"ok": False, "error": str(e)}
+            })
+        except Exception:
+            logger.exception("get_config failed")
+            return _api_error(API_CODE_INTERNAL, "读取配置失败")
 
     def save_config(self, new_config_dict: dict) -> dict:
         """保存全局配置。workspace_track_path 由受控工作区锁定，不可变更。"""
@@ -2451,14 +2500,14 @@ class Api:
             backup_path = backup_application_config("save_config", current)
             config = persist_application_config(payload)
             append_application_audit("save_config", {"backup_path": backup_path})
-            return {
-                "ok": True,
+            return _api_success({
                 "config_path": config.get("config_path"),
                 "workspace_track_path": config.get("workspace_track_path"),
                 "workspace_track_abs_path": config.get("workspace_track_abs_path"),
-            }
-        except Exception as e:
-            return {"ok": False, "error": str(e)}
+            })
+        except Exception:
+            logger.exception("save_config failed")
+            return _api_error(API_CODE_FILE_IO, "保存配置失败")
 
     def test_llm_config(self, provider: str, url: str, model: str, api_key: str, agent_id: str = "") -> dict:
         """【测试即保存网关-稳定性加固版】严格实行先测试、后持久化策略，保障状态机最终一致性。"""
@@ -2491,7 +2540,7 @@ class Api:
             config["last_success_time"] = time.time()
             persist_application_config(config)
 
-            return {"ok": True, "message": text}
+            return _api_success({"message": text})
         except Exception as e:
             # 连通失败：不破坏原有旧配置，但将当前网关可用状态即时标记为假（失效回滚）
             try:
@@ -2500,7 +2549,8 @@ class Api:
                 persist_application_config(config)
             except Exception:
                 pass
-            return {"ok": False, "error": str(e)}
+            logger.warning("test_llm_config failed: %s", e)
+            return _api_error(API_CODE_EXTERNAL_SERVICE, "大模型网关连通失败")
 
     def call_llm(self, prompt: str, sport_type: str = "hiking") -> dict:
         """对话或路书。AI 数据边界 (Task 3.4):
@@ -2964,6 +3014,7 @@ class Api:
             "weather": _decode_weather_json(row.get("weather_json")),
             "hr_curve": _safe_json_list(row.get("hr_curve")),
             "speed_curve": _safe_json_list(row.get("speed_curve")),
+            "shadow_diff": _decode_weather_json(row.get("shadow_diff_json")) if row.get("shadow_diff_json") else {},
             "has_track": bool(row.get("has_track")),
             "has_local_file": bool(str(row.get("file_path") or "").strip() and os.path.exists(str(row.get("file_path") or "").strip())),
         }
@@ -3176,52 +3227,118 @@ class Api:
         finally:
             conn.close()
 
-    def delete_activities(self, activity_ids: list[int] | None = None) -> dict:
+    def delete_activities(self, activity_ids: list[int] | None = None, confirm_token: str = "") -> dict:
         """批量硬删除：强制确保 FIT 文件与数据库同步。"""
         ensure_activity_sync_schema()
         raw_ids = [int(item) for item in (activity_ids or []) if _safe_int(item)]
         if not raw_ids:
-            return {"ok": False, "error": "未选择记录"}
+            return _api_error(
+                API_CODE_VALIDATION,
+                "未选择记录",
+                {"missing_ids": [], "file_errors": [], "skipped_unsafe_paths": []},
+            )
         ids = sorted(set(raw_ids))
+        expected_token = _delete_confirm_token(ids)
+        audit_id = uuid.uuid4().hex[:12]
+        if str(confirm_token or "") != expected_token:
+            logger.warning("delete_activities rejected audit_id=%s reason=invalid_confirm ids=%s", audit_id, ids)
+            return _api_error(
+                API_CODE_AUTH_REQUIRED,
+                "删除确认参数无效",
+                {
+                    "audit_id": audit_id,
+                    "expected_confirm_token": expected_token,
+                    "missing_ids": [],
+                    "file_errors": [],
+                    "skipped_unsafe_paths": [],
+                },
+            )
         conn = profile_backend._conn()
         file_deleted = 0
         file_errors: list[dict[str, str]] = []
+        skipped_unsafe_paths: list[dict[str, str]] = []
+        missing_file_paths: list[dict[str, str]] = []
         try:
             rows = conn.execute(
                 "SELECT id, file_path FROM activities WHERE id IN ({})".format(",".join("?" * len(ids))),
                 ids,
             ).fetchall()
             if not rows:
-                return {"ok": False, "error": "未找到记录"}
+                return _api_error(
+                    API_CODE_NOT_FOUND,
+                    "未找到记录",
+                    {"audit_id": audit_id, "missing_ids": ids, "file_errors": [], "skipped_unsafe_paths": []},
+                )
 
             existing_ids = [int(row["id"]) for row in rows]
             missing_ids = sorted(set(ids) - set(existing_ids))
+            controlled_dir = Path(TRACKS_DIR).expanduser().resolve()
+            deletable_ids: list[int] = []
             for row in rows:
+                row_id = int(row["id"])
                 fp = str(row["file_path"] or "").strip()
                 if not fp:
+                    deletable_ids.append(row_id)
                     continue
                 try:
                     path = Path(fp).expanduser().resolve()
-                    if path.exists() and path.is_file():
-                        path.unlink()
-                        file_deleted += 1
+                    if not _is_path_under_dir(path, controlled_dir):
+                        skipped_unsafe_paths.append({"id": str(row_id), "file_path": fp, "reason": "outside_tracks_dir"})
+                        continue
+                    if not path.exists():
+                        missing_file_paths.append({"id": str(row_id), "file_path": fp})
+                        deletable_ids.append(row_id)
+                        continue
+                    if not path.is_file():
+                        skipped_unsafe_paths.append({"id": str(row_id), "file_path": fp, "reason": "not_file"})
+                        continue
+                    path.unlink()
+                    file_deleted += 1
+                    deletable_ids.append(row_id)
                 except Exception as exc:
-                    file_errors.append({"file_path": fp, "error": str(exc)})
+                    file_errors.append({"id": str(row_id), "file_path": fp, "error": str(exc)})
 
-            conn.execute(
-                "DELETE FROM activities WHERE id IN ({})".format(",".join("?" * len(existing_ids))),
-                existing_ids,
-            )
+            if deletable_ids:
+                conn.execute(
+                    "DELETE FROM activities WHERE id IN ({})".format(",".join("?" * len(deletable_ids))),
+                    deletable_ids,
+                )
             conn.commit()
-            result = {"ok": True, "deleted": len(existing_ids), "files_deleted": file_deleted}
+            logger.info(
+                "delete_activities audit_id=%s requested=%s deleted=%s files_deleted=%s missing=%s unsafe=%s file_errors=%s",
+                audit_id,
+                ids,
+                deletable_ids,
+                file_deleted,
+                missing_ids,
+                skipped_unsafe_paths,
+                file_errors,
+            )
+            result = {
+                "audit_id": audit_id,
+                "deleted": len(deletable_ids),
+                "files_deleted": file_deleted,
+                "missing_ids": missing_ids,
+                "missing_file_paths": missing_file_paths,
+                "file_errors": file_errors,
+                "skipped_unsafe_paths": skipped_unsafe_paths,
+            }
             if missing_ids:
                 result["missing_ids"] = missing_ids
-            if file_errors:
-                result["file_errors"] = file_errors
-            return result
-        except Exception as e:
+            return _api_success(result)
+        except Exception:
             conn.rollback()
-            return {"ok": False, "error": str(e), "files_deleted": file_deleted, "file_errors": file_errors}
+            logger.exception("delete_activities failed audit_id=%s ids=%s", audit_id, ids)
+            return _api_error(
+                API_CODE_DB,
+                "删除活动失败",
+                {
+                "audit_id": audit_id,
+                "files_deleted": file_deleted,
+                "file_errors": file_errors,
+                "skipped_unsafe_paths": skipped_unsafe_paths,
+                },
+            )
         finally:
             conn.close()
 
@@ -3260,7 +3377,7 @@ class Api:
     def batch_import_tracks(self, file_paths: list[str]) -> dict:
         """多模态批量导入：FIT 直接复制，ZIP 解压到 IMPORTS_DIR 后归集到 TRACKS_DIR。"""
         if not file_paths:
-            return {"ok": False, "error": "未提供文件路径"}
+            return _api_error(API_CODE_VALIDATION, "未提供文件路径", {"imported": [], "errors": []})
 
         # 临时挂起自动监听服务，防止引发双重导入灾难
         if self._watch_service:
@@ -3296,11 +3413,11 @@ class Api:
                             if res.get("ok"):
                                 imported.append(str(dst))
                     else:
-                        errors.append({"file": fp, "error": "不支持的文件格式，仅支持 .fit 和 .zip"})
+                        errors.append({"file": fp, "error": "不支持的文件格式，仅支持 .fit 和 .zip", "code": API_CODE_UNSUPPORTED_FILE})
                 except Exception as exc:
                     errors.append({"file": fp, "error": str(exc)})
 
-            return {"ok": True, "imported": imported, "errors": errors if errors else None}
+            return _api_success({"imported": imported, "errors": errors if errors else None})
 
         finally:
             # 无论批量导入成功与否，无条件解除挂起锁，恢复 Watchdog 的日常静默监听
@@ -3316,9 +3433,10 @@ class Api:
                 print(f"[API] 后台全量清洗完成: {res}")
 
             threading.Thread(target=_async_run, daemon=True, name="metrics-rebuild-worker").start()
-            return {"ok": True, "message": "全量雷达指标重建任务已在后台异步启动，请稍后刷新页面查看成果。"}
-        except Exception as e:
-            return {"ok": False, "error": str(e)}
+            return _api_success({"message": "全量雷达指标重建任务已在后台异步启动，请稍后刷新页面查看成果。"})
+        except Exception:
+            logger.exception("api_force_rebuild_radar_data failed")
+            return _api_error(API_CODE_INTERNAL, "全量雷达指标重建启动失败")
 
     def check_first_run_status(self) -> dict:
         """判定首次运行状态与网关实时活性健康状态。"""
@@ -3332,15 +3450,15 @@ class Api:
             last_gateway_ok = bool(config.get("last_gateway_ok", False))
             last_success_time = config.get("last_success_time", 0)
 
-            return {
-                "ok": True,
+            return _api_success({
                 "is_first_run": is_first_run,
                 "last_gateway_ok": last_gateway_ok,
                 "last_success_time": last_success_time,
                 "default_tracks_dir": TRACKS_DIR
-            }
-        except Exception as e:
-            return {"ok": False, "error": str(e), "is_first_run": True, "last_gateway_ok": False}
+            })
+        except Exception:
+            logger.exception("check_first_run_status failed")
+            return _api_error(API_CODE_INTERNAL, "首次运行状态检查失败", {"is_first_run": True, "last_gateway_ok": False})
 
     def start_sync_local_fit_files(self) -> dict:
         return FIT_SYNC_JOB_MANAGER.start(
@@ -3409,6 +3527,7 @@ class Api:
                            updated_at,
                            hr_curve,
                            speed_curve,
+                           shadow_diff_json,
                            CASE WHEN COALESCE(track_json, points_json, '') != '' THEN 1 ELSE 0 END AS has_track
                     FROM activities
                     {where_sql}
@@ -3468,17 +3587,17 @@ class Api:
                 dynamic_columns.append("swolf")
             if has_power:
                 dynamic_columns.append("np")
-            return {
-                "ok": True,
+            return _api_success({
                 "source_dir": source_dir,
                 "total": len(records),
                 "activity_types": activity_types,
                 "page_sizes": SPORT_HUB_PAGE_SIZES,
                 "records": records,
                 "dynamic_columns": dynamic_columns,
-            }
-        except Exception as e:
-            return {"ok": False, "error": str(e)}
+            })
+        except Exception:
+            logger.exception("get_activity_list_snapshot failed")
+            return _api_error(API_CODE_DB, "活动列表快照查询失败")
 
     def get_activity_list(self, page: int = 1, page_size: int = 20, sport_filter: str = "all") -> dict:
         """后端分页返回活动记录基础字段。"""
@@ -3516,8 +3635,7 @@ class Api:
                 key=lambda item: (SPORT_HUB_TYPE_ORDER.get(item, 99), item),
             )
 
-            return {
-                "ok": True,
+            return _api_success({
                 "page": page,
                 "page_size": page_size,
                 "total": total_count,
@@ -3525,9 +3643,10 @@ class Api:
                 "activity_types": activity_types,
                 "page_sizes": SPORT_HUB_PAGE_SIZES,
                 "records": records,
-            }
-        except Exception as e:
-            return {"ok": False, "error": str(e)}
+            })
+        except Exception:
+            logger.exception("get_activity_list failed")
+            return _api_error(API_CODE_DB, "活动列表查询失败")
 
     def get_sport_hub_activity_page(self, page: int = 1, page_size: int = 10, sport_filter: str = "all") -> dict:
         """个人运动数据 - 后端分页活动记录。"""
@@ -3565,8 +3684,7 @@ class Api:
                 key=lambda item: (SPORT_HUB_TYPE_ORDER.get(item, 99), item),
             )
 
-            return {
-                "ok": True,
+            return _api_success({
                 "page": page,
                 "page_size": page_size,
                 "total": total_count,
@@ -3574,20 +3692,22 @@ class Api:
                 "activity_types": activity_types,
                 "page_sizes": SPORT_HUB_PAGE_SIZES,
                 "records": records,
-            }
-        except Exception as e:
-            return {"ok": False, "error": str(e)}
+            })
+        except Exception:
+            logger.exception("get_sport_hub_activity_page failed")
+            return _api_error(API_CODE_DB, "个人运动数据分页查询失败")
 
     def get_activity_detail(self, activity_id: int) -> dict:
         """返回单条活动的详情数据，包含缩略图与统计信息。"""
         try:
             row = self._fetch_activity_row(_safe_int(activity_id))
             if not row:
-                return {"ok": False, "error": "未找到该活动记录"}
+                return _api_error(API_CODE_NOT_FOUND, "未找到该活动记录")
             record = _build_record_from_row(self, row, 0)
-            return {"ok": True, "record": record}
-        except Exception as e:
-            return {"ok": False, "error": str(e)}
+            return _api_success({"record": record})
+        except Exception:
+            logger.exception("get_activity_detail failed activity_id=%s", activity_id)
+            return _api_error(API_CODE_DB, "活动详情查询失败")
 
     def load_activity_track(self, activity_id: int) -> dict:
         """优先从 SQLite 的 track_json 读取轨迹，支持源文件已删除时复盘。
@@ -4045,6 +4165,7 @@ def _build_record_from_row(api_self, row: dict, idx: int) -> dict:
         "file_path": row.get("file_path") or "",
         "has_track": bool(points),
         "has_local_file": bool(str(row.get("file_path") or "").strip() and os.path.isfile(str(row.get("file_path") or "").strip())),
+        "shadow_diff": _decode_weather_json(row.get("shadow_diff_json")) if row.get("shadow_diff_json") else {},
         "thumbnail_points": detail["thumbnail_points"],
         "detail": detail,
     }

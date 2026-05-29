@@ -4031,7 +4031,8 @@
                 btnEl.innerText = '删除中...';
                 if (deleteBtn) deleteBtn.disabled = true;
                 try {
-                    const res = await window.pywebview.api.delete_activities(ids);
+                    const confirmToken = `DELETE:${ids.length}`;
+                    const res = await window.pywebview.api.delete_activities(ids, confirmToken);
                     if (!res || !res.ok) throw new Error((res && res.error) || '删除失败');
                     sportHubState.selectedIds.clear();
                     resetBlockerModalContent();
@@ -4044,6 +4045,10 @@
                     if (res.file_errors && res.file_errors.length) {
                         msg += `，${res.file_errors.length} 个文件删除异常（已跳过）`;
                         console.warn('文件删除异常:', res.file_errors);
+                    }
+                    if (res.skipped_unsafe_paths && res.skipped_unsafe_paths.length) {
+                        msg += `，${res.skipped_unsafe_paths.length} 个受控目录外路径已拒绝`;
+                        console.warn('受控目录外路径已拒绝:', res.skipped_unsafe_paths);
                     }
                     showToast(msg);
                 } catch (e) {
@@ -5044,7 +5049,9 @@
                         provider: c.provider || 'local_mcp',
                         model: c.model || 'openclaw',
                         url: (c.url && String(c.url).trim()) ? String(c.url).trim() : LLM_DEFAULT_URL,
-                        apiKey: (c.api_key !== undefined && c.api_key !== null) ? String(c.api_key) : '',
+                        apiKey: '',
+                        hasApiKey: !!c.has_api_key,
+                        apiKeyMasked: (c.api_key_masked !== undefined && c.api_key_masked !== null) ? String(c.api_key_masked) : '',
                         agentId: (c.agent_id !== undefined && c.agent_id !== null) ? String(c.agent_id) : '',
                         watchBrand: (c.watch_brand !== undefined && c.watch_brand !== null) ? String(c.watch_brand) : '',
                     };
@@ -5165,9 +5172,9 @@
         agentIdInput.readOnly = false;
         agentIdInput.disabled = false;
         if ((providerInput.value || 'local_mcp') === 'local_mcp') {
-            apiKeyInput.placeholder = '如果您的网关没加密，留空即可';
+            apiKeyInput.placeholder = currentLLMConfig.hasApiKey ? ('已保存：' + (currentLLMConfig.apiKeyMasked || '****') + '，如需更换请重新输入') : '如果您的网关没加密，留空即可';
         } else {
-            apiKeyInput.placeholder = 'sk-...';
+            apiKeyInput.placeholder = currentLLMConfig.hasApiKey ? ('已保存：' + (currentLLMConfig.apiKeyMasked || '****') + '，如需更换请重新输入') : 'sk-...';
         }
     }
 

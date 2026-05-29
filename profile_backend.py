@@ -477,7 +477,8 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             calories INTEGER,
             normalized_power REAL,
             swolf REAL,
-            device_name TEXT
+            device_name TEXT,
+            shadow_diff_json TEXT
         )
     """)
 
@@ -502,8 +503,14 @@ def _init_schema(conn: sqlite3.Connection) -> None:
         ("file_mtime", "REAL"),
         ("file_size", "INTEGER"),
         ("deleted_at", "TEXT"),
+        ("avg_pace", "REAL"),
+        ("calories", "INTEGER"),
+        ("normalized_power", "REAL"),
+        ("swolf", "REAL"),
+        ("device_name", "TEXT"),
         ("source_type", "TEXT"),
         ("is_mock", "INTEGER"),
+        ("shadow_diff_json", "TEXT"),
     ]:
         try:
             conn.execute(f"ALTER TABLE activities ADD COLUMN {col} {dtype}")
@@ -809,14 +816,15 @@ def save_activity(data: dict[str, Any]) -> int:
     def _write() -> int:
         conn = _conn()
         try:
+            _init_schema(conn)
             cur = conn.execute(
                 """
                 INSERT INTO activities
                     (filename, title, title_source, sport_type, sub_sport_type, dist_km, duration_sec, gain_m, max_alt_m,
                      avg_hr, max_hr, avg_cadence, hr_decoupling, tss, points_json, file_path, start_time, start_time_utc,
                      start_lat, start_lon, region, region_city, region_country, region_display, region_status, region_error,
-                     region_updated_at, region_attempt_count, weather_json, avg_pace, calories, normalized_power, swolf)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     region_updated_at, region_attempt_count, weather_json, avg_pace, calories, normalized_power, swolf, shadow_diff_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     data.get("filename"),
@@ -852,6 +860,7 @@ def save_activity(data: dict[str, Any]) -> int:
                     data.get("calories"),
                     data.get("normalized_power"),
                     data.get("swolf"),
+                    data.get("shadow_diff_json"),
                 ),
             )
             conn.commit()
@@ -962,6 +971,7 @@ def get_activity_list_filtered(offset: int, limit: int, sport_filter: str) -> tu
         "updated_at, "
         "hr_curve, "
         "speed_curve, "
+        "shadow_diff_json, "
         "CASE WHEN COALESCE(track_json, points_json, '') != '' THEN 1 ELSE 0 END AS has_track"
     )
 

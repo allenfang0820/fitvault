@@ -482,6 +482,38 @@ source_type
 is_mock
 ```
 
+### Debug-only / Audit-only 字段
+
+`activities.shadow_diff_json` 是 MetricsResolver Shadow Layer 的差异审计字段。
+
+契约定义：
+
+| 属性 | 契约 |
+|---|---|
+| DB 字段 | `activities.shadow_diff_json` |
+| API 字段 | `shadow_diff` |
+| 字段性质 | debug-only / audit-only |
+| 数据来源 | MetricsResolver Shadow Layer |
+| 数据用途 | 仅用于 Resolver 与 Legacy 指标差异审计、调试、回归验证 |
+| 常规 UI 展示 | 禁止进入常规活动列表、详情主展示、指标卡片、图表和用户可见业务展示 |
+| AI Snapshot | 禁止进入 AI Snapshot、AI prompt、AI 分析上下文 |
+| Canonical 指标 | 禁止参与 canonical 指标计算、排序、筛选、运动画像、雷达图、训练负荷计算 |
+| 持久化格式 | JSON 字符串，反序列化后仅作为审计对象读取 |
+
+强制边界：
+
+- `shadow_diff_json` 可以在 DB 中持久化，用于可追溯审计。
+- API 可以返回解析后的 `shadow_diff`，但调用方必须将其视为 debug-only 数据。
+- 前端如需使用 `shadow_diff`，只能放入显式调试入口或开发者审计面板，不得默认展示给普通用户。
+- AI Snapshot 白名单不得加入 `shadow_diff`、`shadow_diff_json`、`diff` 或任何等价字段。
+- 任何新增消费点必须在本架构契约中登记，并明确标记 debug-only。
+
+验收规则：
+
+- 查询活动列表或活动详情时，`shadow_diff` 的存在不得影响任何业务字段展示。
+- 构建 AI Snapshot 时，出现 `shadow_diff`、`shadow_diff_json`、`diff` 应视为契约违规。
+- 修改 Resolver、入库或 API 返回逻辑时，必须验证 `shadow_diff_json` 仍不参与 canonical 数据路径。
+
 ---
 
 ### activity_records
@@ -587,6 +619,10 @@ AI 只应该读取：
 - 巨型 JSON
 - 无边界上下文
 - AI 无限上下文堆积
+- `shadow_diff`
+- `shadow_diff_json`
+- `diff`
+- 任何 debug-only / audit-only 字段
 
 ---
 
@@ -1090,4 +1126,3 @@ Narrative / Radar / Trend / Achievement
 # 12. 一句话定义脉图
 
 > 脉图是一个基于 FIT 可信数据层的本地 AI 运动外挂，通过轻量语义解析与 AI Snapshot 机制，为 OpenClaw 提供稳定、可解释、长期可演进的运动上下文系统。
-

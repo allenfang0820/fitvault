@@ -5,6 +5,7 @@ from pathlib import Path
 import profile_backend
 import tempfile
 import json
+import main
 
 class TestDuplicateCheck(unittest.TestCase):
     def setUp(self):
@@ -74,6 +75,16 @@ class TestDuplicateCheck(unittest.TestCase):
         self.assertTrue(res["score"] >= 80.0)
         self.assertEqual(res["duplicate_record"]["filename"], "test1.fit")
 
+
+def assert_response_envelope(testcase, res, ok):
+    testcase.assertEqual(res["ok"], ok)
+    testcase.assertIn("code", res)
+    testcase.assertIn("msg", res)
+    testcase.assertIn("data", res)
+    testcase.assertIn("traceId", res)
+    testcase.assertIsInstance(res["data"], dict)
+    testcase.assertTrue(res["traceId"])
+
     def test_partial_overlap_duplicate(self):
         # Test a track with same start time, slightly different distance and duration, but same points
         res = profile_backend.check_duplicate_activity(
@@ -124,6 +135,104 @@ class TestDuplicateCheck(unittest.TestCase):
         self.assertTrue(res["is_duplicate"])
         self.assertTrue(res["score"] >= 80.0)
         self.assertEqual(res["duplicate_record"]["filename"], "test1.fit")
+
+
+class TestDeleteActivitiesGuard(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.temp_db_path = Path(self.temp_dir.name) / "delete_guard.sqlite"
+        self.tracks_dir = Path(self.temp_dir.name) / "tracks"
+        self.outside_dir = Path(self.temp_dir.name) / "outside"
+        self.tracks_dir.mkdir()
+        self.outside_dir.mkdir()
+        self.original_db_path = profile_backend.DB_PATH
+        self.original_tracks_dir = main.TRACKS_DIR
+        profile_backend.DB_PATH = self.temp_db_path
+        main.TRACKS_DIR = str(self.tracks_dir)
+        main._ACTIVITY_SYNC_SCHEMA_READY_FOR = None
+
+    def tearDown(self):
+        profile_backend.DB_PATH = self.original_db_path
+        main.TRACKS_DIR = self.original_tracks_dir
+        main._ACTIVITY_SYNC_SCHEMA_READY_FOR = None
+        self.temp_dir.cleanup()
+
+    def _save_activity_with_file(self, file_path) -> int:
+        return profile_backend.save_activity({
+            "filename": "delete-test.fit",
+            "dist_km": 1.0,
+            "duration_sec": 60,
+            "start_time": "2023-01-01T10:00:00Z",
+            "file_path": str(file_path) if file_path else "",
+            "points_json": [],
+        })
+
+    def _activity_exists(self, activity_id: int) -> bool:
+        conn = profile_backend._conn()
+        try:
+            row = conn.execute("SELECT id FROM activities WHERE id = ?", (activity_id,)).fetchone()
+            return row is not None
+        finally:
+            conn.close()
+
+    def test_delete_activities_rejects_empty_ids(self):
+        res = main.Api().delete_activities([], "DELETE:0")
+        assert_response_envelope(self, res, False)
+        self.assertEqual(res["code"], main.API_CODE_VALIDATION)
+        self.assertEqual(res["file_errors"], [])
+        self.assertEqual(res["skipped_unsafe_paths"], [])
+
+    def test_delete_activities_requires_confirm_token(self):
+        fit_path = self.tracks_dir / "inside.fit"
+        fit_path.write_text("fit", encoding="utf-8")
+        activity_id = self._save_activity_with_file(fit_path)
+
+        res = main.Api().delete_activities([activity_id], "WRONG")
+
+        assert_response_envelope(self, res, False)
+        self.assertEqual(res["code"], main.API_CODE_AUTH_REQUIRED)
+        self.assertEqual(res["error"], "删除确认参数无效")
+        self.assertTrue(fit_path.exists())
+        self.assertTrue(self._activity_exists(activity_id))
+
+    def test_delete_activities_deletes_controlled_file_and_db_row(self):
+        fit_path = self.tracks_dir / "inside.fit"
+        fit_path.write_text("fit", encoding="utf-8")
+        activity_id = self._save_activity_with_file(fit_path)
+
+        res = main.Api().delete_activities([activity_id], "DELETE:1")
+
+        assert_response_envelope(self, res, True)
+        self.assertEqual(res["code"], main.API_CODE_OK)
+        self.assertEqual(res["deleted"], 1)
+        self.assertEqual(res["files_deleted"], 1)
+        self.assertFalse(fit_path.exists())
+        self.assertFalse(self._activity_exists(activity_id))
+
+    def test_delete_activities_rejects_outside_tracks_dir(self):
+        fit_path = self.outside_dir / "outside.fit"
+        fit_path.write_text("fit", encoding="utf-8")
+        activity_id = self._save_activity_with_file(fit_path)
+
+        res = main.Api().delete_activities([activity_id], "DELETE:1")
+
+        assert_response_envelope(self, res, True)
+        self.assertEqual(res["deleted"], 0)
+        self.assertEqual(len(res["skipped_unsafe_paths"]), 1)
+        self.assertTrue(fit_path.exists())
+        self.assertTrue(self._activity_exists(activity_id))
+
+    def test_delete_activities_deletes_db_row_for_missing_controlled_file(self):
+        missing_path = self.tracks_dir / "missing.fit"
+        activity_id = self._save_activity_with_file(missing_path)
+
+        res = main.Api().delete_activities([activity_id, 999999], "DELETE:2")
+
+        assert_response_envelope(self, res, True)
+        self.assertEqual(res["deleted"], 1)
+        self.assertEqual(res["missing_ids"], [999999])
+        self.assertEqual(len(res["missing_file_paths"]), 1)
+        self.assertFalse(self._activity_exists(activity_id))
 
 if __name__ == '__main__':
     unittest.main()

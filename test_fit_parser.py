@@ -8,6 +8,7 @@ from unittest import mock
 import fit_engine
 import llm_backend
 import track_backend
+from metrics_resolver import MetricsResolver
 
 
 def _first_existing(paths: list[str]) -> Optional[Path]:
@@ -200,6 +201,38 @@ class TestFitParser(unittest.TestCase):
         self.assertTrue(fit_engine.FIT_PARSE_LOG_PATH.exists())
         log_text = fit_engine.FIT_PARSE_LOG_PATH.read_text(encoding="utf-8")
         self.assertIn("FIT 文件初始化失败", log_text)
+
+    def test_metrics_resolver_supports_flat_record_curves(self):
+        resolver = MetricsResolver()
+        pack = resolver._build_analysis_pack(
+            [],
+            [
+                {"heart_rate": 120, "speed": 2.5, "altitude": 10.2, "distance": 100.0, "lat": 30.1, "lon": 104.1},
+                {"hr": 130, "speed": 3.0, "alt": 12.7, "dist": 180.0, "position_lat": 30.2, "position_long": 104.2},
+            ],
+        )
+
+        self.assertEqual(pack["hr_curve"], [120.0, 130.0])
+        self.assertEqual(pack["speed_curve"], [2.5, 3.0])
+        self.assertEqual(pack["altitude_curve"], [10.2, 12.7])
+        self.assertEqual(pack["distance_curve"], [100.0, 180.0])
+        self.assertEqual(pack["lat_curve"], [30.1, 30.2])
+        self.assertEqual(pack["lon_curve"], [104.1, 104.2])
+
+    def test_metrics_resolver_supports_nested_record_curves_and_ai_context(self):
+        resolver = MetricsResolver()
+        records = [
+            {"raw": {"heart_rate": 120, "speed": 2.5, "altitude": 10.2, "distance": 100.0}, "geo": {"lat": 30.1, "lon": 104.1}},
+            {"raw": {"heart_rate": 130, "speed": 3.0, "altitude": 12.7, "distance": 180.0}, "geo": {"lat": 30.2, "lon": 104.2}},
+        ]
+        pack = resolver._build_analysis_pack([], records)
+        context = resolver._build_ai_context({"avg_hr": 125, "max_hr": 150, "avg_pace": 360, "elevation_gain_m": 20, "distance_km": 1.0}, {}, records)
+
+        self.assertEqual(pack["hr_curve"], [120.0, 130.0])
+        self.assertEqual(pack["speed_curve"], [2.5, 3.0])
+        self.assertEqual(pack["lat_curve"], [30.1, 30.2])
+        self.assertEqual(pack["lon_curve"], [104.1, 104.2])
+        self.assertIsNotNone(context["structured_metrics"]["pace_variance"])
 
 
 if __name__ == "__main__":

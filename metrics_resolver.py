@@ -218,14 +218,12 @@ class MetricsResolver:
         sampled = records[::step] if step > 1 else records
 
         for rec in sampled:
-            inner = rec.get("raw") if isinstance(rec, dict) else {}
-            geo = rec.get("geo") if isinstance(rec, dict) else {}
-            hr = self._num(inner.get("heart_rate"))
-            speed = self._num(inner.get("speed"))
-            alt = self._num(inner.get("altitude"))
-            dist = self._num(inner.get("distance"))
-            lat = self._num(geo.get("lat"))
-            lon = self._num(geo.get("lon"))
+            hr = self._num(self._record_value(rec, "heart_rate", "hr"))
+            speed = self._num(self._record_value(rec, "speed"))
+            alt = self._num(self._record_value(rec, "altitude", "alt"))
+            dist = self._num(self._record_value(rec, "distance", "dist"))
+            lat = self._num(self._record_value(rec, "lat", "position_lat"))
+            lon = self._num(self._record_value(rec, "lon", "position_long"))
 
             pack["hr_curve"].append(hr if hr else None)
             pack["speed_curve"].append(round(speed, 2) if speed else None)
@@ -256,9 +254,8 @@ class MetricsResolver:
         pace_values = []
         hr_values = []
         for rec in records:
-            inner = rec.get("raw") if isinstance(rec, dict) else {}
-            spd = self._num(inner.get("speed"))
-            hr = self._num(inner.get("heart_rate"))
+            spd = self._num(self._record_value(rec, "speed"))
+            hr = self._num(self._record_value(rec, "heart_rate", "hr"))
             if spd and spd > 0.1:
                 pace_values.append(16.6667 / spd)
             if hr:
@@ -303,6 +300,24 @@ class MetricsResolver:
             return float(value)
         except (TypeError, ValueError):
             return 0.0
+
+    @staticmethod
+    def _record_value(record: Any, *keys: str) -> Any:
+        if not isinstance(record, dict):
+            return None
+        raw = record.get("raw")
+        geo = record.get("geo")
+        sources = [record]
+        if isinstance(raw, dict):
+            sources.append(raw)
+        if isinstance(geo, dict):
+            sources.append(geo)
+        for key in keys:
+            for source in sources:
+                value = source.get(key)
+                if value is not None:
+                    return value
+        return None
 
     @staticmethod
     def _safe_int_none(value: Any) -> int | None:

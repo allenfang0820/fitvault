@@ -101,9 +101,11 @@ class TestTrackHtmlSyncLogic(unittest.TestCase):
         self.assertIn("确认删除运动记录", body)
         self.assertIn("物理删除", body)
         self.assertIn("btnEl.onclick = async function()", body)
-        self.assertIn("delete_activities(ids)", body)
+        self.assertIn("const confirmToken = `DELETE:${ids.length}`;", body)
+        self.assertIn("delete_activities(ids, confirmToken)", body)
         self.assertIn("files_deleted", body)
         self.assertIn("file_errors", body)
+        self.assertIn("skipped_unsafe_paths", body)
         self.assertIn("loadSportHubActivityList", body)
         self.assertIn("closeBlockerModal()", body)
 

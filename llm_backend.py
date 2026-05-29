@@ -58,6 +58,24 @@ def load_llm_config() -> dict[str, Any]:
     }
 
 
+def mask_secret(value: Any) -> str:
+    secret = str(value or "").strip()
+    if not secret:
+        return ""
+    if len(secret) <= 4:
+        return "****"
+    return f"****{secret[-4:]}"
+
+
+def redact_llm_config(config: dict[str, Any]) -> dict[str, Any]:
+    redacted = dict(config or {})
+    api_key = str(redacted.get("api_key") or "")
+    redacted["api_key"] = ""
+    redacted["has_api_key"] = bool(api_key)
+    redacted["api_key_masked"] = mask_secret(api_key)
+    return redacted
+
+
 def save_llm_config(provider: str, url: str, model: str, api_key: str, agent_id: str = "", watch_brand: str = "", local_dir: str = "") -> None:
     cfg = {
         "provider": (provider or DEFAULT_PROVIDER).strip(),
