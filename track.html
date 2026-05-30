@@ -923,132 +923,36 @@
             overflow-y: auto;
         }
 
-        /* === 配置引导—三模块居中胶囊 === */
-        #settings-guide-card {
-            text-align: center;
-        }
-        .setup-steps {
-            display: inline-flex;
-            gap: 8px;
-            padding: 0;
-        }
-        .setup-step {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            text-align: center;
-            gap: 3px;
-            padding: 10px 18px;
-            min-width: 120px;
-            background: rgba(255,255,255,0.04);
-            border: 1px solid rgba(255,255,255,0.08);
-            border-radius: 999px;
-            transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
-        }
-        .setup-step.completed {
-            background: rgba(34,197,94,0.08);
-            border-color: rgba(34,197,94,0.28);
-            box-shadow: inset 0 0 0 1px rgba(34,197,94,0.06);
-        }
-        .setup-step-dot {
-            width: 20px;
-            height: 20px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 0.6rem;
-            font-weight: 800;
-            flex-shrink: 0;
-            background: rgba(148,163,184,0.14);
-            color: #94a3b8;
-            transition: all 0.25s ease;
-        }
-        .setup-step.completed .setup-step-dot {
-            background: #22c55e;
-            color: #052e16;
-        }
-        .setup-step-body {
-            min-width: 0;
-        }
-        .setup-step-title {
-            font-size: 0.68rem;
-            line-height: 1.2;
-            color: #e2e8f0;
-            font-weight: 700;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-        .setup-step.completed .setup-step-title {
-            color: #bbf7d0;
-        }
-        .setup-step-desc {
-            font-size: 0.52rem;
-            color: #64748b;
-            line-height: 1.2;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-        .setup-step-status {
-            font-size: 0.5rem;
-            line-height: 1;
-            padding: 2px 6px;
-            border-radius: 999px;
-            background: rgba(148,163,184,0.10);
-            color: #94a3b8;
-            transition: all 0.25s ease;
-        }
-        .setup-step.completed .setup-step-status {
-            background: rgba(34,197,94,0.18);
-            color: #86efac;
-        }
-
         /* === Cesium 地球（始终渲染） === */
         #cesiumContainer { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 0; touch-action: auto; }
-        #map-controls-widget {
-            position: absolute;
-            right: 16px;
-            top: 50%;
-            transform: translateY(-50%);
-            z-index: 1000;
+        .topbar-view-controls {
             display: flex;
-            flex-direction: column;
-            gap: 12px;
-            background: rgba(15, 23, 42, 0.8);
-            backdrop-filter: blur(8px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            padding: 8px;
-            border-radius: 12px;
-            box-shadow: 0 10px 25px -5px rgba(0,0,0,0.5);
-        }
-        .slider-wrapper {
-            display: flex;
-            flex-direction: column;
             align-items: center;
-            gap: 8px;
-            min-width: 54px;
-            min-height: 148px;
-            padding: 10px 6px;
-            border-radius: 999px;
-            background: rgba(226, 232, 240, 0.72);
-            border: 1px solid rgba(255, 255, 255, 0.38);
-            box-shadow: inset 0 1px 0 rgba(255,255,255,0.42), 0 8px 18px rgba(0,0,0,0.24);
+            gap: 6px;
+            flex: 0 0 auto;
         }
-        .slider-label {
+        .topbar-slider-wrapper {
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            gap: 4px;
+            flex: 0 0 auto;
+            padding: 2px 8px;
+            border-radius: 999px;
+            background: rgba(226, 232, 240, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        .topbar-slider-wrapper .slider-label {
             color: #0f172a;
-            font-size: 0.78rem;
+            font-size: 0.65rem;
             font-weight: 800;
             line-height: 1;
             user-select: none;
+            white-space: nowrap;
         }
         #map-view-slider {
-            width: 92px;
-            height: 34px;
-            margin: 26px 0;
-            transform: rotate(-90deg);
-            transform-origin: center;
+            width: 72px;
+            height: 18px;
             accent-color: #0f172a;
             cursor: pointer;
             touch-action: none;
@@ -1087,10 +991,10 @@
             box-shadow: 0 4px 10px rgba(0,0,0,0.35);
         }
         #map-compass-btn {
-            width: 44px;
-            height: 44px;
-            min-width: 44px;
-            min-height: 44px;
+            width: 26px;
+            height: 26px;
+            min-width: 26px;
+            min-height: 26px;
             align-self: center;
             border-radius: 50%;
             border: 1px solid rgba(255,255,255,0.48);
@@ -1112,13 +1016,13 @@
             align-items: center;
             justify-content: center;
             color: #0f172a;
-            font-size: 1rem;
+            font-size: 0.58rem;
             font-weight: 900;
         }
         .compass-pointer {
             position: relative;
-            width: 34px;
-            height: 34px;
+            width: 20px;
+            height: 20px;
             transform-origin: 50% 50%;
             transition: transform 0.08s linear;
         }
@@ -1126,22 +1030,22 @@
             content: '';
             position: absolute;
             left: 50%;
-            top: 2px;
+            top: 1px;
             transform: translateX(-50%);
             width: 0;
             height: 0;
-            border-left: 4px solid transparent;
-            border-right: 4px solid transparent;
-            border-bottom: 8px solid #ef4444;
+            border-left: 3px solid transparent;
+            border-right: 3px solid transparent;
+            border-bottom: 6px solid #ef4444;
         }
         .compass-pointer::after {
             content: '';
             position: absolute;
             left: 50%;
-            bottom: 2px;
+            bottom: 1px;
             transform: translateX(-50%);
             width: 2px;
-            height: 8px;
+            height: 6px;
             border-radius: 999px;
             background: rgba(15, 23, 42, 0.55);
         }
@@ -1291,6 +1195,13 @@
         .icon-btn { background: transparent; border: none; color: #94a3b8; font-size: 1.1rem; cursor: pointer; }
         .icon-btn:hover { color: white; }
         #ai-summary { flex: 1; overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.2) transparent; }
+        .sidebar-tab { flex: 1; padding: 5px 0; font-size: 0.78rem; font-weight: 700; color: #94a3b8; background: transparent; border: none; border-bottom: 2px solid transparent; cursor: pointer; transition: all 0.15s; }
+        .sidebar-tab.active { color: #f8fafc; border-bottom-color: #3b82f6; }
+        .sidebar-panel { flex: 1; min-height: 0; }
+        .cp-type-item { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 6px 2px; border-radius: 6px; cursor: pointer; border: 2px solid transparent; background: rgba(255,255,255,0.03); font-size: 0.68rem; color: #94a3b8; transition: all 0.15s; }
+        .cp-type-item.active { border-color: rgba(59,130,246,0.8); background: rgba(59,130,246,0.15); color: #f8fafc; }
+        .cp-list-action { background: transparent; border: none; cursor: pointer; font-size: 0.9rem; padding: 2px 3px; color: #94a3b8; border-radius: 4px; line-height: 1; }
+        .cp-list-action.danger { color: #ef4444; }
         #ai-summary::-webkit-scrollbar { width: 4px; }
         #ai-summary::-webkit-scrollbar-track { background: transparent; }
         #ai-summary::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 2px; }
@@ -2022,6 +1933,57 @@
             margin-bottom: 0;
         }
 
+        .settings-form-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+            gap: 14px 16px;
+            align-items: start;
+        }
+
+        .settings-form-row.full-row {
+            grid-column: 1 / -1;
+        }
+
+        .settings-form-row.full-row .modal-input {
+            max-width: 100%;
+        }
+
+        .settings-form-grid .modal-input {
+            max-width: 360px;
+        }
+
+        .settings-action-row {
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            gap: 12px;
+            margin-top: 16px;
+        }
+
+        .settings-action-row .compact-action-btn {
+            width: auto;
+            min-width: 128px;
+            flex: 0 0 auto;
+        }
+
+        .settings-watch-brand-row {
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
+        @media (max-width: 720px) {
+            .settings-form-grid {
+                grid-template-columns: 1fr;
+            }
+            .modal-input {
+                max-width: 100%;
+            }
+            .settings-action-row .compact-action-btn {
+                width: 100%;
+            }
+        }
+
         .settings-label {
             display: block;
             font-size: 0.8rem;
@@ -2282,17 +2244,6 @@
 
             <!-- Cesium 3D 地球（始终渲染，不受面板切换影响） -->
             <div id="cesiumContainer"></div>
-            <div id="map-controls-widget" aria-label="地图视角控制">
-                <div class="slider-wrapper">
-                    <span class="slider-label">3D</span>
-                    <input type="range" id="map-view-slider" min="30" max="90" step="1" value="90" aria-label="2D 和 3D 视角连续切换">
-                    <span class="slider-label">2D</span>
-                </div>
-                <button type="button" id="map-compass-btn" aria-label="归北" title="归北">
-                    <div class="compass-pointer" id="compass-pointer"></div>
-                </button>
-            </div>
-
             <!-- 顶栏工具条（仅此面板可见） -->
             <div id="top-bar">
                 <div class="panel-inner">
@@ -2304,15 +2255,26 @@
                     <span class="sep">|</span>
                     <span class="mini-stat">最高 <b id="val-max">--</b> m</span>
                     <span class="flex-grow"></span>
+                    <div class="topbar-view-controls" aria-label="地图视角控制">
+                        <button type="button" id="map-compass-btn" aria-label="归北" title="归北">
+                            <div class="compass-pointer" id="compass-pointer"></div>
+                        </button>
+                        <div class="topbar-slider-wrapper">
+                            <span class="slider-label">3D</span>
+                            <input type="range" id="map-view-slider" min="30" max="90" step="1" value="90" aria-label="2D 和 3D 视角连续切换">
+                            <span class="slider-label">2D</span>
+                        </div>
+                    </div>
+                    <span class="sep"></span>
                     <div class="btn-group" style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
-                        <button onclick="triggerTrackImport()" class="ctrl-btn primary" title="导入轨迹文件（支持 GPX / FIT / KML）">📁 <span class="btn-label">导入</span></button>
+                        <button onclick="triggerTrackImport()" class="ctrl-btn primary" title="导入 GPX 轨迹文件">📁 <span class="btn-label">导入GPX</span></button>
                         <button onclick="setViewProfile()" class="ctrl-btn" title="切换到地形剖面图视角">⛰️ <span class="btn-label">剖面</span></button>
                         <button id="btn-auto-rotate" class="ctrl-btn" title="自动环绕旋转视角，松手停止">▶ <span class="btn-label">旋转</span></button>
                         <button onclick="exportGPX()" class="ctrl-btn" title="导出为 GPX 文件">⬇️ <span class="btn-label">导出</span></button>
                     </div>
                     <span class="sep">|</span>
                     <div class="toggle-group" style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
-                        <label class="toggle-label"><input type="checkbox" id="toggle-cp" checked> 打卡点</label>
+                        <label class="toggle-label"><input type="checkbox" id="toggle-cp" checked> CP点</label>
                         <label class="toggle-label"><input type="checkbox" id="toggle-km" checked> 里程</label>
                         <label class="toggle-label"><input type="checkbox" id="toggle-peak" checked> 坡顶</label>
                     </div>
@@ -2380,15 +2342,34 @@
             <div id="ai-sidebar" class="collapsed">
                 <button id="ai-sidebar-btn" onclick="toggleAISidebar()">📋 报告</button>
                 <div id="ai-sidebar-body">
-                    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;flex-shrink:0;">
-                        <div style="font-size:0.9rem;font-weight:800;color:#f8fafc;">📋 轨迹报告</div>
-                        <div style="display:flex;gap:6px;">
-                            <button class="icon-btn" onclick="requestInsight()" title="AI 运动洞察" style="font-size:0.75rem;background:linear-gradient(135deg,#7c3aed,#a855f7);color:#fff;padding:3px 8px;border-radius:6px;">🧠 洞察</button>
-                            <button class="icon-btn" onclick="toggleDebugPanel()" title="查看 AI 消费的数据快照" style="font-size:0.75rem;color:#94a3b8;padding:3px 6px;border-radius:6px;">🐛</button>
-                            <button class="icon-btn" onclick="toggleAISidebar()" title="收起">×</button>
+                    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;flex-shrink:0;">
+                        <div style="display:flex;gap:0;flex:1;border-bottom:1px solid rgba(255,255,255,0.1);">
+                            <button class="sidebar-tab active" data-tab="report" onclick="switchSidebarTab('report', this)">📋 报告</button>
+                            <button class="sidebar-tab" data-tab="cp" onclick="switchSidebarTab('cp', this)">📍 CP点</button>
+                        </div>
+                        <button class="icon-btn" onclick="toggleAISidebar()" title="收起">×</button>
+                    </div>
+                    <div id="sidebar-panel-report" class="sidebar-panel" style="display:flex;flex-direction:column;">
+                        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;flex-shrink:0;">
+                            <div style="font-size:0.9rem;font-weight:800;color:#f8fafc;">📋 轨迹报告</div>
+                            <div style="display:flex;gap:6px;">
+                                <button class="icon-btn" onclick="requestInsight()" title="AI 运动洞察" style="font-size:0.75rem;background:linear-gradient(135deg,#7c3aed,#a855f7);color:#fff;padding:3px 8px;border-radius:6px;">🧠 洞察</button>
+                                <button class="icon-btn" onclick="toggleDebugPanel()" title="查看 AI 消费的数据快照" style="font-size:0.75rem;color:#94a3b8;padding:3px 6px;border-radius:6px;">🐛</button>
+                            </div>
+                        </div>
+                        <div id="ai-summary" class="ai-empty">导入轨迹后自动生成坡度、距离、城市位置等报告。</div>
+                    </div>
+                    <div id="sidebar-panel-cp" class="sidebar-panel" style="display:none;flex-direction:column;overflow:hidden;">
+                        <div id="gpx-temp-notice" style="display:none;margin-bottom:8px;padding:6px 8px;border-radius:6px;background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.3);font-size:0.68rem;color:#fbbf24;line-height:1.5;">⚠️ 临时轨迹会话，CP 点编辑后请导出保存，刷新后将丢失</div>
+                        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-shrink:0;">
+                            <span style="font-size:0.9rem;font-weight:800;color:#f8fafc;">📍 CP 点</span>
+                            <span id="cp-count" style="font-size:0.72rem;font-weight:600;color:#94a3b8;background:rgba(255,255,255,0.08);padding:2px 8px;border-radius:999px;">0</span>
+                        </div>
+                        <div id="cp-list-container" style="flex:1;overflow-y:auto;min-height:0;">
+                            <div id="cp-list-empty" style="font-size:0.78rem;color:#64748b;text-align:center;padding:24px 0;line-height:1.8;">点击轨迹或剖面图<br>添加 CP 点</div>
+                            <div id="cp-list" style="display:flex;flex-direction:column;gap:4px;"></div>
                         </div>
                     </div>
-                    <div id="ai-summary" class="ai-empty">导入轨迹后自动生成坡度、距离、城市位置等报告。</div>
                 </div>
             </div>
 
@@ -2413,90 +2394,51 @@
                 <p>API 密钥、大模型参数、数据存储路径等核心配置项</p>
             </div>
             <div class="panel-body">
-                <div class="section-card" id="settings-guide-card">
-                    <div class="section-title">🧭 配置引导</div>
-                    <div id="settings-guide-text" style="font-size:0.85rem;color:#cbd5e1;line-height:1.7;margin-bottom:14px;">
-                        依次完成以下 3 个步骤后，即可解锁「个人运动数据」和「轨迹分析工具」功能。
-                    </div>
-                    <div class="setup-steps" id="setup-steps-container">
-                        <div class="setup-step" id="setup-step-1" data-step="1">
-                            <div class="setup-step-dot" id="setup-dot-1">1</div>
-                            <div class="setup-step-body">
-                                <div class="setup-step-title">大模型连接测试</div>
-                                <div class="setup-step-desc" id="setup-desc-1">选择手表品牌并完成连接测试</div>
-                            </div>
-                            <div class="setup-step-status" id="setup-status-1">未完成</div>
-                        </div>
-                        <div class="setup-step" id="setup-step-2" data-step="2">
-                            <div class="setup-step-dot" id="setup-dot-2">2</div>
-                            <div class="setup-step-body">
-                                <div class="setup-step-title">选择存储目录</div>
-                                <div class="setup-step-desc" id="setup-desc-2">指定本地 FIT 文件存放路径</div>
-                            </div>
-                            <div class="setup-step-status" id="setup-status-2">未完成</div>
-                        </div>
-                        <div class="setup-step" id="setup-step-3" data-step="3">
-                            <div class="setup-step-dot" id="setup-dot-3">3</div>
-                            <div class="setup-step-body">
-                                <div class="setup-step-title">AI 助手配置确认</div>
-                                <div class="setup-step-desc" id="setup-desc-3">通知 AI 助手存储规范（佳明用户）</div>
-                            </div>
-                            <div class="setup-step-status" id="setup-status-3">未完成</div>
-                        </div>
-                    </div>
-                </div>
                 <div class="section-card">
                     <div class="section-title settings-section-title">🤖 大模型 API 配置</div>
-                    <div class="settings-form-group">
-                        <label class="settings-label">手表品牌 <span class="required">*</span></label>
-                        <div style="display:flex; gap:16px;">
-                            <label style="display:flex; align-items:center; gap:6px; font-size:0.85rem; color:#f8fafc; cursor:pointer;">
-                                <input type="radio" name="watch_brand" value="garmin" style="accent-color:var(--primary); width:16px; height:16px; margin:0;" onchange="selectUserType('garmin'); syncLLMConfigFromFields()">
-                                我是佳明用户
-                            </label>
-                            <label style="display:flex; align-items:center; gap:6px; font-size:0.85rem; color:#f8fafc; cursor:pointer;">
-                                <input type="radio" name="watch_brand" value="coros" style="accent-color:var(--primary); width:16px; height:16px; margin:0;" onchange="selectUserType('coros'); syncLLMConfigFromFields()">
-                                我是高驰用户
-                            </label>
+                    <div class="settings-form-grid">
+                        <div class="settings-form-row full-row">
+                            <label class="settings-label">手表品牌 <span class="required">*</span></label>
+                            <div class="settings-watch-brand-row">
+                                <label style="display:flex; align-items:center; gap:6px; font-size:0.85rem; color:#f8fafc; cursor:pointer;">
+                                    <input type="radio" name="watch_brand" value="garmin" style="accent-color:var(--primary); width:16px; height:16px; margin:0;" onchange="selectUserType('garmin'); syncLLMConfigFromFields()">
+                                    我是佳明用户
+                                </label>
+                                <label style="display:flex; align-items:center; gap:6px; font-size:0.85rem; color:#f8fafc; cursor:pointer;">
+                                    <input type="radio" name="watch_brand" value="coros" style="accent-color:var(--primary); width:16px; height:16px; margin:0;" onchange="selectUserType('coros'); syncLLMConfigFromFields()">
+                                    我是高驰用户
+                                </label>
+                            </div>
                         </div>
-                    </div>
-                    
-                    <div class="settings-form-group">
-                        <div>
+                        <div class="settings-form-row">
                             <label class="settings-label">服务商 (Provider)</label>
                             <select id="llm-provider" class="modal-input" onchange="updateLLMModels(); syncLLMConfigFromFields();" style="background:rgba(15,23,42,0.8);cursor:pointer;">
                                 <option value="local_mcp">本地 + MCP (如 OpenClaw / WorkBuddy)</option>
                             </select>
                         </div>
-                        <div id="llm-custom-url-container" style="display:block;">
+                        <div class="settings-form-row" id="llm-custom-url-container" style="display:block;">
                             <label class="settings-label">自定义 API 地址</label>
                             <input type="text" id="llm-custom-url" class="modal-input" placeholder="https://api.example.com/v1" autocomplete="off" oninput="syncLLMConfigFromFields(); _markUrlModified();" style="background:rgba(15,23,42,0.8);">
                         </div>
-                    </div>
-
-                    <div class="settings-form-group">
-                        <div>
+                        <div class="settings-form-row">
                             <label class="settings-label">模型 (Model)</label>
                             <select id="llm-model" class="modal-input" onchange="syncLLMConfigFromFields()" style="background:rgba(15,23,42,0.8);cursor:pointer;"></select>
                             <div id="llm-custom-model-container" style="margin-top:8px;display:none;">
                                 <input type="text" id="llm-custom-model" class="modal-input" placeholder="自定义模型名" autocomplete="off" oninput="syncLLMConfigFromFields()" style="background:rgba(15,23,42,0.8);">
                             </div>
                         </div>
-                        <div>
+                        <div class="settings-form-row">
                             <label class="settings-label">Agent ID（选填）</label>
                             <input type="text" id="llm-agent-id" class="modal-input" placeholder="网关分配的 ID" autocomplete="off" oninput="syncLLMConfigFromFields()" style="background:rgba(15,23,42,0.8);">
                         </div>
+                        <div class="settings-form-row">
+                            <label class="settings-label">API Key</label>
+                            <input type="password" id="llm-api-key" class="modal-input" placeholder="sk-..." autocomplete="off" oninput="syncLLMConfigFromFields()" style="background:rgba(15,23,42,0.8);">
+                        </div>
                     </div>
 
-                    <div class="settings-form-group">
-                        <label class="settings-label">API Key</label>
-                        <input type="password" id="llm-api-key" class="modal-input" placeholder="sk-..." autocomplete="off" oninput="syncLLMConfigFromFields()" style="background:rgba(15,23,42,0.8);">
-                    </div>
-
-                    <div style="margin-top: 16px;">
-                        <button onclick="testLLMConfig()" class="btn-secondary" id="btn-test-llm">
-                            🧪 测试连接 <span id="test-indicator" class="status-indicator"></span>
-                        </button>
+                    <div class="settings-action-row">
+                        <button onclick="testLLMConfig()" class="btn-secondary compact-action-btn" id="btn-test-llm">🧪 测试连接 <span id="test-indicator" class="status-indicator"></span></button>
                     </div>
                     <div id="llm-test-result" style="margin-top:10px;font-size:0.8rem;color:#94a3b8;">尚未测试连接</div>
                 </div>
@@ -2508,8 +2450,8 @@
                             ~/.fitvault/workspace/tracks/
                         </div>
                     </div>
-                    <div class="settings-form-group">
-                        <button id="btn-notify-ai" class="btn-secondary" onclick="notifyAIAssistant()">
+                    <div class="settings-action-row">
+                        <button id="btn-notify-ai" class="btn-secondary compact-action-btn" onclick="notifyAIAssistant()">
                             <span class="ai-btn-indicator" id="btn-notify-indicator"></span>
                             🤖 告诉AI助手存储规范
                         </button>
@@ -2613,14 +2555,14 @@
     </div>
 </div>
 
-<input type="file" id="file-upload" accept=".gpx,.kml" style="display:none;">
+<input type="file" id="file-upload" accept=".gpx,application/gpx+xml" style="display:none;">
 <div id="toast" style="opacity:0;">提示信息</div>
 
 <div class="blocker-overlay" id="blocker-modal" style="display:none;">
     <div class="blocker-modal-box">
         <div class="blocker-modal-icon">🔒</div>
         <div class="blocker-modal-title">配置尚未完成</div>
-        <div class="blocker-modal-desc">请先完成全部 3 项配置后再访问「个人运动数据」和「轨迹分析工具」功能。</div>
+        <div class="blocker-modal-desc">请先完成大模型连接测试，并告诉 AI 助手存储规范。</div>
         <button class="blocker-modal-btn" onclick="closeBlockerModal()">前往配置</button>
     </div>
 </div>
@@ -2664,6 +2606,7 @@
         <h2 id="edit-modal-title">编辑打卡点</h2>
         <button class="close-btn" onclick="closeModals()">&times;</button>
     </div>
+    <div id="cp-type-grid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:10px;padding:8px;background:rgba(255,255,255,0.04);border-radius:8px;border:1px solid rgba(255,255,255,0.08);"></div>
     <input type="text" id="edit-cp-name" class="modal-input" placeholder="输入打卡点名称..." autocomplete="off">
     <div style="display:flex;gap:10px;margin-top:10px;">
         <button onclick="saveCp()" class="primary-btn" style="flex:1;">保存</button>
@@ -2695,6 +2638,8 @@
         pointEntities: [], kmEntities: [], peakEntities: [],
         sportType: '',
         currentActivityId: null,
+        currentFileType: null,
+        persistenceMode: 'temporary_session',
         currentWeather: null,
         advancedMetrics: null,
         activityMetrics: null,
@@ -2785,6 +2730,40 @@
     };
 
     let aiCoachKeyboardBound = false;
+
+    const CP_TYPES = [
+        { type: 'summit', name: '顶峰', icon: '⛰️', gpx_sym: 'Summit, Peak' },
+        { type: 'camp', name: '营地', icon: '🏕️', gpx_sym: 'Camp, Dwelling' },
+        { type: 'scenic', name: '景点', icon: '🏞️', gpx_sym: 'Scenic Area' },
+        { type: 'toilet', name: '厕所', icon: '🚻', gpx_sym: 'Restroom' },
+        { type: 'restaurant', name: '餐厅', icon: '🍽️', gpx_sym: 'Restaurant' },
+        { type: 'water', name: '补水点', icon: '💧', gpx_sym: 'Drinking Water' },
+        { type: 'danger', name: '危险', icon: '⚠️', gpx_sym: 'Danger' },
+        { type: 'rest', name: '休息点', icon: '🪑', gpx_sym: 'Rest Area' },
+        { type: 'parking', name: '停车', icon: '🅿️', gpx_sym: 'Parking Area' },
+        { type: 'start', name: '起点', icon: '🟢', gpx_sym: 'Trailhead' },
+        { type: 'finish', name: '终点', icon: '🔴', gpx_sym: 'Finish Banner' },
+        { type: 'custom', name: '自定义', icon: '📍', gpx_sym: 'Waypoint' }
+    ];
+    let selectedCpType = 'custom';
+    let cpSyncTimer = null;
+    const CP_TYPE_COLORS = { summit: '#facc15', danger: '#ef4444', water: '#22d3ee', camp: '#84cc16', restaurant: '#f97316', scenic: '#fef3c7', start: '#22c55e', finish: '#dc2626', rest: '#7dd3fc', parking: '#d1d5db', toilet: '#f9a8d4', custom: '#3b82f6' };
+    const cpPinImageCache = {};
+
+    function getCpTypeColor(type) {
+        return CP_TYPE_COLORS[type] || CP_TYPE_COLORS.custom;
+    }
+
+    function getCpPinImage(type, icon) {
+        const color = getCpTypeColor(type);
+        const emoji = icon || '📍';
+        const cacheKey = color + '|' + emoji;
+        if (cpPinImageCache[cacheKey]) return cpPinImageCache[cacheKey];
+        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="48" height="64" viewBox="0 0 48 64"><path d="M24 2C12.4 2 3 11.4 3 23c0 15.8 21 39 21 39s21-23.2 21-39C45 11.4 35.6 2 24 2z" fill="${color}" stroke="#ffffff" stroke-width="4"/><circle cx="24" cy="23" r="9" fill="#ffffff"/><text x="24" y="27" text-anchor="middle" font-size="14">${emoji}</text></svg>`;
+        const url = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+        cpPinImageCache[cacheKey] = url;
+        return url;
+    }
 
     function _safeInt(value, defaultValue = 0) {
         const num = Number(value);
@@ -3215,6 +3194,7 @@
 
     function showBlockerModal() {
         const modal = document.getElementById('blocker-modal');
+        resetBlockerModalContent();
         if (modal) modal.style.display = 'flex';
     }
 
@@ -3232,7 +3212,15 @@
         const btnEl = modal.querySelector('.blocker-modal-btn');
         if (iconEl) iconEl.innerText = '🔒';
         if (titleEl) titleEl.innerText = '配置尚未完成';
-        if (descEl) descEl.innerText = '请先完成全部 3 项配置后再访问「个人运动数据」和「轨迹分析工具」功能。';
+        if (descEl) {
+            if (!onboardingState.llmTestPassed) {
+                descEl.innerText = '请先在配置页完成大模型连接测试。';
+            } else if (!onboardingState.aiNotified) {
+                descEl.innerText = '大模型连接已完成，请继续点击“告诉AI助手存储规范”。';
+            } else {
+                descEl.innerText = '配置已完成，可以继续使用个人运动数据和轨迹分析工具。';
+            }
+        }
         if (btnEl) {
             btnEl.innerText = '前往配置';
             btnEl.disabled = false;
@@ -3280,6 +3268,8 @@
             const res = await window.pywebview.api.load_activity_track_by_file_path(filePath);
             if (res && res.ok && res.data && Array.isArray(res.data.points) && res.data.points.length) {
                 appState.currentActivityId = (res.activity && res.activity.id) || activityId || null;
+                appState.currentFileType = String((res.filename || filePath || '').split('.').pop() || '').toLowerCase() || null;
+                appState.persistenceMode = appState.currentActivityId ? 'canonical_activity' : 'temporary_session';
                 setCurrentWeather((res.data && res.data.weather) || (res.activity && res.activity.weather) || null);
                 if (res.activity && res.activity.sport_type) {
                     const sel = document.getElementById('sport-type-selector');
@@ -3592,58 +3582,7 @@
             onboardingState.llmTestStateLock = false;
             applyLLMTestIndicatorState(indicator, nextState);
         }
-        updateSettingsGuide();
         return true;
-    }
-
-    function updateSettingsGuide() {
-        const guideText = document.getElementById('settings-guide-text');
-        const localDir = getFitTracksDir();
-        const brand = currentLLMConfig.watchBrand || '';
-
-        const step1Done = onboardingState.llmTestPassed;
-        const step2Done = !!localDir && onboardingState.dirValidated;
-        const step3Done = brand === 'coros' ? true : onboardingState.aiNotified;
-        const allDone = step1Done && step2Done && step3Done;
-
-        function applyStep(idx, done, titleDone, descDone, descTodo) {
-            const el = document.getElementById('setup-step-' + idx);
-            const dot = document.getElementById('setup-dot-' + idx);
-            const statusEl = document.getElementById('setup-status-' + idx);
-            const descEl = document.getElementById('setup-desc-' + idx);
-            if (!el) return;
-            if (done) {
-                el.classList.add('completed');
-                if (dot) dot.innerText = '✓';
-                if (statusEl) statusEl.innerText = '已完成';
-                if (descEl) descEl.innerText = descDone;
-            } else {
-                el.classList.remove('completed');
-                if (dot) dot.innerText = String(idx);
-                if (statusEl) statusEl.innerText = '未完成';
-                if (descEl) descEl.innerText = descTodo;
-            }
-        }
-
-        applyStep(1, step1Done, '连接测试已通过', '连接测试已通过', '选择手表品牌并完成连接测试');
-        applyStep(2, step2Done, '存储目录已选择', '目录已选择：' + (localDir || ''), '指定本地 FIT 文件存放路径');
-        applyStep(3, step3Done, 'AI 助手已就绪', brand === 'coros' ? '高驰用户无需通知' : '已通知存储规范', '通知 AI 助手存储规范（佳明用户）');
-
-        if (guideText) {
-            if (allDone) {
-                guideText.innerHTML = '✅ 全部配置已完成，现在可以访问「个人运动数据」和「轨迹分析工具」功能。';
-            } else if (!step1Done) {
-                guideText.innerHTML = '当前建议：先选择手表品牌，填写接口地址、API Key、模型后点击“测试连接”。测试成功后再进行下一步。';
-            } else if (!step2Done) {
-                guideText.innerHTML = '当前建议：连接测试已通过。下一步请点击“选择文件夹”，为 FIT 文件指定本地存储目录。';
-            } else if (!step3Done && brand === 'garmin') {
-                guideText.innerHTML = '当前建议：目录已选择。点击“告诉AI助手存储规范”按钮完成配置。';
-            } else if (!step3Done && brand === 'coros') {
-                guideText.innerHTML = '当前建议：高驰用户无需通知 AI 助手，配置已全部就绪。';
-            } else {
-                guideText.innerHTML = '当前建议：请先确认您的设备品牌，以便系统显示正确的后续操作入口。';
-            }
-        }
     }
 
     function updateProfilePanel(profile) {
@@ -4391,6 +4330,8 @@
                 const res = await window.pywebview.api.load_activity_track(activityId);
                 if (res && res.ok && res.data && Array.isArray(res.data.points) && res.data.points.length) {
                     appState.currentActivityId = (res.activity && res.activity.id) || activityId;
+                    appState.currentFileType = String((res.filename || (record && (record.file_name || record.filename)) || '').split('.').pop() || '').toLowerCase() || 'fit';
+                    appState.persistenceMode = 'canonical_activity';
                     setCurrentWeather((res.data && res.data.weather) || (res.activity && res.activity.weather) || null);
                     applyDataAndRender(res.data, res.filename || (record && (record.file_name || record.filename || record.title)) || '历史轨迹', res.activity || null);
                     showToast('✅ 已从数据库加载该活动轨迹');
@@ -5050,6 +4991,8 @@
                 throw new Error((res && res.error) || '加载失败');
             }
             appState.currentActivityId = (res.activity && res.activity.id) || null;
+            appState.currentFileType = String((res.filename || filePath || '').split('.').pop() || '').toLowerCase() || null;
+            appState.persistenceMode = appState.currentActivityId ? 'canonical_activity' : 'temporary_session';
             setCurrentWeather((res.data && res.data.weather) || (res.activity && res.activity.weather) || null);
             applyDataAndRender(res.data, res.filename || '历史轨迹', res.activity || null);
             if (!isBackground) showToast('✅ 已加载: ' + (res.filename || '历史轨迹'));
@@ -5078,6 +5021,8 @@
                 const res = await window.pywebview.api.load_activity_track(activityId);
                 if (res && res.ok && res.data && Array.isArray(res.data.points) && res.data.points.length) {
                     appState.currentActivityId = (res.activity && res.activity.id) || activityId;
+                    appState.currentFileType = String((res.filename || '').split('.').pop() || '').toLowerCase() || 'fit';
+                    appState.persistenceMode = 'canonical_activity';
                     setCurrentWeather((res.data && res.data.weather) || (res.activity && res.activity.weather) || null);
                     applyDataAndRender(res.data, res.filename || '历史轨迹', res.activity || null);
                     showToast('✅ 已加载: ' + (res.filename || '历史轨迹'));
@@ -5149,6 +5094,8 @@
                     const res = await window.pywebview.api.load_activity_track(latest.id);
                     if (res && res.ok && res.data && res.data.points && res.data.points.length > 0) {
                         appState.currentActivityId = (res.activity && res.activity.id) || latest.id;
+                        appState.currentFileType = String((res.filename || latest.file_name || latest.filename || '').split('.').pop() || '').toLowerCase() || 'fit';
+                        appState.persistenceMode = 'canonical_activity';
                         setCurrentWeather((res.data && res.data.weather) || (res.activity && res.activity.weather) || null);
                         applyDataAndRender(res.data, res.filename || latest.file_name || latest.filename || '历史轨迹', res.activity || null);
                     }
@@ -5178,7 +5125,10 @@
         return m + 'm';
     }
 
-    function switchAITab(tabId) { toggleAISidebar(); }
+    function switchAITab(tabId) {
+        const tab = tabId === 'cp' ? 'cp' : 'report';
+        switchSidebarTab(tab, document.querySelector('.sidebar-tab[data-tab="' + tab + '"]'));
+    }
 
     // ==========================================
     // Viewer-dependent interaction setup.
@@ -5337,6 +5287,7 @@
 
         gestureHandler.setInputAction(function(movement) {
             stopAutoRotateForOrbit();
+            cancelWheelZoom();
             if (panInertiaFrame !== null) { cancelAnimationFrame(panInertiaFrame); panInertiaFrame = null; releaseCameraOwnership('pan'); }
             isPanning = false;
             panStartPosition = null;
@@ -5357,6 +5308,7 @@
         gestureHandler.setInputAction(function(movement) {
             if (isOrbitingCamera) return;
             if (activeCameraController !== null && activeCameraController !== 'pan') return;
+            cancelWheelZoom();
             if (!claimCameraOwnership('pan')) return;
             isPanning = true;
             panStartPosition = Cesium.Cartesian2.clone(movement.position);
@@ -5444,25 +5396,38 @@
 
         gestureHandler.setInputAction(function (movement) {
             const pickedObject = viewer.scene.pick(movement.position);
-            if (Cesium.defined(pickedObject) && pickedObject.id) {
-                const entityId = typeof pickedObject.id === 'string' ? pickedObject.id : pickedObject.id.id;
-                if (entityId && entityId.startsWith('cp_')) { openEditModal(entityId, appState.placemarks.find(p => p.id === entityId)?.name); return; }
-                if (entityId && entityId.startsWith('peak_')) return;
+            const pickedEntity = Cesium.defined(pickedObject) ? pickedObject.id : null;
+            const entityId = pickedEntity ? (typeof pickedEntity === 'string' ? pickedEntity : pickedEntity.id) : '';
+            const entityName = pickedEntity && typeof pickedEntity !== 'string' ? pickedEntity.name : '';
+
+            if (entityId && entityId.startsWith('cp_')) {
+                openEditModal(entityId, appState.placemarks.find(p => p.id === entityId)?.name);
+                return;
             }
-            if (appState.points.length > 0) {
-                let earthPosition;
-                try { earthPosition = viewer.scene.pickPosition(movement.position); } catch(e) {}
-                if (!Cesium.defined(earthPosition)) earthPosition = viewer.camera.pickEllipsoid(movement.position, viewer.scene.globe.ellipsoid);
-                if (Cesium.defined(earthPosition)) {
-                    const cart = Cesium.Cartographic.fromCartesian(earthPosition), lon = Cesium.Math.toDegrees(cart.longitude), lat = Cesium.Math.toDegrees(cart.latitude);
-                    let nearestAlt = cart.height || 0, minDist = Infinity, nearestPoint = null;
-                    appState.points.forEach(p => {
-                        const dist = Math.pow(p.lon - lon, 2) + Math.pow(p.lat - lat, 2);
-                        if (dist < minDist) { minDist = dist; nearestAlt = p.alt; nearestPoint = p; }
-                    });
-                    if (minDist < 0.0005 && nearestPoint) openAddModal(nearestPoint.lon, nearestPoint.lat, nearestAlt);
-                }
+
+            if (entityId && entityId.startsWith('peak_')) return;
+
+            const isTrackEntity =
+                pickedEntity === appState.remainingTrackEntity ||
+                pickedEntity === appState.completedTrackEntity ||
+                entityName === '未完成轨迹' ||
+                entityName === '已完成轨迹' ||
+                entityName === '海拔剖面堆积墙';
+
+            if (!isTrackEntity || appState.points.length === 0) return;
+
+            let earthPosition;
+            try { earthPosition = viewer.scene.pickPosition(movement.position); } catch(e) {}
+            if (!Cesium.defined(earthPosition)) {
+                earthPosition = viewer.camera.pickEllipsoid(movement.position, viewer.scene.globe.ellipsoid);
             }
+            if (!Cesium.defined(earthPosition)) return;
+
+            const cart = Cesium.Cartographic.fromCartesian(earthPosition);
+            const lon = Cesium.Math.toDegrees(cart.longitude);
+            const lat = Cesium.Math.toDegrees(cart.latitude);
+            const nearestPoint = findNearestTrackPoint(lon, lat);
+            if (nearestPoint) openAddModal(nearestPoint.lon, nearestPoint.lat, nearestPoint.alt);
         }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
 
         viewer.camera.changed.addEventListener(function() {
@@ -5536,22 +5501,21 @@
             viewer.scene.canvas.addEventListener('wheel', function(e) {
                 if (e.ctrlKey || e.metaKey) return;
                 if (isOrbitingCamera) return;
-                if (activeCameraController !== null && activeCameraController !== 'swipe-pitch') return;
+                if (activeCameraController !== null && activeCameraController !== 'wheel-zoom') return;
                 var deltaY = e.deltaY;
+                if (e.deltaMode === e.DOM_DELTA_LINE) deltaY *= 16;
+                else if (e.deltaMode === e.DOM_DELTA_PAGE) deltaY *= 800;
                 if (Math.abs(deltaY) < 1) return;
-                if (swipePitchAnimFrame !== null) return;
-                if (!claimCameraOwnership('swipe-pitch')) return;
-                wheelBuffer = [];
-                var direction = deltaY > 0 ? -1 : 1;
-                var currentPitchDeg = Math.abs(Cesium.Math.toDegrees(viewer.camera.pitch));
-                var targetPitchDeg = Math.max(15, Math.min(90, currentPitchDeg + direction * 15));
-                if (Math.abs(targetPitchDeg - currentPitchDeg) < 0.5) {
-                    releaseCameraOwnership('swipe-pitch');
-                    return;
+                e.preventDefault();
+                if (!claimCameraOwnership('wheel-zoom')) return;
+                wheelZoomAccum += deltaY;
+                wheelZoomLastEvent = performance.now();
+                if (!wheelZoomAnchor) {
+                    var canvas = viewer.scene.canvas;
+                    wheelZoomAnchor = new Cesium.Cartesian2(canvas.clientWidth / 2, canvas.clientHeight / 2);
                 }
-                var targetPitchRad = -Cesium.Math.toRadians(targetPitchDeg);
-                animatePitchTo(targetPitchRad, 0.8, 'swipe-pitch');
-            }, { passive: true });
+                if (wheelZoomAnimFrame === null) wheelZoomAnimFrame = requestAnimationFrame(applyWheelZoomStep);
+            }, { passive: false });
 
             setupViewerInteractions();
 
@@ -5643,7 +5607,6 @@
         };
         if (brandInput) selectUserType(brandInput.value);
         updateSyncButtonsVisibility();
-        updateSettingsGuide();
     }
 
     function renderLLMConfigFields() {
@@ -5667,7 +5630,6 @@
         if (corosRadio) corosRadio.checked = (watchBrand === 'coros');
         if (watchBrand) selectUserType(watchBrand);
         updateSyncButtonsVisibility();
-        updateSettingsGuide();
         modelSelect.innerHTML = '';
         if (models.length > 0) {
             modelSelect.style.display = 'block';
@@ -5725,8 +5687,6 @@
             } else {
                 setAIStorageNotifyButtonState('idle');
             }
-        } else {
-            updateSettingsGuide();
         }
     }
 
@@ -5866,13 +5826,132 @@
     }
 
     // Modal forms
+    function getCpTypeInfo(type) {
+        return CP_TYPES.find(item => item.type === type) || CP_TYPES.find(item => item.type === 'custom');
+    }
+
+    function initCpTypeGrid() {
+        const grid = document.getElementById('cp-type-grid');
+        if (!grid) return;
+        grid.innerHTML = '';
+        CP_TYPES.forEach(function(item) {
+            const el = document.createElement('div');
+            el.className = 'cp-type-item';
+            el.dataset.type = item.type;
+            const icon = document.createElement('span');
+            icon.style.fontSize = '1.15rem';
+            icon.textContent = item.icon;
+            const name = document.createElement('span');
+            name.textContent = item.name;
+            el.appendChild(icon);
+            el.appendChild(name);
+            el.onclick = function() { selectCpType(item.type); };
+            grid.appendChild(el);
+        });
+        selectCpType(selectedCpType);
+    }
+
+    function selectCpType(type) {
+        selectedCpType = getCpTypeInfo(type).type;
+        document.querySelectorAll('.cp-type-item').forEach(function(el) {
+            el.classList.toggle('active', el.dataset.type === selectedCpType);
+        });
+    }
+
+    function findNearestTrackPoint(lon, lat) {
+        if (!appState.points || appState.points.length === 0) return null;
+        let minDist = Infinity, nearest = null;
+        appState.points.forEach(function(p) {
+            const d = Math.pow(Number(p.lon) - Number(lon), 2) + Math.pow(Number(p.lat) - Number(lat), 2);
+            if (d < minDist) { minDist = d; nearest = p; }
+        });
+        return nearest;
+    }
+
+    function normalizePlacemark(pm, sourceFallback) {
+        const typeInfo = getCpTypeInfo(pm && pm.type);
+        return {
+            id: String((pm && (pm.id || pm.cp_id)) || ('cp_user_' + Date.now())),
+            name: String((pm && pm.name) || '打卡点'),
+            type: typeInfo.type,
+            icon: String((pm && pm.icon) || typeInfo.icon),
+            gpx_sym: String((pm && pm.gpx_sym) || typeInfo.gpx_sym),
+            lon: Number(pm && pm.lon) || 0,
+            lat: Number(pm && pm.lat) || 0,
+            alt: Number(pm && pm.alt) || 0,
+            dist: Number((pm && (pm.dist_km !== undefined ? pm.dist_km : pm.dist)) || 0),
+            source: String((pm && pm.source) || sourceFallback || 'user'),
+            created_at: Number((pm && pm.created_at) || Date.now())
+        };
+    }
+
+    function isCpPersistentSession() {
+        return !!(appState.currentActivityId && appState.persistenceMode === 'canonical_activity');
+    }
+
+    function syncPlacemarksToBackend() {
+        if (!isCpPersistentSession()) return;
+        if (!(window.pywebview && window.pywebview.api && typeof window.pywebview.api.sync_activity_placemarks === 'function')) return;
+        clearTimeout(cpSyncTimer);
+        cpSyncTimer = setTimeout(function() {
+            const payload = appState.placemarks.filter(function(pm) { return pm.source === 'user'; });
+            window.pywebview.api.sync_activity_placemarks(appState.currentActivityId, payload).catch(function(e) {
+                console.warn('CP同步失败:', e);
+            });
+        }, 500);
+    }
+
+    function requestSceneRender() {
+        if (viewer && viewer.scene && typeof viewer.scene.requestRender === 'function') viewer.scene.requestRender();
+    }
+
+    function getCpVisualAlt(pm, exaggeration) {
+        return (Number(pm.alt || 0) - appState.minAltitude) * exaggeration + 45;
+    }
+
+    function renderCpMapLayer(exaggeration) {
+        if (!viewer) return;
+        appState.pointEntities.forEach(e => viewer.entities.remove(e));
+        appState.pointEntities = [];
+        (appState.placemarks || []).forEach(pm => {
+            const visualAlt = getCpVisualAlt(pm, exaggeration || 2.0);
+            const pointColor = Cesium.Color.fromCssColorString(getCpTypeColor(pm.type));
+            const entity = viewer.entities.add({
+                id: pm.id, name: pm.name, position: Cesium.Cartesian3.fromDegrees(pm.lon, pm.lat, visualAlt), show: appState.showCP,
+                point: { pixelSize: 16, color: pointColor, outlineColor: Cesium.Color.WHITE, outlineWidth: 4, heightReference: Cesium.HeightReference.NONE, disableDepthTestDistance: Number.POSITIVE_INFINITY, scaleByDistance: new Cesium.NearFarScalar(500, 1.4, 200000, 1.0) },
+                billboard: { image: getCpPinImage(pm.type, pm.icon), width: 36, height: 48, verticalOrigin: Cesium.VerticalOrigin.BOTTOM, pixelOffset: new Cesium.Cartesian2(0, 0), heightReference: Cesium.HeightReference.NONE, disableDepthTestDistance: Number.POSITIVE_INFINITY, scaleByDistance: new Cesium.NearFarScalar(500, 1.35, 200000, 0.85) },
+                label: { text: (pm.icon || '📍') + ' ' + pm.name, font: 'bold 14px sans-serif', fillColor: Cesium.Color.WHITE, outlineColor: Cesium.Color.BLACK, outlineWidth: 3, style: Cesium.LabelStyle.FILL_AND_OUTLINE, verticalOrigin: Cesium.VerticalOrigin.BOTTOM, pixelOffset: new Cesium.Cartesian2(0, -54), distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 60000), disableDepthTestDistance: Number.POSITIVE_INFINITY }
+            });
+            appState.pointEntities.push(entity);
+        });
+        requestSceneRender();
+    }
+
+    function refreshCpViews() {
+        renderCpList();
+        try { renderCpMapLayer(2.0); } catch (e) { console.warn('更新CP地图图层失败:', e); }
+        try { drawProfileChart(); } catch (e) { console.warn('更新剖面图失败:', e); }
+        requestAnimationFrame(function() {
+            renderCpList();
+            try { drawProfileChart(); } catch (e) { console.warn('延迟更新剖面图失败:', e); }
+            requestSceneRender();
+        });
+    }
+
+    function updateCpTempNotice() {
+        const notice = document.getElementById('gpx-temp-notice');
+        if (notice) notice.style.display = isCpPersistentSession() ? 'none' : 'block';
+    }
+
     function openEditModal(id, currentName) {
         appState.editingCpId = id; appState.pendingNewCp = null;
+        const pm = appState.placemarks.find(p => p.id === id);
         document.getElementById('edit-modal-title').innerText = '✏️ 编辑打卡点';
-        document.getElementById('edit-cp-name').value = currentName;
+        document.getElementById('edit-cp-name').value = currentName || (pm && pm.name) || '';
         document.getElementById('btn-delete-cp').style.display = 'block';
         document.getElementById('modal-overlay').style.display = 'block';
         document.getElementById('edit-modal').style.display = 'block';
+        selectCpType(pm && pm.type ? pm.type : 'custom');
         setTimeout(() => document.getElementById('edit-cp-name').focus(), 100);
     }
     function openAddModal(lon, lat, alt) {
@@ -5882,28 +5961,144 @@
         document.getElementById('btn-delete-cp').style.display = 'none';
         document.getElementById('modal-overlay').style.display = 'block';
         document.getElementById('edit-modal').style.display = 'block';
+        selectCpType('custom');
         setTimeout(() => document.getElementById('edit-cp-name').focus(), 100);
     }
     function saveCp() {
         const newName = document.getElementById('edit-cp-name').value.trim();
         if (!newName) { showToast("⚠️ 名称不能为空！"); return; }
+        const typeInfo = getCpTypeInfo(selectedCpType);
+        let changed = false;
         if (appState.editingCpId) {
             const pm = appState.placemarks.find(p => p.id === appState.editingCpId);
-            if (pm) pm.name = newName; showToast(`✏️ 已修改为: ${newName}`);
+            if (pm) {
+                pm.name = newName;
+                pm.type = typeInfo.type;
+                pm.icon = typeInfo.icon;
+                pm.gpx_sym = typeInfo.gpx_sym;
+                if (!pm.source) pm.source = 'user';
+                changed = true;
+            }
+            showToast(`✏️ 已修改为: ${typeInfo.icon} ${newName}`);
         } else if (appState.pendingNewCp) {
-            appState.placemarks.push({ 
-                id: 'cp_user_' + Date.now(), name: newName, 
-                lon: appState.pendingNewCp.lon, lat: appState.pendingNewCp.lat, alt: appState.pendingNewCp.alt         
-            });
-            showToast(`📍 成功新增: ${newName}`);
+            const nearest = findNearestTrackPoint(appState.pendingNewCp.lon, appState.pendingNewCp.lat);
+            const newCp = normalizePlacemark({
+                id: 'cp_user_' + Date.now(), name: newName, type: typeInfo.type, icon: typeInfo.icon, gpx_sym: typeInfo.gpx_sym,
+                lon: nearest ? nearest.lon : appState.pendingNewCp.lon,
+                lat: nearest ? nearest.lat : appState.pendingNewCp.lat,
+                alt: nearest ? nearest.alt : appState.pendingNewCp.alt,
+                dist: nearest ? Number(nearest.dist || 0) : 0,
+                source: 'user', created_at: Date.now()
+            }, 'user');
+            appState.placemarks = (appState.placemarks || []).concat([newCp]);
+            appState.pendingNewCp = null;
+            changed = true;
+            showToast(`📍 成功新增: ${typeInfo.icon} ${newName}`);
         }
-        closeModals(); updateScene(); 
+        if (!changed) return;
+        refreshCpViews();
+        closeModals();
+        refreshCpViews();
+        syncPlacemarksToBackend();
     }
     function deleteCp() {
         if (appState.editingCpId) {
             appState.placemarks = appState.placemarks.filter(p => p.id !== appState.editingCpId);
-            showToast(`🗑️ 已删除该打卡点`); closeModals(); updateScene();
+            showToast(`🗑️ 已删除该打卡点`);
+            syncPlacemarksToBackend();
+            closeModals();
+            refreshCpViews();
         }
+    }
+
+    function deleteCpFromList(cpId) {
+        const before = appState.placemarks.length;
+        appState.placemarks = appState.placemarks.filter(p => p.id !== cpId);
+        if (appState.editingCpId === cpId) appState.editingCpId = null;
+        appState.pendingNewCp = null;
+        if (appState.placemarks.length === before) return;
+        syncPlacemarksToBackend();
+        refreshCpViews();
+        showToast('🗑️ 已删除该打卡点');
+    }
+
+    function switchSidebarTab(tab, btn) {
+        document.querySelectorAll('.sidebar-tab').forEach(function(el) { el.classList.remove('active'); });
+        if (btn) btn.classList.add('active');
+        document.querySelectorAll('.sidebar-panel').forEach(function(panel) { panel.style.display = 'none'; });
+        const panel = document.getElementById('sidebar-panel-' + tab);
+        if (panel) panel.style.display = 'flex';
+        if (tab === 'cp') {
+            updateCpTempNotice();
+            renderCpList();
+        }
+    }
+
+    function flyToCp(cpId) {
+        const pm = appState.placemarks.find(p => p.id === cpId);
+        if (!pm || !viewer) return;
+        const visualAlt = (Number(pm.alt || 0) - appState.minAltitude) * 1.5 + 500;
+        viewer.camera.flyTo({ destination: Cesium.Cartesian3.fromDegrees(Number(pm.lon), Number(pm.lat), visualAlt), duration: 1.0 });
+    }
+
+    function renderCpList() {
+        const list = document.getElementById('cp-list');
+        const empty = document.getElementById('cp-list-empty');
+        const count = document.getElementById('cp-count');
+        if (!list || !empty || !count) return;
+        updateCpTempNotice();
+        list.innerHTML = '';
+        const items = Array.isArray(appState.placemarks) ? [...appState.placemarks] : [];
+        count.textContent = String(items.length);
+        if (!items.length) {
+            empty.style.display = 'block';
+            list.style.display = 'none';
+            return;
+        }
+        empty.style.display = 'none';
+        list.style.display = 'flex';
+        items.sort(function(a, b) { return Number(a.dist || a.created_at || 0) - Number(b.dist || b.created_at || 0); });
+        items.forEach(function(pm) {
+            const row = document.createElement('div');
+            row.className = 'cp-list-item';
+            row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.06);cursor:pointer;transition:background 0.15s;user-select:none;';
+            row.onmouseenter = function() { row.style.background = 'rgba(59,130,246,0.1)'; };
+            row.onmouseleave = function() { row.style.background = 'rgba(255,255,255,0.04)'; };
+            row.onclick = function() { flyToCp(pm.id); };
+            const icon = document.createElement('span');
+            icon.style.cssText = 'font-size:1.1rem;flex-shrink:0;';
+            icon.textContent = pm.icon || '📍';
+            const body = document.createElement('div');
+            body.style.cssText = 'flex:1;min-width:0;';
+            const title = document.createElement('div');
+            title.style.cssText = 'font-size:0.78rem;color:#f8fafc;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+            title.textContent = pm.name || '打卡点';
+            const meta = document.createElement('div');
+            meta.style.cssText = 'font-size:0.65rem;color:#64748b;';
+            const distText = Number(pm.dist) ? Number(pm.dist).toFixed(1) + 'km' : '';
+            const altText = Number(pm.alt) ? Math.round(Number(pm.alt)) + 'm' : '';
+            meta.textContent = [distText, altText].filter(Boolean).join(' / ');
+            body.appendChild(title);
+            body.appendChild(meta);
+            const actions = document.createElement('div');
+            actions.style.cssText = 'display:flex;gap:6px;flex-shrink:0;';
+            const edit = document.createElement('button');
+            edit.className = 'cp-list-action';
+            edit.title = '编辑';
+            edit.textContent = '✏️';
+            edit.onclick = function(event) { event.stopPropagation(); openEditModal(pm.id, pm.name); };
+            const del = document.createElement('button');
+            del.className = 'cp-list-action danger';
+            del.title = '删除';
+            del.textContent = '🗑️';
+            del.onclick = function(event) { event.stopPropagation(); deleteCpFromList(pm.id); };
+            actions.appendChild(edit);
+            actions.appendChild(del);
+            row.appendChild(icon);
+            row.appendChild(body);
+            row.appendChild(actions);
+            list.appendChild(row);
+        });
     }
 
     // Markdown Parser
@@ -6020,8 +6215,16 @@
         var maxAlt = (m.max_alt_m != null) ? Math.round(Number(m.max_alt_m)) : 0;
 
         // 向后兼容：确保每个点有 .dist 字段（profile chart 依赖）
+        var fallbackDist = 0;
         for (var i = 0; i < points.length; i++) {
-            points[i].dist = points[i].dist_km != null ? points[i].dist_km : (i === 0 ? 0 : (points[i-1].dist || 0));
+            if (i > 0) {
+                var prev = points[i - 1], cur = points[i];
+                fallbackDist += haversine(prev, cur) / 1000;
+            }
+            var pointDist = points[i].dist_km != null ? Number(points[i].dist_km) : (points[i].dist != null ? Number(points[i].dist) : fallbackDist);
+            if (!Number.isFinite(pointDist)) pointDist = fallbackDist;
+            points[i].dist = pointDist;
+            points[i].dist_km = pointDist;
         }
 
         var distDisplay = m.distance_display || (distKm > 0 ? distKm.toFixed(2) + ' km' : '0 km');
@@ -6370,7 +6573,7 @@
             const report = generateAIReport(appState.points, appState.activityMetrics);
             summaryEl.innerHTML = buildAIReportHTML(report);
             sidebarEl.classList.remove('collapsed');
-            switchAITab('report');
+            switchSidebarTab('report', document.querySelector('.sidebar-tab[data-tab="report"]'));
             return report;
         } catch (err) {
             console.error('轨迹报告生成失败:', err);
@@ -6587,7 +6790,7 @@
         if(wpts.length === 0) wpts = Array.from(xml.getElementsByTagNameNS('*', 'wpt'));
         const placemarks = wpts.map((pt, i) => {
             let name = (pt.getElementsByTagName('name')[0] || pt.getElementsByTagNameNS('*', 'name')[0])?.textContent?.trim() || `打卡点 ${i + 1}`;
-            return { id: 'cp_gpx_' + Date.now() + '_' + i, name: name, lat: parseFloat(pt.getAttribute('lat')), lon: parseFloat(pt.getAttribute('lon')), alt: parseFloat((pt.getElementsByTagName('ele')[0] || pt.getElementsByTagNameNS('*', 'ele')[0])?.textContent || 0) };
+            return normalizePlacemark({ id: 'cp_gpx_' + Date.now() + '_' + i, name: name, lat: parseFloat(pt.getAttribute('lat')), lon: parseFloat(pt.getAttribute('lon')), alt: parseFloat((pt.getElementsByTagName('ele')[0] || pt.getElementsByTagNameNS('*', 'ele')[0])?.textContent || 0), source: 'gpx_wpt' }, 'gpx_wpt');
         });
         return { points, placemarks, activity_type: activity_type };
     }
@@ -6688,6 +6891,28 @@
             ctx.fillStyle = '#ffffff'; ctx.font = 'bold 13px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
             ctx.fillText(`${Math.round(currentPoint.alt)}m`, cx, cy - 10);
         }
+        (appState.placemarks || []).forEach(function(pm) {
+            if (!Number(pm.dist) && !Number(pm.alt)) return;
+            const x = getX(Number(pm.dist || 0));
+            const y = getY(Number(pm.alt || 0));
+            ctx.fillStyle = '#3b82f6';
+            ctx.beginPath();
+            ctx.moveTo(x, y - 10);
+            ctx.lineTo(x - 5, y - 3);
+            ctx.lineTo(x + 5, y - 3);
+            ctx.closePath();
+            ctx.fill();
+            if (x > padding.left + 30 && x < rect.width - padding.right - 30) {
+                const text = (pm.icon || '📍') + ' ' + (pm.name || '打卡点');
+                ctx.font = 'bold 10px sans-serif';
+                const tw = ctx.measureText(text).width;
+                ctx.fillStyle = 'rgba(15,23,42,0.85)';
+                ctx.fillRect(x - tw / 2 - 3, y - 28, tw + 6, 14);
+                ctx.fillStyle = '#f8fafc';
+                ctx.textAlign = 'center';
+                ctx.fillText(text, x, y - 17);
+            }
+        });
     }
     window.addEventListener('resize', drawProfileChart);
 
@@ -6738,16 +6963,7 @@
             }
         });
 
-        appState.pointEntities.forEach(e => viewer.entities.remove(e)); appState.pointEntities = [];
-        appState.placemarks.forEach(pm => {
-            const visualAlt = (pm.alt - appState.minAltitude) * exaggeration + 35;
-            const entity = viewer.entities.add({
-                id: pm.id, name: pm.name, position: Cesium.Cartesian3.fromDegrees(pm.lon, pm.lat, visualAlt), show: appState.showCP, 
-                point: { pixelSize: 12, color: Cesium.Color.WHITE, outlineColor: Cesium.Color.fromCssColorString('#3b82f6'), outlineWidth: 4, heightReference: Cesium.HeightReference.NONE },
-                label: { text: pm.name, font: '14px sans-serif', fillColor: Cesium.Color.WHITE, outlineColor: Cesium.Color.BLACK, outlineWidth: 3, style: Cesium.LabelStyle.FILL_AND_OUTLINE, verticalOrigin: Cesium.VerticalOrigin.BOTTOM, pixelOffset: new Cesium.Cartesian2(0, -15), distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 15000) }
-            });
-            appState.pointEntities.push(entity);
-        });
+        renderCpMapLayer(exaggeration);
 
         appState.kmEntities.forEach(e => viewer.entities.remove(e)); appState.kmEntities = [];
         appState.kmMarkers.forEach(km => {
@@ -6780,14 +6996,18 @@
         setCurrentWeather(data.weather || null);
         appState.advancedMetrics = data.advanced_metrics || null;
         appState.points = data.points;
-        appState.placemarks = data.placemarks || [];
+        appState.placemarks = (data.placemarks || []).map(function(pm) { return normalizePlacemark(pm, appState.persistenceMode === 'canonical_activity' ? 'user' : 'gpx_wpt'); });
         appState.progress = 100; document.getElementById('progress-slider').value = 100; document.getElementById('progress-val').innerText = '100.0%';
 
         // Task 3.2: 捕获后端权威 metrics，前端不再计算 distance/pace/elevation
         appState.activityMetrics = activity || null;
 
-        const stats = calculateStats(appState.points, appState.activityMetrics);
-        _validateNotPreview(stats, '轨迹详情面板');
+        let stats;
+        if (appState.activityMetrics) {
+            stats = _buildStatsFromCanonical(appState.points, appState.activityMetrics);
+        } else {
+            stats = _previewStatsOnly(appState.points);
+        }
         appState.kmMarkers = stats.kmMarkers; appState.peakMarkers = stats.peakMarkers; 
 
         document.getElementById('val-dist').innerText = stats.dist; document.getElementById('val-gain').innerText = stats.gain;
@@ -6833,6 +7053,7 @@
         }
 
         renderTrackReport({ silent: true });
+        renderCpList();
         renderPerformanceRadar();
 
         // Task 4.1: 自动刷新 Debug Panel
@@ -6900,6 +7121,7 @@
 
     function resetMapNorth() {
         if (activeCameraController !== null) return;
+        cancelWheelZoom();
         if (!claimCameraOwnership('compass')) return;
         const focus = getCameraFocusPoint();
         flyCameraAroundFocus(focus, 0.0, viewer.camera.pitch);
@@ -6908,7 +7130,7 @@
     // Camera ownership system.
     // Prevent multiple controllers from competing for camera state.
     let activeCameraController = null;
-    const cameraControllerPriority = { autorotate: 1, compass: 2, flyto: 2, pan: 2, 'swipe-pitch': 2, 'twist-reset': 2, slider: 3, 'two-finger-zoom': 3, 'pinch-zoom': 3, orbit: 4, 'twist-rotate': 4 };
+    const cameraControllerPriority = { autorotate: 1, compass: 2, flyto: 2, pan: 2, 'wheel-zoom': 2, 'twist-reset': 2, slider: 3, 'two-finger-zoom': 3, 'pinch-zoom': 3, orbit: 4, 'twist-rotate': 4 };
 
     function claimCameraOwnership(controllerName) {
         if (!controllerName) return false;
@@ -6943,6 +7165,7 @@
     document.getElementById('btn-auto-rotate').addEventListener('click', (e) => {
         const btn = e.target;
         if(btn.innerText.includes('▶')) {
+            cancelWheelZoom();
             if (!claimCameraOwnership('autorotate')) return;
             btn.innerText = '⏸ 暂停'; btn.style.background = 'rgba(59, 130, 246, 0.8)'; btn.style.borderColor = '#2563eb';
             rotateInterval = setInterval(() => {
@@ -6992,42 +7215,52 @@
             return;
         }
         var currentRange = rangeToWorld(anchor);
+        var cameraController = viewer.scene.screenSpaceCameraController;
         var newRange = Cesium.Math.clamp(currentRange * factor, cameraController.minimumZoomDistance, cameraController.maximumZoomDistance);
         viewer.camera.lookAt(anchor, new Cesium.HeadingPitchRange(viewer.camera.heading, viewer.camera.pitch, newRange));
         resetCameraTransformSafely();
     }
 
-    // Two-finger swipe pitch transition: wheel velocity tracking.
-    var wheelBuffer = [];
-    var swipePitchAnimFrame = null;
+    var wheelZoomAccum = 0;
+    var wheelZoomLastEvent = 0;
+    var wheelZoomAnimFrame = null;
+    var wheelZoomAnchor = null;
+    var WHEEL_ZOOM_SPEED = 0.0015;
+    var WHEEL_ZOOM_IDLE_MS = 80;
 
-    function animatePitchTo(targetPitchRad, durationSec, controllerName) {
-        if (swipePitchAnimFrame !== null) cancelAnimationFrame(swipePitchAnimFrame);
-        var startPitch = viewer.camera.pitch;
-        var startTime = performance.now();
-        function step() {
-            if (!hasCameraOwnership(controllerName)) {
-                swipePitchAnimFrame = null;
-                return;
-            }
-            var elapsed = (performance.now() - startTime) / 1000;
-            var t = Math.min(1, elapsed / durationSec);
-            var eased = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-            var currentPitch = startPitch + (targetPitchRad - startPitch) * eased;
-            var focus = getCameraFocusPoint();
-            if (Cesium.defined(focus)) {
-                var rng = rangeToWorld(focus);
-                viewer.camera.lookAt(focus, new Cesium.HeadingPitchRange(viewer.camera.heading, currentPitch, rng));
-                resetCameraTransformSafely();
-            }
-            if (t >= 1) {
-                swipePitchAnimFrame = null;
-                releaseCameraOwnership(controllerName);
-                return;
-            }
-            swipePitchAnimFrame = requestAnimationFrame(step);
+    function applyWheelZoomStep() {
+        wheelZoomAnimFrame = null;
+        if (!hasCameraOwnership('wheel-zoom')) {
+            wheelZoomAccum = 0;
+            wheelZoomAnchor = null;
+            return;
         }
-        swipePitchAnimFrame = requestAnimationFrame(step);
+        if (Math.abs(wheelZoomAccum) < 0.1) {
+            wheelZoomAccum = 0;
+        } else {
+            var delta = wheelZoomAccum;
+            wheelZoomAccum *= 0.45;
+            var factor = Math.exp(delta * WHEEL_ZOOM_SPEED);
+            zoomAtScreenPoint(wheelZoomAnchor, factor, 'wheel-zoom');
+        }
+        var idle = performance.now() - wheelZoomLastEvent;
+        if (idle > WHEEL_ZOOM_IDLE_MS && Math.abs(wheelZoomAccum) < 0.1) {
+            wheelZoomAccum = 0;
+            wheelZoomAnchor = null;
+            releaseCameraOwnership('wheel-zoom');
+            return;
+        }
+        wheelZoomAnimFrame = requestAnimationFrame(applyWheelZoomStep);
+    }
+
+    function cancelWheelZoom() {
+        if (wheelZoomAnimFrame !== null) {
+            cancelAnimationFrame(wheelZoomAnimFrame);
+            wheelZoomAnimFrame = null;
+        }
+        wheelZoomAccum = 0;
+        wheelZoomAnchor = null;
+        releaseCameraOwnership('wheel-zoom');
     }
 
 
@@ -7203,6 +7436,7 @@
     let dragHeading = 0;
 
     function beginMapViewSliderDrag() {
+        cancelWheelZoom();
         if (!claimCameraOwnership('slider')) return;
         stopAutoRotateForOrbit();
         dragTarget = getCameraFocusPoint();
@@ -7339,7 +7573,6 @@
             const settingsTabBtn = document.querySelector('.bookmark-tab[data-panel="settings"]');
             if (settingsTabBtn) switchTab(settingsTabBtn);
             onboardingState.currentConfigStep = 1;
-            updateSettingsGuide();
         },
 
         verifyStep2() {
@@ -7451,7 +7684,6 @@
             }
         }
         updateSyncButtonsVisibility();
-        updateSettingsGuide();
     }
 </script>
 
@@ -7520,7 +7752,6 @@ function resetDirectoryValidationState() {
     }
     const msgEl = document.getElementById('dir-validation-msg');
     if (msgEl) { msgEl.innerText = '⏳ 等待确认...'; msgEl.style.color = '#64748b'; }
-    updateSettingsGuide();
 }
 
 function isLLMOkConfirmation(res) {
@@ -7584,7 +7815,6 @@ async function notifyAIAssistant() {
         if (success) {
             showToast('✅ 已成功告知 AI 助手存储规范！');
             onboardingState.aiNotified = true;
-            updateSettingsGuide();
             setAIStorageNotifyButtonState('success');
         } else {
             showToast('⚠️ 通知失败，请重试');
@@ -7603,7 +7833,6 @@ async function revalidateDirectory(path) {
     onboardingState.dirValidated = false;
     if (!path) {
         if (msgEl) { msgEl.innerText = ''; msgEl.style.color = ''; }
-        updateSettingsGuide();
         return false;
     }
     if (msgEl) { msgEl.innerText = '⏳ 正在验证目录...'; msgEl.style.color = '#64748b'; }
@@ -7622,13 +7851,11 @@ async function revalidateDirectory(path) {
         } else {
             if (msgEl) { msgEl.innerText = '⚠️ 目录无效或无法访问，请重新选择'; msgEl.style.color = '#f87171'; }
         }
-        updateSettingsGuide();
         return ok;
     } catch (e) {
         if (requestId !== onboardingState.dirValidationRequestId) return false;
         console.warn('目录验证失败:', e);
         if (msgEl) { msgEl.innerText = '⚠️ 目录验证失败: ' + (e.message || e); msgEl.style.color = '#f87171'; }
-        updateSettingsGuide();
         return false;
     }
 }
@@ -7652,6 +7879,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
 async function bootstrapApplication() {
     console.log('[ARCHITECTURE] 方案 B 已启用：前端计算严格隔离');
+    initCpTypeGrid();
     initCesiumViewer();
     try {
         var res = await pywebview.api.check_first_run_status();
@@ -7801,7 +8029,7 @@ function openConfigModalFromWarning() {
             if (loader) {
                 loader.style.display = 'flex';
                 setTimeout(function () { loader.style.opacity = '1'; }, 10);
-                document.getElementById('loading-text').innerText = '正在导入并解析轨迹…';
+                document.getElementById('loading-text').innerText = '正在导入并解析 GPX 轨迹…';
             }
             try {
                 let res = await window.pywebview.api.import_track();
@@ -7816,7 +8044,7 @@ function openConfigModalFromWarning() {
                         showToast('已跳过导入');
                         return;
                     }
-                    document.getElementById('loading-text').innerText = '正在按新策略导入轨迹…';
+                    document.getElementById('loading-text').innerText = '正在按新策略导入 GPX 轨迹…';
                     res = await window.pywebview.api.import_track(res.file_path, decision.action, decision.newFilename || '');
                     if (!res || !res.ok) {
                         showToast('⚠️ 导入失败: ' + (res && res.error ? res.error : '未知错误'));
@@ -7828,6 +8056,8 @@ function openConfigModalFromWarning() {
                     return;
                 }
                 appState.currentActivityId = (res.activity && res.activity.id) || null;
+                appState.currentFileType = String((res.filename || '').split('.').pop() || '').toLowerCase() || null;
+                appState.persistenceMode = appState.currentActivityId ? 'canonical_activity' : 'temporary_session';
                 setCurrentWeather((res.data && res.data.weather) || (res.activity && res.activity.weather) || null);
                 if (res.activity && res.activity.sport_type) {
                     appState.sportType = res.activity.sport_type;
@@ -7848,6 +8078,47 @@ function openConfigModalFromWarning() {
         }
         document.getElementById('file-upload').click();
     }
+
+    function isGpxFilename(filename) {
+        return String(filename || '').trim().toLowerCase().endsWith('.gpx');
+    }
+
+    function bindGpxFileInput() {
+        const input = document.getElementById('file-upload');
+        if (!input || input.dataset.gpxBound === '1') return;
+        input.dataset.gpxBound = '1';
+        input.addEventListener('change', function(event) {
+            const file = event.target && event.target.files && event.target.files[0];
+            input.value = '';
+            if (!file) return;
+            if (!isGpxFilename(file.name)) {
+                showToast('⚠️ 仅支持导入 GPX 文件，请选择 .gpx 格式的轨迹文件');
+                return;
+            }
+            const reader = new FileReader();
+            reader.onload = function() {
+                try {
+                    const parsed = parseGPX(String(reader.result || ''));
+                    if (!parsed || !parsed.points || parsed.points.length === 0) {
+                        showToast('⚠️ GPX 文件中未提取到有效轨迹点');
+                        return;
+                    }
+                    appState.currentActivityId = null;
+                    appState.currentFileType = 'gpx';
+                    appState.persistenceMode = 'temporary_session';
+                    appState.sportType = parsed.activity_type || appState.sportType || '';
+                    applyDataAndRender(parsed, file.name || 'GPX轨迹', null);
+                    showToast('✅ 已导入 GPX 轨迹');
+                } catch (err) {
+                    showToast('⚠️ GPX 解析失败: ' + (err && err.message ? err.message : String(err)));
+                }
+            };
+            reader.onerror = function() { showToast('⚠️ GPX 文件读取失败'); };
+            reader.readAsText(file);
+        });
+    }
+
+    bindGpxFileInput();
 
     // 处理重复文件的弹窗交互
     function handleDuplicateTrack(dupRecord, score, filename) {
@@ -7993,11 +8264,15 @@ function openConfigModalFromWarning() {
         if (!appState.points.length) { showToast("⚠️ 无轨迹可导出！"); return; }
         const smartName = getSmartFileName('gpx');
         const internalName = smartName.replace(/\.gpx$/i, '');
+        const xmlEscape = (value) => String(value == null ? '' : value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
         let gpx = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="3DTrackViewer">\n`;
-        appState.placemarks.forEach(pm => { gpx += `  <wpt lat="${pm.lat.toFixed(6)}" lon="${pm.lon.toFixed(6)}"><ele>${pm.alt.toFixed(1)}</ele><name>${pm.name}</name></wpt>\n`; });
-        gpx += `  <trk><name>${internalName}</name><trkseg>\n`;
+        appState.placemarks.forEach(pm => {
+            const sym = pm.gpx_sym || 'Waypoint';
+            gpx += `  <wpt lat="${Number(pm.lat || 0).toFixed(6)}" lon="${Number(pm.lon || 0).toFixed(6)}"><ele>${Number(pm.alt || 0).toFixed(1)}</ele><name>${xmlEscape((pm.icon || '📍') + ' ' + (pm.name || '打卡点'))}</name><sym>${xmlEscape(sym)}</sym></wpt>\n`;
+        });
+        gpx += `  <trk><name>${xmlEscape(internalName)}</name><trkseg>\n`;
         appState.points.forEach(p => {
-            gpx += `      <trkpt lat="${p.lat.toFixed(6)}" lon="${p.lon.toFixed(6)}"><ele>${p.alt.toFixed(1)}</ele>`;
+            gpx += `      <trkpt lat="${Number(p.lat || 0).toFixed(6)}" lon="${Number(p.lon || 0).toFixed(6)}"><ele>${Number(p.alt || 0).toFixed(1)}</ele>`;
             if (p.time) gpx += `<time>${new Date(p.time).toISOString()}</time>`;
             if (p.hr) gpx += `<extensions><TrackPointExtension><hr>${p.hr}</hr></TrackPointExtension></extensions>`;
             gpx += `</trkpt>\n`;
@@ -8010,10 +8285,11 @@ function openConfigModalFromWarning() {
         if (!appState.points.length) { showToast("⚠️ 无轨迹可导出！"); return; }
         const smartName = getSmartFileName('kml');
         const internalName = smartName.replace(/\.kml$/i, '');
-        let kml = `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n  <Document>\n    <name>${internalName}</name>\n`;
-        appState.placemarks.forEach(pm => { kml += `    <Placemark><name>${pm.name}</name><Point><coordinates>${pm.lon.toFixed(6)},${pm.lat.toFixed(6)},${pm.alt.toFixed(1)}</coordinates></Point></Placemark>\n`; });
+        const xmlEscape = (value) => String(value == null ? '' : value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+        let kml = `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n  <Document>\n    <name>${xmlEscape(internalName)}</name>\n`;
+        appState.placemarks.forEach(pm => { kml += `    <Placemark><name>${xmlEscape((pm.icon || '📍') + ' ' + (pm.name || '打卡点'))}</name><Point><coordinates>${Number(pm.lon || 0).toFixed(6)},${Number(pm.lat || 0).toFixed(6)},${Number(pm.alt || 0).toFixed(1)}</coordinates></Point></Placemark>\n`; });
         kml += `    <Placemark><name>Track</name><LineString><coordinates>\n`;
-        appState.points.forEach(p => { kml += `${p.lon.toFixed(6)},${p.lat.toFixed(6)},${p.alt.toFixed(1)} `; });
+        appState.points.forEach(p => { kml += `${Number(p.lon || 0).toFixed(6)},${Number(p.lat || 0).toFixed(6)},${Number(p.alt || 0).toFixed(1)} `; });
         kml += `\n        </coordinates></LineString></Placemark>\n  </Document>\n</kml>`;
         downloadFile(kml, smartName, 'application/vnd.google-earth.kml+xml');
     }
@@ -8030,6 +8306,8 @@ function openConfigModalFromWarning() {
             else throw new Error("当前架构不支持前端直接解析该格式，请在桌面端通过后端导入。");
             if (result && result.points.length > 0) {
                 appState.currentActivityId = null;
+                appState.currentFileType = ext;
+                appState.persistenceMode = 'temporary_session';
                 setCurrentWeather(result.weather || null);
                 applyDataAndRender(result, file.name);
                 autoMatchActivityType(result);
@@ -8071,8 +8349,47 @@ function openConfigModalFromWarning() {
         clearTimeout(startupLoaderWatchdog);
         const loader = document.getElementById('loading');
         if (loader) { loader.style.opacity = '0'; setTimeout(() => loader.style.display = 'none', 800); }
-        showToast("💡 随时点击轨迹新增打卡点，点击已有打卡点修改或删除！");
+        showToast("💡 随时点击轨迹新增CP点，点击已有CP点修改或删除！");
     }, 1000); 
+
+    function bindTopBarToggles() {
+        const cpToggle = document.getElementById('toggle-cp');
+        const kmToggle = document.getElementById('toggle-km');
+        const peakToggle = document.getElementById('toggle-peak');
+
+        function refreshToggledScene() {
+            if (appState.points && appState.points.length > 0) {
+                updateScene();
+                try { drawProfileChart(); } catch (e) { console.warn('toggle剖面图刷新失败:', e); }
+            }
+        }
+
+        if (cpToggle) cpToggle.addEventListener('change', function() {
+            appState.showCP = cpToggle.checked;
+            refreshToggledScene();
+        });
+        if (kmToggle) kmToggle.addEventListener('change', function() {
+            appState.showKM = kmToggle.checked;
+            refreshToggledScene();
+        });
+        if (peakToggle) peakToggle.addEventListener('change', function() {
+            appState.showPeak = peakToggle.checked;
+            refreshToggledScene();
+        });
+
+        const progressSlider = document.getElementById('progress-slider');
+        const progressVal = document.getElementById('progress-val');
+        if (progressSlider) progressSlider.addEventListener('input', function() {
+            const val = parseFloat(this.value);
+            appState.progress = val;
+            if (progressVal) progressVal.innerText = val.toFixed(1) + '%';
+            if (appState.points && appState.points.length > 0) {
+                try { drawProfileChart(); } catch (e) { console.warn('进度条剖面图刷新失败:', e); }
+                requestSceneRender();
+            }
+        });
+    }
+    bindTopBarToggles();
 
 </script>
 </body>

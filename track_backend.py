@@ -321,9 +321,24 @@ def attach_slopes(points: list[dict[str, Any]]) -> None:
     if not points:
         return
     points[0]["slope_pct"] = None
+    if points[0].get("dist_km") is None:
+        points[0]["dist_km"] = 0.0
+    if points[0].get("dist") is None:
+        points[0]["dist"] = 0.0
+    cumulative_km = float(points[0].get("dist_km") or points[0].get("dist") or 0.0)
     for i in range(1, len(points)):
         p0, p1 = points[i - 1], points[i]
         dist_m = haversine_m(p0["lat"], p0["lon"], p1["lat"], p1["lon"])
+        if p1.get("dist_km") is None and p1.get("dist") is None:
+            cumulative_km += dist_m / 1000.0
+            p1["dist_km"] = cumulative_km
+            p1["dist"] = cumulative_km
+        else:
+            cumulative_km = float(p1.get("dist_km") if p1.get("dist_km") is not None else p1.get("dist") or cumulative_km)
+            if p1.get("dist_km") is None:
+                p1["dist_km"] = cumulative_km
+            if p1.get("dist") is None:
+                p1["dist"] = cumulative_km
         d_alt = float(p1["alt"]) - float(p0["alt"])
         if dist_m > 5:
             p1["slope_pct"] = (d_alt / dist_m) * 100.0

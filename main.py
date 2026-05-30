@@ -570,6 +570,30 @@ def ensure_activity_sync_schema() -> None:
             conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_activities_file_name_unique ON activities(file_name)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_activities_start_time_desc ON activities(start_time DESC)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_activities_sport_type ON activities(sport_type)")
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS activity_placemarks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    activity_id INTEGER NOT NULL,
+                    cp_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    type TEXT NOT NULL DEFAULT 'custom',
+                    icon TEXT NOT NULL DEFAULT '📍',
+                    gpx_sym TEXT NOT NULL DEFAULT 'Waypoint',
+                    lon REAL NOT NULL,
+                    lat REAL NOT NULL,
+                    alt REAL,
+                    dist_km REAL,
+                    source TEXT NOT NULL DEFAULT 'user',
+                    created_at INTEGER,
+                    updated_at INTEGER,
+                    UNIQUE(activity_id, cp_id)
+                )
+                """
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_activity_placemarks_activity_dist ON activity_placemarks(activity_id, dist_km)"
+            )
             conn.commit()
             _ACTIVITY_SYNC_SCHEMA_READY_FOR = cache_key
         except Exception:
@@ -3022,6 +3046,134 @@ class Api:
         finally:
             conn.close()
 
+    def _load_activity_placemarks(self, activity_id: int) -> list[dict[str, Any]]:
+        ensure_activity_sync_schema()
+        if not _safe_int(activity_id):
+            return []
+        conn = profile_backend._conn()
+        try:
+            rows = conn.execute(
+                """
+                SELECT cp_id, name, type, icon, gpx_sym, lon, lat, alt, dist_km, source, created_at, updated_at
+                FROM activity_placemarks
+                WHERE activity_id = ?
+                ORDER BY COALESCE(dist_km, 999999999), id
+                """,
+                (_safe_int(activity_id),),
+            ).fetchall()
+            return [
+                {
+                    "id": str(row["cp_id"] or ""),
+                    "cp_id": str(row["cp_id"] or ""),
+                    "name": str(row["name"] or ""),
+                    "type": str(row["type"] or "custom"),
+                    "icon": str(row["icon"] or "📍"),
+                    "gpx_sym": str(row["gpx_sym"] or "Waypoint"),
+                    "lon": _safe_float(row["lon"]),
+                    "lat": _safe_float(row["lat"]),
+                    "alt": _safe_float(row["alt"]),
+                    "dist": _safe_float(row["dist_km"]),
+                    "dist_km": _safe_float(row["dist_km"]),
+                    "source": str(row["source"] or "user"),
+                    "created_at": _safe_int(row["created_at"]),
+                    "updated_at": _safe_int(row["updated_at"]),
+                }
+                for row in rows
+            ]
+        finally:
+            conn.close()
+
+    def get_activity_placemarks(self, activity_id: int) -> dict:
+        row = self._fetch_activity_row(_safe_int(activity_id))
+        if not row:
+            return _api_error(API_CODE_NOT_FOUND, "未找到该活动记录", {"placemarks": []})
+        placemarks = self._load_activity_placemarks(_safe_int(activity_id))
+        return _api_success({"placemarks": placemarks, "count": len(placemarks)})
+
+    def sync_activity_placemarks(self, activity_id: int, placemarks: list[dict] | str | None = None) -> dict:
+        activity_id = _safe_int(activity_id)
+        if not activity_id:
+            return _api_error(API_CODE_VALIDATION, "activity_id 无效", {"count": 0})
+        if not self._fetch_activity_row(activity_id):
+            return _api_error(API_CODE_NOT_FOUND, "未找到该活动记录", {"count": 0})
+        if isinstance(placemarks, str):
+            try:
+                placemark_items = json.loads(placemarks)
+            except json.JSONDecodeError:
+                return _api_error(API_CODE_VALIDATION, "CP 点数据不是有效 JSON", {"count": 0})
+        else:
+            placemark_items = placemarks or []
+        if not isinstance(placemark_items, list):
+            return _api_error(API_CODE_VALIDATION, "CP 点数据必须是数组", {"count": 0})
+
+        now_ms = int(time.time() * 1000)
+        clean_items: list[dict[str, Any]] = []
+        for item in placemark_items:
+            if not isinstance(item, dict):
+                continue
+            source = str(item.get("source") or "user")
+            if source != "user":
+                continue
+            cp_id = str(item.get("id") or item.get("cp_id") or "").strip()
+            name = str(item.get("name") or "").strip()
+            lon = item.get("lon")
+            lat = item.get("lat")
+            if not cp_id or not name or lon is None or lat is None:
+                continue
+            clean_items.append(
+                {
+                    "cp_id": cp_id[:128],
+                    "name": name[:120],
+                    "type": str(item.get("type") or "custom")[:32],
+                    "icon": str(item.get("icon") or "📍")[:16],
+                    "gpx_sym": str(item.get("gpx_sym") or "Waypoint")[:64],
+                    "lon": _safe_float(lon),
+                    "lat": _safe_float(lat),
+                    "alt": _safe_float(item.get("alt")),
+                    "dist_km": _safe_float(item.get("dist_km") if item.get("dist_km") is not None else item.get("dist")),
+                    "source": "user",
+                    "created_at": _safe_int(item.get("created_at")) or now_ms,
+                    "updated_at": now_ms,
+                }
+            )
+
+        conn = profile_backend._conn()
+        try:
+            conn.execute("DELETE FROM activity_placemarks WHERE activity_id = ? AND source = 'user'", (activity_id,))
+            conn.executemany(
+                """
+                INSERT INTO activity_placemarks
+                    (activity_id, cp_id, name, type, icon, gpx_sym, lon, lat, alt, dist_km, source, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        activity_id,
+                        item["cp_id"],
+                        item["name"],
+                        item["type"],
+                        item["icon"],
+                        item["gpx_sym"],
+                        item["lon"],
+                        item["lat"],
+                        item["alt"],
+                        item["dist_km"],
+                        item["source"],
+                        item["created_at"],
+                        item["updated_at"],
+                    )
+                    for item in clean_items
+                ],
+            )
+            conn.commit()
+            return _api_success({"count": len(clean_items), "placemarks": self._load_activity_placemarks(activity_id)})
+        except Exception:
+            conn.rollback()
+            logger.exception("sync_activity_placemarks failed activity_id=%s", activity_id)
+            return _api_error(API_CODE_DB, "CP 点同步失败", {"count": 0})
+        finally:
+            conn.close()
+
     def _sync_local_fit_files_impl(self, progress_callback=None) -> dict:
         """按配置文件中的工作目录增量同步 FIT 文件到 activities 表。"""
         try:
@@ -3285,6 +3437,10 @@ class Api:
                     file_errors.append({"id": str(row_id), "file_path": fp, "error": str(exc)})
 
             if deletable_ids:
+                conn.execute(
+                    "DELETE FROM activity_placemarks WHERE activity_id IN ({})".format(",".join("?" * len(deletable_ids))),
+                    deletable_ids,
+                )
                 conn.execute(
                     "DELETE FROM activities WHERE id IN ({})".format(",".join("?" * len(deletable_ids))),
                     deletable_ids,
@@ -3800,6 +3956,7 @@ class Api:
                 raw_metrics = row.get("advanced_metrics")
                 advanced_metrics = _decode_weather_json(raw_metrics) if isinstance(raw_metrics, str) else (raw_metrics or {})
                 _attach_per_point_distance(points)
+                placemarks = self._load_activity_placemarks(_safe_int(row.get("id")))
                 return {
                     "ok": True,
                     "filename": filename,
@@ -3807,7 +3964,7 @@ class Api:
                     "activity": _build_activity_canonical(row),
                     "data": {
                         "points": points,
-                        "placemarks": [],
+                        "placemarks": placemarks,
                         "region": str(row.get("region") or "").strip(),
                         "weather": weather,
                         "advanced_metrics": advanced_metrics,
@@ -4197,260 +4354,258 @@ def _build_record_from_row(api_self, row: dict, idx: int) -> dict:
     }
 
 
-    def _build_results_payload(self, records: list[dict]) -> dict:
-        result_entries = []
-        for rec in records:
-            dist = rec.get("distance_km") or 0.0
-            if 20.5 <= dist <= 21.7:
-                result_entries.append({
-                    "activity_id": rec["id"],
-                    "month": rec["month_key"],
-                    "title": rec["title"],
-                    "category": "half_marathon",
-                    "finish_time_sec": rec["duration_sec"],
-                    "avg_hr": rec.get("avg_hr") or 0,
-                })
-            elif 41.0 <= dist <= 43.0:
-                result_entries.append({
-                    "activity_id": rec["id"],
-                    "month": rec["month_key"],
-                    "title": rec["title"],
-                    "category": "full_marathon",
-                    "finish_time_sec": rec["duration_sec"],
-                    "avg_hr": rec.get("avg_hr") or 0,
-                })
-
-        if not result_entries:
-            result_entries = []
-
-        result_entries.sort(key=lambda item: item["month"])
-        return {"entries": result_entries}
-
-    def _build_honors_payload(self, records: list[dict]) -> list[dict]:
-        honor_items = []
-        for rec in records:
-            dist = rec.get("distance_km") or 0
-            if dist < 20:
-                continue
-            month = rec.get("month_key") or "--"
-            year = month.split("-")[0] if "-" in month else "未知"
-            month_no = month.split("-")[1] if "-" in month else "--"
-            honor_items.append({
-                "year": year,
-                "month": month_no,
+def _api_build_results_payload(self, records: list[dict]) -> dict:
+    result_entries = []
+    for rec in records:
+        dist = rec.get("distance_km") or 0.0
+        if 20.5 <= dist <= 21.7:
+            result_entries.append({
                 "activity_id": rec["id"],
+                "month": rec["month_key"],
                 "title": rec["title"],
-                "subtitle": f'{dist:.1f} km · {rec.get("sport_type", "running")}',
-                "photo_label": "赛事照片占位",
+                "category": "half_marathon",
+                "finish_time_sec": rec["duration_sec"],
+                "avg_hr": rec.get("avg_hr") or 0,
             })
+        elif 41.0 <= dist <= 43.0:
+            result_entries.append({
+                "activity_id": rec["id"],
+                "month": rec["month_key"],
+                "title": rec["title"],
+                "category": "full_marathon",
+                "finish_time_sec": rec["duration_sec"],
+                "avg_hr": rec.get("avg_hr") or 0,
+            })
+    result_entries.sort(key=lambda item: item["month"])
+    return {"entries": result_entries}
 
-        if not honor_items:
-            honor_items = []
 
-        grouped: dict[str, dict[str, list[dict]]] = {}
-        for item in honor_items:
-            grouped.setdefault(item["year"], {}).setdefault(item["month"], []).append(item)
+def _api_build_honors_payload(self, records: list[dict]) -> list[dict]:
+    honor_items = []
+    for rec in records:
+        dist = rec.get("distance_km") or 0
+        if dist < 20:
+            continue
+        month = rec.get("month_key") or "--"
+        year = month.split("-")[0] if "-" in month else "未知"
+        month_no = month.split("-")[1] if "-" in month else "--"
+        honor_items.append({
+            "year": year,
+            "month": month_no,
+            "activity_id": rec["id"],
+            "title": rec["title"],
+            "subtitle": f'{dist:.1f} km · {rec.get("sport_type", "running")}',
+            "photo_label": "赛事照片占位",
+        })
+    grouped: dict[str, dict[str, list[dict]]] = {}
+    for item in honor_items:
+        grouped.setdefault(item["year"], {}).setdefault(item["month"], []).append(item)
+    years = []
+    for year in sorted(grouped.keys(), reverse=True):
+        months = []
+        for month in sorted(grouped[year].keys(), reverse=True):
+            months.append({"month": month, "cards": grouped[year][month]})
+        years.append({"year": year, "months": months})
+    return years
 
-        years = []
-        for year in sorted(grouped.keys(), reverse=True):
-            months = []
-            for month in sorted(grouped[year].keys(), reverse=True):
-                months.append({"month": month, "cards": grouped[year][month]})
-            years.append({"year": year, "months": months})
-        return years
 
-    def get_person_sport_hub_data(self) -> dict:
-        """返回个人运动数据面板下半区所需的结构化 JSON。"""
+def _api_get_person_sport_hub_data(self) -> dict:
+    try:
+        ensure_activity_sync_schema()
+        config = resolve_workspace_track_dir(auto_recover=True)
+        source_dir = str(config.get("workspace_track_abs_path") or "")
+        where_sql, params = _source_scope_filter_clause(source_dir)
+        conn = profile_backend._conn()
         try:
-            ensure_activity_sync_schema()
-            config = resolve_workspace_track_dir(auto_recover=True)
-            source_dir = str(config.get("workspace_track_abs_path") or "")
-            where_sql, params = _source_scope_filter_clause(source_dir)
-            conn = profile_backend._conn()
-            try:
-                _cleanup_invalid_activity_types(conn)
-                conn.commit()
-                rows = conn.execute(
-                    f"""
-                    SELECT id, COALESCE(file_name, filename) AS file_name, filename,
-                           title, title_source, start_time_utc,
-                           sport_type, sub_sport_type, COALESCE(distance, dist_km) AS distance,
-                           COALESCE(duration, duration_sec) AS duration, gain_m, max_alt_m,
-                           avg_pace, avg_hr, max_hr, calories,
-                           COALESCE(track_json, points_json) AS track_json,
-                           file_path, start_time, updated_at
-                    FROM activities
-                    {where_sql}
-                    ORDER BY COALESCE(start_time, updated_at) DESC, id DESC
-                    LIMIT 200
-                    """,
-                    tuple(params),
-                ).fetchall()
-            finally:
-                conn.close()
+            _cleanup_invalid_activity_types(conn)
+            conn.commit()
+            rows = conn.execute(
+                f"""
+                SELECT id, COALESCE(file_name, filename) AS file_name, filename,
+                       title, title_source, start_time_utc,
+                       sport_type, sub_sport_type, COALESCE(distance, dist_km) AS distance,
+                       COALESCE(duration, duration_sec) AS duration, gain_m, max_alt_m,
+                       avg_pace, avg_hr, max_hr, calories,
+                       COALESCE(track_json, points_json) AS track_json,
+                       file_path, start_time, updated_at
+                FROM activities
+                {where_sql}
+                ORDER BY COALESCE(start_time, updated_at) DESC, id DESC
+                LIMIT 200
+                """,
+                tuple(params),
+            ).fetchall()
+        finally:
+            conn.close()
+        deduped_rows = _dedupe_activity_rows([dict(row) for row in rows])
+        records = [_build_record_from_row(self, row, idx) for idx, row in enumerate(deduped_rows)]
+        activity_types = sorted(
+            {rec.get("display_sport_type") for rec in records if rec.get("display_sport_type")},
+            key=lambda item: (SPORT_HUB_TYPE_ORDER.get(item, 99), item),
+        )
+        return {
+            "ok": True,
+            "activity_types": activity_types,
+            "page_sizes": SPORT_HUB_PAGE_SIZES,
+            "records": records,
+            "results": self._build_results_payload(records),
+            "honors": self._build_honors_payload(records),
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
-            deduped_rows = _dedupe_activity_rows([dict(row) for row in rows])
-            records = [_build_record_from_row(self, row, idx) for idx, row in enumerate(deduped_rows)]
 
-            activity_types = sorted(
-                {rec.get("display_sport_type") for rec in records if rec.get("display_sport_type")},
-                key=lambda item: (SPORT_HUB_TYPE_ORDER.get(item, 99), item),
-            )
+def _api_load_local_track(self, file_path: str) -> dict:
+    try:
+        return profile_backend.load_local_track(file_path)
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
-            return {
-                "ok": True,
-                "activity_types": activity_types,
-                "page_sizes": SPORT_HUB_PAGE_SIZES,
-                "records": records,
-                "results": self._build_results_payload(records),
-                "honors": self._build_honors_payload(records),
-            }
-        except Exception as e:
-            return {"ok": False, "error": str(e)}
 
-    def load_local_track(self, file_path: str) -> dict:
-        """根据本地路径读取并解析轨迹文件，返回与 parse_track_file 一致的结构。"""
+def _api_get_activity_by_file_path(self, file_path: str) -> dict:
+    try:
+        resolved = str(Path(file_path).expanduser().resolve())
+        ensure_activity_sync_schema()
+        conn = profile_backend._conn()
         try:
-            return profile_backend.load_local_track(file_path)
-        except Exception as e:
-            return {"ok": False, "error": str(e)}
+            row = _find_activity_by_file_path(conn, resolved)
+        finally:
+            conn.close()
+        if not row:
+            return {"ok": False, "error": "未找到对应活动记录"}
+        return {"ok": True, "activity": row}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
-    def get_activity_by_file_path(self, file_path: str) -> dict:
-        try:
-            resolved = str(Path(file_path).expanduser().resolve())
-            ensure_activity_sync_schema()
-            conn = profile_backend._conn()
-            try:
-                row = _find_activity_by_file_path(conn, resolved)
-            finally:
-                conn.close()
-            if not row:
-                return {"ok": False, "error": "未找到对应活动记录"}
-            return {"ok": True, "activity": row}
-        except Exception as e:
-            return {"ok": False, "error": str(e)}
 
-    def load_activity_track_by_file_path(self, file_path: str) -> dict:
-        try:
-            resolved = str(Path(file_path).expanduser().resolve())
-            lookup = self.get_activity_by_file_path(resolved)
-            if lookup.get("ok") and lookup.get("activity"):
-                activity_id = _safe_int(dict(lookup["activity"]).get("id"))
-                if activity_id:
-                    return self.load_activity_track(activity_id)
-            return self.load_local_track(resolved)
-        except Exception as e:
-            return {"ok": False, "error": str(e)}
+def _api_load_activity_track_by_file_path(self, file_path: str) -> dict:
+    try:
+        resolved = str(Path(file_path).expanduser().resolve())
+        lookup = self.get_activity_by_file_path(resolved)
+        if lookup.get("ok") and lookup.get("activity"):
+            activity_id = _safe_int(dict(lookup["activity"]).get("id"))
+            if activity_id:
+                return self.load_activity_track(activity_id)
+        return self.load_local_track(resolved)
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
-    def import_track(self, file_path: str = "", duplicate_action: str = "", new_filename: str = "") -> dict:
-        """统一导入并入库轨迹文件，由 Python 后端完成解析和持久化。"""
-        import webview
-        from webview import FileDialog
 
-        target_path = (file_path or "").strip()
-        if not target_path:
-            if not webview.windows:
-                return {"ok": False, "error": "窗口未就绪"}
-            paths = webview.windows[0].create_file_dialog(
-                FileDialog.OPEN,
-                file_types=("Track files (*.fit;*.gpx;*.kml)",),
-            )
-            if not paths:
-                return {"ok": False, "cancelled": True}
-            target_path = paths[0] if isinstance(paths, (list, tuple)) else paths
+def _api_import_track(self, file_path: str = "", duplicate_action: str = "", new_filename: str = "") -> dict:
+    import webview
+    from webview import FileDialog
 
-        try:
-            return profile_backend.ingest_activity_file(
-                target_path,
-                duplicate_action=duplicate_action,
-                new_filename=new_filename or None,
-            )
-        except Exception as e:
-            return {"ok": False, "error": str(e)}
+    target_path = (file_path or "").strip()
+    if not target_path:
+        if not webview.windows:
+            return {"ok": False, "error": "窗口未就绪"}
+        paths = webview.windows[0].create_file_dialog(
+            FileDialog.OPEN,
+            file_types=("GPX files (*.gpx)",),
+        )
+        if not paths:
+            return {"ok": False, "cancelled": True}
+        target_path = paths[0] if isinstance(paths, (list, tuple)) else paths
+    if Path(target_path).suffix.lower() != ".gpx":
+        return {"ok": False, "error": "仅支持导入 GPX 文件，请选择 .gpx 格式的轨迹文件"}
+    try:
+        return profile_backend.ingest_activity_file(
+            target_path,
+            duplicate_action=duplicate_action,
+            new_filename=new_filename or None,
+        )
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
-    def update_activity_sport_type(self, activity_id: int, sport_type: str) -> dict:
-        try:
-            profile_backend.update_activity_sport_type(activity_id, sport_type)
-            return {"ok": True}
-        except Exception as e:
-            return {"ok": False, "error": str(e)}
 
-    def validate_fit_directory(self, local_dir: str) -> dict:
-        """验证本地 FIT 目录的有效性（存在、可读写），不扫描文件内容。"""
-        try:
-            raw = str(local_dir or "").strip()
-            if not raw:
-                return {"ok": False, "error": "目录不能为空"}
-            path = os.path.abspath(os.path.expanduser(raw))
-            if not os.path.isdir(path):
-                return {"ok": False, "error": f"目录不存在: {path}"}
-            if not os.access(path, os.R_OK):
-                return {"ok": False, "error": "目录不可读"}
-            if not os.access(path, os.W_OK):
-                return {"ok": False, "error": "目录不可写"}
-            return {"ok": True, "path": path}
-        except Exception as e:
-            return {"ok": False, "error": str(e)}
-
-    def scan_fit_directory(self, local_dir: str = "") -> dict:
-        """从配置文件夹扫描所有 fit 文件，解析后返回带 GPS 有效性标记的轨迹列表。"""
-        try:
-            app_cfg = resolve_workspace_track_dir(auto_recover=True)
-            target_dir = str(app_cfg.get("workspace_track_abs_path") or "").strip()
-            if not target_dir and str(local_dir or "").strip():
-                target_dir = os.path.abspath(os.path.expanduser(str(local_dir).strip()))
-            if not target_dir:
-                return {"ok": True, "files": [], "total": 0, "valid": 0, "skipped": 0}
-            import profile_backend as pb
-            res = pb.scan_fit_directory(target_dir)
-            if isinstance(res, dict):
-                res["source_dir"] = target_dir
-                res["integrity"] = check_activity_data_integrity()
-            return res
-        except Exception as e:
-            return {"ok": False, "error": str(e)}
-
-    def check_duplicate_track(self, act_data: dict) -> dict:
-        """检查轨迹是否重复"""
-        try:
-            start_time = act_data.get("start_time")
-            start_time_utc = act_data.get("start_time_utc")
-            
-            res = profile_backend.check_duplicate_activity(
-                start_time=start_time,
-                dist_km=act_data.get("dist_km", 0.0),
-                duration_sec=act_data.get("duration_sec", 0),
-                points_json=act_data.get("points_json", []),
-                start_time_utc=start_time_utc
-            )
-            return {"ok": True, **res}
-        except Exception as e:
-            return {"ok": False, "error": str(e)}
-
-    def save_activity(self, data: dict) -> dict:
-        """保存运动记录，自动将源文件复制到 local_tracks 目录。"""
-        try:
-            # Check for duplicate action
-            dup_action = data.get("_duplicate_action")
-            if dup_action == "skip":
-                return {"ok": True, "skipped": True}
-
-            src = data.get("_src_path")
-            new_filename = data.get("_new_filename")
-            
-            if src:
-                local_path = profile_backend.copy_track_to_local(src, new_filename)
-                data["file_path"] = local_path
-            else:
-                data["file_path"] = None
-                
-            if data.get("points_json") and len(data["points_json"]) > 0:
-                data["start_time"] = data["points_json"][0].get("time")
-                
-            profile_backend.save_activity(data)
-        except Exception as e:
-            return {"ok": False, "error": str(e)}
+def _api_update_activity_sport_type(self, activity_id: int, sport_type: str) -> dict:
+    try:
+        profile_backend.update_activity_sport_type(activity_id, sport_type)
         return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def _api_validate_fit_directory(self, local_dir: str) -> dict:
+    try:
+        raw = str(local_dir or "").strip()
+        if not raw:
+            return {"ok": False, "error": "目录不能为空"}
+        path = os.path.abspath(os.path.expanduser(raw))
+        if not os.path.isdir(path):
+            return {"ok": False, "error": f"目录不存在: {path}"}
+        if not os.access(path, os.R_OK):
+            return {"ok": False, "error": "目录不可读"}
+        if not os.access(path, os.W_OK):
+            return {"ok": False, "error": "目录不可写"}
+        return {"ok": True, "path": path}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def _api_scan_fit_directory(self, local_dir: str = "") -> dict:
+    try:
+        app_cfg = resolve_workspace_track_dir(auto_recover=True)
+        target_dir = str(app_cfg.get("workspace_track_abs_path") or "").strip()
+        if not target_dir and str(local_dir or "").strip():
+            target_dir = os.path.abspath(os.path.expanduser(str(local_dir).strip()))
+        if not target_dir:
+            return {"ok": True, "files": [], "total": 0, "valid": 0, "skipped": 0}
+        import profile_backend as pb
+        res = pb.scan_fit_directory(target_dir)
+        if isinstance(res, dict):
+            res["source_dir"] = target_dir
+            res["integrity"] = check_activity_data_integrity()
+        return res
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def _api_check_duplicate_track(self, act_data: dict) -> dict:
+    try:
+        res = profile_backend.check_duplicate_activity(
+            start_time=act_data.get("start_time"),
+            dist_km=act_data.get("dist_km", 0.0),
+            duration_sec=act_data.get("duration_sec", 0),
+            points_json=act_data.get("points_json", []),
+            start_time_utc=act_data.get("start_time_utc"),
+        )
+        return {"ok": True, **res}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def _api_save_activity(self, data: dict) -> dict:
+    try:
+        dup_action = data.get("_duplicate_action")
+        if dup_action == "skip":
+            return {"ok": True, "skipped": True}
+        src = data.get("_src_path")
+        new_filename = data.get("_new_filename")
+        if src:
+            data["file_path"] = profile_backend.copy_track_to_local(src, new_filename)
+        else:
+            data["file_path"] = None
+        if data.get("points_json") and len(data["points_json"]) > 0:
+            data["start_time"] = data["points_json"][0].get("time")
+        profile_backend.save_activity(data)
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+Api._build_results_payload = _api_build_results_payload
+Api._build_honors_payload = _api_build_honors_payload
+Api.get_person_sport_hub_data = _api_get_person_sport_hub_data
+Api.load_local_track = _api_load_local_track
+Api.get_activity_by_file_path = _api_get_activity_by_file_path
+Api.load_activity_track_by_file_path = _api_load_activity_track_by_file_path
+Api.import_track = _api_import_track
+Api.update_activity_sport_type = _api_update_activity_sport_type
+Api.validate_fit_directory = _api_validate_fit_directory
+Api.scan_fit_directory = _api_scan_fit_directory
+Api.check_duplicate_track = _api_check_duplicate_track
+Api.save_activity = _api_save_activity
 
 
 def _get_schema_version() -> int:
