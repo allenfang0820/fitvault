@@ -338,6 +338,15 @@ def _safe_int(value: Any, default: int = 0) -> int:
         return default
 
 
+def _safe_optional_float(value: Any) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 API_CODE_OK = 0
 API_CODE_VALIDATION = 1001
 API_CODE_NOT_FOUND = 1004
@@ -999,6 +1008,7 @@ def _parse_fit_activity_for_sync(file_path: Path) -> dict[str, Any]:
     stat = file_path.stat()
     advanced_metrics = _compute_advanced_metrics(track_data)
     result = {
+        "points": track_data,
         "file_name": file_path.name,
         "filename": payload.get("filename") or file_path.name,
         "title": str(payload.get("title") or payload.get("filename") or file_path.name),
@@ -1110,13 +1120,15 @@ def _parse_fit_activity_for_sync(file_path: Path) -> dict[str, Any]:
         result["dist_km"] = distance_km
         result["duration"] = duration_sec
         result["duration_sec"] = duration_sec
-        # Phase 2.2 — avg_hr / calories / elevation_gain (validated 44/44)
+        # Phase 2.2 — avg_hr / calories / elevation_gain / elevation_loss (validated 44/44)
         avg_hr = sm.get("avg_hr", avg_hr)
         calories = sm.get("calories", _safe_int(payload.get("calories")))
         elevation_gain = sm.get("elevation_gain_m", _safe_float(payload.get("gain_m")))
+        elevation_loss = sm.get("elevation_loss_m", _safe_float(payload.get("total_descent_m", 0)))
         result["avg_hr"] = avg_hr
         result["calories"] = calories
         result["gain_m"] = elevation_gain
+        result["total_descent_m"] = elevation_loss
         # Phase 2.3 — pace / display (validated 44/44 non-swim; swimming resolver > legacy)
         avg_pace = sm.get("avg_pace", avg_pace)
         avg_pace_display = sm.get("avg_pace_display", avg_pace_display)
@@ -1158,9 +1170,13 @@ def _insert_activity_sync_row(conn: sqlite3.Connection, activity: dict[str, Any]
                  calories, track_json, points_json, file_path, gain_m, max_alt_m, start_lat, start_lon, region,
                  region_city, region_country, region_display, region_status, region_error, region_updated_at, region_attempt_count,
                  weather_json, file_mtime, file_size, advanced_metrics, normalized_power, swolf, device_name,
-                 shadow_diff_json, source_type, is_mock, deleted_at, updated_at, hr_curve, speed_curve)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, 'fit_sdk', 0, NULL, datetime('now'), ?, ?)
+                 shadow_diff_json, source_type, is_mock, deleted_at, updated_at, hr_curve, speed_curve,
+                 min_alt_m, total_descent_m, up_count, down_count, max_single_climb_m, difficulty_score, report_metrics_version,
+                 avg_grade_pct, max_slope_pct, min_slope_pct, uphill_pct, downhill_pct)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, 'fit_sdk', 0, NULL, datetime('now'), ?, ?,
+                    ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?)
             """,
             (
                 activity.get("file_name"),
@@ -1204,6 +1220,18 @@ def _insert_activity_sync_row(conn: sqlite3.Connection, activity: dict[str, Any]
                 activity.get("shadow_diff_json"),
                 activity.get("hr_curve"),
                 activity.get("speed_curve"),
+                activity.get("min_alt_m"),
+                activity.get("total_descent_m"),
+                activity.get("up_count"),
+                activity.get("down_count"),
+                activity.get("max_single_climb_m"),
+                activity.get("difficulty_score"),
+                activity.get("report_metrics_version"),
+                activity.get("avg_grade_pct"),
+                activity.get("max_slope_pct"),
+                activity.get("min_slope_pct"),
+                activity.get("uphill_pct"),
+                activity.get("downhill_pct"),
             ),
         )
         return int(cur.lastrowid)
@@ -1231,6 +1259,8 @@ def _update_activity_sync_row(conn: sqlite3.Connection, activity_id: int, activi
             region_updated_at = ?, region_attempt_count = ?,
             weather_json = ?, file_mtime = ?, file_size = ?, advanced_metrics = ?,
             normalized_power = ?, swolf = ?, device_name = ?, shadow_diff_json = ?, hr_curve = ?, speed_curve = ?,
+            min_alt_m = ?, total_descent_m = ?, up_count = ?, down_count = ?, max_single_climb_m = ?, difficulty_score = ?, report_metrics_version = ?,
+            avg_grade_pct = ?, max_slope_pct = ?, min_slope_pct = ?, uphill_pct = ?, downhill_pct = ?,
             source_type = 'fit_sdk', is_mock = 0, deleted_at = NULL, updated_at = datetime('now')
         WHERE id = ?
         """,
@@ -1276,6 +1306,18 @@ def _update_activity_sync_row(conn: sqlite3.Connection, activity_id: int, activi
             activity.get("shadow_diff_json"),
             activity.get("hr_curve"),
             activity.get("speed_curve"),
+            activity.get("min_alt_m"),
+            activity.get("total_descent_m"),
+            activity.get("up_count"),
+            activity.get("down_count"),
+            activity.get("max_single_climb_m"),
+            activity.get("difficulty_score"),
+            activity.get("report_metrics_version"),
+            activity.get("avg_grade_pct"),
+            activity.get("max_slope_pct"),
+            activity.get("min_slope_pct"),
+            activity.get("uphill_pct"),
+            activity.get("downhill_pct"),
             activity_id,
         ),
     )
@@ -1543,6 +1585,17 @@ def _persist_sync_activity(activity: dict[str, Any]) -> dict[str, Any]:
     activity["sport_type"] = _normalize_activity_token(activity.get("sport_type"))
     activity["sub_sport_type"] = _normalize_activity_token(activity.get("sub_sport_type"))
 
+    # CONTRACT §2.1 / §6: 在持久化前计算报告 canonical 派生指标
+    _points_raw = activity.get("points")
+    if _points_raw and isinstance(_points_raw, list) and len(_points_raw) >= 2:
+        try:
+            _dist = _safe_float(activity.get("dist_km", 0))
+            _gain = _safe_float(activity.get("gain_m", 0))
+            _report = compute_report_metrics(_points_raw, _dist, _gain)
+            activity.update(_report)
+        except Exception as exc:
+            logger.exception("[METRICS] compute_report_metrics failed for %s: %s", activity.get("file_name"), exc)
+
     def _write() -> dict[str, Any]:
         conn = profile_backend._conn()
         try:
@@ -1778,6 +1831,7 @@ class FITFolderWatchService:
                 if activity_id:
                     logger.info("[STAGING] 通知前端: file=%s, activity_id=%s", file_path, activity_id)
                     self._api.notify_new_track_detected(file_path, activity_id)
+                    self._api._schedule_region_enrichment()
                 else:
                     logger.warning("[STAGING] 解析成功但 activity_id 为 0: %s", file_path)
             else:
@@ -2010,7 +2064,7 @@ FORBIDDEN_SNAPSHOT_FIELDS: set[str] = {
     "reasoning_chain", "fatigue_model", "per_point_slope", "derived_grade",
 }
 
-_MAX_SNAPSHOT_KEYS = 28
+_MAX_SNAPSHOT_KEYS = 35  # 增加报告 canonical 字段后从 28 调整
 
 
 def get_snapshot_field_whitelist() -> set[str]:
@@ -2045,6 +2099,11 @@ def get_snapshot_field_whitelist() -> set[str]:
         "race_predict_5k", "race_predict_10k", "race_predict_half", "race_predict_full",
         # v2 新增：运动生理 / 曲线 / 设备上下文
         "hr_decoupling", "hr_curve", "speed_curve", "device_name",
+        # v3 新增：报告 canonical 派生指标 (CONTRACT §6)
+        "min_alt_m", "total_descent_m", "up_count", "down_count",
+        "max_single_climb_m", "difficulty_score", "report_metrics_version",
+        # v4 新增：报告坡度 v2 指标
+        "avg_grade_pct", "max_slope_pct", "min_slope_pct", "uphill_pct", "downhill_pct",
     }
 
 
@@ -2061,6 +2120,13 @@ def validate_ai_snapshot(snapshot: dict[str, Any]) -> None:
     for k in snapshot.keys():
         if k not in allowed:
             raise AssertionError(f"AI Snapshot unauthorized field: {k}")
+    # 报告 canonical 字段范围校验 (CONTRACT §6)
+    _td = snapshot.get("total_descent_m")
+    if _td is not None:
+        assert _td >= 0, f"total_descent_m must be >= 0, got {_td}"
+    _ds = snapshot.get("difficulty_score")
+    if _ds is not None:
+        assert 0 <= _ds <= 10, f"difficulty_score out of range [0,10]: {_ds}"
 
 
 def debug_ai_snapshot(snapshot: dict[str, Any]) -> None:
@@ -2072,8 +2138,314 @@ def debug_ai_snapshot(snapshot: dict[str, Any]) -> None:
           file=sys.stderr, flush=True)
 
 
-# ── AI Snapshot Builder (唯一合法 AI 输入源) ──
+def compute_report_metrics(
+    points: list[dict[str, Any]],
+    dist_km: float,
+    gain_m: float,
+) -> dict[str, Any]:
+    """报告 canonical 派生指标计算器。
+    CONTRACT §2.1 / §6: 所有输出字段来自 FIT records 遍历，存入 DB activities 表。
+    前端仅读取 activityMetrics 展示，不得重复计算。
+    """
+    if not points or len(points) < 2:
+        return {}
 
+    min_alt = points[0].get("alt", 0)
+    total_descent = 0.0
+    last_alt = min_alt
+    for p in points[1:]:
+        alt = p.get("alt", 0)
+        if alt < min_alt:
+            min_alt = alt
+        dalt = alt - last_alt
+        if dalt < -1.5:
+            total_descent += abs(dalt)
+        last_alt = alt
+
+    up_count = 0
+    down_count = 0
+    max_single_climb = 0.0
+    hill_state = 0
+    hill_ref_alt = points[0].get("alt", 0)
+    hill_peak = hill_ref_alt
+    hill_valley = hill_ref_alt
+    HILL_THRESHOLD = 15
+
+    for p in points[1:]:
+        alt = p.get("alt", 0)
+        if hill_state == 1:
+            if alt > hill_peak:
+                hill_peak = alt
+            elif hill_peak - alt >= HILL_THRESHOLD:
+                climb = hill_peak - hill_valley
+                if climb >= HILL_THRESHOLD:
+                    up_count += 1
+                    if climb > max_single_climb:
+                        max_single_climb = climb
+                hill_state = -1
+                hill_valley = alt
+        elif hill_state == -1:
+            if alt < hill_valley:
+                hill_valley = alt
+            elif alt - hill_valley >= HILL_THRESHOLD:
+                if hill_peak - hill_valley >= HILL_THRESHOLD:
+                    down_count += 1
+                hill_state = 1
+                hill_peak = alt
+        else:
+            if alt - hill_ref_alt >= HILL_THRESHOLD:
+                hill_state = 1
+                hill_valley = hill_ref_alt
+                hill_peak = alt
+            elif hill_ref_alt - alt >= HILL_THRESHOLD:
+                hill_state = -1
+                hill_peak = hill_ref_alt
+                hill_valley = alt
+
+    if hill_state == 1:
+        climb = hill_peak - hill_valley
+        if climb >= HILL_THRESHOLD:
+            up_count += 1
+            if climb > max_single_climb:
+                max_single_climb = climb
+    elif hill_state == -1:
+        if hill_peak - hill_valley >= HILL_THRESHOLD:
+            down_count += 1
+
+    diff_score = 0
+    if dist_km > 5:
+        diff_score += 1
+    if dist_km > 10:
+        diff_score += 1
+    if dist_km > 15:
+        diff_score += 1
+    if gain_m > 200:
+        diff_score += 1
+    if gain_m > 500:
+        diff_score += 1
+    if gain_m > 800:
+        diff_score += 1
+    if max_single_climb > 100:
+        diff_score += 1
+    if max_single_climb > 300:
+        diff_score += 1
+    if up_count > 3:
+        diff_score += 1
+    if up_count > 8:
+        diff_score += 1
+
+    _grade = _compute_grade_metrics(points, dist_km, gain_m)
+    result = {
+        "min_alt_m": round(float(min_alt), 1),
+        "total_descent_m": round(float(total_descent), 1),
+        "up_count": up_count,
+        "down_count": down_count,
+        "max_single_climb_m": round(float(max_single_climb), 1),
+        "difficulty_score": diff_score,
+        "avg_grade_pct": _grade.get("avg_grade_pct"),
+        "max_slope_pct": _grade.get("max_slope_pct"),
+        "min_slope_pct": _grade.get("min_slope_pct"),
+        "uphill_pct": _grade.get("uphill_pct"),
+        "downhill_pct": _grade.get("downhill_pct"),
+        "report_metrics_version": 2,
+    }
+    return result
+
+
+def _compute_grade_metrics(
+    points: list[dict[str, Any]],
+    dist_km: float,
+    gain_m: float,
+) -> dict[str, Any]:
+    WINDOW_DISTANCE_M = 100.0
+    MIN_WINDOW_DISTANCE_M = 60.0
+    UPHILL_THRESHOLD = 3.0
+    DOWNHILL_THRESHOLD = -3.0
+    MAX_ABS_SLOPE = 45.0
+    NOISE_ALT_THRESHOLD_M = 1.5
+
+    result: dict[str, Any] = {
+        "avg_grade_pct": None,
+        "max_slope_pct": None,
+        "min_slope_pct": None,
+        "uphill_pct": None,
+        "downhill_pct": None,
+    }
+
+    if not points or len(points) < 2:
+        return result
+
+    has_dist = any(p.get("dist_km") is not None for p in points)
+    has_alt = any(p.get("alt") is not None for p in points)
+    if not has_alt:
+        return result
+
+    if not has_dist and dist_km and dist_km > 0 and len(points) >= 2:
+        n = len(points)
+        _enriched = []
+        for i, p in enumerate(points):
+            _p = dict(p)
+            _p["dist_km"] = (dist_km * i) / (n - 1)
+            _enriched.append(_p)
+        return _compute_grade_metrics(_enriched, dist_km, gain_m)
+
+    if not has_dist:
+        return result
+
+    if dist_km > 0 and gain_m is not None:
+        avg = (gain_m / (dist_km * 1000.0)) * 100.0
+        result["avg_grade_pct"] = round(max(0.0, min(avg, 100.0)), 1)
+
+    window_slopes = []
+    window_distances = []
+    n = len(points)
+    for i in range(n):
+        base_dist = points[i].get("dist_km")
+        base_alt = points[i].get("alt")
+        if base_dist is None or base_alt is None:
+            continue
+        for j in range(i + 1, n):
+            cur_dist = points[j].get("dist_km")
+            cur_alt = points[j].get("alt")
+            if cur_dist is None or cur_alt is None:
+                continue
+            if cur_dist <= base_dist:
+                continue
+            distance_m = (cur_dist - base_dist) * 1000.0
+            if distance_m < MIN_WINDOW_DISTANCE_M:
+                continue
+            if distance_m > WINDOW_DISTANCE_M * 1.5:
+                break
+            alt_delta = cur_alt - base_alt
+            slope = (alt_delta / distance_m) * 100.0
+            if abs(slope) > MAX_ABS_SLOPE:
+                continue
+            if abs(alt_delta) < NOISE_ALT_THRESHOLD_M:
+                slope = 0.0
+            window_slopes.append(slope)
+            window_distances.append(distance_m)
+            break
+
+    if len(window_slopes) >= 3:
+        smoothed = []
+        for k in range(len(window_slopes)):
+            lo = max(0, k - 1)
+            hi = min(len(window_slopes), k + 2)
+            neighbor = sorted(window_slopes[lo:hi])
+            smoothed.append(neighbor[len(neighbor) // 2])
+        window_slopes = smoothed
+
+    if window_slopes:
+        result["max_slope_pct"] = round(max(window_slopes), 1)
+        result["min_slope_pct"] = round(min(window_slopes), 1)
+
+        uphill_m = 0.0
+        downhill_m = 0.0
+        valid_m = 0.0
+        for k, s in enumerate(window_slopes):
+            wd = window_distances[k] if k < len(window_distances) else WINDOW_DISTANCE_M
+            valid_m += wd
+            if s >= UPHILL_THRESHOLD:
+                uphill_m += wd
+            elif s <= DOWNHILL_THRESHOLD:
+                downhill_m += wd
+
+        if valid_m > 0:
+            result["uphill_pct"] = round((uphill_m / valid_m) * 100.0, 1)
+            result["downhill_pct"] = round((downhill_m / valid_m) * 100.0, 1)
+
+    return result
+
+
+def _decode_points_json_simple(raw: str | None) -> list:
+    if not raw or not str(raw).strip():
+        return []
+    import json
+    try:
+        data = json.loads(str(raw))
+        if isinstance(data, list):
+            return data
+        return []
+    except Exception:
+        return []
+
+
+def rebuild_report_metrics_for_all_activities(dry_run: bool = False) -> dict:
+    import sqlite3
+    from profile_backend import DB_PATH
+
+    conn = sqlite3.connect(str(DB_PATH))
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(
+            "SELECT id, filename, dist_km, gain_m, track_json, points_json "
+            "FROM activities "
+            "WHERE deleted_at IS NULL "
+            "  AND (track_json IS NOT NULL OR points_json IS NOT NULL) "
+            "  AND (min_alt_m IS NULL OR report_metrics_version IS NULL OR report_metrics_version < 2 "
+            "       OR avg_grade_pct IS NULL)"
+        ).fetchall()
+
+        rebuilt = 0
+        skipped_no_points = 0
+        errors = 0
+        error_details = []
+
+        for row in rows:
+            points = _decode_points_json_simple(row["track_json"] or row["points_json"])
+            if not points or len(points) < 2:
+                skipped_no_points += 1
+                continue
+            try:
+                _dist = float(row["dist_km"] or 0)
+                _gain = float(row["gain_m"] or 0)
+                _report = compute_report_metrics(points, _dist, _gain)
+                if dry_run:
+                    rebuilt += 1
+                else:
+                    conn.execute(
+                        "UPDATE activities SET min_alt_m=?, total_descent_m=?, up_count=?, "
+                        "down_count=?, max_single_climb_m=?, difficulty_score=?, report_metrics_version=?, "
+                        "avg_grade_pct=?, max_slope_pct=?, min_slope_pct=?, uphill_pct=?, downhill_pct=? "
+                        "WHERE id=?",
+                        (
+                            _report.get("min_alt_m"),
+                            _report.get("total_descent_m"),
+                            _report.get("up_count"),
+                            _report.get("down_count"),
+                            _report.get("max_single_climb_m"),
+                            _report.get("difficulty_score"),
+                            _report.get("report_metrics_version"),
+                            _report.get("avg_grade_pct"),
+                            _report.get("max_slope_pct"),
+                            _report.get("min_slope_pct"),
+                            _report.get("uphill_pct"),
+                            _report.get("downhill_pct"),
+                            row["id"],
+                        ),
+                    )
+                    rebuilt += 1
+            except Exception as exc:
+                errors += 1
+                error_details.append(f"id={row['id']} {row['filename']}: {exc}")
+
+        if not dry_run:
+            conn.commit()
+
+        return {
+            "ok": True,
+            "total_candidates": len(rows),
+            "rebuilt": rebuilt,
+            "skipped_no_points": skipped_no_points,
+            "errors": errors,
+            "error_details": error_details if errors else None,
+            "dry_run": dry_run,
+        }
+    finally:
+        conn.close()
+
+
+# ── AI Snapshot Builder (唯一合法 AI 输入源) ──
 def _build_ai_snapshot(activity_id: int) -> dict[str, Any] | None:
     """AI 语义快照构建器 — 唯一合法 AI 输入源。
     PURE FACT CONTRACT: 所有字段来自 DB/resolver truth。
@@ -2088,7 +2460,9 @@ def _build_ai_snapshot(activity_id: int) -> dict[str, Any] | None:
             " gain_m, max_alt_m, avg_pace, distance, duration,"
             " calories, avg_cadence, normalized_power, swolf,"
             " tss, start_time, start_lat, start_lon, region, file_path, filename,"
-            " hr_decoupling, hr_curve, speed_curve, device_name"
+            " hr_decoupling, hr_curve, speed_curve, device_name,"
+            " min_alt_m, total_descent_m, up_count, down_count, max_single_climb_m, difficulty_score, report_metrics_version,"
+            " avg_grade_pct, max_slope_pct, min_slope_pct, uphill_pct, downhill_pct"
             " FROM activities WHERE id = ? AND deleted_at IS NULL",
             (activity_id,),
         ).fetchone()
@@ -2153,6 +2527,18 @@ def _build_ai_snapshot(activity_id: int) -> dict[str, Any] | None:
             "hr_curve": d.get("hr_curve"),
             "speed_curve": d.get("speed_curve"),
             "device_name": d.get("device_name"),
+            "min_alt_m": d.get("min_alt_m"),
+            "total_descent_m": d.get("total_descent_m"),
+            "up_count": d.get("up_count"),
+            "down_count": d.get("down_count"),
+            "max_single_climb_m": d.get("max_single_climb_m"),
+            "difficulty_score": d.get("difficulty_score"),
+            "report_metrics_version": d.get("report_metrics_version"),
+            "avg_grade_pct": d.get("avg_grade_pct"),
+            "max_slope_pct": d.get("max_slope_pct"),
+            "min_slope_pct": d.get("min_slope_pct"),
+            "uphill_pct": d.get("uphill_pct"),
+            "downhill_pct": d.get("downhill_pct"),
         }
 
         validate_ai_snapshot(snapshot)
@@ -2189,6 +2575,19 @@ def _build_ai_snapshot_block(snapshot: dict[str, Any] | None) -> str:
     lines.append("")
     lines.append("【重要】以上数值来自系统数据库（唯一真值），优先于轨迹明细表中的任何前端推算值。")
     return "\n".join(lines)
+
+
+def _build_risk_assessment_messages(snapshot: dict[str, Any], weather_context: dict[str, Any] | None) -> list[dict[str, str]]:
+    return [
+        {
+            "role": "system",
+            "content": llm_backend.build_risk_assessment_system_prompt(snapshot, weather_context),
+        },
+        {
+            "role": "user",
+            "content": llm_backend.build_risk_assessment_user_prompt(),
+        },
+    ]
 
 
 # ═══════════════════════════════════════════════════════
@@ -2291,6 +2690,7 @@ class Api:
     REPORT_TERRAIN = "__REPORT_TERRAIN__"
     REPORT_PERSONALIZED = "__REPORT_PERSONALIZED__"
     REPORT_INSIGHT = "__REPORT_INSIGHT__"
+    REPORT_RISK_ASSESSMENT = "__REPORT_RISK_ASSESSMENT__"
 
     def __init__(self) -> None:
         self._track_points: list | None = None
@@ -2306,7 +2706,8 @@ class Api:
         self._watch_service: FITFolderWatchService | None = None
         self._ai_snapshot: dict[str, Any] | None = None
         self._profile_startup_sync_scheduled = False
-        self._region_enrichment_scheduled = False
+        self._region_enrichment_timer: threading.Timer | None = None
+        self._region_enrichment_active = False
 
     def on_loaded(self) -> None:
         """页面加载完成后显示窗口，解决白屏感。"""
@@ -2333,12 +2734,40 @@ class Api:
         return {"ok": True}
 
     def _schedule_region_enrichment(self) -> None:
-        if self._region_enrichment_scheduled:
+        if self._region_enrichment_active:
             return
-        self._region_enrichment_scheduled = True
-        timer = threading.Timer(3, profile_backend.start_region_enrichment_background)
+        if self._region_enrichment_timer is not None:
+            self._region_enrichment_timer.cancel()
+        self._region_enrichment_active = True
+
+        def _on_complete(result: dict) -> None:
+            self._region_enrichment_active = False
+            self._region_enrichment_timer = None
+            if result.get("processed", 0) > 0:
+                self._dispatch_region_enrichment_complete(result)
+
+        def _start():
+            profile_backend.start_region_enrichment_background(on_complete=_on_complete)
+
+        timer = threading.Timer(3, _start)
         timer.daemon = True
+        self._region_enrichment_timer = timer
         timer.start()
+
+    def _dispatch_region_enrichment_complete(self, result: dict) -> None:
+        if not self._window:
+            return
+        payload = {
+            "success": result.get("success", 0),
+            "failed": result.get("failed", 0),
+            "cache_hits": result.get("cache_hits", 0),
+        }
+        js_code = f"window.onRegionEnrichmentComplete && window.onRegionEnrichmentComplete({json.dumps(payload)})"
+        try:
+            self._window.evaluate_js(js_code)
+            logger.info("[REGION] 地区补全完成通知已发送: success=%d, failed=%d", payload["success"], payload["failed"])
+        except Exception as exc:
+            logger.exception("[REGION] 地区补全完成通知失败: %s", exc)
 
     def _schedule_profile_startup_sync(self) -> None:
         if self._profile_startup_sync_scheduled:
@@ -2658,6 +3087,23 @@ class Api:
                     "snapshot": insight_data.get("snapshot") or {},
                 }
 
+            if prompt == self.REPORT_RISK_ASSESSMENT:
+                if not self._ai_snapshot:
+                    return {"ok": True, "risk_assessment": llm_backend.empty_risk_assessment("请先加载活动轨迹")}
+                messages = _build_risk_assessment_messages(self._ai_snapshot, self._track_weather)
+                text = llm_backend.chat_completions(
+                    url=url,
+                    api_key=api_key,
+                    model=model,
+                    messages=messages,
+                    session_id=sid,
+                    agent_id=agent_id,
+                )
+                self._chat_messages = []
+                self._new_session_id()
+                risk_assessment = llm_backend.normalize_risk_assessment_json(text)
+                return {"ok": True, "risk_assessment": risk_assessment}
+
             if prompt == self.SYSTEM_INSTRUCTION:
                 storage_rule = (
                     "从现在开始，所有从佳明(Garmin)下载的FIT文件，必须严格遵守以下规范：\n\n"
@@ -2692,8 +3138,9 @@ class Api:
                     sport_type=sport_type,
                     provider=provider,
                     track_filename=fn,
-                    points=self._track_points or [],
-                    placemarks=self._track_placemarks or [],
+                    # CONTRACT §4.5: 通用对话路径 AI 仅消费 snapshot，禁止注入全量 points/placemarks
+                    points=[],
+                    placemarks=[],
                     weather_context=self._track_weather,
                     ai_snapshot_block=ai_block,
                 )
@@ -3613,6 +4060,11 @@ class Api:
                 print("[API] 收到全量数据清洗指令，正在后台启动清洗 worker...")
                 res = force_rebuild_all_records()
                 print(f"[API] 后台全量清洗完成: {res}")
+                try:
+                    _report_result = rebuild_report_metrics_for_all_activities(dry_run=False)
+                    print(f"[API] 报告指标回填完成: {_report_result}")
+                except Exception:
+                    pass
 
             threading.Thread(target=_async_run, daemon=True, name="metrics-rebuild-worker").start()
             return _api_success({"message": "全量雷达指标重建任务已在后台异步启动，请稍后刷新页面查看成果。"})
@@ -3947,6 +4399,18 @@ class Api:
                     "avg_pace_display": avg_pace_display,
                     "pace_unit": pace_unit,
                     "start_time": str(r.get("start_time") or ""),
+                    "min_alt_m": _safe_float(r.get("min_alt_m")),
+                    "total_descent_m": _safe_float(r.get("total_descent_m")),
+                    "up_count": _safe_int(r.get("up_count")),
+                    "down_count": _safe_int(r.get("down_count")),
+                    "max_single_climb_m": _safe_float(r.get("max_single_climb_m")),
+                    "difficulty_score": _safe_int(r.get("difficulty_score")),
+                    "avg_grade_pct": _safe_optional_float(r.get("avg_grade_pct")),
+                    "max_slope_pct": _safe_optional_float(r.get("max_slope_pct")),
+                    "min_slope_pct": _safe_optional_float(r.get("min_slope_pct")),
+                    "uphill_pct": _safe_optional_float(r.get("uphill_pct")),
+                    "downhill_pct": _safe_optional_float(r.get("downhill_pct")),
+                    "report_metrics_version": _safe_int(r.get("report_metrics_version")),
                 }
 
             points = self._decode_points_json(row.get("track_json") or row.get("points_json") or row.get("merged_track_json"))
@@ -3994,7 +4458,7 @@ class Api:
             page = max(1, _safe_int(page, 1))
             page_size = max(1, min(_safe_int(page_size, 30), 100))
             offset = (page - 1) * page_size
-            db_rows, total_count = profile_backend.get_activity_list_filtered(offset, page_size, sport_filter)
+            db_rows, total_count = profile_backend.get_activity_list_filtered(offset, page_size, sport_filter, gps_only=True)
             deduped_rows = _dedupe_activity_rows(db_rows)
             records = [self._build_activity_list_item(row) for row in deduped_rows]
 
@@ -4017,6 +4481,19 @@ class Api:
                       AND deleted_at IS NULL
                       AND COALESCE(source_type, 'fit_sdk') = 'fit_sdk'
                       AND COALESCE(is_mock, 0) = 0
+                      AND start_lat IS NOT NULL
+                      AND start_lon IS NOT NULL
+                      AND COALESCE(track_json, points_json, '') != ''
+                      AND (
+                          CASE
+                              WHEN COALESCE(NULLIF(sub_sport_type, ''), 'unknown') IN ('trail_running', 'road_cycling', 'mountain_biking') THEN sub_sport_type
+                              WHEN COALESCE(NULLIF(sport_type, ''), 'unknown') IN ('trail_running', 'road_cycling', 'mountain_biking') THEN sport_type
+                              ELSE COALESCE(NULLIF(sport_type, ''), 'unknown')
+                          END IN (
+                              'running', 'hiking', 'mountaineering', 'cycling', 'walking',
+                              'trail_running', 'road_cycling', 'mountain_biking'
+                          )
+                      )
                     """
                 ).fetchall()
             finally:

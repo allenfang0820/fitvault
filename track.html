@@ -1245,6 +1245,27 @@
         .ai-stat-value { color: #f8fafc; font-weight: 500; }
         .ai-bar { height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; margin: 3px 0; overflow: hidden; }
         .ai-bar-fill { height: 100%; border-radius: 2px; transition: width 0.5s; }
+        .snapshot-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+        .snapshot-card { min-width: 0; padding: 8px 9px; border-radius: 9px; background: rgba(15,23,42,0.48); border: 1px solid rgba(148,163,184,0.12); }
+        .snapshot-icon { font-size: 0.8rem; color: #93c5fd; margin-bottom: 3px; }
+        .snapshot-value { font-size: 0.86rem; color: #f8fafc; font-weight: 800; font-variant-numeric: tabular-nums; word-break: break-word; }
+        .snapshot-label { font-size: 0.64rem; color: #94a3b8; margin-top: 2px; }
+        .ai-insight-btn { float: right; padding: 2px 8px; border-radius: 999px; border: 1px solid rgba(168,85,247,0.42); background: rgba(124,58,237,0.16); color: #ddd6fe; font-size: 0.68rem; font-weight: 800; cursor: pointer; transition: all 0.15s ease; }
+        .ai-insight-btn:hover { background: rgba(124,58,237,0.28); border-color: rgba(196,181,253,0.65); color: #fff; }
+        .ai-insight-btn:disabled { opacity: 0.48; cursor: not-allowed; background: rgba(71,85,105,0.16); border-color: rgba(100,116,139,0.28); color: #94a3b8; }
+        .risk-assessment-container { display: flex; flex-direction: column; gap: 8px; }
+        .risk-category { padding: 8px 9px; border-radius: 9px; background: rgba(15,23,42,0.48); border: 1px solid rgba(148,163,184,0.12); border-left-width: 3px; }
+        .risk-category-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 5px; color: #e2e8f0; font-size: 0.74rem; font-weight: 800; }
+        .risk-category.risk-high { border-left-color: #ef4444; }
+        .risk-category.risk-moderate { border-left-color: #f59e0b; }
+        .risk-category.risk-low { border-left-color: #22c55e; }
+        .risk-level-badge { flex-shrink: 0; padding: 1px 7px; border-radius: 999px; font-size: 0.62rem; font-weight: 800; }
+        .risk-level-badge.risk-high { color: #fca5a5; background: rgba(239,68,68,0.14); }
+        .risk-level-badge.risk-moderate { color: #fbbf24; background: rgba(245,158,11,0.14); }
+        .risk-level-badge.risk-low { color: #86efac; background: rgba(34,197,94,0.14); }
+        .risk-advice { color: #cbd5e1; font-size: 0.72rem; line-height: 1.55; word-break: break-word; }
+        .risk-disclaimer { color: #94a3b8; font-size: 0.66rem; line-height: 1.5; padding-top: 2px; }
+        .risk-error { color: #fca5a5; font-size: 0.68rem; line-height: 1.5; }
         .rest-point { padding: 4px 6px; background: rgba(52,152,219,0.08); border-radius: 4px; margin-bottom: 4px; border-left: 2px solid #3498db; }
         .rest-point-title { font-weight: 600; color: #3498db; font-size: 0.75rem; }
         .rest-point-info { font-size: 0.7rem; color: #94a3b8; }
@@ -1547,7 +1568,7 @@
         #profile-container {
             position: fixed; bottom: 0; left: 0; width: 100vw; height: 160px;
             background: linear-gradient(to top, rgba(15, 23, 42, 0.7), rgba(15, 23, 42, 0));
-            border-top: 1px solid rgba(255,255,255,0.1); z-index: 5; pointer-events: none; display: flex; flex-direction: column;
+            z-index: 5; pointer-events: none; display: flex; flex-direction: column;
         }
         #profile-canvas { width: 100%; height: 100%; display: block; pointer-events: auto; cursor: crosshair; }
         
@@ -2643,6 +2664,8 @@
         currentWeather: null,
         advancedMetrics: null,
         activityMetrics: null,
+        currentRiskAssessment: null,
+        riskAssessmentLoading: false,
         DEBUG_MODE: false,
         historyFilters: {
             time: 'all',
@@ -2706,6 +2729,7 @@
     const PY_REPORT_TERRAIN = '__REPORT_TERRAIN__';
     const PY_REPORT_PERSONALIZED = '__REPORT_PERSONALIZED__';
     const PY_REPORT_INSIGHT = '__REPORT_INSIGHT__';
+    const PY_REPORT_RISK_ASSESSMENT = '__REPORT_RISK_ASSESSMENT__';
     let currentLLMConfig = { provider: 'local_mcp', model: 'openclaw', url: LLM_DEFAULT_URL, apiKey: '', agentId: '' };
 
     let _currentRadarSportType = 'running';
@@ -3147,6 +3171,21 @@
             showToast('✅ 用户画像已后台自动更新');
         } else if (eventName === 'profile_sync_blocked') {
             showToast('⚠️ Garmin 连接未配置，已继续使用历史画像');
+        }
+    };
+
+    window.onRegionEnrichmentComplete = async function(payload) {
+        const success = (payload && payload.success) || 0;
+        const failed = (payload && payload.failed) || 0;
+        if (success > 0 || failed > 0) {
+            if (getCurrentActivePanel() === 'profile' && sportHubState.activeTab === 'records') {
+                await loadSportHubActivityList({ resetPage: false, refreshSnapshot: true });
+            } else {
+                sportHubState.needsRefresh = true;
+            }
+            if (success > 0) {
+                showToast('📍 ' + success + ' 条活动地区已补全');
+            }
         }
     };
 
@@ -4116,7 +4155,7 @@
         const display = (item && (item.region_display || item.region) || '').trim();
         if (display) return display;
         const status = (item && item.region_status || '').trim();
-        if (status === 'pending') return '待补全';
+        if (status === 'pending') return '查询中……';
         if (status === 'none') return '室内运动';
         if (status === 'failed') return '未知地点';
         return '--';
@@ -4841,16 +4880,15 @@
 
                 const typeSel = document.getElementById('filter-type');
                 if (typeSel && Array.isArray(res.activity_types)) {
-                    const sportNameMap = {running:'跑步',hiking:'徒步',mountaineering:'登山',cycling:'骑行',swimming:'游泳',walking:'步行',trail_running:'越野跑',treadmill_running:'室内跑',road_cycling:'公路骑行',mountain_biking:'山地骑行',driving:'驾车'};
                     const types = res.activity_types;
                     if (types.length === 0) {
                         typeSel.innerHTML = '<option value="all">暂无活动类型</option>';
                     } else if (types.length === 1) {
-                        typeSel.innerHTML = `<option value="${types[0]}">${sportNameMap[types[0]] || '其他'}</option>`;
+                        typeSel.innerHTML = `<option value="all">类型: 全部</option><option value="${types[0]}">${getSportTypeLabel(types[0])}</option>`;
                     } else {
                         const currentVal = typeSel.value;
-                        const sortedTypes = [...types].sort((a, b) => (sportNameMap[a] || a).localeCompare(sportNameMap[b] || b, 'zh-CN'));
-                        typeSel.innerHTML = '<option value="all">类型: 全部</option>' + sortedTypes.map(t => `<option value="${t}">${sportNameMap[t] || '其他'}</option>`).join('');
+                        const sortedTypes = [...types].sort((a, b) => getSportTypeLabel(a).localeCompare(getSportTypeLabel(b), 'zh-CN'));
+                        typeSel.innerHTML = '<option value="all">类型: 全部</option>' + sortedTypes.map(t => `<option value="${t}">${getSportTypeLabel(t)}</option>`).join('');
                         typeSel.value = sortedTypes.includes(currentVal) ? currentVal : 'all';
                         if (typeSel.selectedIndex === -1) typeSel.value = 'all';
                     }
@@ -4867,11 +4905,11 @@
             // 只保留适合轨迹分析的 GPS 活动
             const GPS_SPORT_WHITELIST = new Set([
                 'running', 'hiking', 'mountaineering', 'cycling', 'walking',
-                'trail_running', 'road_cycling', 'mountain_biking', 'treadmill_running'
+                'trail_running', 'road_cycling', 'mountain_biking'
             ]);
             displayFiles = displayFiles.filter(item => {
                 const st = item.display_sport_type || item.sub_sport_type || item.sport_type || '';
-                return GPS_SPORT_WHITELIST.has(st);
+                return GPS_SPORT_WHITELIST.has(st) && item.start_lat != null && item.start_lon != null && item.has_track;
             });
 
             // 应用筛选
@@ -4891,7 +4929,7 @@
                 }
                 // 类型筛选
                 if (filters.type !== 'all') {
-                    const st = item.sport_type || 'unknown';
+                    const st = item.display_sport_type || item.sub_sport_type || item.sport_type || 'unknown';
                     if (st !== filters.type) {
                         return false;
                     }
@@ -4907,16 +4945,13 @@
                 listEl.innerHTML = '<div style="color:#94a3b8;font-size:0.75rem;text-align:center;padding:20px;">没有匹配的记录</div>';
                 return;
             }
-
-            const sportEmoji = {running:'🏃',hiking:'🥾',mountaineering:'🧗',cycling:'🚴',swimming:'🏊',walking:'🚶',trail_running:'🏃',treadmill_running:'🏃',road_cycling:'🛣️',mountain_biking:'🚵',driving:'🚗'};
-            const sportName = {running:'跑步',hiking:'徒步',mountaineering:'登山',cycling:'骑行',swimming:'游泳',walking:'步行',trail_running:'越野跑',treadmill_running:'室内跑',road_cycling:'公路骑行',mountain_biking:'山地骑行',driving:'驾车'};
-            
             listEl.innerHTML = displayFiles.map(item => {
                 const date = item.start_time ? item.start_time.split('T')[0].split(' ')[0] : '--';
                 const dist = item.dist_km ? item.dist_km.toFixed(1) : '--';
                 const gain = item.gain_m ? Math.round(item.gain_m) : '--';
                 const dur = item.duration_sec ? formatDuration(item.duration_sec) : '--';
                 const sportType = item.display_sport_type || item.sub_sport_type || item.sport_type || 'unknown';
+                const sportMeta = getDynamicSportMeta(sportType);
                 const city = item.cityName || '未知地点';
                 const title = item.title || '';
                 
@@ -4929,7 +4964,7 @@
                 ">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
                         <span style="font-size:0.65rem;color:#94a3b8;">${date} · ${city}</span>
-                        <span style="font-size:0.65rem;background:rgba(46,204,113,0.15);color:#2ecc71;border-radius:4px;padding:1px 6px;">${sportEmoji[sportType] || '⏱️'} ${sportName[sportType] || '其他'}</span>
+                        <span style="font-size:0.65rem;background:rgba(46,204,113,0.15);color:#2ecc71;border-radius:4px;padding:1px 6px;">${sportMeta.icon || '⏱️'} ${sportMeta.label || '其他运动'}</span>
                     </div>
                     ${title ? `<div style="font-size:0.75rem;color:#f8fafc;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${title}</div>` : ''}
                     <div style="display:flex;justify-content:space-between;align-items:center;">
@@ -6357,9 +6392,11 @@
         var m = activityMetrics || {};
 
         // Task 3.2: 权威数据来自 DB / Resolver，前端不再做二次计算
-        var totalDistKm = (m.dist_km != null) ? Number(m.dist_km) : (parseFloat(document.getElementById('val-dist').innerText) || 0);
-        var totalAscent = (m.gain_m != null) ? Math.round(Number(m.gain_m)) : (parseInt(document.getElementById('val-gain').innerText) || 0);
-        var maxAlt = (m.max_alt_m != null) ? Math.round(Number(m.max_alt_m)) : (parseInt(document.getElementById('val-max').innerText) || 0);
+        // CONTRACT §2.1: canonical 字段缺失时必须返回 null，禁止从 DOM 或 points 反推
+        if (m.dist_km == null && m.gain_m == null && m.max_alt_m == null) return null;
+        var totalDistKm = (m.dist_km != null) ? Number(m.dist_km) : 0;
+        var totalAscent = (m.gain_m != null) ? Math.round(Number(m.gain_m)) : 0;
+        var maxAlt = (m.max_alt_m != null) ? Math.round(Number(m.max_alt_m)) : 0;
         var avgPaceSec = (m.avg_pace != null) ? Number(m.avg_pace) : 0;
         var avgPaceMin = avgPaceSec > 0 ? avgPaceSec / 60 : 0;
 
@@ -6369,53 +6406,16 @@
             startTimeStr = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0') + ' ' + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
         }
 
-        // 海拔扫描（仅用于 UI 报告展示）
-        var minAlt = Infinity, totalDescent = 0, lastAlt = points[0].alt;
-        for (var i = 0; i < points.length; i++) {
-            var p = points[i];
-            if (p.alt < minAlt) minAlt = p.alt;
-            if (i > 0) {
-                var dAlt = p.alt - lastAlt;
-                if (dAlt < -1.5) totalDescent += Math.abs(dAlt);
-                lastAlt = p.alt;
-            }
-        }
+        // CONTRACT §2.1 / §6: canonical 指标来自 activityMetrics（后端 Resolver + compute_report_metrics）
+        // 前端不再遍历 points 计算 min_alt / total_descent / up_count / down_count / max_climb / difficulty
+        var minAlt = (m.min_alt_m != null) ? Number(m.min_alt_m) : maxAlt;
+        var totalDescent = (m.total_descent_m != null) ? Number(m.total_descent_m) : 0;
+        var upCount = (m.up_count != null) ? Number(m.up_count) : 0;
+        var downCount = (m.down_count != null) ? Number(m.down_count) : 0;
+        var maxSingleClimb = (m.max_single_climb_m != null) ? Number(m.max_single_climb_m) : 0;
 
-        // 起伏分析（仅用海拔数据，不做距离/坡度计算）
-        var upCount = 0, downCount = 0, maxSingleClimb = 0, hillState = 0;
-        var hillRefAlt = points[0].alt, hillPeak = points[0].alt, hillValley = points[0].alt;
-        var hillThreshold = 15;
-
-        for (var hi = 1; hi < points.length; hi++) {
-            var alt = points[hi].alt;
-            if (hillState === 1) {
-                if (alt > hillPeak) { hillPeak = alt; }
-                else if (hillPeak - alt >= hillThreshold) {
-                    var climb = hillPeak - hillValley;
-                    if (climb >= hillThreshold) { upCount++; if (climb > maxSingleClimb) maxSingleClimb = climb; }
-                    hillState = -1; hillValley = alt;
-                }
-            } else if (hillState === -1) {
-                if (alt < hillValley) { hillValley = alt; }
-                else if (alt - hillValley >= hillThreshold) {
-                    if (hillPeak - hillValley >= hillThreshold) { downCount++; }
-                    hillState = 1; hillPeak = alt;
-                }
-            } else {
-                if (alt - hillRefAlt >= hillThreshold) { hillState = 1; hillValley = hillRefAlt; hillPeak = alt; }
-                else if (hillRefAlt - alt >= hillThreshold) { hillState = -1; hillPeak = hillRefAlt; hillValley = alt; }
-            }
-        }
-        if (hillState === 1) { var climb2 = hillPeak - hillValley; if (climb2 >= hillThreshold) { upCount++; if (climb2 > maxSingleClimb) maxSingleClimb = climb2; } }
-        else if (hillState === -1) { if (hillPeak - hillValley >= hillThreshold) downCount++; }
-
-        // 难度评分（基于权威数据的解释层）
-        var diffScore = 0;
-        if (totalDistKm > 5)  diffScore += 1; if (totalDistKm > 10) diffScore += 1; if (totalDistKm > 15) diffScore += 1;
-        if (totalAscent > 200) diffScore += 1; if (totalAscent > 500) diffScore += 1; if (totalAscent > 800) diffScore += 1;
-        if (maxSingleClimb > 100) diffScore += 1; if (maxSingleClimb > 300) diffScore += 1;
-        if (upCount > 3) diffScore += 1; if (upCount > 8) diffScore += 1;
-
+        // 难度评分（来自 canonical，前端仅做展示映射）
+        var diffScore = (m.difficulty_score != null) ? Number(m.difficulty_score) : 0;
         var diffLabel = diffScore <= 2 ? '轻松' : diffScore <= 4 ? '中等' : diffScore <= 7 ? '困难' : '极限';
         var diffBadge = diffScore <= 2 ? 'ai-badge-easy' : diffScore <= 4 ? 'ai-badge-moderate' : diffScore <= 7 ? 'ai-badge-hard' : 'ai-badge-extreme';
 
@@ -6431,7 +6431,7 @@
         }
         var estH = Math.floor(estMinutes / 60), estM = Math.round(estMinutes % 60);
 
-        // 配速分段（使用后端 per-point dist_km，不重复 Haversine）
+        // 配速分段（NARRATIVE_LAYER: 使用后端 per-point dist_km 做分段展示，非 canonical 指标计算）
         var totalDistM = totalDistKm * 1000, paceSegs = [];
         if (points[0].dist_km != null && totalDistM > 0) {
             var segCount = Math.min(5, Math.max(1, Math.floor(totalDistKm / 2)));
@@ -6455,7 +6455,7 @@
             }
         }
 
-        // 补给建议（解释层）
+        // 补给建议（NARRATIVE_LAYER: 规则引擎，不涉及运动学核心计算）
         var supplies = [];
         if (totalDistKm > 3)  supplies.push({icon:'💧', name:'水 500ml', note:'基本补水'});
         if (totalDistKm > 5)  supplies.push({icon:'💧', name:'水 1.5L', note:'定时补充'});
@@ -6487,7 +6487,8 @@
             totalDist: totalDistKm, totalAscent: totalAscent, totalDescent: Math.round(totalDescent),
             upCount: upCount, downCount: downCount, maxSingleClimb: Math.round(maxSingleClimb), avgPace: avgPaceMin,
             maxAlt: maxAlt, minAlt: Math.round(minAlt),
-            maxSlope: 0, minSlope: 0, uphillPct: 0, downhillPct: 0,
+            maxSlope: (m.max_slope_pct != null ? Number(m.max_slope_pct) : null), minSlope: (m.min_slope_pct != null ? Number(m.min_slope_pct) : null),
+            uphillPct: (m.uphill_pct != null ? Number(m.uphill_pct) : null), downhillPct: (m.downhill_pct != null ? Number(m.downhill_pct) : null),
             diffLabel: diffLabel, diffBadge: diffBadge, diffScore: diffScore,
             estTime: estH + '小时' + estM + '分钟', paceSegs: paceSegs, supplies: supplies, restPoints: restPoints,
             totalCal: totalCal, energy: energy, energyLevel: energy > 80 ? '极高' : energy > 60 ? '较高' : energy > 40 ? '中等' : '较低',
@@ -6495,6 +6496,115 @@
             altRange: Math.round(altRange),
             altAnalysis: altRange < 100 ? '<span class="alt-keyword alt-keyword-lv1">马路牙子</span>可能就是全场最大的爬升了，一路坦途。主打一个气定神闲，闭着眼睛也能轻松拿捏目标配速。' : altRange < 300 ? '地形像波浪一样带点起伏，赛道开始不安分了。学会利用地形找准呼吸，在不知不觉的缓坡中稳住自己的<span class="alt-keyword alt-keyword-lv2">节奏</span>。' : altRange < 600 ? '哎哟，这海拔曲线画得跟过山车似的！你的心肺系统马上要迎来一场<span class="alt-keyword alt-keyword-lv3">硬核拉练</span>，准备好迎接大口喘气和乳酸堆积的酸爽感吧。' : '恭喜你，这是一场纯粹的重力对抗战！堪比拔地而起去冲顶四千米以上的高海拔山峰，疯狂的垂直爬升急需你调动身体里的每一丝<span class="alt-keyword alt-keyword-lv4">糖原储备</span>来硬扛。'
         };
+    }
+
+    function formatSnapshotNumber(value, digits, suffix) {
+        if (value == null || value === '') return '--' + (suffix || '');
+        var n = Number(value);
+        if (!Number.isFinite(n)) return '--' + (suffix || '');
+        var fixed = digits != null ? n.toFixed(digits) : String(Math.round(n));
+        return fixed + (suffix || '');
+    }
+
+    function formatSnapshotDuration(seconds) {
+        if (seconds == null || seconds === '') return '--';
+        var sec = Number(seconds);
+        if (!Number.isFinite(sec) || sec <= 0) return '--';
+        var h = Math.floor(sec / 3600);
+        var m = Math.floor((sec % 3600) / 60);
+        var s = Math.floor(sec % 60);
+        if (h > 0) return h + '小时' + String(m).padStart(2, '0') + '分';
+        if (m > 0) return m + '分' + String(s).padStart(2, '0') + '秒';
+        return s + '秒';
+    }
+
+    function formatSnapshotPace(avgPace, sportType) {
+        if (avgPace == null || avgPace === '') return '--';
+        var pace = Number(avgPace);
+        if (!Number.isFinite(pace) || pace <= 0) return '--';
+        var unit = normalizeActivityToken(sportType).includes('swim') ? '/100m' : '/km';
+        var pm = Math.floor(pace / 60);
+        var ps = Math.floor(pace % 60);
+        return pm + "'" + String(ps).padStart(2, '0') + "''" + unit;
+    }
+
+    function buildActivitySnapshotHTML(activityMetrics) {
+        if (!activityMetrics || typeof activityMetrics !== 'object') {
+            return '<div class="ai-section"><h3>📸 运动数据快照</h3><div class="ai-empty">暂无运动数据快照</div></div>';
+        }
+        var m = activityMetrics;
+        var html = '<div class="ai-section activity-snapshot-section"><h3>📸 运动数据快照</h3>';
+        var cards = [
+            { icon: '📏', label: '距离', value: formatSnapshotNumber(m.dist_km, 2, ' km') },
+            { icon: '⏱️', label: '时间', value: formatSnapshotDuration(m.duration_sec) },
+            { icon: '⬆️', label: '爬升', value: formatSnapshotNumber(m.gain_m, 0, ' m') },
+            { icon: '🏃', label: '配速', value: formatSnapshotPace(m.avg_pace, appState.sportType) },
+            { icon: '🔥', label: '消耗', value: formatSnapshotNumber(m.calories, 0, ' kcal') },
+            { icon: '📐', label: '坡度', value: (m.avg_grade_pct != null ? Number(m.avg_grade_pct).toFixed(1) + '%' : '--') }
+        ];
+        html += '<div class="snapshot-grid">';
+        for (var i = 0; i < cards.length; i++) {
+            html += '<div class="snapshot-card"><div class="snapshot-icon">' + safeHtml(cards[i].icon) + '</div><div class="snapshot-value">' + safeHtml(cards[i].value) + '</div><div class="snapshot-label">' + safeHtml(cards[i].label) + '</div></div>';
+        }
+        html += '</div>';
+        html += '</div>';
+        return html;
+    }
+
+    function normalizeRiskLevel(level) {
+        var text = String(level || '').trim();
+        return (text === '低' || text === '中' || text === '高') ? text : '中';
+    }
+
+    function getRiskLevelClass(level) {
+        var normalized = normalizeRiskLevel(level);
+        if (normalized === '高') return 'risk-high';
+        if (normalized === '低') return 'risk-low';
+        return 'risk-moderate';
+    }
+
+    function getRiskItem(risk, key) {
+        var defaultAdvice = '暂无足够数据，建议结合实际路线和个人状态谨慎判断。';
+        var item = risk && typeof risk === 'object' && risk[key] && typeof risk[key] === 'object' ? risk[key] : {};
+        return {
+            level: normalizeRiskLevel(item.level),
+            advice: String(item.advice || defaultAdvice)
+        };
+    }
+
+    function buildRiskAssessmentHTML(risk) {
+        if (!risk || typeof risk !== 'object') {
+            return '<div class="ai-empty">暂无可展示的风险预警结果</div>';
+        }
+        var items = [
+            { key: 'supply_risk', title: '🎒 补给风险' },
+            { key: 'weather_risk', title: '🌦️ 天气风险' },
+            { key: 'equipment_risk', title: '🎽 装备风险' },
+            { key: 'physical_risk', title: '💪 体力风险' }
+        ];
+        var html = '<div class="risk-assessment-container">';
+        for (var i = 0; i < items.length; i++) {
+            var item = getRiskItem(risk, items[i].key);
+            var levelClass = getRiskLevelClass(item.level);
+            html += '<div class="risk-category ' + levelClass + '">';
+            html += '<div class="risk-category-head"><span>' + safeHtml(items[i].title) + '</span><span class="risk-level-badge ' + levelClass + '">' + safeHtml(item.level) + '风险</span></div>';
+            html += '<div class="risk-advice">' + safeHtml(item.advice) + '</div>';
+            html += '</div>';
+        }
+        html += '<div class="risk-disclaimer">' + safeHtml(risk.disclaimer || '以上建议由 AI 生成，仅供参考。请结合自身经验和实际情况判断。') + '</div>';
+        if (risk.error) html += '<div class="risk-error">' + safeHtml(risk.error) + '</div>';
+        html += '</div>';
+        return html;
+    }
+
+    function resetRiskAssessmentState() {
+        appState.currentRiskAssessment = null;
+        appState.riskAssessmentLoading = false;
+        var resultEl = document.getElementById('risk-assessment-result');
+        if (resultEl) {
+            resultEl.className = 'ai-empty';
+            resultEl.innerHTML = '点击“AI分析”按钮，获取智能风险预警';
+        }
     }
 
     function buildAIReportHTML(report) {
@@ -6524,6 +6634,8 @@
         html += '<div class="ai-bar"><div class="ai-bar-fill" style="width:' + report.energy + '%;background:' + report.energyColor + ';"></div></div>';
         html += '<div class="ai-stat"><span class="ai-stat-label">体能消耗</span><span class="ai-stat-value" style="color:' + report.energyColor + '">' + report.energyLevel + ' (' + report.energy + '%)</span></div></div>';
 
+        html += buildActivitySnapshotHTML(appState.activityMetrics);
+
         html += '<div class="ai-section"><h3>📊 坡度与起伏</h3>';
         html += '<div class="ai-stat"><span class="ai-stat-label">最大连续爬坡</span><span class="ai-stat-value" style="color:#fca5a5; font-weight:bold;">↑ ' + Math.round(report.maxSingleClimb) + ' m</span></div>';
         html += '<div class="ai-stat"><span class="ai-stat-label">显著起伏</span><span class="ai-stat-value">' + report.upCount + '上 / ' + report.downCount + '下</span></div>';
@@ -6541,6 +6653,10 @@
             for (var j = 0; j < report.supplies.length; j++) html += '<div class="supply-item"><span>' + report.supplies[j].icon + '</span><span><b>' + report.supplies[j].name + '</b> <span style="color:#64748b;font-size:0.65rem;">' + report.supplies[j].note + '</span></span></div>';
             html += '</div>';
         }
+        html += '<div class="ai-section risk-assessment-section">';
+        html += '<h3>⚠️ 风险预警 <button type="button" class="ai-insight-btn" onclick="requestRiskAssessment()">🤖 AI分析</button></h3>';
+        html += '<div id="risk-assessment-result" class="ai-empty">点击“AI分析”按钮，获取智能风险预警</div>';
+        html += '</div>';
         return html;
     }
 
@@ -6571,7 +6687,18 @@
         }
         try {
             const report = generateAIReport(appState.points, appState.activityMetrics);
+            if (!report) {
+                summaryEl.innerHTML = '<div class="ai-empty">报告数据加载中，请确认轨迹已成功导入并包含权威运动指标。</div>';
+                sidebarEl.classList.remove('collapsed');
+                return null;
+            }
             summaryEl.innerHTML = buildAIReportHTML(report);
+            var regionEl = document.getElementById('track-location-name');
+            if (regionEl && appState.activityMetrics) {
+                var rawRegion = (appState.activityMetrics.region || '').trim();
+                if (!rawRegion) { rawRegion = (appState.activityMetrics.region_display || '').trim(); }
+                regionEl.textContent = rawRegion || '--';
+            }
             sidebarEl.classList.remove('collapsed');
             switchSidebarTab('report', document.querySelector('.sidebar-tab[data-tab="report"]'));
             return report;
@@ -6633,15 +6760,67 @@
         summaryEl.innerHTML = _buildInsightCardsHTML(insight, history);
     }
 
+    async function requestRiskAssessment() {
+        if (appState.riskAssessmentLoading) return;
+        if (!window.pywebview || !window.pywebview.api || !window.pywebview.api.call_llm) {
+            showToast('⚠️ AI 风险预警仅在桌面应用中可用');
+            return;
+        }
+        if (!currentLLMConfig.url) { showToast('⚠️ 请先在配置中填写 API 地址'); return; }
+
+        const resultEl = document.getElementById('risk-assessment-result');
+        const btn = document.querySelector('.risk-assessment-section .ai-insight-btn');
+        appState.riskAssessmentLoading = true;
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = 'AI分析中...';
+        }
+        if (resultEl) {
+            resultEl.className = 'ai-empty';
+            resultEl.innerHTML = '<div class="spinner" style="border-left-color:#a855f7;width:24px;height:24px;border-width:3px;margin:0 auto 10px;"></div><div>AI 正在分析风险...</div>';
+        }
+
+        try {
+            const res = await withTimeout(
+                window.pywebview.api.call_llm(PY_REPORT_RISK_ASSESSMENT, appState.sportType || 'general'),
+                60000
+            );
+            if (!res || !res.ok || !res.risk_assessment) {
+                throw new Error((res && res.error) ? String(res.error) : '无风险预警结果');
+            }
+            appState.currentRiskAssessment = res.risk_assessment;
+            if (resultEl) {
+                resultEl.className = '';
+                resultEl.innerHTML = buildRiskAssessmentHTML(res.risk_assessment);
+            }
+        } catch (e) {
+            if (resultEl) {
+                var errorMsg = e && e.message ? e.message : String(e);
+                resultEl.className = 'ai-empty';
+                resultEl.innerHTML = '<div style="color:#fca5a5;margin-bottom:10px;">风险预警生成失败：' + safeHtml(errorMsg) + '</div><button type="button" class="ai-insight-btn" onclick="requestRiskAssessment()">重试</button>';
+            }
+            showToast('⚠️ 风险预警请求超时或失败');
+        } finally {
+            appState.riskAssessmentLoading = false;
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = '🤖 AI分析';
+            }
+        }
+    }
+
+    // CONTRACT §2.1 / §2.4: fatigue_index / efficiency_index 为 LLM 主观评估值（0-100），
+    // 仅用于 UI narrative 展示层（NARRATIVE_LAYER），不写入 activities 表。
+    // 不属于 §6 要求的可追溯字段，禁止在报告链路中作为 canonical 指标使用。
     function _buildInsightCardsHTML(insight, history) {
         var g = insight || {};
         var grade = g.performance_grade || 'C';
         var gradeLabel = grade === 'S' ? '精英' : grade === 'A' ? '优秀' : grade === 'B' ? '良好' : grade === 'C' ? '一般' : '需关注';
         var km = g.key_metrics || {};
         var metricLabel = { "excellent": "出色", "good": "良好", "fair": "一般", "poor": "较差", "N/A": "N/A" };
-        var fatigueIdx = g.fatigue_index != null ? Number(g.fatigue_index) : 50;
+        var fatigueIdx = g.fatigue_index != null ? Number(g.fatigue_index) : 50; // NARRATIVE_LAYER
         var fatigueColor = fatigueIdx > 70 ? '#ef4444' : fatigueIdx > 40 ? '#f59e0b' : '#22c55e';
-        var effIdx = g.efficiency_index != null ? Number(g.efficiency_index) : 50;
+        var effIdx = g.efficiency_index != null ? Number(g.efficiency_index) : 50; // NARRATIVE_LAYER
         var effColor = effIdx >= 70 ? '#22c55e' : effIdx >= 40 ? '#f59e0b' : '#ef4444';
         var load = g.training_load || 'moderate';
         var loadColor = load === 'high' ? '#ef4444' : load === 'moderate' ? '#f59e0b' : '#22c55e';
@@ -6993,6 +7172,7 @@
             showToast('⚠️ 轨迹数据无效，无法渲染');
             return;
         }
+        resetRiskAssessmentState();
         setCurrentWeather(data.weather || null);
         appState.advancedMetrics = data.advanced_metrics || null;
         appState.points = data.points;

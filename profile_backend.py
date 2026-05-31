@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import random
 import requests
 import shutil
 import sqlite3
@@ -39,7 +40,8 @@ REGION_CACHE_PRECISION = 2
 REGION_ENRICH_LIMIT = 20
 REGION_ENRICH_MAX_REQUESTS = 50
 REGION_ENRICH_RETRY_COOLDOWN_MINUTES = 30
-REGION_ENRICH_REQUEST_INTERVAL_SEC = 1.8
+GEOCODE_REQUEST_INTERVAL_MIN_SEC = 1.5
+GEOCODE_REQUEST_INTERVAL_MAX_SEC = 5.0
 GEOCODE_REQUEST_TIMEOUT_SEC = 8
 GEOCODE_LANG = "zh-CN"
 GEOCODE_USER_AGENT = "FitVault/1.0"
@@ -519,6 +521,27 @@ def _init_schema(conn: sqlite3.Connection) -> None:
         except Exception:
             pass
 
+    # CONTRACT §2.1 / §5: 报告 canonical 派生指标 — 幂等 migration
+    _report_columns = [
+        ("min_alt_m", "REAL"),
+        ("total_descent_m", "REAL"),
+        ("up_count", "INTEGER"),
+        ("down_count", "INTEGER"),
+        ("max_single_climb_m", "REAL"),
+        ("difficulty_score", "INTEGER"),
+        ("report_metrics_version", "INTEGER"),
+        ("avg_grade_pct", "REAL"),
+        ("max_slope_pct", "REAL"),
+        ("min_slope_pct", "REAL"),
+        ("uphill_pct", "REAL"),
+        ("downhill_pct", "REAL"),
+    ]
+    for col, dtype in _report_columns:
+        try:
+            conn.execute(f"ALTER TABLE activities ADD COLUMN {col} {dtype}")
+        except Exception:
+            pass
+
     for col, dtype in [
         ("sub_sport_type", "TEXT"),
         ("file_path", "TEXT"),
@@ -860,8 +883,12 @@ def save_activity(data: dict[str, Any]) -> int:
                     (filename, title, title_source, sport_type, sub_sport_type, dist_km, duration_sec, gain_m, max_alt_m,
                      avg_hr, max_hr, avg_cadence, hr_decoupling, tss, points_json, file_path, start_time, start_time_utc,
                      start_lat, start_lon, region, region_city, region_country, region_display, region_status, region_error,
-                     region_updated_at, region_attempt_count, weather_json, avg_pace, calories, normalized_power, swolf, shadow_diff_json)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     region_updated_at, region_attempt_count, weather_json, avg_pace, calories, normalized_power, swolf, shadow_diff_json,
+                     min_alt_m, total_descent_m, up_count, down_count, max_single_climb_m, difficulty_score, report_metrics_version,
+                     avg_grade_pct, max_slope_pct, min_slope_pct, uphill_pct, downhill_pct)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?)
                 """,
                 (
                     data.get("filename"),
@@ -898,6 +925,18 @@ def save_activity(data: dict[str, Any]) -> int:
                     data.get("normalized_power"),
                     data.get("swolf"),
                     data.get("shadow_diff_json"),
+                    data.get("min_alt_m"),
+                    data.get("total_descent_m"),
+                    data.get("up_count"),
+                    data.get("down_count"),
+                    data.get("max_single_climb_m"),
+                    data.get("difficulty_score"),
+                    data.get("report_metrics_version"),
+                    data.get("avg_grade_pct"),
+                    data.get("max_slope_pct"),
+                    data.get("min_slope_pct"),
+                    data.get("uphill_pct"),
+                    data.get("downhill_pct"),
                 ),
             )
             conn.commit()
@@ -948,7 +987,7 @@ def get_activity_history(limit: int = 50) -> list[dict[str, Any]]:
     return [dict(r) for r in rows]
 
 
-def get_activity_list_filtered(offset: int, limit: int, sport_filter: str) -> tuple[list[dict[str, Any]], int]:
+def get_activity_list_filtered(offset: int, limit: int, sport_filter: str, gps_only: bool = False) -> tuple[list[dict[str, Any]], int]:
     display_sql = (
         "CASE "
         "WHEN COALESCE(NULLIF(sub_sport_type, ''), 'unknown') IN ('trail_running', 'road_cycling', 'mountain_biking') THEN sub_sport_type "
@@ -967,6 +1006,17 @@ def get_activity_list_filtered(offset: int, limit: int, sport_filter: str) -> tu
     if sport_filter and sport_filter != "all":
         where_parts.append(f"{display_sql} = ?")
         params.append(sport_filter)
+
+    if gps_only:
+        where_parts.append(
+            f"{display_sql} IN ("
+            "'running','hiking','mountaineering','cycling','walking',"
+            "'trail_running','road_cycling','mountain_biking'"
+            ")"
+        )
+        where_parts.append("start_lat IS NOT NULL")
+        where_parts.append("start_lon IS NOT NULL")
+        where_parts.append("COALESCE(track_json, points_json, '') != ''")
 
     where_sql = "WHERE " + " AND ".join(where_parts)
 
@@ -1186,14 +1236,14 @@ def _format_city_country(city: str | None, country: str | None) -> str:
     city_text = str(city or "").strip()
     country_text = str(country or "").strip()
     if city_text and country_text:
-        return f"{city_text}，{country_text}"
+        return f"{city_text}/{country_text}"
     return city_text or country_text
 
 
 def _extract_city_country(geo: dict[str, Any] | None) -> tuple[str | None, str | None, str]:
     if not geo:
         return None, None, ""
-    city = str(geo.get("city") or geo.get("town") or geo.get("municipality") or geo.get("state") or "").strip() or None
+    city = str(geo.get("city") or geo.get("county") or geo.get("town") or geo.get("municipality") or "").strip() or None
     country = str(geo.get("country") or "").strip() or None
     return city, country, _format_city_country(city, country)
 
@@ -1325,7 +1375,7 @@ def run_region_enrichment_once(limit: int = REGION_ENRICH_LIMIT, max_requests: i
                 conn.close()
 
             if requests_count > 0:
-                time.sleep(REGION_ENRICH_REQUEST_INTERVAL_SEC)
+                time.sleep(random.uniform(GEOCODE_REQUEST_INTERVAL_MIN_SEC, GEOCODE_REQUEST_INTERVAL_MAX_SEC))
             requests_count += 1
             try:
                 geo = reverse_geocode(lat_round, lon_round)
@@ -1373,8 +1423,15 @@ def run_region_enrichment_once(limit: int = REGION_ENRICH_LIMIT, max_requests: i
         _REGION_ENRICH_LOCK.release()
 
 
-def start_region_enrichment_background(limit: int = REGION_ENRICH_LIMIT) -> None:
-    thread = threading.Thread(target=run_region_enrichment_once, kwargs={"limit": limit}, daemon=True)
+def start_region_enrichment_background(limit: int = REGION_ENRICH_LIMIT, on_complete = None) -> None:
+    def _run():
+        result = run_region_enrichment_once(limit=limit)
+        if callable(on_complete):
+            try:
+                on_complete(result)
+            except Exception:
+                pass
+    thread = threading.Thread(target=_run, daemon=True)
     thread.start()
 
 

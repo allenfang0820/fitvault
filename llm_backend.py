@@ -118,8 +118,10 @@ def test_llm_connection(
     return f"{provider_text} / {model} 连接成功：{text[:80]}"
 
 
-def points_to_dataframe_csv(points: list[dict[str, Any]], max_chars: int = 420_000) -> str:
-    """将轨迹点转为 pandas DataFrame 再输出 CSV，便于模型按表阅读。"""
+def points_to_dataframe_csv(points: list[dict[str, Any]], max_chars: int = 50_000) -> str:
+    """将轨迹点转为 pandas DataFrame 再输出 CSV，便于模型按表阅读。
+    CONTRACT §4.5: snapshot 必须 token 可控。max_chars=50_000 约合 ~12.5K tokens。
+    此函数仅作为历史兼容防御层，不应成为主要 AI 数据源。"""
     import pandas as pd
 
     if not points:
@@ -425,6 +427,134 @@ def _insight_mode_sport(sport_type: str) -> str:
     if key in ("swimming", "lap_swimming", "open_water"):
         return "swimming"
     return "general"
+
+
+RISK_ASSESSMENT_OUTPUT_SCHEMA = """{
+  "supply_risk": {"level": "低|中|高", "advice": "补给、水、电解质、能量相关建议"},
+  "weather_risk": {"level": "低|中|高", "advice": "温度、湿度、风、雨、低温等环境风险建议"},
+  "equipment_risk": {"level": "低|中|高", "advice": "装备、防晒、防雨、头灯、急救等建议"},
+  "physical_risk": {"level": "低|中|高", "advice": "体力分配、爬升压力、心率、节奏控制建议"},
+  "disclaimer": "以上建议由 AI 生成，仅供参考，请结合自身经验和实际情况判断。"
+}"""
+
+
+def _risk_snapshot_payload(snapshot: dict[str, Any] | None, weather_context: dict[str, Any] | None = None) -> str:
+    allowed_keys = (
+        "activity_id", "sport_type", "sub_sport_type", "distance_km", "distance_display",
+        "duration_sec", "avg_pace", "avg_pace_display", "pace_unit", "avg_hr", "max_hr",
+        "calories", "elevation_gain_m", "max_alt_m", "min_alt_m", "total_descent_m",
+        "avg_cadence", "normalized_power", "swolf", "tss", "start_time", "region",
+        "hr_decoupling", "device_name", "up_count", "down_count", "max_single_climb_m",
+        "difficulty_score", "report_metrics_version", "source",
+    )
+    safe_snapshot = {}
+    if isinstance(snapshot, dict):
+        safe_snapshot = {key: snapshot.get(key) for key in allowed_keys if key in snapshot}
+    safe_weather = weather_context if isinstance(weather_context, dict) else None
+    return json.dumps(
+        {"activity_snapshot": safe_snapshot, "weather_context": safe_weather},
+        ensure_ascii=False,
+        indent=2,
+        default=str,
+    )
+
+
+def build_risk_assessment_system_prompt(snapshot: dict[str, Any] | None, weather_context: dict[str, Any] | None = None) -> str:
+    payload = _risk_snapshot_payload(snapshot, weather_context)
+    return f"""你是一位专业户外运动风险分析师，只负责对系统提供的运动数据进行风险解读。
+
+【数据边界 — DATA BOUNDARY（不可逾越）】
+以下数据来自 DB canonical / Resolver truth / 后端权威上下文。你只允许解释，禁止生成或修改事实字段。
+
+【当前功能区权威快照】
+{payload}
+
+【分析维度】
+你必须从以下四个维度进行风险预警：
+1. 补给风险：水、能量、盐丸、电解质、低血糖、脱水
+2. 天气风险：温度、湿度、风、雨、低温、暴晒
+3. 装备风险：防雨、防晒、头灯、急救包、保暖、防滑、路线装备
+4. 体力风险：爬升压力、运动时长、心率压力、节奏控制、后程衰减
+
+【强制禁止行为】
+你 MUST NOT：
+- 重新计算距离
+- 推断配速
+- 还原坡度
+- 重新计算爬升
+- 重建 per-point 数据
+- 使用前端 points[] 或 DOM 推导值
+- 使用 shadow_diff、shadow_diff_json、diff
+- 生成任何 canonical 指标或写回字段建议
+- 输出 markdown 代码块
+
+【输出格式 — 严格 JSON】
+只输出一个合法 JSON 对象，格式必须为：
+{RISK_ASSESSMENT_OUTPUT_SCHEMA}
+
+【等级约束】
+level 只能使用 "低"、"中"、"高" 三个值。
+"""
+
+
+def build_risk_assessment_user_prompt() -> str:
+    return "请基于系统指令中的权威数据快照生成风险预警 JSON。只输出纯 JSON，不要输出 markdown 标记，不要补充额外解释。"
+
+
+def empty_risk_assessment(error: str = "") -> dict[str, Any]:
+    default_advice = "暂无足够数据，建议结合实际路线和个人状态谨慎判断。"
+    return {
+        "supply_risk": {"level": "中", "advice": default_advice},
+        "weather_risk": {"level": "中", "advice": default_advice},
+        "equipment_risk": {"level": "中", "advice": default_advice},
+        "physical_risk": {"level": "中", "advice": default_advice},
+        "disclaimer": "以上建议由 AI 生成，仅供参考，请结合自身经验和实际情况判断。",
+        "error": str(error or ""),
+    }
+
+
+def _normalize_risk_level(level: Any) -> str:
+    text = str(level or "").strip()
+    return text if text in {"低", "中", "高"} else "中"
+
+
+def _normalize_risk_item(value: Any) -> dict[str, str]:
+    default_advice = "暂无足够数据，建议结合实际路线和个人状态谨慎判断。"
+    if not isinstance(value, dict):
+        value = {}
+    return {
+        "level": _normalize_risk_level(value.get("level")),
+        "advice": str(value.get("advice") or default_advice)[:500],
+    }
+
+
+def normalize_risk_assessment_json(raw_text: str) -> dict[str, Any]:
+    if not raw_text:
+        return empty_risk_assessment("LLM 未返回内容")
+
+    text = str(raw_text).strip()
+    m = re.search(r"```(?:json)?\s*\n?(.*?)\n?\s*```", text, re.DOTALL)
+    if m:
+        text = m.group(1).strip()
+
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        text = text[start:end + 1]
+
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        return empty_risk_assessment(f"JSON 解析失败: {text[:120]}")
+
+    if not isinstance(data, dict):
+        return empty_risk_assessment("风险预警结果格式错误")
+
+    schema = empty_risk_assessment(str(data.get("error") or ""))
+    for key in ("supply_risk", "weather_risk", "equipment_risk", "physical_risk"):
+        schema[key] = _normalize_risk_item(data.get(key))
+    schema["disclaimer"] = str(data.get("disclaimer") or schema["disclaimer"])[:500]
+    return schema
 
 
 def _build_insight_system_prompt(

@@ -108,9 +108,9 @@
         { "name": "prompt", "type": "string", "required": true },
         { "name": "sport_type", "type": "string", "required": false, "default": "hiking" }
       ],
-      "returns": "{ ok, content } 或 { ok, insight, history, snapshot }",
+      "returns": "普通聊天返回 { ok, content }；__REPORT_INSIGHT__ 返回 { ok, insight, history, snapshot }；__REPORT_RISK_ASSESSMENT__ 返回 { ok, risk_assessment }",
       "high_risk": false,
-      "description": "调用大模型；AI 输入仅来自 _ai_snapshot(DB truth)，不消费前端计算值"
+      "description": "调用大模型；普通聊天走对话会话；功能区 AI 洞察必须走 sentinel。支持 __REPORT_RISK_ASSESSMENT__ 风险预警，输入来自后端 _ai_snapshot(DB truth) 与后端天气上下文，禁止前端传入 points[]、DOM 推导值、UI fallback 或拼接 prompt；风险预警结果不持久化、不写 DB、不进入 ai_snapshots、不污染普通 AI 教练聊天会话。"
     },
     {
       "name": "sync_track_context",
@@ -427,6 +427,9 @@
     "field_contract": "FIT → Resolver(唯一语义翻译层) → DB(系统标准字段) → UI(契约字段, 禁止fallback推断)",
     "data_flow": "所有字段必须兜底，禁止 None/null/undefined 污染展示",
     "ai_boundary": "AI 输入仅来自 _ai_snapshot(DB truth)，前端计算值不进入 AI 链路",
+    "ai_insight_pattern": "功能区 AI 洞察按钮必须通过 call_llm(SENTINEL, sportType) + 后端 canonical snapshot + prompt builder + normalizer 实现；禁止前端 points[] 拼 prompt，调用后必须隔离普通 AI 教练会话，结果默认只存在前端内存",
+    "risk_assessment_contract": "__REPORT_RISK_ASSESSMENT__ 仅用于轨迹报告风险预警，返回 {ok,risk_assessment}；该能力不是高风险写操作，不删除文件、不改配置、不写 canonical、不写 ai_snapshots",
+    "report_metrics_v2": "load_activity_track 返回的 activity 对象中新增 avg_grade_pct/max_slope_pct/min_slope_pct/uphill_pct/downhill_pct/report_metrics_version；字段来源为 DB canonical compute_report_metrics() 窗口算法派生，禁止前端从 points[] 或 gain_m/dist_km 计算，AI snapshot 消费同名 DB truth 字段且不要求 LLM 重算坡度",
     "security": "高风险接口(deletion/import/snapshot_rebuild)必须具备鉴权/确认门禁",
     "response": "所有接口响应逐步向 {code,msg,data,traceId} 统一结构演进"
   }
