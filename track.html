@@ -606,24 +606,34 @@
             align-items: center;
             padding-top: 8px;
             gap: 8px;
-            flex-wrap: wrap;
+            overflow: hidden;
+            min-width: 0;
         }
         .hub-pagination-info {
             font-size: 0.68rem;
             color: #94a3b8;
+            white-space: nowrap;
+            flex-shrink: 0;
         }
         .hub-pagination-actions {
             display: flex;
-            gap: 8px;
+            gap: 5px;
+            align-items: center;
+            flex-wrap: wrap;
+            row-gap: 5px;
+            justify-content: flex-end;
+            min-width: 0;
         }
         .hub-page-btn {
             border: 1px solid rgba(255,255,255,0.1);
             background: rgba(255,255,255,0.05);
             color: #f8fafc;
             border-radius: 10px;
-            padding: 7px 12px;
+            padding: 4px 9px;
             cursor: pointer;
-            font-size: 0.72rem;
+            font-size: 0.66rem;
+            white-space: nowrap;
+            flex-shrink: 0;
         }
         .hub-page-btn[disabled] {
             opacity: 0.45;
@@ -633,23 +643,35 @@
             display: flex;
             gap: 3px;
             align-items: center;
+            flex-shrink: 0;
         }
         .hub-page-num {
             background: rgba(255,255,255,0.06);
             border: 1px solid rgba(255,255,255,0.1);
             color: #cbd5e1;
-            font-size: 0.68rem;
-            padding: 3px 7px;
+            font-size: 0.64rem;
+            padding: 2px 5px;
             border-radius: 4px;
             cursor: pointer;
-            min-width: 28px;
+            min-width: 24px;
             text-align: center;
+            flex-shrink: 0;
         }
         .hub-page-num:hover { background: rgba(255,255,255,0.12); color: #f8fafc; }
         .hub-page-num.active { background: rgba(99,102,241,0.5); border-color: rgba(99,102,241,0.7); color: #f8fafc; font-weight: 700; }
-        .hub-page-ellipsis { color: #64748b; font-size: 0.7rem; padding: 0 3px; user-select: none; }
-        .hub-page-jump { color: #94a3b8; font-size: 0.65rem; display: flex; align-items: center; gap: 3px; margin-left: 6px; }
+        .hub-page-ellipsis { color: #64748b; font-size: 0.65rem; padding: 0 2px; user-select: none; flex-shrink: 0; }
+        .hub-page-jump { color: #94a3b8; font-size: 0.62rem; display: flex; align-items: center; gap: 2px; margin-left: 2px; white-space: nowrap; flex-shrink: 0; }
         .hub-page-jump input:focus { outline: 1px solid rgba(99,102,241,0.6); }
+        .hub-page-jump input {
+            width: 36px;
+            text-align: center;
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 4px;
+            color: #f8fafc;
+            font-size: 0.62rem;
+            padding: 1px 3px;
+        }
         .hub-empty-state {
             flex: 1;
             display: flex;
@@ -1328,40 +1350,6 @@
         .alt-keyword-lv2 { color: #38bdf8; font-size: calc(0.75rem + 3px); }
         .alt-keyword-lv3 { color: #f59e0b; font-size: calc(0.75rem + 3px); }
         .alt-keyword-lv4 { color: #ef4444; font-size: calc(0.75rem + 3px); }
-        /* ── Insight Card System (Task 4.2 — 5张结构化卡片) ── */
-        .insight-cards-container { display: flex; flex-direction: column; gap: 10px; }
-        .ic-card { background: rgba(15,23,42,0.55); border: 1px solid rgba(124,58,237,0.25); border-radius: 10px; padding: 14px; }
-        .ic-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-        .ic-card-title { font-size: 0.82rem; font-weight: 700; color: #f1f5f9; }
-        .ic-card-grade { font-size: 0.78rem; font-weight: 800; padding: 2px 10px; border-radius: 20px; }
-        .ic-card-grade[data-grade="S"] { color: #ffd700; background: rgba(255,215,0,0.08); }
-        .ic-card-grade[data-grade="A"] { color: #22c55e; background: rgba(34,197,94,0.08); }
-        .ic-card-grade[data-grade="B"] { color: #3b82f6; background: rgba(59,130,246,0.08); }
-        .ic-card-grade[data-grade="C"] { color: #f59e0b; background: rgba(245,158,11,0.08); }
-        .ic-card-grade[data-grade="D"] { color: #ef4444; background: rgba(239,68,68,0.08); }
-        .ic-card-body { font-size: 0.75rem; color: #cbd5e1; line-height: 1.6; }
-        .ic-card-footer { font-size: 0.62rem; color: #475569; margin-top: 8px; text-align: right; font-family: monospace; }
-        /* metrics grid (reused in performance_summary card) */
-        .insight-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 8px; }
-        .im-item { background: rgba(255,255,255,0.03); border-radius: 6px; padding: 8px 10px; display: flex; flex-direction: column; gap: 2px; }
-        .im-label { font-size: 0.65rem; color: #64748b; text-transform: uppercase; }
-        .im-val { font-size: 0.82rem; font-weight: 700; }
-        .im-excellent { color: #22c55e; } .im-good { color: #3b82f6; } .im-fair { color: #f59e0b; } .im-poor { color: #ef4444; }
-        /* index bars (reused) */
-        .ii-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
-        .ii-label { font-size: 0.7rem; color: #94a3b8; min-width: 52px; }
-        .ii-track { flex: 1; height: 6px; background: rgba(255,255,255,0.08); border-radius: 3px; overflow: hidden; }
-        .ii-fill { height: 100%; border-radius: 3px; transition: width 0.6s ease; }
-        .ii-val { font-size: 0.75rem; font-weight: 700; color: #f8fafc; min-width: 28px; text-align: right; }
-        /* tag chips (reused) */
-        .is-tag { display: inline-block; font-size: 0.72rem; padding: 3px 8px; border-radius: 4px; margin: 2px 4px 2px 0; }
-        .is-tag.good { background: rgba(34,197,94,0.12); color: #4ade80; }
-        .is-tag.warn { background: rgba(245,158,11,0.12); color: #fbbf24; }
-        .is-tag.risk { background: rgba(239,68,68,0.12); color: #f87171; }
-        .insight-recommend { font-size: 0.75rem; color: #cbd5e1; line-height: 1.6; background: rgba(124,58,237,0.06); border-radius: 6px; padding: 8px 10px; margin-top: 4px; }
-        .insight-history { max-height: 140px; overflow-y: auto; margin-top: 6px; }
-        .ih-row{display:flex;align-items:center;gap:6px;padding:4px 0;font-size:0.75rem;color:#94a3b8;border-bottom:1px solid rgba(255,255,255,0.04)}
-        .ih-dist{font-weight:600;color:#e2e8f0;min-width:45px}.ih-pace{min-width:60px}.ih-hr{color:#a5b4fc}
 
         .secondary-btn, .primary-btn {
             width: 100%; padding: 10px; border-radius: 8px; cursor: pointer; transition: all 0.2s;
@@ -1679,44 +1667,121 @@
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
-        .radar-ai-panel {
-            margin-top: 12px;
-            padding: 12px;
-            background: rgba(108, 92, 231, 0.08);
-            border-left: 3px solid #6c5ce7;
-            border-radius: 4px;
+        /* §5.6 Modal 化(2026-06-02):雷达图 AI 洞察从内联 panel 升级为弹窗。
+           复用原 5 类 CSS(summary / dim-list / dim-item / advice / disclaimer),命名空间从 .radar-ai-panel 改为 .radar-ai-modal。
+           错误变体走 .radar-ai-modal.error。 */
+        .radar-ai-modal[hidden] { display: none !important; }
+        .radar-ai-modal {
+            position: fixed;
+            inset: 0;
+            z-index: 9999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
             font-size: 13px;
             line-height: 1.6;
+            color: #e2e8f0;
         }
-        .radar-ai-panel .summary {
+        .radar-ai-modal-backdrop {
+            position: absolute;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.6);
+        }
+        .radar-ai-modal-card {
+            position: relative;
+            max-width: 720px;
+            width: calc(100vw - 32px);
+            max-height: 80vh;
+            background: #1e293b;
+            border: 1px solid rgba(108, 92, 231, 0.25);
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+        .radar-ai-modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            flex-shrink: 0;
+        }
+        .radar-ai-modal-header h3 {
+            margin: 0;
+            font-size: 16px;
+            font-weight: 600;
+            color: #6c5ce7;
+        }
+        .radar-ai-modal-close {
+            background: none;
+            border: none;
+            color: #94a3b8;
+            font-size: 20px;
+            cursor: pointer;
+            padding: 0 4px;
+            line-height: 1;
+        }
+        .radar-ai-modal-close:hover {
+            color: #fff;
+        }
+        .radar-ai-modal-body {
+            padding: 20px;
+            overflow-y: auto;
+            flex: 1;
+        }
+        .radar-ai-modal .summary {
             font-weight: 600;
             margin-bottom: 8px;
             color: #6c5ce7;
         }
-        .radar-ai-panel .dim-list {
+        .radar-ai-modal .dim-list {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
             gap: 8px;
             margin: 8px 0;
         }
-        .radar-ai-panel .dim-item {
+        .radar-ai-modal .dim-item {
             background: rgba(255, 255, 255, 0.05);
             padding: 6px 10px;
             border-radius: 3px;
         }
-        .radar-ai-panel .advice {
+        .radar-ai-modal .advice {
             margin-top: 8px;
             padding-top: 8px;
             border-top: 1px dashed rgba(108, 92, 231, 0.3);
         }
-        .radar-ai-panel .disclaimer {
+        .radar-ai-modal .disclaimer {
             margin-top: 8px;
             font-size: 11px;
             opacity: 0.6;
         }
-        .radar-ai-panel.error {
+        .radar-ai-modal.error {
             background: rgba(231, 76, 60, 0.08);
-            border-left-color: #e74c3c;
+            border-left: 3px solid #e74c3c;
+            padding: 12px;
+            border-radius: 4px;
+        }
+        /* 弹窗加载态:点击按钮后立即显示,LLM 响应后由 _renderRadarInsightModal 覆盖 */
+        .radar-ai-modal-loading {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 48px 24px;
+            text-align: center;
+            color: #94a3b8;
+            font-size: 14px;
+        }
+        .radar-ai-modal-spinner {
+            width: 36px;
+            height: 36px;
+            border: 3px solid rgba(108, 92, 231, 0.2);
+            border-top-color: #6c5ce7;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-bottom: 16px;
         }
     </style>
     <style>
@@ -2277,7 +2342,6 @@
                                 </button>
                             </div>
                             <div id="performanceRadar" style="width: 100%; flex: 1; min-height: 180px;"></div>
-                            <div id="radar-ai-insight-panel" class="radar-ai-panel" hidden></div>
                         </div>
                     </div>
 
@@ -2491,10 +2555,6 @@
                     <div id="sidebar-panel-report" class="sidebar-panel" style="display:flex;flex-direction:column;">
                         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;flex-shrink:0;">
                             <div style="font-size:0.9rem;font-weight:800;color:#f8fafc;">📋 轨迹报告</div>
-                            <div style="display:flex;gap:6px;">
-                                <button class="icon-btn" onclick="requestInsight()" title="AI 运动洞察" style="font-size:0.75rem;background:linear-gradient(135deg,#7c3aed,#a855f7);color:#fff;padding:3px 8px;border-radius:6px;">🧠 洞察</button>
-                                <button class="icon-btn" onclick="toggleDebugPanel()" title="查看 AI 消费的数据快照" style="font-size:0.75rem;color:#94a3b8;padding:3px 6px;border-radius:6px;">🐛</button>
-                            </div>
                         </div>
                         <div id="ai-summary" class="ai-empty">导入轨迹后自动生成坡度、距离、城市位置等报告。</div>
                     </div>
@@ -2512,18 +2572,6 @@
                 </div>
             </div>
 
-        </div>
-
-        <!-- Debug Panel (Task 4.1 Snapshot Viewer — 默认隐藏) -->
-        <div id="debug-panel" style="display:none; margin-top:12px; border:1px dashed rgba(148,163,184,0.3); padding:12px; border-radius:8px; background:rgba(15,23,42,0.5);">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                <div style="font-size:11px; color:#94a3b8;">
-                    🐛 AI Snapshot Viewer
-                    <span style="color:#64748b; margin-left:6px;font-family:monospace;">v1.0</span>
-                </div>
-                <button onclick="toggleDebugPanel()" style="border:none; background:none; cursor:pointer; color:#64748b; font-size:14px;">✕</button>
-            </div>
-            <pre id="snapshot-debug-content" style="font-size:11px; background:rgba(0,0,0,0.2); padding:10px; border:1px solid rgba(255,255,255,0.05); border-radius:6px; max-height:360px; overflow:auto; white-space:pre-wrap; color:#cbd5e1; margin:0;">点击 🐛 按钮加载 AI 消费的数据快照</pre>
         </div>
 
         <!-- ========== 【配置】面板 ========== -->
@@ -2816,7 +2864,6 @@
     const LLM_DEFAULT_URL = 'http://localhost:3000/v1/chat/completions';
     const PY_REPORT_TERRAIN = '__REPORT_TERRAIN__';
     const PY_REPORT_PERSONALIZED = '__REPORT_PERSONALIZED__';
-    const PY_REPORT_INSIGHT = '__REPORT_INSIGHT__';
     const PY_REPORT_RISK_ASSESSMENT = '__REPORT_RISK_ASSESSMENT__';
     let currentLLMConfig = { provider: 'local_mcp', model: 'openclaw', url: LLM_DEFAULT_URL, apiKey: '', agentId: '' };
 
@@ -2824,21 +2871,50 @@
 
     let _radarInsightData = null;
     let _radarInsightLoading = false;
+    let _radarInsightModalOpen = false;  // §5.6 Modal 化:追踪弹窗开关状态,用于 ESC 守卫。
 
-    // §5.4 规则 6:AI 洞察结果默认只存在前端内存,页面切换/数据切换/重新点击时清空。
-    // 3 触发点共用此函数:① switchTab 末尾 ② switchRadarSportType 末尾 ③ onRadarAiInsight 自然覆盖(P1-4 不需要主动调)。
+    // §5.4 规则 6:AI 洞察结果默认只存在前端内存,页面切换/数据切换/重新点击/关闭弹窗时清空。
+    // 4 触发点共用此函数:① switchTab 末尾 ② switchRadarSportType 末尾 ③ onRadarAiInsight 自然覆盖 ④ closeRadarAiInsightModal。
     function _clearRadarInsight() {
         _radarInsightData = null;
-        const panel = document.getElementById('radar-ai-insight-panel');
-        if (panel) {
-            panel.hidden = true;
-            panel.innerHTML = '';
+        const modal = document.getElementById('radar-ai-insight-modal');
+        if (modal) {
+            modal.hidden = true;
+            const body = document.getElementById('radar-ai-insight-modal-body');
+            if (body) body.innerHTML = '';
+        }
+        _radarInsightModalOpen = false;
+    }
+
+    // §5.6 Modal 化:关闭弹窗,触发点 ④(_clearRadarInsight 触发点 4)。
+    function closeRadarAiInsightModal() {
+        if (_radarInsightModalOpen) {
+            _clearRadarInsight();
         }
     }
+
+    // §5.6 Modal 化:打开弹窗(在 _renderRadarInsightModal 末尾调用)。
+    function openRadarAiInsightModal() {
+        const modal = document.getElementById('radar-ai-insight-modal');
+        if (modal) {
+            modal.hidden = false;
+            _radarInsightModalOpen = true;
+        }
+    }
+
+    // §5.6 Modal 化:ESC 键全局关闭守卫(避免与 Cesium 键盘冲突,只在弹窗打开时拦截)。
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && _radarInsightModalOpen) {
+            e.stopPropagation();
+            closeRadarAiInsightModal();
+        }
+    });
 
     // §5.4 规则 1/2/7 + P1-9 loading 守门 + P1-8 try/catch 错误兜底。
     // 该函数是雷达图 AI 洞察的"按下按钮"入口,严格只传 sentinel + sportType,
     // 禁止拼 prompt、禁止读雷达图 DOM、禁止写 DB。
+    // §5.6 Modal 化:点击按钮后立即弹窗 + 显示 loading 态(spinner + "AI 解读中……"),
+    // LLM 响应后由 _renderRadarInsightModal 覆盖为正式内容。
     async function onRadarAiInsight(sportType, btn) {
         if (!sportType) return;
         if (_radarInsightLoading) return;
@@ -2851,20 +2927,27 @@
             btn.innerHTML = '<span class="spinner"></span>解读中...';
         }
 
+        // 立即打开弹窗并显示加载态(§5.6 Modal 化加载体验)
+        const body = document.getElementById('radar-ai-insight-modal-body');
+        if (body) {
+            body.innerHTML = '<div class="radar-ai-modal-loading"><div class="radar-ai-modal-spinner"></div>AI 解读中……</div>';
+        }
+        openRadarAiInsightModal();
+
         try {
             const res = await window.pywebview.api.call_llm('__RADAR_INSIGHT__', sportType);
             if (res && res.ok && res.radar_insight) {
                 _radarInsightData = res.radar_insight;
-                _renderRadarInsightPanel(_radarInsightData);
+                _renderRadarInsightModal(_radarInsightData);
             } else {
                 const fallback = (res && res.radar_insight) || { error: 'AI 洞察返回失败' };
                 _radarInsightData = fallback;
-                _renderRadarInsightPanel(fallback);
+                _renderRadarInsightModal(fallback);
             }
         } catch (e) {
             const errData = { error: 'AI 洞察请求失败: ' + (e.message || e) };
             _radarInsightData = errData;
-            _renderRadarInsightPanel(errData);
+            _renderRadarInsightModal(errData);
             console.error('onRadarAiInsight failed', e);
         } finally {
             _radarInsightLoading = false;
@@ -2875,42 +2958,61 @@
         }
     }
 
-    // §5.4 规则 1/2/7:渲染函数只接 data 参数 + 写 DOM,不读雷达图状态、不调后端、不写 DB。
+    // §5.4 规则 1/2/7 + §5.6 Modal 化:渲染函数只接 data 参数 + 写 modal body,不读雷达图状态、不调后端、不写 DB。
     // 设计接受 innerHTML XSS 风险(LLM 是本地 / 受信);生产硬化候选 P3(改 textContent 或 DOMPurify)。
-    function _renderRadarInsightPanel(data) {
-        const panel = document.getElementById('radar-ai-insight-panel');
-        if (!panel) return;
+    // §5.6 术语本地化:运动类型中文映射表
+    const SPORT_TYPE_CN = {
+        'running': '跑步', 'trail_running': '越野跑', 'treadmill_running': '跑步机',
+        'hiking': '徒步', 'mountaineering': '登山', 'walking': '步行',
+        'cycling': '骑行', 'road_cycling': '公路骑行', 'mountain_biking': '山地骑行',
+        'swimming': '游泳', 'lap_swimming': '泳池游泳', 'open_water': '公开水域'
+    };
+
+    function _renderRadarInsightModal(data) {
+        const modal = document.getElementById('radar-ai-insight-modal');
+        const body = document.getElementById('radar-ai-insight-modal-body');
+        if (!modal || !body) return;
         if (!data) {
-            panel.hidden = true;
+            _clearRadarInsight();
             return;
         }
 
         let html = '';
         if (data.error) {
-            html = `<div class="radar-ai-panel error">
+            html = `<div class="radar-ai-modal error">
                 <div class="summary">⚠️ ${data.error}</div>
             </div>`;
         } else {
-            const dims = (data.dimension_interpretation || []).map(function(d) {
+            // §5.6 术语本地化:从 dimension_interpretation 推导 key→label
+            const rawDims = data.dimension_interpretation || [];
+            const dimLabelMap = {};
+            rawDims.forEach(function(d) { if (d.key) dimLabelMap[d.key] = d.label || d.key; });
+
+            const sportCn = SPORT_TYPE_CN[data.sport_type] || data.sport_type || '-';
+            const strongestCn = dimLabelMap[data.strongest_dim] || data.strongest_dim || '-';
+            const weakestCn = dimLabelMap[data.weakest_dim] || data.weakest_dim || '-';
+
+            const dims = rawDims.map(function(d) {
                 return `<div class="dim-item">
                     <strong>${d.label}</strong> (${d.score})
                     <div>${d.comment || ''}</div>
                 </div>`;
             }).join('');
             const load = data.load_status || {};
+            const loadStatusCn = load.status || '-';
             html = `<div class="summary">${data.summary || ''}</div>
-                <div>运动类型: <strong>${data.sport_type || '-'}</strong>
-                &nbsp;|&nbsp; 训练负荷: CTL ${load.ctl} / ATL ${load.atl} / TSB ${load.tsb} (${load.status || '-'})</div>
-                <div>最弱维度: <strong>${data.weakest_dim || '-'}</strong>
-                &nbsp;|&nbsp; 最强维度: <strong>${data.strongest_dim || '-'}</strong>
+                <div>运动类型: <strong>${sportCn}</strong>
+                &nbsp;|&nbsp; 训练负荷: 慢性训练负荷 ${load.ctl ?? '-'} / 急性训练负荷 ${load.atl ?? '-'} / 训练平衡度 ${load.tsb ?? '-'} (${loadStatusCn})</div>
+                <div>最弱维度: <strong>${weakestCn}</strong>
+                &nbsp;|&nbsp; 最强维度: <strong>${strongestCn}</strong>
                 &nbsp;|&nbsp; 平衡度: <strong>${data.balance_assessment || '-'}</strong>
                 &nbsp;|&nbsp; 长期趋势: <strong>${data.long_term_trend || '-'}</strong></div>
                 <div class="dim-list">${dims}</div>
                 <div class="advice"><strong>训练建议:</strong> ${data.training_advice || ''}</div>
                 <div class="disclaimer">${data.disclaimer || ''} · 阅后即焚</div>`;
         }
-        panel.innerHTML = html;
-        panel.hidden = false;
+        body.innerHTML = html;
+        openRadarAiInsightModal();
     }
 
     let onboardingState = {
@@ -3295,7 +3397,7 @@
         if (!noticeEl) return;
         if (connection === 'disconnected') {
             noticeEl.style.display = '';
-            noticeEl.innerText = '❌ Garmin 连接未配置\n请前往「设置」→「连接测试」检测连接状态\n连接成功后画像将自动同步\n🔄 最后更新：' + lastText + (lastText !== '从未同步' ? '（使用历史数据）' : '');
+            noticeEl.innerText = '❌ LLM 网关未配置\n请前往「设置」→「连接测试」检测连接状态\n连接成功后画像将自动同步\n🔄 最后更新：' + lastText + (lastText !== '从未同步' ? '（使用历史数据）' : '');
         } else if (syncStatus === 'failed_retryable') {
             noticeEl.style.display = '';
             noticeEl.innerText = '⚠️ 上次同步失败\n当前继续使用最近一次成功画像\n失败原因：' + (meta.last_error || '未知错误') + '\n🔄 最后更新：' + lastText;
@@ -3311,7 +3413,7 @@
             await loadProfileCard();
             showToast('✅ 用户画像已后台自动更新');
         } else if (eventName === 'profile_sync_blocked') {
-            showToast('⚠️ Garmin 连接未配置，已继续使用历史画像');
+            showToast('⚠️ LLM 网关未配置，已继续使用历史画像');
         }
     };
 
@@ -4821,22 +4923,22 @@
         if (totalPages <= 1) { container.innerHTML = ''; return; }
 
         const pages = [];
-        const maxVisible = 7;
+        const maxVisible = 5;
         const cur = Math.max(1, Math.min(totalPages, currentPage));
 
-        if (totalPages <= maxVisible + 2) {
+        if (totalPages <= maxVisible) {
             for (let i = 1; i <= totalPages; i++) pages.push(i);
         } else {
             pages.push(1);
-            if (cur > 4) pages.push('...');
+            if (cur > 3) pages.push('...');
 
-            let start = Math.max(2, cur - 2);
-            let end = Math.min(totalPages - 1, cur + 2);
-            if (cur <= 4) { start = 2; end = Math.min(totalPages - 1, maxVisible); }
-            if (cur >= totalPages - 3) { start = Math.max(2, totalPages - maxVisible + 1); end = totalPages - 1; }
+            let start = Math.max(2, cur - 1);
+            let end = Math.min(totalPages - 1, cur + 1);
+            if (cur <= 3) { start = 2; end = Math.min(totalPages - 1, maxVisible - 1); }
+            if (cur >= totalPages - 2) { start = Math.max(2, totalPages - maxVisible + 2); end = totalPages - 1; }
 
             for (let i = start; i <= end; i++) pages.push(i);
-            if (cur < totalPages - 3) pages.push('...');
+            if (cur < totalPages - 2) pages.push('...');
             pages.push(totalPages);
         }
 
@@ -5256,6 +5358,22 @@
         if (profile.vo2max) document.getElementById('vp-vo2').innerText = profile.vo2max;
         if (profile.resting_hr) document.getElementById('vp-rhr').innerText = profile.resting_hr + ' bpm';
         if (profile.max_hr) document.getElementById('vp-mhr').innerText = profile.max_hr + ' bpm';
+    }
+
+    /**
+     * 将 ISO 8601 时间字符串格式化为可读的本地时间。
+     * 输入: "2026-04-11T09:11:19+08:11" 或时间戳
+     * 输出: "2026-04-11 09:11"
+     */
+    function _formatStartTime(raw) {
+        if (!raw) return '未知时间';
+        var d = new Date(raw);
+        if (isNaN(d.getTime())) return '未知时间';
+        return d.getFullYear() + '-' +
+            String(d.getMonth() + 1).padStart(2, '0') + '-' +
+            String(d.getDate()).padStart(2, '0') + ' ' +
+            String(d.getHours()).padStart(2, '0') + ':' +
+            String(d.getMinutes()).padStart(2, '0');
     }
 
     function formatDuration(sec) {
@@ -6486,10 +6604,9 @@
         var avgPaceSec = (m.avg_pace != null) ? Number(m.avg_pace) : 0;
         var avgPaceMin = avgPaceSec > 0 ? avgPaceSec / 60 : 0;
 
-        var startTimeStr = m.start_time || '未知时间';
-        if (startTimeStr === '未知时间' && points[0] && points[0].time) {
-            var d = new Date(points[0].time);
-            startTimeStr = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0') + ' ' + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+        var startTimeStr = _formatStartTime(m.start_time);
+        if (startTimeStr === '未知时间' && points && points[0] && points[0].time) {
+            startTimeStr = _formatStartTime(points[0].time);
         }
 
         // CONTRACT §2.1 / §6: canonical 指标来自 activityMetrics（后端 Resolver + compute_report_metrics）
@@ -6805,47 +6922,6 @@
         sidebarEl.classList.remove('collapsed');
     }
 
-    // ═══════════════════════════════════════════════════
-    // Insight Engine Consumer — Task 3.3
-    // ═══════════════════════════════════════════════════
-
-    async function requestInsight() {
-        if (!window.pywebview || !window.pywebview.api || !window.pywebview.api.call_llm) {
-            showToast('⚠️ AI 洞察仅在桌面应用中可用');
-            return;
-        }
-        if (!currentLLMConfig.url) { showToast('⚠️ 请先在配置中填写 API 地址'); return; }
-
-        const sidebarEl = document.getElementById('ai-sidebar');
-        const summaryEl = document.getElementById('ai-summary');
-        if (sidebarEl) sidebarEl.classList.remove('collapsed');
-        if (summaryEl) summaryEl.innerHTML = '<div class="ai-empty"><div class="spinner" style="border-left-color:#a855f7;width:28px;height:28px;border-width:3px;margin:0 auto 12px;"></div><div>AI 正在解析运动数据...</div></div>';
-
-        try {
-            const res = await withTimeout(
-                window.pywebview.api.call_llm(PY_REPORT_INSIGHT, appState.sportType || 'general'),
-                60000
-            );
-            if (!res || !res.ok || !res.insight) {
-                if (summaryEl) summaryEl.innerHTML = '<div class="ai-empty">AI 洞察生成失败：' + ((res && res.error) ? res.error : '无数据') + '</div>';
-                showToast('⚠️ AI 洞察生成失败');
-                return;
-            }
-            renderInsight(res.insight, res.history || []);
-        } catch (e) {
-            if (summaryEl) summaryEl.innerHTML = '<div class="ai-empty" style="color:#fca5a5;">AI 洞察请求失败：' + (e && e.message ? e.message : String(e)) + '</div>';
-            showToast('⚠️ AI 洞察请求超时或失败');
-        }
-    }
-
-    function renderInsight(insight, history) {
-        const summaryEl = document.getElementById('ai-summary');
-        const sidebarEl = document.getElementById('ai-sidebar');
-        if (!summaryEl || !sidebarEl) return;
-        sidebarEl.classList.remove('collapsed');
-        summaryEl.innerHTML = _buildInsightCardsHTML(insight, history);
-    }
-
     async function requestRiskAssessment() {
         if (appState.riskAssessmentLoading) return;
         if (!window.pywebview || !window.pywebview.api || !window.pywebview.api.call_llm) {
@@ -6896,136 +6972,12 @@
     }
 
     // CONTRACT §2.1 / §2.4: fatigue_index / efficiency_index 为 LLM 主观评估值（0-100），
-    // 仅用于 UI narrative 展示层（NARRATIVE_LAYER），不写入 activities 表。
-    // 不属于 §6 要求的可追溯字段，禁止在报告链路中作为 canonical 指标使用。
-    function _buildInsightCardsHTML(insight, history) {
-        var g = insight || {};
-        var grade = g.performance_grade || 'C';
-        var gradeLabel = grade === 'S' ? '精英' : grade === 'A' ? '优秀' : grade === 'B' ? '良好' : grade === 'C' ? '一般' : '需关注';
-        var km = g.key_metrics || {};
-        var metricLabel = { "excellent": "出色", "good": "良好", "fair": "一般", "poor": "较差", "N/A": "N/A" };
-        var fatigueIdx = g.fatigue_index != null ? Number(g.fatigue_index) : 50; // NARRATIVE_LAYER
-        var fatigueColor = fatigueIdx > 70 ? '#ef4444' : fatigueIdx > 40 ? '#f59e0b' : '#22c55e';
-        var effIdx = g.efficiency_index != null ? Number(g.efficiency_index) : 50; // NARRATIVE_LAYER
-        var effColor = effIdx >= 70 ? '#22c55e' : effIdx >= 40 ? '#f59e0b' : '#ef4444';
-        var load = g.training_load || 'moderate';
-        var loadColor = load === 'high' ? '#ef4444' : load === 'moderate' ? '#f59e0b' : '#22c55e';
-        var loadLabel = load === 'high' ? '高强度' : load === 'moderate' ? '中等强度' : '低强度';
 
-        var html = '<div class="insight-cards-container">';
-
-        // Card 1: 表现总结
-        html += '<div class="ic-card">';
-        html += '<div class="ic-card-header"><span class="ic-card-title">📊 表现总结</span><span class="ic-card-grade" data-grade="' + grade + '">' + grade + ' ' + gradeLabel + '</span></div>';
-        html += '<div class="ic-card-body">' + escHtml(g.summary || '暂无总结') + '</div>';
-        html += '<div class="insight-metrics">';
-        html += '<div class="im-item"><span class="im-label">配速效率</span><span class="im-val im-' + (km.pace_efficiency || 'fair') + '">' + (metricLabel[km.pace_efficiency] || km.pace_efficiency || 'N/A') + '</span></div>';
-        html += '<div class="im-item"><span class="im-label">心率效率</span><span class="im-val im-' + (km.hr_efficiency || 'fair') + '">' + (metricLabel[km.hr_efficiency] || km.hr_efficiency || 'N/A') + '</span></div>';
-        html += '<div class="im-item"><span class="im-label">耐力</span><span class="im-val im-' + (km.endurance || 'fair') + '">' + (metricLabel[km.endurance] || km.endurance || 'N/A') + '</span></div>';
-        html += '<div class="im-item"><span class="im-label">爬坡能力</span><span class="im-val im-' + (km.climbing_ability || 'N/A') + '">' + (metricLabel[km.climbing_ability] || km.climbing_ability || 'N/A') + '</span></div>';
-        html += '</div>';
-        html += '<div class="ic-card-footer">Snapshot v1.0</div>';
-        html += '</div>';
-
-        // Card 2: 身体负荷
-        html += '<div class="ic-card">';
-        html += '<div class="ic-card-header"><span class="ic-card-title">💪 身体负荷</span><span class="ic-card-grade" data-grade="' + grade + '">训练负荷：' + loadLabel + '</span></div>';
-        html += '<div class="ic-card-body" style="color:' + loadColor + '">本次运动强度评估为 <strong>' + loadLabel + '</strong>。';
-        html += '<div style="margin-top:6px;"><div class="ii-bar"><span class="ii-label">疲劳指数</span><div class="ii-track"><div class="ii-fill" style="width:' + fatigueIdx + '%;background:' + fatigueColor + '"></div></div><span class="ii-val">' + fatigueIdx + '</span></div></div>';
-        html += '</div>';
-        html += '<div class="ic-card-footer">Snapshot v1.0</div>';
-        html += '</div>';
-
-        // Card 3: 效率分析
-        html += '<div class="ic-card">';
-        html += '<div class="ic-card-header"><span class="ic-card-title">⚡ 效率分析</span><span class="ic-card-grade" data-grade="' + grade + '">' + grade + '</span></div>';
-        html += '<div class="ic-card-body">';
-        html += '<div style="margin-bottom:6px;">配速效率 <strong>' + (metricLabel[km.pace_efficiency] || 'N/A') + '</strong> / 心率效率 <strong>' + (metricLabel[km.hr_efficiency] || 'N/A') + '</strong></div>';
-        html += '<div class="ii-bar"><span class="ii-label">效率指数</span><div class="ii-track"><div class="ii-fill" style="width:' + effIdx + '%;background:' + effColor + '"></div></div><span class="ii-val">' + effIdx + '</span></div>';
-        html += '</div>';
-        html += '<div class="ic-card-footer">Snapshot v1.0</div>';
-        html += '</div>';
-
-        // Card 4: 风险与亮点
-        html += '<div class="ic-card">';
-        html += '<div class="ic-card-header"><span class="ic-card-title">⚠️ 风险与亮点</span><span class="ic-card-grade" data-grade="' + grade + '">' + grade + '</span></div>';
-        html += '<div class="ic-card-body">';
-        if ((g.strengths || []).length) {
-            html += '<div style="margin-bottom:6px;"><strong style="color:#4ade80;">💪 亮点</strong> ';
-            for (var si = 0; si < g.strengths.length; si++) html += '<span class="is-tag good">' + escHtml(g.strengths[si]) + '</span>';
-            html += '</div>';
-        }
-        if ((g.anomalies || []).length) {
-            html += '<div style="margin-bottom:6px;"><strong style="color:#fbbf24;">⚠️ 异常</strong> ';
-            for (var ai = 0; ai < g.anomalies.length; ai++) html += '<span class="is-tag warn">' + escHtml(g.anomalies[ai]) + '</span>';
-            html += '</div>';
-        }
-        if ((g.risks || []).length) {
-            html += '<div style="margin-bottom:6px;"><strong style="color:#f87171;">🔴 风险</strong> ';
-            for (var ri = 0; ri < g.risks.length; ri++) html += '<span class="is-tag risk">' + escHtml(g.risks[ri]) + '</span>';
-            html += '</div>';
-        }
-        if (g.recommendation) {
-            html += '<div class="insight-recommend">📝 ' + escHtml(g.recommendation) + '</div>';
-        }
-        html += '</div>';
-        html += '<div class="ic-card-footer">Snapshot v1.0</div>';
-        html += '</div>';
-
-        // Card 5: 历史对比
-        if (history && history.length) {
-            html += '<div class="ic-card">';
-            html += '<div class="ic-card-header"><span class="ic-card-title">📈 历史对比</span><span class="ic-card-grade" data-grade="' + grade + '">近' + history.length + '次</span></div>';
-            html += '<div class="ic-card-body"><div class="insight-history">';
-            for (var hi = 0; hi < Math.min(history.length, 6); hi++) {
-                var h = history[hi];
-                html += '<div class="ih-row"><span class="ih-dist">' + (h.dist_km || 0).toFixed(1) + 'km</span><span class="ih-pace">' + escHtml(h.avg_pace_display || '--') + '</span><span class="ih-hr">HR ' + (h.avg_hr || '--') + '</span></div>';
-            }
-            html += '</div></div>';
-            html += '<div class="ic-card-footer">Snapshot v1.0</div>';
-            html += '</div>';
-        }
-
-        html += '</div>';
-        return html;
-    }
 
     // ═══════════════════════════════════════════════════
-    // Snapshot Viewer (Task 4.1 — 调试面板)
+    // Snapshot Viewer (Task 4.1 — 已移除，开发者调试工具不进入生产 UI)
+    // 契约 §7：debug-only 不得进入生产 UI 表面
     // ═══════════════════════════════════════════════════
-
-    var debugVisible = false;
-
-    function toggleDebugPanel() {
-        var panel = document.getElementById('debug-panel');
-        if (!panel) return;
-        debugVisible = !debugVisible;
-        panel.style.display = debugVisible ? 'block' : 'none';
-        if (debugVisible && appState.currentActivityId) {
-            loadSnapshotDebug(appState.currentActivityId);
-        }
-    }
-
-    async function loadSnapshotDebug(activityId) {
-        var el = document.getElementById('snapshot-debug-content');
-        if (!el) return;
-        el.textContent = 'loading...';
-        var aid = parseInt(activityId);
-        if (!aid || aid <= 0) {
-            el.textContent = '（无有效 activity id）';
-            return;
-        }
-        try {
-            if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.debug_snapshot === 'function') {
-                var res = await window.pywebview.api.debug_snapshot(aid);
-                el.textContent = JSON.stringify(res, null, 2);
-            } else {
-                el.textContent = '⚠️ 仅桌面应用中可用（需 pywebview API）';
-            }
-        } catch (e) {
-            el.textContent = '加载失败: ' + (e && e.message ? e.message : String(e));
-        }
-    }
 
     function parseGPX(text) {
         const xml = new DOMParser().parseFromString(text, "text/xml");
@@ -7320,11 +7272,6 @@
         renderTrackReport({ silent: true });
         renderCpList();
         renderPerformanceRadar();
-
-        // Task 4.1: 自动刷新 Debug Panel
-        if (debugVisible && appState.currentActivityId) {
-            loadSnapshotDebug(appState.currentActivityId);
-        }
 
         // Task 3.2: UI vs DB 对齐校验（开发模式）
         if (appState.DEBUG_MODE && appState.activityMetrics) {
@@ -8410,5 +8357,17 @@ function openConfigModalFromWarning() {
     bindTopBarToggles();
 
 </script>
+<!-- §5.6 Modal 化:雷达图 AI 洞察弹窗容器,放在 body 末尾以保证最高层叠。 -->
+<div id="radar-ai-insight-modal" class="radar-ai-modal" hidden role="dialog" aria-modal="true" aria-labelledby="radar-ai-modal-title">
+    <div class="radar-ai-modal-backdrop" onclick="closeRadarAiInsightModal()"></div>
+    <div class="radar-ai-modal-card">
+        <div class="radar-ai-modal-header">
+            <h3 id="radar-ai-modal-title">✨ 运动能力 AI 解读</h3>
+            <button class="radar-ai-modal-close" onclick="closeRadarAiInsightModal()" aria-label="关闭">✕</button>
+        </div>
+        <div id="radar-ai-insight-modal-body" class="radar-ai-modal-body"></div>
+    </div>
+</div>
+
 </body>
 </html>

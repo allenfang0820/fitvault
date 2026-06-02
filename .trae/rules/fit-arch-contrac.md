@@ -222,6 +222,75 @@ frontend renderer
 
 这些字段如需展示，必须由后端新增计算、迁移、入库或通过 canonical API 透传。
 
+### 5.6 AI 洞察功能开发标准流程
+
+> **本节是 §5.4 + §5.5 的**「开发执行规范」**。新增任何功能区 AI 洞察(雷达图 / 活动详情 / 训练计划 / ...)时,必须严格遵循本节定义的 7 条铁律与 P0/P1/P2 任务清单。**
+
+#### 5.6.1 适用范围
+
+每新增一个**功能区**的 AI 洞察按钮,不论后端 sentinel 是什么、前端放在哪个 Tab,均适用本节。
+
+| 类别 | 现有 / 未来 | sentinel 命名 |
+|---|---|---|
+| 雷达图(已实现) | `__RADAR_INSIGHT__` | 完成于 P0-2 |
+| 单次活动详情(已实现) | `__REPORT_INSIGHT__` | 既有 sentinel,延用 |
+| 训练计划 | `__TRAINING_PLAN_INSIGHT__` | 未来 |
+| ... | ... | ... |
+
+#### 5.6.2 7 条铁律(每条对应实现位置 + 验收方式)
+
+| # | 规则 | 铁律描述 | 必改文件 | 验收方式 |
+|---|---|---|---|---|
+| 1 | **独立 sentinel** | 每类功能区必须**新建** sentinel,**严禁**复用现有 | `main.py` | 全文 grep 确认无字符串复用 |
+| 2 | **前端只传控制参数** | 前端 onclick 只传 `('__XXX_INSIGHT__', control_id)`,**不传**任何 metrics / points / DOM 推导值 | `track.html` | 静态 grep,onclick 形参只有 sentinel + control_id |
+| 3 | **后端从 _ai_snapshot 构建** | 后端必须从 `_ai_snapshot` / profile_backend / DB 权威字段构建,**不读**任何前端 payload | `main.py` | `_build_xxx_insight_snapshot` 必须白名单过滤 |
+| 4 | **sentinel 入口清空 + 刷新** | `call_llm` 内 `if prompt == self.XXX_INSIGHT` 入口处**必须** `self._chat_messages = []; self._new_session_id()`,**所有**分支(happy / 降级)前执行 | `main.py` | 集成测试覆盖 happy + 降级 1 + 降级 2 |
+| 5 | **阅后即焚 3 触发点** | 前端必须在 ①切 Tab ②切 sport/state ③重新点击 三处共用 `_clearRadarInsight()` 类清空辅助 | `track.html` | 静态 grep,3 处都引用 |
+| 6 | **严禁写 DB** | 整个洞察流程**不**调 `db` / `sqlite` / `INSERT` / `save_xxx`,**不**进 `ai_snapshots` 表 | 全栈 | 集成测试断言 `_ai_snapshot` / `_track_points` 未被改写 |
+| 7 | **错误用 empty_xxx_insight** | 任何失败(LLM 异常 / 数据缺失 / JSON 解析)必须返回 `empty_xxx_insight(error_msg)`,**不抛** promise reject / 不返 raw error | `llm_backend.py` | normalizer 单元测试 + 集成测试覆盖所有失败路径 |
+
+#### 5.6.3 P0-N / P1-N / P2-N 标准任务清单
+
+新增一个功能区 AI 洞察,必须按顺序完成下列三阶段(每阶段 5-7 个子任务):
+
+| 阶段 | 子任务 | 必改文件 | 行数(参考) |
+|---|---|---|---|
+| **P0-N** 后端 | 1. 在 `main.py` 新增 sentinel 常量 + `call_llm` 分支(带 §5.6.2 规则 4 入口清空) | `main.py` | ~50 |
+| | 2. 在 `llm_backend.py` 新增 prompt builder + normalizer + `empty_xxx_insight` | `llm_backend.py` | ~150 |
+| | 3. 在 `main.py` 新增 `_build_xxx_insight_snapshot`(白名单过滤,严禁 shadow_diff) | `main.py` | ~30 |
+| | 4. 在 `main.py` 新增 `_build_xxx_insight_messages` | `main.py` | ~15 |
+| | 5. 在 `docs/js_api_contract.json` 登记新 API | `docs/js_api_contract.json` | ~5 |
+| **P1-N** 前端 | 1. 在 `track.html` 目标 Tab 加按钮 + 面板 HTML | `track.html` | ~10 |
+| | 2. 在 `track.html` 加 CSS(5 类:.summary / .dim-list / .dim-item / .advice / .disclaimer + error 变体) | `track.html` | ~70 |
+| | 3. 在 `track.html` 加状态层(`_xxxInsightData` / `_xxxInsightLoading` / `_clearXxxInsight`) | `track.html` | ~15 |
+| | 4. 在 `track.html` 加 `onXxxAiInsight` async 入口(try/catch/finally) | `track.html` | ~40 |
+| | 5. 在 `track.html` 加 `_renderXxxInsightPanel` 渲染函数 | `track.html` | ~35 |
+| | 6. 在 `track.html` `switchTab` 末尾追加 `_clearXxxInsight()` | `track.html` | ~2 |
+| | 7. 在 `track.html` 切状态函数末尾追加 `_clearXxxInsight()`(若适用) | `track.html` | ~2 |
+| **P2-N** 测试 | 1. prompt 单元测试(6 维度 / N sport / DATA BOUNDARY / MUST NOT) | `test_xxx_prompts.py` | ~25 |
+| | 2. normalizer 单元测试(降级 / 截断 / clamp) | 同上 | ~15 |
+| | 3. snapshot 构建器 mock 测试(白名单 / shadow_diff 隔离) | 同上 | ~10 |
+| | 4. `Api.call_llm` 集成测试(happy / 降级 / §5.6.2 规则 4 全分支) | `test_xxx_integration.py` | ~15 |
+| | 5. 手工测试清单(覆盖 5 sport_type / 切 Tab / 切 sport / LLM 异常 / 无数据) | `docs/xxx_manual_test_checklist.md` | ~250 |
+
+#### 5.6.4 §5.4 / §5.5 / §5.6 三者关系
+
+| 章节 | 角色 | 时机 |
+|---|---|---|
+| **§5.4** | 「是什么」(7 条 AI 边界规则) | **审计时**查阅 |
+| **§5.5** | 「具体怎么算」(轨迹报告 v3 字段) | 实现轨迹报告时查阅 |
+| **§5.6**(本节) | 「怎么开发」(P0/P1/P2 任务清单 + 7 条铁律) | **开始新 AI 洞察功能**时查阅 |
+
+#### 5.6.5 违反本节的后果
+
+| 违规 | 后果 |
+|---|---|
+| sentinel 复用 | 与其他功能区 session 污染(用户切 Tab 后 AI 教练回答错乱) |
+| 前端读 DOM | 违反 §五 数据可信分层(UI 推导值进入 AI) |
+| 入口清空缺失 | 降级路径残留旧 session,AI 教练回答带旧上下文 |
+| 写 DB | 违反 §八 canonical 隔离(AI 输出污染运动画像) |
+| 错误抛异常 | pywebview 通道破裂,前端白屏 |
+
 ---
 
 ## 六、shadow_diff 契约

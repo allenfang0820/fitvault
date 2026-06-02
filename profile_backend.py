@@ -145,12 +145,12 @@ def get_profile_sync_metadata() -> dict[str, Any]:
     }
 
 
-def check_garmin_connection() -> dict[str, Any]:
+def check_llm_gateway_connection() -> dict[str, Any]:
     cfg = llm_backend.load_llm_config()
     url = str(cfg.get("url") or "").strip()
     model = str(cfg.get("model") or "openclaw").strip()
     if not url:
-        return {"connected": False, "message": "Garmin 连接未配置，请前往设置检测连接"}
+        return {"connected": False, "message": "LLM 网关未配置，请前往设置检测连接"}
     if not model:
         return {"connected": False, "message": "模型名未配置，请前往设置检测连接"}
     try:
@@ -162,8 +162,8 @@ def check_garmin_connection() -> dict[str, Any]:
             agent_id=str(cfg.get("agent_id") or ""),
         )
     except Exception as exc:
-        return {"connected": False, "message": f"Garmin 连接检测失败：{exc}"}
-    return {"connected": True, "message": "Garmin 连接已就绪"}
+        return {"connected": False, "message": f"LLM 网关检测失败：{exc}"}
+    return {"connected": True, "message": "LLM 网关已就绪"}
 
 
 def should_skip_profile_sync_for_cooldown() -> bool:
@@ -2096,10 +2096,10 @@ def fetch_mcp_persona(platform: str, trigger_type: str = "manual") -> dict[str, 
         return {"ok": False, "error": "不支持的平台，仅支持 garmin / coros"}
 
     if platform == "garmin":
-        conn = check_garmin_connection()
+        conn = check_llm_gateway_connection()
         if not conn.get("connected"):
-            mark_profile_sync_blocked(str(conn.get("message") or "Garmin 连接未配置"))
-            return {"ok": False, "error": conn.get("message") or "Garmin 连接未配置"}
+            mark_profile_sync_blocked(str(conn.get("message") or "LLM 网关未配置"))
+            return {"ok": False, "error": conn.get("message") or "LLM 网关未配置"}
 
     state = read_sync_state()
     if state.get("active_job_id"):

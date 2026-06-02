@@ -135,18 +135,6 @@
       "description": "重置 LLM 会话"
     },
     {
-      "name": "debug_snapshot",
-      "file": "main.py",
-      "line": 2697,
-      "category": "ai",
-      "parameters": [
-        { "name": "activity_id", "type": "int", "required": true }
-      ],
-      "returns": "{ ok, snapshot, meta: {version, source, generated_at} }",
-      "high_risk": false,
-      "description": "返回 AI 实际消费的 snapshot 数据源 (debug-only)"
-    },
-    {
       "name": "get_activity_list_snapshot",
       "file": "main.py",
       "line": 3589,

@@ -742,7 +742,7 @@ class TestFitSync(unittest.TestCase):
             "last_attempt_at": _dt.datetime.now().isoformat(),
             "last_attempt_status": "blocked",
             "connection_status": "disconnected",
-            "last_error": "Garmin 连接未配置",
+            "last_error": "LLM 网关未配置",
         })
         meta = profile_backend.get_profile_sync_metadata()
         self.assertEqual(meta["sync_status"], "blocked")

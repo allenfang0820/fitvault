@@ -2600,97 +2600,8 @@ def _build_risk_assessment_messages(snapshot: dict[str, Any], weather_context: d
     ]
 
 
-# ═══════════════════════════════════════════════════════
-# Insight Engine — Insight Builder + History Window
-# Task 3.3: Schema-Driven AI Sports Insight
-# ═══════════════════════════════════════════════════════
-
-def _get_history_window(activity_id: int, sport_type: str, limit: int = 10) -> list[dict[str, Any]]:
-    """获取同类型运动最近 N 条历史记录摘要，用于趋势对比。"""
-    try:
-        con_status = f"id != {activity_id} AND deleted_at IS NULL"
-        conn = sqlite3.connect(profile_backend._DB_PATH)
-        conn.row_factory = sqlite3.Row
-        rows = conn.execute(
-            f"""SELECT id, sport_type, sub_sport_type, dist_km, duration_sec,
-                avg_hr, max_hr, avg_pace, gain_m, start_time
-            FROM activities
-            WHERE {con_status}
-              AND sport_type = ?
-            ORDER BY start_time DESC
-            LIMIT ?""",
-            (sport_type, limit),
-        ).fetchall()
-        conn.close()
-        history = []
-        for r in rows:
-            d = dict(r)
-            dur_sec = d.get("duration_sec") or 0
-            dur_min = int(dur_sec // 60) if dur_sec else 0
-            dist = d.get("dist_km") or 0
-            avg_pace = d.get("avg_pace")
-            pace_str = ""
-            if avg_pace and avg_pace > 0:
-                pm = int(avg_pace // 60)
-                ps = int(avg_pace % 60)
-                pace_str = f"{pm}'{ps:02d}\"/km"
-            history.append({
-                "id": d.get("id"),
-                "dist_km": round(float(dist), 2) if dist else 0,
-                "duration_min": dur_min,
-                "avg_hr": d.get("avg_hr"),
-                "max_hr": d.get("max_hr"),
-                "avg_pace_display": pace_str or "--",
-                "gain_m": round(float(d.get("gain_m") or 0)),
-                "start_time": str(d.get("start_time") or ""),
-            })
-        return history
-    except Exception:
-        return []
 
 
-def _build_history_block(history: list[dict[str, Any]]) -> str:
-    """将历史记录格式化为 prompt 可嵌入文本。
-       HISTORY IS CONTEXT REFERENCE ONLY — 非分析数据源。AI 不得基于历史做趋势建模。"""
-    if not history:
-        return ""
-    lines = ["【历史同类运动 — 背景参考（context reference only，非分析数据源）】"]
-    for i, h in enumerate(history[:8]):
-        lines.append(
-            f"  #{i + 1}: {h.get('dist_km')}km / {h.get('duration_min')}min / "
-            f"配速 {h.get('avg_pace_display')} / HR {h.get('avg_hr')}-{h.get('max_hr')} / "
-            f"爬升 {h.get('gain_m')}m ({h.get('start_time')})"
-        )
-    lines.append("  以上为背景信息，仅用于理解运动习惯，不得用于建模或趋势推导。")
-    return "\n".join(lines)
-
-
-def _build_ai_insight(activity_id: int) -> dict[str, Any]:
-    """AI 运动洞察构建器。
-    链路: DB → Snapshot → Prompt → LLM → normalize → UI
-    """
-    snapshot = _build_ai_snapshot(activity_id)
-    if not snapshot:
-        return llm_backend._empty_insight("未找到活动记录")
-
-    sport_type = str(snapshot.get("sport_type") or "unknown")
-    mode = llm_backend._insight_mode_sport(sport_type)
-
-    # 历史对比窗口
-    history = _get_history_window(activity_id, sport_type, limit=10)
-    history_block = _build_history_block(history)
-
-    # 构建 prompt
-    system_prompt = llm_backend._build_insight_system_prompt(snapshot, mode, history_block)
-    user_prompt = llm_backend._build_insight_user_prompt()
-
-    return {
-        "snapshot": snapshot,
-        "mode": mode,
-        "history": history,
-        "system_prompt": system_prompt,
-        "user_prompt": user_prompt,
-    }
 
 
 def _build_radar_insight_snapshot(sport_type: str) -> dict[str, Any]:
@@ -2746,7 +2657,6 @@ class Api:
     SYSTEM_INSTRUCTION = "__SYSTEM_INSTRUCTION__"
     REPORT_TERRAIN = "__REPORT_TERRAIN__"
     REPORT_PERSONALIZED = "__REPORT_PERSONALIZED__"
-    REPORT_INSIGHT = "__REPORT_INSIGHT__"
     REPORT_RISK_ASSESSMENT = "__REPORT_RISK_ASSESSMENT__"
     RADAR_INSIGHT = "__RADAR_INSIGHT__"
 
@@ -3125,31 +3035,6 @@ class Api:
                 self._new_session_id()
                 return {"ok": True, "content": text}
 
-            if prompt == self.REPORT_INSIGHT:
-                if not self._ai_snapshot:
-                    return {"ok": True, "insight": llm_backend._empty_insight("请先加载活动轨迹")}
-                insight_data = _build_ai_insight(self._ai_snapshot.get("activity_id"))
-                sys_b = insight_data["system_prompt"]
-                usr = insight_data["user_prompt"]
-                messages = [{"role": "system", "content": sys_b}, {"role": "user", "content": usr}]
-                text = llm_backend.chat_completions(
-                    url=url,
-                    api_key=api_key,
-                    model=model,
-                    messages=messages,
-                    session_id=sid,
-                    agent_id=agent_id,
-                )
-                self._chat_messages = []
-                self._new_session_id()
-                insight = llm_backend.normalize_insight_json(text)
-                return {
-                    "ok": True,
-                    "insight": insight,
-                    "history": insight_data.get("history") or [],
-                    "snapshot": insight_data.get("snapshot") or {},
-                }
-
             if prompt == self.REPORT_RISK_ASSESSMENT:
                 if not self._ai_snapshot:
                     return {"ok": True, "risk_assessment": llm_backend.empty_risk_assessment("请先加载活动轨迹")}
@@ -3168,6 +3053,11 @@ class Api:
                 return {"ok": True, "risk_assessment": risk_assessment}
 
             if prompt == self.RADAR_INSIGHT:
+                # §5.4 规则 5:洞察调用后清空 + 刷新 session,避免污染 AI 教练会话
+                # 必须在所有分支(happy / 降级)前执行,否则降级路径会留下旧 session
+                self._chat_messages = []
+                self._new_session_id()
+
                 if not sport_type:
                     return {
                         "ok": True,
@@ -3188,9 +3078,6 @@ class Api:
                     session_id=sid,
                     agent_id=agent_id,
                 )
-                # §5.4 规则 5:洞察调用后清空 + 刷新 session,避免污染 AI 教练会话
-                self._chat_messages = []
-                self._new_session_id()
                 return {
                     "ok": True,
                     "radar_insight": llm_backend.normalize_radar_insight_json(text),
@@ -3255,26 +3142,6 @@ class Api:
             self._chat_messages.append({"role": "assistant", "content": text})
             return {"ok": True, "content": text}
 
-        except Exception as e:
-            return {"ok": False, "error": str(e)}
-
-    def debug_snapshot(self, activity_id: int) -> dict:
-        """Task 4.1: Snapshot Viewer Debug API。
-           返回 AI 实际消费的唯一数据源 —— 与 _build_ai_snapshot() 完全一致。
-           禁止额外计算、禁止修改 MetricsResolver、禁止返回前端计算字段。"""
-        try:
-            snapshot = _build_ai_snapshot(int(activity_id))
-            if not snapshot:
-                return {"ok": False, "error": "未找到活动记录"}
-            return {
-                "ok": True,
-                "snapshot": snapshot,
-                "meta": {
-                    "version": "1.0",
-                    "source": "_build_ai_snapshot (resolver truth + DB canonical)",
-                    "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                },
-            }
         except Exception as e:
             return {"ok": False, "error": str(e)}
 

@@ -180,7 +180,7 @@ class TestBuildRadarInsightSystemPromptSafetyBoundaries(unittest.TestCase):
     def test_prompt_contains_dimensional_interpretation_dict(self):
         """6 维度解读字典(RADAR_DIMENSION_INTERPRETATION)的内容出现在 prompt。"""
         prompt = build_radar_insight_system_prompt(_make_sample_snapshot(), "running")
-        for sample_phrase in ("Banister TRIMP", "有氧解耦", "VAM", "30 秒滑动窗口"):
+        for sample_phrase in ("Banister 专业训练负荷", "有氧解耦", "垂直爬升速率", "30 秒滑动窗口"):
             with self.subTest(phrase=sample_phrase):
                 self.assertIn(sample_phrase, prompt)
 

@@ -3,16 +3,15 @@
 
 覆盖范围:
 - Api.call_llm("__RADAR_INSIGHT__", ...) 端到端流程
-- §5.4 规则 5:洞察调用后清空 _chat_messages + 刷新 session_id
+- §5.4 规则 5:洞察调用后清空 _chat_messages + 刷新 session_id(全分支适用)
 - §5.4 规则 7:不写 DB / 不污染 canonical
 - 响应 schema 严格:{ok, radar_insight, sport_type}
 - 3 种降级路径:空 sport_type / 无 metrics / 无 dimensions
 - 与 __REPORT_INSIGHT__ 共存不互相污染
 
-设计说明(已知):
-- §5.4 规则 5(清空 chat_messages + 刷新 session)在 happy path 严格执行
-- 降级路径(空 sport_type / 无 metrics)未触发清空(代码设计如此)
-- 集成测试反映当前代码行为,任何修复应在 P3 提
+设计说明:
+- §5.4 规则 5(清空 chat_messages + 刷新 session)在 RADAR_INSIGHT 分支入口执行,
+  覆盖 happy path 和所有降级路径(空 sport_type / 无 metrics)。
 
 遵循 fit-arch-contrac 契约:
 - 不依赖真实 LLM(全部 mock)
@@ -169,8 +168,8 @@ class TestCallLlmRadarInsightHappyPath(unittest.TestCase):
 class TestCallLlmRadarInsightSessionBoundary(unittest.TestCase):
     """§5.4 规则 5:洞察调用后清空 _chat_messages + 刷新 session_id。
 
-    设计说明:仅 happy path 触发清空 + 刷新;降级路径(空 sport_type /
-    无 metrics)当前不触发(由代码实现决定)。本测试类专注 happy path。
+    设计说明:清空 + 刷新在 RADAR_INSIGHT 分支入口执行,
+    覆盖 happy path 和所有降级路径(空 sport_type / 无 metrics / 无 dimensions)。
     """
 
     @mock.patch("main.llm_backend.chat_completions")
@@ -216,6 +215,58 @@ class TestCallLlmRadarInsightSessionBoundary(unittest.TestCase):
         # §5.4 规则 5:刷新
         self.assertNotEqual(api._session_id, old_sid)
         self.assertTrue(api._session_id.startswith("session_"))
+
+    @mock.patch("main.llm_backend.chat_completions")
+    @mock.patch("main.llm_backend.load_llm_config")
+    @mock.patch("main._build_radar_insight_messages")
+    @mock.patch("main._build_radar_insight_snapshot")
+    def test_chat_messages_cleared_even_on_empty_sport_type(
+        self, mock_snap, mock_msgs, mock_cfg, mock_llm,
+    ):
+        """§5.4 规则 5 全分支适用:空 sport_type 降级路径也必须清空。"""
+        mock_cfg.return_value = _fake_llm_config()
+
+        api = _make_api_with_state(initial_messages=[
+            {"role": "user", "content": "之前问过的问题"},
+        ])
+        old_sid = api._session_id
+        self.assertEqual(len(api._chat_messages), 1)
+
+        result = api.call_llm("__RADAR_INSIGHT__", "")
+        self.assertTrue(result["ok"])
+        # §5.4 规则 5:清空 + 刷新
+        self.assertEqual(api._chat_messages, [])
+        self.assertNotEqual(api._session_id, old_sid)
+        # 降级路径不调 LLM / snapshot / messages
+        mock_llm.assert_not_called()
+        mock_snap.assert_not_called()
+        mock_msgs.assert_not_called()
+
+    @mock.patch("main.llm_backend.chat_completions")
+    @mock.patch("main.llm_backend.load_llm_config")
+    @mock.patch("main._build_radar_insight_messages")
+    @mock.patch("main._build_radar_insight_snapshot")
+    def test_chat_messages_cleared_even_on_no_metrics(
+        self, mock_snap, mock_msgs, mock_cfg, mock_llm,
+    ):
+        """§5.4 规则 5 全分支适用:无 metrics 降级路径也必须清空。"""
+        snap = _fake_radar_snapshot()
+        snap["metrics"] = {}  # metrics 为空
+        mock_snap.return_value = snap
+        mock_cfg.return_value = _fake_llm_config()
+
+        api = _make_api_with_state(initial_messages=[
+            {"role": "user", "content": "之前问过的问题"},
+        ])
+        old_sid = api._session_id
+
+        result = api.call_llm("__RADAR_INSIGHT__", "running")
+        self.assertTrue(result["ok"])
+        # §5.4 规则 5:清空 + 刷新
+        self.assertEqual(api._chat_messages, [])
+        self.assertNotEqual(api._session_id, old_sid)
+        mock_llm.assert_not_called()
+        mock_msgs.assert_not_called()
 
 
 class TestCallLlmRadarInsightFallbackPaths(unittest.TestCase):
