@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import io
 import json
-import logging
 import math
 import secrets
 import sys
@@ -16,8 +15,6 @@ from pathlib import Path
 from typing import Any
 
 import requests
-
-logger = logging.getLogger(__name__)
 
 DEFAULT_URL = "http://localhost:3000/v1/chat/completions"
 DEFAULT_MODEL = "openclaw"
@@ -355,24 +352,11 @@ def chat_completions(
     if agent_id and str(agent_id).strip():
         body["agent_id"] = str(agent_id).strip()
         body["agentId"] = str(agent_id).strip()
-    logger.info(
-        "[LLM] → 发送请求 url=%s model=%s session_id=%s messages=%d条 timeout=%ds",
-        url, model, session_id, len(messages or []), timeout,
-    )
-    if messages:
-        roles = [str(m.get("role", "?")) for m in messages]
-        first_user = next((str(m.get("content", ""))[:120] for m in messages if m.get("role") == "user"), "")
-        logger.info("[LLM] → roles=%s first_user=%r", roles, first_user)
     try:
         t0 = time.time()
         r = requests.post(url, headers=headers, json=body, timeout=timeout)
         elapsed = time.time() - t0
-        logger.info(
-            "[LLM] ← 响应 status=%d elapsed=%.1fs url=%s session_id=%s",
-            r.status_code, elapsed, url, session_id,
-        )
     except requests.RequestException as e:
-        logger.exception("[LLM] × 网络异常 url=%s session_id=%s err=%s", url, session_id, e)
         raise RuntimeError(f"网络请求失败: {e}") from e
 
     if not r.ok:
@@ -382,10 +366,6 @@ def chat_completions(
             err = err_obj.get("message") or json.dumps(err_obj, ensure_ascii=False)[:800]
         except Exception:
             err = (r.text or "")[:800]
-        logger.warning(
-            "[LLM] × 非 2xx 响应 status=%d session_id=%s err=%s",
-            r.status_code, session_id, err[:400],
-        )
         if r.status_code == 401:
             raise RuntimeError(f"认证失败 (401): API Key 无效或未填写。{err}")
         if r.status_code == 502:
@@ -395,22 +375,15 @@ def chat_completions(
     try:
         data = r.json()
     except json.JSONDecodeError as e:
-        logger.error("[LLM] × 响应不是合法 JSON session_id=%s body[:400]=%s", session_id, (r.text or "")[:400])
         raise RuntimeError("响应不是合法 JSON") from e
 
     choices = data.get("choices") or []
     if not choices:
-        logger.error("[LLM] × 响应无 choices session_id=%s body=%s", session_id, json.dumps(data, ensure_ascii=False)[:600])
         raise RuntimeError("响应中无 choices 字段")
     msg = choices[0].get("message") or {}
     content = msg.get("content")
     if not content:
-        logger.error("[LLM] × 模型未返回内容 session_id=%s msg=%s", session_id, json.dumps(msg, ensure_ascii=False)[:600])
         raise RuntimeError("模型未返回内容")
-    logger.info(
-        "[LLM] ← 内容长度=%d session_id=%s 前120字=%r",
-        len(content or ""), session_id, (content or "")[:120],
-    )
     return str(content)
 
 

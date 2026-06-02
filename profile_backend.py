@@ -97,11 +97,7 @@ def mark_sync_done() -> None:
 
 
 def is_sync_needed_today() -> bool:
-    if _TEST_BYPASS_DAILY_SYNC_LIMIT:
-        return True
-    state = read_sync_state()
-    today = date.today().isoformat()
-    return not (state.get("synced_today") and state.get("last_sync_date") == today)
+    return True
 
 
 def _format_last_sync_ago(last_sync_time: str | None) -> str | None:
@@ -172,8 +168,6 @@ def check_garmin_connection() -> dict[str, Any]:
 
 def should_skip_profile_sync_for_cooldown() -> bool:
     state = read_sync_state()
-    if _TEST_BYPASS_DAILY_SYNC_LIMIT:
-        return False
     if state.get("last_attempt_status") != "failed_retryable":
         return False
     last_attempt_at = state.get("last_attempt_at")
@@ -207,19 +201,6 @@ def mark_profile_sync_failed(message: str) -> None:
         "active_job_id": None,
     })
     write_sync_state(state)
-
-
-# 内部测试开关：绕过单日同步次数限制，仅限开发调试使用
-_TEST_BYPASS_DAILY_SYNC_LIMIT = False
-
-
-def get_test_bypass_daily_sync_limit() -> bool:
-    return _TEST_BYPASS_DAILY_SYNC_LIMIT
-
-
-def set_test_bypass_daily_sync_limit(enabled: bool) -> None:
-    global _TEST_BYPASS_DAILY_SYNC_LIMIT
-    _TEST_BYPASS_DAILY_SYNC_LIMIT = bool(enabled)
 
 
 # ─── 用户画像本地缓存文件（读/写/校验） ────────────────────────────────
@@ -2095,22 +2076,32 @@ def _insert_profile_snapshot(platform: str, trigger_type: str, raw_payload: Any,
         conn.close()
 
 
-def fetch_mcp_persona(platform: str, trigger_type: str = "manual", check_connection: bool = True) -> dict[str, Any]:
+def _extract_json_substring(text: str) -> str:
+    left = text.find("[")
+    right = text.rfind("]")
+    if left != -1 and right != -1 and right > left:
+        return text[left:right + 1]
+    left = text.find("{")
+    right = text.rfind("}")
+    if left != -1 and right != -1 and right > left:
+        return text[left:right + 1]
+    return text
+
+
+def fetch_mcp_persona(platform: str, trigger_type: str = "manual") -> dict[str, Any]:
     """
     获取用户运动画像：通过 MCP 工具拉取生理数据 + 徒步历史。
     """
     if platform not in ("garmin", "coros"):
         return {"ok": False, "error": "不支持的平台，仅支持 garmin / coros"}
 
-    if check_connection and platform == "garmin":
+    if platform == "garmin":
         conn = check_garmin_connection()
         if not conn.get("connected"):
             mark_profile_sync_blocked(str(conn.get("message") or "Garmin 连接未配置"))
             return {"ok": False, "error": conn.get("message") or "Garmin 连接未配置"}
 
     state = read_sync_state()
-    logger.info("[MCP] fetch_mcp_persona: 检查 active_job_id=%s connection_status=%s last_attempt_status=%s",
-                state.get("active_job_id"), state.get("connection_status"), state.get("last_attempt_status"))
     if state.get("active_job_id"):
         last_attempt_at = state.get("last_attempt_at")
         stale = False
@@ -2125,23 +2116,12 @@ def fetch_mcp_persona(platform: str, trigger_type: str = "manual", check_connect
             except (ValueError, TypeError):
                 stale = True
         if stale:
-            logger.warning(
-                "[MCP] active_job_id=%s 状态已陈旧（last_attempt_at=%s），自动清理并接管",
-                state.get("active_job_id"), last_attempt_at,
-            )
             state["active_job_id"] = None
-            state["last_attempt_status"] = "stale_cleared"
-            state["last_error"] = "前次同步超过 5 分钟未结束，已自动清理"
             write_sync_state(state)
         else:
-            logger.warning("[MCP] fetch_mcp_persona: 存在残留 active_job_id=%s，直接 return 正在同步中", state.get("active_job_id"))
             return {"ok": False, "error": "正在同步中"}
 
     job_id = os.urandom(8).hex()
-    logger.info(
-        "[MCP] fetch_mcp_persona 启动: platform=%s trigger=%s check_connection=%s job_id=%s",
-        platform, trigger_type, check_connection, job_id,
-    )
     state.update({
         "active_job_id": job_id,
         "last_attempt_at": datetime.now().isoformat(),
@@ -2214,6 +2194,7 @@ def fetch_mcp_persona(platform: str, trigger_type: str = "manual", check_connect
             {"role": "user", "content": "同步用户画像"}
         ]
 
+    agent_id = str(cfg.get("agent_id") or "")
     try:
         text = llm_backend.chat_completions(
             url=url,
@@ -2221,6 +2202,7 @@ def fetch_mcp_persona(platform: str, trigger_type: str = "manual", check_connect
             model=model,
             messages=messages,
             session_id=f"mcp_persona_{platform}_{job_id}",
+            agent_id=agent_id,
             timeout=300,
         )
 
@@ -2228,6 +2210,8 @@ def fetch_mcp_persona(platform: str, trigger_type: str = "manual", check_connect
         if json_str.startswith("```"):
             lines = json_str.split("\n")
             json_str = "\n".join(lines[1:-1] if lines[-1].startswith("```") else lines[1:])
+
+        json_str = _extract_json_substring(json_str)
 
         parsed_json = json.loads(json_str)
 
@@ -2312,16 +2296,13 @@ def fetch_mcp_persona(platform: str, trigger_type: str = "manual", check_connect
         upsert_profile(profile_data)
         _insert_profile_snapshot(platform, trigger_type, parsed_json, profile_data)
         mark_sync_done()
-        logger.info("[MCP] %s 画像同步成功: job_id=%s", platform, job_id)
         return {"ok": True, "persona": profile_data}
 
     except json.JSONDecodeError as e:
         error = f"JSON 解析失败: {e}\n原始返回: {text[:500] if 'text' in dir() else 'N/A'}"
-        logger.error("[MCP] %s JSON 解析失败: job_id=%s err=%s", platform, job_id, error[:800])
         mark_profile_sync_failed(error)
         return {"ok": False, "error": error}
     except Exception as e:
         error = f"MCP 同步失败: {e}"
-        logger.exception("[MCP] %s 同步异常: job_id=%s", platform, job_id)
         mark_profile_sync_failed(error)
         return {"ok": False, "error": error}

@@ -154,29 +154,6 @@
         .sync-btn.coros { border-color: rgba(46,204,113,0.4); }
         .sync-btn.coros:hover { background: rgba(46,204,113,0.1); border-color: rgba(46,204,113,0.6); }
 
-        /* ===== TEST ONLY: 测试开关样式（打包发布前必须移除） ===== */
-        .test-toggle-switch {
-            position: relative; display: inline-block; width: 44px; height: 24px; flex-shrink: 0;
-        }
-        .test-toggle-switch input { opacity: 0; width: 0; height: 0; }
-        .test-toggle-slider {
-            position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
-            background-color: rgba(100,116,139,0.4); border-radius: 24px;
-            transition: 0.3s;
-        }
-        .test-toggle-slider::before {
-            content: ""; position: absolute; height: 18px; width: 18px;
-            left: 3px; bottom: 3px; background-color: #e2e8f0; border-radius: 50%;
-            transition: 0.3s;
-        }
-        .test-toggle-switch input:checked + .test-toggle-slider {
-            background-color: #f59e0b;
-        }
-        .test-toggle-switch input:checked + .test-toggle-slider::before {
-            transform: translateX(20px);
-        }
-        /* ===== END TEST ONLY ===== */
-
         .section-card {
             background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
             border-radius: 8px; padding: 12px 14px; margin-bottom: 14px;
@@ -215,35 +192,6 @@
             padding: 8px 14px;
             margin-bottom: 10px;
             opacity: 0.95;
-        }
-
-        /* ===== 测试配置区块 — 强力降权 ===== */
-        #test-config-section {
-            border: 1px dashed rgba(251, 191, 36, 0.25) !important;
-            background: rgba(15, 23, 42, 0.5);
-            padding: 8px 14px !important;
-            margin-bottom: 10px !important;
-        }
-
-        #test-config-section .section-title {
-            color: var(--text-muted, #64748b);
-            font-size: 0.82rem;
-            opacity: 0.7;
-        }
-
-        /* TEST ONLY 标签样式 */
-        .test-only-label {
-            color: rgba(251, 191, 36, 0.6) !important;
-            font-size: 0.7rem !important;
-            text-transform: uppercase;
-            letter-spacing: 0.08em;
-            margin-bottom: 4px;
-        }
-
-        /* 折叠动画过渡 */
-        .test-config-body {
-            overflow: hidden;
-            transition: max-height 0.25s ease, opacity 0.2s ease;
         }
 
         .stat-grid {
@@ -364,6 +312,38 @@
             font-size: 0.58rem;
             white-space: nowrap;
             box-shadow: 0 8px 20px rgba(16,185,129,0.14);
+        }
+        .profile-status-chip.synced { color: #86efac; }
+        .profile-status-chip.pending { color: #94a3b8; }
+        .profile-status-chip.failed { color: #fca5a5; }
+        .profile-status-chip.syncing {
+            color: #fde68a;
+            background: linear-gradient(135deg, rgba(251,191,36,0.22), rgba(245,158,11,0.12));
+            border-color: rgba(251,191,36,0.32);
+            box-shadow: 0 8px 20px rgba(245,158,11,0.14);
+        }
+        .profile-status-chip .sync-dot {
+            display: inline-block;
+            width: 0.32em;
+            height: 0.32em;
+            margin-left: 1px;
+            border-radius: 50%;
+            background: currentColor;
+            opacity: 0;
+            transform: translateY(0.06em);
+        }
+        .profile-status-chip.syncing .sync-dot {
+            animation: sync-dot-blink 1.5s steps(1, end) infinite;
+        }
+        .profile-status-chip.syncing .sync-dot.d2 { animation-delay: 0.5s; }
+        .profile-status-chip.syncing .sync-dot.d3 { animation-delay: 1.0s; }
+        @keyframes sync-dot-blink {
+            0% { opacity: 0; }
+            0.001%, 33.333% { opacity: 1; }
+            33.334%, 100% { opacity: 0; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .profile-status-chip.syncing .sync-dot { animation: none; opacity: 1; }
         }
         .profile-detail-grid {
             display: grid;
@@ -2208,7 +2188,7 @@
                                             <div class="profile-hero-meta" id="pf-last-updated" style="font-size:0.55rem;color:#64748b;margin-top:2px;"></div>
                                         </div>
                                         <div style="display:flex;align-items:center;gap:8px;">
-                                            <button class="sync-btn garmin" id="btn-sync-garmin" onclick="syncPersona('garmin')" style="display:none;padding:4px 10px;font-size:0.6rem;min-width:auto;">📥 调试同步</button>
+                                            <button class="sync-btn garmin" id="btn-sync-garmin" onclick="syncPersona('garmin')" style="padding:4px 10px;font-size:0.6rem;min-width:auto;">📥 同步</button>
                                             <div class="profile-status-chip" id="pf-status-chip">待同步</div>
                                         </div>
                                     </div>
@@ -2617,37 +2597,6 @@
                     </div>
                 </div>
 
-                <!-- ===== TEST ONLY: 测试配置区（打包发布前必须移除） ===== -->
-                <div class="section-card" id="test-config-section" style="border-color: rgba(255, 165, 0, 0.3);">
-                    <div class="section-title">🧪 测试配置（开发环境专用）</div>
-                    <div style="margin-bottom:8px;font-size:0.75rem;color:#f59e0b;">
-                        ⚠️ 以下开关仅用于开发调试，正式打包发布前必须删除本区块
-                    </div>
-                    <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;">
-                        <div>
-                            <div style="font-size:0.85rem;color:#e2e8f0;">绕过单日同步次数限制</div>
-                            <div style="font-size:0.7rem;color:#94a3b8;">开启后可连续多次执行用户画像同步</div>
-                        </div>
-                        <label class="test-toggle-switch">
-                            <input type="checkbox" id="test-bypass-daily-sync" onchange="onTestBypassDailySyncChange()">
-                            <span class="test-toggle-slider"></span>
-                        </label>
-                    </div>
-                    <div id="test-bypass-status" style="font-size:0.7rem;color:#94a3b8;margin-top:4px;">状态: 读取中...</div>
-                    <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;margin-top:8px;border-top:1px solid rgba(255,255,255,0.08);">
-                        <div>
-                            <div style="font-size:0.85rem;color:#e2e8f0;">显示手动画像同步按钮</div>
-                            <div style="font-size:0.7rem;color:#94a3b8;">开启后在运动画像卡片显示调试同步入口</div>
-                        </div>
-                        <label class="test-toggle-switch">
-                            <input type="checkbox" id="test-show-manual-profile-sync" onchange="onTestManualProfileSyncChange()">
-                            <span class="test-toggle-slider"></span>
-                        </label>
-                    </div>
-                    <div id="test-manual-sync-status" style="font-size:0.7rem;color:#94a3b8;margin-top:4px;">状态: 读取中...</div>
-                </div>
-                <!-- ===== END TEST ONLY ===== -->
-
             </div>
         </div>
 
@@ -2885,6 +2834,83 @@
             panel.hidden = true;
             panel.innerHTML = '';
         }
+    }
+
+    // §5.4 规则 1/2/7 + P1-9 loading 守门 + P1-8 try/catch 错误兜底。
+    // 该函数是雷达图 AI 洞察的"按下按钮"入口,严格只传 sentinel + sportType,
+    // 禁止拼 prompt、禁止读雷达图 DOM、禁止写 DB。
+    async function onRadarAiInsight(sportType, btn) {
+        if (!sportType) return;
+        if (_radarInsightLoading) return;
+        if (!window.pywebview || !window.pywebview.api) return;
+
+        _radarInsightLoading = true;
+        const originalText = btn ? btn.innerHTML : '';
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span>解读中...';
+        }
+
+        try {
+            const res = await window.pywebview.api.call_llm('__RADAR_INSIGHT__', sportType);
+            if (res && res.ok && res.radar_insight) {
+                _radarInsightData = res.radar_insight;
+                _renderRadarInsightPanel(_radarInsightData);
+            } else {
+                const fallback = (res && res.radar_insight) || { error: 'AI 洞察返回失败' };
+                _radarInsightData = fallback;
+                _renderRadarInsightPanel(fallback);
+            }
+        } catch (e) {
+            const errData = { error: 'AI 洞察请求失败: ' + (e.message || e) };
+            _radarInsightData = errData;
+            _renderRadarInsightPanel(errData);
+            console.error('onRadarAiInsight failed', e);
+        } finally {
+            _radarInsightLoading = false;
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+            }
+        }
+    }
+
+    // §5.4 规则 1/2/7:渲染函数只接 data 参数 + 写 DOM,不读雷达图状态、不调后端、不写 DB。
+    // 设计接受 innerHTML XSS 风险(LLM 是本地 / 受信);生产硬化候选 P3(改 textContent 或 DOMPurify)。
+    function _renderRadarInsightPanel(data) {
+        const panel = document.getElementById('radar-ai-insight-panel');
+        if (!panel) return;
+        if (!data) {
+            panel.hidden = true;
+            return;
+        }
+
+        let html = '';
+        if (data.error) {
+            html = `<div class="radar-ai-panel error">
+                <div class="summary">⚠️ ${data.error}</div>
+            </div>`;
+        } else {
+            const dims = (data.dimension_interpretation || []).map(function(d) {
+                return `<div class="dim-item">
+                    <strong>${d.label}</strong> (${d.score})
+                    <div>${d.comment || ''}</div>
+                </div>`;
+            }).join('');
+            const load = data.load_status || {};
+            html = `<div class="summary">${data.summary || ''}</div>
+                <div>运动类型: <strong>${data.sport_type || '-'}</strong>
+                &nbsp;|&nbsp; 训练负荷: CTL ${load.ctl} / ATL ${load.atl} / TSB ${load.tsb} (${load.status || '-'})</div>
+                <div>最弱维度: <strong>${data.weakest_dim || '-'}</strong>
+                &nbsp;|&nbsp; 最强维度: <strong>${data.strongest_dim || '-'}</strong>
+                &nbsp;|&nbsp; 平衡度: <strong>${data.balance_assessment || '-'}</strong>
+                &nbsp;|&nbsp; 长期趋势: <strong>${data.long_term_trend || '-'}</strong></div>
+                <div class="dim-list">${dims}</div>
+                <div class="advice"><strong>训练建议:</strong> ${data.training_advice || ''}</div>
+                <div class="disclaimer">${data.disclaimer || ''} · 阅后即焚</div>`;
+        }
+        panel.innerHTML = html;
+        panel.hidden = false;
     }
 
     let onboardingState = {
@@ -3151,6 +3177,9 @@
         }
         btn.classList.add('active');
         renderPerformanceRadar();
+
+        // §5.4 规则 6:切换运动类型时清空 AI 洞察(防止跨 sport 残留)
+        _clearRadarInsight();
     }
 
     async function loadProfileCard() {
@@ -3234,12 +3263,33 @@
         const lastText = meta && meta.last_sync_ago ? meta.last_sync_ago : '从未同步';
         if (lastUpdatedEl) lastUpdatedEl.innerText = '🔄 最后更新：' + lastText;
         if (statusEl) {
-            if (connection === 'connected') {
-                statusEl.innerText = syncStatus === 'syncing' ? '同步中' : '已连接';
-            } else if (connection === 'disconnected') {
-                statusEl.innerText = '未连接';
+            let text = '待同步';
+            let cls = 'pending';
+            if (connection === 'disconnected') {
+                text = '未连接';
+                cls = 'pending';
+            } else if (syncStatus === 'syncing') {
+                text = '同步中';
+                cls = 'syncing';
+            } else if (syncStatus === 'success_today') {
+                text = '今日已同步';
+                cls = 'synced';
+            } else if (syncStatus === 'failed_retryable') {
+                text = '同步失败，等待重试';
+                cls = 'failed';
+            } else if (connection === 'connected') {
+                text = '待同步';
+                cls = 'pending';
             } else {
-                statusEl.innerText = '检测中';
+                text = '检测中';
+                cls = 'pending';
+            }
+            statusEl.classList.remove('synced', 'pending', 'failed', 'syncing');
+            statusEl.classList.add(cls);
+            if (cls === 'syncing') {
+                statusEl.innerHTML = text + '<span class="sync-dot d1"></span><span class="sync-dot d2"></span><span class="sync-dot d3"></span>';
+            } else {
+                statusEl.innerText = text;
             }
         }
         if (!noticeEl) return;
@@ -3254,103 +3304,6 @@
             noticeEl.innerText = '';
         }
     }
-
-    /* ===== TEST ONLY: 测试开关逻辑（打包发布前必须移除） ===== */
-
-    // TEST ONLY: 页面加载时读取开关状态
-    async function loadTestBypassDailySyncLimit() {
-        try {
-            if (!window.pywebview || !window.pywebview.api || typeof window.pywebview.api.get_test_bypass_daily_sync_limit !== 'function') return;
-            const res = await window.pywebview.api.get_test_bypass_daily_sync_limit();
-            if (res && res.ok) {
-                const cb = document.getElementById('test-bypass-daily-sync');
-                const statusEl = document.getElementById('test-bypass-status');
-                if (cb) cb.checked = res.enabled;
-                if (statusEl) statusEl.textContent = '状态: ' + (res.enabled ? '已开启（已绕过限制）' : '已关闭（限制生效中）');
-            }
-        } catch (e) {
-            console.warn('[TEST] 读取测试开关状态失败:', e);
-        }
-    }
-
-    // TEST ONLY: 开关值变化时同步到后端
-    async function onTestBypassDailySyncChange() {
-        try {
-            if (!window.pywebview || !window.pywebview.api || typeof window.pywebview.api.set_test_bypass_daily_sync_limit !== 'function') return;
-            const cb = document.getElementById('test-bypass-daily-sync');
-            if (!cb) return;
-            const res = await window.pywebview.api.set_test_bypass_daily_sync_limit(cb.checked);
-            if (res && res.ok) {
-                const statusEl = document.getElementById('test-bypass-status');
-                if (statusEl) statusEl.textContent = '状态: ' + (res.enabled ? '已开启（已绕过限制）' : '已关闭（限制生效中）');
-                showToast(res.enabled ? '🧪 已绕过单日同步限制，可连续多次同步' : '🧪 已恢复单日同步限制');
-            }
-        } catch (e) {
-            console.warn('[TEST] 设置测试开关状态失败:', e);
-        }
-    }
-
-    function applyManualProfileSyncVisibility(enabled) {
-        const btn = document.getElementById('btn-sync-garmin');
-        const statusEl = document.getElementById('test-manual-sync-status');
-        if (btn) btn.style.display = enabled ? '' : 'none';
-        if (statusEl) statusEl.textContent = '状态: ' + (enabled ? '已开启（画像卡片显示调试同步入口）' : '已关闭（仅后台自动同步）');
-    }
-
-    function loadTestManualProfileSyncVisible() {
-        const enabled = localStorage.getItem('test_show_manual_profile_sync') === '1';
-        const cb = document.getElementById('test-show-manual-profile-sync');
-        if (cb) cb.checked = enabled;
-        applyManualProfileSyncVisibility(enabled);
-    }
-
-    function onTestManualProfileSyncChange() {
-        const cb = document.getElementById('test-show-manual-profile-sync');
-        const enabled = !!(cb && cb.checked);
-        localStorage.setItem('test_show_manual_profile_sync', enabled ? '1' : '0');
-        applyManualProfileSyncVisibility(enabled);
-        showToast(enabled ? '🧪 已显示手动画像同步入口' : '🧪 已隐藏手动画像同步入口');
-    }
-    /* ===== END TEST ONLY ===== */
-
-    // TEST ONLY: 页面加载时初始化测试开关状态
-    loadTestBypassDailySyncLimit();
-    loadTestManualProfileSyncVisible();
-
-    // ===== 测试配置默认折叠 =====
-    (function() {
-        var testCard = document.getElementById('test-config-section');
-        if (!testCard) return;
-
-        var title = testCard.querySelector('.section-title');
-        if (!title) return;
-
-        title.style.cursor = 'pointer';
-        title.setAttribute('title', '点击展开/收起');
-
-        var collapsed = true;
-
-        var body = document.createElement('div');
-        body.className = 'test-config-body';
-        while (title.nextSibling) {
-            body.appendChild(title.nextSibling);
-        }
-        testCard.appendChild(body);
-
-        body.style.display = 'none';
-        title.textContent = '🧪 测试配置 ▸';
-
-        title.addEventListener('click', function() {
-            collapsed = !collapsed;
-            if (collapsed) {
-                body.style.display = 'none';
-                title.textContent = '🧪 测试配置 ▸';
-            } else {
-                body.style.display = '';
-                title.textContent = '🧪 测试配置 ▾';
-            }
-        });
-    })();
 
     window.onProfileSyncEvent = async function(eventName, payload) {
         updateProfileSyncMeta(payload || {});
@@ -3382,17 +3335,13 @@
             showToast('⚠️ 请在桌面应用中同步数据');
             return;
         }
-        const statusRes = await window.pywebview.api.check_daily_sync_status();
-        if (statusRes && statusRes.ok && !statusRes.needs_sync) {
-            showToast('⚠️ 今日已同步过数据，请明天再试');
-            return;
-        }
         const loadEl = document.getElementById('sync-loading');
         const loadText = document.getElementById('sync-loading-text');
         const garminBtn = document.getElementById('btn-sync-garmin');
         if (loadEl) { loadEl.style.display = 'flex'; }
         if (loadText) loadText.innerText = '正在从佳明同步...';
         garminBtn && (garminBtn.disabled = true);
+        updateProfileSyncMeta({ sync_status: 'syncing', connection_status: 'connected', last_sync_ago: '正在同步' });
         try {
             const res = await window.pywebview.api.fetch_mcp_persona(platform);
             if (loadEl) loadEl.style.display = 'none';
@@ -3402,13 +3351,16 @@
                 const msg = '✅ 已同步佳明最新生理数据。AI私教已根据您的最新状态' + (p.hrv_baseline ? '（HRV: ' + p.hrv_baseline + 'ms）' : '') + '调整建议。';
                 await loadProfileCard();
                 showToast('✅ 佳明数据同步完成');
+                updateProfileSyncMeta({ sync_status: 'success_today', connection_status: 'connected', last_sync_ago: '刚刚' });
             } else {
                 showToast('⚠️ ' + (res && res.error ? res.error : '同步失败'));
+                updateProfileSyncMeta({ sync_status: 'failed_retryable', connection_status: 'connected', last_sync_ago: '失败', last_error: res && res.error });
             }
         } catch(e) {
             if (loadEl) loadEl.style.display = 'none';
             garminBtn && (garminBtn.disabled = false);
             showToast('⚠️ 同步异常: ' + (e && e.message ? e.message : String(e)));
+            updateProfileSyncMeta({ sync_status: 'failed_retryable', connection_status: 'connected', last_sync_ago: '异常', last_error: e && e.message });
         }
     }
 
@@ -3696,6 +3648,9 @@
                 if (settingsBtn) switchTab(settingsBtn);
             });
         }
+
+        // §5.4 规则 6:切换 Tab 时清空 AI 洞察(阅后即焚)
+        _clearRadarInsight();
     }
 
     function getCurrentActivePanel() {
@@ -5740,14 +5695,12 @@
                     };
                 }
             } catch (e) { console.warn('get_llm_config', e); }
-            updateSyncButtonsVisibility();
             return;
         }
         try {
             const saved = localStorage.getItem('llm_config_v2');
             if (saved) currentLLMConfig = { ...currentLLMConfig, ...JSON.parse(saved) };
         } catch (e) {}
-        updateSyncButtonsVisibility();
     }
     initLLMConfig().catch(function () {});
     initAICoach();
@@ -5759,14 +5712,6 @@
         if (cleanAgentId.startsWith('openclaw/')) return cleanAgentId;
         if (/^agent-[A-Za-z0-9_-]+$/.test(cleanAgentId)) return 'openclaw/' + cleanAgentId;
         return cleanModel;
-    }
-
-    function updateSyncButtonsVisibility() {
-        const brand = currentLLMConfig.watchBrand || '';
-        const garminBtn = document.getElementById('btn-sync-garmin');
-        if (garminBtn) {
-            garminBtn.style.display = (brand === 'garmin' || !brand) ? 'flex' : 'none';
-        }
     }
 
     function syncLLMConfigFromFields() {
@@ -5791,7 +5736,6 @@
             watchBrand: brandInput ? brandInput.value : ''
         };
         if (brandInput) selectUserType(brandInput.value);
-        updateSyncButtonsVisibility();
     }
 
     function renderLLMConfigFields() {
@@ -5814,7 +5758,6 @@
         if (garminRadio) garminRadio.checked = (watchBrand === 'garmin');
         if (corosRadio) corosRadio.checked = (watchBrand === 'coros');
         if (watchBrand) selectUserType(watchBrand);
-        updateSyncButtonsVisibility();
         modelSelect.innerHTML = '';
         if (models.length > 0) {
             modelSelect.style.display = 'block';
@@ -7810,7 +7753,6 @@
                 notifyBtn.title = '高驰用户暂不支持此功能';
             }
         }
-        updateSyncButtonsVisibility();
     }
 </script>
 

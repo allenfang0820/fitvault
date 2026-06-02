@@ -2846,30 +2846,22 @@ class Api:
 
     def startup_sync_check(self) -> dict:
         try:
-            logger.info("[MCP] startup_sync_check 进入")
-            conn = profile_backend.check_garmin_connection()
-            logger.info("[MCP] startup_sync_check: 预检测结果 connected=%s message=%s", conn.get("connected"), conn.get("message"))
-            if not conn.get("connected"):
-                message = str(conn.get("message") or "Garmin 连接未配置")
-                profile_backend.mark_profile_sync_blocked(message)
-                result = {"ok": False, "blocked": True, "message": message, **profile_backend.get_profile_sync_metadata()}
-                self._dispatch_profile_sync_event("profile_sync_blocked", result)
-                return result
             needed = profile_backend.is_sync_needed_today()
-            logger.info("[MCP] startup_sync_check: is_sync_needed_today=%s", needed)
             if not needed:
                 result = {"ok": True, "already_synced": True, "message": "今天已同步", **profile_backend.get_profile_sync_metadata()}
                 self._dispatch_profile_sync_event("profile_sync_complete", result)
                 return result
             cooldown = profile_backend.should_skip_profile_sync_for_cooldown()
-            logger.info("[MCP] startup_sync_check: should_skip_cooldown=%s", cooldown)
             if cooldown:
                 result = {"ok": False, "cooldown": True, "message": "上次同步失败，冷却中", **profile_backend.get_profile_sync_metadata()}
                 self._dispatch_profile_sync_event("profile_sync_complete", result)
                 return result
-            logger.info("[MCP] startup_sync_check: 即将调用 fetch_mcp_persona (check_connection=False)")
-            result = profile_backend.fetch_mcp_persona("garmin", trigger_type="startup", check_connection=False)
-            logger.info("[MCP] startup_sync_check: fetch_mcp_persona 返回 ok=%s", result.get("ok"))
+            self._dispatch_profile_sync_event("profile_sync_started", {
+                **profile_backend.get_profile_sync_metadata(),
+                "sync_status": "syncing",
+                "last_sync_ago": "正在同步",
+            })
+            result = profile_backend.fetch_mcp_persona("garmin", trigger_type="startup")
             if result.get("ok"):
                 prof = profile_backend.get_profile()
                 result.update({"profile": prof.to_dict(), **profile_backend.get_profile_sync_metadata()})
@@ -3437,13 +3429,6 @@ class Api:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
-    def get_test_bypass_daily_sync_limit(self) -> dict:
-        return {"ok": True, "enabled": profile_backend.get_test_bypass_daily_sync_limit()}
-
-    def set_test_bypass_daily_sync_limit(self, enabled: bool) -> dict:
-        profile_backend.set_test_bypass_daily_sync_limit(enabled)
-        return {"ok": True, "enabled": profile_backend.get_test_bypass_daily_sync_limit()}
-
     def check_daily_sync_status(self) -> dict:
         needs = profile_backend.is_sync_needed_today()
         state = profile_backend.read_sync_state()
@@ -3454,17 +3439,6 @@ class Api:
             "last_sync_time": state.get("last_sync_time"),
             **profile_backend.get_profile_sync_metadata(),
         }
-
-    def silent_fetch_mcp_persona(self, platform: str) -> dict:
-        needs = profile_backend.is_sync_needed_today()
-        if not needs:
-            cached = profile_backend.read_local_profile()
-            return {"ok": True, "already_synced": True, "has_cached": cached is not None, **profile_backend.get_profile_sync_metadata()}
-        result = profile_backend.fetch_mcp_persona(platform, trigger_type="background")
-        if result.get("ok"):
-            prof = profile_backend.get_profile()
-            return {"ok": True, "already_synced": False, "profile": prof.to_dict(), "has_cached": True, **profile_backend.get_profile_sync_metadata()}
-        return {"ok": True, "already_synced": False, "error": result.get("error"), "has_cached": False, **profile_backend.get_profile_sync_metadata()}
 
     def _workspace_track_dir(self) -> str:
         config = init_application_config()

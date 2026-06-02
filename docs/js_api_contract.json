@@ -304,18 +304,6 @@
       "description": "手动触发用户画像同步"
     },
     {
-      "name": "silent_fetch_mcp_persona",
-      "file": "main.py",
-      "line": 2886,
-      "category": "profile",
-      "parameters": [
-        { "name": "platform", "type": "string", "required": true }
-      ],
-      "returns": "{ ok, already_synced, has_cached } 或 { ok, profile }",
-      "high_risk": false,
-      "description": "后台静默画像同步；若今日已同步则直接返回缓存"
-    },
-    {
       "name": "startup_sync_check",
       "file": "main.py",
       "line": 2336,
@@ -334,28 +322,6 @@
       "returns": "{ ok, needs_sync, last_sync_date, last_sync_time }",
       "high_risk": false,
       "description": "检查当日是否需要画像同步"
-    },
-    {
-      "name": "get_test_bypass_daily_sync_limit",
-      "file": "main.py",
-      "line": 2868,
-      "category": "profile",
-      "parameters": [],
-      "returns": "{ ok, enabled }",
-      "high_risk": false,
-      "description": "读取测试旁路开关"
-    },
-    {
-      "name": "set_test_bypass_daily_sync_limit",
-      "file": "main.py",
-      "line": 2871,
-      "category": "profile",
-      "parameters": [
-        { "name": "enabled", "type": "bool", "required": true }
-      ],
-      "returns": "{ ok, enabled }",
-      "high_risk": false,
-      "description": "设置测试旁路开关"
     },
     {
       "name": "pick_and_parse_track",

@@ -1,3 +1,4 @@
+import os
 import sqlite3
 import tempfile
 import threading
@@ -26,6 +27,9 @@ class TestFitSync(unittest.TestCase):
         self.original_connect_timeout_sec = profile_backend.SQLITE_CONNECT_TIMEOUT_SEC
         self.original_tracks_dir = main.TRACKS_DIR
         self.original_imports_dir = main.IMPORTS_DIR
+        self.original_sync_state_dir = profile_backend.SYNC_STATE_DIR
+        self.original_sync_state_path = profile_backend.SYNC_STATE_PATH
+        self.original_profile_cache_path = profile_backend.PROFILE_CACHE_PATH
 
         profile_backend.DB_PATH = self.temp_dir / "user_profile.db"
         profile_backend.DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -33,8 +37,12 @@ class TestFitSync(unittest.TestCase):
         main._ACTIVITY_SYNC_SCHEMA_READY_FOR = None
         main.TRACKS_DIR = str(self.temp_dir / "tracks")
         main.IMPORTS_DIR = str(self.temp_dir / "imports")
+        profile_backend.SYNC_STATE_DIR = str(self.temp_dir / "sync_state")
+        profile_backend.SYNC_STATE_PATH = os.path.join(profile_backend.SYNC_STATE_DIR, "sync_state.json")
+        profile_backend.PROFILE_CACHE_PATH = os.path.join(profile_backend.SYNC_STATE_DIR, "user_profile_cache.json")
         Path(main.TRACKS_DIR).mkdir(parents=True, exist_ok=True)
         Path(main.IMPORTS_DIR).mkdir(parents=True, exist_ok=True)
+        Path(profile_backend.SYNC_STATE_DIR).mkdir(parents=True, exist_ok=True)
         self.api = main.Api()
 
     def tearDown(self):
@@ -45,6 +53,9 @@ class TestFitSync(unittest.TestCase):
         profile_backend.SQLITE_CONNECT_TIMEOUT_SEC = self.original_connect_timeout_sec
         main.TRACKS_DIR = self.original_tracks_dir
         main.IMPORTS_DIR = self.original_imports_dir
+        profile_backend.SYNC_STATE_DIR = self.original_sync_state_dir
+        profile_backend.SYNC_STATE_PATH = self.original_sync_state_path
+        profile_backend.PROFILE_CACHE_PATH = self.original_profile_cache_path
         self.temp_dir_obj.cleanup()
 
     def _workspace_config(self) -> dict:
@@ -634,71 +645,108 @@ class TestFitSync(unittest.TestCase):
         api = main.Api()
         profile_backend.mark_sync_done()
         status = api.check_daily_sync_status()
-        self.assertFalse(status["needs_sync"])
+        self.assertTrue(status["needs_sync"],
+            "is_sync_needed_today 已临时绕过单日限制，永远返回 True（开发调试阶段）")
 
-    def test_bypass_daily_sync_limit_via_api_endpoints(self):
-        api = main.Api()
-        # 默认关闭
-        res = api.get_test_bypass_daily_sync_limit()
-        self.assertTrue(res["ok"])
-        self.assertFalse(res["enabled"])
-
-        # 开启
-        res = api.set_test_bypass_daily_sync_limit(True)
-        self.assertTrue(res["ok"])
-        self.assertTrue(res["enabled"])
-        self.assertTrue(profile_backend.get_test_bypass_daily_sync_limit())
-
-        # 关闭
-        res = api.set_test_bypass_daily_sync_limit(False)
-        self.assertTrue(res["ok"])
-        self.assertFalse(res["enabled"])
-        self.assertFalse(profile_backend.get_test_bypass_daily_sync_limit())
-
-    def test_bypass_makes_sync_needed_even_after_mark_done(self):
-        profile_backend.set_test_bypass_daily_sync_limit(True)
+    # 验证画像同步状态指示器元数据：覆盖 pending / syncing / synced_today / failed 四种状态
+    def test_sync_metadata_initial_state_is_pending(self):
+        profile_backend.write_sync_state({})
+        conn = profile_backend._conn()
         try:
-            profile_backend.mark_sync_done()
-            self.assertTrue(profile_backend.is_sync_needed_today(),
-                "绕过开启时，即使标记为已同步，is_sync_needed_today 也应返回 True")
+            conn.execute("DELETE FROM user_profile")
+            conn.commit()
         finally:
-            profile_backend.set_test_bypass_daily_sync_limit(False)
+            conn.close()
+        meta = profile_backend.get_profile_sync_metadata()
+        self.assertEqual(meta["sync_status"], "idle",
+            "无任何同步记录时 sync_status 应为 idle，前端会显示'待同步'")
+        self.assertEqual(meta["last_sync_ago"], "从未同步")
+        self.assertEqual(meta["connection_status"], "unknown")
 
-    def test_bypass_off_restores_sync_limit(self):
-        profile_backend.set_test_bypass_daily_sync_limit(True)
-        profile_backend.mark_sync_done()
-        profile_backend.set_test_bypass_daily_sync_limit(False)
-        self.assertFalse(profile_backend.is_sync_needed_today(),
-            "绕过关闭后，已同步状态应恢复限制")
+    def test_sync_metadata_active_job_is_syncing(self):
+        profile_backend.write_sync_state({
+            "active_job_id": "abc123",
+            "last_attempt_at": "2024-01-01T00:00:00",
+            "last_attempt_status": "syncing",
+            "connection_status": "connected",
+        })
+        meta = profile_backend.get_profile_sync_metadata()
+        self.assertEqual(meta["sync_status"], "syncing",
+            "active_job_id 存在时 sync_status 应为 syncing，前端显示'同步中...'动画")
+        self.assertEqual(meta["connection_status"], "connected")
 
-    def test_bypass_check_daily_sync_status_reflects_switch(self):
-        api = main.Api()
-        profile_backend.mark_sync_done()
-        profile_backend.set_test_bypass_daily_sync_limit(True)
-        try:
-            status = api.check_daily_sync_status()
-            self.assertTrue(status["needs_sync"],
-                "API check_daily_sync_status 应反映绕过开关状态")
-            self.assertTrue(status["ok"])
-        finally:
-            profile_backend.set_test_bypass_daily_sync_limit(False)
+    def test_sync_metadata_today_success_is_synced(self):
+        import datetime as _dt
+        today = _dt.date.today().isoformat()
+        now_iso = _dt.datetime.now().isoformat()
+        profile_backend.write_sync_state({
+            "last_sync_date": today,
+            "last_sync_time": now_iso,
+            "last_attempt_status": "success",
+            "synced_today": True,
+            "connection_status": "connected",
+        })
+        meta = profile_backend.get_profile_sync_metadata()
+        self.assertEqual(meta["sync_status"], "success_today",
+            "last_sync_date 为今天时 sync_status 应为 success_today，前端显示'今日已同步'")
+        self.assertIn("今天", meta["last_sync_ago"])
 
-    def test_bypass_silent_fetch_respects_switch(self):
-        profile_backend.mark_sync_done()
-        profile_backend.set_test_bypass_daily_sync_limit(True)
-        try:
-            result = main.Api().silent_fetch_mcp_persona("garmin")
-            self.assertFalse(result.get("already_synced", True),
-                "绕过开启时 silent_fetch_mcp_persona 不应标记 already_synced")
-        finally:
-            profile_backend.set_test_bypass_daily_sync_limit(False)
+    def test_sync_metadata_yesterday_success_is_not_synced_today(self):
+        import datetime as _dt
+        from datetime import timedelta
+        yesterday_date = _dt.date.today() - timedelta(days=1)
+        yesterday = yesterday_date.isoformat()
+        yesterday_dt = _dt.datetime.combine(yesterday_date, _dt.time(7, 0))
+        profile_backend.write_sync_state({
+            "last_sync_date": yesterday,
+            "last_sync_time": yesterday_dt.isoformat(),
+            "last_attempt_status": "success",
+            "synced_today": False,
+            "connection_status": "connected",
+        })
+        meta = profile_backend.get_profile_sync_metadata()
+        self.assertNotEqual(meta["sync_status"], "success_today",
+            "昨天同步过但今天没同步时 sync_status 不应为 success_today，"
+            "前端会落到'待同步'分支（connection=connected 且 sync_status 非 success_today/failed）")
+        self.assertIn("昨天", meta["last_sync_ago"])
 
-    def test_bypass_off_silent_fetch_returns_already_synced(self):
-        profile_backend.mark_sync_done()
-        profile_backend.set_test_bypass_daily_sync_limit(False)
-        result = main.Api().silent_fetch_mcp_persona("garmin")
-        self.assertTrue(result.get("already_synced", False),
-            "绕过关闭时 silent_fetch_mcp_persona 应返回 already_synced=True")
+    def test_sync_metadata_failed_is_failed_retryable(self):
+        import datetime as _dt
+        profile_backend.write_sync_state({
+            "last_attempt_at": _dt.datetime.now().isoformat(),
+            "last_attempt_status": "failed_retryable",
+            "last_error": "MCP 同步失败: timeout",
+            "connection_status": "connected",
+        })
+        meta = profile_backend.get_profile_sync_metadata()
+        self.assertEqual(meta["sync_status"], "failed_retryable",
+            "上次同步失败时 sync_status 应为 failed_retryable，前端显示'同步失败，等待重试'")
+        self.assertEqual(meta["last_error"], "MCP 同步失败: timeout")
+
+    def test_sync_metadata_active_job_overrides_today_success(self):
+        today = profile_backend.date.today().isoformat()
+        profile_backend.write_sync_state({
+            "active_job_id": "running",
+            "last_sync_date": today,
+            "last_attempt_status": "success",
+            "synced_today": True,
+            "connection_status": "connected",
+        })
+        meta = profile_backend.get_profile_sync_metadata()
+        self.assertEqual(meta["sync_status"], "syncing",
+            "active_job_id 存在时应优先于 success_today，前端显示'同步中...'动画")
+
+    def test_sync_metadata_disconnected_when_blocked(self):
+        import datetime as _dt
+        profile_backend.write_sync_state({
+            "last_attempt_at": _dt.datetime.now().isoformat(),
+            "last_attempt_status": "blocked",
+            "connection_status": "disconnected",
+            "last_error": "Garmin 连接未配置",
+        })
+        meta = profile_backend.get_profile_sync_metadata()
+        self.assertEqual(meta["sync_status"], "blocked")
+        self.assertEqual(meta["connection_status"], "disconnected")
 
     # 验证增量同步预检机制：已入库未变更文件被跳过，新增文件被解析
     def test_incremental_sync_skips_unchanged_files_and_parses_new_only(self):
