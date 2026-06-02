@@ -108,6 +108,26 @@
         }
         .tab-panel.active { display: flex; }
 
+        /* ===== panel-header — 配置页标题区 ===== */
+        .panel-header {
+            padding: 18px 22px 12px;
+            border-bottom: 1px solid rgba(212, 175, 55, 0.15);
+            margin-bottom: 4px;
+        }
+        .panel-header h2 {
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--primary, #d4af37);
+            margin: 0 0 4px 0;
+            letter-spacing: 0.02em;
+        }
+        .panel-header p {
+            font-size: 0.78rem;
+            color: var(--text-muted, #64748b);
+            margin: 0;
+            line-height: 1.4;
+        }
+
         /* === 【个人运动数据】面板 === */
         #panel-profile {
             background: var(--bg);
@@ -159,21 +179,71 @@
 
         .section-card {
             background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
-            border-radius: 8px; padding: 8px 10px; margin-bottom: 6px;
+            border-radius: 8px; padding: 12px 14px; margin-bottom: 14px;
+            transition: margin-bottom 0.2s ease;
         }
         .section-title {
             font-size: 0.65rem; font-weight: 700; color: var(--primary);
             letter-spacing: 0.8px; margin-bottom: 4px; text-transform: uppercase;
         }
         .settings-section-title {
-            font-size: 1rem;
+            font-size: 0.95rem;
             font-weight: 600;
-            color: var(--primary);
+            color: var(--text-primary, #e2e8f0);
             letter-spacing: 0.5px;
             border-bottom: 1px solid rgba(255,255,255,0.1);
             padding-bottom: 10px;
-            margin-bottom: 16px;
+            margin-bottom: 8px !important;
             text-transform: none;
+        }
+
+        /* ===== section-card — 配置页视觉权重差异化 ===== */
+        /* 用户设备卡片 — 蓝色低调强调 */
+        #watch-brand-config-section {
+            padding: 10px 14px;
+            border-left: 3px solid rgba(59, 130, 246, 0.35);
+        }
+
+        /* LLM API 配置卡片 — 更宽松 + 左侧金色强调线 */
+        #panel-settings .section-card:nth-of-type(2) {
+            padding: 14px 18px;
+            border-left: 3px solid rgba(212, 175, 55, 0.4);
+        }
+
+        /* 辅助配置卡片（存储 + 测试）— 更紧凑 */
+        #panel-settings .section-card:nth-of-type(n+3) {
+            padding: 8px 14px;
+            margin-bottom: 10px;
+            opacity: 0.95;
+        }
+
+        /* ===== 测试配置区块 — 强力降权 ===== */
+        #test-config-section {
+            border: 1px dashed rgba(251, 191, 36, 0.25) !important;
+            background: rgba(15, 23, 42, 0.5);
+            padding: 8px 14px !important;
+            margin-bottom: 10px !important;
+        }
+
+        #test-config-section .section-title {
+            color: var(--text-muted, #64748b);
+            font-size: 0.82rem;
+            opacity: 0.7;
+        }
+
+        /* TEST ONLY 标签样式 */
+        .test-only-label {
+            color: rgba(251, 191, 36, 0.6) !important;
+            font-size: 0.7rem !important;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            margin-bottom: 4px;
+        }
+
+        /* 折叠动画过渡 */
+        .test-config-body {
+            overflow: hidden;
+            transition: max-height 0.25s ease, opacity 0.2s ease;
         }
 
         .stat-grid {
@@ -1596,96 +1666,80 @@
         .radar-sport-tab.active {
             background: rgba(0,255,127,0.15); border-color: rgba(0,255,127,0.3); color: #00FF7F;
         }
+        .radar-ai-btn {
+            float: right;
+            margin-left: 8px;
+            padding: 4px 12px;
+            background: linear-gradient(135deg, #6c5ce7 0%, #a29bfe 100%);
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+        .radar-ai-btn:hover {
+            opacity: 0.85;
+        }
+        .radar-ai-btn:disabled {
+            opacity: 0.5;
+            cursor: wait;
+        }
+        .radar-ai-btn .spinner {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border: 2px solid #fff;
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-right: 4px;
+            vertical-align: middle;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .radar-ai-panel {
+            margin-top: 12px;
+            padding: 12px;
+            background: rgba(108, 92, 231, 0.08);
+            border-left: 3px solid #6c5ce7;
+            border-radius: 4px;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+        .radar-ai-panel .summary {
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #6c5ce7;
+        }
+        .radar-ai-panel .dim-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 8px;
+            margin: 8px 0;
+        }
+        .radar-ai-panel .dim-item {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 6px 10px;
+            border-radius: 3px;
+        }
+        .radar-ai-panel .advice {
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px dashed rgba(108, 92, 231, 0.3);
+        }
+        .radar-ai-panel .disclaimer {
+            margin-top: 8px;
+            font-size: 11px;
+            opacity: 0.6;
+        }
+        .radar-ai-panel.error {
+            background: rgba(231, 76, 60, 0.08);
+            border-left-color: #e74c3c;
+        }
     </style>
     <style>
-        /* 新手引导覆盖层样式 */
-        .onboarding-overlay {
-            position: fixed;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0, 0, 0, 0.7);
-            backdrop-filter: blur(4px);
-            -webkit-backdrop-filter: blur(4px);
-            z-index: 9999;
-            display: none;
-            justify-content: center;
-            align-items: center;
-        }
-        .onboarding-card {
-            background: #1e293b;
-            border-radius: 12px;
-            padding: 30px;
-            width: 450px;
-            max-width: 90%;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.5);
-            border: 1px solid rgba(255,255,255,0.1);
-            color: #f8fafc;
-            position: relative;
-        }
-        .onboarding-title {
-            font-size: 1.25rem;
-            font-weight: 700;
-            margin-bottom: 20px;
-            text-align: center;
-            color: var(--primary);
-        }
-        .onboarding-step {
-            display: none;
-        }
-        .onboarding-step.active {
-            display: block;
-        }
-        .onboarding-actions {
-            margin-top: 25px;
-            display: flex;
-            justify-content: flex-end;
-            gap: 10px;
-        }
-        .onboarding-btn {
-            padding: 8px 16px;
-            border-radius: 6px;
-            font-size: 0.85rem;
-            cursor: pointer;
-            border: none;
-            transition: all 0.2s;
-        }
-        .onboarding-btn.primary {
-            background: var(--primary);
-            color: #0f172a;
-            font-weight: 600;
-        }
-        .onboarding-btn.primary:hover {
-            background: #00e673;
-        }
-        .onboarding-btn.secondary {
-            background: rgba(255,255,255,0.1);
-            color: #f8fafc;
-        }
-        .onboarding-btn.secondary:hover {
-            background: rgba(255,255,255,0.2);
-        }
-        .onboarding-btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-        .onboarding-close {
-            position: absolute;
-            top: 15px;
-            right: 15px;
-            background: none;
-            border: none;
-            color: #94a3b8;
-            font-size: 1.2rem;
-            cursor: pointer;
-        }
-        .onboarding-close:hover {
-            color: #f8fafc;
-        }
-        .onboarding-desc {
-            font-size: 0.85rem;
-            color: #94a3b8;
-            margin-bottom: 15px;
-            line-height: 1.5;
-        }
         .user-type-selector {
             display: flex;
             gap: 15px;
@@ -1761,6 +1815,11 @@
         }
         .ai-btn-indicator.idle {
             background: #475569;
+        }
+        .ai-btn-text {
+            display: inline-block;
+            white-space: nowrap;
+            line-height: 1;
         }
         .ai-btn-indicator.communicating {
             background: #f59e0b;
@@ -1954,31 +2013,62 @@
             margin-bottom: 0;
         }
 
+        /* ===== settings-form-grid — 单列布局（默认） ===== */
         .settings-form-grid {
-            display: grid;
-            grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-            gap: 14px 16px;
-            align-items: start;
-        }
-
-        .settings-form-row.full-row {
-            grid-column: 1 / -1;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
         }
 
         .settings-form-row.full-row .modal-input {
             max-width: 100%;
         }
 
-        .settings-form-grid .modal-input {
-            max-width: 360px;
+        .settings-form-grid .modal-input,
+        .settings-form-grid input[type="text"],
+        .settings-form-grid input[type="password"],
+        .settings-form-grid input[type="url"],
+        .settings-form-grid select {
+            max-width: 420px;
+            width: 100%;
+            box-sizing: border-box;
+            height: 36px;
+            font-size: 0.85rem;
+            padding: 6px 10px;
         }
+
+        /* ===== API 配置卡片 — 两列流式网格 ===== */
+        #panel-settings .section-card:nth-of-type(2) .settings-form-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-auto-flow: row;
+            gap: 10px 16px;
+            align-items: start;
+        }
+
+        #panel-settings .section-card:nth-of-type(2) .settings-form-grid .settings-form-row {
+            min-width: 0;
+        }
+
+        #panel-settings .section-card:nth-of-type(2) .settings-form-grid .modal-input,
+        #panel-settings .section-card:nth-of-type(2) .settings-form-grid input[type="text"],
+        #panel-settings .section-card:nth-of-type(2) .settings-form-grid input[type="password"],
+        #panel-settings .section-card:nth-of-type(2) .settings-form-grid input[type="url"],
+        #panel-settings .section-card:nth-of-type(2) .settings-form-grid select {
+            max-width: 100%;
+            font-size: 0.85rem;
+            padding: 6px 10px;
+        }
+
+        /* API Key 行 — 内联布局（与测试按钮同行） */
+        /* 已删除 — 改为单列常规布局 */
 
         .settings-action-row {
             display: flex;
-            justify-content: flex-end;
+            justify-content: flex-start !important;
             align-items: center;
             gap: 12px;
-            margin-top: 16px;
+            margin-top: 6px !important;
         }
 
         .settings-action-row .compact-action-btn {
@@ -1994,25 +2084,65 @@
         }
 
         @media (max-width: 720px) {
-            .settings-form-grid {
-                grid-template-columns: 1fr;
-            }
-            .modal-input {
+            .settings-form-grid .modal-input,
+            .settings-form-grid input[type="text"],
+            .settings-form-grid input[type="password"],
+            .settings-form-grid input[type="url"],
+            .settings-form-grid select {
                 max-width: 100%;
             }
             .settings-action-row .compact-action-btn {
                 width: 100%;
             }
+            #panel-settings .section-card:nth-of-type(2) .settings-form-grid {
+                grid-template-columns: 1fr;
+            }
         }
 
+        /* ===== settings-label — 统一间距 ===== */
         .settings-label {
             display: block;
             font-size: 0.8rem;
-            color: #94a3b8;
-            margin-bottom: 6px;
+            font-weight: 500;
+            color: var(--text-secondary, #94a3b8);
+            letter-spacing: 0.01em;
+            margin-bottom: 4px !important;
         }
         .settings-label .required {
             color: #ef4444;
+        }
+
+        /* Radio 选项 label — 行内无间距 */
+        .settings-watch-brand-row label {
+            display: inline-flex !important;
+            align-items: center;
+            gap: 5px;
+            margin-bottom: 0 !important;
+            font-weight: normal;
+            font-size: 0.85rem;
+            cursor: pointer;
+        }
+
+        /* ===== Gateway Token 安全提示 — ::after 伪元素 ===== */
+        .settings-form-row:has(> .modal-input[type="password"]) {
+            position: relative;
+        }
+
+        .settings-form-row:has(> .modal-input[type="password"])::after {
+            content: "🔒 仅保存在本地浏览器，不会上传至任何服务器";
+            display: block;
+            font-size: 0.72rem;
+            color: var(--text-muted, #64748b);
+            margin-top: 3px;
+            opacity: 0.8;
+        }
+
+        /* ===== 模型 fallback 容器 — 防跳动 ===== */
+        #llm-custom-model-container {
+            margin-top: 8px;
+            min-height: 0;
+            overflow: hidden;
+            transition: all 0.2s ease;
         }
     </style>
 </head>
@@ -2158,8 +2288,16 @@
                                     <button class="radar-sport-tab" data-radar-sport="cycling" onclick="switchRadarSportType('cycling', this)">🚴 骑行</button>
                                     <button class="radar-sport-tab" data-radar-sport="swimming" onclick="switchRadarSportType('swimming', this)">🏊 游泳</button>
                                 </span>
+                                <button
+                                    id="radar-ai-insight-btn"
+                                    class="radar-ai-btn"
+                                    onclick="onRadarAiInsight(_currentRadarSportType, this)"
+                                    title="AI 解读当前运动类型 90 天能力画像(阅后即焚)">
+                                    ✨ AI 洞察
+                                </button>
                             </div>
                             <div id="performanceRadar" style="width: 100%; flex: 1; min-height: 180px;"></div>
+                            <div id="radar-ai-insight-panel" class="radar-ai-panel" hidden></div>
                         </div>
                     </div>
 
@@ -2415,12 +2553,9 @@
                 <p>API 密钥、大模型参数、数据存储路径等核心配置项</p>
             </div>
             <div class="panel-body">
-                <div class="section-card">
-                    <div class="section-title settings-section-title">🤖 大模型 API 配置</div>
-                    <div class="settings-form-grid">
-                        <div class="settings-form-row full-row">
-                            <label class="settings-label">手表品牌 <span class="required">*</span></label>
-                            <div class="settings-watch-brand-row">
+                <div class="section-card" id="watch-brand-config-section">
+                    <div class="section-title settings-section-title">⌚ 用户设备</div>
+                    <div class="settings-watch-brand-row">
                                 <label style="display:flex; align-items:center; gap:6px; font-size:0.85rem; color:#f8fafc; cursor:pointer;">
                                     <input type="radio" name="watch_brand" value="garmin" style="accent-color:var(--primary); width:16px; height:16px; margin:0;" onchange="selectUserType('garmin'); syncLLMConfigFromFields()">
                                     我是佳明用户
@@ -2429,8 +2564,11 @@
                                     <input type="radio" name="watch_brand" value="coros" style="accent-color:var(--primary); width:16px; height:16px; margin:0;" onchange="selectUserType('coros'); syncLLMConfigFromFields()">
                                     我是高驰用户
                                 </label>
-                            </div>
-                        </div>
+                    </div>
+                </div>
+                <div class="section-card">
+                    <div class="section-title settings-section-title">🤖 大模型 API 配置</div>
+                    <div class="settings-form-grid">
                         <div class="settings-form-row">
                             <label class="settings-label">服务商 (Provider)</label>
                             <select id="llm-provider" class="modal-input" onchange="updateLLMModels(); syncLLMConfigFromFields();" style="background:rgba(15,23,42,0.8);cursor:pointer;">
@@ -2453,8 +2591,8 @@
                             <input type="text" id="llm-agent-id" class="modal-input" placeholder="网关分配的 ID" autocomplete="off" oninput="syncLLMConfigFromFields()" style="background:rgba(15,23,42,0.8);">
                         </div>
                         <div class="settings-form-row">
-                            <label class="settings-label">API Key</label>
-                            <input type="password" id="llm-api-key" class="modal-input" placeholder="sk-..." autocomplete="off" oninput="syncLLMConfigFromFields()" style="background:rgba(15,23,42,0.8);">
+                            <label class="settings-label">Gateway Token</label>
+                            <input type="password" id="llm-api-key" class="modal-input" placeholder="粘贴 Gateway Token..." autocomplete="off" oninput="syncLLMConfigFromFields()" style="background:rgba(15,23,42,0.8);">
                         </div>
                     </div>
 
@@ -2474,7 +2612,7 @@
                     <div class="settings-action-row">
                         <button id="btn-notify-ai" class="btn-secondary compact-action-btn" onclick="notifyAIAssistant()">
                             <span class="ai-btn-indicator" id="btn-notify-indicator"></span>
-                            🤖 告诉AI助手存储规范
+                            <span class="ai-btn-text">告诉AI助手存储规范</span>
                         </button>
                     </div>
                 </div>
@@ -2579,14 +2717,16 @@
 <input type="file" id="file-upload" accept=".gpx,application/gpx+xml" style="display:none;">
 <div id="toast" style="opacity:0;">提示信息</div>
 
+<!-- 确认对话框（通用） -->
 <div class="blocker-overlay" id="blocker-modal" style="display:none;">
     <div class="blocker-modal-box">
-        <div class="blocker-modal-icon">🔒</div>
-        <div class="blocker-modal-title">配置尚未完成</div>
-        <div class="blocker-modal-desc">请先完成大模型连接测试，并告诉 AI 助手存储规范。</div>
-        <button class="blocker-modal-btn" onclick="closeBlockerModal()">前往配置</button>
+        <div class="blocker-modal-icon">⚠️</div>
+        <div class="blocker-modal-title">确认操作</div>
+        <div class="blocker-modal-desc">确定执行此操作吗？</div>
+        <button class="blocker-modal-btn" onclick="document.getElementById('blocker-modal').style.display='none'">取消</button>
     </div>
 </div>
+
 <div id="track-detected-toast">
     <div class="track-toast-header">
         <div class="track-toast-title">📡 雷达检测到新轨迹落盘！</div>
@@ -2662,7 +2802,6 @@
         currentFileType: null,
         persistenceMode: 'temporary_session',
         currentWeather: null,
-        advancedMetrics: null,
         activityMetrics: null,
         currentRiskAssessment: null,
         riskAssessmentLoading: false,
@@ -2733,6 +2872,20 @@
     let currentLLMConfig = { provider: 'local_mcp', model: 'openclaw', url: LLM_DEFAULT_URL, apiKey: '', agentId: '' };
 
     let _currentRadarSportType = 'running';
+
+    let _radarInsightData = null;
+    let _radarInsightLoading = false;
+
+    // §5.4 规则 6:AI 洞察结果默认只存在前端内存,页面切换/数据切换/重新点击时清空。
+    // 3 触发点共用此函数:① switchTab 末尾 ② switchRadarSportType 末尾 ③ onRadarAiInsight 自然覆盖(P1-4 不需要主动调)。
+    function _clearRadarInsight() {
+        _radarInsightData = null;
+        const panel = document.getElementById('radar-ai-insight-panel');
+        if (panel) {
+            panel.hidden = true;
+            panel.innerHTML = '';
+        }
+    }
 
     let onboardingState = {
         llmTestPassed: false,
@@ -3164,6 +3317,41 @@
     loadTestBypassDailySyncLimit();
     loadTestManualProfileSyncVisible();
 
+    // ===== 测试配置默认折叠 =====
+    (function() {
+        var testCard = document.getElementById('test-config-section');
+        if (!testCard) return;
+
+        var title = testCard.querySelector('.section-title');
+        if (!title) return;
+
+        title.style.cursor = 'pointer';
+        title.setAttribute('title', '点击展开/收起');
+
+        var collapsed = true;
+
+        var body = document.createElement('div');
+        body.className = 'test-config-body';
+        while (title.nextSibling) {
+            body.appendChild(title.nextSibling);
+        }
+        testCard.appendChild(body);
+
+        body.style.display = 'none';
+        title.textContent = '🧪 测试配置 ▸';
+
+        title.addEventListener('click', function() {
+            collapsed = !collapsed;
+            if (collapsed) {
+                body.style.display = 'none';
+                title.textContent = '🧪 测试配置 ▸';
+            } else {
+                body.style.display = '';
+                title.textContent = '🧪 测试配置 ▾';
+            }
+        });
+    })();
+
     window.onProfileSyncEvent = async function(eventName, payload) {
         updateProfileSyncMeta(payload || {});
         if (eventName === 'profile_sync_complete' && payload && payload.ok && payload.profile) {
@@ -3229,42 +3417,6 @@
         toast.innerText = msg; toast.style.opacity = '1';
         if (toastTimeout) clearTimeout(toastTimeout);
         toastTimeout = setTimeout(() => { toast.style.opacity = '0'; }, 3500);
-    }
-
-    function showBlockerModal() {
-        const modal = document.getElementById('blocker-modal');
-        resetBlockerModalContent();
-        if (modal) modal.style.display = 'flex';
-    }
-
-    function closeBlockerModal() {
-        const modal = document.getElementById('blocker-modal');
-        if (modal) modal.style.display = 'none';
-    }
-
-    function resetBlockerModalContent() {
-        const modal = document.getElementById('blocker-modal');
-        if (!modal) return;
-        const iconEl = modal.querySelector('.blocker-modal-icon');
-        const titleEl = modal.querySelector('.blocker-modal-title');
-        const descEl = modal.querySelector('.blocker-modal-desc');
-        const btnEl = modal.querySelector('.blocker-modal-btn');
-        if (iconEl) iconEl.innerText = '🔒';
-        if (titleEl) titleEl.innerText = '配置尚未完成';
-        if (descEl) {
-            if (!onboardingState.llmTestPassed) {
-                descEl.innerText = '请先在配置页完成大模型连接测试。';
-            } else if (!onboardingState.aiNotified) {
-                descEl.innerText = '大模型连接已完成，请继续点击“告诉AI助手存储规范”。';
-            } else {
-                descEl.innerText = '配置已完成，可以继续使用个人运动数据和轨迹分析工具。';
-            }
-        }
-        if (btnEl) {
-            btnEl.innerText = '前往配置';
-            btnEl.disabled = false;
-            btnEl.onclick = closeBlockerModal;
-        }
     }
 
     function hideTrackDetectedToast() {
@@ -4091,9 +4243,9 @@
         } else {
             tbody.innerHTML = pageItems.map((item) => {
                 const hrDisplay = (item.avg_hr || item.max_hr) ? `${item.avg_hr || '--'} / ${item.max_hr || '--'} bpm` : '/';
-                const npDisplay = item.normalized_power != null && item.normalized_power !== '' ? `${item.normalized_power} W` : '/';
+                const npDisplay = item.normalized_power_display || '/';
                 const npCol = showNp ? `<td>${npDisplay}</td>` : '';
-                const gainCol = showGain ? `<td>${item.gain_m != null ? item.gain_m + ' m' : '/'}</td>` : '';
+                const gainCol = showGain ? `<td>${item.gain_display || '/'}</td>` : '';
                 const swolfCol = showSwolf ? `<td>${item.swolf != null ? item.swolf : '/'}${item.swolf_subtitle ? '<br><small>' + item.swolf_subtitle + '</small>' : ''}</td>` : '';
                 return `
                 <tr onclick="openActivityDetailModal(${item.id})">
@@ -4207,8 +4359,7 @@
                     const res = await window.pywebview.api.delete_activities(ids, confirmToken);
                     if (!res || !res.ok) throw new Error((res && res.error) || '删除失败');
                     sportHubState.selectedIds.clear();
-                    resetBlockerModalContent();
-                    closeBlockerModal();
+                    document.getElementById('blocker-modal').style.display = 'none';
                     await loadSportHubActivityList({ resetPage: true, refreshSnapshot: true });
                     let msg = `已删除 ${res.deleted} 条运动记录`;
                     if (typeof res.files_deleted === 'number') {
@@ -4224,8 +4375,7 @@
                     }
                     showToast(msg);
                 } catch (e) {
-                    resetBlockerModalContent();
-                    closeBlockerModal();
+                    document.getElementById('blocker-modal').style.display = 'none';
                     showToast('删除失败：' + ((e && e.message) || e));
                 }
             };
@@ -5769,13 +5919,6 @@
         return true;
     }
 
-    async function openLLMConfig() {
-        await refreshSettingsPanel();
-
-        document.getElementById('modal-overlay').style.display = 'block';
-        document.getElementById('llm-config-modal').style.display = 'block';
-    }
-
     async function testLLMConfig() {
         syncLLMConfigFromFields();
         const provider = currentLLMConfig.provider || 'local_mcp';
@@ -5807,6 +5950,7 @@
                     headers['X-Agent-ID'] = agentId;
                     headers['X-Agent-Id'] = agentId;
                 }
+                const testSessionId = 'llm_config_test_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
                 const body = {
                     model: model,
                     messages: [
@@ -5815,9 +5959,9 @@
                     ],
                     temperature: 0,
                     stream: false,
-                    session_id: 'llm_config_test',
-                    chat_id: 'llm_config_test',
-                    user: 'llm_config_test'
+                    session_id: testSessionId,
+                    chat_id: testSessionId,
+                    user: testSessionId
                 };
                 if (agentId) {
                     body.agent_id = agentId;
@@ -5857,7 +6001,6 @@
     function closeModals() {
         document.getElementById('modal-overlay').style.display = 'none';
         document.getElementById('edit-modal').style.display = 'none';
-        document.getElementById('llm-config-modal').style.display = 'none';
     }
 
     // Modal forms
@@ -7174,7 +7317,6 @@
         }
         resetRiskAssessmentState();
         setCurrentWeather(data.weather || null);
-        appState.advancedMetrics = data.advanced_metrics || null;
         appState.points = data.points;
         appState.placemarks = (data.placemarks || []).map(function(pm) { return normalizePlacemark(pm, appState.persistenceMode === 'canonical_activity' ? 'user' : 'gpx_wpt'); });
         appState.progress = 100; document.getElementById('progress-slider').value = 100; document.getElementById('progress-val').innerText = '100.0%';
@@ -7649,201 +7791,6 @@
     }
     document.getElementById('map-compass-btn')?.addEventListener('click', resetMapNorth);
 
-    // ===== 新手引导逻辑 =====
-    const Onboarding = {
-        init() {
-            const isFirstTime = !localStorage.getItem('onboarding_completed');
-            
-            if (isFirstTime) {
-                // 默认切换到配置面板
-                setTimeout(() => {
-                    const btn = document.querySelector('.bookmark-tab[data-panel="settings"]');
-                    if (btn) switchTab(btn);
-                    this.show();
-                }, 500);
-            }
-        },
-
-        show() {
-            let overlay = document.getElementById('onboarding-overlay');
-            if (!overlay) {
-                overlay = document.createElement('div');
-                overlay.id = 'onboarding-overlay';
-                overlay.className = 'onboarding-overlay';
-                
-                // 获取当前本地路径，用于第二步显示
-                const currentLocalDir = getFitTracksDir();
-                
-                overlay.innerHTML = `
-                    <div class="onboarding-card">
-                        <button class="onboarding-close" onclick="Onboarding.close()">×</button>
-                        
-                        <!-- 步骤1: 大模型配置 -->
-                        <div class="onboarding-step active" id="step-1">
-                            <div class="onboarding-title">👋 欢迎使用 AI 运动分析仪</div>
-                            <div class="onboarding-desc">
-                                欢迎使用 AI 运动分析仪！<br><br>
-                                首次使用需要进行一些初始化配置。点击「下一步」将进入配置流程。
-                            </div>
-                            <div class="onboarding-actions">
-                                <button class="onboarding-btn primary" onclick="Onboarding.verifyStep1()">下一步</button>
-                            </div>
-                        </div>
-
-                        <!-- 步骤2: 存储配置 -->
-                        <div class="onboarding-step" id="step-2">
-                            <div class="onboarding-title">📁 存储目录说明</div>
-                            <div class="onboarding-desc">
-                                系统已在本地自动创建 FIT 文件存储目录，您只需点击「下一步」确认即可。<br><br>
-                                存储路径：<br>
-                                <b style="color:var(--primary); word-break:break-all;">${currentLocalDir}</b>
-                            </div>
-                            <div class="onboarding-actions">
-                                <button class="onboarding-btn secondary" onclick="Onboarding.prevStep(1)">上一步</button>
-                                <button class="onboarding-btn primary" onclick="Onboarding.verifyStep2()">已选择，下一步</button>
-                            </div>
-                        </div>
-
-                        <!-- 步骤3: 身份选择与 AI 助手通知 -->
-                        <div class="onboarding-step" id="step-3">
-                            <div class="onboarding-title">⌚ 选择设备并告诉 AI</div>
-                            <div class="onboarding-desc">
-                                请选择您的运动手表品牌。这决定了 AI 助手如何为您处理下载的文件。
-                            </div>
-                            
-                            <div class="user-type-selector">
-                                <div class="user-type-option" id="onboard-type-garmin" onclick="Onboarding.selectType('garmin')">
-                                    <div style="font-size:1.5rem;margin-bottom:5px;">🔵</div>
-                                    <div>佳明用户</div>
-                                </div>
-                                <div class="user-type-option" id="onboard-type-coros" onclick="Onboarding.selectType('coros')">
-                                    <div style="font-size:1.5rem;margin-bottom:5px;">⚪</div>
-                                    <div>高驰用户</div>
-                                </div>
-                            </div>
-                            
-                            <div id="onboard-ai-notify" style="text-align:center; margin-bottom:15px; display:none;">
-                                <button id="onboard-notify-btn" class="ai-assistant-btn" style="margin:0; padding:10px 20px;" onclick="Onboarding.notifyAI()">
-                                    🤖 告诉AI助手存储规范
-                                </button>
-                                <div id="onboard-notify-status" style="font-size:0.75rem; color:var(--primary); margin-top:8px; display:none;">
-                                    ✅ 已成功通知 AI 助手！
-                                </div>
-                            </div>
-
-                            <div class="onboarding-actions">
-                                <button class="onboarding-btn secondary" onclick="Onboarding.prevStep(2)">上一步</button>
-                                <button class="onboarding-btn primary" id="onboard-finish-btn" onclick="Onboarding.finish()" disabled>完成配置</button>
-                            </div>
-                        </div>
-                    </div>
-                `;
-                document.body.appendChild(overlay);
-            }
-            overlay.style.display = 'flex';
-        },
-
-        close() {
-            const overlay = document.getElementById('onboarding-overlay');
-            if (overlay) overlay.style.display = 'none';
-        },
-
-        verifyStep1() {
-            this.close();
-            const settingsTabBtn = document.querySelector('.bookmark-tab[data-panel="settings"]');
-            if (settingsTabBtn) switchTab(settingsTabBtn);
-            onboardingState.currentConfigStep = 1;
-        },
-
-        verifyStep2() {
-            this.nextStep(3);
-        },
-
-        nextStep(step) {
-            document.querySelectorAll('.onboarding-step').forEach(el => el.classList.remove('active'));
-            document.getElementById(`step-${step}`).classList.add('active');
-        },
-
-        prevStep(step) {
-            document.querySelectorAll('.onboarding-step').forEach(el => el.classList.remove('active'));
-            document.getElementById(`step-${step}`).classList.add('active');
-        },
-
-        selectType(type) {
-            this.selectedType = type;
-            document.getElementById('onboard-type-garmin').classList.toggle('active', type === 'garmin');
-            document.getElementById('onboard-type-coros').classList.toggle('active', type === 'coros');
-            
-            // 同步更新底层界面的选择
-            const radios = document.getElementsByName('watch_brand');
-            for (let i = 0; i < radios.length; i++) {
-                if (radios[i].value === type) {
-                    radios[i].checked = true;
-                    break;
-                }
-            }
-            
-            // 更新底部界面的按钮状态
-            selectUserType(type);
-
-            const notifyDiv = document.getElementById('onboard-ai-notify');
-            const notifyBtn = document.getElementById('onboard-notify-btn');
-            const finishBtn = document.getElementById('onboard-finish-btn');
-            const statusDiv = document.getElementById('onboard-notify-status');
-            
-            notifyDiv.style.display = 'block';
-            statusDiv.style.display = 'none';
-            notifyBtn.innerText = '🤖 告诉AI助手存储规范';
-            notifyBtn.disabled = false;
-            
-            if (type === 'coros') {
-                notifyBtn.disabled = true;
-                notifyBtn.style.opacity = '0.5';
-                notifyBtn.innerText = '高驰用户无需通知AI助手';
-                finishBtn.disabled = false; // 高驰直接可以完成
-            } else {
-                notifyBtn.style.opacity = '1';
-                finishBtn.disabled = true; // 佳明必须先点通知
-            }
-        },
-
-        async notifyAI() {
-            if (this.selectedType !== 'garmin') return;
-            
-            const btn = document.getElementById('onboard-notify-btn');
-            const statusDiv = document.getElementById('onboard-notify-status');
-            const finishBtn = document.getElementById('onboard-finish-btn');
-            
-            btn.innerText = '⏳ 正在通知...';
-            btn.disabled = true;
-            
-            _validateNotPreview(appState.activityMetrics, 'AI助手通知');
-            await notifyAIAssistant();
-            
-            if (onboardingState.aiNotified) {
-                statusDiv.style.display = 'block';
-                btn.innerText = '✅ 通知成功';
-                btn.classList.add('notified');
-                finishBtn.disabled = false;
-            } else {
-                btn.innerText = '🤖 重新通知AI助手';
-                btn.disabled = false;
-                showToast('通知失败，请重试');
-            }
-        },
-
-        finish() {
-            localStorage.setItem('onboarding_completed', 'true');
-            this.close();
-            showToast('🎉 配置完成！欢迎使用。');
-            
-            // 引导完成后自动切到个人数据页
-            const btn = document.querySelector('.bookmark-tab[data-panel="profile"]');
-            if (btn) switchTab(btn);
-        }
-    };
-    window.Onboarding = Onboarding;
-
     // 原有的逻辑扩展
     function selectUserType(type) {
         // 更新底层 UI
@@ -7866,24 +7813,6 @@
         updateSyncButtonsVisibility();
     }
 </script>
-
-<!-- ===== FIT Vault 首次运行配置引导层 ===== -->
-<div id="first-run-overlay" class="hidden fixed inset-0 bg-slate-950/95 z-[9999] flex items-center justify-center backdrop-blur-sm">
-    <div class="w-[460px] bg-slate-900 border border-slate-700 rounded-2xl p-7 shadow-2xl">
-        <h3 class="text-lg font-bold text-sky-400 mb-2">✨ 欢迎来到脉图 FIT Vault</h3>
-        <p class="text-xs text-slate-400 leading-relaxed mb-5">为了激活本地 AI 运动教练，请先完成大模型网关连接。系统已自动创建加密运动资产目录，无需手动选择 FIT 文件路径。</p>
-        <div class="space-y-3.5">
-            <div><label class="block text-slate-400 text-[11px] mb-1">模型供应商</label><input type="text" id="modal-provider" value="openai" class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-200 text-xs"></div>
-            <div><label class="block text-slate-400 text-[11px] mb-1">API URL</label><input type="text" id="modal-url" value="http://127.0.0.1:28789/v1" class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-200 text-xs"></div>
-            <div><label class="block text-slate-400 text-[11px] mb-1">模型名称</label><input type="text" id="modal-model" value="gpt-4o" class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-200 text-xs"></div>
-            <div><label class="block text-slate-400 text-[11px] mb-1">API Key</label><input type="password" id="modal-key" placeholder="sk-..." class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-200 text-xs"></div>
-        </div>
-        <div class="mt-6">
-            <button id="modal-submit-btn" onclick="submitModalConfig()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs py-2.5 rounded-xl">⚡ 验证测试并开启脉图</button>
-            <span id="modal-status" class="block text-[11px] mt-2.5 text-center"></span>
-        </div>
-    </div>
-</div>
 
 <!-- ===== FIT Vault 网关失联轻提示浮条 ===== -->
 <div id="gateway-warning-bar" class="hidden w-full bg-amber-500/10 border-b border-amber-500/20 px-4 py-2 text-center transition-all duration-300">
@@ -7912,7 +7841,20 @@ function hideBootLoading() {
     else { window.addEventListener('load', _watchdogClear); }
 })();
 
-const BTN_AI_TEXT_IDLE = '🤖 告诉AI助手存储规范';
+const BTN_AI_TEXT_IDLE = '告诉AI助手存储规范';
+
+function updateBtnText(btnId, text) {
+    const btn = document.getElementById(btnId);
+    if (!btn) return;
+
+    const textEl = btn.querySelector('.ai-btn-text');
+    if (textEl) {
+        textEl.textContent = text;
+        return;
+    }
+
+    btn.textContent = text;
+}
 
 function setNotifyIndicator(state) {
     const ind = document.getElementById('btn-notify-indicator');
@@ -7926,7 +7868,7 @@ function resetDirectoryValidationState() {
     setNotifyIndicator('idle');
     const btn = document.getElementById('btn-notify-ai');
     if (btn) {
-        btn.innerText = BTN_AI_TEXT_IDLE;
+        updateBtnText('btn-notify-ai', BTN_AI_TEXT_IDLE);
         btn.classList.remove('notified');
         btn.disabled = true;
     }
@@ -7947,23 +7889,23 @@ function setAIStorageNotifyButtonState(state) {
     const ind = document.getElementById('btn-notify-indicator');
     switch (state) {
         case 'idle':
-            if (btn) { btn.innerText = BTN_AI_TEXT_IDLE; btn.disabled = true; btn.classList.remove('notified'); }
+            if (btn) { updateBtnText('btn-notify-ai', BTN_AI_TEXT_IDLE); btn.disabled = true; btn.classList.remove('notified'); }
             if (ind) ind.className = 'ai-btn-indicator idle';
             break;
         case 'enabled':
-            if (btn) { btn.innerText = BTN_AI_TEXT_IDLE; btn.disabled = false; btn.classList.remove('notified'); }
+            if (btn) { updateBtnText('btn-notify-ai', BTN_AI_TEXT_IDLE); btn.disabled = false; btn.classList.remove('notified'); }
             if (ind) ind.className = 'ai-btn-indicator idle';
             break;
         case 'syncing':
-            if (btn) { btn.innerText = '存储规范同步中...'; btn.disabled = true; }
+            if (btn) { updateBtnText('btn-notify-ai', '存储规范同步中...'); btn.disabled = true; }
             if (ind) ind.className = 'ai-btn-indicator communicating';
             break;
         case 'success':
-            if (btn) { btn.innerText = '✅存储目录有效'; btn.disabled = true; btn.classList.add('notified'); }
+            if (btn) { updateBtnText('btn-notify-ai', '✅存储目录有效'); btn.disabled = true; btn.classList.add('notified'); }
             if (ind) ind.className = 'ai-btn-indicator success';
             break;
         case 'failed':
-            if (btn) { btn.innerText = BTN_AI_TEXT_IDLE; btn.disabled = false; btn.classList.remove('notified'); }
+            if (btn) { updateBtnText('btn-notify-ai', BTN_AI_TEXT_IDLE); btn.disabled = false; btn.classList.remove('notified'); }
             if (ind) ind.className = 'ai-btn-indicator failed';
             break;
     }
@@ -8142,52 +8084,6 @@ function runSilentGatewayValidation() {
             }
         });
     }).catch(function () { clearTimeout(timer); });
-}
-
-async function submitModalConfig() {
-    var provider = document.getElementById('modal-provider').value.trim();
-    var url = document.getElementById('modal-url').value.trim();
-    var model = document.getElementById('modal-model').value.trim();
-    var apiKey = document.getElementById('modal-key').value.trim();
-    var statusSpan = document.getElementById('modal-status');
-    var submitBtn = document.getElementById('modal-submit-btn');
-    if (!apiKey) {
-        statusSpan.style.color = '#f87171';
-        statusSpan.innerText = '❌ 请填写 API Key';
-        return;
-    }
-    submitBtn.disabled = true;
-    submitBtn.innerText = '🔄 正在验证网关...';
-    var timedOut = false;
-    var timer = setTimeout(function () {
-        timedOut = true;
-        submitBtn.disabled = false;
-        submitBtn.innerText = '⚡ 验证测试并开启脉图';
-        statusSpan.style.color = '#f87171';
-        statusSpan.innerText = '❌ 连接超时，请检查 API URL 和网络';
-    }, 15000);
-    try {
-        var res = await pywebview.api.test_llm_config(provider, url, model, apiKey, '');
-        clearTimeout(timer);
-        if (timedOut) return;
-        if (res.ok) {
-            statusSpan.style.color = '#34d399';
-            statusSpan.innerText = '🎉 网关连接成功，正在启动系统...';
-            setTimeout(function () {
-                document.getElementById('first-run-overlay').classList.add('hidden');
-                location.reload();
-            }, 1200);
-        } else {
-            throw new Error(res.error || '未知错误');
-        }
-    } catch (err) {
-        clearTimeout(timer);
-        if (timedOut) return;
-        submitBtn.disabled = false;
-        submitBtn.innerText = '⚡ 验证测试并开启脉图';
-        statusSpan.style.color = '#f87171';
-        statusSpan.innerText = '❌ ' + (err.message || err);
-    }
 }
 
 function openConfigModalFromWarning() {

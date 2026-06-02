@@ -5,6 +5,13 @@ from collections import deque
 logger = logging.getLogger(__name__)
 
 
+_CYCLING_SPORT_TYPES: frozenset[str] = frozenset({
+    "cycling",
+    "road_cycling",
+    "mountain_biking",
+})
+
+
 class AdvancedMetricsCalc:
 
     # =========================================================
@@ -69,26 +76,7 @@ class AdvancedMetricsCalc:
         return round(trimp_total, 1)
 
     # =========================================================
-    # 2. HRV 恢复评分
-    # =========================================================
-
-    @staticmethod
-    def score_hrv_efficiency(current_hrv, baseline_hrv):
-        if not AdvancedMetricsCalc._is_valid_number(current_hrv) or current_hrv <= 0:
-            return None
-        if not AdvancedMetricsCalc._is_valid_number(baseline_hrv) or baseline_hrv <= 0:
-            return None
-        ratio = current_hrv / baseline_hrv
-        if 0.9 <= ratio <= 1.2:
-            return 90.0
-        elif ratio > 1.2:
-            return 98.0
-        else:
-            score = (90.0 - (1.0 - ratio) * 100)
-            return round(max(20.0, score), 1)
-
-    # =========================================================
-    # 3. Aerobic Decoupling (Pa:Hr)
+    # 2. Aerobic Decoupling (Pa:Hr)
     # =========================================================
 
     @staticmethod
@@ -322,7 +310,7 @@ class RadarScoreEngine:
     def score_anaerobic(peak_speed, sport_type="running"):
         if not peak_speed:
             return 0
-        if "cycling" in sport_type:
+        if sport_type in _CYCLING_SPORT_TYPES:
             if peak_speed < 8:
                 return 20
             if peak_speed < 12:

@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
 import os
 import random
@@ -29,6 +30,9 @@ else:
 DB_PATH = _BASE / "user_profile.db"
 TRACKS_DIR = _BASE / "workspace" / "tracks"
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+logger = logging.getLogger(__name__)
+
 SQLITE_POOL_SIZE = 6
 SQLITE_POOL_ACQUIRE_TIMEOUT_SEC = 10.0
 SQLITE_BUSY_TIMEOUT_MS = 15000
@@ -2105,10 +2109,39 @@ def fetch_mcp_persona(platform: str, trigger_type: str = "manual", check_connect
             return {"ok": False, "error": conn.get("message") or "Garmin 连接未配置"}
 
     state = read_sync_state()
+    logger.info("[MCP] fetch_mcp_persona: 检查 active_job_id=%s connection_status=%s last_attempt_status=%s",
+                state.get("active_job_id"), state.get("connection_status"), state.get("last_attempt_status"))
     if state.get("active_job_id"):
-        return {"ok": False, "error": "正在同步中"}
+        last_attempt_at = state.get("last_attempt_at")
+        stale = False
+        if not last_attempt_at:
+            stale = True
+        else:
+            try:
+                last_at = datetime.fromisoformat(str(last_attempt_at).replace("Z", "+00:00"))
+                age = datetime.now(last_at.tzinfo) - last_at
+                if age > timedelta(minutes=5):
+                    stale = True
+            except (ValueError, TypeError):
+                stale = True
+        if stale:
+            logger.warning(
+                "[MCP] active_job_id=%s 状态已陈旧（last_attempt_at=%s），自动清理并接管",
+                state.get("active_job_id"), last_attempt_at,
+            )
+            state["active_job_id"] = None
+            state["last_attempt_status"] = "stale_cleared"
+            state["last_error"] = "前次同步超过 5 分钟未结束，已自动清理"
+            write_sync_state(state)
+        else:
+            logger.warning("[MCP] fetch_mcp_persona: 存在残留 active_job_id=%s，直接 return 正在同步中", state.get("active_job_id"))
+            return {"ok": False, "error": "正在同步中"}
 
     job_id = os.urandom(8).hex()
+    logger.info(
+        "[MCP] fetch_mcp_persona 启动: platform=%s trigger=%s check_connection=%s job_id=%s",
+        platform, trigger_type, check_connection, job_id,
+    )
     state.update({
         "active_job_id": job_id,
         "last_attempt_at": datetime.now().isoformat(),
@@ -2187,7 +2220,7 @@ def fetch_mcp_persona(platform: str, trigger_type: str = "manual", check_connect
             api_key=api_key,
             model=model,
             messages=messages,
-            session_id="mcp_persona_" + platform,
+            session_id=f"mcp_persona_{platform}_{job_id}",
             timeout=300,
         )
 
@@ -2279,13 +2312,16 @@ def fetch_mcp_persona(platform: str, trigger_type: str = "manual", check_connect
         upsert_profile(profile_data)
         _insert_profile_snapshot(platform, trigger_type, parsed_json, profile_data)
         mark_sync_done()
+        logger.info("[MCP] %s 画像同步成功: job_id=%s", platform, job_id)
         return {"ok": True, "persona": profile_data}
 
     except json.JSONDecodeError as e:
         error = f"JSON 解析失败: {e}\n原始返回: {text[:500] if 'text' in dir() else 'N/A'}"
+        logger.error("[MCP] %s JSON 解析失败: job_id=%s err=%s", platform, job_id, error[:800])
         mark_profile_sync_failed(error)
         return {"ok": False, "error": error}
     except Exception as e:
         error = f"MCP 同步失败: {e}"
+        logger.exception("[MCP] %s 同步异常: job_id=%s", platform, job_id)
         mark_profile_sync_failed(error)
         return {"ok": False, "error": error}

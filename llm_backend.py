@@ -7,12 +7,17 @@ from __future__ import annotations
 
 import io
 import json
+import logging
 import math
+import secrets
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
 import requests
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_URL = "http://localhost:3000/v1/chat/completions"
 DEFAULT_MODEL = "openclaw"
@@ -102,6 +107,7 @@ def test_llm_connection(
         raise RuntimeError("接口地址为空")
     if not str(model or "").strip():
         raise RuntimeError("模型名为空")
+    test_session_id = f"llm_config_test_{int(time.time() * 1000)}_{secrets.token_hex(3)}"
     text = chat_completions(
         url=str(url).strip(),
         api_key=api_key or "",
@@ -110,7 +116,7 @@ def test_llm_connection(
             {"role": "system", "content": "你只需要用中文回复：连接成功。"},
             {"role": "user", "content": "请回复连接成功"},
         ],
-        session_id="llm_config_test",
+        session_id=test_session_id,
         agent_id=agent_id or "",
         timeout=30,
     )
@@ -349,9 +355,24 @@ def chat_completions(
     if agent_id and str(agent_id).strip():
         body["agent_id"] = str(agent_id).strip()
         body["agentId"] = str(agent_id).strip()
+    logger.info(
+        "[LLM] → 发送请求 url=%s model=%s session_id=%s messages=%d条 timeout=%ds",
+        url, model, session_id, len(messages or []), timeout,
+    )
+    if messages:
+        roles = [str(m.get("role", "?")) for m in messages]
+        first_user = next((str(m.get("content", ""))[:120] for m in messages if m.get("role") == "user"), "")
+        logger.info("[LLM] → roles=%s first_user=%r", roles, first_user)
     try:
+        t0 = time.time()
         r = requests.post(url, headers=headers, json=body, timeout=timeout)
+        elapsed = time.time() - t0
+        logger.info(
+            "[LLM] ← 响应 status=%d elapsed=%.1fs url=%s session_id=%s",
+            r.status_code, elapsed, url, session_id,
+        )
     except requests.RequestException as e:
+        logger.exception("[LLM] × 网络异常 url=%s session_id=%s err=%s", url, session_id, e)
         raise RuntimeError(f"网络请求失败: {e}") from e
 
     if not r.ok:
@@ -361,6 +382,10 @@ def chat_completions(
             err = err_obj.get("message") or json.dumps(err_obj, ensure_ascii=False)[:800]
         except Exception:
             err = (r.text or "")[:800]
+        logger.warning(
+            "[LLM] × 非 2xx 响应 status=%d session_id=%s err=%s",
+            r.status_code, session_id, err[:400],
+        )
         if r.status_code == 401:
             raise RuntimeError(f"认证失败 (401): API Key 无效或未填写。{err}")
         if r.status_code == 502:
@@ -370,15 +395,22 @@ def chat_completions(
     try:
         data = r.json()
     except json.JSONDecodeError as e:
+        logger.error("[LLM] × 响应不是合法 JSON session_id=%s body[:400]=%s", session_id, (r.text or "")[:400])
         raise RuntimeError("响应不是合法 JSON") from e
 
     choices = data.get("choices") or []
     if not choices:
+        logger.error("[LLM] × 响应无 choices session_id=%s body=%s", session_id, json.dumps(data, ensure_ascii=False)[:600])
         raise RuntimeError("响应中无 choices 字段")
     msg = choices[0].get("message") or {}
     content = msg.get("content")
     if not content:
+        logger.error("[LLM] × 模型未返回内容 session_id=%s msg=%s", session_id, json.dumps(msg, ensure_ascii=False)[:600])
         raise RuntimeError("模型未返回内容")
+    logger.info(
+        "[LLM] ← 内容长度=%d session_id=%s 前120字=%r",
+        len(content or ""), session_id, (content or "")[:120],
+    )
     return str(content)
 
 
@@ -649,6 +681,243 @@ def _build_insight_system_prompt(
 
 def _build_insight_user_prompt() -> str:
     return "请根据系统指令中提供的运动数据，生成结构化 JSON 分析报告。不要输出 markdown 标记，只输出纯 JSON。"
+
+
+RADAR_DIMENSION_INTERPRETATION: dict[str, str] = {
+    "endurance": "耐力:基于 Banister TRIMP + 42 天 PMC 长期负荷(CTL)。TRIMP<30→20 分,30~80→50 分,80~150→75 分,≥150→95 分。CTL 反映长期训练负荷累积。",
+    "recovery": "恢复:直接消费 user_profile.hrv_baseline(来自 Garmin Connect / MCP 画像同步),clamp 到 [0, 100]。fallback = 60。",
+    "stability": "心肺稳定:基于有氧解耦 Pa:Hr 90 天最近 5 次均值。decoupling<5%→95 分,5~10%→75 分,10~15%→55 分,≥15%→30 分。",
+    "threshold": "阈值:基于乳酸阈值心率(20 分钟滑动窗口 × 0.95)90 天最大值。threshold_hr/max_hr <0.75→40 分,0.75~0.82→65 分,0.82~0.88→82 分,≥0.88→95 分。",
+    "climbing": "爬升:基于 VAM(平均爬升速度 = total_ascent/climb_time × 3600 m/h)90 天最大值。VAM<300→20 分,300~600→50 分,600~900→75 分,≥900→95 分。",
+    "anaerobic": "无氧爆发:基于 30 秒滑动窗口峰值速度 90 天最大值。跑步<3 m/s→20 分,3~5→50 分,5~7→75 分,≥7→95 分;骑行<8→20 分,8~12→50 分,12~16→75 分,≥16→95 分。",
+}
+
+RADAR_INSIGHT_OUTPUT_SCHEMA = """{
+  "summary": "80 字以内的中文总结,概述该运动类型的整体能力画像与亮点短板",
+  "sport_type": "running|trail_running|hiking|cycling|swimming",
+  "sport_mode": "running|cycling|swimming|general",
+  "dimension_interpretation": [
+    {
+      "key": "endurance|recovery|stability|threshold|climbing|anaerobic",
+      "label": "中文维度名(耐力/恢复/心肺稳定/阈值/爬升/无氧爆发)",
+      "score": 0-100 整数,
+      "comment": "30-60 字解读:该维度当前水平的具体含义,以及提升建议方向"
+    }
+  ],
+  "strongest_dim": "得分最高维度的 key",
+  "weakest_dim": "得分最低维度的 key",
+  "balance_assessment": "well_balanced|slightly_imbalanced|imbalanced — 6 维度间离散度",
+  "load_status": {
+    "ctl": 数字,
+    "atl": 数字,
+    "tsb": 数字,
+    "status": "fresh|optimal|stressed|overreaching — 综合 TSB 解读"
+  },
+  "training_advice": "针对最弱维度的具体训练建议,120 字以内",
+  "long_term_trend": "improving|stable|declining — 90 天能力趋势(基于 CTL 走向)",
+  "disclaimer": "AI 生成仅供参考,具体训练请结合个人实际"
+}"""
+
+
+def _build_radar_insight_snapshot_payload(snapshot: dict[str, Any] | None) -> str:
+    """将 radar insight snapshot 序列化为 system prompt 可嵌入的 JSON 字符串。
+    §5.4 规则 3:仅暴露后端权威字段,严禁前端计算值或 DOM 推导值。
+    """
+    if not snapshot:
+        return "{}"
+    return json.dumps(
+        snapshot,
+        ensure_ascii=False,
+        indent=2,
+        default=str,
+    )
+
+
+def build_radar_insight_system_prompt(
+    snapshot: dict[str, Any] | None,
+    sport_type: str,
+) -> str:
+    """雷达图 AI 洞察 system prompt 构建器。"""
+    payload = _build_radar_insight_snapshot_payload(snapshot)
+
+    sport_cn_map = {
+        "running": "跑步",
+        "trail_running": "越野跑",
+        "treadmill_running": "跑步机",
+        "hiking": "徒步",
+        "mountaineering": "登山",
+        "cycling": "骑行",
+        "road_cycling": "公路骑行",
+        "mountain_biking": "山地骑行",
+        "swimming": "游泳",
+        "lap_swimming": "泳池游泳",
+        "open_water": "公开水域",
+    }
+    sport_cn = sport_cn_map.get(sport_type, sport_type or "运动")
+
+    mode = _insight_mode_sport(sport_type)
+
+    return f"""你是一位资深运动表现分析师与训练科学专家,专长于{sport_cn}长期能力画像分析。
+
+【数据边界 — DATA BOUNDARY(不可逾越)】
+以下数据由脉图系统从 SQLite canonical DB / 雷达后端引擎 / 用户画像 Resolver 预计算,**绝对权威**。你只允许解释(interpret),禁止任何形式的重新推导、估算、推断。
+
+【当前功能区权威快照 — 90 天滚动聚合】
+```json
+{payload}
+```
+
+【6 维度评分含义解读(供你理解为何得此分)】
+- {RADAR_DIMENSION_INTERPRETATION['endurance']}
+- {RADAR_DIMENSION_INTERPRETATION['recovery']}
+- {RADAR_DIMENSION_INTERPRETATION['stability']}
+- {RADAR_DIMENSION_INTERPRETATION['threshold']}
+- {RADAR_DIMENSION_INTERPRETATION['climbing']}
+- {RADAR_DIMENSION_INTERPRETATION['anaerobic']}
+
+【运动专项约束(基于 {mode} 模式)】
+- 若 sport_mode == "running":重点解读配速相关维度(endurance / stability),爬升因人而异
+- 若 sport_mode == "cycling":重点解读功率与心率漂移(stability / threshold),爬升由 VAM 体现
+- 若 sport_mode == "swimming":重点解读耐力持续性(endurance / threshold),爬升维度不适用(N/A)
+- 若 sport_mode == "general":均衡解读 6 维度
+
+【必须输出维度】
+dimension_interpretation 数组必须严格包含该运动类型 schema 中的所有维度(参考现有雷达图 RADAR_SCHEMAS):
+- running: endurance, recovery, stability, threshold, climbing, anaerobic(6 个)
+- trail_running: endurance, recovery, stability, climbing, anaerobic(5 个,无 threshold)
+- cycling: endurance, recovery, stability, threshold, climbing, anaerobic(6 个)
+- hiking: endurance, recovery, climbing(3 个)
+- swimming: endurance, recovery, threshold(3 个)
+
+【强行约束 — 绝对禁止行为】
+你 MUST NOT:
+- 重新计算距离、时间、配速、心率、爬升
+- 还原或推断 per-point 数据
+- 重新计算 TRIMP / VAM / threshold_hr / decoupling / anaerobic_peak
+- 重新计算 CTL / ATL / TSB
+- 使用前端 DOM 推导值或 UI fallback 值
+- 使用 shadow_diff / shadow_diff_json / diff / 任何 debug-only 字段
+- 生成任何 canonical 指标或写回字段建议
+- 跨能力区域胡乱联想(例如把跑步洞察写成骑行)
+- 输出 markdown 代码块标记
+- 忽略维度缺失维度(score 为 0 时,comment 写"暂无足够数据"而非略过)
+
+【输出格式 — 严格 JSON】
+只输出一个合法 JSON 对象,格式必须严格遵循:
+{RADAR_INSIGHT_OUTPUT_SCHEMA}
+
+【铁律】
+1. 只使用上方【权威快照】中的数值,禁止重新计算
+2. dimension_interpretation 数组必须覆盖该 sport_type 的全部 schema 维度
+3. 输出必须是纯 JSON,不要包含 markdown 代码块标记
+4. 所有数值字段必须填数字,文本字段填中文
+5. training_advice 必须针对 weakest_dim 给出具体可执行建议
+6. balance_assessment 判定:6 维度极差 < 15 = well_balanced,15~30 = slightly_imbalanced,≥30 = imbalanced
+7. load_status.status 判定:TSB > 5 = fresh,0~5 = optimal,-10~0 = stressed,<-10 = overreaching
+"""
+
+
+def build_radar_insight_user_prompt(sport_type: str) -> str:
+    """雷达图 AI 洞察 user prompt:触发 LLM 输出的固定指令。"""
+    sport_cn_map = {
+        "running": "跑步", "trail_running": "越野跑", "hiking": "徒步",
+        "cycling": "骑行", "swimming": "游泳",
+    }
+    sport_cn = sport_cn_map.get(sport_type, sport_type or "该运动")
+    return (
+        f"请基于系统指令中提供的 90 天{sport_cn}雷达图权威快照,"
+        f"生成结构化 JSON 解读。只输出纯 JSON,不要输出 markdown 标记,"
+        f"不要补充额外解释,不要寒暄。"
+    )
+
+
+def empty_radar_insight(error: str = "") -> dict[str, Any]:
+    """雷达图 AI 洞察空态:LLM 失败 / 无数据 / 无维度时使用。"""
+    return {
+        "summary": error or "暂无 90 天数据,无法生成洞察",
+        "sport_type": "",
+        "sport_mode": "general",
+        "dimension_interpretation": [],
+        "strongest_dim": None,
+        "weakest_dim": None,
+        "balance_assessment": "well_balanced",
+        "load_status": {
+            "ctl": 0,
+            "atl": 0,
+            "tsb": 0,
+            "status": "optimal",
+        },
+        "training_advice": "请先积累 90 天运动数据后再生成洞察",
+        "long_term_trend": "stable",
+        "disclaimer": "AI 生成仅供参考,具体训练请结合个人实际",
+        "error": str(error or ""),
+    }
+
+
+def normalize_radar_insight_json(raw_text: str) -> dict[str, Any]:
+    """将 LLM 返回的原始文本标准化为 radar insight schema。
+    失败时返回 empty_radar_insight,严禁抛异常至前端。
+    """
+    if not raw_text:
+        return empty_radar_insight("LLM 未返回内容")
+
+    text = raw_text.strip()
+
+    m = re.search(r"```(?:json)?\s*\n?(.*?)\n?\s*```", text, re.DOTALL)
+    if m:
+        text = m.group(1).strip()
+
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        return empty_radar_insight(f"JSON 解析失败: {text[:120]}")
+
+    if not isinstance(data, dict):
+        return empty_radar_insight("洞察结果格式错误")
+
+    schema = empty_radar_insight()
+    schema["summary"] = str(data.get("summary") or schema["summary"])[:300]
+    schema["sport_type"] = str(data.get("sport_type") or schema["sport_type"])
+    schema["sport_mode"] = str(data.get("sport_mode") or schema["sport_mode"])
+    schema["strongest_dim"] = str(data.get("strongest_dim") or "") or None
+    schema["weakest_dim"] = str(data.get("weakest_dim") or "") or None
+    schema["balance_assessment"] = str(data.get("balance_assessment") or "well_balanced")
+    schema["training_advice"] = str(data.get("training_advice") or schema["training_advice"])[:500]
+    schema["long_term_trend"] = str(data.get("long_term_trend") or "stable")
+    schema["disclaimer"] = str(data.get("disclaimer") or schema["disclaimer"])[:300]
+
+    raw_dims = data.get("dimension_interpretation") or []
+    if isinstance(raw_dims, list):
+        clean_dims = []
+        for d in raw_dims[:6]:
+            if not isinstance(d, dict):
+                continue
+            try:
+                score_val = int(d.get("score") or 0)
+            except (TypeError, ValueError):
+                score_val = 0
+            score_val = max(0, min(score_val, 100))
+            clean_dims.append({
+                "key": str(d.get("key") or ""),
+                "label": str(d.get("label") or d.get("key") or ""),
+                "score": score_val,
+                "comment": str(d.get("comment") or "")[:200],
+            })
+        schema["dimension_interpretation"] = clean_dims
+
+    raw_load = data.get("load_status") or {}
+    if isinstance(raw_load, dict):
+        try:
+            schema["load_status"]["ctl"] = float(raw_load.get("ctl") or 0)
+            schema["load_status"]["atl"] = float(raw_load.get("atl") or 0)
+            schema["load_status"]["tsb"] = float(raw_load.get("tsb") or 0)
+            schema["load_status"]["status"] = str(
+                raw_load.get("status") or schema["load_status"]["status"]
+            )
+        except (TypeError, ValueError):
+            pass
+
+    return schema
 
 
 def normalize_insight_json(raw_text: str) -> dict[str, Any]:

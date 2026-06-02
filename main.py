@@ -88,6 +88,21 @@ OUTDOOR_LAND_GAIN_TYPES: frozenset[str] = frozenset({
     "hiking", "mountaineering", "walking",
 })
 
+# 活动列表字段展示规则：仅这些类型显示累计爬升
+# 范围：跑步、骑行、徒步、登山
+LIST_GAIN_ELIGIBLE_TYPES: frozenset[str] = frozenset({
+    "running", "trail_running", "treadmill_running",
+    "cycling", "road_cycling", "mountain_biking",
+    "hiking", "mountaineering",
+})
+
+# 活动列表字段展示规则：仅这些类型显示标准化功率
+# 范围：跑步、骑行
+LIST_POWER_ELIGIBLE_TYPES: frozenset[str] = frozenset({
+    "running", "trail_running", "treadmill_running",
+    "cycling", "road_cycling", "mountain_biking",
+})
+
 IRRELEVANT_LIST_METRICS: dict[str, frozenset[str]] = {
     "cardio": frozenset({"distance", "pace"}),
     "strength_training": frozenset({"distance", "pace"}),
@@ -681,17 +696,12 @@ def _compute_advanced_metrics(track_data: list[dict]) -> dict:
         logger.debug("首条数据采样: %s", records[0])
         logger.debug("中段数据采样: %s", records[mid_idx])
     trimp = calc.calculate_trimp(records, user_profile_dict)
-    hrv_score = calc.score_hrv_efficiency(
-        None,  # 修复 Bug：当前单次运动中没有真实 HRV，直接传 None，避免 baseline vs baseline
-        user_profile_dict.get("hrv_baseline"),
-    )
     decoupling = calc.calculate_aerobic_decoupling(records)
     vam = calc.calculate_vam(records)
     threshold_hr = calc.calculate_threshold_hr(records)
     anaerobic_peak = calc.calculate_anaerobic_peak(records)
     result = {
         "trimp": trimp,
-        "hrv": hrv_score,
         "decoupling": decoupling,
         "vam": vam,
         "threshold_hr": threshold_hr,
@@ -2683,6 +2693,53 @@ def _build_ai_insight(activity_id: int) -> dict[str, Any]:
     }
 
 
+def _build_radar_insight_snapshot(sport_type: str) -> dict[str, Any]:
+    """雷达图 AI 洞察专用 snapshot 构建器(§5.4 规则 3)。
+    数据源:_rolling_aggregate_radar_metrics(雷达后端引擎) + profile_backend
+    白名单:仅暴露雷达相关字段,严禁 shadow_diff / debug-only 字段。
+    """
+    if not sport_type:
+        return {}
+
+    metrics = _rolling_aggregate_radar_metrics(sport_type)
+    prof = profile_backend.get_profile()
+
+    ALLOWED_METRIC_KEYS = (
+        "ctl", "atl", "tsb", "hrv",
+        "decoupling", "vam", "threshold_hr", "anaerobic_peak",
+        "radar",
+    )
+    safe_metrics = {k: metrics.get(k) for k in ALLOWED_METRIC_KEYS if k in metrics}
+
+    safe_user_profile = {}
+    if prof is not None:
+        for k in ("age", "gender", "resting_hr", "max_hr", "hrv_baseline"):
+            v = getattr(prof, k, None)
+            if v is not None:
+                safe_user_profile[k] = v
+
+    return {
+        "source": "DB Canonical / 雷达后端引擎 / Resolver Truth",
+        "sport_type": sport_type,
+        "aggregation_window_days": 90,
+        "metrics": safe_metrics,
+        "user_profile": safe_user_profile,
+    }
+
+
+def _build_radar_insight_messages(
+    snapshot: dict[str, Any],
+    sport_type: str,
+) -> list[dict[str, str]]:
+    """组装 [system_msg, user_msg] 用于 LLM 调用。"""
+    system_prompt = llm_backend.build_radar_insight_system_prompt(snapshot, sport_type)
+    user_prompt = llm_backend.build_radar_insight_user_prompt(sport_type)
+    return [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
+    ]
+
+
 class Api:
     """pywebview js_api：轨迹文件、导出、大模型（OpenAI 兼容）等。"""
 
@@ -2691,6 +2748,7 @@ class Api:
     REPORT_PERSONALIZED = "__REPORT_PERSONALIZED__"
     REPORT_INSIGHT = "__REPORT_INSIGHT__"
     REPORT_RISK_ASSESSMENT = "__REPORT_RISK_ASSESSMENT__"
+    RADAR_INSIGHT = "__RADAR_INSIGHT__"
 
     def __init__(self) -> None:
         self._track_points: list | None = None
@@ -2773,7 +2831,7 @@ class Api:
         if self._profile_startup_sync_scheduled:
             return
         self._profile_startup_sync_scheduled = True
-        timer = threading.Timer(5, self.startup_sync_check)
+        timer = threading.Timer(300, self.startup_sync_check)
         timer.daemon = True
         timer.start()
 
@@ -2788,22 +2846,30 @@ class Api:
 
     def startup_sync_check(self) -> dict:
         try:
+            logger.info("[MCP] startup_sync_check 进入")
             conn = profile_backend.check_garmin_connection()
+            logger.info("[MCP] startup_sync_check: 预检测结果 connected=%s message=%s", conn.get("connected"), conn.get("message"))
             if not conn.get("connected"):
                 message = str(conn.get("message") or "Garmin 连接未配置")
                 profile_backend.mark_profile_sync_blocked(message)
                 result = {"ok": False, "blocked": True, "message": message, **profile_backend.get_profile_sync_metadata()}
                 self._dispatch_profile_sync_event("profile_sync_blocked", result)
                 return result
-            if not profile_backend.is_sync_needed_today():
+            needed = profile_backend.is_sync_needed_today()
+            logger.info("[MCP] startup_sync_check: is_sync_needed_today=%s", needed)
+            if not needed:
                 result = {"ok": True, "already_synced": True, "message": "今天已同步", **profile_backend.get_profile_sync_metadata()}
                 self._dispatch_profile_sync_event("profile_sync_complete", result)
                 return result
-            if profile_backend.should_skip_profile_sync_for_cooldown():
+            cooldown = profile_backend.should_skip_profile_sync_for_cooldown()
+            logger.info("[MCP] startup_sync_check: should_skip_cooldown=%s", cooldown)
+            if cooldown:
                 result = {"ok": False, "cooldown": True, "message": "上次同步失败，冷却中", **profile_backend.get_profile_sync_metadata()}
                 self._dispatch_profile_sync_event("profile_sync_complete", result)
                 return result
+            logger.info("[MCP] startup_sync_check: 即将调用 fetch_mcp_persona (check_connection=False)")
             result = profile_backend.fetch_mcp_persona("garmin", trigger_type="startup", check_connection=False)
+            logger.info("[MCP] startup_sync_check: fetch_mcp_persona 返回 ok=%s", result.get("ok"))
             if result.get("ok"):
                 prof = profile_backend.get_profile()
                 result.update({"profile": prof.to_dict(), **profile_backend.get_profile_sync_metadata()})
@@ -2951,12 +3017,17 @@ class Api:
     def test_llm_config(self, provider: str, url: str, model: str, api_key: str, agent_id: str = "") -> dict:
         """【测试即保存网关-稳定性加固版】严格实行先测试、后持久化策略，保障状态机最终一致性。"""
         try:
+            # 当 api_key 为空时，复用已存储的密钥（前端不会持有明文 key，这是安全设计）
+            effective_key = api_key
+            if not effective_key:
+                stored = llm_backend.load_llm_config()
+                effective_key = (stored.get("api_key") or "").strip()
             # 1. 先发起真实的接口网络活性探测（防污染核心）
             text = llm_backend.test_llm_connection(
                 provider=provider,
                 url=url,
                 model=model,
-                api_key=api_key,
+                api_key=effective_key,
                 agent_id=agent_id,
             )
 
@@ -2965,7 +3036,7 @@ class Api:
                 provider=provider,
                 url=url,
                 model=model,
-                api_key=api_key,
+                api_key=effective_key,
                 agent_id=agent_id,
                 watch_brand="",
                 local_dir=TRACKS_DIR
@@ -3103,6 +3174,36 @@ class Api:
                 self._new_session_id()
                 risk_assessment = llm_backend.normalize_risk_assessment_json(text)
                 return {"ok": True, "risk_assessment": risk_assessment}
+
+            if prompt == self.RADAR_INSIGHT:
+                if not sport_type:
+                    return {
+                        "ok": True,
+                        "radar_insight": llm_backend.empty_radar_insight("请先选择运动类型"),
+                    }
+                snapshot = _build_radar_insight_snapshot(sport_type)
+                if not snapshot.get("metrics") or not (snapshot["metrics"].get("radar") or {}).get("dimensions"):
+                    return {
+                        "ok": True,
+                        "radar_insight": llm_backend.empty_radar_insight("当前运动类型暂无 90 天数据"),
+                    }
+                messages = _build_radar_insight_messages(snapshot, sport_type)
+                text = llm_backend.chat_completions(
+                    url=url,
+                    api_key=api_key,
+                    model=model,
+                    messages=messages,
+                    session_id=sid,
+                    agent_id=agent_id,
+                )
+                # §5.4 规则 5:洞察调用后清空 + 刷新 session,避免污染 AI 教练会话
+                self._chat_messages = []
+                self._new_session_id()
+                return {
+                    "ok": True,
+                    "radar_insight": llm_backend.normalize_radar_insight_json(text),
+                    "sport_type": sport_type,
+                }
 
             if prompt == self.SYSTEM_INSTRUCTION:
                 storage_rule = (
@@ -3437,6 +3538,21 @@ class Api:
             avg_pace_sec = None
             avg_pace_display = "/"
 
+        gain_raw_value = _safe_float(row.get("gain_m"))
+        power_raw_value = _safe_float(normalized_power) if normalized_power is not None else None
+        if display_type in LIST_GAIN_ELIGIBLE_TYPES:
+            gain_field_value = round(gain_raw_value, 1) if gain_raw_value is not None else None
+            gain_field_display = f"{int(round(gain_field_value))} m" if gain_field_value is not None else "/"
+        else:
+            gain_field_value = None
+            gain_field_display = "/"
+        if display_type in LIST_POWER_ELIGIBLE_TYPES:
+            power_field_value = round(power_raw_value, 1) if power_raw_value is not None else None
+            power_field_display = f"{int(round(power_field_value))} W" if power_field_value is not None else "/"
+        else:
+            power_field_value = None
+            power_field_display = "/"
+
         return {
             "id": int(row.get("id") or 0),
             "file_name": display_filename,
@@ -3457,8 +3573,10 @@ class Api:
             "avg_hr": avg_hr,
             "max_hr": max_hr,
             "calories": _safe_int(calories),
-            "gain_m": round(_safe_float(row.get("gain_m")), 1),
-            "normalized_power": _safe_float(normalized_power) if normalized_power is not None else None,
+            "gain_m": gain_field_value,
+            "gain_display": gain_field_display,
+            "normalized_power": power_field_value,
+            "normalized_power_display": power_field_display,
             "swolf": round(_safe_float(swolf), 1) if swolf is not None else None,
             "swolf_subtitle": swolf_subtitle,
             "file_path": str(row.get("file_path") or ""),
@@ -4417,21 +4535,17 @@ class Api:
             if points:
                 filename = str(row.get("filename") or row.get("file_name") or "历史轨迹")
                 weather = _decode_weather_json(row.get("weather_json"))
-                raw_metrics = row.get("advanced_metrics")
-                advanced_metrics = _decode_weather_json(raw_metrics) if isinstance(raw_metrics, str) else (raw_metrics or {})
                 _attach_per_point_distance(points)
                 placemarks = self._load_activity_placemarks(_safe_int(row.get("id")))
                 return {
                     "ok": True,
                     "filename": filename,
-                    "advanced_metrics": advanced_metrics,
                     "activity": _build_activity_canonical(row),
                     "data": {
                         "points": points,
                         "placemarks": placemarks,
                         "region": str(row.get("region") or "").strip(),
                         "weather": weather,
-                        "advanced_metrics": advanced_metrics,
                     },
                 }
 
@@ -4693,69 +4807,6 @@ def _build_record_from_row(api_self, row: dict, idx: int) -> dict:
         month_key = "--"
         date_label = str(timestamp or "--")
 
-    import json
-
-    raw_metrics_json = row.get("advanced_metrics")
-    adv_metrics = {}
-
-    if raw_metrics_json and isinstance(raw_metrics_json, str):
-        try:
-            adv_metrics = json.loads(raw_metrics_json) or {}
-        except (json.JSONDecodeError, ValueError):
-            adv_metrics = {}
-    elif isinstance(raw_metrics_json, dict):
-        adv_metrics = raw_metrics_json
-
-    # 3. 【能力感知雷达网关 (Capability-Aware Radar Gateway)】
-    if display_type in ("running", "trail_running"):
-        radar_data = {
-            "type": display_type,
-            "labels": ["耐力水平", "乳酸阈值", "有氧效率", "无氧爆发", "恢复得分"],
-            "scores": [
-                min(100, max(20, int(_safe_float(adv_metrics.get("trimp")) / 1.5))) if adv_metrics.get("trimp") else 60,
-                min(100, max(20, int(_safe_float(adv_metrics.get("threshold_hr")) / 1.8))) if adv_metrics.get("threshold_hr") else 65,
-                min(100, max(20, int(100 - _safe_float(adv_metrics.get("decoupling", 0)) * 200))) if adv_metrics.get("decoupling") is not None else 70,
-                min(100, max(20, int(_safe_float(adv_metrics.get("anaerobic_peak")) * 10))) if adv_metrics.get("anaerobic_peak") else 55,
-                min(100, max(20, int(_safe_float(adv_metrics.get("hrv", 60)))))
-            ]
-        }
-    elif display_type in ("cycling", "road_cycling", "mountain_biking"):
-        radar_data = {
-            "type": display_type,
-            "labels": ["巡航输出", "有氧耐力", "心率响应", "爬升攀登", "恢复基线"],
-            "scores": [
-                min(100, max(20, int(_safe_float(adv_metrics.get("anaerobic_peak")) * 8))) if adv_metrics.get("anaerobic_peak") else 60,
-                min(100, max(20, int(_safe_float(adv_metrics.get("trimp")) / 2.0))) if adv_metrics.get("trimp") else 55,
-                min(100, max(20, int(100 - _safe_float(adv_metrics.get("decoupling", 0)) * 150))) if adv_metrics.get("decoupling") is not None else 65,
-                min(100, max(20, int(_safe_float(adv_metrics.get("vam")) / 10.0))) if adv_metrics.get("vam") else 50,
-                min(100, max(20, int(_safe_float(adv_metrics.get("hrv", 60)))))
-            ]
-        }
-    elif display_type in ("hiking", "mountaineering"):
-        radar_data = {
-            "type": display_type,
-            "labels": ["爬升效率", "长时耐力", "海拔适应", "体能负荷", "心脏恢复"],
-            "scores": [
-                min(100, max(20, int(_safe_float(adv_metrics.get("vam")) / 8.0))) if adv_metrics.get("vam") else 65,
-                min(100, max(20, int(_safe_float(adv_metrics.get("trimp")) / 1.2))) if adv_metrics.get("trimp") else 70,
-                min(100, max(20, int(_safe_float(row.get("max_alt_m", 0)) / 50.0))) if row.get("max_alt_m") else 50,
-                min(100, max(20, int(_safe_float(adv_metrics.get("trimp")) / 2.5))) if adv_metrics.get("trimp") else 60,
-                min(100, max(20, int(_safe_float(adv_metrics.get("hrv", 60)))))
-            ]
-        }
-    else:
-        radar_data = {
-            "type": display_type,
-            "labels": ["运动时长", "卡路里消耗", "心率控制", "训练负荷", "恢复指数"],
-            "scores": [
-                min(100, max(20, int(duration_sec / 60.0))) if duration_sec else 50,
-                min(100, max(20, int(calories / 10.0))) if calories else 45,
-                min(100, max(20, int((avg_hr or 120) / 1.8))),
-                min(100, max(20, int(_safe_float(adv_metrics.get("trimp", 30))))),
-                min(100, max(20, int(_safe_float(adv_metrics.get("hrv", 60)))))
-            ]
-        }
-
     raw_for_engine = {
         "distance_km": dist_km,
         "duration_sec": duration_sec,
@@ -4779,7 +4830,6 @@ def _build_record_from_row(api_self, row: dict, idx: int) -> dict:
         "display_metrics": SemanticSportsEngine.build_display_metrics(display_type, raw_for_engine),
         "layout": SemanticSportsEngine.get_layout(display_type),
         "capabilities": capabilities,
-        "radar": radar_data,
         "summary": raw_for_engine,
         "laps": api_self._build_lap_rows(dist_km, duration_sec, avg_hr, base_power),
         "thumbnail_points": api_self._sample_thumbnail_points(points),
