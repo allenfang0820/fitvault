@@ -137,47 +137,153 @@ class AdvancedMetricsCalc:
     # 4. VAM
     # =========================================================
 
+    # =========================================================
+    # 内部工具:rolling median 平滑(窗口不足时使用已有点)
+    # =========================================================
+    @staticmethod
+    def _rolling_median(values, window=5):
+        """对序列做 rolling median,边界处用边值填充保持窗口完整。
+
+        目的:抑制城市平路/公路通勤中 1m 级海拔噪声,使 VAM 不被
+        噪声误算为 720 m/h。
+        边界处理:左侧不足用 values[0] 填充,右侧不足用 values[-1] 填充,
+        避免窗口收缩后边界点被"拉平"导致真实爬升被低估。
+        """
+        n = len(values)
+        if n == 0:
+            return []
+        half = window // 2
+        result = []
+        for i in range(n):
+            win_vals = []
+            for j in range(i - half, i + half + 1):
+                if j < 0:
+                    win_vals.append(values[0])
+                elif j >= n:
+                    win_vals.append(values[-1])
+                else:
+                    win_vals.append(values[j])
+            win_vals = sorted(win_vals)
+            m = len(win_vals)
+            mid = m // 2
+            if m % 2 == 1:
+                result.append(win_vals[mid])
+            else:
+                result.append((win_vals[mid - 1] + win_vals[mid]) / 2.0)
+        return result
+
     @staticmethod
     def calculate_vam(records):
+        """计算 VAM(m/h,垂直爬升速度)。
+
+        算法:「有效爬坡段」识别 + 段级过滤,而非逐点累计。
+        1) 按 timestamp 排序
+        2) 对 altitude 做 rolling median(窗口 5)平滑
+        3) 识别连续上坡段;单点下降 <= 2m 容忍保留
+        4) 段级过滤:累计爬升 >= 10m / 持续 >= 60s / 距离 >= 100m / 坡度 >= 3%
+        5) VAM = sum(有效段爬升) / sum(有效段时间) * 3600
+        6) 无有效段返回 0.0
+        """
         if not records or len(records) < 2:
             return 0.0
         records = AdvancedMetricsCalc._sort_records(records)
-        total_ascent = 0.0
-        climb_time = 0.0
-        for i in range(1, len(records)):
-            curr = records[i]
-            prev = records[i - 1]
-            alt = curr.get('altitude')
-            prev_alt = prev.get('altitude')
-            dist = curr.get('distance')
-            prev_dist = prev.get('distance')
-            curr_time = AdvancedMetricsCalc._safe_timestamp(curr)
-            prev_time = AdvancedMetricsCalc._safe_timestamp(prev)
-            if not (AdvancedMetricsCalc._is_valid_number(alt)
-                    and AdvancedMetricsCalc._is_valid_number(prev_alt)
-                    and AdvancedMetricsCalc._is_valid_number(dist)
+
+        # 仅保留有有效 altitude 的 record(其它字段在配对时再校验)
+        valid_alt_records = [
+            r for r in records
+            if AdvancedMetricsCalc._is_valid_number(r.get('altitude'))
+        ]
+        if len(valid_alt_records) < 2:
+            return 0.0
+
+        # 平滑 altitude
+        altitudes = [r.get('altitude') for r in valid_alt_records]
+        smoothed = AdvancedMetricsCalc._rolling_median(altitudes, window=5)
+
+        # 段状态
+        segments = []  # 候选段列表:{"ascent", "time", "distance"}
+        current = None
+
+        for i in range(1, len(valid_alt_records)):
+            prev_rec = valid_alt_records[i - 1]
+            curr_rec = valid_alt_records[i]
+            prev_alt = smoothed[i - 1]
+            curr_alt = smoothed[i]
+
+            dist = curr_rec.get('distance')
+            prev_dist = prev_rec.get('distance')
+            curr_time = AdvancedMetricsCalc._safe_timestamp(curr_rec)
+            prev_time = AdvancedMetricsCalc._safe_timestamp(prev_rec)
+
+            if not (AdvancedMetricsCalc._is_valid_number(dist)
                     and AdvancedMetricsCalc._is_valid_number(prev_dist)
                     and curr_time
                     and prev_time):
+                if current is not None:
+                    segments.append(current)
+                    current = None
                 continue
-            delta_alt = alt - prev_alt
+
+            delta_alt = curr_alt - prev_alt
             delta_dist = dist - prev_dist
             delta_time = (curr_time - prev_time).total_seconds()
+
+            # 时间断裂 / 无效距离 → 切断当前段
             if delta_time <= 0 or delta_time > 300:
+                if current is not None:
+                    segments.append(current)
+                    current = None
                 continue
             if delta_dist <= 0:
                 continue
-            if delta_alt <= 0:
+
+            # 异常垂直速度(>= 5 m/s)→ 视为噪声,跳过
+            if (abs(delta_alt) / delta_time) >= 5:
                 continue
-            if (delta_alt / delta_time) >= 5:
-                continue
-            gradient = delta_alt / delta_dist
-            if gradient >= 0.03:
-                total_ascent += delta_alt
-                climb_time += delta_time
-        if climb_time > 0:
-            return round((total_ascent / climb_time) * 3600, 1)
-        return 0.0
+
+            if delta_alt >= 0:
+                # 上坡或平段 → 加入 / 延续当前段
+                if current is None:
+                    current = {"ascent": 0.0, "time": 0.0, "distance": 0.0}
+                current["ascent"] += delta_alt
+                current["time"] += delta_time
+                current["distance"] += delta_dist
+            else:
+                # 下降
+                drop = -delta_alt
+                if drop <= 2.0:
+                    # 单点小幅下降:保留时间/距离,容忍真实爬坡中的抖动
+                    if current is not None:
+                        current["time"] += delta_time
+                        current["distance"] += delta_dist
+                else:
+                    # 明显下降 → 切断当前段
+                    if current is not None:
+                        segments.append(current)
+                        current = None
+
+        # 收尾最后一段
+        if current is not None:
+            segments.append(current)
+
+        # 段级过滤(有效爬坡段定义)
+        valid_segments = [
+            s for s in segments
+            if s["ascent"] >= 10.0
+            and s["time"] >= 60.0
+            and s["distance"] >= 100.0
+            and s["distance"] > 0
+            and (s["ascent"] / s["distance"]) >= 0.03
+        ]
+
+        if not valid_segments:
+            return 0.0
+
+        total_ascent = sum(s["ascent"] for s in valid_segments)
+        total_time = sum(s["time"] for s in valid_segments)
+        if total_time <= 0:
+            return 0.0
+        return round((total_ascent / total_time) * 3600, 1)
 
     # =========================================================
     # 5. Lactate Threshold HR
@@ -282,9 +388,28 @@ class RadarScoreEngine:
         return 30
 
     @staticmethod
-    def score_climbing(vam):
+    def score_climbing(vam, sport_type=None):
+        """爬升维度评分。sport_type 为 None 时保持原行为(跨运动统一阈值),
+        提供 sport_type 时 cycling/hiking 走专属阈值。
+        """
         if not vam:
             return 0
+        if sport_type in _CYCLING_SPORT_TYPES:
+            if vam < 100:
+                return 20
+            if vam < 250:
+                return 50
+            if vam < 500:
+                return 75
+            return 95
+        if sport_type == "hiking":
+            if vam < 100:
+                return 20
+            if vam < 200:
+                return 50
+            if vam < 400:
+                return 75
+            return 95
         if vam < 300:
             return 20
         if vam < 600:
@@ -333,7 +458,6 @@ class RadarScoreEngine:
         "cycling": ["endurance", "recovery", "stability", "threshold", "climbing", "anaerobic"],
         "hiking": ["endurance", "recovery", "climbing"],
         "swimming": ["endurance", "recovery", "threshold"],
-        "strength": ["recovery", "anaerobic"],
     }
 
     LABELS = {
@@ -354,7 +478,7 @@ class RadarScoreEngine:
             "endurance": cls.score_endurance(metrics_data.get("trimp")),
             "recovery": cls.score_recovery(metrics_data.get("hrv")),
             "stability": cls.score_stability(metrics_data.get("decoupling")),
-            "climbing": cls.score_climbing(metrics_data.get("vam")),
+            "climbing": cls.score_climbing(metrics_data.get("vam"), sport_type),
             "threshold": cls.score_threshold(metrics_data.get("threshold_hr"), max_hr),
             "anaerobic": cls.score_anaerobic(metrics_data.get("anaerobic_peak"), sport_type),
         }

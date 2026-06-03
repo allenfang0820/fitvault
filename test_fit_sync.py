@@ -211,6 +211,31 @@ class TestFitSync(unittest.TestCase):
         self.assertTrue(result["ok"], result)
         self.assertLess(result.get("elapsed_sec", 99), 1.0)
 
+    def test_remote_fit_sync_sends_date_range_prompt_to_openclaw(self):
+        api = object.__new__(main.Api)
+        with mock.patch.object(llm_backend, "load_llm_config", return_value={
+            "provider": "local_mcp",
+            "url": "http://localhost:3000/v1/chat/completions",
+            "model": "openclaw",
+            "api_key": "",
+            "agent_id": "",
+        }), mock.patch.object(llm_backend, "chat_completions", return_value="下载完成") as chat_mock:
+            result = api.sync_remote_fit_activities("2026-05-01", "2026-05-31")
+
+        self.assertTrue(result["ok"], result)
+        kwargs = chat_mock.call_args.kwargs
+        self.assertEqual(kwargs["model"], "openclaw")
+        prompt_text = "\n".join(message["content"] for message in kwargs["messages"])
+        self.assertIn("2026-05-01 至 2026-05-31", prompt_text)
+        self.assertIn(main.TRACKS_DIR, prompt_text)
+        self.assertIn("FIT 文件", prompt_text)
+
+    def test_remote_fit_sync_rejects_invalid_date_range(self):
+        api = object.__new__(main.Api)
+        result = api.sync_remote_fit_activities("2026-06-01", "2026-05-01")
+        self.assertFalse(result["ok"], result)
+        self.assertIn("开始日期不能晚于结束日期", result["error"])
+
     def test_parse_fit_activity_for_sync_defers_region_enrichment(self):
         fit_path = self.temp_dir / "region.fit"
         fit_path.write_bytes(b"fit")

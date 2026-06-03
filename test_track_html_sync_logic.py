@@ -94,6 +94,17 @@ class TestTrackHtmlSyncLogic(unittest.TestCase):
         self.assertIn("function deleteSelectedSportHubRecords", self.source)
         self.assertIn("delete_activities", self.source)
 
+    def test_activity_records_support_remote_date_range_sync(self):
+        self.assertIn('id="sport-sync-start-date"', self.source)
+        self.assertIn('id="sport-sync-end-date"', self.source)
+        self.assertIn('id="sport-records-remote-sync-btn"', self.source)
+        self.assertIn("function initSportHubSyncDateRange", self.source)
+        body = extract_function_body(self.source, "async function syncRemoteSportHubActivities()")
+        self.assertIn("sync_remote_fit_activities(startDate, endDate)", body)
+        self.assertIn("syncAndLoadSportHubRecords({ sync: true, resetPage: true })", body)
+        self.assertIn("开始日期不能晚于结束日期", body)
+        self.assertIn("OpenClaw", body)
+
     def test_batch_delete_uses_blocker_modal_and_deletes_local_files(self):
         body = extract_function_body(self.source, "async function deleteSelectedSportHubRecords()")
         self.assertNotIn("confirm(", body, "不得使用浏览器原生 confirm")

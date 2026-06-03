@@ -197,6 +197,22 @@
       "description": "按时间倒序的历史运动记录列表 (limit 50)"
     },
     {
+      "name": "get_trace_activity_history",
+      "file": "main.py",
+      "line": 4585,
+      "category": "activity",
+      "parameters": [
+        { "name": "page", "type": "int", "required": false, "default": 1 },
+        { "name": "page_size", "type": "int", "required": false, "default": 30 },
+        { "name": "sport_filter", "type": "string", "required": false, "default": "all" },
+        { "name": "time_filter", "type": "string", "required": false, "default": "all" },
+        { "name": "location_filter", "type": "string", "required": false, "default": "all" }
+      ],
+      "returns": "{ ok, records, total, page, page_size, total_pages, activity_types, locations }。locations 字段：地区筛选选项，基于符合条件的全量 GPS 活动生成，不受分页影响；每项结构 { value, label, count }，按 count DESC 再按 label 排序",
+      "high_risk": false,
+      "description": "历史轨迹抽屉分页列表，支持运动类型(sport_filter)/时间(time_filter: 7d/30d/90d/this_year/last_year)/地区(location_filter)三联过滤，后端 SQL 严格执行筛选，total/total_pages 为筛选后总数。locations 字段不受 time/location_filter 影响，与 sport_filter 联动。"
+    },
+    {
       "name": "sync_local_fit_files",
       "file": "main.py",
       "line": 3180,
@@ -206,6 +222,20 @@
       "high_risk": true,
       "risk_level": "high",
       "description": "扫描 TRACKS_DIR 全量 FIT 文件并同步入库；触发进度回调"
+    },
+    {
+      "name": "sync_remote_fit_activities",
+      "file": "main.py",
+      "line": 3331,
+      "category": "sync",
+      "parameters": [
+        { "name": "start_date", "type": "string", "required": true },
+        { "name": "end_date", "type": "string", "required": true }
+      ],
+      "returns": "{ ok, content, prompt, start_date, end_date, target_dir }",
+      "high_risk": true,
+      "risk_level": "high",
+      "description": "向 OpenClaw 发送带起止日期的活动 FIT 下载提示词，要求下载结果保存到 TRACKS_DIR；前端随后应调用本地 FIT 同步刷新活动列表。日期格式为 YYYY-MM-DD，包含首尾日期。"
     },
     {
       "name": "batch_import_tracks",

@@ -130,6 +130,23 @@ class TestBuildRadarInsightSystemPromptSportMapping(unittest.TestCase):
         self.assertIn("运动", prompt)
 
 
+class TestClimbingSportTypeInterpretation(unittest.TestCase):
+    """§5 雷达修复 F:运动专项爬升维度解读段必须出现在所有 sport_type 的 prompt 中,
+    含 4 个核心短语,作为 LLM 解读的运动专项爬升上下文。
+    """
+
+    def test_climbing_interpretation_context_in_prompt(self):
+        """运动专项爬升维度解读段必须出现在 prompt 中,含 4 个核心短语。"""
+        for sport_type in ("running", "cycling", "hiking"):
+            with self.subTest(sport_type=sport_type):
+                prompt = build_radar_insight_system_prompt(
+                    _make_sample_snapshot(sport_type), sport_type
+                )
+                for phrase in ("100/250/500 m/h", "100/200/400 m/h", "VAM 基准", "vam 数值本身"):
+                    with self.subTest(phrase=phrase):
+                        self.assertIn(phrase, prompt)
+
+
 class TestBuildRadarInsightSystemPromptSnapshotPayload(unittest.TestCase):
     """snapshot 序列化逻辑。"""
 

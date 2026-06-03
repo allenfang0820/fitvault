@@ -13,7 +13,7 @@ import threading
 import time
 import uuid
 import zipfile
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -43,7 +43,15 @@ HTML_FILENAME = "track.html"
 
 # ─── Managed Workspace ───────────────────────────────────────────
 CURRENT_SCHEMA_VERSION = 2
-CURRENT_METRICS_VERSION = 3  # P1 核心资产：用于判定历史雷达算法是否需要强制清洗
+CURRENT_METRICS_VERSION = 4  # v4: 修复 VAM 平路海拔噪声 + 雷达 90 天 VAM 聚合可信度过滤
+# v3 → v4 变更要点(2026-Q2):
+# 1) calculate_vam 重写为"有效爬坡段"算法(rolling median + 段级过滤),
+#    消除 1m/5s 海拔噪声被算成 720 m/h 的根因。
+# 2) _rolling_aggregate_radar_metrics 增加 _is_valid_vam_activity 过滤
+#    (cycling/road/mtb/running ≥ 20m@1km, trail_running ≥ 30m, hiking ≥ 50m),
+#    避免 gain_m=0/4/5m 的通勤旧 VAM 污染雷达图。
+# 触发条件:历史 advanced_metrics.metrics_version < 4 → 由
+# api_force_rebuild_radar_data / rebuild_advanced_metrics_for_all_activities 强制清洗重建。
 WORKSPACE_ROOT = os.path.abspath(os.path.expanduser("~/.fitvault/workspace/"))
 TRACKS_DIR = os.path.abspath(os.path.expanduser("~/.fitvault/workspace/tracks/"))
 IMPORTS_DIR = os.path.abspath(os.path.expanduser("~/.fitvault/workspace/imports/"))
@@ -76,6 +84,70 @@ SPORT_HUB_TYPE_ORDER = {
     "breathing": 17,
     "flexibility_training": 18,
 }
+
+
+# ══════════════════════════════════════════════════════════════════
+# MTDI 轨迹难度计算 — Canonical 层
+# 契约 §2.1 / §2.2 / §2.4: 难度为唯一可信计算，禁止前端复算
+# 输入: dist_km / gain_m / max_alt_m / max_single_climb_m / sport_type
+# 输出: mtdi_score (0-∞) + mtdi_level (1-8) + mtdi_level_name
+# ══════════════════════════════════════════════════════════════════
+
+MTDI_LEVEL_THRESHOLDS: tuple[float, ...] = (8, 16, 29, 46, 76, 111, 181)
+
+
+def calculate_track_difficulty(
+    dist_km: float,
+    gain_m: float,
+    max_alt_m: float,
+    max_single_climb_m: float,
+    sport_type: str = "running",
+) -> dict[str, Any]:
+    """多模态脉图轨迹难度指数 (MTDI)。
+
+    Pure Fact Contract: 输入仅来自 DB canonical / Resolver truth。
+    禁止前端计算、禁止 AI 重算、禁止上下文拼接。
+    """
+    dist = max(0, dist_km or 0)
+    gain = max(0, gain_m or 0)
+    max_alt = max(0, max_alt_m or 0)
+    max_climb = max(0, max_single_climb_m or 0)
+
+    sport_str = str(sport_type or "").lower()
+    if "cycl" in sport_str or "bik" in sport_str or "骑" in sport_str:
+        dist_factor = 3.0
+        gain_factor = 120.0
+        if "mountain" in sport_str or "山地" in sport_str:
+            dist_factor = 2.0
+    else:
+        dist_factor = 1.0
+        gain_factor = 100.0
+
+    base_score = (dist / dist_factor) + (gain / gain_factor)
+    k_alt = 1.0 + max(0, (max_alt - 2000) / 20000.0)
+    p_climb = max_climb / gain_factor
+    mtdi_score = (base_score * k_alt) + p_climb
+
+    level = 1
+    for threshold in MTDI_LEVEL_THRESHOLDS:
+        if mtdi_score >= threshold:
+            level += 1
+        else:
+            break
+
+    return {
+        "score": round(mtdi_score, 1),
+        "level": int(level),
+        "level_name": f"LV {level}",
+        "factors": {
+            "dist_factor": dist_factor,
+            "gain_factor": gain_factor,
+            "base_score": round(base_score, 2),
+            "k_alt": round(k_alt, 3),
+            "p_climb": round(p_climb, 2),
+        },
+    }
+
 
 POWER_ELIGIBLE_TYPES: frozenset[str] = frozenset({
     "running", "trail_running", "treadmill_running",
@@ -628,7 +700,7 @@ def ensure_activity_sync_schema() -> None:
 
 
 import track_backend
-from utils.metrics_calc import AdvancedMetricsCalc, RadarScoreEngine
+from utils.metrics_calc import AdvancedMetricsCalc, RadarScoreEngine, _CYCLING_SPORT_TYPES
 
 
 def _convert_track_to_algorithm_records(track_data: list[dict]) -> list[dict]:
@@ -712,6 +784,70 @@ def _compute_advanced_metrics(track_data: list[dict]) -> dict:
     return result
 
 
+def _p90(values: list[float]) -> float:
+    """90 分位数聚合策略,用于雷达 3 个维度(VAM/Threshold HR/Anaerobic Peak)的滚动聚合。
+
+    设计意图:消除 max() 聚合下"单次极端活动永久主导得分"的系统性问题。
+    详见审计报告 §8 / §9.1 修复建议 P0。
+
+    样本量门控:
+    - N = 0:返回 0.0(无数据兜底,与原 max() 行为一致)
+    - N < 4:退化为算术平均(max 在小样本下退化为该值本身,无统计意义)
+    - N >= 4:用线性插值计算 90 分位数(同 numpy.percentile 默认 method)
+    """
+    if not values:
+        return 0.0
+    if len(values) < 4:
+        return sum(values) / len(values)
+
+    sorted_vals = sorted(values)
+    # 线性插值 p90(0-based index 0.9 * (n-1)),与 numpy.percentile 默认 linear 一致
+    rank = 0.9 * (len(sorted_vals) - 1)
+    lower_idx = int(rank)
+    upper_idx = min(lower_idx + 1, len(sorted_vals) - 1)
+    fraction = rank - lower_idx
+    return sorted_vals[lower_idx] * (1 - fraction) + sorted_vals[upper_idx] * fraction
+
+
+# 雷达 90 天聚合 VAM 可信度阈值
+# (最小总爬升 m, 最小距离 km)
+# 设计意图:即使单次 calculate_vam 已修复,历史 advanced_metrics 中
+# 可能残留 gain_m=0/4/5m 的通勤骑行旧 VAM,直接聚合会污染雷达图。
+# 只有"真实爬坡活动"才允许 VAM 进入聚合。
+_VAM_CREDIBILITY_THRESHOLDS: dict[str, tuple[float, float]] = {
+    "cycling": (20.0, 1.0),
+    "road_cycling": (20.0, 1.0),
+    "mountain_biking": (20.0, 1.0),
+    "running": (20.0, 1.0),
+    "trail_running": (30.0, 1.0),
+    "hiking": (50.0, 1.0),
+}
+
+
+def _is_valid_vam_activity(row: dict, sport_type: str | None) -> bool:
+    """VAM 可信度过滤:只有真实爬坡活动才允许 VAM 进入 90 天聚合。
+
+    阈值表见 _VAM_CREDIBILITY_THRESHOLDS。
+    - gain_m 缺失按 0 处理(不通过)
+    - dist_km 缺失时回退 distance/1000.0
+    - sport_type 不在表中(游泳等无 climbing 维度)默认不纳入
+    """
+    if not sport_type:
+        return False
+    threshold = _VAM_CREDIBILITY_THRESHOLDS.get(sport_type)
+    if threshold is None:
+        return False
+    min_gain_m, min_dist_km = threshold
+    gain_m = _safe_float(row.get("gain_m"), 0.0)
+    dist_km = _safe_float(row.get("dist_km"), 0.0)
+    if dist_km <= 0:
+        # 兼容 distance(米)字段
+        dist_m = _safe_float(row.get("distance"), 0.0)
+        if dist_m > 0:
+            dist_km = dist_m / 1000.0
+    return gain_m >= min_gain_m and dist_km >= min_dist_km
+
+
 def _rolling_aggregate_radar_metrics(sport_type: str | None = None) -> dict:
     """
     滚动极值与近期均值聚合（Rolling Aggregation）+ PMC 长期负荷衰减模型
@@ -726,22 +862,45 @@ def _rolling_aggregate_radar_metrics(sport_type: str | None = None) -> dict:
     conn = profile_backend._conn()
     try:
         if sport_type:
-            rows = conn.execute(
-                """
-                SELECT id, start_time_utc, start_time, advanced_metrics
-                FROM activities
-                WHERE deleted_at IS NULL
-                  AND sport_type = ?
-                  AND advanced_metrics IS NOT NULL
-                  AND advanced_metrics != ''
-                ORDER BY COALESCE(start_time_utc, start_time) ASC
-                """,
-                (sport_type,),
-            ).fetchall()
+            # §5 雷达数据源:骑行变体(cycling/road_cycling/mountain_biking)统一查询,
+            # 对齐 _CYCLING_SPORT_TYPES 集合意图,确保 road/mtb 骑行者雷达数据不空洞。
+            # 任务 2 修复:额外取出 gain_m/dist_km/distance/duration_sec/duration/sport_type
+            # 用于 VAM 可信度过滤(避免 gain_m=0/4/5m 的通勤旧 VAM 污染雷达图)。
+            if sport_type in _CYCLING_SPORT_TYPES:
+                cycling_types = sorted(_CYCLING_SPORT_TYPES)
+                placeholders = ",".join(["?"] * len(cycling_types))
+                rows = conn.execute(
+                    f"""
+                    SELECT id, start_time_utc, start_time, advanced_metrics,
+                           sport_type, gain_m, dist_km, distance, duration_sec, duration
+                    FROM activities
+                    WHERE deleted_at IS NULL
+                      AND sport_type IN ({placeholders})
+                      AND advanced_metrics IS NOT NULL
+                      AND advanced_metrics != ''
+                    ORDER BY COALESCE(start_time_utc, start_time) ASC
+                    """,
+                    tuple(cycling_types),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """
+                    SELECT id, start_time_utc, start_time, advanced_metrics,
+                           sport_type, gain_m, dist_km, distance, duration_sec, duration
+                    FROM activities
+                    WHERE deleted_at IS NULL
+                      AND sport_type = ?
+                      AND advanced_metrics IS NOT NULL
+                      AND advanced_metrics != ''
+                    ORDER BY COALESCE(start_time_utc, start_time) ASC
+                    """,
+                    (sport_type,),
+                ).fetchall()
         else:
             rows = conn.execute(
                 """
-                SELECT id, start_time_utc, start_time, advanced_metrics
+                SELECT id, start_time_utc, start_time, advanced_metrics,
+                       sport_type, gain_m, dist_km, distance, duration_sec, duration
                 FROM activities
                 WHERE deleted_at IS NULL
                   AND advanced_metrics IS NOT NULL
@@ -783,8 +942,11 @@ def _rolling_aggregate_radar_metrics(sport_type: str | None = None) -> dict:
             if not isinstance(metrics, dict):
                 continue
 
+            # §任务 2 VAM 可信度过滤:仅真实爬升/距离达标的活动允许 VAM 入聚合
             if "vam" in metrics and metrics["vam"] is not None:
-                vam_values.append(float(metrics["vam"]))
+                row_sport_type = row.get("sport_type") or sport_type
+                if _is_valid_vam_activity(row, row_sport_type):
+                    vam_values.append(float(metrics["vam"]))
             if "threshold_hr" in metrics and metrics["threshold_hr"] is not None:
                 threshold_hr_values.append(float(metrics["threshold_hr"]))
             if "anaerobic_peak" in metrics and metrics["anaerobic_peak"] is not None:
@@ -814,9 +976,10 @@ def _rolling_aggregate_radar_metrics(sport_type: str | None = None) -> dict:
 
     tsb = ctl - atl
 
-    vam_max = max(vam_values) if vam_values else 0.0
-    threshold_hr_max = max(threshold_hr_values) if threshold_hr_values else 0.0
-    anaerobic_peak_max = max(anaerobic_peak_values) if anaerobic_peak_values else 0.0
+    # §5 雷达聚合:p90 替代 max 消除异常值主导(审计 §8 / §9.1 P0)
+    vam_max = _p90(vam_values)
+    threshold_hr_max = _p90(threshold_hr_values)
+    anaerobic_peak_max = _p90(anaerobic_peak_values)
 
     last_5_decoupling = decoupling_values[-5:] if decoupling_values else []
     decoupling_avg = sum(last_5_decoupling) / len(last_5_decoupling) if last_5_decoupling else 0.0
@@ -2873,7 +3036,27 @@ class Api:
         cfg["local_dir"] = TRACKS_DIR
         cfg["workspace_track_path"] = TRACKS_DIR
         cfg["workspace_track_abs_path"] = TRACKS_DIR
+        cfg["ai_notified"] = bool(llm_backend.load_llm_config().get("ai_notified", False))
         return _api_success(cfg)
+
+    def set_ai_notified(self, value: bool) -> dict:
+        """独立写入 ai_notified 标志，不触发网络测试。"""
+        try:
+            current = llm_backend.load_llm_config()
+            llm_backend.save_llm_config(
+                provider=current.get("provider", ""),
+                url=current.get("url", ""),
+                model=current.get("model", ""),
+                api_key=current.get("api_key", ""),
+                agent_id=current.get("agent_id", ""),
+                watch_brand=current.get("watch_brand", ""),
+                local_dir=current.get("local_dir", ""),
+                ai_notified=bool(value),
+            )
+            return _api_success({"ai_notified": bool(value)})
+        except Exception:
+            logger.exception("set_ai_notified failed")
+            return _api_error(API_CODE_INTERNAL, "写入 ai_notified 失败")
 
     def save_llm_config(self, provider: str, url: str, model: str, api_key: str, agent_id: str = "", watch_brand: str = "", local_dir: str = "") -> dict:
         """【防御加锁】拒绝外部越权直调。核心持久化已全面收拢至 test_llm_config 网关中。"""
@@ -3144,6 +3327,77 @@ class Api:
 
         except Exception as e:
             return {"ok": False, "error": str(e)}
+
+    def sync_remote_fit_activities(self, start_date: str = "", end_date: str = "") -> dict:
+        """Request OpenClaw to download FIT files for a specific date range."""
+        start_raw = str(start_date or "").strip()
+        end_raw = str(end_date or "").strip()
+        try:
+            start_day = date.fromisoformat(start_raw)
+            end_day = date.fromisoformat(end_raw)
+        except ValueError:
+            return _api_error(API_CODE_VALIDATION, "请选择有效的开始和结束日期")
+        if start_day > end_day:
+            return _api_error(API_CODE_VALIDATION, "开始日期不能晚于结束日期")
+
+        cfg = llm_backend.load_llm_config()
+        url = str(cfg.get("url") or "").strip()
+        if not url:
+            return _api_error(API_CODE_VALIDATION, "API 接口地址为空，请在设置中配置")
+
+        provider = str(cfg.get("provider") or "local_mcp")
+        model = str(cfg.get("model") or "openclaw").strip() or "openclaw"
+        api_key = str(cfg.get("api_key") or "")
+        agent_id = str(cfg.get("agent_id") or "")
+        session_id = "fit_remote_sync_" + uuid.uuid4().hex[:16]
+        prompt = (
+            "请调用已经封装好的 Garmin / 活动下载 skill，同步指定时间范围内的活动 FIT 文件。\n\n"
+            f"时间范围：{start_day.isoformat()} 至 {end_day.isoformat()}（包含首尾日期）。\n"
+            f"FIT 文件保存目录：{TRACKS_DIR}\n\n"
+            "要求：\n"
+            "1. 只下载上述时间范围内的活动 FIT 文件。\n"
+            "2. 下载后的 ZIP 如需解压，请完成解压并把 FIT 文件放入上述目录。\n"
+            "3. 如目录不存在，请创建目录。\n"
+            "4. 已存在的同名或同活动 FIT 文件请跳过或安全去重，不要覆盖未知文件。\n"
+            "5. 完成后用中文简要回复下载结果，包含成功数量、跳过数量和错误信息。"
+        )
+        try:
+            text = llm_backend.chat_completions(
+                url=url,
+                api_key=api_key,
+                model=model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "你是本地运动数据同步助手。你可以调用 OpenClaw 已封装的技能下载活动 FIT 文件。"
+                            "必须严格遵守用户提供的日期范围和保存目录。"
+                        ),
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                session_id=session_id,
+                agent_id=agent_id,
+                timeout=300,
+            )
+            logger.info(
+                "remote FIT sync requested provider=%s model=%s range=%s..%s dir=%s",
+                provider,
+                model,
+                start_day.isoformat(),
+                end_day.isoformat(),
+                TRACKS_DIR,
+            )
+            return _api_success({
+                "content": text,
+                "prompt": prompt,
+                "start_date": start_day.isoformat(),
+                "end_date": end_day.isoformat(),
+                "target_dir": TRACKS_DIR,
+            })
+        except Exception as e:
+            logger.warning("sync_remote_fit_activities failed: %s", e)
+            return _api_error(API_CODE_EXTERNAL_SERVICE, str(e))
 
     def pick_and_parse_track(self) -> dict:
         import webview
@@ -4372,6 +4626,18 @@ class Api:
                     "report_metrics_version": _safe_int(r.get("report_metrics_version")),
                 }
 
+            activity_canonical = _build_activity_canonical(row)
+            mtdi = calculate_track_difficulty(
+                dist_km=activity_canonical.get("dist_km"),
+                gain_m=activity_canonical.get("gain_m"),
+                max_alt_m=activity_canonical.get("max_alt_m"),
+                max_single_climb_m=activity_canonical.get("max_single_climb_m"),
+                sport_type=activity_canonical.get("sport_type") or "running",
+            )
+            activity_canonical["mtdi_score"] = mtdi["score"]
+            activity_canonical["mtdi_level"] = mtdi["level"]
+            activity_canonical["mtdi_level_name"] = mtdi["level_name"]
+
             points = self._decode_points_json(row.get("track_json") or row.get("points_json") or row.get("merged_track_json"))
             if points:
                 filename = str(row.get("filename") or row.get("file_name") or "历史轨迹")
@@ -4381,7 +4647,7 @@ class Api:
                 return {
                     "ok": True,
                     "filename": filename,
-                    "activity": _build_activity_canonical(row),
+                    "activity": activity_canonical,
                     "data": {
                         "points": points,
                         "placemarks": placemarks,
@@ -4407,13 +4673,27 @@ class Api:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
-    def get_trace_activity_history(self, page: int = 1, page_size: int = 30, sport_filter: str = "all") -> dict:
-        """返回轨迹分析工具使用的分页活动记录列表，后端驱动分页。"""
+    def get_trace_activity_history(
+        self,
+        page: int = 1,
+        page_size: int = 30,
+        sport_filter: str = "all",
+        time_filter: str = "all",
+        location_filter: str = "all",
+    ) -> dict:
+        """返回轨迹分析工具使用的分页活动记录列表，后端驱动分页。
+
+        §任务 3:扩展 time_filter / location_filter 后端参数(透传到 SQL),
+        返回中新增 locations(地区选项,与 sport_filter 联动,与 time/location filter 独立)。
+        """
         try:
             page = max(1, _safe_int(page, 1))
             page_size = max(1, min(_safe_int(page_size, 30), 100))
             offset = (page - 1) * page_size
-            db_rows, total_count = profile_backend.get_activity_list_filtered(offset, page_size, sport_filter, gps_only=True)
+            db_rows, total_count = profile_backend.get_activity_list_filtered(
+                offset, page_size, sport_filter, gps_only=True,
+                time_filter=time_filter, location_filter=location_filter,
+            )
             deduped_rows = _dedupe_activity_rows(db_rows)
             records = [self._build_activity_list_item(row) for row in deduped_rows]
 
@@ -4423,6 +4703,8 @@ class Api:
                 rec["cityName"] = (rec.get("region") or "").strip() or "未知地点"
                 rec["has_local_file"] = bool(str(rec.get("file_path") or "").strip())
 
+            # total / total_pages 来自 get_activity_list_filtered 的 COUNT(*),
+            # 该 COUNT(*) 与分页查询使用同一套 WHERE,严格反映筛选后总数
             total_pages = max(1, (total_count + page_size - 1) // page_size)
             page = min(page, total_pages)
 
@@ -4462,6 +4744,12 @@ class Api:
                 key=lambda item: (SPORT_HUB_TYPE_ORDER.get(item, 99), item),
             )
 
+            # §任务 3:地区选项(独立于 time/location filter,与 sport_filter 联动)
+            # 选址下拉是"我有活动的城市",不应随时间窗口变化而变化
+            location_options = profile_backend.get_activity_location_options(
+                sport_filter=sport_filter, gps_only=True,
+            )
+
             return {
                 "ok": True,
                 "records": records,
@@ -4470,6 +4758,7 @@ class Api:
                 "page_size": page_size,
                 "total_pages": total_pages,
                 "activity_types": activity_types,
+                "locations": location_options,
             }
         except Exception as e:
             return {"ok": False, "error": str(e)}

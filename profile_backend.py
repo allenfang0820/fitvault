@@ -972,7 +972,14 @@ def get_activity_history(limit: int = 50) -> list[dict[str, Any]]:
     return [dict(r) for r in rows]
 
 
-def get_activity_list_filtered(offset: int, limit: int, sport_filter: str, gps_only: bool = False) -> tuple[list[dict[str, Any]], int]:
+def get_activity_list_filtered(
+    offset: int,
+    limit: int,
+    sport_filter: str,
+    gps_only: bool = False,
+    time_filter: str = "all",
+    location_filter: str = "all",
+) -> tuple[list[dict[str, Any]], int]:
     display_sql = (
         "CASE "
         "WHEN COALESCE(NULLIF(sub_sport_type, ''), 'unknown') IN ('trail_running', 'road_cycling', 'mountain_biking') THEN sub_sport_type "
@@ -991,6 +998,32 @@ def get_activity_list_filtered(offset: int, limit: int, sport_filter: str, gps_o
     if sport_filter and sport_filter != "all":
         where_parts.append(f"{display_sql} = ?")
         params.append(sport_filter)
+
+    # §任务 1:时间过滤(time_filter)——所有分支使用 ? 参数绑定,COUNT(*) 与分页共用同一套 WHERE
+    if time_filter == "7d":
+        where_parts.append("start_time IS NOT NULL AND start_time >= datetime('now', '-7 days')")
+    elif time_filter == "30d":
+        where_parts.append("start_time IS NOT NULL AND start_time >= datetime('now', '-30 days')")
+    elif time_filter == "90d":
+        where_parts.append("start_time IS NOT NULL AND start_time >= datetime('now', '-90 days')")
+    elif time_filter == "this_year":
+        where_parts.append(
+            "strftime('%Y', start_time) = strftime('%Y', 'now')"
+        )
+    elif time_filter == "last_year":
+        where_parts.append(
+            "strftime('%Y', start_time) = strftime('%Y', 'now', '-1 year')"
+        )
+    # 'all' 或未知值 → 不加过滤
+
+    # §任务 1:地区过滤(location_filter)——同时匹配 region_display / region / region_city,使用参数绑定防注入
+    if location_filter and location_filter != "all":
+        where_parts.append(
+            "(COALESCE(NULLIF(region_display, ''), '') = ? "
+            "OR COALESCE(NULLIF(region, ''), '') = ? "
+            "OR COALESCE(NULLIF(region_city, ''), '') = ?)"
+        )
+        params.extend([location_filter, location_filter, location_filter])
 
     if gps_only:
         where_parts.append(
@@ -1069,6 +1102,91 @@ def get_activity_list_filtered(offset: int, limit: int, sport_filter: str, gps_o
         conn.close()
 
     return [dict(r) for r in rows], total_count
+
+
+# §任务 2:地区选项排除集合(与 §任务 1 抽取逻辑保持一致)
+_LOCATION_OPTION_EXCLUDE = ("待补全", "室内运动", "未知地点")
+
+
+def get_activity_location_options(
+    sport_filter: str = "all",
+    gps_only: bool = True,
+) -> list[dict[str, Any]]:
+    """从全量符合条件的活动中生成地区选项。
+
+    地区值优先级: region_display -> region -> region_city。
+    排除空值、待补全、室内运动、未知地点。
+    返回 [{value, label, count}],按 count DESC 再按 label 中文 ASC。
+
+    复用 get_activity_list_filtered 的 sport_filter / gps_only 过滤语义,
+    保证选项与列表页查询口径一致(同一批活动)。
+    """
+    display_sql = (
+        "CASE "
+        "WHEN COALESCE(NULLIF(sub_sport_type, ''), 'unknown') IN ('trail_running', 'road_cycling', 'mountain_biking') THEN sub_sport_type "
+        "WHEN COALESCE(NULLIF(sport_type, ''), 'unknown') IN ('trail_running', 'road_cycling', 'mountain_biking') THEN sport_type "
+        "ELSE COALESCE(NULLIF(sport_type, ''), 'unknown') "
+        "END"
+    )
+
+    where_parts = [
+        "COALESCE(source_type, 'fit_sdk') = 'fit_sdk'",
+        "COALESCE(is_mock, 0) = 0",
+        "deleted_at IS NULL",
+    ]
+    params: list[Any] = []
+
+    if sport_filter and sport_filter != "all":
+        where_parts.append(f"{display_sql} = ?")
+        params.append(sport_filter)
+
+    if gps_only:
+        where_parts.append(
+            f"{display_sql} IN ("
+            "'running','hiking','mountaineering','cycling','walking',"
+            "'trail_running','road_cycling','mountain_biking'"
+            ")"
+        )
+        where_parts.append("start_lat IS NOT NULL")
+        where_parts.append("start_lon IS NOT NULL")
+        where_parts.append("COALESCE(track_json, points_json, '') != ''")
+
+    where_sql = "WHERE " + " AND ".join(where_parts)
+
+    # 地区优先级解析:display -> region -> city
+    # NULLIF 把空串转 NULL,COALESCE 取首个非 NULL
+    region_expr = (
+        "COALESCE(NULLIF(region_display, ''), "
+        "NULLIF(region, ''), "
+        "NULLIF(region_city, ''))"
+    )
+
+    # 排除列表展开为 IN(?, ?, ?)
+    placeholders = ",".join(["?"] * len(_LOCATION_OPTION_EXCLUDE))
+    exclude_params: list[str] = list(_LOCATION_OPTION_EXCLUDE)
+
+    conn = _conn()
+    try:
+        rows = conn.execute(
+            f"""
+            SELECT {region_expr} AS region_value, COUNT(*) AS cnt
+            FROM activities
+            {where_sql}
+              AND {region_expr} IS NOT NULL
+              AND {region_expr} NOT IN ({placeholders})
+            GROUP BY {region_expr}
+            ORDER BY cnt DESC, region_value ASC
+            """,
+            tuple(params + exclude_params),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    return [
+        {"value": r[0], "label": r[0], "count": int(r[1])}
+        for r in rows
+        if r[0]  # 二次防御:过滤空字符串
+    ]
 
 
 def load_local_track(file_path: str) -> dict[str, Any]:

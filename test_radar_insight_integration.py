@@ -23,7 +23,7 @@ import json
 import unittest
 from unittest import mock
 
-from main import Api
+from main import Api, _p90
 
 
 def _make_api_with_state(initial_messages=None, initial_session="session_test_initial"):
@@ -389,6 +389,70 @@ class TestCallLlmRadarInsightSafetyBoundaries(unittest.TestCase):
         self.assertEqual(api._chat_messages, [])
         # 2. 第二次调用刷新出**新**的 session_id
         self.assertNotEqual(sid_after_radar, sid_after_second_radar)
+
+
+class TestP90AllenScenario(unittest.TestCase):
+    """P0 修复集成测试:Allen 案例复现 + 降档验证。
+
+    审计背景(§8 / §9.1 P0):
+    - 4 次骑行活动中 3 次通勤平路 VAM=0,1 次偶遇陡坡 VAM=1200
+    - 修复前:max([0,0,0,1200])=1200 → score_climbing(1200)=95(满分)
+    - 修复后:p90([0,0,0,1200])=840 → score_climbing(840)=75(降档 1 个等级)
+
+    验证 _p90 函数 + 雷达维度 score_climbing 的端到端降档行为。
+    """
+
+    def test_p90_allen_scenario_cycling_climbing(self):
+        """Allen 案例复现:4 次骑行通勤中 1 次陡坡,修复后爬升应降档。
+
+        修复前:max([0, 0, 0, 1200]) = 1200 → score_climbing(1200) = 95
+        修复后:p90 = 840 → score_climbing(840) = 75
+        降档 ≥ 1 个等级,验证异常值主导已被消除。
+        """
+        # _p90 helper 级别断言(浮点容忍 1e-5,避免 IEEE 754 误差)
+        self.assertAlmostEqual(_p90([0, 0, 0, 1200]), 840.0, places=5)
+
+        # 端到端降档验证(配合 RadarScoreEngine.score_climbing)
+        from utils.metrics_calc import RadarScoreEngine
+        allen_values = [0, 0, 0, 1200]
+
+        # 修复前行为
+        pre_fix_max = max(allen_values)
+        pre_fix_score = RadarScoreEngine.score_climbing(pre_fix_max)
+
+        # 修复后行为
+        post_fix_p90 = _p90(allen_values)
+        post_fix_score = RadarScoreEngine.score_climbing(post_fix_p90)
+
+        # 断言:从满分 95 降到 75
+        self.assertEqual(pre_fix_score, 95)
+        self.assertEqual(post_fix_score, 75)
+        self.assertLess(post_fix_score, pre_fix_score)
+        # 降档 ≥ 20 分(1 个等级)
+        self.assertGreaterEqual(pre_fix_score - post_fix_score, 20)
+
+    def test_p90_does_not_pollute_canonical(self):
+        """§5.4 规则 7 / §八 canonical:使用 _p90 不触发任何 DB / shadow_diff 写入。
+
+        _p90 是纯函数(只接收 list[float],返回 float),不涉及 DB / I/O。
+        此测试断言:即使在 Api 实例有完整状态时调用 _p90,canonical 层不变。
+        """
+        api = _make_api_with_state()
+        # 预设 canonical 状态
+        api._ai_snapshot = {"canonical": "do_not_modify"}
+        api._track_points = [{"lat": 1, "lon": 2}]
+
+        # 调用 _p90(纯计算)
+        result = _p90([100, 200, 300, 400, 500])
+
+        # 验证 canonical 未变
+        self.assertEqual(api._ai_snapshot, {"canonical": "do_not_modify"})
+        self.assertEqual(api._track_points, [{"lat": 1, "lon": 2}])
+        # 验证计算结果正确
+        # sorted=[100, 200, 300, 400, 500], rank=0.9*4=3.6
+        # lower=3, upper=4, fraction=0.6
+        # result = 400 * 0.4 + 500 * 0.6 = 160 + 300 = 460.0
+        self.assertAlmostEqual(result, 460.0, places=5)
 
 
 if __name__ == "__main__":

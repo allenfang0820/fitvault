@@ -58,6 +58,7 @@ def load_llm_config() -> dict[str, Any]:
         "agent_id": str(data.get("agent_id") or DEFAULT_AGENT_ID).strip(),
         "watch_brand": str(data.get("watch_brand") or "").strip(),
         "local_dir": str(data.get("local_dir") or "").strip(),
+        "ai_notified": bool(data.get("ai_notified", False)),
     }
 
 
@@ -79,7 +80,7 @@ def redact_llm_config(config: dict[str, Any]) -> dict[str, Any]:
     return redacted
 
 
-def save_llm_config(provider: str, url: str, model: str, api_key: str, agent_id: str = "", watch_brand: str = "", local_dir: str = "") -> None:
+def save_llm_config(provider: str, url: str, model: str, api_key: str, agent_id: str = "", watch_brand: str = "", local_dir: str = "", ai_notified: bool = False) -> None:
     cfg = {
         "provider": (provider or DEFAULT_PROVIDER).strip(),
         "url": (url or DEFAULT_URL).strip(),
@@ -88,6 +89,7 @@ def save_llm_config(provider: str, url: str, model: str, api_key: str, agent_id:
         "agent_id": (agent_id or "").strip(),
         "watch_brand": (watch_brand or "").strip(),
         "local_dir": (local_dir or "").strip(),
+        "ai_notified": bool(ai_notified),
     }
     p = _config_file()
     p.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -535,7 +537,7 @@ RADAR_DIMENSION_INTERPRETATION: dict[str, str] = {
     "recovery": "恢复:直接消费 user_profile.hrv_baseline(来自 Garmin Connect / MCP 画像同步),clamp 到 [0, 100]。fallback = 60。",
     "stability": "心肺稳定:基于有氧解耦 Pa:Hr 90 天最近 5 次均值。decoupling<5%→95 分,5~10%→75 分,10~15%→55 分,≥15%→30 分。",
     "threshold": "阈值:基于乳酸阈值心率(20 分钟滑动窗口 × 0.95)90 天最大值。threshold_hr/max_hr <0.75→40 分,0.75~0.82→65 分,0.82~0.88→82 分,≥0.88→95 分。",
-    "climbing": "爬升:基于垂直爬升速率(平均爬升速度 = total_ascent/climb_time × 3600 m/h)90 天最大值。垂直爬升速率<300→20 分,300~600→50 分,600~900→75 分,≥900→95 分。",
+    "climbing": "爬升:基于后端『有效爬坡段』算法计算的 VAM(m/h = 有效段累计爬升 / 有效段时间 × 3600),经 90 天可信活动过滤(cycling / road_cycling / mountain_biking / running ≥ 20m@1km,trail_running ≥ 30m@1km,hiking ≥ 50m@1km)与 p90 聚合后得到。低爬升通勤 / 平路活动不作为爬升能力依据。阈值随运动类型变化:running 默认 300 / 600 / 900 m/h,cycling 100 / 250 / 500 m/h,hiking 100 / 200 / 400 m/h。LLM 只能解释系统提供的 canonical snapshot,禁止重新计算或推断。",
     "anaerobic": "无氧爆发:基于 30 秒滑动窗口峰值速度 90 天最大值。跑步<3 m/s→20 分,3~5→50 分,5~7→75 分,≥7→95 分;骑行<8→20 分,8~12→50 分,12~16→75 分,≥16→95 分。",
 }
 
@@ -627,6 +629,15 @@ def build_radar_insight_system_prompt(
 - 若 sport_mode == "cycling":重点解读功率与心率漂移(stability / threshold),爬升由垂直爬升速率体现
 - 若 sport_mode == "swimming":重点解读耐力持续性(endurance / threshold),爬升维度不适用(N/A)
 - 若 sport_mode == "general":均衡解读 6 维度
+
+【运动专项爬升维度解读 — 涉及 VAM 阈值差异时遵循】
+- 爬升(VAM)阈值按 sport_type 分支:cycling/road_cycling/mountain_biking 用 100/250/500 m/h,
+  hiking 用 100/200/400 m/h,其他运动(跑步/越野跑)沿用 300/600/900 m/h。
+- 解读骑行/徒步用户爬升维度时:
+  · 必须先说明阈值基准("该得分基于骑行 VAM 基准,不同于跑步")
+  · 重点呈现 vam 数值本身(m/h)而非分数,因骑行/徒步 VAM 上限低于跑步
+  · 不得跨运动类比("您比跑步用户的爬升差"——评分体系本就不同)
+- 解读跑步/越野跑用户爬升维度时:维持现有叙事(分数与阈值对照即可)。
 
 【必须输出维度】
 dimension_interpretation 数组必须严格包含该运动类型 schema 中的所有维度(参考现有雷达图 RADAR_SCHEMAS):

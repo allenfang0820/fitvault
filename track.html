@@ -504,6 +504,29 @@
             align-items: center;
             flex-wrap: wrap;
         }
+        .hub-date-range {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 4px 6px;
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 8px;
+            background: rgba(15,23,42,0.46);
+        }
+        .hub-date-input {
+            width: 118px;
+            background: rgba(15,23,42,0.74);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: #f8fafc;
+            border-radius: 6px;
+            padding: 4px 6px;
+            font-size: 0.66rem;
+            outline: none;
+        }
+        .hub-date-separator {
+            color: #94a3b8;
+            font-size: 0.66rem;
+        }
         .hub-sync-btn {
             border: 1px solid rgba(56, 189, 248, 0.22);
             background: linear-gradient(135deg, rgba(15, 23, 42, 0.92), rgba(12, 74, 110, 0.76));
@@ -1345,11 +1368,23 @@
         .pace-row { display: flex; justify-content: space-between; align-items: center; font-size: 0.75rem; padding: 2px 0; }
         .pace-seg-name { color: #94a3b8; }
         .pace-seg-val { color: #f8fafc; font-weight: 500; font-variant-numeric: tabular-nums; }
-        .alt-keyword { font-weight: 800; letter-spacing: 0.01em; }
-        .alt-keyword-lv1 { color: #22c55e; font-size: calc(0.75rem + 3px); }
-        .alt-keyword-lv2 { color: #38bdf8; font-size: calc(0.75rem + 3px); }
-        .alt-keyword-lv3 { color: #f59e0b; font-size: calc(0.75rem + 3px); }
-        .alt-keyword-lv4 { color: #ef4444; font-size: calc(0.75rem + 3px); }
+        /* 难度文案高亮 — 8 级渐进式色阶（冷→中性→暖）与字号提升
+           心理暗示: 低难度 = 浅冷色放松；中难度 = 中性色聚焦；高难度 = 深暖色警示 */
+        .alt-keyword {
+            font-weight: 700;
+            font-size: 1.15em;
+            letter-spacing: 0.02em;
+            line-height: 1.4;
+            transition: color 0.2s ease;
+        }
+        .alt-keyword-lv1 { color: #34d399; } /* 青绿 — 轻松 */
+        .alt-keyword-lv2 { color: #38bdf8; } /* 天蓝 — 平静 */
+        .alt-keyword-lv3 { color: #22d3ee; } /* 蓝青 — 起步 */
+        .alt-keyword-lv4 { color: #fbbf24; } /* 琥珀 — 注意 */
+        .alt-keyword-lv5 { color: #fb923c; } /* 橙 — 投入 */
+        .alt-keyword-lv6 { color: #f87171; } /* 朱红 — 警示 */
+        .alt-keyword-lv7 { color: #ef4444; } /* 番茄红 — 严肃 */
+        .alt-keyword-lv8 { color: #e11d48; } /* 玫瑰红 — 极限 */
 
         .secondary-btn, .primary-btn {
             width: 100%; padding: 10px; border-radius: 8px; cursor: pointer; transition: all 0.2s;
@@ -2020,11 +2055,20 @@
             opacity: 1;
         }
         .status-indicator.error { background: #ef4444; box-shadow: 0 0 10px #ef4444; }
+        .status-indicator.silent {
+            background: #60a5fa;
+            box-shadow: 0 0 6px rgba(96, 165, 250, 0.4);
+            animation: indicatorSilentPulse 1.2s ease-in-out infinite;
+        }
 
         @keyframes pulse-yellow {
             0% { transform: scale(0.94); opacity: 0.62; box-shadow: 0 0 5px rgba(250, 204, 21, 0.45); }
             50% { transform: scale(1.14); opacity: 1; box-shadow: 0 0 12px rgba(250, 204, 21, 0.95); }
             100% { transform: scale(0.94); opacity: 0.62; box-shadow: 0 0 5px rgba(250, 204, 21, 0.45); }
+        }
+        @keyframes indicatorSilentPulse {
+            0%, 100% { opacity: 0.5; }
+            50% { opacity: 1; }
         }
 
         .settings-btn-group {
@@ -2225,9 +2269,15 @@
             <span class="tab-label">配置</span>
             <span class="tab-arrow">➜</span>
         </button>
+        <div class="bookmark-spacer"></div>
+        <button class="bookmark-tab" data-panel="help" onclick="switchTab(this)">
+            <span class="tab-icon">📖</span>
+            <span class="tab-label">帮助说明</span>
+            <span class="tab-arrow">➜</span>
+        </button>
     </div>
 
-    <!-- ========== 主内容区（3个面板） ========== -->
+    <!-- ========== 主内容区（4个面板） ========== -->
     <div id="main-content">
 
         <!-- ========== 【个人运动数据】面板 ========== -->
@@ -2348,7 +2398,7 @@
                     <div class="profile-bottom-workspace">
                         <div class="profile-tab-bar" id="sport-hub-tab-bar">
                             <button class="profile-tab-btn active" data-hub-tab="records" onclick="switchSportHubTab('records')">运动记录</button>
-                            <button class="profile-tab-btn" data-hub-tab="results" onclick="switchSportHubTab('results')">成绩记录</button>
+                            <button class="profile-tab-btn" data-hub-tab="results" onclick="switchSportHubTab('results')">成长趋势</button>
                             <button class="profile-tab-btn" data-hub-tab="honors" onclick="switchSportHubTab('honors')">荣誉墙</button>
                             <button class="profile-tab-btn" data-hub-tab="reserved" onclick="switchSportHubTab('reserved')">预留分析</button>
                         </div>
@@ -2359,6 +2409,12 @@
                                         <select id="sport-record-type-filter" class="hub-select" onchange="onSportHubFilterChange()">
                                             <option value="all">全部活动类型</option>
                                         </select>
+                                        <span class="hub-date-range">
+                                            <input type="date" id="sport-sync-start-date" class="hub-date-input" aria-label="同步开始日期">
+                                            <span class="hub-date-separator">至</span>
+                                            <input type="date" id="sport-sync-end-date" class="hub-date-input" aria-label="同步结束日期">
+                                        </span>
+                                        <button class="hub-sync-btn" id="sport-records-remote-sync-btn" onclick="syncRemoteSportHubActivities()">同步活动</button>
                                         <button class="hub-sync-btn" id="sport-records-sync-btn" onclick="forceRefreshMovementRecords()">🔄 同步本地数据</button>
                                         <button class="hub-sync-btn" id="sport-records-delete-btn" onclick="deleteSelectedSportHubRecords()">🗑️ 删除选中</button>
                                     </div>
@@ -2648,6 +2704,54 @@
             </div>
         </div>
 
+        <!-- ========== 【帮助说明】面板 ========== -->
+        <div id="panel-help" class="tab-panel">
+            <div class="panel-header">
+                <h2>📖 帮助说明</h2>
+                <p>脉图核心功能与使用流程速查</p>
+            </div>
+            <div class="panel-body" style="padding:18px 22px; overflow-y:auto;">
+                <div class="section-card">
+                    <div class="section-title">🧭 三大主功能区</div>
+                    <ul style="margin:0; padding-left:18px; line-height:1.9; color:#cbd5e1; font-size:0.82rem;">
+                        <li><b style="color:#f8fafc;">个人运动数据</b>：同步 Garmin / 高驰用户画像、查看运动记录、PB 成绩、荣誉墙、能力雷达。</li>
+                        <li><b style="color:#f8fafc;">轨迹分析工具</b>：导入 FIT / GPX、3D 地形渲染、剖面图、打卡点编辑、轨迹报告 v3。</li>
+                        <li><b style="color:#f8fafc;">配置</b>：大模型 API、数据存储路径、设备选择、连接测试、存储规范同步。</li>
+                    </ul>
+                </div>
+                <div class="section-card">
+                    <div class="section-title">🚀 快速上手</div>
+                    <ol style="margin:0; padding-left:18px; line-height:1.9; color:#cbd5e1; font-size:0.82rem;">
+                        <li>进入 <b>配置</b>，选择设备品牌，填写大模型 API 地址与密钥，运行连接测试。</li>
+                        <li>进入 <b>个人运动数据</b>，点击「同步」拉取运动画像与近期记录。</li>
+                        <li>进入 <b>轨迹分析工具</b>，从历史记录选择一条活动或直接拖入 FIT / GPX 文件。</li>
+                        <li>查看剖面、添加打卡点、生成 AI 解读（雷达图 / 风险评估 / 地形解读）。</li>
+                    </ol>
+                </div>
+                <div class="section-card">
+                    <div class="section-title">⌨️ 快捷键</div>
+                    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:8px; font-size:0.78rem; color:#cbd5e1;">
+                        <div><kbd style="background:rgba(15,23,42,0.6); padding:2px 6px; border-radius:4px; border:1px solid rgba(212,175,55,0.3);">Ctrl/⌘ + Shift + A</kbd> 全局呼出 AI 私教</div>
+                        <div><kbd style="background:rgba(15,23,42,0.6); padding:2px 6px; border-radius:4px; border:1px solid rgba(212,175,55,0.3);">Enter</kbd> 私教输入框发送</div>
+                    </div>
+                </div>
+                <div class="section-card">
+                    <div class="section-title">🛡️ 数据准则</div>
+                    <ul style="margin:0; padding-left:18px; line-height:1.9; color:#cbd5e1; font-size:0.78rem;">
+                        <li>脉图是 <b>本地 AI 运动外挂</b>，数据完全保存在本机 SQLite，不上传云端。</li>
+                        <li>所有显示指标均来自 <b>FIT 可信数据层</b>，AI 仅作解读，不会写回原始数据。</li>
+                        <li>高风险操作（如批量删除活动）需二次确认。</li>
+                    </ul>
+                </div>
+                <div class="section-card" style="border-style:dashed; opacity:0.85;">
+                    <div class="section-title">ℹ️ 关于本面板</div>
+                    <p style="margin:0; color:#94a3b8; font-size:0.75rem; line-height:1.7;">
+                        本帮助说明为前端纯静态内容，不依赖后端、不参与 AI 链路、不写入 canonical 数据库。
+                    </p>
+                </div>
+            </div>
+        </div>
+
     </div><!-- end #main-content -->
 
 </div><!-- end #app-wrapper -->
@@ -2720,7 +2824,7 @@
         <div class="blocker-modal-icon">⚠️</div>
         <div class="blocker-modal-title">确认操作</div>
         <div class="blocker-modal-desc">确定执行此操作吗？</div>
-        <button class="blocker-modal-btn" onclick="document.getElementById('blocker-modal').style.display='none'">取消</button>
+        <button class="blocker-modal-btn" onclick="closeBlockerModal()">取消</button>
     </div>
 </div>
 
@@ -2833,6 +2937,7 @@
         totalPages: 1,
         recordsLoading: false,
         recordsSyncing: false,
+        remoteSyncing: false,
         recordsReady: false,
         recordsError: '',
         lastSyncSummary: null,
@@ -3023,7 +3128,8 @@
         llmTestTransitionTimer: null,
         aiNotified: false,
         dirValidated: true,
-        dirValidationRequestId: 0
+        dirValidationRequestId: 0,
+        lastNotifiedDirHash: ''
     };
 
     const aiCoachState = {
@@ -3719,7 +3825,7 @@
     }
 
     function switchTab(tabBtn) {
-        const panels = ['profile', 'trace', 'settings'];
+        const panels = ['profile', 'trace', 'settings', 'help'];
         const activePanel = tabBtn ? tabBtn.getAttribute('data-panel') : 'profile';
 
         document.querySelectorAll('.bookmark-tab').forEach(function(t) { t.classList.remove('active'); });
@@ -3750,6 +3856,9 @@
                 if (settingsBtn) switchTab(settingsBtn);
             });
         }
+        if (activePanel === 'help') {
+            // 帮助说明面板为纯静态内容,无需加载后端数据
+        }
 
         // §5.4 规则 6:切换 Tab 时清空 AI 洞察(阅后即焚)
         _clearRadarInsight();
@@ -3767,7 +3876,7 @@
 
     function restoreStartupRoute() {
         const lastPanel = localStorage.getItem('last_active_panel');
-        const targetPanel = ['profile', 'trace', 'settings'].includes(lastPanel) ? lastPanel : 'profile';
+        const targetPanel = ['profile', 'trace', 'settings', 'help'].includes(lastPanel) ? lastPanel : 'profile';
         const btn = document.querySelector('.bookmark-tab[data-panel="' + targetPanel + '"]');
         if (btn) switchTab(btn);
     }
@@ -3789,14 +3898,15 @@
 
     function setLLMTestStatus(text, passed, isTesting = false, options = {}) {
         const requestId = typeof options.requestId === 'number' ? options.requestId : null;
-        const nextState = isTesting ? 'loading' : (passed ? 'success' : (text !== '尚未测试连接' ? 'error' : 'idle'));
+        const mode = options.mode === 'silent' ? 'silent' : 'manual';
+        const nextState = (isTesting && mode === 'silent') ? 'silent' : (isTesting ? 'loading' : (passed ? 'success' : (text !== '尚未测试连接' ? 'error' : 'idle')));
         const isLatestRequest = requestId === null || requestId === onboardingState.llmTestRequestId;
         const stateLocked = onboardingState.llmTestStateLock && onboardingState.llmTestState === 'loading';
 
         if (!isLatestRequest) {
             return false;
         }
-        if (stateLocked && requestId === null && nextState !== 'loading') {
+        if (stateLocked && requestId === null && nextState !== 'loading' && nextState !== 'silent') {
             return false;
         }
 
@@ -3805,7 +3915,9 @@
 
         if (resultEl) {
             resultEl.innerText = text;
-            resultEl.style.color = isTesting ? '#facc15' : (passed ? 'var(--primary)' : (nextState === 'error' ? '#fca5a5' : '#94a3b8'));
+            const silentColor = '#60a5fa';
+            const colorForState = isTesting ? (mode === 'silent' ? silentColor : '#facc15') : (passed ? 'var(--primary)' : (nextState === 'error' ? '#fca5a5' : '#94a3b8'));
+            resultEl.style.color = colorForState;
         }
 
         clearLLMTestTransitionTimer();
@@ -3815,6 +3927,10 @@
             onboardingState.llmTestStateLock = true;
             onboardingState.llmTestState = 'loading';
             applyLLMTestIndicatorState(indicator, 'loading');
+        } else if (nextState === 'silent') {
+            onboardingState.llmTestStateLock = true;
+            onboardingState.llmTestState = 'silent';
+            applyLLMTestIndicatorState(indicator, 'silent');
         } else if (nextState === 'success' && onboardingState.llmTestState === 'loading') {
             onboardingState.llmTestTransitionTimer = setTimeout(function() {
                 if (requestId !== null && requestId !== onboardingState.llmTestRequestId) {
@@ -4098,6 +4214,24 @@
         sportHubState.syncStats = { inserted: 0, updated: 0, skipped: 0, removed: 0, total: 0, current: 0 };
     }
 
+    function formatDateInputValue(dateObj) {
+        const year = dateObj.getFullYear();
+        const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+        const day = String(dateObj.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+
+    function initSportHubSyncDateRange() {
+        const startEl = document.getElementById('sport-sync-start-date');
+        const endEl = document.getElementById('sport-sync-end-date');
+        if (!startEl || !endEl || startEl.value || endEl.value) return;
+        const end = new Date();
+        const start = new Date();
+        start.setDate(end.getDate() - 30);
+        startEl.value = formatDateInputValue(start);
+        endEl.value = formatDateInputValue(end);
+    }
+
     async function pollSportHubSyncJob(jobId) {
         if (!(window.pywebview && window.pywebview.api && typeof window.pywebview.api.get_sync_local_fit_files_status === 'function')) {
             throw new Error('当前版本不支持同步进度查询');
@@ -4195,10 +4329,20 @@
 
     function updateMovementRecordsSyncButton() {
         const btn = document.getElementById('sport-records-sync-btn');
-        if (!btn) return;
-        const busy = sportHubState.recordsSyncing || sportHubState.recordsLoading || isMovementRecordsInitializing || isMovementRecordsRefreshing;
-        btn.disabled = busy;
-        btn.innerText = busy ? '🔄 同步中...' : '🔄 同步本地数据';
+        const remoteBtn = document.getElementById('sport-records-remote-sync-btn');
+        const startEl = document.getElementById('sport-sync-start-date');
+        const endEl = document.getElementById('sport-sync-end-date');
+        const busy = sportHubState.recordsSyncing || sportHubState.recordsLoading || sportHubState.remoteSyncing || isMovementRecordsInitializing || isMovementRecordsRefreshing;
+        if (btn) {
+            btn.disabled = busy;
+            btn.innerText = busy ? '🔄 同步中...' : '🔄 同步本地数据';
+        }
+        if (remoteBtn) {
+            remoteBtn.disabled = busy;
+            remoteBtn.innerText = sportHubState.remoteSyncing ? '同步活动中...' : '同步活动';
+        }
+        if (startEl) startEl.disabled = busy;
+        if (endEl) endEl.disabled = busy;
     }
 
     async function fetchSportHubActivityDetail(activityId) {
@@ -4272,9 +4416,11 @@
             headerRow.innerHTML = baseHeaders.join('');
         }
 
-        if (sportHubState.recordsSyncing || sportHubState.recordsLoading) {
+        if (sportHubState.recordsSyncing || sportHubState.recordsLoading || sportHubState.remoteSyncing) {
             let loadingText = '正在加载运动记录...';
-            if (sportHubState.recordsSyncing) {
+            if (sportHubState.remoteSyncing) {
+                loadingText = sportHubState.syncMessage || '正在请求 OpenClaw 同步指定时间范围内的活动 FIT 文件...';
+            } else if (sportHubState.recordsSyncing) {
                 const stats = sportHubState.syncStats || {};
                 const progressText = stats.total
                     ? `进度 ${stats.current}/${stats.total}（${Math.round(sportHubState.syncProgress || 0)}%）`
@@ -4335,8 +4481,8 @@
                 : '';
             info.innerText = `共 ${sportHubState.total} 条记录，当前第 ${page}/${totalPages} 页，显示 ${from}-${to} 条${syncHint}${skippedHint}`;
         }
-        if (prevBtn) prevBtn.disabled = page <= 1 || sportHubState.recordsLoading || sportHubState.recordsSyncing;
-        if (nextBtn) nextBtn.disabled = page >= totalPages || sportHubState.recordsLoading || sportHubState.recordsSyncing;
+        if (prevBtn) prevBtn.disabled = page <= 1 || sportHubState.recordsLoading || sportHubState.recordsSyncing || sportHubState.remoteSyncing;
+        if (nextBtn) nextBtn.disabled = page >= totalPages || sportHubState.recordsLoading || sportHubState.recordsSyncing || sportHubState.remoteSyncing;
 
         renderPageNumbers(
             'sport-records-page-numbers',
@@ -4355,7 +4501,7 @@
         }
         const deleteBtn = document.getElementById('sport-records-delete-btn');
         if (deleteBtn) {
-            deleteBtn.disabled = sportHubState.selectedIds.size === 0 || sportHubState.recordsLoading || sportHubState.recordsSyncing;
+            deleteBtn.disabled = sportHubState.selectedIds.size === 0 || sportHubState.recordsLoading || sportHubState.recordsSyncing || sportHubState.remoteSyncing;
             deleteBtn.innerText = sportHubState.selectedIds.size ? `🗑️ 删除选中(${sportHubState.selectedIds.size})` : '🗑️ 删除选中';
         }
     }
@@ -4388,6 +4534,11 @@
         renderSportHubRecords();
     }
 
+    function closeBlockerModal() {
+        const modal = document.getElementById('blocker-modal');
+        if (modal) modal.style.display = 'none';
+    }
+
     async function deleteSelectedSportHubRecords() {
         const ids = Array.from(sportHubState.selectedIds || []);
         if (!ids.length) {
@@ -4416,7 +4567,7 @@
                     const res = await window.pywebview.api.delete_activities(ids, confirmToken);
                     if (!res || !res.ok) throw new Error((res && res.error) || '删除失败');
                     sportHubState.selectedIds.clear();
-                    document.getElementById('blocker-modal').style.display = 'none';
+                    closeBlockerModal();
                     await loadSportHubActivityList({ resetPage: true, refreshSnapshot: true });
                     let msg = `已删除 ${res.deleted} 条运动记录`;
                     if (typeof res.files_deleted === 'number') {
@@ -4432,7 +4583,7 @@
                     }
                     showToast(msg);
                 } catch (e) {
-                    document.getElementById('blocker-modal').style.display = 'none';
+                    closeBlockerModal();
                     showToast('删除失败：' + ((e && e.message) || e));
                 }
             };
@@ -4753,6 +4904,7 @@
     }
 
     async function onSwitchToMovementRecords(options = {}) {
+        initSportHubSyncDateRange();
         const forceRefresh = !!options.forceRefresh;
         if (isMovementRecordsInitialized && !forceRefresh && !sportHubState.needsRefresh) {
             renderSportHubRecords();
@@ -4882,6 +5034,48 @@
 
     async function forceRefreshMovementRecords() {
         await onSwitchToMovementRecords({ forceRefresh: true });
+    }
+
+    async function syncRemoteSportHubActivities() {
+        initSportHubSyncDateRange();
+        const startEl = document.getElementById('sport-sync-start-date');
+        const endEl = document.getElementById('sport-sync-end-date');
+        const startDate = startEl ? String(startEl.value || '').trim() : '';
+        const endDate = endEl ? String(endEl.value || '').trim() : '';
+        if (!startDate || !endDate) {
+            showToast('请选择同步活动的开始和结束日期');
+            return;
+        }
+        if (startDate > endDate) {
+            showToast('开始日期不能晚于结束日期');
+            return;
+        }
+        if (!(window.pywebview && window.pywebview.api && typeof window.pywebview.api.sync_remote_fit_activities === 'function')) {
+            showToast('当前版本不支持通过 OpenClaw 同步活动');
+            return;
+        }
+        sportHubState.remoteSyncing = true;
+        sportHubState.recordsError = '';
+        sportHubState.syncMessage = `正在请求 OpenClaw 同步 ${startDate} 至 ${endDate} 的活动 FIT 文件...`;
+        renderSportHubRecords();
+        try {
+            const res = await window.pywebview.api.sync_remote_fit_activities(startDate, endDate);
+            if (!res || !res.ok) throw new Error((res && res.error) || 'OpenClaw 活动同步失败');
+            const content = String(res.content || '').trim();
+            sportHubState.syncMessage = content || 'OpenClaw 已完成活动下载请求，正在刷新本地 FIT 数据...';
+            showToast('OpenClaw 已返回同步结果，正在刷新本地记录');
+            await syncAndLoadSportHubRecords({ sync: true, resetPage: true });
+        } catch (e) {
+            console.error('syncRemoteSportHubActivities error:', e);
+            sportHubState.recordsError = String((e && e.message) || e || '同步活动失败');
+            sportHubState.syncMessage = sportHubState.recordsError;
+            showToast('同步活动失败：' + sportHubState.recordsError);
+            renderSportHubRecords();
+        } finally {
+            sportHubState.remoteSyncing = false;
+            updateMovementRecordsSyncButton();
+            renderSportHubRecords();
+        }
     }
 
     function switchSportHubTab(tab) {
@@ -5046,11 +5240,15 @@
 
         try {
             if (!useCache || appState.rawHistoryFiles.length === 0) {
-                const sportFilter = String(appState.historyFilters.type || 'all');
+                const filters = appState.historyFilters;
+                const sportFilter = String(filters.type || 'all');
                 const page = Math.max(1, Number(appState.historyPagination.currentPage) || 1);
                 const pageSize = Number(appState.historyPagination.pageSize) || 30;
 
-                const res = await window.pywebview.api.get_trace_activity_history(page, pageSize, sportFilter);
+                // §任务 4:time_filter / location_filter 透传后端,避免前端双重过滤
+                const res = await window.pywebview.api.get_trace_activity_history(
+                    page, pageSize, sportFilter, filters.time, filters.location
+                );
                 if (!res || !res.ok) {
                     listEl.innerHTML = '<div style="color:#94a3b8;font-size:0.75rem;text-align:center;padding:20px;">暂无历史记录</div>';
                     return;
@@ -5066,21 +5264,19 @@
                     f.cityName = (f.region || '').trim() || '未知地点';
                 });
 
+                // §任务 4:地区下拉框使用后端 res.locations(全量 GPS 活动口径,不受当前页影响)
                 const locationSel = document.getElementById('filter-location');
-                if (locationSel) {
-                    const cities = new Set();
-                    appState.rawHistoryFiles.forEach(f => {
-                        if (f.cityName && f.cityName !== '未知地点' && f.cityName !== '其他地区') {
-                            cities.add(f.cityName);
-                        }
-                    });
-                    if (cities.size <= 1) {
-                        locationSel.innerHTML = cities.size === 0 ? '<option value="all">暂无地区数据</option>' : `<option value="${Array.from(cities)[0]}">${Array.from(cities)[0]}</option>`;
+                if (locationSel && Array.isArray(res.locations)) {
+                    const locs = res.locations;
+                    const currentLocVal = locationSel.value;  // 保留当前选择(若仍存在)
+                    if (locs.length === 0) {
+                        locationSel.innerHTML = '<option value="all">暂无地区数据</option>';
                     } else {
-                        const currentLocVal = locationSel.value;
-                        const sortedCities = Array.from(cities).sort((a, b) => a.localeCompare(b, 'zh-CN'));
-                        locationSel.innerHTML = '<option value="all">地点: 全部</option>' + sortedCities.map(c => `<option value="${c}">${c}</option>`).join('');
-                        locationSel.value = sortedCities.includes(currentLocVal) ? currentLocVal : 'all';
+                        locationSel.innerHTML = '<option value="all">地点: 全部</option>'
+                            + locs.map(l => `<option value="${l.value}">${l.label} (${l.count})</option>`).join('');
+                        // 当前选择若仍存在则保留,否则回到 all
+                        const stillExists = locs.some(l => l.value === currentLocVal);
+                        locationSel.value = stillExists ? currentLocVal : 'all';
                         if (locationSel.selectedIndex === -1) locationSel.value = 'all';
                     }
                 }
@@ -5109,7 +5305,7 @@
                 return tb - ta;
             });
 
-            // 只保留适合轨迹分析的 GPS 活动
+            // GPS 白名单兜底过滤(后端 gps_only=True 已处理,这里作为前端安全网)
             const GPS_SPORT_WHITELIST = new Set([
                 'running', 'hiking', 'mountaineering', 'cycling', 'walking',
                 'trail_running', 'road_cycling', 'mountain_biking'
@@ -5119,34 +5315,7 @@
                 return GPS_SPORT_WHITELIST.has(st) && item.start_lat != null && item.start_lon != null && item.has_track;
             });
 
-            // 应用筛选
-            const filters = appState.historyFilters;
-            const now = new Date();
-            displayFiles = displayFiles.filter(item => {
-                // 时间筛选
-                if (filters.time !== 'all') {
-                    const itemDate = item.start_time ? new Date(item.start_time) : null;
-                    if (!itemDate) return false;
-                    const diffDays = (now - itemDate) / (1000 * 60 * 60 * 24);
-                    if (filters.time === '7d' && diffDays > 7) return false;
-                    if (filters.time === '30d' && diffDays > 30) return false;
-                    if (filters.time === '90d' && diffDays > 90) return false;
-                    if (filters.time === 'this_year' && itemDate.getFullYear() !== now.getFullYear()) return false;
-                    if (filters.time === 'last_year' && itemDate.getFullYear() !== now.getFullYear() - 1) return false;
-                }
-                // 类型筛选
-                if (filters.type !== 'all') {
-                    const st = item.display_sport_type || item.sub_sport_type || item.sport_type || 'unknown';
-                    if (st !== filters.type) {
-                        return false;
-                    }
-                }
-                // 地点筛选
-                if (filters.location !== 'all') {
-                    if (item.cityName !== filters.location) return false;
-                }
-                return true;
-            });
+            // §任务 4:不再做 time / type / location 前端过滤(后端 SQL 已处理,避免双重过滤导致结果错误)
 
             if (displayFiles.length === 0) {
                 listEl.innerHTML = '<div style="color:#94a3b8;font-size:0.75rem;text-align:center;padding:20px;">没有匹配的记录</div>';
@@ -6591,6 +6760,92 @@
         return peakMarkers;
     }
 
+    // ══════════════════════════════════════════════════════════════════
+    // 轨迹难度文案库 — Pure Static Lookup (NARRATIVE_LAYER)
+    // 数据源: docs/.qclaw/workspace-agent-823b6b76/运动难度等级文案库.md
+    // 契约 §5.2 / §5.4: 不调用 AI 解读，禁止重新计算
+    // 适配逻辑: 按 (style, level) 双维度查表
+    // ══════════════════════════════════════════════════════════════════
+    var DIFFICULTY_TEXT_LIBRARY = {
+        'outdoor': {
+            1: '营地散步局。连【防晒霜都不用补】，穿【拖鞋也能走完】，大自然对你露出了慈祥的微笑。',
+            2: '农家乐热身。路况平坦得【像你家的客厅】，这趟遇到最凶猛的野生动物，可能是一只【过马路的松鼠】。',
+            3: '轻装徒步游。终于闻到了【泥土的芬芳】，保温杯里的水刚好喝完一半，山风吹拂，【一切尽在掌握】。',
+            4: '进山探路者。有点野外拉练的意思了，【连续的爬升】让你开始喘气，但山腰的风景绝对【值回票价】。',
+            5: '越野老鸟局。路标开始稀疏，【碎石与野路齐飞】，是时候【拔出你的登山杖】，给大自然一点颜色看看了。',
+            6: '荒野求生初体验。大腿肌肉【疯狂抗议】，每一次大爬升都在【拷问灵魂】：「我周末为什么不【在家吹空调】？」',
+            7: '达尔文甄选赛。地形【极其狂野】，不仅考验体能储备，更考验【野外直觉】。今天下山，路人看你的眼神都会【带着敬畏】。',
+            8: '贝爷直呼内行。这不是在运动，这是在挑战【人类物种的边界】！走完这条线，整座山头的飞禽走兽都得【尊你为王】。'
+        },
+        'runner': {
+            1: '饭后遛弯局。这点运动量，连你今天出门前【多喝的那口】运动饮料都【消耗不掉】。',
+            2: '相当于去公园【看大爷下了一盘棋】，大腿肌肉表示：【就这？】连热身都不算。',
+            3: '终于有点【出汗的迹象】了，起码对得起你脚上那双【顶配碳板跑鞋】的磨损费。',
+            4: '周末例行拉练标准包。跑完这趟，刚好能【心安理得】地去【整一顿烧烤】犒劳自己。',
+            5: '有点长距离拉练后半程那味儿了，腿上的【乳酸开始堆积】，身体正在提醒你【谁才是老大】。',
+            6: '【撞墙期】的绝望感提前派送。脚步【比灌了铅还沉】，满脑子都是「我刚才【为什么要决定出门】」。',
+            7: '堪比全马最后的【魔鬼直道】。【咬牙切齿】怀疑人生，全靠不愿上收容车的尊严和【一口仙气吊着】。',
+            8: '恭喜你在跑圈【当场封神】。此路线跑完，你可以直接考虑【原地退役】并开始【撰写回忆录】了。'
+        },
+        'cyclist': {
+            1: '休闲骑（骗局）。连飞轮的【黄油都没热透】，这心率也就比你在【沙发上刷手机】高那么一点。',
+            2: '【买菜车】也能拉爆。全程顺风加大平路，今天你的昂贵功率计怕是只能【当个摆设】了。',
+            3: '完美咖啡骑 (Coffee Ride)。微微出汗的【舒适踏频】，正好适合去店里点杯美式顺便【给车拍个照】。',
+            4: '巡航模式启动。开始需要点【核心力量】稳住输出了，今天的汗水总算对得起你那套【气动骑行服】。',
+            5: '乳酸阈值榨汁机。连绵的缓长坡让你开始【后悔没换大飞轮】，摇车摇得大腿【直呼救命】。',
+            6: '【HC 级爬坡】体验卡。心率直接【顶爆红区】，低头一看码表上的坡度，恨不得当场把碳刀扔了【扫个共享单车】。',
+            7: 'FTP 终结者。双腿随时处于抽筋的边缘【疯狂试探】，全靠【"绝不推车"】的骑士底线在【死死硬踩】。',
+            8: '大环赛【皇后赛段】级别。膝盖、心肺和牙齿在进行【三方交火】。能【脚不落地】骑完这条线，当地车群以后都得【管你叫大哥】。'
+        }
+    };
+
+    // 8 级颜色索引：低难度（冷色放松）→ 中难度（中性聚焦）→ 高难度（暖色警示）
+    var _DIFFICULTY_HIGHLIGHT_COLORS = {
+        1: 'alt-keyword-lv1',
+        2: 'alt-keyword-lv2',
+        3: 'alt-keyword-lv3',
+        4: 'alt-keyword-lv4',
+        5: 'alt-keyword-lv5',
+        6: 'alt-keyword-lv6',
+        7: 'alt-keyword-lv7',
+        8: 'alt-keyword-lv8'
+    };
+
+    // 将 text 中所有【高亮文本】替换为 span 标签，按难度等级应用渐进式色阶
+    // 可扩展: 新增【】标记只需修改 DIFFICULTY_TEXT_LIBRARY，无需改动此函数
+    // 颜色规范见 .alt-keyword-lv* CSS（冷→中性→暖的 8 级色阶）
+    function _highlightBracketText(text, mtdiLevel) {
+        if (!text || typeof text !== 'string') return text;
+        var level = Math.max(1, Math.min(8, Math.round(Number(mtdiLevel) || 1)));
+        var colorClass = _DIFFICULTY_HIGHLIGHT_COLORS[level] || _DIFFICULTY_HIGHLIGHT_COLORS[1];
+        return text.replace(/【([^】]+)】/g, function(match, inner) {
+            return '<span class="alt-keyword ' + colorClass + '">' + inner + '</span>';
+        });
+    }
+
+    function getDifficultyStyleKey(sportType) {
+        var s = String(sportType || '').toLowerCase();
+        if (s.indexOf('hiking') >= 0 || s.indexOf('trail') >= 0 || s.indexOf('mountaineer') >= 0 || s.indexOf('徒') >= 0 || s.indexOf('爬') >= 0) return 'outdoor';
+        if (s.indexOf('cycl') >= 0 || s.indexOf('bik') >= 0 || s.indexOf('骑') >= 0) return 'cyclist';
+        return 'runner';
+    }
+
+    function getDifficultyText(mtdiLevel, sportType) {
+        var level = Math.max(1, Math.min(8, Math.round(Number(mtdiLevel) || 1)));
+        var style = getDifficultyStyleKey(sportType);
+        var dict = DIFFICULTY_TEXT_LIBRARY[style] || DIFFICULTY_TEXT_LIBRARY['runner'];
+        var raw = dict[level] || dict[1] || '';
+        return _highlightBracketText(raw, level);
+    }
+
+    function getDifficultyBadgeClass(mtdiLevel) {
+        var level = Math.max(1, Math.min(8, Math.round(Number(mtdiLevel) || 1)));
+        if (level <= 2) return 'ai-badge-easy';
+        if (level <= 4) return 'ai-badge-moderate';
+        if (level <= 6) return 'ai-badge-hard';
+        return 'ai-badge-extreme';
+    }
+
     function generateAIReport(points, activityMetrics) {
         if (!points || points.length < 2) return null;
         var m = activityMetrics || {};
@@ -6617,10 +6872,14 @@
         var downCount = (m.down_count != null) ? Number(m.down_count) : 0;
         var maxSingleClimb = (m.max_single_climb_m != null) ? Number(m.max_single_climb_m) : 0;
 
-        // 难度评分（来自 canonical，前端仅做展示映射）
-        var diffScore = (m.difficulty_score != null) ? Number(m.difficulty_score) : 0;
-        var diffLabel = diffScore <= 2 ? '轻松' : diffScore <= 4 ? '中等' : diffScore <= 7 ? '困难' : '极限';
-        var diffBadge = diffScore <= 2 ? 'ai-badge-easy' : diffScore <= 4 ? 'ai-badge-moderate' : diffScore <= 7 ? 'ai-badge-hard' : 'ai-badge-extreme';
+        // 难度评分（来自 canonical：mtdi_level / mtdi_score 由后端 calculate_track_difficulty 计算）
+        // 契约 §2.1 / §2.4: 前端禁止重新计算 MTDI，禁止从 points[] 反推
+        // 文案来源: DIFFICULTY_TEXT_LIBRARY (NARRATIVE_LAYER — 静态查表)
+        var mtdiLevel = (m.mtdi_level != null) ? Number(m.mtdi_level) : 1;
+        var mtdiScore = (m.mtdi_score != null) ? Number(m.mtdi_score) : 0;
+        var diffLabel = mtdiLevel <= 2 ? '轻松' : mtdiLevel <= 4 ? '中等' : mtdiLevel <= 6 ? '困难' : '极限';
+        var diffBadge = getDifficultyBadgeClass(mtdiLevel);
+        var diffScore = mtdiScore;
 
         // 预估用时（解释层）
         var estMinutes;
@@ -6697,7 +6956,7 @@
             totalCal: totalCal, energy: energy, energyLevel: energy > 80 ? '极高' : energy > 60 ? '较高' : energy > 40 ? '中等' : '较低',
             energyColor: energy > 80 ? '#ef4444' : energy > 60 ? '#f59e0b' : energy > 40 ? '#3b82f6' : '#22c55e',
             altRange: Math.round(altRange),
-            altAnalysis: altRange < 100 ? '<span class="alt-keyword alt-keyword-lv1">马路牙子</span>可能就是全场最大的爬升了，一路坦途。主打一个气定神闲，闭着眼睛也能轻松拿捏目标配速。' : altRange < 300 ? '地形像波浪一样带点起伏，赛道开始不安分了。学会利用地形找准呼吸，在不知不觉的缓坡中稳住自己的<span class="alt-keyword alt-keyword-lv2">节奏</span>。' : altRange < 600 ? '哎哟，这海拔曲线画得跟过山车似的！你的心肺系统马上要迎来一场<span class="alt-keyword alt-keyword-lv3">硬核拉练</span>，准备好迎接大口喘气和乳酸堆积的酸爽感吧。' : '恭喜你，这是一场纯粹的重力对抗战！堪比拔地而起去冲顶四千米以上的高海拔山峰，疯狂的垂直爬升急需你调动身体里的每一丝<span class="alt-keyword alt-keyword-lv4">糖原储备</span>来硬扛。'
+            altAnalysis: getDifficultyText(mtdiLevel, m.sport_type || 'running')
         };
     }
 
@@ -7811,6 +8070,16 @@ function withTimeout(promise, ms) {
 
 async function notifyAIAssistant() {
     const localDir = getFitTracksDir();
+    const currentHash = computeDirHash(localDir);
+
+    // 任务 5：路径未变且已通知过 → 自动跳过 LLM 调用
+    if (onboardingState.aiNotified && onboardingState.lastNotifiedDirHash === currentHash) {
+        console.log('[AI 助手通知] 目录未变且已通知过，跳过 LLM 调用');
+        showToast('✅ AI 助手已记录当前存储规范');
+        setAIStorageNotifyButtonState('success');
+        return;
+    }
+
     setAIStorageNotifyButtonState('syncing');
 
     // [僵尸代码] 老提示词已迁移至 main.py SYSTEM_INSTRUCTION 分支
@@ -7826,7 +8095,16 @@ async function notifyAIAssistant() {
         if (success) {
             showToast('✅ 已成功告知 AI 助手存储规范！');
             onboardingState.aiNotified = true;
+            onboardingState.lastNotifiedDirHash = currentHash;  // 任务 5：记录哈希
             setAIStorageNotifyButtonState('success');
+            // 任务 3：跨刷新持久化 ai_notified
+            try {
+                if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.set_ai_notified === 'function') {
+                    await window.pywebview.api.set_ai_notified(true);
+                }
+            } catch (persistErr) {
+                console.warn('[AI 助手通知] set_ai_notified 失败:', persistErr);
+            }
         } else {
             showToast('⚠️ 通知失败，请重试');
             setAIStorageNotifyButtonState('failed');
@@ -7874,6 +8152,18 @@ async function revalidateDirectory(path) {
 const _FIT_TRACKS_DIR_FALLBACK = '~/.fitvault/workspace/tracks/';
 var _fitTracksDirCached = '';
 
+function computeDirHash(dirPath) {
+    // 任务 5：稳定字符串哈希（不需加密强度），用于目录变更检测
+    var hash = 0;
+    if (!dirPath) return '';
+    for (var i = 0; i < dirPath.length; i++) {
+        var ch = dirPath.charCodeAt(i);
+        hash = ((hash << 5) - hash) + ch;
+        hash |= 0;  // 转 32 位整数
+    }
+    return String(hash);
+}
+
 function getFitTracksDir() {
     if (_fitTracksDirCached) return _fitTracksDirCached;
     // bootstrap 未完成时用约定兜底路径
@@ -7900,6 +8190,22 @@ async function bootstrapApplication() {
             // 更新设置面板中的路径显示
             var display = document.getElementById('storage-dir-display');
             if (display) display.innerText = _fitTracksDirCached;
+        }
+        // 恢复 ai_notified 状态（任务 3：跨刷新持久化）
+        try {
+            const llmCfg = await window.pywebview.api.get_llm_config();
+            if (llmCfg && llmCfg.ok && typeof llmCfg.ai_notified === 'boolean') {
+                onboardingState.aiNotified = llmCfg.ai_notified;
+                if (llmCfg.ai_notified) {
+                    // 任务 5：恢复目录哈希，使自动跳过逻辑生效
+                    onboardingState.lastNotifiedDirHash = computeDirHash(_fitTracksDirCached);
+                    if (typeof setAIStorageNotifyButtonState === 'function') {
+                        setAIStorageNotifyButtonState('success');
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn('[BOOT] get_llm_config for ai_notified failed:', e);
         }
         if (res.ok && res.is_first_run) {
             hideBootLoading();
@@ -7955,10 +8261,25 @@ function runSilentGatewayValidation() {
     var timer = setTimeout(function () {
         timedOut = true;
         console.warn('[FIT Vault] 静默网关检查超时，跳过（不影响主界面）');
+        // 任务 4：超时分支更新指示灯
+        if (typeof setLLMTestStatus === 'function') {
+            setLLMTestStatus('静默验证超时（不影响主界面）', false, false);
+        }
     }, 5000);
+    // 任务 4：进入静默验证时点亮 silent 指示灯
+    if (typeof setLLMTestStatus === 'function') {
+        setLLMTestStatus('静默验证网关连接中…', false, true, { mode: 'silent' });
+    }
     pywebview.api.get_llm_config().then(function (res) {
         if (timedOut) return;
-        if (!res.ok || !res.api_key) { clearTimeout(timer); return; }
+        if (!res.ok || !res.api_key) {
+            clearTimeout(timer);
+            // 任务 4：未配置时回滚指示灯到 idle
+            if (typeof setLLMTestStatus === 'function') {
+                setLLMTestStatus('尚未配置网关', false, false);
+            }
+            return;
+        }
         pywebview.api.test_llm_config(res.provider, res.url, res.model, res.api_key, res.agent_id || '')
         .then(function (testRes) {
             clearTimeout(timer);
@@ -7967,12 +8288,29 @@ function runSilentGatewayValidation() {
             if (testRes.ok) {
                 console.log('[FIT Vault] 网关健康正常');
                 if (bar) bar.classList.add('hidden');
+                // 任务 4：成功分支更新指示灯
+                if (typeof setLLMTestStatus === 'function') {
+                    setLLMTestStatus('静默验证：网关连接正常', true, false);
+                    onboardingState.llmTestPassed = true;
+                }
             } else {
                 console.warn('[FIT Vault] 网关离线');
                 if (bar) bar.classList.remove('hidden');
+                // 任务 4：失败分支更新指示灯
+                if (typeof setLLMTestStatus === 'function') {
+                    setLLMTestStatus('静默验证：网关连接异常', false, false);
+                    onboardingState.llmTestPassed = false;
+                }
             }
         });
-    }).catch(function () { clearTimeout(timer); });
+    }).catch(function (e) {
+        clearTimeout(timer);
+        console.warn('[FIT Vault] 静默验证异常:', e);
+        // 任务 4：catch 分支更新指示灯
+        if (typeof setLLMTestStatus === 'function') {
+            setLLMTestStatus('静默验证异常：' + ((e && e.message) || e), false, false);
+        }
+    });
 }
 
 function openConfigModalFromWarning() {
