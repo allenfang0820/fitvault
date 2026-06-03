@@ -59,6 +59,7 @@ def load_llm_config() -> dict[str, Any]:
         "watch_brand": str(data.get("watch_brand") or "").strip(),
         "local_dir": str(data.get("local_dir") or "").strip(),
         "ai_notified": bool(data.get("ai_notified", False)),
+        "ai_notified_hash": str(data.get("ai_notified_hash") or "").strip(),
     }
 
 
@@ -80,7 +81,7 @@ def redact_llm_config(config: dict[str, Any]) -> dict[str, Any]:
     return redacted
 
 
-def save_llm_config(provider: str, url: str, model: str, api_key: str, agent_id: str = "", watch_brand: str = "", local_dir: str = "", ai_notified: bool = False) -> None:
+def save_llm_config(provider: str, url: str, model: str, api_key: str, agent_id: str = "", watch_brand: str = "", local_dir: str = "", ai_notified: bool = False, ai_notified_hash: str = "") -> None:
     cfg = {
         "provider": (provider or DEFAULT_PROVIDER).strip(),
         "url": (url or DEFAULT_URL).strip(),
@@ -90,6 +91,7 @@ def save_llm_config(provider: str, url: str, model: str, api_key: str, agent_id:
         "watch_brand": (watch_brand or "").strip(),
         "local_dir": (local_dir or "").strip(),
         "ai_notified": bool(ai_notified),
+        "ai_notified_hash": str(ai_notified_hash or "").strip(),
     }
     p = _config_file()
     p.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")

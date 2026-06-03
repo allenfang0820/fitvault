@@ -99,11 +99,31 @@ class TestTrackHtmlSyncLogic(unittest.TestCase):
         self.assertIn('id="sport-sync-end-date"', self.source)
         self.assertIn('id="sport-records-remote-sync-btn"', self.source)
         self.assertIn("function initSportHubSyncDateRange", self.source)
+        self.assertIn("function isGarminWatchBrand", self.source)
         body = extract_function_body(self.source, "async function syncRemoteSportHubActivities()")
+        self.assertIn("if (!isGarminWatchBrand())", body)
         self.assertIn("sync_remote_fit_activities(startDate, endDate)", body)
         self.assertIn("syncAndLoadSportHubRecords({ sync: true, resetPage: true })", body)
         self.assertIn("开始日期不能晚于结束日期", body)
         self.assertIn("OpenClaw", body)
+        self.assertIn("导入本地 FIT 文件", body)
+
+    def test_activity_records_import_local_fit_files_uses_local_import_api(self):
+        self.assertIn("导入本地 FIT 文件", self.source)
+        self.assertNotIn("🔄 同步本地数据", self.source)
+        self.assertIn("function importLocalFitFiles", self.source)
+        body = extract_function_body(self.source, "async function importLocalFitFiles()")
+        self.assertIn("pick_and_import_fit_files", body)
+        self.assertIn("loadSportHubActivityList({ resetPage: true, refreshSnapshot: true })", body)
+        self.assertNotIn("sync_remote_fit_activities", body)
+        self.assertNotIn("call_llm", body)
+
+    def test_remote_sync_button_is_brand_gated_but_local_import_is_not(self):
+        body = extract_function_body(self.source, "function updateMovementRecordsSyncButton()")
+        self.assertIn("const garminReady = isGarminWatchBrand();", body)
+        self.assertIn("remoteBtn.disabled = busy || !garminReady", body)
+        self.assertIn("btn.disabled = busy", body)
+        self.assertIn("当前手表品牌暂不支持按时间同步活动", body)
 
     def test_batch_delete_uses_blocker_modal_and_deletes_local_files(self):
         body = extract_function_body(self.source, "async function deleteSelectedSportHubRecords()")

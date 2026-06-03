@@ -97,6 +97,25 @@
             filter: drop-shadow(0 0 10px rgba(46, 204, 113, 1));
         }
 
+        /* === 任务：配置 Tab ⚠️ 徽标 === */
+        .settings-badge {
+            position: absolute;
+            top: 2px;
+            right: 2px;
+            font-size: 1rem;
+            line-height: 1;
+            color: #f59e0b;
+            text-shadow: 0 0 4px rgba(245, 158, 11, 0.6);
+            display: none;
+            pointer-events: none;
+            z-index: 6;
+            animation: settings-badge-pulse 1.4s ease-in-out infinite;
+        }
+        @keyframes settings-badge-pulse {
+            0%, 100% { transform: scale(1); opacity: 0.85; }
+            50% { transform: scale(1.2); opacity: 1; }
+        }
+
         /* === 主内容区（3个面板切换） === */
         #main-content {
             flex: 1; position: relative; overflow: hidden;
@@ -1017,6 +1036,111 @@
             background: var(--bg);
             overflow-y: auto;
         }
+
+        /* === 【帮助说明】面板 — 视觉优化 === */
+        /* §1 不透明背景层(94% 不透明度)隔绝底层界面,同时保留微弱半透明质感 */
+        #panel-help {
+            background:
+                linear-gradient(180deg, rgba(15, 23, 42, 0.96) 0%, rgba(11, 18, 32, 0.94) 100%),
+                var(--bg);
+            overflow-y: auto;
+        }
+        #panel-help .panel-header {
+            /* header 区单独加深,与滚动内容区分 */
+            background: linear-gradient(180deg, rgba(15, 23, 42, 0.98) 0%, rgba(15, 23, 42, 0.94) 100%);
+            border-bottom: 1px solid rgba(212, 175, 55, 0.25);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+        }
+        #panel-help .panel-body {
+            /* body 加一个略浅的二级底色,与卡片形成层次 */
+            background: rgba(15, 23, 42, 0.55);
+        }
+
+        /* §2 WCAG 可访问性 — 文字对比度/行高/字间距 */
+        /* 普通正文 16px 起步,行高 1.7,字间距 0.02em,对比度 ≥ 7:1(AAA) */
+        #panel-help {
+            color: #e2e8f0;
+            font-size: 0.82rem;
+            line-height: 1.75;
+            letter-spacing: 0.02em;
+        }
+        #panel-help .section-card {
+            color: #e2e8f0;
+        }
+        #panel-help .section-card p,
+        #panel-help .section-card li,
+        #panel-help .section-card td,
+        #panel-help .section-card th {
+            color: #e2e8f0;
+            line-height: 1.75;
+            letter-spacing: 0.02em;
+        }
+        /* 次要说明文字用 #cbd5e1,主标题/关键字段用 #f8fafc,对比度全部 ≥ AAA */
+        #panel-help .section-card .help-muted {
+            color: #cbd5e1;
+            font-size: 0.78rem;
+            letter-spacing: 0.015em;
+        }
+        #panel-help .section-card b,
+        #panel-help .section-card strong {
+            color: #f8fafc;
+            font-weight: 700;
+        }
+        #panel-help .section-card .help-emphasis {
+            color: #fde68a;
+            font-weight: 600;
+        }
+
+        /* §3 阴影 + 边界 — 强化卡片层级独立性 */
+        #panel-help .section-card {
+            background: linear-gradient(180deg, rgba(30, 41, 59, 0.92) 0%, rgba(15, 23, 42, 0.88) 100%);
+            border: 1px solid rgba(212, 175, 55, 0.18);
+            border-radius: 12px;
+            box-shadow:
+                0 4px 14px rgba(0, 0, 0, 0.45),
+                0 1px 3px rgba(0, 0, 0, 0.35),
+                inset 0 1px 0 rgba(255, 255, 255, 0.04);
+            padding: 16px 18px;
+            margin-bottom: 14px;
+            transition: box-shadow 0.2s ease, transform 0.2s ease;
+        }
+        #panel-help .section-card:hover {
+            box-shadow:
+                0 6px 20px rgba(0, 0, 0, 0.55),
+                0 2px 5px rgba(0, 0, 0, 0.4),
+                inset 0 1px 0 rgba(255, 255, 255, 0.05);
+        }
+        #panel-help .section-title {
+            color: #f8fafc;
+            font-size: 0.95rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            padding-bottom: 8px;
+            margin-bottom: 12px;
+            border-bottom: 1px solid rgba(212, 175, 55, 0.22);
+        }
+        #panel-help .section-card > div[style*="border-left"] {
+            /* 三个 AI 互动色块加 box-shadow 让其与卡片背景脱离 */
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+        }
+        #panel-help .section-card table {
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 6px;
+            overflow: hidden;
+        }
+        #panel-help .section-card kbd {
+            display: inline-block;
+            line-height: 1.4;
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        }
+        /* 滚动条加深,避免与内容混淆 */
+        #panel-help::-webkit-scrollbar { width: 10px; }
+        #panel-help::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.5); }
+        #panel-help::-webkit-scrollbar-thumb {
+            background: rgba(212, 175, 55, 0.35);
+            border-radius: 5px;
+        }
+        #panel-help::-webkit-scrollbar-thumb:hover { background: rgba(212, 175, 55, 0.55); }
 
         /* === Cesium 地球（始终渲染） === */
         #cesiumContainer { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 0; touch-action: auto; }
@@ -2268,6 +2392,7 @@
             <span class="tab-icon">⚙️</span>
             <span class="tab-label">配置</span>
             <span class="tab-arrow">➜</span>
+            <span class="settings-badge" id="settings-badge" style="display:none;" title="网关未连通">⚠️</span>
         </button>
         <div class="bookmark-spacer"></div>
         <button class="bookmark-tab" data-panel="help" onclick="switchTab(this)">
@@ -2303,7 +2428,6 @@
                                             <div class="profile-hero-meta" id="pf-last-updated" style="font-size:0.55rem;color:#64748b;margin-top:2px;"></div>
                                         </div>
                                         <div style="display:flex;align-items:center;gap:8px;">
-                                            <button class="sync-btn garmin" id="btn-sync-garmin" onclick="syncPersona('garmin')" style="padding:4px 10px;font-size:0.6rem;min-width:auto;">📥 同步</button>
                                             <div class="profile-status-chip" id="pf-status-chip">待同步</div>
                                         </div>
                                     </div>
@@ -2415,7 +2539,7 @@
                                             <input type="date" id="sport-sync-end-date" class="hub-date-input" aria-label="同步结束日期">
                                         </span>
                                         <button class="hub-sync-btn" id="sport-records-remote-sync-btn" onclick="syncRemoteSportHubActivities()">同步活动</button>
-                                        <button class="hub-sync-btn" id="sport-records-sync-btn" onclick="forceRefreshMovementRecords()">🔄 同步本地数据</button>
+                                        <button class="hub-sync-btn" id="sport-records-sync-btn" onclick="importLocalFitFiles()">导入本地 FIT 文件</button>
                                         <button class="hub-sync-btn" id="sport-records-delete-btn" onclick="deleteSelectedSportHubRecords()">🗑️ 删除选中</button>
                                     </div>
                                     <div class="sport-hub-toolbar-right">
@@ -2638,17 +2762,21 @@
             </div>
             <div class="panel-body">
                 <div class="section-card" id="watch-brand-config-section">
-                    <div class="section-title settings-section-title">⌚ 用户设备</div>
-                    <div class="settings-watch-brand-row">
+                    <div class="section-title settings-section-title">
+                        ⌚ 用户设备
+                        <span style="color:#ef4444; font-size:0.75rem; margin-left:6px; font-weight:500;">* 必选</span>
+                    </div>
+                    <div class="settings-watch-brand-row" id="watch-brand-row">
                                 <label style="display:flex; align-items:center; gap:6px; font-size:0.85rem; color:#f8fafc; cursor:pointer;">
-                                    <input type="radio" name="watch_brand" value="garmin" style="accent-color:var(--primary); width:16px; height:16px; margin:0;" onchange="selectUserType('garmin'); syncLLMConfigFromFields()">
+                                    <input type="radio" name="watch_brand" value="garmin" required style="accent-color:var(--primary); width:16px; height:16px; margin:0;" onchange="selectUserType('garmin'); syncLLMConfigFromFields()">
                                     我是佳明用户
                                 </label>
                                 <label style="display:flex; align-items:center; gap:6px; font-size:0.85rem; color:#f8fafc; cursor:pointer;">
-                                    <input type="radio" name="watch_brand" value="coros" style="accent-color:var(--primary); width:16px; height:16px; margin:0;" onchange="selectUserType('coros'); syncLLMConfigFromFields()">
+                                    <input type="radio" name="watch_brand" value="coros" required style="accent-color:var(--primary); width:16px; height:16px; margin:0;" onchange="selectUserType('coros'); syncLLMConfigFromFields()">
                                     我是高驰用户
                                 </label>
                     </div>
+                    <div id="watch-brand-error" style="display:none; color:#f87171; font-size:0.75rem; margin-top:6px;">⚠️ 请选择您的设备类型</div>
                 </div>
                 <div class="section-card">
                     <div class="section-title settings-section-title">🤖 大模型 API 配置</div>
@@ -2707,48 +2835,182 @@
         <!-- ========== 【帮助说明】面板 ========== -->
         <div id="panel-help" class="tab-panel">
             <div class="panel-header">
-                <h2>📖 帮助说明</h2>
-                <p>脉图核心功能与使用流程速查</p>
+                <h2>📖 脉图 — 简要使用说明</h2>
+                <p>你的本地 AI 运动数据分析师。支持导入 FIT/GPX 轨迹文件，自动解析运动数据并生成可视化报告与 AI 洞察。</p>
             </div>
             <div class="panel-body" style="padding:18px 22px; overflow-y:auto;">
+
                 <div class="section-card">
-                    <div class="section-title">🧭 三大主功能区</div>
-                    <ul style="margin:0; padding-left:18px; line-height:1.9; color:#cbd5e1; font-size:0.82rem;">
-                        <li><b style="color:#f8fafc;">个人运动数据</b>：同步 Garmin / 高驰用户画像、查看运动记录、PB 成绩、荣誉墙、能力雷达。</li>
-                        <li><b style="color:#f8fafc;">轨迹分析工具</b>：导入 FIT / GPX、3D 地形渲染、剖面图、打卡点编辑、轨迹报告 v3。</li>
-                        <li><b style="color:#f8fafc;">配置</b>：大模型 API、数据存储路径、设备选择、连接测试、存储规范同步。</li>
-                    </ul>
-                </div>
-                <div class="section-card">
-                    <div class="section-title">🚀 快速上手</div>
+                    <div class="section-title">① 首次启动</div>
                     <ol style="margin:0; padding-left:18px; line-height:1.9; color:#cbd5e1; font-size:0.82rem;">
-                        <li>进入 <b>配置</b>，选择设备品牌，填写大模型 API 地址与密钥，运行连接测试。</li>
-                        <li>进入 <b>个人运动数据</b>，点击「同步」拉取运动画像与近期记录。</li>
-                        <li>进入 <b>轨迹分析工具</b>，从历史记录选择一条活动或直接拖入 FIT / GPX 文件。</li>
-                        <li>查看剖面、添加打卡点、生成 AI 解读（雷达图 / 风险评估 / 地形解读）。</li>
+                        <li>打开脉图后，进入「<b style="color:#f8fafc;">配置</b>」页</li>
+                        <li>填写大模型网关信息（供应商 / API 地址 / 模型 / Token）</li>
+                        <li>点击「<b style="color:#f8fafc;">测试连接</b>」，绿灯亮起表示配置有效</li>
+                        <li>选择手表品牌（佳明 / 高驰）</li>
+                        <li>点击「<b style="color:#f8fafc;">告诉 AI 助手存储规范</b>」，完成初始化</li>
                     </ol>
+                    <p style="margin:8px 0 0 0; padding:8px 10px; border-radius:8px; background:rgba(212,175,55,0.06); border-left:2px solid var(--primary, #d4af37); color:#fde68a; font-size:0.75rem; line-height:1.6;">
+                        💡 配置只需一次，后续启动自动静默验证，无需重复操作。
+                    </p>
                 </div>
+
                 <div class="section-card">
-                    <div class="section-title">⌨️ 快捷键</div>
-                    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:8px; font-size:0.78rem; color:#cbd5e1;">
-                        <div><kbd style="background:rgba(15,23,42,0.6); padding:2px 6px; border-radius:4px; border:1px solid rgba(212,175,55,0.3);">Ctrl/⌘ + Shift + A</kbd> 全局呼出 AI 私教</div>
-                        <div><kbd style="background:rgba(15,23,42,0.6); padding:2px 6px; border-radius:4px; border:1px solid rgba(212,175,55,0.3);">Enter</kbd> 私教输入框发送</div>
+                    <div class="section-title">② 导入运动数据</div>
+                    <div style="margin:6px 0; color:#cbd5e1; font-size:0.82rem; line-height:1.7;">
+                        <b style="color:#f8fafc;">方式 A：自动同步（推荐）</b>
+                        <ul style="margin:4px 0 0 0; padding-left:22px;">
+                            <li>将 FIT 文件放入系统指定的本地存储目录</li>
+                            <li>脉图启动时自动扫描并入库</li>
+                        </ul>
+                    </div>
+                    <div style="margin:14px 0 0 0; color:#cbd5e1; font-size:0.82rem; line-height:1.7;">
+                        <b style="color:#f8fafc;">方式 B：手动导入</b>
+                        <ul style="margin:4px 0 0 0; padding-left:22px;">
+                            <li>点击「<b>导入轨迹</b>」按钮</li>
+                            <li>选择 FIT 或 GPX 文件</li>
+                            <li>系统自动解析并生成运动记录</li>
+                        </ul>
                     </div>
                 </div>
+
                 <div class="section-card">
-                    <div class="section-title">🛡️ 数据准则</div>
-                    <ul style="margin:0; padding-left:18px; line-height:1.9; color:#cbd5e1; font-size:0.78rem;">
-                        <li>脉图是 <b>本地 AI 运动外挂</b>，数据完全保存在本机 SQLite，不上传云端。</li>
-                        <li>所有显示指标均来自 <b>FIT 可信数据层</b>，AI 仅作解读，不会写回原始数据。</li>
-                        <li>高风险操作（如批量删除活动）需二次确认。</li>
-                    </ul>
+                    <div class="section-title">③ 查看运动报告</div>
+                    <p style="margin:0 0 8px 0; color:#cbd5e1; font-size:0.82rem; line-height:1.6;">导入成功后，在「<b style="color:#f8fafc;">活动列表</b>」中选择任意记录：</p>
+                    <table style="width:100%; border-collapse:collapse; font-size:0.78rem;">
+                        <thead>
+                            <tr style="background:rgba(212,175,55,0.08);">
+                                <th style="text-align:left; padding:8px 10px; border-bottom:1px solid rgba(212,175,55,0.25); color:#f8fafc;">面板</th>
+                                <th style="text-align:left; padding:8px 10px; border-bottom:1px solid rgba(212,175,55,0.25); color:#f8fafc;">内容</th>
+                            </tr>
+                        </thead>
+                        <tbody style="color:#cbd5e1;">
+                            <tr><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);"><b>3D 轨迹</b></td><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);">Cesium 地球视图，支持缩放、旋转、视角切换</td></tr>
+                            <tr><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);"><b>海拔剖面</b></td><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);">多维数据叠加（海拔 / 心率 / 配速 / 功率）</td></tr>
+                            <tr><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);"><b>数据卡片</b></td><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);">距离、时间、爬升、消耗、平均配速等核心指标</td></tr>
+                            <tr><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);"><b>AI 洞察</b></td><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);">一键生成运动表现分析与训练建议</td></tr>
+                            <tr><td style="padding:6px 10px;"><b>AI 私教</b></td><td style="padding:6px 10px;">与 AI 对话，深入分析运动数据、制定训练计划</td></tr>
+                        </tbody>
+                    </table>
+                    <div style="margin-top:10px; padding:8px 10px; border-radius:8px; background:rgba(15,23,42,0.5); color:#cbd5e1; font-size:0.78rem; line-height:1.7;">
+                        <b style="color:#fde68a;">🖱️ 交互操作</b><br>
+                        • 点击剖面图任意位置 → 3D 地球视角自动飞抵对应坐标<br>
+                        • 拖拽地球视角 → 剖面图游标实时同步
+                    </div>
                 </div>
+
+                <div class="section-card">
+                    <div class="section-title">④ AI 互动功能</div>
+                    <p style="margin:0 0 8px 0; color:#94a3b8; font-size:0.75rem; line-height:1.6;">脉图提供三种 AI 互动方式，满足不同深度的分析需求：</p>
+
+                    <div style="margin:10px 0; padding:10px 12px; border-radius:8px; background:rgba(46,204,113,0.06); border-left:2px solid rgba(46,204,113,0.6);">
+                        <div style="color:#86efac; font-weight:600; font-size:0.82rem; margin-bottom:4px;">4.1 AI 洞察（一键生成）</div>
+                        <ul style="margin:4px 0 0 0; padding-left:18px; color:#cbd5e1; font-size:0.78rem; line-height:1.7;">
+                            <li><b>入口</b>：活动详情页 → 点击「<b>AI 洞察</b>」按钮</li>
+                            <li><b>功能</b>：基于单条运动记录，自动生成结构化分析报告</li>
+                            <li><b>内容包含</b>：运动表现总评、关键数据亮点、训练建议、难度等级评定（LV 1-8 趣味文案）</li>
+                            <li><b>特点</b>：无需输入，秒级生成，适合快速了解单次运动表现</li>
+                        </ul>
+                    </div>
+
+                    <div style="margin:10px 0; padding:10px 12px; border-radius:8px; background:rgba(212,175,55,0.06); border-left:2px solid rgba(212,175,55,0.6);">
+                        <div style="color:#fde68a; font-weight:600; font-size:0.82rem; margin-bottom:4px;">4.2 AI 私教（对话式深度分析）</div>
+                        <ul style="margin:4px 0 0 0; padding-left:18px; color:#cbd5e1; font-size:0.78rem; line-height:1.7;">
+                            <li><b>入口</b>：活动详情页 → 点击「<b>AI 私教</b>」按钮</li>
+                            <li><b>功能</b>：与 AI 进行多轮对话，深入探讨运动数据</li>
+                            <li><b>支持提问示例</b>：
+                                <ul style="margin:2px 0 0 18px; padding-left:6px; list-style:'› ';">
+                                    <li>这次训练的心率区间分布合理吗？</li>
+                                    <li>帮我分析一下最后 5 公里的掉速原因</li>
+                                    <li>根据我的 VO₂max，制定一个 8 周半马备赛计划</li>
+                                    <li>对比我上周的同路线数据，进步在哪里？</li>
+                                </ul>
+                            </li>
+                            <li><b>特点</b>：支持上下文记忆，可追问细节，适合深度训练规划</li>
+                        </ul>
+                    </div>
+
+                    <div style="margin:10px 0; padding:10px 12px; border-radius:8px; background:rgba(96,165,250,0.06); border-left:2px solid rgba(96,165,250,0.6);">
+                        <div style="color:#93c5fd; font-weight:600; font-size:0.82rem; margin-bottom:4px;">4.3 全局 AI 助手（侧边栏常驻）</div>
+                        <ul style="margin:4px 0 0 0; padding-left:18px; color:#cbd5e1; font-size:0.78rem; line-height:1.7;">
+                            <li><b>入口</b>：主界面右侧「<b>💬 AI 助手</b>」悬浮按钮</li>
+                            <li><b>功能</b>：不依赖单条记录，基于全局运动数据回答</li>
+                            <li><b>支持提问示例</b>：
+                                <ul style="margin:2px 0 0 18px; padding-left:6px; list-style:'› ';">
+                                    <li>我最近一个月的跑量趋势如何？</li>
+                                    <li>我的静息心率有变化吗？</li>
+                                    <li>推荐一条适合我当前水平的路线</li>
+                                </ul>
+                            </li>
+                            <li><b>特点</b>：随时可用，跨记录查询，适合日常训练监控</li>
+                        </ul>
+                    </div>
+
+                    <p style="margin:10px 0 0 0; padding:8px 10px; border-radius:8px; background:rgba(248,113,113,0.06); border-left:2px solid rgba(248,113,113,0.5); color:#fecaca; font-size:0.72rem; line-height:1.7;">
+                        ⚠️ <b>AI 互动注意事项</b><br>
+                        • AI 分析基于本地 FIT 文件数据，不涉及云端上传<br>
+                        • 首次使用 AI 功能前，请确保「配置」页网关连接正常（绿灯状态）<br>
+                        • 复杂分析可能需要 10-30 秒，请耐心等待
+                    </p>
+                </div>
+
+                <div class="section-card">
+                    <div class="section-title">⑤ 个人数据页</div>
+                    <p style="margin:0 0 6px 0; color:#cbd5e1; font-size:0.82rem;">「<b style="color:#f8fafc;">我的</b>」页展示：</p>
+                    <ul style="margin:0; padding-left:18px; line-height:1.9; color:#cbd5e1; font-size:0.82rem;">
+                        <li>用户画像（生理指标、VO₂max、HRV 等）</li>
+                        <li>历史 PB 与预测成绩</li>
+                        <li>运动荣誉墙</li>
+                        <li>数据同步状态</li>
+                    </ul>
+                    <p style="margin:8px 0 0 0; padding:8px 10px; border-radius:8px; background:rgba(15,23,42,0.5); color:#94a3b8; font-size:0.72rem; line-height:1.6;">
+                        用户画像数据来自 Garmin Connect API，活动数据以本地 FIT 文件为唯一事实源。
+                    </p>
+                </div>
+
+                <div class="section-card">
+                    <div class="section-title">⑥ 快捷键</div>
+                    <table style="width:100%; border-collapse:collapse; font-size:0.78rem;">
+                        <thead>
+                            <tr style="background:rgba(212,175,55,0.08);">
+                                <th style="text-align:left; padding:8px 10px; border-bottom:1px solid rgba(212,175,55,0.25); color:#f8fafc; width:35%;">按键</th>
+                                <th style="text-align:left; padding:8px 10px; border-bottom:1px solid rgba(212,175,55,0.25); color:#f8fafc;">功能</th>
+                            </tr>
+                        </thead>
+                        <tbody style="color:#cbd5e1;">
+                            <tr><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);"><kbd style="background:rgba(15,23,42,0.6); padding:2px 8px; border-radius:4px; border:1px solid rgba(212,175,55,0.3); color:#fde68a;">I</kbd></td><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);">导入轨迹</td></tr>
+                            <tr><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);"><kbd style="background:rgba(15,23,42,0.6); padding:2px 8px; border-radius:4px; border:1px solid rgba(212,175,55,0.3); color:#fde68a;">R</kbd></td><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);">刷新活动列表</td></tr>
+                            <tr><td style="padding:6px 10px;"><kbd style="background:rgba(15,23,42,0.6); padding:2px 8px; border-radius:4px; border:1px solid rgba(212,175,55,0.3); color:#fde68a;">1~5</kbd></td><td style="padding:6px 10px;">快速切换底部面板</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="section-card">
+                    <div class="section-title">⑦ 常见问题</div>
+
+                    <div style="margin:10px 0; padding:10px 12px; border-radius:8px; background:rgba(15,23,42,0.4); border:1px solid rgba(255,255,255,0.06);">
+                        <div style="color:#fde68a; font-weight:600; font-size:0.8rem; margin-bottom:4px;">❓ AI 洞察一直加载中？</div>
+                        <p style="margin:0; color:#cbd5e1; font-size:0.76rem; line-height:1.6;">检查「配置」页网关连接状态，红灯表示连接失败，请重新测试。</p>
+                    </div>
+
+                    <div style="margin:10px 0; padding:10px 12px; border-radius:8px; background:rgba(15,23,42,0.4); border:1px solid rgba(255,255,255,0.06);">
+                        <div style="color:#fde68a; font-weight:600; font-size:0.8rem; margin-bottom:4px;">❓ 导入 GPX 后没有心率数据？</div>
+                        <p style="margin:0; color:#cbd5e1; font-size:0.76rem; line-height:1.6;">GPX 为标准 XML 格式，不原生支持心率/功率。如需完整数据，建议使用设备导出的 FIT 文件。</p>
+                    </div>
+
+                    <div style="margin:10px 0; padding:10px 12px; border-radius:8px; background:rgba(15,23,42,0.4); border:1px solid rgba(255,255,255,0.06);">
+                        <div style="color:#fde68a; font-weight:600; font-size:0.8rem; margin-bottom:4px;">❓ 3D 轨迹加载慢？</div>
+                        <p style="margin:0; color:#cbd5e1; font-size:0.76rem; line-height:1.6;">首次加载需下载地形切片，请保持网络畅通。后续同一区域会缓存加速。</p>
+                    </div>
+                </div>
+
                 <div class="section-card" style="border-style:dashed; opacity:0.85;">
-                    <div class="section-title">ℹ️ 关于本面板</div>
-                    <p style="margin:0; color:#94a3b8; font-size:0.75rem; line-height:1.7;">
+                    <div class="section-title">ℹ️ 版本</div>
+                    <p style="margin:0; color:#94a3b8; font-size:0.72rem; line-height:1.7;">
+                        版本：v1.0 | 更新日期：2026-06-03<br>
                         本帮助说明为前端纯静态内容，不依赖后端、不参与 AI 链路、不写入 canonical 数据库。
                     </p>
                 </div>
+
             </div>
         </div>
 
@@ -3212,11 +3474,33 @@
         else if (t.includes('ski') || t.includes('雪')) { icon = '🎿'; label = '滑雪'; paceLabel = '滑行'; }
         else if (t.includes('row') || t.includes('boat') || t.includes('划')) { icon = '🚣'; label = '划船'; paceLabel = '划行'; }
         else if (t.includes('paddle') || t.includes('板')) { icon = '🏄'; label = '桨板'; paceLabel = '划行'; }
+        else if (t.includes('horse') || t.includes('equestr') || t.includes('骑')) { icon = '🐎'; label = '骑马'; paceLabel = '骑行'; }
+        else if (t.includes('golf')) { icon = '🏌️'; label = '高尔夫'; paceLabel = '挥杆'; }
+        else if (t.includes('tennis')) { icon = '🎾'; label = '网球'; paceLabel = '训练'; }
+        else if (t.includes('soccer') || t.includes('football')) { icon = '⚽'; label = '足球'; paceLabel = '训练'; }
+        else if (t.includes('basketball')) { icon = '🏀'; label = '篮球'; paceLabel = '训练'; }
+        else if (t.includes('sail')) { icon = '⛵'; label = '帆船'; paceLabel = '航行'; }
+        else if (t.includes('surf')) { icon = '🏄'; label = '冲浪'; paceLabel = '冲浪'; }
+        else if (t.includes('fish')) { icon = '🎣'; label = '钓鱼'; paceLabel = '等待'; }
+        else if (t.includes('diving')) { icon = '🤿'; label = '潜水'; paceLabel = '潜水'; }
+        else if (t.includes('motorcycl')) { icon = '🏍️'; label = '摩托'; paceLabel = '车速'; }
+        else if (t.includes('fly')) { icon = '✈️'; label = '飞行'; paceLabel = '航速'; }
+        else if (t.includes('kayak')) { icon = '🛶'; label = '皮划艇'; paceLabel = '划行'; }
+        else if (t.includes('raft')) { icon = '🛟'; label = '漂流'; paceLabel = '漂流'; }
+        else if (t.includes('rock') && t.includes('climb')) { icon = '🧗'; label = '攀岩'; paceLabel = '攀登'; }
         
         if (label === typeStr) {
             label = typeStr.charAt(0).toUpperCase() + typeStr.slice(1).replace(/[_-]/g, ' ');
         }
         return { icon, label, paceLabel };
+    }
+
+    // §契约 §二/§五:优先消费后端 Resolver 注入的 sport_type_cn,无则回退到本地 if-else
+    function resolveSportCn(typeStr, preComputedCn) {
+        if (preComputedCn && typeof preComputedCn === 'string' && preComputedCn.trim() !== '') {
+            return preComputedCn.trim();
+        }
+        return getDynamicSportMeta(typeStr).label;
     }
 
     function getSportTypeLabel(type) {
@@ -3504,9 +3788,6 @@
         if (connection === 'disconnected') {
             noticeEl.style.display = '';
             noticeEl.innerText = '❌ LLM 网关未配置\n请前往「设置」→「连接测试」检测连接状态\n连接成功后画像将自动同步\n🔄 最后更新：' + lastText + (lastText !== '从未同步' ? '（使用历史数据）' : '');
-        } else if (syncStatus === 'failed_retryable') {
-            noticeEl.style.display = '';
-            noticeEl.innerText = '⚠️ 上次同步失败\n当前继续使用最近一次成功画像\n失败原因：' + (meta.last_error || '未知错误') + '\n🔄 最后更新：' + lastText;
         } else {
             noticeEl.style.display = 'none';
             noticeEl.innerText = '';
@@ -3537,40 +3818,6 @@
             }
         }
     };
-
-    async function syncPersona(platform) {
-        if (!window.pywebview || !window.pywebview.api) {
-            showToast('⚠️ 请在桌面应用中同步数据');
-            return;
-        }
-        const loadEl = document.getElementById('sync-loading');
-        const loadText = document.getElementById('sync-loading-text');
-        const garminBtn = document.getElementById('btn-sync-garmin');
-        if (loadEl) { loadEl.style.display = 'flex'; }
-        if (loadText) loadText.innerText = '正在从佳明同步...';
-        garminBtn && (garminBtn.disabled = true);
-        updateProfileSyncMeta({ sync_status: 'syncing', connection_status: 'connected', last_sync_ago: '正在同步' });
-        try {
-            const res = await window.pywebview.api.fetch_mcp_persona(platform);
-            if (loadEl) loadEl.style.display = 'none';
-            garminBtn && (garminBtn.disabled = false);
-            if (res && res.ok && res.profile) {
-                const p = res.profile;
-                const msg = '✅ 已同步佳明最新生理数据。AI私教已根据您的最新状态' + (p.hrv_baseline ? '（HRV: ' + p.hrv_baseline + 'ms）' : '') + '调整建议。';
-                await loadProfileCard();
-                showToast('✅ 佳明数据同步完成');
-                updateProfileSyncMeta({ sync_status: 'success_today', connection_status: 'connected', last_sync_ago: '刚刚' });
-            } else {
-                showToast('⚠️ ' + (res && res.error ? res.error : '同步失败'));
-                updateProfileSyncMeta({ sync_status: 'failed_retryable', connection_status: 'connected', last_sync_ago: '失败', last_error: res && res.error });
-            }
-        } catch(e) {
-            if (loadEl) loadEl.style.display = 'none';
-            garminBtn && (garminBtn.disabled = false);
-            showToast('⚠️ 同步异常: ' + (e && e.message ? e.message : String(e)));
-            updateProfileSyncMeta({ sync_status: 'failed_retryable', connection_status: 'connected', last_sync_ago: '异常', last_error: e && e.message });
-        }
-    }
 
     function showToast(msg) {
         const toast = document.getElementById('toast');
@@ -3896,6 +4143,18 @@
         }
     }
 
+    // 任务：更新配置 Tab ⚠️ 徽标
+    function updateSettingsTabBadge(state) {
+        // state: 'warn' 显示 ⚠️，'clear' 隐藏
+        const badge = document.getElementById('settings-badge');
+        if (!badge) return;
+        if (state === 'warn') {
+            badge.style.display = 'inline-flex';
+        } else {
+            badge.style.display = 'none';
+        }
+    }
+
     function setLLMTestStatus(text, passed, isTesting = false, options = {}) {
         const requestId = typeof options.requestId === 'number' ? options.requestId : null;
         const mode = options.mode === 'silent' ? 'silent' : 'manual';
@@ -3927,10 +4186,14 @@
             onboardingState.llmTestStateLock = true;
             onboardingState.llmTestState = 'loading';
             applyLLMTestIndicatorState(indicator, 'loading');
+            // 任务：loading 态 → 徽标 warn
+            if (typeof updateSettingsTabBadge === 'function') updateSettingsTabBadge('warn');
         } else if (nextState === 'silent') {
             onboardingState.llmTestStateLock = true;
             onboardingState.llmTestState = 'silent';
             applyLLMTestIndicatorState(indicator, 'silent');
+            // 任务：silent 态 → 徽标 warn
+            if (typeof updateSettingsTabBadge === 'function') updateSettingsTabBadge('warn');
         } else if (nextState === 'success' && onboardingState.llmTestState === 'loading') {
             onboardingState.llmTestTransitionTimer = setTimeout(function() {
                 if (requestId !== null && requestId !== onboardingState.llmTestRequestId) {
@@ -3940,11 +4203,21 @@
                 onboardingState.llmTestStateLock = false;
                 applyLLMTestIndicatorState(indicator, 'success');
                 onboardingState.llmTestTransitionTimer = null;
+                // 任务：success 态 → 清除徽标
+                if (typeof updateSettingsTabBadge === 'function') updateSettingsTabBadge('clear');
             }, 50);
         } else {
             onboardingState.llmTestState = nextState;
             onboardingState.llmTestStateLock = false;
             applyLLMTestIndicatorState(indicator, nextState);
+            // 任务：error / idle / silent / failed → warn；success → clear
+            if (typeof updateSettingsTabBadge === 'function') {
+                if (nextState === 'success') {
+                    updateSettingsTabBadge('clear');
+                } else {
+                    updateSettingsTabBadge('warn');
+                }
+            }
         }
         return true;
     }
@@ -4007,6 +4280,10 @@
     }
 
     function sportHubTypeLabel(type) {
+        // §契约 §二/§五: 优先消费后端 Resolver 注入的 activity_type_labels
+        if (sportHubState && sportHubState.activityTypeLabels && sportHubState.activityTypeLabels[type]) {
+            return sportHubState.activityTypeLabels[type];
+        }
         return getDynamicSportMeta(type).label;
     }
 
@@ -4019,7 +4296,8 @@
     }
 
     function sportHubRecordTypeLabel(record) {
-        return sportHubTypeLabel(sportHubRecordTypeKey(record));
+        const typeKey = sportHubRecordTypeKey(record);
+        return resolveSportCn(typeKey, record && record.sport_type_cn);
     }
 
     function sportHubRecordTypeIcon(record) {
@@ -4096,6 +4374,7 @@
         const applyInsights = options.applyInsights !== false;
         if (applyRecords) {
             sportHubState.activityTypes = Array.isArray(data.activity_types) ? data.activity_types : [];
+            sportHubState.activityTypeLabels = (data && data.activity_type_labels && typeof data.activity_type_labels === 'object') ? data.activity_type_labels : {};
             sportHubState.pageSizes = Array.isArray(data.page_sizes) && data.page_sizes.length ? data.page_sizes : [10, 20, 50];
             if (!sportHubState.pageSizes.includes(sportHubState.filters.pageSize)) {
                 sportHubState.filters.pageSize = sportHubState.pageSizes[0];
@@ -4163,6 +4442,7 @@
             if (!res || !res.ok) throw new Error((res && res.error) || '运动记录加载失败');
 
             sportHubState.activityTypes = Array.isArray(res.activity_types) ? res.activity_types : [];
+            sportHubState.activityTypeLabels = (res && res.activity_type_labels && typeof res.activity_type_labels === 'object') ? res.activity_type_labels : {};
             sportHubState.pageSizes = Array.isArray(res.page_sizes) && res.page_sizes.length ? res.page_sizes : [10, 20, 50];
             sportHubState.dynamicColumns = Array.isArray(res.dynamic_columns) ? res.dynamic_columns : [];
             sportHubState.total = _safeInt(res.total, 0);
@@ -4230,6 +4510,30 @@
         start.setDate(end.getDate() - 30);
         startEl.value = formatDateInputValue(start);
         endEl.value = formatDateInputValue(end);
+    }
+
+    function isGarminWatchBrand() {
+        return String((currentLLMConfig && currentLLMConfig.watchBrand) || '').trim().toLowerCase() === 'garmin';
+    }
+
+    // 佳明用户存储规范验证判定：非佳明直接放行；佳明用户须已完成「告诉AI助手存储规范」且路径未变
+    function _validate_storage_notification() {
+        if (!isGarminWatchBrand()) return true;
+        var currentHash = computeDirHash(getFitTracksDir());
+        return !!(onboardingState.aiNotified && onboardingState.lastNotifiedDirHash === currentHash);
+    }
+
+    // 任务：用户设备必选 — 切换错误提示显隐，返回是否已选
+    function validateWatchBrandRequired() {
+        const checked = document.querySelector('input[name="watch_brand"]:checked');
+        const errEl = document.getElementById('watch-brand-error');
+        if (checked) {
+            if (errEl) errEl.style.display = 'none';
+            return true;
+        } else {
+            if (errEl) errEl.style.display = 'block';
+            return false;
+        }
     }
 
     async function pollSportHubSyncJob(jobId) {
@@ -4333,16 +4637,26 @@
         const startEl = document.getElementById('sport-sync-start-date');
         const endEl = document.getElementById('sport-sync-end-date');
         const busy = sportHubState.recordsSyncing || sportHubState.recordsLoading || sportHubState.remoteSyncing || isMovementRecordsInitializing || isMovementRecordsRefreshing;
+        const garminReady = isGarminWatchBrand();
+        const storageValidated = _validate_storage_notification();
         if (btn) {
             btn.disabled = busy;
-            btn.innerText = busy ? '🔄 同步中...' : '🔄 同步本地数据';
+            btn.innerText = busy ? '导入中...' : '导入本地 FIT 文件';
+            btn.title = '选择本地 FIT 文件或 ZIP 压缩包并导入规范目录';
         }
         if (remoteBtn) {
-            remoteBtn.disabled = busy;
+            remoteBtn.disabled = busy || !garminReady || !storageValidated;
             remoteBtn.innerText = sportHubState.remoteSyncing ? '同步活动中...' : '同步活动';
+            if (!garminReady) {
+                remoteBtn.title = '当前手表品牌暂不支持按时间同步活动，请在配置页面选择佳明，或使用导入本地 FIT 文件。';
+            } else if (!storageValidated) {
+                remoteBtn.title = '请先在「配置」页面完成「告诉AI助手存储规范」验证，确保 AI 助手了解您的存储规范后，方可使用同步功能。';
+            } else {
+                remoteBtn.title = '按日期范围通过 OpenClaw 同步佳明活动 FIT 文件';
+            }
         }
-        if (startEl) startEl.disabled = busy;
-        if (endEl) endEl.disabled = busy;
+        if (startEl) startEl.disabled = busy || !garminReady;
+        if (endEl) endEl.disabled = busy || !garminReady;
     }
 
     async function fetchSportHubActivityDetail(activityId) {
@@ -5032,12 +5346,61 @@
         }
     }
 
+    async function importLocalFitFiles() {
+        if (!(window.pywebview && window.pywebview.api && typeof window.pywebview.api.pick_and_import_fit_files === 'function')) {
+            showToast('当前版本不支持选择本地 FIT 文件导入');
+            return;
+        }
+        sportHubState.recordsSyncing = true;
+        sportHubState.recordsError = '';
+        resetSportHubSyncState();
+        sportHubState.syncMessage = '请选择本地 FIT 文件或 ZIP 压缩包...';
+        renderSportHubRecords();
+        try {
+            const res = await window.pywebview.api.pick_and_import_fit_files();
+            if (!res || !res.ok) throw new Error((res && res.error) || '本地 FIT 文件导入失败');
+            if (res.cancelled) {
+                showToast('已取消导入');
+                return;
+            }
+            sportHubState.lastSyncSummary = {
+                ok: true,
+                inserted: Array.isArray(res.imported) ? res.imported.length : 0,
+                updated: 0,
+                skipped: 0,
+                errors: res.errors || []
+            };
+            await loadSportHubActivityList({ resetPage: true, refreshSnapshot: true });
+            const importedCount = Array.isArray(res.imported) ? res.imported.length : 0;
+            const errorCount = Array.isArray(res.errors) ? res.errors.length : 0;
+            showToast(`已导入 ${importedCount} 个本地文件${errorCount ? `，${errorCount} 个文件异常` : ''}`);
+        } catch (e) {
+            console.error('importLocalFitFiles error:', e);
+            sportHubState.recordsError = String((e && e.message) || e || '本地 FIT 文件导入失败');
+            sportHubState.syncMessage = sportHubState.recordsError;
+            showToast('导入失败：' + sportHubState.recordsError);
+        } finally {
+            sportHubState.recordsSyncing = false;
+            sportHubState.recordsLoading = false;
+            updateMovementRecordsSyncButton();
+            renderSportHubRecords();
+        }
+    }
+
     async function forceRefreshMovementRecords() {
-        await onSwitchToMovementRecords({ forceRefresh: true });
+        await importLocalFitFiles();
     }
 
     async function syncRemoteSportHubActivities() {
         initSportHubSyncDateRange();
+        if (!isGarminWatchBrand()) {
+            showToast('当前手表品牌为高驰或未配置，暂不支持按时间同步活动，请使用导入本地 FIT 文件。');
+            return;
+        }
+        if (!_validate_storage_notification()) {
+            showToast('请先在「配置」页面完成「告诉AI助手存储规范」验证，方可使用同步活动功能。');
+            return;
+        }
         const startEl = document.getElementById('sport-sync-start-date');
         const endEl = document.getElementById('sport-sync-end-date');
         const startDate = startEl ? String(startEl.value || '').trim() : '';
@@ -5328,6 +5691,7 @@
                 const dur = item.duration_sec ? formatDuration(item.duration_sec) : '--';
                 const sportType = item.display_sport_type || item.sub_sport_type || item.sport_type || 'unknown';
                 const sportMeta = getDynamicSportMeta(sportType);
+                const sportCn = resolveSportCn(sportType, item.sport_type_cn);
                 const city = item.cityName || '未知地点';
                 const title = item.title || '';
                 
@@ -5340,7 +5704,7 @@
                 ">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
                         <span style="font-size:0.65rem;color:#94a3b8;">${date} · ${city}</span>
-                        <span style="font-size:0.65rem;background:rgba(46,204,113,0.15);color:#2ecc71;border-radius:4px;padding:1px 6px;">${sportMeta.icon || '⏱️'} ${sportMeta.label || '其他运动'}</span>
+                        <span style="font-size:0.65rem;background:rgba(46,204,113,0.15);color:#2ecc71;border-radius:4px;padding:1px 6px;">${sportMeta.icon || '⏱️'} ${sportCn || '其他运动'}</span>
                     </div>
                     ${title ? `<div style="font-size:0.75rem;color:#f8fafc;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${title}</div>` : ''}
                     <div style="display:flex;justify-content:space-between;align-items:center;">
@@ -6045,6 +6409,8 @@
         if (garminRadio) garminRadio.checked = (watchBrand === 'garmin');
         if (corosRadio) corosRadio.checked = (watchBrand === 'coros');
         if (watchBrand) selectUserType(watchBrand);
+        // 任务：用户设备必选 — 启动时若未选则显示红色提示
+        validateWatchBrandRequired();
         modelSelect.innerHTML = '';
         if (models.length > 0) {
             modelSelect.style.display = 'block';
@@ -6095,7 +6461,8 @@
         const localDir = getFitTracksDir();
         if (localDir) {
             await revalidateDirectory(localDir);
-            if (onboardingState.dirValidated && onboardingState.aiNotified) {
+            var currentHash = computeDirHash(localDir);
+            if (onboardingState.dirValidated && onboardingState.aiNotified && onboardingState.lastNotifiedDirHash === currentHash) {
                 setAIStorageNotifyButtonState('success');
             } else if (onboardingState.dirValidated) {
                 setAIStorageNotifyButtonState('enabled');
@@ -6165,7 +6532,7 @@
         if (testBtn) { testBtn.disabled = true; testBtn.style.opacity = '0.6'; }
         try {
             if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.test_llm_config === 'function') {
-                const res = await window.pywebview.api.test_llm_config(provider, url, model, apiKey, agentId);
+                const res = await window.pywebview.api.test_llm_config(provider, url, model, apiKey, agentId, currentLLMConfig.watchBrand || '');
                 if (res && res.ok) {
                     if (!setLLMTestStatus('连接成功，可进行下一步', true, false, { requestId: requestId })) return;
                     showToast('✅ 连接成功');
@@ -7101,9 +7468,11 @@
         html += '<div class="ai-section"><h3>📊 坡度与起伏</h3>';
         html += '<div class="ai-stat"><span class="ai-stat-label">最大连续爬坡</span><span class="ai-stat-value" style="color:#fca5a5; font-weight:bold;">↑ ' + Math.round(report.maxSingleClimb) + ' m</span></div>';
         html += '<div class="ai-stat"><span class="ai-stat-label">显著起伏</span><span class="ai-stat-value">' + report.upCount + '上 / ' + report.downCount + '下</span></div>';
-        html += '<div class="ai-stat"><span class="ai-stat-label">坡度范围</span><span class="ai-stat-value">' + (report.maxSlope ? report.minSlope.toFixed(1) + '% ~ ' + report.maxSlope.toFixed(1) + '%' : '由后端 Resolver 提供') + '</span></div>';
-        html += '<div class="ai-stat"><span class="ai-stat-label">上坡/下坡路程比</span><span class="ai-stat-value">' + (report.uphillPct ? report.uphillPct + '% / ' + report.downhillPct + '%' : '由后端 Resolver 提供') + '</span></div>';
-        html += '<div style="font-size:0.7rem;color:#94a3b8;margin-top:3px;">' + report.altAnalysis + '</div></div>';
+        // 修复: 改为 != null 判空,避免 0.0 / 0% 等合法零值被误判为 fallback
+        html += '<div class="ai-stat"><span class="ai-stat-label">坡度范围</span><span class="ai-stat-value">' + (report.maxSlope != null ? report.minSlope.toFixed(1) + '% ~ ' + report.maxSlope.toFixed(1) + '%' : '由后端 Resolver 提供') + '</span></div>';
+        html += '<div class="ai-stat"><span class="ai-stat-label">上坡/下坡路程比</span><span class="ai-stat-value">' + (report.uphillPct != null ? report.uphillPct + '% / ' + report.downhillPct + '%' : '由后端 Resolver 提供') + '</span></div>';
+        // 字号 0.75rem 与 .ai-stat 同级；高亮 .alt-keyword 相对论放大 1.15em 自动联动
+        html += '<div style="font-size:0.75rem;color:#94a3b8;margin-top:3px;line-height:1.5;">' + report.altAnalysis + '</div></div>';
 
         const meta = getDynamicSportMeta(appState.sportType);
         html += '<div class="ai-section"><h3>' + meta.icon + ' 配速建议 (' + meta.paceLabel + ')</h3>';
@@ -7946,6 +8315,16 @@
         document.getElementById('type-garmin')?.classList.toggle('active', type === 'garmin');
         document.getElementById('type-coros')?.classList.toggle('active', type === 'coros');
         currentLLMConfig.watchBrand = type || '';
+        // 选择即持久化，不依赖测试连接
+        if (type && window.pywebview && window.pywebview.api && typeof window.pywebview.api.set_watch_brand === 'function') {
+            window.pywebview.api.set_watch_brand(type).catch(function(e) {
+                console.warn('set_watch_brand 持久化失败:', e);
+            });
+        }
+        // 任务：选中后立即隐藏必选错误提示
+        if (type && typeof validateWatchBrandRequired === 'function') {
+            validateWatchBrandRequired();
+        }
         
         const notifyBtn = document.getElementById('btn-notify-ai');
         if (notifyBtn) {
@@ -7958,6 +8337,9 @@
                 notifyBtn.style.opacity = '0.5';
                 notifyBtn.title = '高驰用户暂不支持此功能';
             }
+        }
+        if (typeof updateMovementRecordsSyncButton === 'function') {
+            updateMovementRecordsSyncButton();
         }
     }
 </script>
@@ -8102,8 +8484,16 @@ async function notifyAIAssistant() {
                 if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.set_ai_notified === 'function') {
                     await window.pywebview.api.set_ai_notified(true);
                 }
+                // 持久化通知时的目录哈希，用于重启后路径变更检测
+                if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.set_ai_notified_hash === 'function') {
+                    await window.pywebview.api.set_ai_notified_hash(currentHash);
+                }
             } catch (persistErr) {
                 console.warn('[AI 助手通知] set_ai_notified 失败:', persistErr);
+            }
+            // 验证通过后立即更新同步活动按钮状态
+            if (typeof updateMovementRecordsSyncButton === 'function') {
+                updateMovementRecordsSyncButton();
             }
         } else {
             showToast('⚠️ 通知失败，请重试');
@@ -8191,14 +8581,20 @@ async function bootstrapApplication() {
             var display = document.getElementById('storage-dir-display');
             if (display) display.innerText = _fitTracksDirCached;
         }
+        // 任务：启动时根据 last_gateway_ok 决定是否立即显示配置 Tab ⚠️ 徽标
+        if (res && res.ok && !res.last_gateway_ok) {
+            if (typeof updateSettingsTabBadge === 'function') {
+                updateSettingsTabBadge('warn');
+            }
+        }
         // 恢复 ai_notified 状态（任务 3：跨刷新持久化）
         try {
             const llmCfg = await window.pywebview.api.get_llm_config();
             if (llmCfg && llmCfg.ok && typeof llmCfg.ai_notified === 'boolean') {
                 onboardingState.aiNotified = llmCfg.ai_notified;
                 if (llmCfg.ai_notified) {
-                    // 任务 5：恢复目录哈希，使自动跳过逻辑生效
-                    onboardingState.lastNotifiedDirHash = computeDirHash(_fitTracksDirCached);
+                    // 从后端恢复通知时的目录哈希（而非从当前路径重新计算），正确检测路径变更
+                    onboardingState.lastNotifiedDirHash = String(llmCfg.ai_notified_hash || computeDirHash(_fitTracksDirCached));
                     if (typeof setAIStorageNotifyButtonState === 'function') {
                         setAIStorageNotifyButtonState('success');
                     }
@@ -8257,60 +8653,122 @@ async function bootstrapApplication() {
 }
 
 function runSilentGatewayValidation() {
-    var timedOut = false;
-    var timer = setTimeout(function () {
-        timedOut = true;
-        console.warn('[FIT Vault] 静默网关检查超时，跳过（不影响主界面）');
-        // 任务 4：超时分支更新指示灯
-        if (typeof setLLMTestStatus === 'function') {
-            setLLMTestStatus('静默验证超时（不影响主界面）', false, false);
-        }
-    }, 5000);
-    // 任务 4：进入静默验证时点亮 silent 指示灯
-    if (typeof setLLMTestStatus === 'function') {
-        setLLMTestStatus('静默验证网关连接中…', false, true, { mode: 'silent' });
-    }
-    pywebview.api.get_llm_config().then(function (res) {
-        if (timedOut) return;
-        if (!res.ok || !res.api_key) {
-            clearTimeout(timer);
-            // 任务 4：未配置时回滚指示灯到 idle
-            if (typeof setLLMTestStatus === 'function') {
-                setLLMTestStatus('尚未配置网关', false, false);
-            }
-            return;
-        }
-        pywebview.api.test_llm_config(res.provider, res.url, res.model, res.api_key, res.agent_id || '')
-        .then(function (testRes) {
-            clearTimeout(timer);
-            if (timedOut) return;
-            var bar = document.getElementById('gateway-warning-bar');
-            if (testRes.ok) {
-                console.log('[FIT Vault] 网关健康正常');
-                if (bar) bar.classList.add('hidden');
-                // 任务 4：成功分支更新指示灯
-                if (typeof setLLMTestStatus === 'function') {
-                    setLLMTestStatus('静默验证：网关连接正常', true, false);
-                    onboardingState.llmTestPassed = true;
-                }
+    if (_silentValidationInProgress) return;
+    _silentValidationInProgress = true;
+    var attempt = 0;
+    var maxAttempts = 10;
+
+    function tryOnce() {
+        attempt++;
+        var timedOut = false;
+        var timer = setTimeout(function () {
+            timedOut = true;
+            console.warn('[FIT Vault] 静默网关检查超时（尝试 ' + attempt + '/' + maxAttempts + '）');
+            if (attempt < maxAttempts) {
+                // 任务：超时自动重试 1 次，1 秒后重试避免对后端打满
+                console.log('[FIT Vault] 2 秒后自动重试...');
+                setTimeout(tryOnce, 2000);
             } else {
-                console.warn('[FIT Vault] 网关离线');
-                if (bar) bar.classList.remove('hidden');
-                // 任务 4：失败分支更新指示灯
                 if (typeof setLLMTestStatus === 'function') {
-                    setLLMTestStatus('静默验证：网关连接异常', false, false);
-                    onboardingState.llmTestPassed = false;
+                    setLLMTestStatus('静默验证超时（不影响主界面）', false, false);
                 }
+                _silentValidationInProgress = false;
+            }
+        }, 5000);
+        // 任务 4：进入静默验证时点亮 silent 指示灯
+        if (typeof setLLMTestStatus === 'function') {
+            setLLMTestStatus('静默验证网关连接中…（' + attempt + '/' + maxAttempts + '）', false, true, { mode: 'silent' });
+        }
+        pywebview.api.get_llm_config().then(function (res) {
+            if (timedOut) return;
+            // 修复：get_llm_config 经 redact 后 api_key 永远为空字符串，必须用 has_api_key 判定
+            if (!res.ok || !res.has_api_key) {
+                clearTimeout(timer);
+                if (typeof setLLMTestStatus === 'function') {
+                    setLLMTestStatus('尚未配置网关', false, false);
+                }
+                _silentValidationInProgress = false;
+                return;
+            }
+            pywebview.api.test_llm_config(res.provider, res.url, res.model, '', res.agent_id || '', res.watch_brand || '')
+            .then(function (testRes) {
+                clearTimeout(timer);
+                if (timedOut) return;
+                var bar = document.getElementById('gateway-warning-bar');
+                if (testRes.ok) {
+                    console.log('[FIT Vault] 网关健康正常');
+                    if (bar) bar.classList.add('hidden');
+                    if (typeof setLLMTestStatus === 'function') {
+                        setLLMTestStatus('静默验证：网关连接正常', true, false);
+                        onboardingState.llmTestPassed = true;
+                    }
+                } else {
+                    console.warn('[FIT Vault] 网关离线');
+                    if (bar) bar.classList.remove('hidden');
+                    if (typeof setLLMTestStatus === 'function') {
+                        setLLMTestStatus('静默验证：网关连接异常', false, false);
+                        onboardingState.llmTestPassed = false;
+                    }
+                }
+                // 无论成败，启动 TCP 心跳；网关后上线时心跳会重新触发静默验证
+                startLLMHeartbeat();
+                _silentValidationInProgress = false;
+            });
+        }).catch(function (e) {
+            clearTimeout(timer);
+            console.warn('[FIT Vault] 静默验证异常:', e);
+            if (typeof setLLMTestStatus === 'function') {
+                setLLMTestStatus('静默验证异常：' + ((e && e.message) || e), false, false);
+            }
+            _silentValidationInProgress = false;
+        });
+    }
+
+    tryOnce();
+}
+
+// ===== TCP 心跳：60s 周期探测网关端口可达性，不发送 LLM 消息，零垃圾会话 =====
+var _heartbeatTimer = null;
+var _heartbeatLastOk = null;
+var _silentValidationInProgress = false;
+
+function startLLMHeartbeat() {
+    stopLLMHeartbeat();
+    _heartbeatTimer = setInterval(function () {
+        if (!window.pywebview || !window.pywebview.api
+            || typeof window.pywebview.api.ping_llm_gateway !== 'function') return;
+        window.pywebview.api.ping_llm_gateway().then(function (res) {
+            var ok = !!(res && res.ok && res.reachable);
+            if (_heartbeatLastOk === null) {
+                _heartbeatLastOk = ok;
+                return;
+            }
+            if (_heartbeatLastOk && !ok) {
+                console.warn('[Heartbeat] LLM 网关端口不可达，连接可能已断开');
+                if (typeof updateSettingsTabBadge === 'function') updateSettingsTabBadge('warn');
+            } else if (!_heartbeatLastOk && ok) {
+                console.log('[Heartbeat] LLM 网关端口恢复，重新启动静默全链路验证');
+                // 网关从离线变为在线，触发全链路 LLM 连通性验证
+                if (typeof runSilentGatewayValidation === 'function') {
+                    runSilentGatewayValidation();
+                }
+            }
+            _heartbeatLastOk = ok;
+        }).catch(function () {
+            if (_heartbeatLastOk) {
+                console.warn('[Heartbeat] LLM 心跳异常');
+                if (typeof updateSettingsTabBadge === 'function') updateSettingsTabBadge('warn');
+                _heartbeatLastOk = false;
             }
         });
-    }).catch(function (e) {
-        clearTimeout(timer);
-        console.warn('[FIT Vault] 静默验证异常:', e);
-        // 任务 4：catch 分支更新指示灯
-        if (typeof setLLMTestStatus === 'function') {
-            setLLMTestStatus('静默验证异常：' + ((e && e.message) || e), false, false);
-        }
-    });
+    }, 60000);
+}
+
+function stopLLMHeartbeat() {
+    if (_heartbeatTimer) {
+        clearInterval(_heartbeatTimer);
+        _heartbeatTimer = null;
+    }
 }
 
 function openConfigModalFromWarning() {

@@ -97,7 +97,9 @@ def mark_sync_done() -> None:
 
 
 def is_sync_needed_today() -> bool:
-    return True
+    state = read_sync_state()
+    today = date.today().isoformat()
+    return not (state.get("synced_today") and state.get("last_sync_date") == today)
 
 
 def _format_last_sync_ago(last_sync_time: str | None) -> str | None:
@@ -969,7 +971,79 @@ def get_activity_history(limit: int = 50) -> list[dict[str, Any]]:
         (limit,),
     ).fetchall()
     conn.close()
-    return [dict(r) for r in rows]
+    rows_dicts = [dict(r) for r in rows]
+    for _row in rows_dicts:
+        _row["sport_type_cn"] = translate_sport_type(_row.get("sport_type"))
+    return rows_dicts
+
+
+# §契约 §二/§五:Resolver 是唯一语义翻译层
+# FIT SDK 运动类型英文常量 → 中文显示名映射 (单一可信来源)
+SPORT_TYPE_CN_MAP: dict[str, str] = {
+    "running": "跑步",
+    "trail_running": "越野跑",
+    "treadmill_running": "跑步机",
+    "hiking": "徒步",
+    "mountaineering": "登山",
+    "walking": "步行",
+    "cycling": "骑行",
+    "road_cycling": "公路骑行",
+    "mountain_biking": "山地骑行",
+    "e_biking": "电助力骑行",
+    "swimming": "游泳",
+    "lap_swimming": "泳池游泳",
+    "open_water": "公开水域",
+    "horseback_riding": "骑马",
+    "equestrian": "骑马",
+    "golf": "高尔夫",
+    "tennis": "网球",
+    "soccer": "足球",
+    "basketball": "篮球",
+    "skiing": "滑雪",
+    "alpine_skiing": "高山滑雪",
+    "cross_country_skiing": "越野滑雪",
+    "snowboarding": "单板滑雪",
+    "rowing": "划船",
+    "paddling": "桨板",
+    "sailing": "帆船",
+    "surfing": "冲浪",
+    "fishing": "钓鱼",
+    "hunting": "狩猎",
+    "inline_skating": "轮滑",
+    "rock_climbing": "攀岩",
+    "kayaking": "皮划艇",
+    "rafting": "漂流",
+    "diving": "潜水",
+    "yoga": "瑜伽",
+    "pilates": "普拉提",
+    "strength_training": "力量训练",
+    "hiit": "高强度间歇",
+    "breath_training": "呼吸训练",
+    "flexibility_training": "柔韧训练",
+    "cardio": "有氧运动",
+    "driving": "驾车",
+    "flying": "飞行",
+    "motorcycling": "摩托",
+    "transition": "换项",
+    "multisport": "多项",
+    "other": "其他",
+}
+
+
+def translate_sport_type(sport_type: str | None) -> str:
+    """Resolver 层:FIT SDK sport_type → 中文显示名。
+
+    - 命中映射表 → 返回中文标签
+    - 未命中 → 返回 PascalCase 化后的原值(如 ``horseback_riding`` → ``Horseback riding``)
+    - 空值 → 返回 ``"综合运动"`` 兜底
+    """
+    if not sport_type:
+        return "综合运动"
+    raw = str(sport_type).strip().lower()
+    if raw in SPORT_TYPE_CN_MAP:
+        return SPORT_TYPE_CN_MAP[raw]
+    # 兜底:PascalCase + 空格化下划线
+    return raw.replace("_", " ").title() if raw else "综合运动"
 
 
 def get_activity_list_filtered(
@@ -1101,7 +1175,15 @@ def get_activity_list_filtered(
     finally:
         conn.close()
 
-    return [dict(r) for r in rows], total_count
+    rows_dicts = [dict(r) for r in rows]
+    # §契约 §二/§五:Resolver 层在响应中注入 sport_type_cn,前端不再做翻译
+    for _row in rows_dicts:
+        _row["sport_type_cn"] = translate_sport_type(_row.get("sport_type"))
+    return rows_dicts, total_count
+
+
+# 别名保持向后兼容(老代码可能引用)
+get_sport_hub_activity_page = get_activity_list_filtered
 
 
 # §任务 2:地区选项排除集合(与 §任务 1 抽取逻辑保持一致)
@@ -1200,7 +1282,12 @@ def load_local_track(file_path: str) -> dict[str, Any]:
         conn = _conn()
         row = conn.execute(
             """
-            SELECT id, sport_type, sub_sport_type
+            SELECT id, sport_type, sub_sport_type, region, region_display,
+                   dist_km, gain_m, max_alt_m, min_alt_m, total_descent_m,
+                   up_count, down_count, max_single_climb_m, difficulty_score,
+                   avg_grade_pct, max_slope_pct, min_slope_pct, uphill_pct, downhill_pct,
+                   report_metrics_version, mtdi_score, mtdi_level, mtdi_level_name,
+                   avg_pace, avg_hr, max_hr, calories, start_time, duration_sec
             FROM activities
             WHERE file_path = ?
             ORDER BY id DESC
@@ -1250,6 +1337,8 @@ def build_activity_payload(filename: str, data: dict[str, Any], src_path: str | 
         "dist_km": dist_km,
         "duration_sec": duration_sec,
         "gain_m": gain_m,
+        "total_descent_m": float(data.get("total_descent_m") or 0),
+        "total_descent_m_device": float(data.get("total_descent_m") or 0),  # FIT 设备值,不受 resolver/计算器覆写
         "max_alt_m": float(data.get("max_alt_m") or (max(alt_values) if alt_values else 0.0)),
         "avg_hr": int(avg_hr) if avg_hr is not None else (int(round(sum(hr_values) / len(hr_values))) if hr_values else None),
         "max_hr": int(max_hr) if max_hr is not None else (max(hr_values) if hr_values else None),
@@ -1623,6 +1712,315 @@ def ingest_activity_file(
     }
 
 
+def parse_gpx_for_preview(src_path: str) -> dict[str, Any]:
+    """解析 GPX 文件，仅返回内存数据（不持久化，不写 DB，不拷贝文件）。
+    
+    契约依据：
+    - §二 FIT 文件为唯一可信运动数据源，GPX 是用后即抛型文件
+    - §八 canonical DB 只存 fit_sdk 数据，不含 GPX
+    - Region 从 geocode_cache 只读解析（不触发写入）
+    """
+    import track_backend
+
+    p = Path(src_path).expanduser().resolve()
+    if not p.is_file():
+        return {"ok": False, "error": f"文件不存在: {src_path}"}
+
+    data = track_backend.parse_track_file(str(p))
+    points = data.get("points") or []
+
+    # 复用 build_activity_payload 的计算逻辑（距离/时间/爬升/心率等）
+    activity = build_activity_payload(p.name, data, str(p))
+
+    # ====== Region 解析（geocode_cache 只读，不写 DB，不触发 enrichment 线程）====== 
+    start_lat = activity.get("start_lat")
+    start_lon = activity.get("start_lon")
+    region_display = ""
+    region_status = "none"
+    if start_lat is not None and start_lon is not None:
+        region_display = resolve_activity_region(start_lat, start_lon)
+        if region_display and region_display != "室内运动（无GPS）":
+            region_status = "success"
+        else:
+            region_status = "pending"
+
+    # 前端轨迹报告需要的衍生指标 — 统一算法：FIT 和 GPX 共用 compute_report_metrics
+    dist_km_val = float(activity.get("dist_km") or 0.0)
+    gain_m_val = float(activity.get("gain_m") or 0.0)
+    report = compute_report_metrics(points, dist_km_val, gain_m_val)
+
+    return {
+        "ok": True,
+        "filename": p.name,
+        "data": {
+            "points": points,
+            "placemarks": data.get("placemarks") or [],
+            "weather": data.get("weather") or {},
+        },
+        "activity": {
+            "id": None,  # ← 关键：无 DB id，前端自动切换 temporary_session
+            "filename": p.name,
+            "sport_type": activity["sport_type"],
+            "sub_sport_type": activity["sub_sport_type"],
+            "dist_km": activity["dist_km"],
+            "duration_sec": activity["duration_sec"],
+            "gain_m": activity["gain_m"],
+            "max_alt_m": activity["max_alt_m"],
+            "min_alt_m": report.get("min_alt_m"),
+            "total_descent_m": report.get("total_descent_m"),
+            "avg_grade_pct": report.get("avg_grade_pct"),
+            "max_slope_pct": report.get("max_slope_pct"),
+            "min_slope_pct": report.get("min_slope_pct"),
+            "uphill_pct": report.get("uphill_pct"),
+            "downhill_pct": report.get("downhill_pct"),
+            "up_count": report.get("up_count"),
+            "down_count": report.get("down_count"),
+            "max_single_climb_m": report.get("max_single_climb_m"),
+            "difficulty_score": report.get("difficulty_score"),
+            "avg_hr": activity["avg_hr"],
+            "max_hr": activity["max_hr"],
+            "calories": activity["calories"],
+            "avg_pace": activity["avg_pace"],
+            "start_time": activity["start_time"],
+            "region": region_display,
+            "region_status": region_status,
+            "region_display": region_display,
+            "weather": data.get("weather") or {},
+        },
+    }
+
+
+def compute_report_metrics(
+    points: list[dict[str, Any]],
+    dist_km: float,
+    gain_m: float,
+) -> dict[str, Any]:
+    """报告 canonical 派生指标计算器（FIT 和 GPX 共用一组算法）。
+
+    CONTRACT §2.1 / §五 / §5.5:
+    - 所有输出字段来自 points 遍历，可算就算，不可算才 None
+    - avg_grade_pct 由后端统一计算（前端不得推导）
+    - 前端仅读取 activityMetrics 展示，不得重复计算
+    """
+    if not points or len(points) < 2:
+        return {}
+
+    min_alt = points[0].get("alt", 0)
+    total_descent = 0.0
+    last_alt = min_alt
+    for p in points[1:]:
+        alt = p.get("alt", 0)
+        if alt < min_alt:
+            min_alt = alt
+        dalt = alt - last_alt
+        # 阈值 0.1m 适配 1 秒采样 FIT 数据 (设备值优先,此处为 fallback)
+        if dalt < -0.1:
+            total_descent += abs(dalt)
+        last_alt = alt
+
+    up_count = 0
+    down_count = 0
+    max_single_climb = 0.0
+    hill_state = 0
+    hill_ref_alt = points[0].get("alt", 0)
+    hill_peak = hill_ref_alt
+    hill_valley = hill_ref_alt
+    HILL_THRESHOLD = 15
+
+    for p in points[1:]:
+        alt = p.get("alt", 0)
+        if hill_state == 1:
+            if alt > hill_peak:
+                hill_peak = alt
+            elif hill_peak - alt >= HILL_THRESHOLD:
+                climb = hill_peak - hill_valley
+                if climb >= HILL_THRESHOLD:
+                    up_count += 1
+                    if climb > max_single_climb:
+                        max_single_climb = climb
+                hill_state = -1
+                hill_valley = alt
+        elif hill_state == -1:
+            if alt < hill_valley:
+                hill_valley = alt
+            elif alt - hill_valley >= HILL_THRESHOLD:
+                if hill_peak - hill_valley >= HILL_THRESHOLD:
+                    down_count += 1
+                hill_state = 1
+                hill_peak = alt
+        else:
+            if alt - hill_ref_alt >= HILL_THRESHOLD:
+                hill_state = 1
+                hill_valley = hill_ref_alt
+                hill_peak = alt
+            elif hill_ref_alt - alt >= HILL_THRESHOLD:
+                hill_state = -1
+                hill_peak = hill_ref_alt
+                hill_valley = alt
+
+    if hill_state == 1:
+        climb = hill_peak - hill_valley
+        if climb >= HILL_THRESHOLD:
+            up_count += 1
+            if climb > max_single_climb:
+                max_single_climb = climb
+    elif hill_state == -1:
+        if hill_peak - hill_valley >= HILL_THRESHOLD:
+            down_count += 1
+
+    diff_score = 0
+    if dist_km > 5:
+        diff_score += 1
+    if dist_km > 10:
+        diff_score += 1
+    if dist_km > 15:
+        diff_score += 1
+    if gain_m > 200:
+        diff_score += 1
+    if gain_m > 500:
+        diff_score += 1
+    if gain_m > 800:
+        diff_score += 1
+    if max_single_climb > 100:
+        diff_score += 1
+    if max_single_climb > 300:
+        diff_score += 1
+    if up_count > 3:
+        diff_score += 1
+    if up_count > 8:
+        diff_score += 1
+
+    _grade = _compute_grade_metrics(points, dist_km, gain_m)
+    return {
+        "min_alt_m": round(float(min_alt), 1),
+        "total_descent_m": round(float(total_descent), 1),
+        "up_count": up_count,
+        "down_count": down_count,
+        "max_single_climb_m": round(float(max_single_climb), 1),
+        "difficulty_score": diff_score,
+        "avg_grade_pct": _grade.get("avg_grade_pct"),
+        "max_slope_pct": _grade.get("max_slope_pct"),
+        "min_slope_pct": _grade.get("min_slope_pct"),
+        "uphill_pct": _grade.get("uphill_pct"),
+        "downhill_pct": _grade.get("downhill_pct"),
+        "report_metrics_version": 2,
+    }
+
+
+def _compute_grade_metrics(
+    points: list[dict[str, Any]],
+    dist_km: float,
+    gain_m: float,
+) -> dict[str, Any]:
+    """轨迹报告坡度指标计算器（FIT 和 GPX 共用）。
+    
+    CONTRACT §5.5: 每个字段独立判定数据可用性。
+    滑窗计算 max_slope / min_slope / uphill_pct / downhill_pct。
+    """
+    WINDOW_DISTANCE_M = 100.0
+    MIN_WINDOW_DISTANCE_M = 60.0
+    UPHILL_THRESHOLD = 3.0
+    DOWNHILL_THRESHOLD = -3.0
+    MAX_ABS_SLOPE = 45.0
+    NOISE_ALT_THRESHOLD_M = 1.5
+
+    result: dict[str, Any] = {
+        "avg_grade_pct": None,
+        "max_slope_pct": None,
+        "min_slope_pct": None,
+        "uphill_pct": None,
+        "downhill_pct": None,
+    }
+
+    if not points or len(points) < 2:
+        return result
+
+    has_dist = any(p.get("dist_km") is not None for p in points)
+    has_alt = any(p.get("alt") is not None for p in points)
+
+    # 距离回退: 轨迹无 dist_km 但总距可用,按时间均匀插值后递归
+    if not has_dist and dist_km and dist_km > 0 and len(points) >= 2:
+        n = len(points)
+        _enriched = []
+        for i, p in enumerate(points):
+            _p = dict(p)
+            _p["dist_km"] = (dist_km * i) / (n - 1)
+            _enriched.append(_p)
+        return _compute_grade_metrics(_enriched, dist_km, gain_m)
+
+    if not has_dist and not has_alt:
+        return result
+
+    # avg_grade_pct 独立计算
+    if has_dist and dist_km and dist_km > 0 and gain_m is not None:
+        avg = (gain_m / (dist_km * 1000.0)) * 100.0
+        result["avg_grade_pct"] = round(max(0.0, min(avg, 100.0)), 1)
+
+    if not has_alt:
+        return result
+
+    # 滑窗计算 max/min/uphill/downhill
+    window_slopes: list[float] = []
+    window_distances: list[float] = []
+    n = len(points)
+    for i in range(n):
+        base_dist = points[i].get("dist_km")
+        base_alt = points[i].get("alt")
+        if base_dist is None or base_alt is None:
+            continue
+        for j in range(i + 1, n):
+            cur_dist = points[j].get("dist_km")
+            cur_alt = points[j].get("alt")
+            if cur_dist is None or cur_alt is None:
+                continue
+            if cur_dist <= base_dist:
+                continue
+            distance_m = (cur_dist - base_dist) * 1000.0
+            if distance_m < MIN_WINDOW_DISTANCE_M:
+                continue
+            if distance_m > WINDOW_DISTANCE_M * 1.5:
+                break
+            alt_delta = cur_alt - base_alt
+            slope = (alt_delta / distance_m) * 100.0
+            if abs(slope) > MAX_ABS_SLOPE:
+                continue
+            if abs(alt_delta) < NOISE_ALT_THRESHOLD_M:
+                slope = 0.0
+            window_slopes.append(slope)
+            window_distances.append(distance_m)
+            break
+
+    if len(window_slopes) >= 3:
+        smoothed: list[float] = []
+        for k in range(len(window_slopes)):
+            lo = max(0, k - 1)
+            hi = min(len(window_slopes), k + 2)
+            neighbor = sorted(window_slopes[lo:hi])
+            smoothed.append(neighbor[len(neighbor) // 2])
+        window_slopes = smoothed
+
+    if window_slopes:
+        result["max_slope_pct"] = round(max(window_slopes), 1)
+        result["min_slope_pct"] = round(min(window_slopes), 1)
+
+        uphill_m = 0.0
+        downhill_m = 0.0
+        valid_m = 0.0
+        for k, s in enumerate(window_slopes):
+            wd = window_distances[k] if k < len(window_distances) else WINDOW_DISTANCE_M
+            valid_m += wd
+            if s >= UPHILL_THRESHOLD:
+                uphill_m += wd
+            elif s <= DOWNHILL_THRESHOLD:
+                downhill_m += wd
+
+        if valid_m > 0:
+            result["uphill_pct"] = round((uphill_m / valid_m) * 100.0, 1)
+            result["downhill_pct"] = round((downhill_m / valid_m) * 100.0, 1)
+
+    return result
+
+
 def _summarize_track_points(points: list[dict[str, Any]], track_backend_module: Any) -> tuple[float, int, int]:
     dist_m = 0.0
     gain_m = 0.0
@@ -1632,9 +2030,10 @@ def _summarize_track_points(points: list[dict[str, Any]], track_backend_module: 
             continue
         dist_m += track_backend_module.haversine_m(p0["lat"], p0["lon"], p1["lat"], p1["lon"])
         if p0.get("alt") is not None and p1.get("alt") is not None:
-            alt_gain = float(p1.get("alt") or 0.0) - float(p0.get("alt") or 0.0)
-            if alt_gain > 0:
-                gain_m += alt_gain
+            dalt = float(p1.get("alt") or 0.0) - float(p0.get("alt") or 0.0)
+            # CONTRACT §5.5: 1.5m 噪声阈值 — 与 compute_report_metrics 一致
+            if dalt > 1.5:
+                gain_m += dalt
 
     duration_sec = 0
     timed_points = [p for p in points if p.get("time")]

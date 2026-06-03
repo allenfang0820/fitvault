@@ -7,12 +7,14 @@ import json
 import logging
 import os
 import shutil
+import socket
 import sqlite3
 import sys
 import threading
 import time
 import uuid
 import zipfile
+from urllib.parse import urlparse
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -1137,6 +1139,7 @@ def _parse_fit_activity_for_sync(file_path: Path) -> dict[str, Any]:
             "calories": basic.get("total_calories"),
             "gain_m": basic.get("total_ascent"),
             "max_alt_m": basic.get("max_altitude"),
+            "total_descent_m": basic.get("total_descent"),
         },
         basic.get("sport"),
         basic.get("sub_sport"),
@@ -1302,6 +1305,7 @@ def _parse_fit_activity_for_sync(file_path: Path) -> dict[str, Any]:
         result["calories"] = calories
         result["gain_m"] = elevation_gain
         result["total_descent_m"] = elevation_loss
+        result["total_descent_m_device"] = payload.get("total_descent_m_device")  # 设备值,不受 resolver 覆写
         # Phase 2.3 — pace / display (validated 44/44 non-swim; swimming resolver > legacy)
         avg_pace = sm.get("avg_pace", avg_pace)
         avg_pace_display = sm.get("avg_pace_display", avg_pace_display)
@@ -1759,15 +1763,23 @@ def _persist_sync_activity(activity: dict[str, Any]) -> dict[str, Any]:
     activity["sub_sport_type"] = _normalize_activity_token(activity.get("sub_sport_type"))
 
     # CONTRACT §2.1 / §6: 在持久化前计算报告 canonical 派生指标
+    # 保存设备报告的 total_descent (§2.1 数据可信分层: fit_sdk > points 计算值)
+    _device_descent = _safe_float(activity.get("total_descent_m_device"))
     _points_raw = activity.get("points")
     if _points_raw and isinstance(_points_raw, list) and len(_points_raw) >= 2:
         try:
             _dist = _safe_float(activity.get("dist_km", 0))
             _gain = _safe_float(activity.get("gain_m", 0))
-            _report = compute_report_metrics(_points_raw, _dist, _gain)
+            _report = profile_backend.compute_report_metrics(_points_raw, _dist, _gain)
             activity.update(_report)
+            # 设备报告的 total_descent 优先于 points 计算值
+            if _device_descent is not None and _device_descent > 0:
+                activity["total_descent_m"] = _device_descent
         except Exception as exc:
             logger.exception("[METRICS] compute_report_metrics failed for %s: %s", activity.get("file_name"), exc)
+            # 降级路径也保留设备值
+            if _device_descent is not None and _device_descent > 0:
+                activity["total_descent_m"] = _device_descent
 
     def _write() -> dict[str, Any]:
         conn = profile_backend._conn()
@@ -1839,6 +1851,8 @@ def _sync_single_fit_file(file_path: str | Path) -> dict[str, Any]:
         "activity": row or {},
         "resolved": activity.get("resolved"),
         "diff": activity.get("diff"),
+        # T-IMPORT-FIT-DEDUP: 暴露 points 给 80 分查重用 (不污染契约 §三 响应结构,仅扩展)
+        "points": activity.get("points") or [],
     }
 
 
@@ -2311,225 +2325,6 @@ def debug_ai_snapshot(snapshot: dict[str, Any]) -> None:
           file=sys.stderr, flush=True)
 
 
-def compute_report_metrics(
-    points: list[dict[str, Any]],
-    dist_km: float,
-    gain_m: float,
-) -> dict[str, Any]:
-    """报告 canonical 派生指标计算器。
-    CONTRACT §2.1 / §6: 所有输出字段来自 FIT records 遍历，存入 DB activities 表。
-    前端仅读取 activityMetrics 展示，不得重复计算。
-    """
-    if not points or len(points) < 2:
-        return {}
-
-    min_alt = points[0].get("alt", 0)
-    total_descent = 0.0
-    last_alt = min_alt
-    for p in points[1:]:
-        alt = p.get("alt", 0)
-        if alt < min_alt:
-            min_alt = alt
-        dalt = alt - last_alt
-        if dalt < -1.5:
-            total_descent += abs(dalt)
-        last_alt = alt
-
-    up_count = 0
-    down_count = 0
-    max_single_climb = 0.0
-    hill_state = 0
-    hill_ref_alt = points[0].get("alt", 0)
-    hill_peak = hill_ref_alt
-    hill_valley = hill_ref_alt
-    HILL_THRESHOLD = 15
-
-    for p in points[1:]:
-        alt = p.get("alt", 0)
-        if hill_state == 1:
-            if alt > hill_peak:
-                hill_peak = alt
-            elif hill_peak - alt >= HILL_THRESHOLD:
-                climb = hill_peak - hill_valley
-                if climb >= HILL_THRESHOLD:
-                    up_count += 1
-                    if climb > max_single_climb:
-                        max_single_climb = climb
-                hill_state = -1
-                hill_valley = alt
-        elif hill_state == -1:
-            if alt < hill_valley:
-                hill_valley = alt
-            elif alt - hill_valley >= HILL_THRESHOLD:
-                if hill_peak - hill_valley >= HILL_THRESHOLD:
-                    down_count += 1
-                hill_state = 1
-                hill_peak = alt
-        else:
-            if alt - hill_ref_alt >= HILL_THRESHOLD:
-                hill_state = 1
-                hill_valley = hill_ref_alt
-                hill_peak = alt
-            elif hill_ref_alt - alt >= HILL_THRESHOLD:
-                hill_state = -1
-                hill_peak = hill_ref_alt
-                hill_valley = alt
-
-    if hill_state == 1:
-        climb = hill_peak - hill_valley
-        if climb >= HILL_THRESHOLD:
-            up_count += 1
-            if climb > max_single_climb:
-                max_single_climb = climb
-    elif hill_state == -1:
-        if hill_peak - hill_valley >= HILL_THRESHOLD:
-            down_count += 1
-
-    diff_score = 0
-    if dist_km > 5:
-        diff_score += 1
-    if dist_km > 10:
-        diff_score += 1
-    if dist_km > 15:
-        diff_score += 1
-    if gain_m > 200:
-        diff_score += 1
-    if gain_m > 500:
-        diff_score += 1
-    if gain_m > 800:
-        diff_score += 1
-    if max_single_climb > 100:
-        diff_score += 1
-    if max_single_climb > 300:
-        diff_score += 1
-    if up_count > 3:
-        diff_score += 1
-    if up_count > 8:
-        diff_score += 1
-
-    _grade = _compute_grade_metrics(points, dist_km, gain_m)
-    result = {
-        "min_alt_m": round(float(min_alt), 1),
-        "total_descent_m": round(float(total_descent), 1),
-        "up_count": up_count,
-        "down_count": down_count,
-        "max_single_climb_m": round(float(max_single_climb), 1),
-        "difficulty_score": diff_score,
-        "avg_grade_pct": _grade.get("avg_grade_pct"),
-        "max_slope_pct": _grade.get("max_slope_pct"),
-        "min_slope_pct": _grade.get("min_slope_pct"),
-        "uphill_pct": _grade.get("uphill_pct"),
-        "downhill_pct": _grade.get("downhill_pct"),
-        "report_metrics_version": 2,
-    }
-    return result
-
-
-def _compute_grade_metrics(
-    points: list[dict[str, Any]],
-    dist_km: float,
-    gain_m: float,
-) -> dict[str, Any]:
-    WINDOW_DISTANCE_M = 100.0
-    MIN_WINDOW_DISTANCE_M = 60.0
-    UPHILL_THRESHOLD = 3.0
-    DOWNHILL_THRESHOLD = -3.0
-    MAX_ABS_SLOPE = 45.0
-    NOISE_ALT_THRESHOLD_M = 1.5
-
-    result: dict[str, Any] = {
-        "avg_grade_pct": None,
-        "max_slope_pct": None,
-        "min_slope_pct": None,
-        "uphill_pct": None,
-        "downhill_pct": None,
-    }
-
-    if not points or len(points) < 2:
-        return result
-
-    has_dist = any(p.get("dist_km") is not None for p in points)
-    has_alt = any(p.get("alt") is not None for p in points)
-    if not has_alt:
-        return result
-
-    if not has_dist and dist_km and dist_km > 0 and len(points) >= 2:
-        n = len(points)
-        _enriched = []
-        for i, p in enumerate(points):
-            _p = dict(p)
-            _p["dist_km"] = (dist_km * i) / (n - 1)
-            _enriched.append(_p)
-        return _compute_grade_metrics(_enriched, dist_km, gain_m)
-
-    if not has_dist:
-        return result
-
-    if dist_km > 0 and gain_m is not None:
-        avg = (gain_m / (dist_km * 1000.0)) * 100.0
-        result["avg_grade_pct"] = round(max(0.0, min(avg, 100.0)), 1)
-
-    window_slopes = []
-    window_distances = []
-    n = len(points)
-    for i in range(n):
-        base_dist = points[i].get("dist_km")
-        base_alt = points[i].get("alt")
-        if base_dist is None or base_alt is None:
-            continue
-        for j in range(i + 1, n):
-            cur_dist = points[j].get("dist_km")
-            cur_alt = points[j].get("alt")
-            if cur_dist is None or cur_alt is None:
-                continue
-            if cur_dist <= base_dist:
-                continue
-            distance_m = (cur_dist - base_dist) * 1000.0
-            if distance_m < MIN_WINDOW_DISTANCE_M:
-                continue
-            if distance_m > WINDOW_DISTANCE_M * 1.5:
-                break
-            alt_delta = cur_alt - base_alt
-            slope = (alt_delta / distance_m) * 100.0
-            if abs(slope) > MAX_ABS_SLOPE:
-                continue
-            if abs(alt_delta) < NOISE_ALT_THRESHOLD_M:
-                slope = 0.0
-            window_slopes.append(slope)
-            window_distances.append(distance_m)
-            break
-
-    if len(window_slopes) >= 3:
-        smoothed = []
-        for k in range(len(window_slopes)):
-            lo = max(0, k - 1)
-            hi = min(len(window_slopes), k + 2)
-            neighbor = sorted(window_slopes[lo:hi])
-            smoothed.append(neighbor[len(neighbor) // 2])
-        window_slopes = smoothed
-
-    if window_slopes:
-        result["max_slope_pct"] = round(max(window_slopes), 1)
-        result["min_slope_pct"] = round(min(window_slopes), 1)
-
-        uphill_m = 0.0
-        downhill_m = 0.0
-        valid_m = 0.0
-        for k, s in enumerate(window_slopes):
-            wd = window_distances[k] if k < len(window_distances) else WINDOW_DISTANCE_M
-            valid_m += wd
-            if s >= UPHILL_THRESHOLD:
-                uphill_m += wd
-            elif s <= DOWNHILL_THRESHOLD:
-                downhill_m += wd
-
-        if valid_m > 0:
-            result["uphill_pct"] = round((uphill_m / valid_m) * 100.0, 1)
-            result["downhill_pct"] = round((downhill_m / valid_m) * 100.0, 1)
-
-    return result
-
-
 def _decode_points_json_simple(raw: str | None) -> list:
     if not raw or not str(raw).strip():
         return []
@@ -2572,7 +2367,7 @@ def rebuild_report_metrics_for_all_activities(dry_run: bool = False) -> dict:
             try:
                 _dist = float(row["dist_km"] or 0)
                 _gain = float(row["gain_m"] or 0)
-                _report = compute_report_metrics(points, _dist, _gain)
+                _report = profile_backend.compute_report_metrics(points, _dist, _gain)
                 if dry_run:
                     rebuilt += 1
                 else:
@@ -3058,6 +2853,65 @@ class Api:
             logger.exception("set_ai_notified failed")
             return _api_error(API_CODE_INTERNAL, "写入 ai_notified 失败")
 
+    def set_watch_brand(self, value: str) -> dict:
+        """独立写入 watch_brand，不触发网络测试，选择即持久化。"""
+        try:
+            current = llm_backend.load_llm_config()
+            llm_backend.save_llm_config(
+                provider=current.get("provider", ""),
+                url=current.get("url", ""),
+                model=current.get("model", ""),
+                api_key=current.get("api_key", ""),
+                agent_id=current.get("agent_id", ""),
+                watch_brand=str(value or ""),
+                local_dir=current.get("local_dir", ""),
+                ai_notified=bool(current.get("ai_notified", False)),
+                ai_notified_hash=str(current.get("ai_notified_hash", "")),
+            )
+            return _api_success({"watch_brand": str(value or "")})
+        except Exception:
+            logger.exception("set_watch_brand failed")
+            return _api_error(API_CODE_INTERNAL, "写入 watch_brand 失败")
+
+    def set_ai_notified_hash(self, value: str) -> dict:
+        """持久化通知时的目录哈希，用于重启后路径变更检测。"""
+        try:
+            current = llm_backend.load_llm_config()
+            llm_backend.save_llm_config(
+                provider=current.get("provider", ""),
+                url=current.get("url", ""),
+                model=current.get("model", ""),
+                api_key=current.get("api_key", ""),
+                agent_id=current.get("agent_id", ""),
+                watch_brand=current.get("watch_brand", ""),
+                local_dir=current.get("local_dir", ""),
+                ai_notified=bool(current.get("ai_notified", False)),
+                ai_notified_hash=str(value or ""),
+            )
+            return _api_success({"ai_notified_hash": str(value or "")})
+        except Exception:
+            logger.exception("set_ai_notified_hash failed")
+            return _api_error(API_CODE_INTERNAL, "写入 ai_notified_hash 失败")
+
+    def ping_llm_gateway(self) -> dict:
+        """TCP 存活探测：仅检测网关端口可达，不发送 LLM 消息，不创建会话。"""
+        try:
+            cfg = llm_backend.load_llm_config()
+            url = str(cfg.get("url", "")).strip()
+            if not url:
+                return _api_error(API_CODE_VALIDATION, "网关地址未配置")
+            parsed = urlparse(url)
+            host = parsed.hostname or "127.0.0.1"
+            port = parsed.port or (443 if parsed.scheme == "https" else 80)
+            sock = socket.create_connection((host, port), timeout=3)
+            sock.close()
+            return _api_success({"reachable": True, "host": host, "port": port})
+        except (socket.timeout, ConnectionRefusedError, OSError) as e:
+            return _api_success({"reachable": False, "error": str(e)})
+        except Exception:
+            logger.exception("ping_llm_gateway failed")
+            return _api_error(API_CODE_INTERNAL, "网关探测异常")
+
     def save_llm_config(self, provider: str, url: str, model: str, api_key: str, agent_id: str = "", watch_brand: str = "", local_dir: str = "") -> dict:
         """【防御加锁】拒绝外部越权直调。核心持久化已全面收拢至 test_llm_config 网关中。"""
         print("[API 警告] 外部代码尝试越权直接保存配置，已被安全网关拦截并重定向。")
@@ -3099,7 +2953,7 @@ class Api:
             logger.exception("save_config failed")
             return _api_error(API_CODE_FILE_IO, "保存配置失败")
 
-    def test_llm_config(self, provider: str, url: str, model: str, api_key: str, agent_id: str = "") -> dict:
+    def test_llm_config(self, provider: str, url: str, model: str, api_key: str, agent_id: str = "", watch_brand: str = "") -> dict:
         """【测试即保存网关-稳定性加固版】严格实行先测试、后持久化策略，保障状态机最终一致性。"""
         try:
             # 当 api_key 为空时，复用已存储的密钥（前端不会持有明文 key，这是安全设计）
@@ -3123,7 +2977,7 @@ class Api:
                 model=model,
                 api_key=effective_key,
                 agent_id=agent_id,
-                watch_brand="",
+                watch_brand=watch_brand,
                 local_dir=TRACKS_DIR
             )
             print(f"[Config 治理] 验证成功，大模型存储规范已安全固化对齐: {TRACKS_DIR}")
@@ -3146,6 +3000,11 @@ class Api:
                 pass
             logger.warning("test_llm_config failed: %s", e)
             return _api_error(API_CODE_EXTERNAL_SERVICE, "大模型网关连通失败")
+
+    @staticmethod
+    def _is_garmin_watch_brand(value: Any) -> bool:
+        brand = str(value or "").strip().lower()
+        return brand in {"garmin", "佳明"}
 
     def call_llm(self, prompt: str, sport_type: str = "hiking") -> dict:
         """对话或路书。AI 数据边界 (Task 3.4):
@@ -3341,6 +3200,11 @@ class Api:
             return _api_error(API_CODE_VALIDATION, "开始日期不能晚于结束日期")
 
         cfg = llm_backend.load_llm_config()
+        if not self._is_garmin_watch_brand(cfg.get("watch_brand")):
+            return _api_error(
+                API_CODE_VALIDATION,
+                "当前手表品牌暂不支持按时间同步活动，请在配置页面选择佳明后重试，或使用导入本地 FIT 文件。",
+            )
         url = str(cfg.get("url") or "").strip()
         if not url:
             return _api_error(API_CODE_VALIDATION, "API 接口地址为空，请在设置中配置")
@@ -3398,6 +3262,29 @@ class Api:
         except Exception as e:
             logger.warning("sync_remote_fit_activities failed: %s", e)
             return _api_error(API_CODE_EXTERNAL_SERVICE, str(e))
+
+    def pick_and_import_fit_files(self) -> dict:
+        """Open a local file picker and import FIT / ZIP files through batch_import_tracks."""
+        import webview
+        from webview import FileDialog
+
+        if not webview.windows:
+            return _api_error(API_CODE_INTERNAL, "窗口未就绪", {"imported": [], "errors": []})
+        try:
+            paths = webview.windows[0].create_file_dialog(
+                FileDialog.OPEN,
+                allow_multiple=True,
+                file_types=("FIT or ZIP files (*.fit;*.zip)",),
+            )
+        except TypeError:
+            paths = webview.windows[0].create_file_dialog(
+                FileDialog.OPEN,
+                file_types=("FIT or ZIP files (*.fit;*.zip)",),
+            )
+        if not paths:
+            return _api_success({"cancelled": True, "imported": [], "errors": []})
+        file_paths = list(paths) if isinstance(paths, (list, tuple)) else [paths]
+        return self.batch_import_tracks(file_paths)
 
     def pick_and_parse_track(self) -> dict:
         import webview
@@ -4153,6 +4040,26 @@ class Api:
             return report
         for member in members:
             entry_name = member.filename
+            # T-IMPORT-FIT-DEDUP Issue B: ZIP 文件名编码兜底
+            # 当 UTF-8 flag (bit 11, 0x800) 未设置 且文件名含非 ASCII 字符时,
+            # 说明 Python zipfile 已按 CP437 默认解码,需要还原回原始字节并重新尝试解码。
+            # 常见场景:
+            #   - macOS Archive Utility: UTF-8 字节但未设 flag
+            #   - Windows 资源管理器: GBK 字节,未设 flag
+            #   - 7-Zip 等: 偶有不设 flag
+            # 优先级: UTF-8 > GBK > Big5 > Shift_JIS (按现代系统使用率)
+            if not (member.flag_bits & 0x800) and any(ord(c) > 127 for c in entry_name):
+                try:
+                    raw_bytes = entry_name.encode('cp437')
+                except UnicodeEncodeError:
+                    raw_bytes = None
+                if raw_bytes is not None:
+                    for _enc in ('utf-8', 'gbk', 'big5', 'shift_jis'):
+                        try:
+                            entry_name = raw_bytes.decode(_enc)
+                            break  # 找到第一个能成功解码的编码
+                        except (UnicodeDecodeError, UnicodeEncodeError):
+                            continue
             resolved = Path(target_root / entry_name).resolve()
             if not _is_path_under_dir(resolved, target_root):
                 logging.getLogger("track_import").warning(f"拒绝路径穿越: {entry_name}")
@@ -4219,6 +4126,7 @@ class Api:
             self._watch_service.suspended = True
 
         imported: list[str] = []
+        skipped: list[dict] = []
         errors: list[dict] = []
 
         try:
@@ -4235,15 +4143,22 @@ class Api:
                         # 手动调用单入口同步解析
                         res = _sync_single_fit_file(dst)
                         if res.get("ok"):
-                            imported.append(str(dst))
+                            # T-IMPORT-FIT-DEDUP (二次扩展): FIT 分支同样用文件名 stem 覆盖 title
+                            # 防止 FIT 内部 title 字段(如 GBK 误读)导致活动列表显示乱码
+                            self._apply_title_override(res.get("activity_id"), dst)
+                            skip_entry = self._rollback_if_semantic_duplicate(res, dst, fp)
+                            if skip_entry is not None:
+                                skipped.append(skip_entry)
+                            else:
+                                imported.append(str(dst))
 
                     elif src.suffix.lower() == ".zip":
                         with zipfile.ZipFile(str(src), "r") as zf:
                             extract_report = self.safe_extract_zip(zf, IMPORTS_DIR)
                         for err in extract_report.get("errors") or []:
                             errors.append({"file": fp, **err})
-                        for skipped in extract_report.get("skipped") or []:
-                            errors.append({"file": fp, **skipped})
+                        for skipped_item in extract_report.get("skipped") or []:
+                            errors.append({"file": fp, **skipped_item})
                         for fit_path in extract_report.get("extracted") or []:
                             fit = Path(fit_path).expanduser().resolve()
                             if fit.suffix.lower() not in ZIP_ALLOWED_SUFFIXES or not _is_path_under_dir(fit, Path(IMPORTS_DIR).expanduser().resolve()):
@@ -4253,18 +4168,128 @@ class Api:
                             shutil.move(str(fit), str(dst))
                             res = _sync_single_fit_file(dst)
                             if res.get("ok"):
-                                imported.append(str(dst))
+                                # T-IMPORT-FIT-DEDUP (二次): ZIP 分支同样覆盖 title
+                                self._apply_title_override(res.get("activity_id"), dst)
+                                skip_entry = self._rollback_if_semantic_duplicate(res, dst, fp)
+                                if skip_entry is not None:
+                                    skipped.append(skip_entry)
+                                else:
+                                    imported.append(str(dst))
                     else:
                         errors.append({"file": fp, "error": "不支持的文件格式，仅支持 .fit 和 .zip", "code": API_CODE_UNSUPPORTED_FILE})
                 except Exception as exc:
                     errors.append({"file": fp, "error": str(exc)})
 
-            return _api_success({"imported": imported, "errors": errors if errors else None})
+            return _api_success({
+                "imported": imported,
+                "skipped": skipped,
+                "errors": errors if errors else None,
+            })
 
         finally:
             # 无论批量导入成功与否，无条件解除挂起锁，恢复 Watchdog 的日常静默监听
             if self._watch_service:
                 self._watch_service.suspended = False
+
+    def _apply_title_override(self, new_id: int | None, dst: Path) -> None:
+        """T-IMPORT-FIT-DEDUP (二次): 用文件名 stem 覆盖 activities.title。
+
+        防止 FIT 内部 ``basic_info.title`` 字段被 GBK 误读后写入 activities.title,
+        导致活动列表显示乱码。FIT/ZIP 两条分支统一调用。
+
+        Args:
+            new_id: ``_sync_single_fit_file`` 返回的 ``activity_id``
+            dst: 已归集到 TRACKS_DIR 的 FIT 文件路径
+        """
+        if not (new_id and dst.stem):
+            return
+        try:
+            _conn = profile_backend._conn()
+            try:
+                _conn.execute(
+                    "UPDATE activities SET title = ? WHERE id = ?",
+                    (dst.stem, new_id),
+                )
+                _conn.commit()
+            finally:
+                _conn.close()
+        except Exception as _exc:
+            logging.getLogger("track_import").warning(
+                "[title-override] UPDATE failed for id=%s: %s", new_id, _exc,
+            )
+
+    def _rollback_if_semantic_duplicate(self, sync_res: dict, dst: Path, src_path: str) -> dict | None:
+        """T-IMPORT-FIT-DEDUP: 80 分语义查重钩子。
+
+        在 ``_sync_single_fit_file`` 成功插入后,比对已存在的活动;
+        若与某条既有记录 ``is_duplicate=True`` 且 score >= 80,则回滚
+        (删除刚插入的 row 与文件),并返回 ``skipped`` 描述供上层展示。
+
+        Args:
+            sync_res: ``_sync_single_fit_file`` 的返回值,含 ``activity_id``/``activity``/``resolved``
+            dst: 已复制到 TRACKS_DIR 的目标文件
+            src_path: 原始文件路径(用于错误描述)
+
+        Returns:
+            命中重复时返回 ``skipped`` 字典;未命中返回 None。
+        """
+        new_id = sync_res.get("activity_id")
+        parsed = sync_res.get("resolved") or {}
+        activity_row = sync_res.get("activity") or {}
+        start_time = activity_row.get("start_time") or parsed.get("start_time")
+        # dist_km/duration_sec 不在 activities 行,resolved 字段名为 distance_km/duration_sec
+        dist_km = parsed.get("distance_km")
+        if dist_km is None:
+            dist_km = parsed.get("dist_km")
+        duration_sec = parsed.get("duration_sec")
+        # points 由 _sync_single_fit_file 显式暴露 (T-IMPORT-FIT-DEDUP)
+        points = sync_res.get("points") or []
+        if not (start_time and dist_km is not None and duration_sec is not None):
+            return None  # 必要字段不全,跳过查重(契约:不污染 canonical)
+        try:
+            dup_check = profile_backend.check_duplicate_activity(
+                start_time=start_time,
+                dist_km=float(dist_km),
+                duration_sec=int(duration_sec),
+                points_json=points,
+                start_time_utc=activity_row.get("start_time_utc") or parsed.get("start_time_utc"),
+            )
+        except Exception as exc:
+            # 查重异常不应阻塞导入(契约 §7 边界)
+            logging.getLogger("track_import").warning(
+                "[dedup] check_duplicate_activity raised for id=%s: %s", new_id, exc,
+            )
+            return None
+        existing = dup_check.get("duplicate_record") or {}
+        existing_id = existing.get("id")
+        if not (dup_check.get("is_duplicate") and existing_id):
+            return None
+        if existing_id == new_id:
+            # 命中的是刚插入的自己(API 无 exclude_id,只能事后过滤)
+            return None
+        # 命中:回滚(删除刚插入的 row + 文件)
+        conn = profile_backend._conn()
+        try:
+            conn.execute("DELETE FROM activities WHERE id = ?", (new_id,))
+            conn.commit()
+        except Exception as exc:
+            logging.getLogger("track_import").warning(
+                "[dedup] rollback DELETE failed for id=%s: %s", new_id, exc,
+            )
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+        try:
+            os.remove(str(dst))
+        except OSError:
+            pass
+        return {
+            "file": str(src_path),
+            "duplicate_of": existing_id,
+            "score": dup_check.get("score"),
+        }
 
     def api_force_rebuild_radar_data(self) -> dict:
         """【P1 异步清洗网关】允许用户手动一键强刷全库雷达指标，安全更新至 METRICS_VERSION 3。"""
@@ -4395,6 +4420,9 @@ class Api:
 
             deduped_rows = _dedupe_activity_rows([dict(row) for row in all_rows])
             records = [self._build_activity_list_item(row) for row in deduped_rows]
+            # §契约 §二/§五: Resolver 层注入 sport_type_cn
+            for _row in records:
+                _row["sport_type_cn"] = profile_backend.translate_sport_type(_row.get("sport_type"))
             activity_types = sorted(
                 {
                     _resolve_display_sport_type(row["sport_type"], row["sub_sport_type"])
@@ -4438,6 +4466,7 @@ class Api:
                 "source_dir": source_dir,
                 "total": len(records),
                 "activity_types": activity_types,
+                "activity_type_labels": {t: profile_backend.translate_sport_type(t) for t in activity_types},
                 "page_sizes": SPORT_HUB_PAGE_SIZES,
                 "records": records,
                 "dynamic_columns": dynamic_columns,
@@ -4488,6 +4517,7 @@ class Api:
                 "total": total_count,
                 "total_pages": total_pages,
                 "activity_types": activity_types,
+                "activity_type_labels": {t: profile_backend.translate_sport_type(t) for t in activity_types},
                 "page_sizes": SPORT_HUB_PAGE_SIZES,
                 "records": records,
             })
@@ -5149,6 +5179,12 @@ def _api_load_activity_track_by_file_path(self, file_path: str) -> dict:
 
 
 def _api_import_track(self, file_path: str = "", duplicate_action: str = "", new_filename: str = "") -> dict:
+    """GPX 导入入口。
+
+    契约 §二 §八：GPX 是用后即抛型文件，不进 canonical DB。
+    本接口仅解析并返回内存数据，不写 activities 表，不拷贝文件到 TRACKS_DIR。
+    duplicate_action / new_filename 保留参数签名兼容，实际不持久化无意义。
+    """
     import webview
     from webview import FileDialog
 
@@ -5166,11 +5202,8 @@ def _api_import_track(self, file_path: str = "", duplicate_action: str = "", new
     if Path(target_path).suffix.lower() != ".gpx":
         return {"ok": False, "error": "仅支持导入 GPX 文件，请选择 .gpx 格式的轨迹文件"}
     try:
-        return profile_backend.ingest_activity_file(
-            target_path,
-            duplicate_action=duplicate_action,
-            new_filename=new_filename or None,
-        )
+        # §二 §八：GPX 只解析不持久化 — 不写 activities 表，不拷贝文件
+        return profile_backend.parse_gpx_for_preview(target_path)
     except Exception as e:
         return {"ok": False, "error": str(e)}
 

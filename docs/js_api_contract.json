@@ -92,7 +92,8 @@
         { "name": "url", "type": "string", "required": true },
         { "name": "model", "type": "string", "required": true },
         { "name": "api_key", "type": "string", "required": true },
-        { "name": "agent_id", "type": "string", "required": false }
+        { "name": "agent_id", "type": "string", "required": false },
+        { "name": "watch_brand", "type": "string", "required": false }
       ],
       "returns": "{ ok, code, msg, data: {message}, traceId }",
       "high_risk": true,
@@ -142,7 +143,7 @@
       "parameters": [
         { "name": "sport_filter", "type": "string", "required": false, "default": "all" }
       ],
-      "returns": "{ ok, code, msg, data: {source_dir, total, activity_types, page_sizes, records, dynamic_columns}, traceId }",
+      "returns": "{ ok, code, msg, data: {source_dir, total, activity_types, page_sizes, records, dynamic_columns}, traceId }。records 中每条含 sport_type_cn(Resolver 注入的中文运动类型标签)",
       "high_risk": false,
       "description": "运动中心全量活动列表 (不分页)"
     },
@@ -156,7 +157,7 @@
         { "name": "page_size", "type": "int", "required": false, "default": 20 },
         { "name": "sport_filter", "type": "string", "required": false, "default": "all" }
       ],
-      "returns": "{ ok, code, msg, data: {page, page_size, total, total_pages, activity_types, page_sizes, records}, traceId }",
+      "returns": "{ ok, code, msg, data: {page, page_size, total, total_pages, activity_types, page_sizes, records}, traceId }。records 中每条含 sport_type_cn(Resolver 注入的中文运动类型标签)",
       "high_risk": false,
       "description": "活动分页列表"
     },
@@ -170,7 +171,7 @@
         { "name": "page_size", "type": "int", "required": false, "default": 10 },
         { "name": "sport_filter", "type": "string", "required": false, "default": "all" }
       ],
-      "returns": "{ ok, code, msg, data: {page, page_size, total, total_pages, activity_types, page_sizes, records}, traceId }",
+      "returns": "{ ok, code, msg, data: {page, page_size, total, total_pages, activity_types, page_sizes, records}, traceId }。records 中每条含 sport_type_cn(Resolver 注入的中文运动类型标签)",
       "high_risk": false,
       "description": "个人运动数据分页查询"
     },
@@ -192,7 +193,7 @@
       "line": 2860,
       "category": "activity",
       "parameters": [],
-      "returns": "{ ok, history }",
+      "returns": "{ ok, history }。history 中每条含 sport_type_cn(Resolver 注入的中文运动类型标签)",
       "high_risk": false,
       "description": "按时间倒序的历史运动记录列表 (limit 50)"
     },
@@ -238,17 +239,28 @@
       "description": "向 OpenClaw 发送带起止日期的活动 FIT 下载提示词，要求下载结果保存到 TRACKS_DIR；前端随后应调用本地 FIT 同步刷新活动列表。日期格式为 YYYY-MM-DD，包含首尾日期。"
     },
     {
+      "name": "pick_and_import_fit_files",
+      "file": "main.py",
+      "line": 3404,
+      "category": "sync",
+      "parameters": [],
+      "returns": "{ ok, imported, errors, cancelled }",
+      "high_risk": true,
+      "risk_level": "high",
+      "description": "打开本地文件选择器，允许选择单个/多个 FIT 文件或 ZIP 压缩包，并复用 batch_import_tracks 导入到 TRACKS_DIR。前端不得解析 FIT 或 ZIP；本接口不调用 OpenClaw。"
+    },
+    {
       "name": "batch_import_tracks",
       "file": "main.py",
-      "line": 3396,
+      "line": 4253,
       "category": "sync",
       "parameters": [
         { "name": "file_paths", "type": "array<string>", "required": true }
       ],
-      "returns": "{ ok, code, msg, data: {imported, errors}, traceId }",
+      "returns": "{ ok, code, msg, data: {imported, skipped, errors}, traceId }",
       "high_risk": true,
       "risk_level": "high",
-      "description": "多模态批量导入：FIT 直接复制，ZIP 解压到 IMPORTS_DIR 后归集到 TRACKS_DIR；有路径穿越/资源上限防护"
+      "description": "多模态批量导入：FIT 直接复制，ZIP 解压到 IMPORTS_DIR 后归集到 TRACKS_DIR；有路径穿越/资源上限防护。T-IMPORT-FIT-DEDUP 起 80 分语义查重：命中的文件回滚 (DELETE row + remove file) 并写入 data.skipped，每项含 {file, duplicate_of, score}。ZIP 文件名若 UTF-8 flag 未设置会做 CP437→GBK 兜底解码以修复 Windows 中文乱码。"
     },
     {
       "name": "delete_activities",
@@ -405,6 +417,52 @@
       "returns": "{ ok, code, msg, data: {is_first_run, last_gateway_ok, last_success_time, default_tracks_dir}, traceId }",
       "high_risk": false,
       "description": "首次运行状态检查"
+    },
+    {
+      "name": "set_ai_notified",
+      "file": "main.py",
+      "line": 2825,
+      "category": "ai",
+      "parameters": [
+        { "name": "value", "type": "boolean", "required": true }
+      ],
+      "returns": "{ ok, ai_notified }",
+      "high_risk": false,
+      "description": "独立写入 ai_notified 标志，不触发网络测试"
+    },
+    {
+      "name": "set_watch_brand",
+      "file": "main.py",
+      "line": 2844,
+      "category": "config",
+      "parameters": [
+        { "name": "value", "type": "string", "required": true }
+      ],
+      "returns": "{ ok, watch_brand }",
+      "high_risk": false,
+      "description": "独立写入设备品牌，选择即持久化，不触发网络测试"
+    },
+    {
+      "name": "set_ai_notified_hash",
+      "file": "main.py",
+      "line": 2862,
+      "category": "ai",
+      "parameters": [
+        { "name": "value", "type": "string", "required": true }
+      ],
+      "returns": "{ ok, ai_notified_hash }",
+      "high_risk": false,
+      "description": "持久化通知时的目录哈希，用于重启后路径变更检测"
+    },
+    {
+      "name": "ping_llm_gateway",
+      "file": "main.py",
+      "line": 2879,
+      "category": "diagnostics",
+      "parameters": [],
+      "returns": "{ ok, reachable, host, port } 或 { ok, reachable:false, error }",
+      "high_risk": false,
+      "description": "TCP 存活探测：仅检测网关端口可达，不发送 LLM 消息，不创建会话"
     }
   ],
   "architectural_constraints": {

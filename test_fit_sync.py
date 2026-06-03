@@ -3,6 +3,7 @@ import sqlite3
 import tempfile
 import threading
 import time
+import types
 import unittest
 import json
 import zipfile
@@ -219,6 +220,7 @@ class TestFitSync(unittest.TestCase):
             "model": "openclaw",
             "api_key": "",
             "agent_id": "",
+            "watch_brand": "garmin",
         }), mock.patch.object(llm_backend, "chat_completions", return_value="下载完成") as chat_mock:
             result = api.sync_remote_fit_activities("2026-05-01", "2026-05-31")
 
@@ -235,6 +237,55 @@ class TestFitSync(unittest.TestCase):
         result = api.sync_remote_fit_activities("2026-06-01", "2026-05-01")
         self.assertFalse(result["ok"], result)
         self.assertIn("开始日期不能晚于结束日期", result["error"])
+
+    def test_remote_fit_sync_rejects_coros_without_calling_openclaw(self):
+        api = object.__new__(main.Api)
+        with mock.patch.object(llm_backend, "load_llm_config", return_value={
+            "provider": "local_mcp",
+            "url": "http://localhost:3000/v1/chat/completions",
+            "model": "openclaw",
+            "api_key": "",
+            "agent_id": "",
+            "watch_brand": "coros",
+        }), mock.patch.object(llm_backend, "chat_completions") as chat_mock:
+            result = api.sync_remote_fit_activities("2026-05-01", "2026-05-31")
+
+        self.assertFalse(result["ok"], result)
+        self.assertIn("暂不支持按时间同步活动", result["error"])
+        chat_mock.assert_not_called()
+
+    def test_remote_fit_sync_rejects_empty_brand_without_calling_openclaw(self):
+        api = object.__new__(main.Api)
+        with mock.patch.object(llm_backend, "load_llm_config", return_value={
+            "provider": "local_mcp",
+            "url": "http://localhost:3000/v1/chat/completions",
+            "model": "openclaw",
+            "api_key": "",
+            "agent_id": "",
+            "watch_brand": "",
+        }), mock.patch.object(llm_backend, "chat_completions") as chat_mock:
+            result = api.sync_remote_fit_activities("2026-05-01", "2026-05-31")
+
+        self.assertFalse(result["ok"], result)
+        self.assertIn("暂不支持按时间同步活动", result["error"])
+        chat_mock.assert_not_called()
+
+    def test_pick_and_import_fit_files_uses_batch_import_tracks(self):
+        selected = [str(self.temp_dir / "manual.fit")]
+        fake_window = mock.Mock()
+        fake_window.create_file_dialog.return_value = selected
+        fake_file_dialog = types.SimpleNamespace(OPEN="open")
+        fake_webview = types.SimpleNamespace(windows=[fake_window], FileDialog=fake_file_dialog)
+
+        with mock.patch.dict("sys.modules", {
+            "webview": fake_webview,
+        }), mock.patch.object(self.api, "batch_import_tracks", return_value={"ok": True, "imported": selected, "errors": None}) as import_mock, \
+             mock.patch.object(llm_backend, "chat_completions") as chat_mock:
+            result = self.api.pick_and_import_fit_files()
+
+        self.assertTrue(result["ok"], result)
+        import_mock.assert_called_once_with(selected)
+        chat_mock.assert_not_called()
 
     def test_parse_fit_activity_for_sync_defers_region_enrichment(self):
         fit_path = self.temp_dir / "region.fit"
@@ -670,8 +721,7 @@ class TestFitSync(unittest.TestCase):
         api = main.Api()
         profile_backend.mark_sync_done()
         status = api.check_daily_sync_status()
-        self.assertTrue(status["needs_sync"],
-            "is_sync_needed_today 已临时绕过单日限制，永远返回 True（开发调试阶段）")
+        self.assertFalse(status["needs_sync"])
 
     # 验证画像同步状态指示器元数据：覆盖 pending / syncing / synced_today / failed 四种状态
     def test_sync_metadata_initial_state_is_pending(self):
