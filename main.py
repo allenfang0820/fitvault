@@ -190,6 +190,7 @@ IRRELEVANT_LIST_METRICS: dict[str, frozenset[str]] = {
 _ACTIVITY_SYNC_SCHEMA_LOCK = threading.Lock()
 _ACTIVITY_SYNC_SCHEMA_READY_FOR: str | None = None
 _APP_SHUTTING_DOWN = threading.Event()
+PROFILE_SYNC_INTERVAL_SEC = 5 * 60
 FIT_WATCH_STABLE_SEC = 2.0
 FIT_WATCH_POLL_INTERVAL_SEC = 1.5
 ZIP_MAX_MEMBERS = 500
@@ -2613,8 +2614,6 @@ class Api:
     """pywebview js_api：轨迹文件、导出、大模型（OpenAI 兼容）等。"""
 
     SYSTEM_INSTRUCTION = "__SYSTEM_INSTRUCTION__"
-    REPORT_TERRAIN = "__REPORT_TERRAIN__"
-    REPORT_PERSONALIZED = "__REPORT_PERSONALIZED__"
     REPORT_RISK_ASSESSMENT = "__REPORT_RISK_ASSESSMENT__"
     RADAR_INSIGHT = "__RADAR_INSIGHT__"
 
@@ -2632,6 +2631,7 @@ class Api:
         self._watch_service: FITFolderWatchService | None = None
         self._ai_snapshot: dict[str, Any] | None = None
         self._profile_startup_sync_scheduled = False
+        self._profile_sync_timer: threading.Timer | None = None
         self._region_enrichment_timer: threading.Timer | None = None
         self._region_enrichment_active = False
 
@@ -2699,9 +2699,24 @@ class Api:
         if self._profile_startup_sync_scheduled:
             return
         self._profile_startup_sync_scheduled = True
-        timer = threading.Timer(300, self.startup_sync_check)
+        self._schedule_next_profile_sync(PROFILE_SYNC_INTERVAL_SEC)
+
+    def _schedule_next_profile_sync(self, delay_sec: float) -> None:
+        if _APP_SHUTTING_DOWN.is_set():
+            return
+        timer = threading.Timer(delay_sec, self._run_profile_sync_tick)
         timer.daemon = True
         timer.start()
+        self._profile_sync_timer = timer
+
+    def _run_profile_sync_tick(self) -> None:
+        try:
+            self.startup_sync_check()
+        except Exception:
+            logger.exception("画像同步 tick 异常")
+        finally:
+            if not _APP_SHUTTING_DOWN.is_set():
+                self._schedule_next_profile_sync(PROFILE_SYNC_INTERVAL_SEC)
 
     def _dispatch_profile_sync_event(self, event_name: str, payload: dict) -> None:
         if not self._window:
@@ -3029,54 +3044,6 @@ class Api:
         fn = self._track_filename or "轨迹"
 
         try:
-            if prompt == self.REPORT_TERRAIN:
-                sys_b = llm_backend.build_base_system_block(
-                    sport_type=sport_type,
-                    provider=provider,
-                    track_filename=fn,
-                    points=[],          # 契约束定: AI 不消费前端 points
-                    placemarks=[],      # 契约束定: AI 不消费前端 placemarks
-                    weather_context=None,  # 契约束定: 气象数据由 snapshot 提供
-                    ai_snapshot_block=ai_block,
-                )
-                usr = llm_backend.build_report_user_prompt_terrain(sport_type)
-                messages = [{"role": "system", "content": sys_b}, {"role": "user", "content": usr}]
-                text = llm_backend.chat_completions(
-                    url=url,
-                    api_key=api_key,
-                    model=model,
-                    messages=messages,
-                    session_id=sid,
-                    agent_id=agent_id,
-                )
-                self._chat_messages = []
-                self._new_session_id()
-                return {"ok": True, "content": text}
-
-            if prompt == self.REPORT_PERSONALIZED:
-                sys_b = llm_backend.build_base_system_block(
-                    sport_type=sport_type,
-                    provider=provider,
-                    track_filename=fn,
-                    points=[],          # 契约束定: AI 不消费前端 points
-                    placemarks=[],      # 契约束定: AI 不消费前端 placemarks
-                    weather_context=None,  # 契约束定: 气象数据由 snapshot 提供
-                    ai_snapshot_block=ai_block,
-                )
-                usr = llm_backend.build_report_user_prompt_personalized(sport_type, provider)
-                messages = [{"role": "system", "content": sys_b}, {"role": "user", "content": usr}]
-                text = llm_backend.chat_completions(
-                    url=url,
-                    api_key=api_key,
-                    model=model,
-                    messages=messages,
-                    session_id=sid,
-                    agent_id=agent_id,
-                )
-                self._chat_messages = []
-                self._new_session_id()
-                return {"ok": True, "content": text}
-
             if prompt == self.REPORT_RISK_ASSESSMENT:
                 if not self._ai_snapshot:
                     return {"ok": True, "risk_assessment": llm_backend.empty_risk_assessment("请先加载活动轨迹")}

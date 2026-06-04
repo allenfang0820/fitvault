@@ -255,38 +255,6 @@ def build_base_system_block(
 """
 
 
-def build_report_user_prompt_terrain(sport_type: str) -> str:
-    _, role = _sport_labels(sport_type)
-    return f"""你是一位{role}。请根据 System 中给出的完整 GPS 轨迹明细表，生成【标准路线路书与评估报告】。
-
-请直接回复 Markdown 纯文本。【核心警告】：绝对不要调用任何写文件、保存本地文件或生成 MD 文件的工具。
-内容必须极度简练（侧边栏极窄，每个板块一两句话，总字数控制在 150 字内）。包含：
-1. ⛰️ **赛道/路线整体评估**
-2. 🏃 **常规体能分配建议**
-3. ⚠️ **客观环境风险与安全警示**
-4. 🎒 **标准建议装备与补给**"""
-
-
-def build_report_user_prompt_personalized(sport_type: str, provider: str) -> str:
-    sport_cn, role = _sport_labels(sport_type)
-    mcp = ""
-    if provider == "local_mcp":
-        mcp = (
-            "【严格工具调用指令】请务必调用运动数据(如高驰 COROS) MCP 工具获取用户最近 5 次真实"
-            f"{sport_cn}记录。若工具失败或未授权，仅回复："
-            "「❌ 获取高驰历史数据失败或超时。无法进行精准预测，请检查 OpenClaw/QClaw 工具配置或网络状态。」"
-            "禁止瞎猜、禁止保存文件。\n\n"
-        )
-    return f"""{mcp}你是一位{role}。请根据 System 中的完整 GPS 轨迹明细，并结合（如可用）工具返回的**最近 5 次真实{sport_cn}历史**作为体能基准，
-生成【极简版】{sport_cn}预测报告。
-
-请直接回复 Markdown 纯文本。【核心警告】：绝对不要罗列近期运动原始数据；绝对不要调用写文件工具。
-总字数控制在 150 字内，仅包含：
-1. ⏱️ **预计用时**
-2. 🏃 **建议配速**（含心率控制简述）
-3. 🎒 **建议补给**"""
-
-
 def build_chat_system_block(
     *,
     sport_type: str,

@@ -116,13 +116,7 @@ class TestFitParser(unittest.TestCase):
             points=[{"lat": 30.0, "lon": 104.0, "time": "2026-05-20T00:00:00Z"}],
             placemarks=[],
         )
-        mountaineering_prompt = llm_backend.build_report_user_prompt_personalized("mountaineering", "openai")
-        cycling_prompt = llm_backend.build_report_user_prompt_personalized("cycling", "openai")
-
         self.assertIn("用户活动类型：【驾车】", driving_block)
-        self.assertIn("登山预测报告", mountaineering_prompt)
-        self.assertIn("骑行预测报告", cycling_prompt)
-        self.assertNotIn("徒步预测报告", cycling_prompt)
 
     def test_running_fit_metadata(self):
         path = _first_existing(

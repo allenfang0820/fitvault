@@ -2418,7 +2418,6 @@
                             <div id="pf-empty" style="display:none; text-align:center; padding:16px 0; color:#64748b; font-size:0.75rem;">
                                 📋 暂无画像数据，连接成功后将自动同步 Garmin 用户画像
                             </div>
-                            <div id="pf-sync-notice" style="display:none;margin:0 0 10px 0;padding:8px 10px;border-radius:10px;background:rgba(248,113,113,0.08);border:1px solid rgba(248,113,113,0.25);color:#fecaca;font-size:0.68rem;line-height:1.5;"></div>
                             <div class="profile-summary-head">
                                 <div class="profile-avatar" id="pf-avatar">🏃</div>
                                 <div class="profile-summary-main">
@@ -3229,8 +3228,6 @@
     let latestDetectedTrack = { filePath: '', activityId: 0 };
 
     const LLM_DEFAULT_URL = 'http://localhost:3000/v1/chat/completions';
-    const PY_REPORT_TERRAIN = '__REPORT_TERRAIN__';
-    const PY_REPORT_PERSONALIZED = '__REPORT_PERSONALIZED__';
     const PY_REPORT_RISK_ASSESSMENT = '__REPORT_RISK_ASSESSMENT__';
     let currentLLMConfig = { provider: 'local_mcp', model: 'openclaw', url: LLM_DEFAULT_URL, apiKey: '', agentId: '' };
 
@@ -3677,13 +3674,11 @@
     async function loadProfileCard() {
         var loadingEl = document.getElementById('pf-loading');
         var emptyEl = document.getElementById('pf-empty');
-        var noticeEl = document.getElementById('pf-sync-notice');
         var summaryHead = document.querySelector('.profile-summary-card .profile-summary-head');
         var metricTabs = document.querySelector('.profile-summary-card .profile-metric-tabs');
         var metricPanels = document.querySelector('.profile-summary-card .pf-metric-panels');
         if (loadingEl) loadingEl.style.display = '';
         if (emptyEl) emptyEl.style.display = 'none';
-        if (noticeEl) noticeEl.style.display = 'none';
         if (summaryHead) summaryHead.style.display = 'none';
         if (metricTabs) metricTabs.style.display = 'none';
         if (metricPanels) metricPanels.style.display = 'none';
@@ -3748,19 +3743,14 @@
 
     function updateProfileSyncMeta(meta) {
         const statusEl = document.getElementById('pf-status-chip');
-        const noticeEl = document.getElementById('pf-sync-notice');
         const lastUpdatedEl = document.getElementById('pf-last-updated');
-        const connection = meta && meta.connection_status ? meta.connection_status : 'unknown';
         const syncStatus = meta && meta.sync_status ? meta.sync_status : 'idle';
         const lastText = meta && meta.last_sync_ago ? meta.last_sync_ago : '从未同步';
         if (lastUpdatedEl) lastUpdatedEl.innerText = '🔄 最后更新：' + lastText;
         if (statusEl) {
             let text = '待同步';
             let cls = 'pending';
-            if (connection === 'disconnected') {
-                text = '未连接';
-                cls = 'pending';
-            } else if (syncStatus === 'syncing') {
+            if (syncStatus === 'syncing') {
                 text = '同步中';
                 cls = 'syncing';
             } else if (syncStatus === 'success_today') {
@@ -3769,12 +3759,6 @@
             } else if (syncStatus === 'failed_retryable') {
                 text = '同步失败，等待重试';
                 cls = 'failed';
-            } else if (connection === 'connected') {
-                text = '待同步';
-                cls = 'pending';
-            } else {
-                text = '检测中';
-                cls = 'pending';
             }
             statusEl.classList.remove('synced', 'pending', 'failed', 'syncing');
             statusEl.classList.add(cls);
@@ -3784,14 +3768,6 @@
                 statusEl.innerText = text;
             }
         }
-        if (!noticeEl) return;
-        if (connection === 'disconnected') {
-            noticeEl.style.display = '';
-            noticeEl.innerText = '❌ LLM 网关未配置\n请前往「设置」→「连接测试」检测连接状态\n连接成功后画像将自动同步\n🔄 最后更新：' + lastText + (lastText !== '从未同步' ? '（使用历史数据）' : '');
-        } else {
-            noticeEl.style.display = 'none';
-            noticeEl.innerText = '';
-        }
     }
 
     window.onProfileSyncEvent = async function(eventName, payload) {
@@ -3799,8 +3775,6 @@
         if (eventName === 'profile_sync_complete' && payload && payload.ok && payload.profile) {
             await loadProfileCard();
             showToast('✅ 用户画像已后台自动更新');
-        } else if (eventName === 'profile_sync_blocked') {
-            showToast('⚠️ LLM 网关未配置，已继续使用历史画像');
         }
     };
 
@@ -4218,6 +4192,9 @@
                     updateSettingsTabBadge('warn');
                 }
             }
+        }
+        if (typeof updateMovementRecordsSyncButton === 'function') {
+            updateMovementRecordsSyncButton();
         }
         return true;
     }
@@ -8593,10 +8570,18 @@ async function bootstrapApplication() {
             if (llmCfg && llmCfg.ok && typeof llmCfg.ai_notified === 'boolean') {
                 onboardingState.aiNotified = llmCfg.ai_notified;
                 if (llmCfg.ai_notified) {
-                    // 从后端恢复通知时的目录哈希（而非从当前路径重新计算），正确检测路径变更
-                    onboardingState.lastNotifiedDirHash = String(llmCfg.ai_notified_hash || computeDirHash(_fitTracksDirCached));
+                    // 以后端权威绝对路径为基准，自愈历史兜底路径 hash 污染
+                    onboardingState.lastNotifiedDirHash = computeDirHash(_fitTracksDirCached);
+                    if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.set_ai_notified_hash === 'function') {
+                        window.pywebview.api.set_ai_notified_hash(onboardingState.lastNotifiedDirHash).catch(function(e) {
+                            console.warn('[BOOT] set_ai_notified_hash 自愈失败:', e);
+                        });
+                    }
                     if (typeof setAIStorageNotifyButtonState === 'function') {
                         setAIStorageNotifyButtonState('success');
+                    }
+                    if (typeof updateMovementRecordsSyncButton === 'function') {
+                        updateMovementRecordsSyncButton();
                     }
                 }
             }
@@ -8653,8 +8638,6 @@ async function bootstrapApplication() {
 }
 
 function runSilentGatewayValidation() {
-    if (_silentValidationInProgress) return;
-    _silentValidationInProgress = true;
     var attempt = 0;
     var maxAttempts = 10;
 
@@ -8672,7 +8655,6 @@ function runSilentGatewayValidation() {
                 if (typeof setLLMTestStatus === 'function') {
                     setLLMTestStatus('静默验证超时（不影响主界面）', false, false);
                 }
-                _silentValidationInProgress = false;
             }
         }, 5000);
         // 任务 4：进入静默验证时点亮 silent 指示灯
@@ -8684,10 +8666,10 @@ function runSilentGatewayValidation() {
             // 修复：get_llm_config 经 redact 后 api_key 永远为空字符串，必须用 has_api_key 判定
             if (!res.ok || !res.has_api_key) {
                 clearTimeout(timer);
+                // 任务 4：未配置时回滚指示灯到 idle
                 if (typeof setLLMTestStatus === 'function') {
                     setLLMTestStatus('尚未配置网关', false, false);
                 }
-                _silentValidationInProgress = false;
                 return;
             }
             pywebview.api.test_llm_config(res.provider, res.url, res.model, '', res.agent_id || '', res.watch_brand || '')
@@ -8712,15 +8694,14 @@ function runSilentGatewayValidation() {
                 }
                 // 无论成败，启动 TCP 心跳；网关后上线时心跳会重新触发静默验证
                 startLLMHeartbeat();
-                _silentValidationInProgress = false;
             });
         }).catch(function (e) {
             clearTimeout(timer);
             console.warn('[FIT Vault] 静默验证异常:', e);
+            // 任务 4：catch 分支更新指示灯
             if (typeof setLLMTestStatus === 'function') {
                 setLLMTestStatus('静默验证异常：' + ((e && e.message) || e), false, false);
             }
-            _silentValidationInProgress = false;
         });
     }
 
@@ -8730,7 +8711,6 @@ function runSilentGatewayValidation() {
 // ===== TCP 心跳：60s 周期探测网关端口可达性，不发送 LLM 消息，零垃圾会话 =====
 var _heartbeatTimer = null;
 var _heartbeatLastOk = null;
-var _silentValidationInProgress = false;
 
 function startLLMHeartbeat() {
     stopLLMHeartbeat();
