@@ -40,12 +40,47 @@ SPORT_TYPE_ALIASES = {
 }
 
 
+def _assert_valid_fit_file(path: Path) -> None:
+    """FIT 文件前置校验:拦截系统影子文件 + magic 验证。
+
+    供 parse_fit_file / parse_fit_file_raw 两条入口共用,作为契约兜底。
+    任一入口绕过都会污染下游(garmin_fit_sdk Decoder、fitparse 等),
+    必须在这里统一拦截。
+
+    Raises:
+        ValueError: 文件名是系统影子文件 / 文件头 magic 不匹配
+    """
+    # 1) macOS AppleDouble 影子文件 (._xxx.fit) + Windows 临时文件 (~$xxx.fit)
+    if path.name.startswith("._") or path.name.startswith("~$"):
+        raise ValueError(f"系统影子文件,跳过: {path.name}")
+
+    # 2) FIT 文件头 magic 验证。
+    # 偏移 0: header_size (12 或 14)
+    # 偏移 8-12: ".FIT" 4 字节 magic
+    try:
+        with open(path, "rb") as _f:
+            _header = _f.read(14)
+    except OSError as exc:
+        raise ValueError(f"无法读取 FIT 文件: {exc}") from exc
+    if len(_header) < 12 or _header[8:12] != b".FIT" or _header[0] not in (12, 14):
+        raise ValueError(
+            f"不是有效 FIT 文件(magic 不匹配,可能为压缩包/系统文件/损坏): {path.name}"
+        )
+
+
 class FITCoreEngine:
     @staticmethod
     def parse_fit_file_raw(file_path: str | Path) -> dict[str, Any]:
         from garmin_fit_sdk import Decoder, Stream
 
-        path = str(Path(file_path).expanduser().resolve())
+        path = Path(file_path).expanduser().resolve()
+        if not path.exists():
+            raise FileNotFoundError(f"文件不存在: {path}")
+        if not path.is_file():
+            raise ValueError(f"路径不是文件: {path}")
+        _assert_valid_fit_file(path)  # 契约兜底:与 parse_fit_file 共用
+
+        path = str(path)
         stream = Stream.from_file(path)
         messages, meta = Decoder(stream).read()
         if "record_mesgs" in messages:
@@ -74,6 +109,7 @@ class FITCoreEngine:
             raise FileNotFoundError(f"文件不存在: {path}")
         if not path.is_file():
             raise ValueError(f"路径不是文件: {path}")
+        _assert_valid_fit_file(path)  # 契约兜底:与 parse_fit_file_raw 共用
 
         logger = FITCoreEngine._logger()
         try:
@@ -94,6 +130,7 @@ class FITCoreEngine:
             session_info = FITCoreEngine._read_session_info(fit)
             sport_info = FITCoreEngine._read_sport_info(fit)
             activity_info = FITCoreEngine._read_activity_info(fit)
+            lap_data = FITCoreEngine._read_lap_data(fit)
             track_data = FITCoreEngine._read_track_data(fit)
             has_gps = bool(track_data)
             if not has_gps:
@@ -143,6 +180,7 @@ class FITCoreEngine:
             return {
                 "basic_info": basic_info,
                 "track_data": track_data,
+                "lap_data": lap_data,
                 "source": "canonical",
             }
         except ValueError:
@@ -282,6 +320,33 @@ class FITCoreEngine:
             }
             break
         return info
+
+    @staticmethod
+    def _read_lap_data(fit: FitFile) -> list[dict[str, Any]]:
+        """提取 FIT lap_mesgs,字段命名与 MetricsResolver._normalize_laps 入参保持一致。
+
+        返回结构:list[{total_distance, total_timer_time, avg_heart_rate,
+                        max_heart_rate, avg_cadence, avg_power, total_calories,
+                        lap_start_time, lap_index}]
+        """
+        laps: list[dict[str, Any]] = []
+        for idx, msg in enumerate(fit.get_messages("lap")):
+            values = FITCoreEngine._message_fields_dict(msg)
+            lap_start = values.get("start_time") or values.get("timestamp")
+            if isinstance(lap_start, datetime) and lap_start.tzinfo is None:
+                lap_start = lap_start.replace(tzinfo=timezone.utc)
+            laps.append({
+                "lap_index": values.get("index") or values.get("lap_index") or idx,
+                "total_distance": FITCoreEngine._float_or_none(values.get("total_distance")),
+                "total_timer_time": FITCoreEngine._float_or_none(values.get("total_timer_time")),
+                "avg_heart_rate": FITCoreEngine._int_or_none(values.get("avg_heart_rate")),
+                "max_heart_rate": FITCoreEngine._int_or_none(values.get("max_heart_rate")),
+                "avg_cadence": FITCoreEngine._int_or_none(values.get("avg_cadence")),
+                "avg_power": FITCoreEngine._int_or_none(values.get("avg_power")),
+                "total_calories": FITCoreEngine._int_or_none(values.get("total_calories")),
+                "lap_start_time": FITCoreEngine._iso_utc(lap_start),
+            })
+        return laps
 
     @staticmethod
     def _read_track_data(fit: FitFile) -> list[dict[str, Any]]:

@@ -15,7 +15,7 @@ import time
 import uuid
 import zipfile
 from urllib.parse import urlparse
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -24,7 +24,7 @@ import track_backend  # noqa: F401 -- PyInstaller bundles track_backend
 import profile_backend  # noqa: F401 -- PyInstaller bundles profile 模块
 from fit_engine import FITCoreEngine
 from garmin_fit_sdk import Decoder, Stream
-from metrics_resolver import MetricsResolver
+from metrics_resolver import MetricsResolver, SemanticSportsEngine  # V4.0 治理:SemanticSportsEngine 已下沉
 
 DEBUG_MODE = False
 APP_VERSION = "v0.6.0"
@@ -105,50 +105,14 @@ def calculate_track_difficulty(
     max_single_climb_m: float,
     sport_type: str = "running",
 ) -> dict[str, Any]:
-    """多模态脉图轨迹难度指数 (MTDI)。
+    """V4.0 治理:已下沉至 MetricsResolver._calculate_track_difficulty,此函数为过渡期透传兼容层。
 
-    Pure Fact Contract: 输入仅来自 DB canonical / Resolver truth。
-    禁止前端计算、禁止 AI 重算、禁止上下文拼接。
+    严禁修改此函数体添加任何额外逻辑(透传代码模板约束)。
+    完整实现见 metrics_resolver.py:MetricsResolver._calculate_track_difficulty
     """
-    dist = max(0, dist_km or 0)
-    gain = max(0, gain_m or 0)
-    max_alt = max(0, max_alt_m or 0)
-    max_climb = max(0, max_single_climb_m or 0)
-
-    sport_str = str(sport_type or "").lower()
-    if "cycl" in sport_str or "bik" in sport_str or "骑" in sport_str:
-        dist_factor = 3.0
-        gain_factor = 120.0
-        if "mountain" in sport_str or "山地" in sport_str:
-            dist_factor = 2.0
-    else:
-        dist_factor = 1.0
-        gain_factor = 100.0
-
-    base_score = (dist / dist_factor) + (gain / gain_factor)
-    k_alt = 1.0 + max(0, (max_alt - 2000) / 20000.0)
-    p_climb = max_climb / gain_factor
-    mtdi_score = (base_score * k_alt) + p_climb
-
-    level = 1
-    for threshold in MTDI_LEVEL_THRESHOLDS:
-        if mtdi_score >= threshold:
-            level += 1
-        else:
-            break
-
-    return {
-        "score": round(mtdi_score, 1),
-        "level": int(level),
-        "level_name": f"LV {level}",
-        "factors": {
-            "dist_factor": dist_factor,
-            "gain_factor": gain_factor,
-            "base_score": round(base_score, 2),
-            "k_alt": round(k_alt, 3),
-            "p_climb": round(p_climb, 2),
-        },
-    }
+    return MetricsResolver._calculate_track_difficulty(
+        dist_km, gain_m, max_alt_m, max_single_climb_m, sport_type
+    )
 
 
 POWER_ELIGIBLE_TYPES: frozenset[str] = frozenset({
@@ -442,6 +406,83 @@ API_CODE_VALIDATION = 1001
 API_CODE_NOT_FOUND = 1004
 API_CODE_AUTH_REQUIRED = 1401
 API_CODE_UNSUPPORTED_FILE = 2001
+
+
+# 任务 2: 详情 API 必需列白名单
+# 维护规则:
+#   1. 本白名单由 _fetch_activity_row 全部调用点(详情/复盘/轨迹加载/地标)实际消费的 row 字段驱动
+#   2. 任何向这些调用方引入新字段的改动,必须同步更新本白名单
+#   3. 反之,向本白名单添加新列前必须先确认有调用方实际消费
+#   4. 严禁添加仅用于 AI/审计/调试的字段(如 shadow_diff_json 的扩展、debug 标记)
+#   5. 大体积字段(advanced_metrics/track_json)必须在所有调用方都确认必要时才纳入
+DETAIL_API_REQUIRED_COLUMNS: tuple[str, ...] = (
+    # 基础标识
+    "id",
+    "filename",
+    "file_name",
+    "title",
+    "title_source",
+    # 运动类型
+    "sport_type",
+    "sub_sport_type",
+    # 时间
+    "start_time",
+    "start_time_utc",
+    "updated_at",
+    # 距离/时长
+    "dist_km",
+    "distance",
+    "duration",
+    "duration_sec",
+    "avg_pace",
+    # 心率
+    "avg_hr",
+    "max_hr",
+    # 热量
+    "calories",
+    # 海拔/爬升
+    "gain_m",
+    "max_alt_m",
+    "min_alt_m",
+    "total_descent_m",
+    "up_count",
+    "down_count",
+    "max_single_climb_m",
+    "difficulty_score",
+    "report_metrics_version",
+    "avg_grade_pct",
+    "max_slope_pct",
+    "min_slope_pct",
+    "uphill_pct",
+    "downhill_pct",
+    # 地理
+    "start_lat",
+    "start_lon",
+    "region",
+    "region_status",
+    "region_display",
+    "weather_json",
+    # 文件/设备
+    "file_path",
+    "device_name",
+    # 审计(保留 shadow_diff 但前端不展示,符合 §六)
+    "shadow_diff_json",
+    # 圈速(任务 1 引入)
+    "laps_json",
+    # 曲线(复盘模块消费)
+    "hr_curve",
+    "speed_curve",
+    "cadence_curve",
+    "hr_zone_distribution",
+    "is_race",
+    "is_event",
+    "is_intermittent",
+    # 轨迹(仅用于缩略图采样 + 轨迹加载)
+    "track_json",
+    "points_json",
+    # WHERE 子句使用
+    "deleted_at",
+)
 API_CODE_EXTERNAL_SERVICE = 3001
 API_CODE_FILE_IO = 4001
 API_CODE_DB = 5001
@@ -453,21 +494,34 @@ def _new_trace_id() -> str:
 
 
 def _api_success(data: dict[str, Any] | None = None, msg: str = "ok", **legacy_fields: Any) -> dict[str, Any]:
+    # 任务 3 (P1-3):严格遵守 fit-arch-contrac §三 统一响应结构 {code, msg, data, traceId}
+    # 移除 response.update(payload) 双重包装,所有 payload 字段仅通过 res.data.xxx 访问
     payload = dict(data or {})
     if legacy_fields:
         payload.update(legacy_fields)
-    response = {"ok": True, "code": API_CODE_OK, "msg": msg, "data": payload, "traceId": _new_trace_id()}
-    response.update(payload)
-    return response
+    return {
+        "ok": True,
+        "code": API_CODE_OK,
+        "msg": msg,
+        "data": payload,
+        "traceId": _new_trace_id(),
+    }
 
 
 def _api_error(code: int, msg: str, data: dict[str, Any] | None = None, **legacy_fields: Any) -> dict[str, Any]:
+    # 任务 3 (P1-3):严格遵守 fit-arch-contrac §三 统一响应结构
+    # 保留 error 顶层字段(契约 §3.1 过渡期兼容),移除 payload 派生
     payload = dict(data or {})
     if legacy_fields:
         payload.update(legacy_fields)
-    response = {"ok": False, "code": code, "msg": msg, "data": payload, "traceId": _new_trace_id(), "error": msg}
-    response.update(payload)
-    return response
+    return {
+        "ok": False,
+        "code": code,
+        "msg": msg,
+        "error": msg,  # 过渡期兼容:error 字段保留在顶层
+        "data": payload,
+        "traceId": _new_trace_id(),
+    }
 
 
 def _delete_confirm_token(ids: list[int]) -> str:
@@ -504,6 +558,202 @@ def _safe_json_list(value: Any) -> list | None:
     except (TypeError, ValueError, json.JSONDecodeError):
         return None
     return obj if isinstance(obj, list) else None
+
+
+def _build_resolved_payload_v81(
+    hr_curve: list[float],
+    speed_curve: list[float],
+    sport_type: str,
+) -> dict[str, Any]:
+    """V8.1:从 hr_curve / speed_curve 构造 minimal record_mesgs,调 MetricsResolver.resolve()。
+
+    替代 V4.0 防腐层的 storage_model 中间列(V8.0 已确认该列不存在,
+    V6.3 主路径读不到而 4 段永远空)。
+
+    契约:
+    - §2.1 全链路可追溯:数据源 = hr_curve + speed_curve(最终来源 = FIT 解析 → fit_sdk)
+    - §6 shadow_diff 隔离:MetricsResolver 内部 shadow 层不外泄,本函数出口白名单过滤
+    - §8 canonical 只读:不写新列,纯只读计算
+
+    Args:
+        hr_curve: 心率逐点序列(单位 bpm)
+        speed_curve: 速度逐点序列(单位 m/s)
+        sport_type: 运动类型(running / cycling / ...)
+
+    Returns:
+        dict 含 4 段:{gap_curve, efficiency_curve, insight_events, context_tags}
+        任一输入为 None 或空 → 返回全空 dict
+        MetricsResolver 抛异常 → 兜底全空 dict
+    """
+    empty = {
+        "gap_curve": [],
+        "grade_curve": [],
+        "efficiency_curve": [],
+        "insight_events": [],
+        "context_tags": {},
+    }
+    if not hr_curve or not speed_curve:
+        return empty
+
+    try:
+        # 构造 minimal record_mesgs(probe V8.1 验证通过)
+        # - timestamp: 占位时间序列(用于 GapCalculator delta_t 计算)
+        # - altitude: 暂传 100.0(无真实 altitude_curve 时基线值;
+        #   Resolver 内部 "if alt else None" 会把 0.0 当 falsy 丢弃,用非零值绕过)
+        # - distance: 累积距离 = sum(speed * dt)
+        n = min(len(hr_curve), len(speed_curve))
+        if n < 2:
+            return empty
+        # 假设采样间隔 1s(V8.1 简化:dt 固定 1s,distance 累积 = 速度累加)
+        dt = 1.0
+        base_time = datetime(2024, 1, 1, 8, 0, 0, tzinfo=timezone.utc)
+        records: list[dict[str, Any]] = []
+        cum_dist = 0.0
+        for i in range(n):
+            hr_v = hr_curve[i] if hr_curve[i] is not None and hr_curve[i] > 0 else 0
+            sp_v = speed_curve[i] if speed_curve[i] is not None and speed_curve[i] > 0 else 0.0
+            if i > 0:
+                cum_dist += sp_v * dt
+            records.append({
+                "heart_rate": hr_v,
+                "speed": sp_v,
+                "timestamp": base_time + timedelta(seconds=i * dt),
+                "position_lat": None,
+                "position_long": None,
+                "altitude": 100.0,
+                "distance": cum_dist,
+            })
+
+        raw = {
+            "record_mesgs": records,
+            "session_mesgs": [{}],  # V8.1 走 default 兜底,sport_type 由 meta 传
+            "lap_mesgs": [],
+        }
+        meta = {"sport_type": sport_type}
+
+        resolved = MetricsResolver().resolve(raw, meta)
+        if not isinstance(resolved, dict):
+            return empty
+
+        # §6 shadow_diff 隔离:出口白名单过滤
+        for forbidden in ("shadow_diff", "shadow_diff_json", "diff"):
+            resolved.pop(forbidden, None)
+
+        return {
+            "gap_curve": resolved.get("gap_curve") or [],
+            "grade_curve": resolved.get("grade_curve") or [],
+            "efficiency_curve": resolved.get("efficiency_curve") or [],
+            "insight_events": resolved.get("insight_events") or [],
+            "fatigue_zones": resolved.get("fatigue_zones") or [],  # V4.0: 从 Resolver 契约层透传
+            "context_tags": resolved.get("context_tags") or {},
+        }
+    except Exception:
+        logger.exception("_build_resolved_payload_v81 Resolver 调用失败,降级空 dict")
+        return empty
+
+
+def _compute_hr_drift_from_curve(hr_curve: list) -> float | None:
+    """V8.2: 从 hr_curve 计算心率漂移百分比。
+
+    定义: (后20%均值 - 前20%均值) / 前20%均值 × 100
+    > 0 表示心率随时间上升(热漂/脱水/疲劳)
+    < 0 表示心率下降(冷却/恢复)
+    见 docs/physiology_reference.md §指标 6
+
+    Args:
+        hr_curve: 心率逐点序列
+
+    Returns:
+        float | None: 漂移百分比,样本不足时返回 None
+    """
+    valid = [h for h in hr_curve if h and h > 0]
+    if len(valid) < 20:
+        return None
+    n = len(valid)
+    split = max(1, n // 5)
+    first_mean = sum(valid[:split]) / split
+    last_mean = sum(valid[-split:]) / split
+    if first_mean <= 0:
+        return None
+    return round((last_mean - first_mean) / first_mean * 100.0, 2)
+
+
+def _compute_speed_decay_from_curve(speed_curve: list) -> float | None:
+    """V8.2: 从 speed_curve 计算速度衰减百分比。
+
+    定义: (前20%均值 - 后20%均值) / 前20%均值 × 100
+    > 0 表示后程降速(疲劳)
+    < 0 表示后程加速(负配速)
+
+    Args:
+        speed_curve: 速度逐点序列
+
+    Returns:
+        float | None: 衰减百分比,样本不足时返回 None
+    """
+    valid = [s for s in speed_curve if s and s > 0]
+    if len(valid) < 20:
+        return None
+    n = len(valid)
+    split = max(1, n // 5)
+    first_mean = sum(valid[:split]) / split
+    last_mean = sum(valid[-split:]) / split
+    if first_mean <= 0:
+        return None
+    return round((first_mean - last_mean) / first_mean * 100.0, 2)
+
+
+def _compute_hr_zone_distribution(
+    hr_curve: list,
+    max_hr: float | None,
+) -> str | None:
+    """V8.4: 从 hr_curve 和 max_hr 计算 Z1-Z5 心率区间分布,序列化为 JSON。
+
+    区间定义(Banister 模型,基于 max_hr 百分比):
+    - Z1: < 60% max_hr(恢复区)
+    - Z2: 60-70% max_hr(有氧基础)
+    - Z3: 70-80% max_hr(有氧)
+    - Z4: 80-90% max_hr(阈值)
+    - Z5: ≥ 90% max_hr(无氧)
+
+    假设 hr_curve 采样间隔 1s(V8.4 简化;V8.x 可加 sample_interval_sec 参数)。
+
+    契约:
+    - §2.1 全链路可追溯:hr_zone 来源 = hr_curve + max_hr(FIT 解析 → fit_sdk)
+    - §8 canonical 写入:此函数输出仅供 INSERT 流程
+    - §2.2 数据可信分层:max_hr 缺失时拒写(None),不写入假数据
+
+    Args:
+        hr_curve: 心率逐点序列
+        max_hr: 最高心率(bpm),无则返回 None
+
+    Returns:
+        str: JSON 字典 '{"Z1": sec, "Z2": sec, ...}' (单位:秒)
+        None: hr_curve 空 / max_hr 无效(< 30 视为设备无 HR 数据)
+    """
+    if not hr_curve or not max_hr or max_hr < 30:
+        return None
+
+    z1 = z2 = z3 = z4 = z5 = 0
+    for h in hr_curve:
+        if h is None or h <= 0:
+            continue
+        ratio = float(h) / float(max_hr)
+        if ratio < 0.6:
+            z1 += 1
+        elif ratio < 0.7:
+            z2 += 1
+        elif ratio < 0.8:
+            z3 += 1
+        elif ratio < 0.9:
+            z4 += 1
+        else:
+            z5 += 1
+
+    return json.dumps(
+        {"Z1": z1, "Z2": z2, "Z3": z3, "Z4": z4, "Z5": z5},
+        ensure_ascii=False,
+    )
 
 
 def _infer_weather_from_track_data(data: dict[str, Any]) -> dict[str, Any] | None:
@@ -707,83 +957,26 @@ from utils.metrics_calc import AdvancedMetricsCalc, RadarScoreEngine, _CYCLING_S
 
 
 def _convert_track_to_algorithm_records(track_data: list[dict]) -> list[dict]:
-    """将 FIT 引擎输出的标准轨迹点转换为 AdvancedMetricsCalc 需要的记录格式。"""
-    if not track_data:
-        return []
-    from datetime import datetime
-    records = []
-    cumulative_dist = 0.0
-    prev_lat, prev_lon = None, None
-    for pt in track_data:
-        ts = None
-        raw_time = pt.get("time")
-        if raw_time:
-            try:
-                ts = datetime.fromisoformat(raw_time.replace("Z", "+00:00"))
-            except (ValueError, TypeError):
-                pass
-        if ts is None:
-            continue
-
-        if "speed" not in pt and "enhanced_speed" in pt:
-            pt["speed"] = pt["enhanced_speed"]
-        if "altitude" not in pt and "enhanced_altitude" in pt:
-            pt["altitude"] = pt["enhanced_altitude"]
-        if "hr" not in pt and "heart_rate" in pt:
-            pt["hr"] = pt["heart_rate"]
-
-        lat = pt.get("lat")
-        lon = pt.get("lon")
-        dist_segment = 0.0
-        if lat is not None and lon is not None and prev_lat is not None and prev_lon is not None:
-            dist_segment = track_backend.haversine_m(prev_lat, prev_lon, lat, lon)
-        cumulative_dist += dist_segment
-        prev_lat, prev_lon = lat, lon
-
-        raw_speed = pt.get("speed")
-        pace = pt.get("pace")
-        calc_speed = (1000.0 / pace) if pace and pace > 0 else 0.0
-        final_speed = raw_speed if raw_speed is not None and raw_speed >= 0 else calc_speed
-
-        records.append({
-            "timestamp": ts,
-            "heart_rate": pt.get("hr"),
-            "speed": final_speed,
-            "altitude": pt.get("altitude") or pt.get("alt"),
-            "distance": cumulative_dist,
-            "power": pt.get("power"),
-        })
-    return records
+    """V4.0 治理: 业务逻辑已下沉至 MetricsResolver。
+    完整实现见 metrics_resolver.py: MetricsResolver._convert_track_to_algorithm_records
+    """
+    return MetricsResolver._convert_track_to_algorithm_records(track_data)
 
 
 def _compute_advanced_metrics(track_data: list[dict]) -> dict:
-    """从 user_profile 读取当前用户生理画像，对轨迹数据执行 6 维雷达算法。"""
-    records = _convert_track_to_algorithm_records(track_data)
+    """V4.0 治理: IO 隔离，纯计算下沉至 MetricsResolver。
+
+    IO 层留在 main.py(profile_backend.get_profile()),
+    纯计算见 metrics_resolver.py: MetricsResolver._compute_advanced_metrics
+    """
+    records = MetricsResolver._convert_track_to_algorithm_records(track_data)
     if not records or len(records) < 2:
         return {}
     prof = profile_backend.get_profile()
     user_profile_dict = prof.to_dict() if prof else {}
-    user_profile_dict = {k: v for k, v in user_profile_dict.items() if v is not None}
-    calc = AdvancedMetricsCalc
-    logger.debug("准备计算高级指标，总数据点数: %s", len(records))
-    if records:
-        mid_idx = len(records) // 2
-        logger.debug("首条数据采样: %s", records[0])
-        logger.debug("中段数据采样: %s", records[mid_idx])
-    trimp = calc.calculate_trimp(records, user_profile_dict)
-    decoupling = calc.calculate_aerobic_decoupling(records)
-    vam = calc.calculate_vam(records)
-    threshold_hr = calc.calculate_threshold_hr(records)
-    anaerobic_peak = calc.calculate_anaerobic_peak(records)
-    result = {
-        "trimp": trimp,
-        "decoupling": decoupling,
-        "vam": vam,
-        "threshold_hr": threshold_hr,
-        "anaerobic_peak": anaerobic_peak,
-        "metrics_version": CURRENT_METRICS_VERSION,
-    }
-    logger.debug("6维指标计算完成: %s", result)
+    result = MetricsResolver._compute_advanced_metrics(records, user_profile_dict)
+    if result:
+        result["metrics_version"] = CURRENT_METRICS_VERSION
     return result
 
 
@@ -844,7 +1037,7 @@ def _is_valid_vam_activity(row: dict, sport_type: str | None) -> bool:
     gain_m = _safe_float(row.get("gain_m"), 0.0)
     dist_km = _safe_float(row.get("dist_km"), 0.0)
     if dist_km <= 0:
-        # 兼容 distance(米)字段
+        # V8.x 修复: distance 字段已对齐米单位(语义正确)
         dist_m = _safe_float(row.get("distance"), 0.0)
         if dist_m > 0:
             dist_km = dist_m / 1000.0
@@ -1120,6 +1313,7 @@ def _parse_fit_activity_for_sync(file_path: Path) -> dict[str, Any]:
     core = FITCoreEngine.parse_fit_file(resolved_path)
     basic = dict(core.get("basic_info") or {})
     track_data = [dict(point) for point in (core.get("track_data") or [])]
+    raw_laps = list(core.get("lap_data") or [])
     has_track_points = bool(track_data)
     has_gps = any((pt.get("lat") is not None and pt.get("lon") is not None) for pt in track_data)
     data = track_backend.enrich_sport_metadata(
@@ -1184,6 +1378,9 @@ def _parse_fit_activity_for_sync(file_path: Path) -> dict[str, Any]:
 
     stat = file_path.stat()
     advanced_metrics = _compute_advanced_metrics(track_data)
+    # 规范化 lap 数据:复用 MetricsResolver._normalize_laps 保持字段语义一致
+    normalized_laps = MetricsResolver._normalize_laps(raw_laps) if raw_laps else []
+    laps_json = json.dumps(normalized_laps, ensure_ascii=False) if normalized_laps else None
     result = {
         "points": track_data,
         "file_name": file_path.name,
@@ -1211,6 +1408,8 @@ def _parse_fit_activity_for_sync(file_path: Path) -> dict[str, Any]:
         "avg_stroke_distance": _safe_float(payload.get("avg_stroke_distance")),
         "hr_curve": None,
         "speed_curve": None,
+        "cadence_curve": None,  # V8.3
+        "laps_json": laps_json,  # 真实圈速数据 (FIT lap_mesgs 归一化)
         "track_json": track_json,
         "points_json": track_json,
         "file_path": resolved_path,
@@ -1293,8 +1492,11 @@ def _parse_fit_activity_for_sync(file_path: Path) -> dict[str, Any]:
         # Phase 2.1 — distance / duration (validated 44/44)
         distance_km = sm.get("distance_km", distance_km)
         duration_sec = sm.get("duration_sec", duration_sec)
-        result["distance"] = distance_km
-        result["dist_km"] = distance_km
+        # V8.x 修复 distance 字段单位歧义:distance = 米(语义对齐),dist_km = 公里
+        # §2.1 字段全链路可追溯:严禁双字段语义重叠
+        _km = distance_km if distance_km is not None else 0
+        result["distance"] = _km * 1000.0  # 真存米
+        result["dist_km"] = _km             # 真存公里
         result["duration"] = duration_sec
         result["duration_sec"] = duration_sec
         # Phase 2.2 — avg_hr / calories / elevation_gain / elevation_loss (validated 44/44)
@@ -1327,11 +1529,26 @@ def _parse_fit_activity_for_sync(file_path: Path) -> dict[str, Any]:
             result["swolf"] = result["avg_stroke_distance"]
         # Phase 2.5 — normalized_power: promote resolver-computed value from storage_model
         result["normalized_power"] = sm.get("normalized_power_w")
-        ap = resolved.get("analysis_pack") or {}
-        if ap.get("hr_curve"):
-            result["hr_curve"] = json.dumps(ap["hr_curve"], ensure_ascii=False)
-        if ap.get("speed_curve"):
-            result["speed_curve"] = json.dumps(ap["speed_curve"], ensure_ascii=False)
+        # V8.3: 直接从 resolved 顶层取曲线(Resolver 已放 final_data)
+        # 旧逻辑 ap = resolved.get("analysis_pack") 永远为空(V7.1 Resolver 未把 analysis_pack 放入 final_data)
+        # 这是 V8.3 修复的副作用:hr/speed/cadence 三条曲线终于能进 DB
+        if resolved.get("hr_curve"):
+            result["hr_curve"] = json.dumps(resolved["hr_curve"], ensure_ascii=False)
+        if resolved.get("speed_curve"):
+            result["speed_curve"] = json.dumps(resolved["speed_curve"], ensure_ascii=False)
+        # V8.3: cadence_curve 持久化(V7.12 步频稳定性依赖)
+        if resolved.get("cadence_curve"):
+            # 过滤 None(设备未采样),保留非零值(步频>0 是真值)
+            cad_vals = [c for c in resolved["cadence_curve"] if c is not None and c > 0]
+            if cad_vals:
+                result["cadence_curve"] = json.dumps(cad_vals, ensure_ascii=False)
+        # V8.4: hr_zone_distribution 持久化(V7.13 训练负荷依赖)
+        # result["hr_curve"] 已是 JSON 字符串,需反解
+        hr_curve_for_zones = _safe_json_list(result.get("hr_curve")) or []
+        max_hr_for_zones = _safe_int(result.get("max_hr")) or 0
+        hr_zone_json = _compute_hr_zone_distribution(hr_curve_for_zones, max_hr_for_zones)
+        if hr_zone_json:
+            result["hr_zone_distribution"] = hr_zone_json
     except Exception as exc:
         logger.exception("MetricsResolver 解析失败，将使用 legacy 值兜底: %s, error=%s", resolved_path, exc)
 
@@ -1348,11 +1565,11 @@ def _insert_activity_sync_row(conn: sqlite3.Connection, activity: dict[str, Any]
                  calories, track_json, points_json, file_path, gain_m, max_alt_m, start_lat, start_lon, region,
                  region_city, region_country, region_display, region_status, region_error, region_updated_at, region_attempt_count,
                  weather_json, file_mtime, file_size, advanced_metrics, normalized_power, swolf, device_name,
-                 shadow_diff_json, source_type, is_mock, deleted_at, updated_at, hr_curve, speed_curve,
+                 shadow_diff_json, source_type, is_mock, deleted_at, updated_at, hr_curve, speed_curve, cadence_curve, hr_zone_distribution, laps_json,
                  min_alt_m, total_descent_m, up_count, down_count, max_single_climb_m, difficulty_score, report_metrics_version,
                  avg_grade_pct, max_slope_pct, min_slope_pct, uphill_pct, downhill_pct)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, 'fit_sdk', 0, NULL, datetime('now'), ?, ?,
+                    ?, ?, 'fit_sdk', 0, NULL, datetime('now'), ?, ?, ?, ?, ?,
                     ?, ?, ?, ?, ?, ?, ?,
                     ?, ?, ?, ?, ?)
             """,
@@ -1398,6 +1615,9 @@ def _insert_activity_sync_row(conn: sqlite3.Connection, activity: dict[str, Any]
                 activity.get("shadow_diff_json"),
                 activity.get("hr_curve"),
                 activity.get("speed_curve"),
+                activity.get("cadence_curve"),  # V8.3
+                activity.get("hr_zone_distribution"),  # V8.4
+                activity.get("laps_json"),  # 真实圈速数据
                 activity.get("min_alt_m"),
                 activity.get("total_descent_m"),
                 activity.get("up_count"),
@@ -1437,6 +1657,7 @@ def _update_activity_sync_row(conn: sqlite3.Connection, activity_id: int, activi
             region_updated_at = ?, region_attempt_count = ?,
             weather_json = ?, file_mtime = ?, file_size = ?, advanced_metrics = ?,
             normalized_power = ?, swolf = ?, device_name = ?, shadow_diff_json = ?, hr_curve = ?, speed_curve = ?,
+            laps_json = ?,
             min_alt_m = ?, total_descent_m = ?, up_count = ?, down_count = ?, max_single_climb_m = ?, difficulty_score = ?, report_metrics_version = ?,
             avg_grade_pct = ?, max_slope_pct = ?, min_slope_pct = ?, uphill_pct = ?, downhill_pct = ?,
             source_type = 'fit_sdk', is_mock = 0, deleted_at = NULL, updated_at = datetime('now')
@@ -1484,6 +1705,7 @@ def _update_activity_sync_row(conn: sqlite3.Connection, activity_id: int, activi
             activity.get("shadow_diff_json"),
             activity.get("hr_curve"),
             activity.get("speed_curve"),
+            activity.get("laps_json"),
             activity.get("min_alt_m"),
             activity.get("total_descent_m"),
             activity.get("up_count"),
@@ -1551,13 +1773,21 @@ def _cleanup_invalid_activity_types(conn: sqlite3.Connection) -> None:
 
 def _walk_fit_files(base: Path) -> list[Path]:
     fit_files: list[Path] = []
+    skipped_system: list[str] = []
     for root, _dirs, files in os.walk(str(base)):
         for name in files:
+            # 过滤 macOS AppleDouble 影子文件(._xxx.fit) + Windows 隐藏/系统文件
+            # 这些是文件系统元数据,不是真正的 FIT,会让 fitparse 报错刷 ERROR 日志
+            if name.startswith("._") or name in (".DS_Store", "Thumbs.db", "desktop.ini") or name.startswith("~$"):
+                skipped_system.append(name)
+                continue
             if name.lower().endswith(".fit"):
                 fit_files.append(Path(root) / name)
     fit_files.sort(key=lambda item: (str(item.parent).lower(), item.name.lower()))
     abs_path = str(base.resolve()) if base.exists() else str(base)
     logger.info("FIT 扫描目录: %s, 发现文件数: %s", abs_path, len(fit_files))
+    if skipped_system:
+        logger.info("FIT 扫描跳过 %d 个系统/影子文件(.DS_Store / ._* / Thumbs.db 等)", len(skipped_system))
     if len(fit_files) == 0:
         logger.warning("FIT 文件数为 0，请确认路径是否正确: %s", abs_path)
     return fit_files
@@ -1758,6 +1988,7 @@ def _is_file_unchanged(disk_path: Path, existing: dict[str, Any]) -> bool:
 
 
 def _persist_sync_activity(activity: dict[str, Any]) -> dict[str, Any]:
+    profile_backend._assert_gpx_not_persisted(activity)  # §二 §八: GPX/KML 用后即抛
     file_name = str(activity.get("file_name") or activity.get("filename") or "").strip()
     file_path = str(activity.get("file_path") or "").strip()
     activity["sport_type"] = _normalize_activity_token(activity.get("sport_type"))
@@ -2247,83 +2478,12 @@ def _attach_per_point_distance(points: list[dict[str, Any]]) -> None:
 #   - AI 推理链 / training_load / fatigue model
 # ═══════════════════════════════════════════════════════
 
-FORBIDDEN_SNAPSHOT_FIELDS: set[str] = {
-    "slope_pct", "pace_calc", "frontend_distance", "ui_only_metric",
-    "reasoning_chain", "fatigue_model", "per_point_slope", "derived_grade",
-}
-
-_MAX_SNAPSHOT_KEYS = 35  # 增加报告 canonical 字段后从 28 调整
-
-
-def get_snapshot_field_whitelist() -> set[str]:
-    """AI Snapshot 允许字段白名单。任何不在此集合中的字段不得进入 snapshot。"""
-    return {
-        "activity_id", "sport_type", "sub_sport_type",
-        "distance_km", "distance_display",
-        "duration_sec", "duration",
-        "avg_pace", "avg_pace_display", "pace_unit",
-        "avg_hr", "max_hr",
-        "calories",
-        "elevation_gain_m", "gain_m",
-        "max_alt_m",
-        "avg_cadence",
-        "normalized_power",
-        "swolf",
-        "tss",
-        "start_time", "start_time_utc",
-        "start_lat", "start_lon",
-        "region",
-        "file_path", "filename",
-        "source",
-        # 以下为可选字段（可能为 None）
-        "resting_hr", "hrv_baseline", "vo2max",
-        "weight", "height_cm",
-        "pb_5km", "pb_10km", "pb_half_marathon", "pb_full_marathon",
-        "lactate_threshold_hr", "lactate_threshold_pace",
-        "ftp_watts",
-        "avg_sleep_hours",
-        "longest_hike_km", "longest_run_km", "longest_cycle_km",
-        "swimming_100m_pb", "longest_swim_distance_m",
-        "race_predict_5k", "race_predict_10k", "race_predict_half", "race_predict_full",
-        # v2 新增：运动生理 / 曲线 / 设备上下文
-        "hr_decoupling", "hr_curve", "speed_curve", "device_name",
-        # v3 新增：报告 canonical 派生指标 (CONTRACT §6)
-        "min_alt_m", "total_descent_m", "up_count", "down_count",
-        "max_single_climb_m", "difficulty_score", "report_metrics_version",
-        # v4 新增：报告坡度 v2 指标
-        "avg_grade_pct", "max_slope_pct", "min_slope_pct", "uphill_pct", "downhill_pct",
-    }
-
-
-def validate_ai_snapshot(snapshot: dict[str, Any]) -> None:
-    """AI Snapshot Contract Guard — 防污染护栏。
-    确保 snapshot 不含任何前端计算字段或推理结构。"""
-    for f in FORBIDDEN_SNAPSHOT_FIELDS:
-        assert f not in snapshot, f"AI Snapshot pollution detected: {f}"
-    assert len(snapshot.keys()) <= _MAX_SNAPSHOT_KEYS, (
-        f"AI Snapshot keys exceeded: {len(snapshot.keys())} > {_MAX_SNAPSHOT_KEYS}"
-    )
-    # 白名单校验 — 防止未知字段进入 AI 输入
-    allowed = get_snapshot_field_whitelist()
-    for k in snapshot.keys():
-        if k not in allowed:
-            raise AssertionError(f"AI Snapshot unauthorized field: {k}")
-    # 报告 canonical 字段范围校验 (CONTRACT §6)
-    _td = snapshot.get("total_descent_m")
-    if _td is not None:
-        assert _td >= 0, f"total_descent_m must be >= 0, got {_td}"
-    _ds = snapshot.get("difficulty_score")
-    if _ds is not None:
-        assert 0 <= _ds <= 10, f"difficulty_score out of range [0,10]: {_ds}"
-
-
-def debug_ai_snapshot(snapshot: dict[str, Any]) -> None:
-    """开发模式：输出 snapshot 结构校验。确保 keys ≤ {_MAX_SNAPSHOT_KEYS}、无数组、无嵌套。"""
-    import sys
-    keys = list(snapshot.keys())
-    nested = [k for k, v in snapshot.items() if isinstance(v, (list, dict))]
-    print(f"[AI SNAPSHOT CONTRACT] keys={keys} count={len(keys)} nested={nested or 'none'}",
-          file=sys.stderr, flush=True)
+# V4.0 治理: AI Snapshot 契约层全部下沉至 metrics_resolver.py
+# 删除: FORBIDDEN_SNAPSHOT_FIELDS / _MAX_SNAPSHOT_KEYS / get_snapshot_field_whitelist
+#       validate_ai_snapshot / debug_ai_snapshot
+# 完整实现见 metrics_resolver.py: MetricsResolver._AI_SNAPSHOT_* / _validate_ai_snapshot /
+#                                   _debug_ai_snapshot / _build_ai_snapshot_block /
+#                                   _build_ai_snapshot_text_block
 
 
 def _decode_points_json_simple(raw: str | None) -> list:
@@ -2414,11 +2574,16 @@ def rebuild_report_metrics_for_all_activities(dry_run: bool = False) -> dict:
         conn.close()
 
 
-# ── AI Snapshot Builder (唯一合法 AI 输入源) ──
+# ── AI Snapshot Builder (V4.0 治理: IO 隔离 + 1 行透传至 Resolver) ──
+
+
 def _build_ai_snapshot(activity_id: int) -> dict[str, Any] | None:
-    """AI 语义快照构建器 — 唯一合法 AI 输入源。
-    PURE FACT CONTRACT: 所有字段来自 DB/resolver truth。
-    禁止前端计算数据、推理结构、per-point 指标进入。"""
+    """AI 语义快照构建器 (V4.0 治理: IO 隔离拆分)
+
+    V4.0 治理: 本函数仅做 IO 查询 (SQLite) + 1 行透传至 Resolver 纯计算
+    所有 dict 转换/格式化/校验逻辑已下沉至 MetricsResolver._build_ai_snapshot_block
+    严禁在本函数中重新添加业务计算(透传代码模板约束)
+    """
     if not activity_id:
         return None
     try:
@@ -2438,112 +2603,15 @@ def _build_ai_snapshot(activity_id: int) -> dict[str, Any] | None:
         conn.close()
         if not row:
             return None
-        d = dict(row)
-
-        sub_sport = str(d.get("sub_sport_type") or "").lower()
-        pace_unit = "/100m" if sub_sport in ("lap_swimming", "open_water") else "/km"
-
-        # ── Display Fields (纯格式化，不重新计算) ──
-        raw_dist_km = d.get("dist_km")
-        if raw_dist_km is not None:
-            dist_km = _safe_float(raw_dist_km)
-        else:
-            raw_dist_m = d.get("distance")
-            dist_km = round(_safe_float(raw_dist_m) / 1000.0, 2) if raw_dist_m is not None else None
-
-        if dist_km is not None and dist_km > 0:
-            if dist_km < 0.1:
-                distance_display = f"{int(dist_km * 1000)}m"
-            else:
-                distance_display = f"{round(dist_km, 2):.2f}km"
-        else:
-            distance_display = "-- km"
-
-        raw_avg_pace = d.get("avg_pace")
-        avg_pace = _safe_float(raw_avg_pace) if raw_avg_pace is not None else None
-        if avg_pace is not None and avg_pace > 0:
-            pm = int(avg_pace // 60)
-            ps = int(avg_pace % 60)
-            avg_pace_display = f"{pm}'{ps:02d}''{pace_unit}"
-        else:
-            avg_pace_display = f"-- {pace_unit}"
-
-        snapshot = {
-            "activity_id": activity_id,
-            "sport_type": d.get("sport_type"),
-            "sub_sport_type": d.get("sub_sport_type"),
-            "distance_km": dist_km,
-            "distance_display": distance_display,
-            "duration_sec": d.get("duration_sec") or d.get("duration"),
-            "avg_pace": avg_pace,
-            "avg_pace_display": avg_pace_display,
-            "pace_unit": pace_unit,
-            "avg_hr": d.get("avg_hr"),
-            "max_hr": d.get("max_hr"),
-            "calories": d.get("calories"),
-            "elevation_gain_m": d.get("gain_m"),
-            "max_alt_m": d.get("max_alt_m"),
-            "avg_cadence": d.get("avg_cadence"),
-            "normalized_power": d.get("normalized_power"),
-            "swolf": d.get("swolf"),
-            "tss": d.get("tss"),
-            "start_time": d.get("start_time"),
-            "start_lat": d.get("start_lat"),
-            "start_lon": d.get("start_lon"),
-            "region": d.get("region"),
-            "source": "DB Canonical / Resolver Truth",
-            "hr_decoupling": d.get("hr_decoupling"),
-            "hr_curve": d.get("hr_curve"),
-            "speed_curve": d.get("speed_curve"),
-            "device_name": d.get("device_name"),
-            "min_alt_m": d.get("min_alt_m"),
-            "total_descent_m": d.get("total_descent_m"),
-            "up_count": d.get("up_count"),
-            "down_count": d.get("down_count"),
-            "max_single_climb_m": d.get("max_single_climb_m"),
-            "difficulty_score": d.get("difficulty_score"),
-            "report_metrics_version": d.get("report_metrics_version"),
-            "avg_grade_pct": d.get("avg_grade_pct"),
-            "max_slope_pct": d.get("max_slope_pct"),
-            "min_slope_pct": d.get("min_slope_pct"),
-            "uphill_pct": d.get("uphill_pct"),
-            "downhill_pct": d.get("downhill_pct"),
-        }
-
-        validate_ai_snapshot(snapshot)
-        debug_ai_snapshot(snapshot)
-        return snapshot
+        # 1 行透传至 Resolver 纯计算(V4.0 治理)
+        return MetricsResolver._build_ai_snapshot_block(dict(row))
     except Exception:
         return None
 
 
 def _build_ai_snapshot_block(snapshot: dict[str, Any] | None) -> str:
-    """将 AI snapshot 格式化为 LLM system prompt 可嵌入的文本块。"""
-    if not snapshot:
-        return ""
-    lines = [
-        "【运动语义快照 — 系统真值（非前端计算）】",
-        f"- 运动类型: {snapshot.get('sport_type') or '-'} / {snapshot.get('sub_sport_type') or '-'}",
-        f"- 距离: {snapshot.get('distance_display') or '-'} ({snapshot.get('distance_km')} km)",
-        f"- 用时: {snapshot.get('duration_sec')} 秒",
-        f"- 配速: {snapshot.get('avg_pace_display') or '-'} ({snapshot.get('pace_unit') or '-'})",
-        f"- 平均心率: {snapshot.get('avg_hr')} bpm / 最大: {snapshot.get('max_hr')} bpm",
-        f"- 卡路里: {snapshot.get('calories')}",
-        f"- 累计爬升: {snapshot.get('elevation_gain_m')} m / 最高海拔: {snapshot.get('max_alt_m')} m",
-    ]
-    if snapshot.get("normalized_power") is not None:
-        lines.append(f"- NP: {snapshot.get('normalized_power')} W")
-    if snapshot.get("swolf") is not None:
-        lines.append(f"- SWOLF: {snapshot.get('swolf')}")
-    if snapshot.get("avg_cadence") is not None:
-        lines.append(f"- 平均步频/踏频: {snapshot.get('avg_cadence')}")
-    if snapshot.get("tss") is not None:
-        lines.append(f"- TSS: {snapshot.get('tss')}")
-    if snapshot.get("region"):
-        lines.append(f"- 区域: {snapshot.get('region')}")
-    lines.append("")
-    lines.append("【重要】以上数值来自系统数据库（唯一真值），优先于轨迹明细表中的任何前端推算值。")
-    return "\n".join(lines)
+    """V4.0 治理: 已下沉至 MetricsResolver._build_ai_snapshot_text_block, 此函数为 1 行透传兼容层"""
+    return MetricsResolver._build_ai_snapshot_text_block(snapshot)
 
 
 def _build_risk_assessment_messages(snapshot: dict[str, Any], weather_context: dict[str, Any] | None) -> list[dict[str, str]]:
@@ -2616,6 +2684,7 @@ class Api:
     SYSTEM_INSTRUCTION = "__SYSTEM_INSTRUCTION__"
     REPORT_RISK_ASSESSMENT = "__REPORT_RISK_ASSESSMENT__"
     RADAR_INSIGHT = "__RADAR_INSIGHT__"
+    FATIGUE_REVIEW_INSIGHT = "__FATIGUE_REVIEW_INSIGHT__"
 
     def __init__(self) -> None:
         self._track_points: list | None = None
@@ -2971,6 +3040,12 @@ class Api:
     def test_llm_config(self, provider: str, url: str, model: str, api_key: str, agent_id: str = "", watch_brand: str = "") -> dict:
         """【测试即保存网关-稳定性加固版】严格实行先测试、后持久化策略，保障状态机最终一致性。"""
         try:
+            # CONTRACT §2.1 / §7.2: 显式校验必填参数 url / model，禁止静默用 DEFAULT_URL 走 localhost。
+            url_stripped = (url or "").strip()
+            model_stripped = (model or "").strip()
+            if not url_stripped or not model_stripped:
+                return _api_error(API_CODE_VALIDATION, "请先填写 API 接口地址和模型名，再点击测试连接")
+
             # 当 api_key 为空时，复用已存储的密钥（前端不会持有明文 key，这是安全设计）
             effective_key = api_key
             if not effective_key:
@@ -3028,11 +3103,13 @@ class Api:
            - 禁止: 前端 calculateStats 输出、per-point slope、request.get_json() metrics"""
         cfg = llm_backend.load_llm_config()
         url = (cfg.get("url") or "").strip()
+        # CONTRACT §2.1 / §7.2: 未配置时禁止静默 fallback 到 localhost，必须立刻阻塞。
         if not url:
-            return {"ok": False, "error": "API 接口地址为空，请在设置中配置"}
-
+            return {"ok": False, "error": "API 接口地址未配置，请在系统配置页填写后重试"}
+        model = (cfg.get("model") or "").strip()
+        if not model:
+            return {"ok": False, "error": "模型名未配置，请在系统配置页填写后重试"}
         provider = str(cfg.get("provider") or "local_mcp")
-        model = str(cfg.get("model") or "openclaw").strip()
         api_key = str(cfg.get("api_key") or "")
         agent_id = str(cfg.get("agent_id") or "")
         sid = self._session_id
@@ -3092,6 +3169,51 @@ class Api:
                     "radar_insight": llm_backend.normalize_radar_insight_json(text),
                     "sport_type": sport_type,
                 }
+
+            if prompt == self.FATIGUE_REVIEW_INSIGHT:
+                # §5.6.2 规则 4:复盘覆盖层洞察必须独立 sentinel,入口处先清空 + 刷新
+                # §5.6.2 规则 6:严禁写 DB,AI 洞察只存前端内存
+                # §5.6.2 规则 7:错误用 empty_fatigue_review_insight,严禁抛 promise reject
+                self._chat_messages = []
+                self._new_session_id()
+
+                if not self._ai_snapshot:
+                    return {
+                        "ok": True,
+                        "fatigue_review_insight": llm_backend.empty_fatigue_review_insight("请先加载活动轨迹"),
+                    }
+                # §5.4 规则 3:从 _ai_snapshot 构建 snapshot,严禁前端 payload
+                fr_snapshot = self._build_fatigue_review_snapshot()
+                if not fr_snapshot.get("metrics") or not fr_snapshot.get("curves"):
+                    return {
+                        "ok": True,
+                        "fatigue_review_insight": llm_backend.empty_fatigue_review_insight("当前活动数据不足,无法生成洞察"),
+                    }
+                sport_cn = {
+                    "running": "跑步", "trail_running": "越野跑", "hiking": "徒步",
+                    "cycling": "骑行", "swimming": "游泳",
+                }.get(sport_type, sport_type or "该运动")
+                try:
+                    messages = llm_backend.build_fatigue_review_messages(fr_snapshot, sport_type, sport_cn)
+                    text = llm_backend.chat_completions(
+                        url=url,
+                        api_key=api_key,
+                        model=model,
+                        messages=messages,
+                        session_id=sid,
+                        agent_id=agent_id,
+                    )
+                    return {
+                        "ok": True,
+                        "fatigue_review_insight": llm_backend.normalize_fatigue_review_json(text),
+                        "sport_type": sport_type,
+                    }
+                except Exception as e:
+                    logger.warning("fatigue_review_insight failed: %s", e)
+                    return {
+                        "ok": True,
+                        "fatigue_review_insight": llm_backend.empty_fatigue_review_insight(str(e)),
+                    }
 
             if prompt == self.SYSTEM_INSTRUCTION:
                 storage_rule = (
@@ -3177,7 +3299,9 @@ class Api:
             return _api_error(API_CODE_VALIDATION, "API 接口地址为空，请在设置中配置")
 
         provider = str(cfg.get("provider") or "local_mcp")
-        model = str(cfg.get("model") or "openclaw").strip() or "openclaw"
+        model = (cfg.get("model") or "").strip()
+        if not model:
+            return _api_error(API_CODE_VALIDATION, "模型名未配置，请在系统配置页填写后重试")
         api_key = str(cfg.get("api_key") or "")
         agent_id = str(cfg.get("agent_id") or "")
         session_id = "fit_remote_sync_" + uuid.uuid4().hex[:16]
@@ -3421,7 +3545,16 @@ class Api:
 
     def _build_activity_list_item(self, row: dict) -> dict:
         display_type = _resolve_display_sport_type(row.get("sport_type"), row.get("sub_sport_type"))
-        distance_km = _safe_float(row.get("distance") if row.get("distance") is not None else row.get("dist_km"))
+        # V8.x 修复: distance 字段已对齐米单位, dist_km 是真公里值
+        # §2.1 字段全链路可追溯: 优先 dist_km(已知正确), distance 仅做兜底
+        dist_km_field = _safe_float(row.get("dist_km"))
+        dist_m_field = _safe_float(row.get("distance"))
+        if dist_km_field and dist_km_field > 0:
+            distance_km = dist_km_field
+        elif dist_m_field and dist_m_field > 0:
+            distance_km = dist_m_field / 1000.0
+        else:
+            distance_km = 0.0
         duration_sec = _safe_int(row.get("duration") if row.get("duration") is not None else row.get("duration_sec"))
         # LEGACY (DO NOT EXTEND)
         # 未来将迁移至 MetricsResolver
@@ -3514,6 +3647,7 @@ class Api:
             "sport_type": str(row.get("sport_type") or "unknown"),
             "sub_sport_type": str(row.get("sub_sport_type") or "unknown"),
             "display_sport_type": display_type,
+            "sport_type_cn": profile_backend.translate_sport_type(display_type),
             "distance_km": round(distance_km, 2) if distance_km is not None else None,
             "duration_sec": duration_sec,
             "avg_pace_sec": avg_pace_sec,
@@ -3547,9 +3681,12 @@ class Api:
         ensure_activity_sync_schema()
         conn = profile_backend._conn()
         try:
+            # 任务 2: 详情 API 按需查询,仅 SELECT 白名单列(见 DETAIL_API_REQUIRED_COLUMNS)
+            # 避免 SELECT * 拉取 advanced_metrics/未消费派生列等大字段
+            columns_str = ", ".join(DETAIL_API_REQUIRED_COLUMNS)
             row = conn.execute(
-                """
-                SELECT *,
+                f"""
+                SELECT {columns_str},
                        COALESCE(track_json, points_json) AS merged_track_json
                 FROM activities
                 WHERE id = ? AND deleted_at IS NULL
@@ -4342,6 +4479,7 @@ class Api:
                            sport_type,
                            sub_sport_type,
                            COALESCE(distance, dist_km) AS distance,
+                           dist_km,
                            COALESCE(duration, duration_sec) AS duration,
                            avg_pace,
                            avg_hr,
@@ -4387,9 +4525,6 @@ class Api:
 
             deduped_rows = _dedupe_activity_rows([dict(row) for row in all_rows])
             records = [self._build_activity_list_item(row) for row in deduped_rows]
-            # §契约 §二/§五: Resolver 层注入 sport_type_cn
-            for _row in records:
-                _row["sport_type_cn"] = profile_backend.translate_sport_type(_row.get("sport_type"))
             activity_types = sorted(
                 {
                     _resolve_display_sport_type(row["sport_type"], row["sub_sport_type"])
@@ -4553,6 +4688,1057 @@ class Api:
             logger.exception("get_activity_detail failed activity_id=%s", activity_id)
             return _api_error(API_CODE_DB, "活动详情查询失败")
 
+    def get_fatigue_review(self, activity_id: int) -> dict:
+        """V6.3 运动复盘覆盖层数据源。
+
+        契约:fit-arch-contrac §3 响应结构 / §六 shadow_diff 隔离 / §8 只读。
+        data 字段白名单(7 段):metrics / collapse_events / curves / context_tags /
+        ai_insight / advice / disclaimer。前端禁止拼接 prompt,AI 洞察由
+        call_llm('__FATIGUE_REVIEW_INSIGHT__', sport_type) 独立 sentinel 走专用通道。
+        """
+        try:
+            aid = _safe_int(activity_id)
+            if aid is None or aid <= 0:
+                return _api_error(API_CODE_VALIDATION, "activity_id 必须为正整数")
+
+            row = self._fetch_activity_row(aid)
+            if not row:
+                return _api_error(API_CODE_NOT_FOUND, "未找到该活动记录")
+
+            # §六 shadow_diff 隔离:严禁从 _build_standard_diff 路径拉取 shadow_diff
+            fr_snapshot = self._build_fatigue_review_snapshot(row)
+            return _api_success(fr_snapshot)
+        except Exception:
+            logger.exception("get_fatigue_review failed activity_id=%s", activity_id)
+            return _api_error(API_CODE_DB, "复盘数据查询失败")
+
+    def _fetch_historical_metrics_avg(self, sport_type: str, current_activity_id: int, limit: int = 5) -> dict:
+        """V8.2: 从 hr_curve / speed_curve 列直接计算同运动类型历史基线。
+
+        替代 V7.6 的 storage_model 方案(V4.0 防腐层从未写入该列,V8.0 决策不补)。
+        V8.2 改为读 activities 表已有列(hr_curve / speed_curve),直接用曲线统计量
+        计算心率漂移和速度衰减的历史均值,作为 trend baseline。
+
+        契约:
+        - §2.1 全链路可追溯:trend 来源 = hr_curve + speed_curve(FIT 解析 → fit_sdk)
+        - §8 canonical 只读:仅 SELECT,严禁 INSERT/UPDATE
+        - §7.2 安全:activity_id 走 _safe_int,DB 异常降级返回 sample_size=0
+        - bonk_count 暂不可计算(需 Records → Resolver→ insight_events,V8.x 扩展)
+        """
+        try:
+            aid = _safe_int(current_activity_id) or 0
+            compare_limit = _safe_int(limit) or 5
+            conn = profile_backend._conn()
+            try:
+                rows = conn.execute(
+                    """
+                    SELECT id, hr_curve, speed_curve
+                    FROM activities
+                    WHERE sport_type = ?
+                      AND (? = 0 OR id < ?)
+                      AND deleted_at IS NULL
+                      AND hr_curve IS NOT NULL
+                      AND hr_curve != ''
+                    ORDER BY id DESC
+                    LIMIT ?
+                    """,
+                    (sport_type, aid, aid, compare_limit),
+                ).fetchall()
+            finally:
+                conn.close()
+
+            if not rows:
+                return {"hr_drift_pct": None, "decoupling_pct": None, "bonk_count": 0, "sample_size": 0}
+
+            hr_drift_vals: list[float] = []
+            decoupling_vals: list[float] = []
+
+            for r in rows:
+                hr_curve = _safe_json_list(r["hr_curve"]) or []
+                speed_curve = _safe_json_list(r["speed_curve"]) or []
+
+                # V8.2: 直接从曲线计算,不依赖 Resolver(reduce coupling)
+                hr_drift = _compute_hr_drift_from_curve(hr_curve)
+                if hr_drift is not None:
+                    hr_drift_vals.append(hr_drift)
+
+                speed_decay = _compute_speed_decay_from_curve(speed_curve)
+                if speed_decay is not None:
+                    decoupling_vals.append(speed_decay)
+
+            return {
+                "hr_drift_pct": (sum(hr_drift_vals) / len(hr_drift_vals)) if hr_drift_vals else None,
+                "decoupling_pct": (sum(decoupling_vals) / len(decoupling_vals)) if decoupling_vals else None,
+                "bonk_count": 0,  # V8.2: 无法从曲线列计算(V8.x 扩展)
+                "sample_size": len(rows),
+            }
+        except Exception:
+            logger.exception("_fetch_historical_metrics_avg failed")
+            return {"hr_drift_pct": None, "decoupling_pct": None, "bonk_count": 0, "sample_size": 0}
+
+
+    # === V7.14:21d Baseline 真实查询 + 跨周期负荷比 ===
+    # 见 docs/physiology_reference.md §指标 5/7/9 + §五未来指标入源流程
+    # §8 严禁写 activities 表;只读 SQL
+    # §6 SQL 严禁 SELECT shadow_diff_json
+
+    def _fetch_efficiency_trend(self, row: dict) -> dict:
+        """V7.14:21d 中位数 efficiency_ratio baseline 查询。
+
+        见 docs/physiology_reference.md §五未来指标入源流程
+        返回:{"baseline_ratio": float|None, "compared_count": int, "level": str}
+        """
+        try:
+            from profile_backend import DB_PATH
+            import sqlite3
+            from datetime import datetime, timedelta, timezone
+            sport_type = str(row.get("sport_type") or "running")
+            current_id = _safe_int(row.get("id")) or 0
+            avg_hr = _safe_float(row.get("avg_hr"))
+            avg_pace = _safe_float(row.get("avg_pace") or row.get("avg_pace_sec"))
+            duration_sec = _safe_int(row.get("duration_sec") or row.get("duration")) or 0
+
+            if not avg_hr or not avg_pace or duration_sec < 15 * 60:
+                return {"baseline_ratio": None, "compared_count": 0, "level": "flat"}
+
+            conn = sqlite3.connect(str(DB_PATH))
+            cursor = conn.cursor()
+            cutoff_ts = (datetime.now(timezone.utc) - timedelta(days=21)).isoformat()
+            cursor.execute(
+                """
+                SELECT avg_hr, avg_pace, duration_sec
+                FROM activities
+                WHERE sport_type = ?
+                  AND id != ?
+                  AND start_time >= ?
+                  AND avg_hr IS NOT NULL
+                  AND avg_pace IS NOT NULL
+                  AND duration_sec > ?
+                ORDER BY start_time DESC
+                """,
+                (sport_type, current_id, cutoff_ts, 15 * 60),
+            )
+            rows = cursor.fetchall()
+            conn.close()
+        except Exception:
+            return {"baseline_ratio": None, "compared_count": 0, "level": "flat"}
+
+        ratios = []
+        for h, p, _d in rows:
+            if p and float(p) > 0 and h and float(h) > 0:
+                speed_mps = 1000.0 / float(p)
+                ratios.append(speed_mps / float(h))
+        if len(ratios) < 3:  # V7.9 MIN_HISTORY = 3
+            return {"baseline_ratio": None, "compared_count": len(ratios), "level": "flat"}
+
+        ratios.sort()
+        n = len(ratios)
+        median = ratios[n // 2] if n % 2 == 1 else (ratios[n // 2 - 1] + ratios[n // 2]) / 2
+        return {
+            "baseline_ratio": round(median, 6),
+            "compared_count": len(ratios),
+            "level": "computed",
+        }
+
+    def _fetch_durability_trend(self, row: dict) -> dict:
+        """V7.14:21d 中位数 head/tail 速度比 baseline。
+
+        见 docs/physiology_reference.md §五未来指标入源流程
+        返回:{"baseline_ratio": float|None, "compared_count": int, "level": str}
+        """
+        try:
+            from profile_backend import DB_PATH
+            import sqlite3
+            import json as _json_v714
+            from datetime import datetime, timedelta, timezone
+            sport_type = str(row.get("sport_type") or "running")
+            current_id = _safe_int(row.get("id")) or 0
+
+            conn = sqlite3.connect(str(DB_PATH))
+            cursor = conn.cursor()
+            cutoff_ts = (datetime.now(timezone.utc) - timedelta(days=21)).isoformat()
+            cursor.execute(
+                """
+                SELECT speed_curve
+                FROM activities
+                WHERE sport_type = ?
+                  AND id != ?
+                  AND start_time >= ?
+                  AND speed_curve IS NOT NULL
+                  AND duration_sec > ?
+                ORDER BY start_time DESC
+                """,
+                (sport_type, current_id, cutoff_ts, 45 * 60),
+            )
+            rows = cursor.fetchall()
+            conn.close()
+        except Exception:
+            return {"baseline_ratio": None, "compared_count": 0, "level": "flat"}
+
+        ratios = []
+        for (speed_curve_json,) in rows:
+            try:
+                speed_curve = _json_v714.loads(speed_curve_json)
+            except (TypeError, ValueError):
+                continue
+            valid = [s for s in speed_curve if s and s > 0]
+            if len(valid) < 20:
+                continue
+            n = len(valid)
+            head_idx = max(1, int(n * 0.30))
+            tail_idx = max(1, int(n * 0.30))
+            head_speed = sum(valid[:head_idx]) / head_idx
+            tail_speed = sum(valid[-tail_idx:]) / tail_idx
+            if head_speed > 0:
+                ratios.append(tail_speed / head_speed)
+        if len(ratios) < 3:
+            return {"baseline_ratio": None, "compared_count": len(ratios), "level": "flat"}
+
+        ratios.sort()
+        n = len(ratios)
+        median = ratios[n // 2] if n % 2 == 1 else (ratios[n // 2 - 1] + ratios[n // 2]) / 2
+        return {
+            "baseline_ratio": round(median, 6),
+            "compared_count": len(ratios),
+            "level": "computed",
+        }
+
+    def _fetch_cadence_stability_trend(self, row: dict) -> dict:
+        """V8.5:21d 中位数 cadence CV baseline 查询。
+
+        算法:
+          1. 查询同 sport_type 的最近 21d 活动(限 running / trail_running)
+          2. 对每条活动,解析 cadence_curve → 计算 CV (std/avg * 100)
+          3. 取中位数作为 baseline
+          4. 返回 baseline_cv + compared_count + level
+
+        复用 V7.9 21d baseline 模式(见 _fetch_efficiency_trend)。
+        见 docs/physiology_reference.md §指标 8。
+
+        契约:
+        - §2.1 全链路可追溯:trend baseline 来源 = 21d cadence_curve
+        - §8 canonical 只读:仅 SELECT
+        - §6 SQL 严禁 SELECT shadow_diff_json
+        """
+        try:
+            from profile_backend import DB_PATH
+            import sqlite3
+            import json as _json_v85
+            from datetime import datetime, timedelta, timezone
+            sport_type = str(row.get("sport_type") or "running")
+            current_id = _safe_int(row.get("id")) or 0
+
+            conn = sqlite3.connect(str(DB_PATH))
+            cursor = conn.cursor()
+            cutoff_ts = (datetime.now(timezone.utc) - timedelta(days=21)).isoformat()
+            cursor.execute(
+                """
+                SELECT cadence_curve
+                FROM activities
+                WHERE sport_type = ?
+                  AND id != ?
+                  AND start_time >= ?
+                  AND cadence_curve IS NOT NULL
+                  AND cadence_curve != ''
+                  AND duration_sec > ?
+                ORDER BY start_time DESC
+                """,
+                (sport_type, current_id, cutoff_ts, 20 * 60),
+            )
+            rows = cursor.fetchall()
+            conn.close()
+        except Exception:
+            return {"baseline_cv": None, "compared_count": 0, "level": "flat"}
+
+        cvs: list[float] = []
+        for (cadence_json,) in rows:
+            try:
+                cadence_stream = _json_v85.loads(cadence_json)
+            except (TypeError, ValueError):
+                continue
+            # 复刻 V7.12 CV 计算:过滤 > 30 spm 的有效点
+            valid = [c for c in cadence_stream if c and c > 30]
+            if len(valid) < 20:
+                continue
+            avg = sum(valid) / len(valid)
+            if avg <= 0:
+                continue
+            # stddev 简单实现(与 Resolver._stddev 一致)
+            variance = sum((x - avg) ** 2 for x in valid) / len(valid)
+            stddev = variance ** 0.5
+            cv = (stddev / avg) * 100.0
+            cvs.append(round(cv, 2))
+
+        if len(cvs) < 3:  # V7.9 MIN_HISTORY = 3
+            return {"baseline_cv": None, "compared_count": len(cvs), "level": "flat"}
+
+        cvs.sort()
+        n = len(cvs)
+        median = cvs[n // 2] if n % 2 == 1 else (cvs[n // 2 - 1] + cvs[n // 2]) / 2
+        return {
+            "baseline_cv": round(median, 2),
+            "compared_count": len(cvs),
+            "level": "computed",
+        }
+
+    def _fetch_training_load_trend(self, row: dict) -> dict:
+        """V8.5:21d 中位数 daily load baseline 查询。
+
+        算法:
+          1. 查询同 sport_type 的最近 21d 活动
+          2. 对每条活动,解析 hr_zone_distribution → 调 _compute_training_load
+          3. 失败时降级:用 avg_hr/max_hr 推算主要 zone weight
+          4. 取中位数 load 作为 baseline
+
+        复用 V7.9 21d baseline 模式 + V7.13 训练负荷降级路径。
+        见 docs/physiology_reference.md §指标 9。
+
+        契约:
+        - §2.1 全链路可追溯:trend baseline 来源 = 21d hr_zone_distribution / avg_hr / max_hr
+        - §8 canonical 只读:仅 SELECT
+        - §6 SQL 严禁 SELECT shadow_diff_json
+        """
+        try:
+            from profile_backend import DB_PATH
+            import sqlite3
+            import json as _json_v85
+            from datetime import datetime, timedelta, timezone
+            from metrics_resolver import MetricsResolver as _MR_v85
+
+            sport_type = str(row.get("sport_type") or "running")
+            current_id = _safe_int(row.get("id")) or 0
+
+            conn = sqlite3.connect(str(DB_PATH))
+            cursor = conn.cursor()
+            cutoff_ts = (datetime.now(timezone.utc) - timedelta(days=21)).isoformat()
+            cursor.execute(
+                """
+                SELECT hr_zone_distribution, avg_hr, max_hr, duration_sec
+                FROM activities
+                WHERE sport_type = ?
+                  AND id != ?
+                  AND start_time >= ?
+                  AND duration_sec > ?
+                  AND avg_hr IS NOT NULL
+                  AND max_hr IS NOT NULL
+                ORDER BY start_time DESC
+                """,
+                (sport_type, current_id, cutoff_ts, 5 * 60),
+            )
+            rows = cursor.fetchall()
+            conn.close()
+        except Exception:
+            return {"baseline_load": None, "compared_count": 0, "level": "flat"}
+
+        loads: list[float] = []
+        for zone_json, avg_hr, max_hr, dur in rows:
+            hr_zone_dist = None
+            if zone_json:
+                try:
+                    hr_zone_dist = _json_v85.loads(zone_json)
+                except (TypeError, ValueError):
+                    hr_zone_dist = None
+            load_result = _MR_v85._compute_training_load(
+                hr_zone_distribution=hr_zone_dist,
+                avg_hr=float(avg_hr) if avg_hr else None,
+                max_hr=float(max_hr) if max_hr else None,
+                duration_sec=float(dur) if dur else 0.0,
+                sport_type=sport_type,
+            )
+            load = load_result.get("load")
+            if load is not None:
+                loads.append(float(load))
+
+        if len(loads) < 3:  # V7.9 MIN_HISTORY = 3
+            return {"baseline_load": None, "compared_count": len(loads), "level": "flat"}
+
+        loads.sort()
+        n = len(loads)
+        median = loads[n // 2] if n % 2 == 1 else (loads[n // 2 - 1] + loads[n // 2]) / 2
+        return {
+            "baseline_load": round(median, 1),
+            "compared_count": len(loads),
+            "level": "computed",
+        }
+
+    def _fetch_load_ratio_7d_42d(self, row: dict) -> dict:
+        """V7.14:7d/42d acute/chronic training load ratio。
+
+        行业惯例参考 Gabbett 2016 训练负荷管理:
+          ratio = acute_7d / (chronic_42d / 6)
+          < 0.8   → under_training
+          0.8-1.3 → balanced
+          1.3-1.5 → caution
+          > 1.5   → danger(过度训练风险)
+
+        见 docs/physiology_reference.md §指标 9
+        返回:{"ratio": float|None, "acute_7d": float|None, "chronic_42d": float|None,
+              "compared_count": int, "level": str}
+        """
+        try:
+            from profile_backend import DB_PATH
+            import sqlite3
+            from datetime import datetime, timedelta, timezone
+            from metrics_resolver import MetricsResolver as _MR_v714
+
+            sport_type = str(row.get("sport_type") or "running")
+            current_id = _safe_int(row.get("id")) or 0
+
+            # 当前活动的 load(已在 V7.13 算过,直接用;失败时 fallback 重算)
+            hr_zone_dist = None
+            if row.get("hr_zone_distribution"):
+                try:
+                    import json
+                    hr_zone_dist = json.loads(row.get("hr_zone_distribution"))
+                except (TypeError, ValueError):
+                    hr_zone_dist = None
+            duration_sec = _safe_int(row.get("duration_sec") or row.get("duration")) or 0
+            current_load_result = _MR_v714._compute_training_load(
+                hr_zone_distribution=hr_zone_dist,
+                avg_hr=_safe_float(row.get("avg_hr")),
+                max_hr=_safe_float(row.get("max_hr")),
+                duration_sec=float(duration_sec),
+                sport_type=sport_type,
+            )
+            current_load = current_load_result.get("load") or 0.0
+
+            # 7d 与 42d 历史累积 load
+            conn = sqlite3.connect(str(DB_PATH))
+            cursor = conn.cursor()
+            now = datetime.now(timezone.utc)
+            cutoff_7d = (now - timedelta(days=7)).isoformat()
+            cutoff_42d = (now - timedelta(days=42)).isoformat()
+
+            def _query_period_load(cutoff_ts):
+                cursor.execute(
+                    """
+                    SELECT avg_hr, max_hr, duration_sec
+                    FROM activities
+                    WHERE sport_type = ?
+                      AND id != ?
+                      AND start_time <= ?
+                      AND start_time >= ?
+                      AND avg_hr IS NOT NULL
+                      AND max_hr IS NOT NULL
+                      AND duration_sec > ?
+                    """,
+                    (sport_type, current_id, now.isoformat(), cutoff_ts, 5 * 60),
+                )
+                period_rows = cursor.fetchall()
+                total = 0.0
+                count = 0
+                for h, mx, d in period_rows:
+                    load = _MR_v714._compute_training_load(
+                        avg_hr=float(h), max_hr=float(mx), duration_sec=float(d),
+                        sport_type=sport_type,
+                    )
+                    if load.get("load") is not None:
+                        total += load["load"]
+                        count += 1
+                return total, count
+
+            chronic_42d, count_42d = _query_period_load(cutoff_42d)
+            acute_7d, count_7d = _query_period_load(cutoff_7d)
+            conn.close()
+
+            # 加上当前活动 load
+            total_chronic = chronic_42d + current_load
+            total_acute = acute_7d + current_load
+
+            if total_chronic <= 0 or count_42d < 3:
+                return {
+                    "ratio": None, "acute_7d": round(total_acute, 1),
+                    "chronic_42d": round(total_chronic, 1),
+                    "compared_count": count_42d, "level": "insufficient_data",
+                }
+            # 行业标准:chronic_avg_week = chronic_42d / 6
+            # ratio = acute_7d / chronic_avg_week
+            ratio = total_acute / (total_chronic / 6.0)
+            ratio = round(ratio, 2)
+
+            if ratio < 0.8:
+                level = "under_training"
+            elif ratio <= 1.3:
+                level = "balanced"
+            elif ratio <= 1.5:
+                level = "caution"
+            else:
+                level = "danger"
+
+            return {
+                "ratio": ratio,
+                "acute_7d": round(total_acute, 1),
+                "chronic_42d": round(total_chronic, 1),
+                "compared_count": count_42d,
+                "level": level,
+            }
+        except Exception:
+            return {
+                "ratio": None, "acute_7d": None, "chronic_42d": None,
+                "compared_count": 0, "level": "error",
+            }
+
+    def _empty_fatigue_review_snapshot(
+        sport_type: str = "running",
+        advice_text: str = "复盘快照构建失败,数据不足",
+    ) -> dict:
+        """V8.x 统一复盘空态兜底模板(§3 9 段白名单 + 8 维 metrics 完整)。
+
+        修复 V4 Bug #1 / #2: 旧版 except 兜底 dict 缺 fatigue_zones / total_distance_m /
+        4 个 V7.x 新指标,前端 ECharts 在降级场景下读不到完整契约。
+        本函数保证: 任何降级路径(无 hr_curve / Resolver 异常 / AI 失败)
+        返回结构与正常路径完全一致,前端零特殊处理。
+        """
+        return {
+            "sport_type": sport_type,
+            "metrics": {
+                "hr_drift": {
+                    "pct": 0.0, "level": "unknown", "confidence": "unavailable",
+                    "trend": {"level": "flat", "compared_count": 0, "delta_pct": None, "is_improving": None, "source": "historical_avg"},
+                },
+                "decoupling": {
+                    "pct": 0.0, "level": "unknown",
+                    "trend": {"level": "flat", "compared_count": 0, "delta_pct": None, "is_improving": None, "source": "historical_avg"},
+                },
+                "bonk_risk": {
+                    "is_at_risk": False, "confidence": "unavailable",
+                    "trend": {"is_increasing": False, "compared_count": 0, "level": "flat", "source": "historical_avg"},
+                },
+                "events": {
+                    "count": 0,
+                    "trend": {"delta_count": 0, "level": "flat", "compared_count": 0, "source": "historical_avg"},
+                },
+                # V7.9 - V7.13 4 个新指标完整兜底
+                "efficiency": {
+                    "score": None, "level": "unknown", "confidence": "unavailable",
+                    "delta_pct": None, "sample_size": 0,
+                    "trend": {"level": "flat", "compared_count": 0, "baseline_ratio": None, "source": "v7_14_error"},
+                },
+                "durability": {
+                    "score": None, "level": "unknown", "confidence": "unavailable",
+                    "head_speed": None, "tail_speed": None,
+                    "trend": {"level": "flat", "compared_count": 0, "baseline_ratio": None, "source": "v7_14_error"},
+                },
+                "cadence_stability": {
+                    "score": None, "level": "unknown", "confidence": "unavailable",
+                    "cv": None, "decay_pct": None, "is_intermittent": False,
+                    "trend": {"level": "flat", "compared_count": 0, "is_improving": None, "baseline_cv": None, "source": "v8_5_error"},
+                },
+                "training_load": {
+                    "load": None, "level": "unknown", "zone_used": None, "confidence": "unavailable",
+                    "load_ratio": None, "ratio_7d_42d": "v7_14_error",
+                    "trend": {"level": "flat", "compared_count": 0, "is_improving": None, "baseline_load": None, "source": "v8_5_error"},
+                },
+            },
+            "collapse_events": [],
+            "fatigue_zones": [],
+            "curves": {
+                "efficiency": [],
+                "gap": [],
+                "grade": [],
+                "hr": [],
+                "speed": [],
+                "total_distance_m": 0.0,
+            },
+            "context_tags": {},
+            "ai_insight": None,
+            "advice": advice_text,
+            "disclaimer": "AI 生成仅供参考 · 数据来源：FIT 解析 + 后端算法",
+        }
+
+    def _build_fatigue_review_snapshot(self, row: dict) -> dict:
+        """V6.3 复盘覆盖层白名单快照(§六 shadow_diff 隔离)。
+
+        严禁携带:shadow_diff / shadow_diff_json / diff / records 原始数据。
+        7 段白名单:metrics / collapse_events / curves / context_tags / ai_insight /
+        advice / disclaimer。
+        """
+        try:
+            # V4 Bug #1 修复: 安全初始化所有可能在内部 try 块失败的变量,
+            # 防止最末 return 引用未赋值变量导致 UnboundLocalError
+            fatigue_zones: list = []
+            gap_curve: list = []
+            grade_curve: list = []
+            efficiency_curve: list = []
+            bonk_events: list = []
+            context_tags: dict = {}
+            hr_curve: list = []
+            speed_curve: list = []
+
+            # 1. 基础标量
+            total_calories = _safe_float(row.get("calories")) or 0.0
+            # V8.x 修复: distance 字段已对齐米单位, dist_km 是真公里值
+            # §2.1 字段全链路可追溯: 优先用 dist_km * 1000(已知正确), distance 仅做兜底
+            dist_km_field = _safe_float(row.get("dist_km"))
+            dist_m_field = _safe_float(row.get("distance"))
+            if dist_km_field and dist_km_field > 0:
+                total_distance_m = dist_km_field * 1000.0
+            elif dist_m_field and dist_m_field > 0:
+                total_distance_m = dist_m_field
+            else:
+                total_distance_m = 0.0
+            sport_type = str(row.get("sport_type") or "running")
+
+            # === V8.1: 直接调 MetricsResolver.resolve() 实时计算 ===
+            # 替代 V4.0 防腐层的 storage_model 中间列(V8.0 已确认该列不存在,
+            # V6.3 主路径读不到而 4 段永远空)。
+            # 契约:§2.1 全链路可追溯 / §6 shadow_diff 隔离 / §8 canonical 只读
+            hr_curve = _safe_json_list(row.get("hr_curve")) or []
+            speed_curve = _safe_json_list(row.get("speed_curve")) or []
+
+            gap_curve: list[float] = []
+            grade_curve: list[float] = []
+            efficiency_curve: list[float] = []
+            bonk_events: list[dict[str, Any]] = []
+            context_tags: dict[str, str] = {}
+
+            if hr_curve and speed_curve:
+                try:
+                    resolved_v81 = _build_resolved_payload_v81(
+                        hr_curve=hr_curve,
+                        speed_curve=speed_curve,
+                        sport_type=sport_type,
+                    )
+                    gap_curve = resolved_v81.get("gap_curve") or []
+                    grade_curve = resolved_v81.get("grade_curve") or []
+                    efficiency_curve = resolved_v81.get("efficiency_curve") or []
+                    bonk_events = resolved_v81.get("insight_events") or []
+                    fatigue_zones = resolved_v81.get("fatigue_zones") or []  # V4.0: 从 Resolver 契约层透传
+                    context_tags = resolved_v81.get("context_tags") or {}
+                except Exception:
+                    logger.exception(
+                        "_build_fatigue_review_snapshot V8.1 Resolver 调用失败,降级空数组"
+                    )
+
+            # 4. metrics 白名单:四个核心指标
+            decoupling_pct = 0.0
+            decoupling_level = "unknown"
+            if efficiency_curve and len(efficiency_curve) >= 2:
+                first_half = [v for v in efficiency_curve[: len(efficiency_curve) // 2] if v and v > 0]
+                second_half = [v for v in efficiency_curve[len(efficiency_curve) // 2 :] if v and v > 0]
+                if first_half and second_half:
+                    fh = sum(first_half) / len(first_half)
+                    sh = sum(second_half) / len(second_half)
+                    if fh > 0:
+                        decoupling_pct = round(abs(fh - sh) / fh * 100.0, 2)
+                        decoupling_level = (
+                            "excellent" if decoupling_pct < 5
+                            else "good" if decoupling_pct < 10
+                            else "warn" if decoupling_pct < 15
+                            else "bad"
+                        )
+
+            bonk_at_risk = bool(bonk_events) and total_calories >= 1600.0
+
+            # === V7.10 指标 6:HR Drift 真实算法(替代 V7.6 decoupling_pct 代理) ===
+            # 见 docs/physiology_reference.md §指标 6
+            # 注:decoupling 字段继续使用 efficiency_curve 计算的 decoupling_pct
+            # hr_drift 字段改为从 hr_curve 提取 records 后用 _compute_hr_drift 计算
+            try:
+                import json as _json_v710
+                from metrics_resolver import MetricsResolver as _MR_v710
+                _hr_curve_raw = _safe_json_list(row.get("hr_curve")) or []
+                _records_v710 = []
+                for _i, _hr_v in enumerate(_hr_curve_raw):
+                    if _hr_v is None or _hr_v <= 0:
+                        continue
+                    _records_v710.append({
+                        "raw": {
+                            "heart_rate": _hr_v,
+                            "timestamp": _i,  # 简化为索引(用于排序,值不参与计算)
+                            # 给一个稳态非零速度值,避免被 pace CV 过滤(reference §5)
+                            "speed": 3.0,
+                        }
+                    })
+                _duration_v710 = _safe_int(row.get("duration_sec") or row.get("duration")) or 0
+                _drift_result = _MR_v710._compute_hr_drift(
+                    records=_records_v710,
+                    duration_sec=float(_duration_v710),
+                )
+                _drift_pct = _drift_result.get("drift_pct")
+                _drift_level = _drift_result.get("level", "unknown")
+                _drift_confidence = _drift_result.get("confidence", "unavailable")
+            except Exception:
+                _drift_pct = 0.0
+                _drift_level = "unknown"
+                _drift_confidence = "unavailable"
+
+            metrics = {
+                "hr_drift": {
+                    "pct": _drift_pct if _drift_pct is not None else 0.0,
+                    "level": _drift_level,
+                    "confidence": _drift_confidence,  # V7.10 新增 confidence
+                },
+                "decoupling": {
+                    "pct": decoupling_pct,
+                    "level": decoupling_level,
+                },
+                "bonk_risk": {
+                    "is_at_risk": bonk_at_risk,
+                    "confidence": "medium" if bonk_at_risk else "low",
+                },
+            }
+
+            # 5. collapse_events 白名单(每条带 event_id 联动标识)
+            collapse_events: list[dict[str, Any]] = []
+            for idx, ev in enumerate(bonk_events or []):
+                if not isinstance(ev, dict):
+                    continue
+                collapse_events.append({
+                    "event_id": f"ce_{idx:02d}",
+                    "type": str(ev.get("type", "BONK_WARNING")),
+                    "trigger_km": ev.get("trigger_km"),
+                    "trigger_time_sec": None,
+                    "value_y": ev.get("value_y"),
+                    "description": str(ev.get("description", "")),
+                })
+
+            # V7.6 trend 派生:挂在 metrics 子字段,不扩展 V6.3 顶级 7 段白名单
+            _TREND_COMPARE_COUNT = 5
+            historical_avg = self._fetch_historical_metrics_avg(
+                sport_type=sport_type,
+                current_activity_id=int(row.get("id", 0)) or 0,
+                limit=_TREND_COMPARE_COUNT,
+            )
+            sample_size = historical_avg.get("sample_size", 0)
+
+            def _trend_of(current_val, baseline_val, reverse_polarity: bool = False) -> dict:
+                if sample_size < 3 or baseline_val is None or current_val is None:
+                    return {"delta_pct": None, "level": "unknown", "compared_count": sample_size, "is_improving": None, "source": "historical_avg"}
+                if baseline_val == 0:
+                    return {"delta_pct": None, "level": "unknown", "compared_count": sample_size, "is_improving": None, "source": "historical_avg"}
+                delta_pct = round((current_val - baseline_val) / baseline_val * 100.0, 2)
+                if abs(delta_pct) <= 2.0:
+                    level = "flat"
+                elif delta_pct > 0:
+                    level = "up"
+                else:
+                    level = "down"
+                is_improving = delta_pct < 0 if reverse_polarity else delta_pct <= 0
+                return {"delta_pct": delta_pct, "level": level, "compared_count": sample_size, "is_improving": is_improving, "source": "historical_avg"}
+
+            metrics["hr_drift"]["trend"] = _trend_of(
+                _drift_pct if _drift_pct is not None else 0.0,
+                historical_avg.get("hr_drift_pct"),
+            )
+            metrics["decoupling"]["trend"] = _trend_of(decoupling_pct, historical_avg.get("decoupling_pct"), reverse_polarity=True)
+            metrics["bonk_risk"]["trend"] = {
+                "is_increasing": bool(bonk_at_risk) and historical_avg.get("bonk_count", 0) == 0,
+                "compared_count": sample_size,
+                "level": "up" if (bonk_at_risk and historical_avg.get("bonk_count", 0) == 0) else "flat",
+                "source": "historical_avg",
+            }
+            historical_bonk_count = historical_avg.get("bonk_count", 0)
+            event_delta = len(collapse_events) - historical_bonk_count
+            metrics["events"] = {
+                "count": len(collapse_events),
+                "trend": {
+                    "delta_count": event_delta,
+                    "level": "up" if event_delta > 0 else ("down" if event_delta < 0 else "flat"),
+                    "compared_count": sample_size,
+                    "source": "historical_avg",
+                },
+            }
+
+            # V7.9 指标 5:Efficiency Score(注入 metrics 子字段,不扩展 7 段顶级白名单)
+            # 见 docs/physiology_reference.md §指标 5
+            try:
+                from metrics_resolver import (
+                    MetricsResolver,
+                    evaluate_efficiency,
+                )
+                _eff_avg_hr = _safe_float(row.get("avg_hr"))
+                _eff_avg_pace = _safe_float(row.get("avg_pace") or row.get("avg_pace_sec"))
+                _eff_dur = _safe_int(row.get("duration_sec") or row.get("duration")) or 0
+                # baseline 查询(用 profile_backend.DB_PATH,与项目其他读取一致)
+                try:
+                    from profile_backend import DB_PATH
+                    _eff_baseline = MetricsResolver._fetch_efficiency_baseline(
+                        db_path=str(DB_PATH),
+                        sport_type=sport_type,
+                        current_activity_id=_safe_int(row.get("id")) or 0,
+                    )
+                except Exception:
+                    _eff_baseline = {"baseline_ratio": None, "sample_size": 0}
+                _eff_result = evaluate_efficiency(
+                    avg_hr=_eff_avg_hr,
+                    avg_pace_sec_per_km=_eff_avg_pace,
+                    sport_type=sport_type,
+                    duration_sec=float(_eff_dur),
+                    baseline_ratio=_eff_baseline.get("baseline_ratio"),
+                    sample_size=_eff_baseline.get("sample_size", 0),
+                    avg_temp_c=None,
+                    max_alt_m=_safe_float(row.get("max_altitude_m") or row.get("max_alt_m")),
+                    hr_source="chest_strap",
+                )
+                metrics["efficiency"] = {
+                    "score": _eff_result.get("score"),
+                    "level": _eff_result.get("level"),
+                    "confidence": _eff_result.get("confidence"),
+                    "delta_pct": _eff_result.get("delta_pct"),
+                    "sample_size": _eff_result.get("sample_size"),
+                }
+            except Exception:
+                # V7.9:efficiency 注入失败不影响其他 metric,降级为 unavailable
+                metrics["efficiency"] = {
+                    "score": None,
+                    "level": "unknown",
+                    "confidence": "unavailable",
+                    "delta_pct": None,
+                    "sample_size": 0,
+                }
+
+            # V7.14:efficiency trend 真实查询(21d baseline)
+            # 见 docs/physiology_reference.md §指标 5 + §五未来指标入源流程
+            try:
+                _eff_trend = self._fetch_efficiency_trend(row)
+                metrics["efficiency"]["trend"] = {
+                    "level": _eff_trend.get("level", "flat"),
+                    "compared_count": _eff_trend.get("compared_count", 0),
+                    "baseline_ratio": _eff_trend.get("baseline_ratio"),
+                    "source": "v7_14_baseline",
+                }
+            except Exception:
+                metrics["efficiency"]["trend"] = {
+                    "level": "flat",
+                    "compared_count": 0,
+                    "source": "v7_14_error",
+                }
+
+            # V7.11 指标 7:Durability Index(耐久指数)
+            # 见 docs/physiology_reference.md §指标 7
+            try:
+                from metrics_resolver import MetricsResolver as _MR_v711
+                _speed_curve_raw = _safe_json_list(row.get("speed_curve")) or []
+                _duration_v711 = _safe_int(row.get("duration_sec") or row.get("duration")) or 0
+                # race 标志:row 可能不含,默认 False
+                _is_race_v711 = bool(row.get("is_race") or row.get("is_event") or False)
+                _durability_result = _MR_v711._compute_durability_index(
+                    speed_stream=_speed_curve_raw,
+                    duration_sec=float(_duration_v711),
+                    sport_type=sport_type,
+                    is_race=_is_race_v711,
+                )
+                metrics["durability"] = {
+                    "score": _durability_result.get("score"),
+                    "level": _durability_result.get("level"),
+                    "confidence": _durability_result.get("confidence"),
+                    "head_speed": _durability_result.get("head_speed"),
+                    "tail_speed": _durability_result.get("tail_speed"),
+                }
+                # V7.14:durability trend 真实查询(21d baseline)
+                # 见 docs/physiology_reference.md §指标 7 + §五未来指标入源流程
+                try:
+                    _dur_trend = self._fetch_durability_trend(row)
+                    metrics["durability"]["trend"] = {
+                        "level": _dur_trend.get("level", "flat"),
+                        "compared_count": _dur_trend.get("compared_count", 0),
+                        "baseline_ratio": _dur_trend.get("baseline_ratio"),
+                        "source": "v7_14_baseline",
+                    }
+                except Exception:
+                    metrics["durability"]["trend"] = {
+                        "level": "flat",
+                        "compared_count": 0,
+                        "source": "v7_14_error",
+                    }
+            except Exception:
+                # V7.11:durability 注入失败不影响其他 metric,降级为 unavailable
+                metrics["durability"] = {
+                    "score": None,
+                    "level": "unknown",
+                    "confidence": "unavailable",
+                    "head_speed": None,
+                    "tail_speed": None,
+                }
+
+            # V7.12 指标 8:Cadence Stability(步频稳定性)
+            # 见 docs/physiology_reference.md §指标 8
+            try:
+                from metrics_resolver import MetricsResolver as _MR_v712
+                _cadence_curve_raw = _safe_json_list(row.get("cadence_curve")) or []
+                _duration_v712 = _safe_int(row.get("duration_sec") or row.get("duration")) or 0
+                _is_intermittent_v712 = bool(row.get("is_intermittent") or False)
+                _cadence_result = _MR_v712._compute_cadence_stability(
+                    cadence_stream=_cadence_curve_raw,
+                    duration_sec=float(_duration_v712),
+                    sport_type=sport_type,
+                    is_intermittent=_is_intermittent_v712,
+                )
+                metrics["cadence_stability"] = {
+                    "score": _cadence_result.get("score"),
+                    "level": _cadence_result.get("level"),
+                    "confidence": _cadence_result.get("confidence"),
+                    "cv": _cadence_result.get("cv"),
+                    "decay_pct": _cadence_result.get("decay_pct"),
+                    "is_intermittent": _cadence_result.get("is_intermittent"),
+                }
+                # V8.5:21d 中位数 cadence CV baseline trend
+                # 语义与 4 个老指标不同:CV 越小越稳(is_improving 方向反转)
+                # 见 docs/physiology_reference.md §指标 8
+                try:
+                    _cad_trend = self._fetch_cadence_stability_trend(row)
+                    _baseline_cv = _cad_trend.get("baseline_cv")
+                    _current_cv = _cadence_result.get("cv")
+                    if _baseline_cv is not None and _current_cv is not None and _baseline_cv > 0:
+                        _delta_pct = round((_baseline_cv - _current_cv) / _baseline_cv * 100.0, 2)
+                        # CV 下降 = 步频更稳 = improving
+                        if _delta_pct > 5:
+                            _cad_level, _cad_improving = "up", True
+                        elif _delta_pct < -5:
+                            _cad_level, _cad_improving = "down", False
+                        else:
+                            _cad_level, _cad_improving = "flat", None
+                    else:
+                        _delta_pct, _cad_level, _cad_improving = None, _cad_trend.get("level", "flat"), None
+                    metrics["cadence_stability"]["trend"] = {
+                        "delta_pct": _delta_pct,
+                        "level": _cad_level,
+                        "compared_count": _cad_trend.get("compared_count", 0),
+                        "is_improving": _cad_improving,
+                        "baseline_cv": _baseline_cv,
+                        "source": "v8_5_21d_median_cadence_cv",
+                    }
+                except Exception:
+                    metrics["cadence_stability"]["trend"] = {
+                        "delta_pct": None,
+                        "level": "flat",
+                        "compared_count": 0,
+                        "is_improving": None,
+                        "source": "v8_5_error",
+                    }
+            except Exception:
+                # V7.12:cadence_stability 注入失败不影响其他 metric,降级为 unavailable
+                metrics["cadence_stability"] = {
+                    "score": None,
+                    "level": "unknown",
+                    "confidence": "unavailable",
+                    "cv": None,
+                    "decay_pct": None,
+                    "is_intermittent": False,
+                }
+
+            # V7.13 指标 9:Training Load(TRIMP 简化版)
+            # 见 docs/physiology_reference.md §指标 9
+            # §6 误用 2:跨 sport 不可比;前端显示需 sport_type 显式标注
+            try:
+                from metrics_resolver import MetricsResolver as _MR_v713
+                # HR zone 分布(可选,row 字段 JSON 字符串;parse 失败则降级为 avg_hr 推算)
+                _hr_zone_dist = None
+                if row.get("hr_zone_distribution"):
+                    try:
+                        _hr_zone_dist = json.loads(row.get("hr_zone_distribution"))
+                    except (TypeError, ValueError):
+                        _hr_zone_dist = None
+                _duration_v713 = _safe_int(row.get("duration_sec") or row.get("duration")) or 0
+                _load_result = _MR_v713._compute_training_load(
+                    hr_zone_distribution=_hr_zone_dist,
+                    avg_hr=_safe_float(row.get("avg_hr")),
+                    max_hr=_safe_float(row.get("max_hr")),
+                    duration_sec=float(_duration_v713),
+                    sport_type=sport_type,
+                    hr_source="chest_strap",  # 简化:假设胸带
+                )
+                metrics["training_load"] = {
+                    "load": _load_result.get("load"),
+                    "level": _load_result.get("level"),
+                    "zone_used": _load_result.get("zone_used"),
+                    "confidence": _load_result.get("confidence"),
+                    # V7.14:load_ratio = 7d/42d 真实计算(Gabbett 2016 行业惯例)
+                    "load_ratio": None,
+                    "ratio_7d_42d": "pending_v7_14_compute",
+                }
+                # V7.14:7d/42d acute/chronic 真实计算
+                try:
+                    _load_ratio = self._fetch_load_ratio_7d_42d(row)
+                    metrics["training_load"]["load_ratio"] = _load_ratio.get("ratio")
+                    metrics["training_load"]["ratio_7d_42d"] = _load_ratio.get("level")
+                    metrics["training_load"]["acute_7d"] = _load_ratio.get("acute_7d")
+                    metrics["training_load"]["chronic_42d"] = _load_ratio.get("chronic_42d")
+                    metrics["training_load"]["ratio_compared_count"] = _load_ratio.get("compared_count")
+                except Exception:
+                    metrics["training_load"]["load_ratio"] = None
+                    metrics["training_load"]["ratio_7d_42d"] = "v7_14_error"
+                # V8.5:21d 中位数 daily load baseline trend
+                # 训练负荷无统一改善方向(高/低因训练阶段而异),is_improving 留 None
+                # 见 docs/physiology_reference.md §指标 9
+                try:
+                    _load_trend = self._fetch_training_load_trend(row)
+                    _baseline_load = _load_trend.get("baseline_load")
+                    _current_load = _load_result.get("load")
+                    if _baseline_load is not None and _current_load is not None and _baseline_load > 0:
+                        _load_delta_pct = round((_current_load - _baseline_load) / _baseline_load * 100.0, 2)
+                        if _load_delta_pct > 10:
+                            _load_level = "up"
+                        elif _load_delta_pct < -10:
+                            _load_level = "down"
+                        else:
+                            _load_level = "flat"
+                    else:
+                        _load_delta_pct, _load_level = None, _load_trend.get("level", "flat")
+                    metrics["training_load"]["trend"] = {
+                        "delta_pct": _load_delta_pct,
+                        "level": _load_level,
+                        "compared_count": _load_trend.get("compared_count", 0),
+                        "is_improving": None,  # 训练负荷无统一改善方向
+                        "baseline_load": _baseline_load,
+                        "source": "v8_5_21d_median_daily_load",
+                    }
+                except Exception:
+                    metrics["training_load"]["trend"] = {
+                        "delta_pct": None,
+                        "level": "flat",
+                        "compared_count": 0,
+                        "is_improving": None,
+                        "source": "v8_5_error",
+                    }
+            except Exception:
+                # V7.13:training_load 注入失败不影响其他 metric,降级为 unavailable
+                metrics["training_load"] = {
+                    "load": None,
+                    "level": "unknown",
+                    "zone_used": None,
+                    "confidence": "unavailable",
+                    "load_ratio": None,
+                    "ratio_7d_42d": "v7_14_error",
+                }
+
+            # === V4.0 防腐层:fatigue_zones 已下沉至 MetricsResolver._calculate_fatigue_zones ===
+            # 旧版 V8.11 滑窗算法已删除(含 for 循环 bug 修复 + 真实 distance_curve)
+            # main.py 仅作为路由网关,从 resolved_v81.get("fatigue_zones") 透传
+            # 周边 metrics 白名单(decoupling / bonk_risk / events / historical_avg)完全保留
+
+            # 6. 7 段白名单
+            return {
+                "sport_type": sport_type,
+                "metrics": metrics,
+                "collapse_events": collapse_events,
+                "fatigue_zones": fatigue_zones,  # V8.11: Layer 2 疲劳背景带
+                "curves": {
+                    "efficiency": efficiency_curve,
+                    "gap": gap_curve,
+                    "grade": grade_curve,
+                    "hr": hr_curve,
+                    "speed": speed_curve,
+                    "total_distance_m": total_distance_m,  # V8.11: 供前端 ECharts xAxis 用真实距离
+                },
+                "context_tags": context_tags,
+                "ai_insight": None,
+                "advice": "暂未生成",
+                "disclaimer": "AI 生成仅供参考 · 数据来源：FIT 解析 + 后端算法",
+            }
+        except Exception as e:
+            logger.exception("_build_fatigue_review_snapshot failed: %s", e)
+            # V4 Bug #1 / #2 修复: 统一空态兜底模板, 9 段白名单 + 8 维 metrics 完整
+            # 防止前端 ECharts 在降级场景下读不到 fatigue_zones / total_distance_m / 4 个新指标
+            safe_sport = "running"
+            if isinstance(row, dict):
+                safe_sport = row.get("sport_type") or "running"
+            return self._empty_fatigue_review_snapshot(
+                sport_type=safe_sport,
+                advice_text=f"复盘快照构建失败,内部错误: {str(e)[:50]}",
+            )
+
     def load_activity_track(self, activity_id: int) -> dict:
         """优先从 SQLite 的 track_json 读取轨迹，支持源文件已删除时复盘。
            Task 3.2: 同时返回权威 metrics，前端不再计算 distance/pace/elevation。"""
@@ -4561,69 +5747,10 @@ class Api:
             if not row:
                 return {"ok": False, "error": "未找到该活动记录"}
 
-            def _build_activity_canonical(r: dict) -> dict:
-                sub_sport = str(r.get("sub_sport_type") or "").lower()
-                pace_unit = "/100m" if sub_sport in ("lap_swimming", "open_water") else "/km"
-                dist_km = _safe_float(r.get("dist_km"))
-                if dist_km == 0.0:
-                    dist_m = _safe_float(r.get("distance"))
-                    if dist_m and dist_m > 0:
-                        dist_km = round(dist_m / 1000.0, 2)
-                duration_sec = _safe_int(r.get("duration_sec") or r.get("duration"))
-                gain_m = _safe_float(r.get("gain_m"))
-                avg_hr = _safe_int(r.get("avg_hr")) or None
-                max_hr = _safe_int(r.get("max_hr")) or None
-                calories = _safe_int(r.get("calories")) or None
-                avg_pace = _safe_float(r.get("avg_pace")) or None
+            # V4.0 治理: _build_activity_canonical 已下沉至 MetricsResolver
+            # 完整实现见 metrics_resolver.py: MetricsResolver._build_activity_canonical
+            activity_canonical = MetricsResolver._build_activity_canonical(row)
 
-                if dist_km and dist_km > 0:
-                    if dist_km < 0.1:
-                        distance_display = f"{int(dist_km * 1000)}m"
-                    else:
-                        distance_display = f"{round(dist_km, 2):.2f}km"
-                else:
-                    distance_display = "-- km"
-
-                if avg_pace and avg_pace > 0:
-                    pm = int(avg_pace // 60)
-                    ps = int(avg_pace % 60)
-                    avg_pace_display = f"{pm}'{ps:02d}''{pace_unit}"
-                else:
-                    avg_pace_display = f"-- {pace_unit}"
-
-                return {
-                    "id": _safe_int(r.get("id")),
-                    "sport_type": str(r.get("sport_type") or "unknown"),
-                    "sub_sport_type": str(r.get("sub_sport_type") or "unknown"),
-                    "region": str(r.get("region") or "").strip(),
-                    "weather": _decode_weather_json(r.get("weather_json")),
-                    "dist_km": dist_km,
-                    "distance_display": distance_display,
-                    "duration_sec": duration_sec,
-                    "gain_m": gain_m,
-                    "max_alt_m": _safe_float(r.get("max_alt_m")),
-                    "avg_hr": avg_hr,
-                    "max_hr": max_hr,
-                    "calories": calories,
-                    "avg_pace": avg_pace,
-                    "avg_pace_display": avg_pace_display,
-                    "pace_unit": pace_unit,
-                    "start_time": str(r.get("start_time") or ""),
-                    "min_alt_m": _safe_float(r.get("min_alt_m")),
-                    "total_descent_m": _safe_float(r.get("total_descent_m")),
-                    "up_count": _safe_int(r.get("up_count")),
-                    "down_count": _safe_int(r.get("down_count")),
-                    "max_single_climb_m": _safe_float(r.get("max_single_climb_m")),
-                    "difficulty_score": _safe_int(r.get("difficulty_score")),
-                    "avg_grade_pct": _safe_optional_float(r.get("avg_grade_pct")),
-                    "max_slope_pct": _safe_optional_float(r.get("max_slope_pct")),
-                    "min_slope_pct": _safe_optional_float(r.get("min_slope_pct")),
-                    "uphill_pct": _safe_optional_float(r.get("uphill_pct")),
-                    "downhill_pct": _safe_optional_float(r.get("downhill_pct")),
-                    "report_metrics_version": _safe_int(r.get("report_metrics_version")),
-                }
-
-            activity_canonical = _build_activity_canonical(row)
             mtdi = calculate_track_difficulty(
                 dist_km=activity_canonical.get("dist_km"),
                 gain_m=activity_canonical.get("gain_m"),
@@ -4747,8 +5874,7 @@ class Api:
                 sport_filter=sport_filter, gps_only=True,
             )
 
-            return {
-                "ok": True,
+            return _api_success({
                 "records": records,
                 "total": total_count,
                 "page": page,
@@ -4756,9 +5882,10 @@ class Api:
                 "total_pages": total_pages,
                 "activity_types": activity_types,
                 "locations": location_options,
-            }
+            })
         except Exception as e:
-            return {"ok": False, "error": str(e)}
+            logger.exception("get_trace_activity_history failed")
+            return _api_error(API_CODE_DB, str(e))
 
     def check_activity_data_integrity(self) -> dict:
         try:
@@ -4811,98 +5938,24 @@ class Api:
         return rows
 
 
-class SemanticSportsEngine:
-    METRICS = {
-        "distance": {"label": "距离", "unit": "km"},
-        "duration": {"label": "时长", "unit": ""},
-        "avg_pace": {"label": "平均配速", "unit": "/km"},
-        "avg_speed": {"label": "平均速度", "unit": "km/h"},
-        "avg_hr": {"label": "平均心率", "unit": "bpm"},
-        "max_hr": {"label": "最大心率", "unit": "bpm"},
-        "elevation": {"label": "总爬升", "unit": "m"},
-        "calories": {"label": "热量", "unit": "Kcal"}
-    }
-
-    SPORT_PROFILES = {
-        "running": {
-            "summary_keys": ["distance", "avg_pace", "duration", "avg_hr"],
-            "cards": [{"type": "summary_grid"}, {"type": "pace_hr_chart"}, {"type": "elevation_chart"}]
-        },
-        "trail_running": {
-            "summary_keys": ["distance", "elevation", "duration", "avg_pace"],
-            "cards": [{"type": "summary_grid"}, {"type": "elevation_chart"}, {"type": "pace_hr_chart"}]
-        },
-        "cycling": {
-            "summary_keys": ["distance", "avg_speed", "duration", "avg_hr"],
-            "cards": [{"type": "summary_grid"}, {"type": "speed_hr_power_chart"}, {"type": "elevation_chart"}]
-        },
-        "swimming": {
-            "summary_keys": ["distance", "avg_pace", "duration", "avg_hr"],
-            "cards": [{"type": "summary_grid"}, {"type": "pace_hr_chart"}]
-        },
-        "strength": {
-            "summary_keys": ["duration", "calories", "avg_hr", "max_hr"],
-            "cards": [{"type": "summary_grid"}, {"type": "hr_zones_chart"}]
-        },
-        "hiking": {
-            "summary_keys": ["distance", "duration", "elevation", "avg_hr"],
-            "cards": [{"type": "summary_grid"}, {"type": "elevation_chart"}]
-        }
-    }
-
-    @staticmethod
-    def format_duration(seconds):
-        if not seconds or seconds < 0:
-            return "--"
-        h = seconds // 3600
-        m = (seconds % 3600) // 60
-        s = seconds % 60
-        if h > 0:
-            return f"{h}:{m:02d}:{s:02d}"
-        return f"{m:02d}:{s:02d}"
-
-    @staticmethod
-    def format_pace(pace_sec):
-        if not pace_sec or pace_sec <= 0:
-            return "--"
-        return f"{pace_sec // 60}'{pace_sec % 60:02d}\""
-
-    @classmethod
-    def build_display_metrics(cls, sport_type, raw_data):
-        profile = cls.SPORT_PROFILES.get(sport_type, cls.SPORT_PROFILES["running"])
-        display_list = []
-        for key in profile["summary_keys"]:
-            meta = cls.METRICS.get(key, {"label": key, "unit": ""})
-            val_str = "--"
-            if key == "distance":
-                val_str = f"{raw_data.get('distance_km', 0):.2f}"
-            elif key == "duration":
-                val_str = cls.format_duration(raw_data.get('duration_sec', 0))
-            elif key == "avg_pace":
-                val_str = cls.format_pace(raw_data.get('avg_pace_sec', 0))
-            elif key == "avg_speed":
-                dist = raw_data.get('distance_km', 0)
-                sec = raw_data.get('duration_sec', 0)
-                val_str = f"{(dist / sec * 3600):.1f}" if sec > 0 else "--"
-            elif key in ("avg_hr", "max_hr", "calories", "elevation"):
-                val = raw_data.get(key)
-                val_str = str(val) if val else "--"
-            display_list.append({
-                "key": key,
-                "label": meta["label"],
-                "value": val_str,
-                "unit": meta["unit"]
-            })
-        return display_list
-
-    @classmethod
-    def get_layout(cls, sport_type: str) -> dict:
-        return {"cards": cls.SPORT_PROFILES.get(sport_type, cls.SPORT_PROFILES["running"])["cards"]}
+def _build_real_laps_from_row(row: dict, dist_km: float = 0, duration_sec: int = 0, avg_hr = None, base_power: int = 0) -> list[dict[str, Any]]:
+    """V4.0 治理: 业务逻辑已下沉至 MetricsResolver。
+    完整实现见 metrics_resolver.py: MetricsResolver._build_real_laps_from_row
+    """
+    return MetricsResolver._build_real_laps_from_row(row)
 
 
 def _build_record_from_row(api_self, row: dict, idx: int) -> dict:
     points = api_self._decode_points_json(row.get("track_json") or row.get("points_json") or row.get("merged_track_json"))
-    dist_km = _safe_float(row.get("distance") if row.get("distance") is not None else row.get("dist_km"))
+    # V8.x 修复: distance 已对齐米单位, dist_km 是真公里值
+    dist_km_field = _safe_float(row.get("dist_km"))
+    dist_m_field = _safe_float(row.get("distance"))
+    if dist_km_field and dist_km_field > 0:
+        dist_km = dist_km_field
+    elif dist_m_field and dist_m_field > 0:
+        dist_km = dist_m_field / 1000.0
+    else:
+        dist_km = 0.0
     duration_sec = _safe_int(row.get("duration") if row.get("duration") is not None else row.get("duration_sec"))
     avg_hr = _safe_int(row.get("avg_hr")) or None
     max_hr = _safe_int(row.get("max_hr"))
@@ -4946,11 +5999,20 @@ def _build_record_from_row(api_self, row: dict, idx: int) -> dict:
         "elevation": int(row.get("gain_m") or 0),
     }
 
+    # 任务 5 (P2-1): 能力字段判据统一——存在性而非值域
+    # 原 has_elevation: bool(row.get("gain_m") and float(row.get("gain_m")) > 0)
+    # 问题: gain_m=0 的平坦路段被误判为「无海拔数据」,与 has_gps/has_hr 风格不一致
+    # 修复: 任一海拔字段非空即认为「有海拔数据」(4 字段交叉验证)
+    # 原 has_power: 硬编码 False,所有有功率数据的活动都被错误地隐藏功率 section
+    # 修复: 任一功率字段非空即认为「有功率数据」
     capabilities = {
         "has_gps": bool(points),
         "has_hr": bool(avg_hr),
-        "has_elevation": bool(row.get("gain_m") and float(row.get("gain_m")) > 0),
-        "has_power": False,
+        "has_elevation": any(
+            row.get(field) is not None
+            for field in ("gain_m", "max_alt_m", "min_alt_m", "total_descent_m")
+        ),
+        "has_power": bool(row.get("avg_power") or row.get("normalized_power")),
     }
 
     detail = {
@@ -4958,7 +6020,7 @@ def _build_record_from_row(api_self, row: dict, idx: int) -> dict:
         "layout": SemanticSportsEngine.get_layout(display_type),
         "capabilities": capabilities,
         "summary": raw_for_engine,
-        "laps": api_self._build_lap_rows(dist_km, duration_sec, avg_hr, base_power),
+        "laps": _build_real_laps_from_row(row, dist_km, duration_sec, avg_hr, base_power) or api_self._build_lap_rows(dist_km, duration_sec, avg_hr, base_power),
         "thumbnail_points": api_self._sample_thumbnail_points(points),
     }
 
@@ -4977,6 +6039,7 @@ def _build_record_from_row(api_self, row: dict, idx: int) -> dict:
         "sport_type": str(row.get("sport_type") or "running"),
         "sub_sport_type": str(row.get("sub_sport_type") or "unknown"),
         "display_sport_type": display_type,
+        "sport_type_cn": profile_backend.translate_sport_type(display_type),
         "title": title,
         "title_source": str(row.get("title_source") or ""),
         "file_name": row.get("filename") or row.get("file_name") or title,
@@ -5077,7 +6140,7 @@ def _api_get_person_sport_hub_data(self) -> dict:
                 f"""
                 SELECT id, COALESCE(file_name, filename) AS file_name, filename,
                        title, title_source, start_time_utc,
-                       sport_type, sub_sport_type, COALESCE(distance, dist_km) AS distance,
+                       sport_type, sub_sport_type, COALESCE(distance, dist_km) AS distance, dist_km,
                        COALESCE(duration, duration_sec) AS duration, gain_m, max_alt_m,
                        avg_pace, avg_hr, max_hr, calories,
                        COALESCE(track_json, points_json) AS track_json,
@@ -5141,6 +6204,14 @@ def _api_load_activity_track_by_file_path(self, file_path: str) -> dict:
             if activity_id:
                 return self.load_activity_track(activity_id)
         return self.load_local_track(resolved)
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def _api_find_gpx_pollution(self) -> dict:
+    """审计接口: 返回当前 DB 中 GPX/KML 残留污染。"""
+    try:
+        return profile_backend.find_gpx_pollution()
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
@@ -5234,6 +6305,7 @@ def _api_check_duplicate_track(self, act_data: dict) -> dict:
 
 def _api_save_activity(self, data: dict) -> dict:
     try:
+        profile_backend._assert_gpx_not_persisted(data)  # §二 §八: API 入口拒绝 GPX/KML
         dup_action = data.get("_duplicate_action")
         if dup_action == "skip":
             return {"ok": True, "skipped": True}
@@ -5258,6 +6330,7 @@ Api.load_local_track = _api_load_local_track
 Api.get_activity_by_file_path = _api_get_activity_by_file_path
 Api.load_activity_track_by_file_path = _api_load_activity_track_by_file_path
 Api.import_track = _api_import_track
+Api.find_gpx_pollution = _api_find_gpx_pollution
 Api.update_activity_sport_type = _api_update_activity_sport_type
 Api.validate_fit_directory = _api_validate_fit_directory
 Api.scan_fit_directory = _api_scan_fit_directory

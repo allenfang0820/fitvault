@@ -83,11 +83,13 @@ SPORT_TYPE_ALIASES = {
     "walk": "walking",
     "步行": "walking",
     "健走": "walking",
+    "cardio": "cardio",
+    "cardio_training": "cardio",
+    "fitness_equipment": "cardio",
+    "fitness equipment": "cardio",
+    "indoor_cardio": "cardio",
     "drive": "driving",
     "driving": "driving",
-    "car": "driving",
-    "auto": "driving",
-    "motoring": "driving",
     "驾车": "driving",
     "开车": "driving",
 }
@@ -112,11 +114,13 @@ SPORT_TYPE_KEYWORDS = (
     ("mountain_biking", ("mountain", "mtb", "山地")),
     ("swimming", ("swim", "游泳")),
     ("cycling", ("bike", "bik", "cycl", "骑行", "自行车")),
-    ("driving", ("driv", "car", "auto", "motoring", "驾车", "开车")),
-    ("running", ("run", "jog", "跑")),
+    ("cardio", ("cardio", "aerobic", "fitness_equipment", "有氧")),
     ("mountaineering", ("mountaineering", "alpine", "high_mountain", "高山", "登山运动")),
     ("hiking", ("hike", "hiking", "mountain", "climb", "trek", "登山", "徒步", "爬山")),
     ("walking", ("walk", "步行", "健走")),
+    # § 修子串误判:driving 放在最末位,精确词 driv/drive/driving/驾车/开车,严禁"car"/"auto"
+    ("driving", ("driv", "驾车", "开车")),
+    ("running", ("run", "jog", "跑")),
 )
 
 FIT_SUB_SPORT_TO_SPORT_TYPE = {

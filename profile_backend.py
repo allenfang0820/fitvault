@@ -120,6 +120,79 @@ def _format_last_sync_ago(last_sync_time: str | None) -> str | None:
     return synced_at.strftime("%Y-%m-%d %H:%M")
 
 
+def _assert_gpx_not_persisted(data: dict[str, Any]) -> None:
+    """GPX/KML 用后即抛契约: 写库入口拒绝 .gpx/.kml 源数据。
+
+    §二 §八：FIT 是唯一可信数据源。filename 推断比 source_type 字段更可靠
+    （source_type 在 INSERT/UPDATE 中是 SQL 字面量,容易被静默覆盖）。
+
+    Args:
+        data: 即将入库的 activity dict,需含 file_name / filename / file_path 至少一个
+
+    Raises:
+        ValueError: 当任何字段以 .gpx 或 .kml 结尾时,直接拒绝写库
+    """
+    for key in ("file_name", "filename", "file_path"):
+        v = str(data.get(key) or "").strip().lower()
+        if v.endswith((".gpx", ".kml")):
+            raise ValueError(
+                f"GPX/KML 是用后即抛型文件,禁止入库 ({key}={v!r})"
+            )
+
+
+def find_gpx_pollution() -> dict[str, Any]:
+    """审计 GPX/KML 残留污染。
+
+    Returns:
+        {
+            "type_a_contradiction": [list of {id, file_name, file_path, source_type}],
+                # source_type='fit_sdk' 但 file 是 .gpx/.kml — 已被静默覆盖的污染
+            "type_b_explicit_gpx": [list of {id, file_name, file_path, source_type}],
+                # file 是 .gpx/.kml — 任何 source_type 都算污染
+            "total_count": int,  # = len(type_b_explicit_gpx) 超集口径
+        }
+    """
+    conn = _conn()
+    try:
+        rows = conn.execute(
+            """
+            SELECT id, file_name, file_path, source_type
+            FROM activities
+            WHERE (file_name LIKE '%.gpx' OR file_name LIKE '%.kml'
+                OR file_path LIKE '%.gpx' OR file_path LIKE '%.kml')
+              AND COALESCE(deleted_at, '') = ''
+            ORDER BY id
+            """
+        ).fetchall()
+    finally:
+        conn.close()
+
+    type_a = [
+        {
+            "id": r["id"],
+            "file_name": r["file_name"],
+            "file_path": r["file_path"],
+            "source_type": r["source_type"],
+        }
+        for r in rows
+        if r["source_type"] == "fit_sdk"
+    ]
+    type_b = [
+        {
+            "id": r["id"],
+            "file_name": r["file_name"],
+            "file_path": r["file_path"],
+            "source_type": r["source_type"],
+        }
+        for r in rows
+    ]
+    return {
+        "type_a_contradiction": type_a,
+        "type_b_explicit_gpx": type_b,
+        "total_count": len(type_b),
+    }
+
+
 def get_profile_sync_metadata() -> dict[str, Any]:
     state = read_sync_state()
     last_sync_time = state.get("last_sync_time")
@@ -150,7 +223,7 @@ def get_profile_sync_metadata() -> dict[str, Any]:
 def check_llm_gateway_connection() -> dict[str, Any]:
     cfg = llm_backend.load_llm_config()
     url = str(cfg.get("url") or "").strip()
-    model = str(cfg.get("model") or "openclaw").strip()
+    model = str(cfg.get("model") or "").strip()
     if not url:
         return {"connected": False, "message": "LLM 网关未配置，请前往设置检测连接"}
     if not model:
@@ -572,7 +645,28 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             conn.execute(f"ALTER TABLE activities ADD COLUMN {col} {dtype}")
         except Exception:
             pass
-            
+
+    # === V8.0: V7.11-V7.13 新指标所需的 5 个数据列 ===
+    # 依据 fit-arch-contrac §2.1 全链路可追溯,5 列的最终来源必须是 FIT 解析
+    # (source_type=fit_sdk),不允许 frontend_fallback / mock / synthetic 标记
+    # 写入入口在 V8.2/V8.3 阶段实现 (sync_local_fit_files / batch_import_tracks)
+    # 列类型选择:
+    #   - cadence_curve / hr_zone_distribution: TEXT (JSON 序列化的数组)
+    #   - is_race / is_event / is_intermittent: INTEGER DEFAULT 0 (布尔型 SQLite 习惯)
+    # 全部 nullable,不强制 NOT NULL,旧活动记录补列不会失败
+    for col, dtype in [
+        ("cadence_curve", "TEXT"),
+        ("hr_zone_distribution", "TEXT"),
+        ("is_race", "INTEGER DEFAULT 0"),
+        ("is_event", "INTEGER DEFAULT 0"),
+        ("is_intermittent", "INTEGER DEFAULT 0"),
+        ("laps_json", "TEXT"),  # 真实圈速数据 (FIT lap_mesgs 归一化)
+    ]:
+        try:
+            conn.execute(f"ALTER TABLE activities ADD COLUMN {col} {dtype}")
+        except Exception:
+            pass
+
     for col, dtype in [
         ("avg_bedtime", "TEXT"),
         ("avg_sleep_hours", "REAL"),
@@ -860,6 +954,7 @@ def upsert_profile(data: dict[str, Any]) -> UserProfile:
 
 
 def save_activity(data: dict[str, Any]) -> int:
+    _assert_gpx_not_persisted(data)  # §二 §八: GPX/KML 用后即抛
     def _write() -> int:
         conn = _conn()
         try:
@@ -973,7 +1068,9 @@ def get_activity_history(limit: int = 50) -> list[dict[str, Any]]:
     conn.close()
     rows_dicts = [dict(r) for r in rows]
     for _row in rows_dicts:
-        _row["sport_type_cn"] = translate_sport_type(_row.get("sport_type"))
+        # §契约 §二/§五: 使用解析后的显示类型翻译，sub_sport_type 可覆盖主类型
+        _resolved = (str(_row.get("sub_sport_type") or "").strip() or _row.get("sport_type"))
+        _row["sport_type_cn"] = translate_sport_type(_resolved)
     return rows_dicts
 
 
@@ -1005,6 +1102,8 @@ SPORT_TYPE_CN_MAP: dict[str, str] = {
     "snowboarding": "单板滑雪",
     "rowing": "划船",
     "paddling": "桨板",
+    "stand_up_paddleboarding": "立式桨板",
+    "training": "训练",
     "sailing": "帆船",
     "surfing": "冲浪",
     "fishing": "钓鱼",
@@ -1022,6 +1121,8 @@ SPORT_TYPE_CN_MAP: dict[str, str] = {
     "flexibility_training": "柔韧训练",
     "cardio": "有氧运动",
     "driving": "驾车",
+    "fitness_equipment": "有氧运动",
+    "indoor_cardio": "室内有氧",
     "flying": "飞行",
     "motorcycling": "摩托",
     "transition": "换项",
@@ -1123,6 +1224,7 @@ def get_activity_list_filtered(
         "sport_type, "
         "sub_sport_type, "
         "distance, "
+        "dist_km, "
         "COALESCE(dist_km, ROUND(distance / 1000.0, 2)) AS distance_km_clean, "
         "COALESCE(duration, duration_sec) AS duration, "
         "avg_pace, "
@@ -1178,7 +1280,8 @@ def get_activity_list_filtered(
     rows_dicts = [dict(r) for r in rows]
     # §契约 §二/§五:Resolver 层在响应中注入 sport_type_cn,前端不再做翻译
     for _row in rows_dicts:
-        _row["sport_type_cn"] = translate_sport_type(_row.get("sport_type"))
+        _resolved = (str(_row.get("sub_sport_type") or "").strip() or _row.get("sport_type"))
+        _row["sport_type_cn"] = translate_sport_type(_resolved)
     return rows_dicts, total_count
 
 
@@ -2654,7 +2757,10 @@ def fetch_mcp_persona(platform: str, trigger_type: str = "manual") -> dict[str, 
     if not url:
         mark_profile_sync_failed("LLM URL 未配置，请在设置页填写")
         return {"ok": False, "error": "LLM URL 未配置，请在设置页填写"}
-    model = (cfg.get("model") or "openclaw").strip()
+    model = (cfg.get("model") or "").strip()
+    if not model:
+        mark_profile_sync_failed("模型名未配置，请在设置页填写")
+        return {"ok": False, "error": "模型名未配置，请在设置页填写"}
     api_key = str(cfg.get("api_key") or "")
 
     if platform == "coros":

@@ -1,10 +1,123 @@
 from __future__ import annotations
 
+import copy
 import math
 from typing import Any
 
 from garmin_fit_sdk import profile as garmin_fit_profile
 from metrics_registry import METRICS_REGISTRY, SPORT_ALIASES, SPORT_DISPLAY_NAMES
+# V7.1 Resolver 接入 GapCalculator 引擎(任务 1.1-1.3 已定型,API 稳定)
+from gap_calculator import GapCalculator
+
+# === V7.8 sport 隔离:能力路由注册表 ===
+# 见 docs/physiology_reference.md §指标 4 Capability Routing
+# 字段定义(只增不改,见 reference §四 1.3 退出机制):
+#   uses_altitude: 海拔是否构成主要环境压力(陆上有氧)
+#   uses_heat:     是否进入"热应激"判定(池水温度恒定故 False)
+#   uses_power:    是否进入功率分支(骑行/滑雪)
+#   uses_swolf:    是否进入 SWOLF 分支(游泳)
+#   uses_cadence:  是否采集步频/踏频数据
+# 严禁硬 sport 字符串排除:必须通过 capability 决定指标启用
+_SPORT_CAPABILITY_REGISTRY: dict[str, dict[str, bool]] = {
+    "running": {
+        "uses_altitude": True,
+        "uses_heat": True,
+        "uses_power": False,
+        "uses_swolf": False,
+        "uses_cadence": True,
+    },
+    "trail_running": {
+        "uses_altitude": True,
+        "uses_heat": True,
+        "uses_power": False,
+        "uses_swolf": False,
+        "uses_cadence": True,
+    },
+    "hiking": {
+        "uses_altitude": True,
+        "uses_heat": True,
+        "uses_power": False,
+        "uses_swolf": False,
+        "uses_cadence": False,
+    },
+    "swimming": {
+        "uses_altitude": False,  # 池内/水面海拔无意义
+        "uses_heat": False,      # 池温恒定
+        "uses_power": False,
+        "uses_swolf": True,
+        "uses_cadence": False,
+    },
+    "open_water": {
+        "uses_altitude": False,
+        "uses_heat": True,       # 水温低,应激大
+        "uses_power": False,
+        "uses_swolf": True,
+        "uses_cadence": False,
+    },
+    "cycling": {
+        "uses_altitude": False,  # 公路骑行海拔非主因
+        "uses_heat": True,
+        "uses_power": True,
+        "uses_swolf": False,
+        "uses_cadence": False,
+    },
+    "mountain_biking": {
+        "uses_altitude": True,   # 爬升是核心
+        "uses_heat": True,
+        "uses_power": True,
+        "uses_swolf": False,
+        "uses_cadence": False,
+    },
+    "skiing": {
+        "uses_altitude": True,
+        "uses_heat": True,
+        "uses_power": True,
+        "uses_swolf": False,
+        "uses_cadence": False,
+    },
+    "default": {
+        "uses_altitude": True,
+        "uses_heat": True,
+        "uses_power": False,
+        "uses_swolf": False,
+        "uses_cadence": False,
+    },
+}
+
+
+def _classify_sport_dimension(sport_type: str | None) -> dict[str, bool]:
+    """V7.8:按 sport_type 查 _SPORT_CAPABILITY_REGISTRY。
+
+    §2.1 全链路可追溯:sport 源头 = session_mesgs.sport → SPORT_ALIASES → 本函数。
+    未知 sport 走 default(最保守,全部 False)。
+    严禁抛 KeyError(见 reference §6 风险说明 降级路径)。
+    """
+    token = str(sport_type or "").strip().lower()
+    return _SPORT_CAPABILITY_REGISTRY.get(token, _SPORT_CAPABILITY_REGISTRY["default"])
+
+
+# ── V4.0 核心数据契约 (防腐层) ──
+ACTIVITY_SCHEMA = {
+    "sport": "running",
+    "total_distance": 0.0,
+    "total_calories": 0.0,
+    "decoupling_rate": 0.0,
+
+    # 核心时序曲线 (保留旧命名以兼容下游单测与 UI)
+    "distance_curve": [],
+    "speed_curve": [],
+    "gap_curve": [],
+    "hr_curve": [],
+    "altitude_curve": [],
+    "lat_curve": [],
+    "lon_curve": [],
+    "efficiency_curve": [],
+
+    # V4.0 高阶分析引擎输出
+    "fatigue_zones": [],
+    "insight_events": [],
+    "context_tags": {},
+}
 
 SEMICIRCLE_SCALE = 180.0 / (1 << 31)
 MAX_CURVE_POINTS = 200
@@ -36,13 +149,139 @@ class MetricsResolver:
         ap = self._build_analysis_pack(laps, records)
         ac = self._build_ai_context(sm, session, records)
 
-        return {
-            "storage_model": sm,
-            "view_model": vm,
-            "analysis_pack": ap,
-            "ai_context": ac,
-            "source": "resolver",
-        }
+        # === V7.1 Resolver 接入 GapCalculator(§2.1 全链路 / §8 canonical 只读)===
+        # 契约依据:
+        #   - §2.1 字段全链路可追溯:GAP 曲线源头 = records(FIT SDK) → GapCalculator → ai_context
+        #   - §8 canonical DB 原则:GAP 输出仅进入 *_curve 字段,严禁持久化到 activities 表
+        #   - §11 Resolver 入口零二次处理:直接透传 calculate() 输出,禁止 trim/归零/clamp
+        gap_result = GapCalculator().calculate(records)
+        gap_curve_out: list[float] = gap_result.get("gap_curve", []) or []
+        efficiency_curve_out: list[float] = gap_result.get("efficiency_curve", []) or []
+        grade_curve_out: list[float] = gap_result.get("grade_curve", []) or []
+
+        # === V4.0 管线整合与截断 (防腐层) ===
+        final_data = copy.deepcopy(ACTIVITY_SCHEMA)
+
+        # 提取标量字段
+        sport_type = sm.get("sport_type", "running")
+        total_distance = float(sm.get("distance_m", 0))
+        total_calories = float(sm.get("calories", 0))
+        decoupling_rate = 0.0  # 待后续引擎计算(GapCalculator 串联后)
+
+        # 提取时序曲线(来自 analysis_pack)
+        distance_curve = ap.get("distance_curve", [])
+        speed_curve = ap.get("speed_curve", [])
+        hr_curve = ap.get("hr_curve", [])
+        altitude_curve = ap.get("altitude_curve", [])
+        lat_curve = ap.get("lat_curve", [])
+        lon_curve = ap.get("lon_curve", [])
+        gap_curve: list[float] = gap_curve_out         # V7.1: GapCalculator 真实输出
+        efficiency_curve: list[float] = efficiency_curve_out  # V7.1: GapCalculator 真实输出
+        # grade_curve_out 暂未进入 ACTIVITY_SCHEMA(白名单稳定,后续字段版本化扩展)
+
+        # 1. 触发 Bonk 状态机(2.2 基建)
+        insight_events = MetricsResolver._detect_bonk_event(
+            distance_curve=distance_curve,
+            ei_curve=efficiency_curve,
+            total_calories=total_calories,
+        )
+
+        # 触发 Layer 2 疲劳预警带计算(V4.0 从 main.py 下沉)
+        fatigue_zones = MetricsResolver._calculate_fatigue_zones(
+            distance_curve=distance_curve,
+            ei_curve=efficiency_curve,
+            sport_type=sport_type,
+        )
+
+        # 2. 映射至 Schema
+        final_data["sport"] = sport_type
+        final_data["total_distance"] = total_distance
+        final_data["total_calories"] = total_calories
+        final_data["decoupling_rate"] = decoupling_rate
+
+        final_data["distance_curve"] = distance_curve
+        final_data["speed_curve"] = speed_curve
+        final_data["gap_curve"] = gap_curve
+        final_data["hr_curve"] = hr_curve
+        final_data["altitude_curve"] = altitude_curve
+        final_data["lat_curve"] = lat_curve
+        final_data["lon_curve"] = lon_curve
+        final_data["efficiency_curve"] = efficiency_curve
+        # V8.3: cadence_curve 暴露到 final_data,供 main.py 持久化
+        final_data["cadence_curve"] = ap.get("cadence_curve", []) or []
+
+        final_data["insight_events"] = insight_events
+        final_data["fatigue_zones"] = fatigue_zones  # V4.0: 从 main.py 下沉的 Layer 2 疲劳预警带
+
+        # === V4.0 环境标签生成 (供 LLM 防幻觉使用) ===
+        # 从 FIT session 提取平均温度(多数 Garmin 设备提供)
+        avg_temp_raw = self._extract(session, "avg_temperature") or self._extract(session, "temperature")
+        avg_temp = self._num(avg_temp_raw) if avg_temp_raw is not None else None
+
+        max_alt = max((a for a in altitude_curve if a is not None), default=0.0) if altitude_curve else 0.0
+
+        context_tags: dict[str, str] = {}
+
+        # === V7.8:context_tags 注入改为 capability 路由(指标 4)===
+        # 见 docs/physiology_reference.md §指标 4
+        # 严禁硬 sport 字符串排除,必须通过 capability 决定是否注入
+        dimension = _classify_sport_dimension(sport_type)
+
+        # 1. 热应激标签判定(V7.8:仅对 uses_heat=True 的 sport 注入)
+        if dimension["uses_heat"] and avg_temp is not None and avg_temp > 0:
+            if avg_temp >= 30.0:
+                context_tags["热应激 (Heat Stress)"] = f"Extreme (极端，{avg_temp:.1f}°C) - 极其严峻的散热压力，必定引发严重的心率血管漂移，不要因此批评用户耐力。"
+            elif avg_temp >= 25.0:
+                context_tags["热应激 (Heat Stress)"] = f"High (高，{avg_temp:.1f}°C) - 会导致散热受阻，后半程心率显著偏高属正常生理代偿。"
+            elif avg_temp >= 20.0:
+                context_tags["热应激 (Heat Stress)"] = f"Moderate (中度，{avg_temp:.1f}°C) - 轻微影响心率稳定性。"
+
+        # 2. 海拔缺氧标签判定(V7.8:仅对 uses_altitude=True 的 sport 注入)
+        if dimension["uses_altitude"]:
+            if max_alt >= 2500:
+                context_tags["海拔缺氧 (Altitude Hypoxia)"] = f"High (高海拔，{int(max_alt)}m) - 严重缺氧环境，维持同等配速时心率基线会大幅代偿上升。"
+            elif max_alt >= 1500:
+                context_tags["海拔缺氧 (Altitude Hypoxia)"] = f"Moderate (中海拔，{int(max_alt)}m) - 轻度缺氧，同样的等效速度下心率会略高。"
+
+        # 3. V7.8 指标 1:糖原耗竭风险标签(全 sport 注入,但仅 risk_level != unknown)
+        glycogen_risk = MetricsResolver._assess_glycogen_depletion_risk(
+            total_calories=total_calories,
+            sport_type=sport_type,
+        )
+        if glycogen_risk["risk_level"] in ("moderate", "high"):
+            context_tags["糖原耗竭风险 (Glycogen Depletion Risk)"] = (
+                f"{glycogen_risk['risk_level'].upper()} "
+                f"(zone {glycogen_risk['zone'][0]:.0f}-{glycogen_risk['zone'][1]:.0f} kcal) - "
+                f"本次 kcal={glycogen_risk['kcal']:.0f}"
+            )
+
+        # 4. V7.8 指标 2:心肺负荷标签(全 sport 注入,但仅 cardio != unknown)
+        cardio = MetricsResolver._classify_cardio_load(
+            avg_hr=sm.get("avg_hr"),
+            max_hr=sm.get("max_hr"),
+            sport_type=sport_type,
+            avg_power_w=sm.get("avg_power_w"),
+        )
+        if cardio != "unknown":
+            context_tags["心肺负荷 (Cardio Load)"] = f"{cardio} (avg_hr/max_hr)"
+
+        # 5. V7.8 指标 3:功率变异性标签(仅 uses_power sport;power_stream 暂传 None → unavailable)
+        # V7.13 升级:从 records 提 power 数组后,真正计算 VI
+        if dimension["uses_power"]:
+            vi_result = MetricsResolver._classify_vi(
+                power_stream=None,
+                sport_type=sport_type,
+                duration_min=float(sm.get("duration_sec", 0)) / 60.0,
+            )
+            if vi_result["confidence"] != "unavailable":
+                context_tags["功率变异性 (Variability Index)"] = (
+                    f"VI={vi_result['vi']}, level={vi_result['level']}, "
+                    f"confidence={vi_result['confidence']}"
+                )
+
+        final_data["context_tags"] = context_tags
+
+        return final_data
 
     # ── storage_model ──────────────────────────────────────────
 
@@ -210,6 +449,7 @@ class MetricsResolver:
             "distance_curve": [],
             "lat_curve": [],
             "lon_curve": [],
+            "cadence_curve": [],  # V8.3: 步频时序,供 V7.12 Cadence Stability 算法
         }
         if not records:
             return pack
@@ -219,11 +459,12 @@ class MetricsResolver:
 
         for rec in sampled:
             hr = self._num(self._record_value(rec, "heart_rate", "hr"))
-            speed = self._num(self._record_value(rec, "speed"))
-            alt = self._num(self._record_value(rec, "altitude", "alt"))
+            speed = self._num(self._record_value(rec, "speed", "enhanced_speed"))  # V8.11: FIT 多数设备用 enhanced_speed
+            alt = self._num(self._record_value(rec, "altitude", "alt", "enhanced_altitude"))
             dist = self._num(self._record_value(rec, "distance", "dist"))
             lat = self._num(self._record_value(rec, "lat", "position_lat"))
             lon = self._num(self._record_value(rec, "lon", "position_long"))
+            cad = self._num(self._record_value(rec, "cadence"))  # V8.3
 
             pack["hr_curve"].append(hr if hr else None)
             pack["speed_curve"].append(round(speed, 2) if speed else None)
@@ -231,6 +472,7 @@ class MetricsResolver:
             pack["distance_curve"].append(round(dist, 1) if dist else None)
             pack["lat_curve"].append(round(lat, 6) if lat else None)
             pack["lon_curve"].append(round(lon, 6) if lon else None)
+            pack["cadence_curve"].append(int(cad) if cad and cad > 0 else None)  # V8.3
 
             if speed and speed > 0.1:
                 pace_min_per_km = 16.6667 / speed
@@ -254,7 +496,7 @@ class MetricsResolver:
         pace_values = []
         hr_values = []
         for rec in records:
-            spd = self._num(self._record_value(rec, "speed"))
+            spd = self._num(self._record_value(rec, "speed", "enhanced_speed"))  # V8.11
             hr = self._num(self._record_value(rec, "heart_rate", "hr"))
             if spd and spd > 0.1:
                 pace_values.append(16.6667 / spd)
@@ -327,6 +569,511 @@ class MetricsResolver:
             return int(float(value))
         except (TypeError, ValueError):
             return None
+
+    # ══════════════════════════════════════════════════════════════════
+    # V4.0 治理: AI Snapshot 契约层下沉
+    # §V4.0 防腐层契约:本节从 main.py 整体迁移,纯计算,无 IO
+    # 严禁在 main.py 中重新实现 _build_ai_snapshot_block / _validate_ai_snapshot 等方法
+    # 注意: SQLite 查询(IO)仍保留在 main.py._build_ai_snapshot,仅 dict 转换/格式化/校验下沉
+    # ══════════════════════════════════════════════════════════════════
+
+    # AI Snapshot 禁止字段(防污染护栏)
+    _AI_SNAPSHOT_FORBIDDEN_FIELDS: frozenset[str] = frozenset({
+        "slope_pct", "pace_calc", "frontend_distance", "ui_only_metric",
+        "reasoning_chain", "fatigue_model", "per_point_slope", "derived_grade",
+    })
+
+    # AI Snapshot 允许字段数上限(CONTRACT §6, 报告 canonical + 坡度 v2 后从 35 调整到 39)
+    _AI_SNAPSHOT_MAX_KEYS: int = 39
+
+    # AI Snapshot 允许字段白名单
+    _AI_SNAPSHOT_FIELD_WHITELIST: frozenset[str] = frozenset({
+        "activity_id", "sport_type", "sub_sport_type",
+        "distance_km", "distance_display",
+        "duration_sec", "duration",
+        "avg_pace", "avg_pace_display", "pace_unit",
+        "avg_hr", "max_hr",
+        "calories",
+        "elevation_gain_m", "gain_m",
+        "max_alt_m",
+        "avg_cadence",
+        "normalized_power",
+        "swolf",
+        "tss",
+        "start_time", "start_time_utc",
+        "start_lat", "start_lon",
+        "region",
+        "file_path", "filename",
+        "source",
+        # 以下为可选字段(可能为 None)
+        "resting_hr", "hrv_baseline", "vo2max",
+        "weight", "height_cm",
+        "pb_5km", "pb_10km", "pb_half_marathon", "pb_full_marathon",
+        "lactate_threshold_hr", "lactate_threshold_pace",
+        "ftp_watts",
+        "avg_sleep_hours",
+        "longest_hike_km", "longest_run_km", "longest_cycle_km",
+        "swimming_100m_pb", "longest_swim_distance_m",
+        "race_predict_5k", "race_predict_10k", "race_predict_half", "race_predict_full",
+        # v2 新增:运动生理 / 曲线 / 设备上下文
+        "hr_decoupling", "hr_curve", "speed_curve", "device_name",
+        # v3 新增:报告 canonical 派生指标
+        "min_alt_m", "total_descent_m", "up_count", "down_count",
+        "max_single_climb_m", "difficulty_score", "report_metrics_version",
+        # v4 新增:报告坡度 v2 指标
+        "avg_grade_pct", "max_slope_pct", "min_slope_pct", "uphill_pct", "downhill_pct",
+    })
+
+    @staticmethod
+    def _safe_float(value: Any) -> float | None:
+        """安全转 float:None/异常返回 None(任务 4 V4-0 治理下沉工具)"""
+        if value is None:
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _validate_ai_snapshot(snapshot: dict[str, Any]) -> None:
+        """AI Snapshot Contract Guard — 防污染护栏(V4.0 治理下沉)
+
+        校验内容:
+          1. 不含 FORBIDDEN_SNAPSHOT_FIELDS
+          2. keys ≤ _AI_SNAPSHOT_MAX_KEYS
+          3. 所有 keys 必须在白名单内
+          4. 报告 canonical 字段范围校验(total_descent_m ≥ 0, difficulty_score 0-10)
+        """
+        for f in MetricsResolver._AI_SNAPSHOT_FORBIDDEN_FIELDS:
+            assert f not in snapshot, f"AI Snapshot pollution detected: {f}"
+        assert len(snapshot.keys()) <= MetricsResolver._AI_SNAPSHOT_MAX_KEYS, (
+            f"AI Snapshot keys exceeded: {len(snapshot.keys())} > {MetricsResolver._AI_SNAPSHOT_MAX_KEYS}"
+        )
+        for k in snapshot.keys():
+            if k not in MetricsResolver._AI_SNAPSHOT_FIELD_WHITELIST:
+                raise AssertionError(f"AI Snapshot unauthorized field: {k}")
+        # 报告 canonical 字段范围校验
+        _td = snapshot.get("total_descent_m")
+        if _td is not None:
+            assert _td >= 0, f"total_descent_m must be >= 0, got {_td}"
+        _ds = snapshot.get("difficulty_score")
+        if _ds is not None:
+            assert 0 <= _ds <= 10, f"difficulty_score out of range [0,10]: {_ds}"
+
+    @staticmethod
+    def _debug_ai_snapshot(snapshot: dict[str, Any]) -> None:
+        """开发模式:输出 snapshot 结构校验(V4.0 治理下沉)
+
+        §V4.0 防腐层契约:本方法从 main.py 整体迁移,纯文本输出
+        严禁在 main.py 中重新实现
+        """
+        import sys
+        keys = list(snapshot.keys())
+        nested = [k for k, v in snapshot.items() if isinstance(v, (list, dict))]
+        print(
+            f"[AI SNAPSHOT CONTRACT] keys={keys} count={len(keys)} nested={nested or 'none'}",
+            file=sys.stderr,
+            flush=True,
+        )
+
+    # ══════════════════════════════════════════════════════════════════
+    # V4.0 治理: _build_activity_canonical 业务计算下沉(轨迹报告)
+    # §V4.0 防腐层契约:本节从 main.py 整体迁移,纯计算,无 IO
+    # 严禁在 main.py 中重新实现该方法
+    # ══════════════════════════════════════════════════════════════════
+
+    @staticmethod
+    def _safe_int_zero(value: Any) -> int:
+        """安全转 int:None/异常返回 0(V4-5 治理下沉工具,与 main.py _safe_int 语义一致)"""
+        if value is None:
+            return 0
+        try:
+            return int(float(value))
+        except (TypeError, ValueError):
+            return 0
+
+    @staticmethod
+    def _safe_float_zero(value: Any) -> float:
+        """安全转 float:None/异常返回 0.0(V4-5 治理下沉工具)"""
+        if value is None:
+            return 0.0
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return 0.0
+
+    @staticmethod
+    def _decode_weather_json(value: Any) -> dict[str, Any] | None:
+        """解码 weather_json 字段(V4-5 治理下沉工具)
+
+        §V4.0 防腐层契约:从 main.py 整体迁移,纯 dict/JSON 转换,无 IO
+        接受 str / dict / None 入参,返回 dict 或 None
+        """
+        if not value:
+            return None
+        if isinstance(value, dict):
+            return value
+        import json
+        try:
+            obj = json.loads(str(value))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return None
+        return obj if isinstance(obj, dict) else None
+
+    @staticmethod
+    def _build_activity_canonical(r: dict[str, Any]) -> dict[str, Any]:
+        """轨迹报告 activity_canonical 组装器(V4.0 治理下沉)
+
+        §V4.0 防腐层契约:本方法从 main.py 整体迁移,纯计算,无 IO
+        §五 数据可信分层:仅消费 dict 入参(DB row),不做派生计算
+        用于 main.py.load_activity_track 返回前端所需的扁平化轨迹报告字段
+
+        Args:
+            r: activities 表行 dict(必须已含 sport_type, sub_sport_type, dist_km,
+               distance, duration_sec, duration, gain_m, max_alt_m, avg_pace 等)
+
+        Returns:
+            activity_canonical dict(扁平化 UI 字段 + 报告 canonical 字段)
+        """
+        sub_sport = str(r.get("sub_sport_type") or "").lower()
+        pace_unit = "/100m" if sub_sport in ("lap_swimming", "open_water") else "/km"
+
+        dist_km = MetricsResolver._safe_float_zero(r.get("dist_km"))
+        if dist_km == 0.0:
+            dist_m = MetricsResolver._safe_float_zero(r.get("distance"))
+            if dist_m and dist_m > 0:
+                dist_km = round(dist_m / 1000.0, 2)
+        duration_sec = MetricsResolver._safe_int_zero(r.get("duration_sec") or r.get("duration"))
+        gain_m = MetricsResolver._safe_float_zero(r.get("gain_m"))
+        avg_hr = MetricsResolver._safe_int_zero(r.get("avg_hr")) or None
+        max_hr = MetricsResolver._safe_int_zero(r.get("max_hr")) or None
+        calories = MetricsResolver._safe_int_zero(r.get("calories")) or None
+        avg_pace = MetricsResolver._safe_float_zero(r.get("avg_pace")) or None
+
+        if dist_km and dist_km > 0:
+            if dist_km < 0.1:
+                distance_display = f"{int(dist_km * 1000)}m"
+            else:
+                distance_display = f"{round(dist_km, 2):.2f}km"
+        else:
+            distance_display = "-- km"
+
+        if avg_pace and avg_pace > 0:
+            pm = int(avg_pace // 60)
+            ps = int(avg_pace % 60)
+            avg_pace_display = f"{pm}'{ps:02d}''{pace_unit}"
+        else:
+            avg_pace_display = f"-- {pace_unit}"
+
+        return {
+            "id": MetricsResolver._safe_int_zero(r.get("id")),
+            "sport_type": str(r.get("sport_type") or "unknown"),
+            "sub_sport_type": str(r.get("sub_sport_type") or "unknown"),
+            "region": str(r.get("region") or "").strip(),
+            "weather": MetricsResolver._decode_weather_json(r.get("weather_json")),
+            "dist_km": dist_km,
+            "distance_display": distance_display,
+            "duration_sec": duration_sec,
+            "gain_m": gain_m,
+            "max_alt_m": MetricsResolver._safe_float_zero(r.get("max_alt_m")),
+            "avg_hr": avg_hr,
+            "max_hr": max_hr,
+            "calories": calories,
+            "avg_pace": avg_pace,
+            "avg_pace_display": avg_pace_display,
+            "pace_unit": pace_unit,
+            "start_time": str(r.get("start_time") or ""),
+            "min_alt_m": MetricsResolver._safe_float_zero(r.get("min_alt_m")),
+            "total_descent_m": MetricsResolver._safe_float_zero(r.get("total_descent_m")),
+            "up_count": MetricsResolver._safe_int_zero(r.get("up_count")),
+            "down_count": MetricsResolver._safe_int_zero(r.get("down_count")),
+            "max_single_climb_m": MetricsResolver._safe_float_zero(r.get("max_single_climb_m")),
+            "difficulty_score": MetricsResolver._safe_int_zero(r.get("difficulty_score")),
+            "avg_grade_pct": MetricsResolver._safe_float(r.get("avg_grade_pct")),
+            "max_slope_pct": MetricsResolver._safe_float(r.get("max_slope_pct")),
+            "min_slope_pct": MetricsResolver._safe_float(r.get("min_slope_pct")),
+            "uphill_pct": MetricsResolver._safe_float(r.get("uphill_pct")),
+            "downhill_pct": MetricsResolver._safe_float(r.get("downhill_pct")),
+            "report_metrics_version": MetricsResolver._safe_int_zero(r.get("report_metrics_version")),
+        }
+
+    # ══════════════════════════════════════════════════════════════════
+    # V4.0 治理: _build_real_laps_from_row 业务计算下沉(圈速数据)
+    # §V4.0 防腐层契约:本节从 main.py 整体迁移,纯计算,无 IO
+    # 严禁在 main.py 中重新实现该方法
+    # ══════════════════════════════════════════════════════════════════
+
+    @staticmethod
+    def _build_real_laps_from_row(row: dict[str, Any]) -> list[dict[str, Any]]:
+        """从 activities.laps_json 解析真实圈速数据,转换为前端展示格式。
+
+        §V4.0 防腐层契约:本方法从 main.py 整体迁移,纯计算,无 IO
+        §2.1 字段全链路可追溯:UI 字段必须能追溯至 FIT SDK
+        真实数据源:FIT lap_mesgs → MetricsResolver._normalize_laps → laps_json
+
+        Args:
+            row: activities 表行 dict(必须含 laps_json 键)
+
+        Returns:
+            list[dict]: 圈速列表,每圈含 lap_no/distance_km/pace_sec/hr/cadence/gct_ms/power_w
+            返回 [] 表示无真实数据,调用方应 fallback 到 _build_lap_rows
+        """
+        raw = row.get("laps_json")
+        if not raw:
+            return []
+        try:
+            import json
+            parsed = json.loads(raw) if isinstance(raw, str) else raw
+        except Exception:
+            return []
+        if not isinstance(parsed, list) or not parsed:
+            return []
+        rows: list[dict[str, Any]] = []
+        for idx, lap in enumerate(parsed):
+            if not isinstance(lap, dict):
+                continue
+            dist_m = MetricsResolver._safe_float_zero(lap.get("distance_m"))
+            elapsed = MetricsResolver._safe_float_zero(lap.get("elapsed_sec"))
+            lap_avg_hr = MetricsResolver._safe_int_zero(lap.get("avg_hr"))
+            lap_avg_cadence = MetricsResolver._safe_int_zero(lap.get("avg_cadence"))
+            lap_avg_power = MetricsResolver._safe_int_zero(lap.get("avg_power"))
+            # V9.x 修复:从 normalized lap dict 读 stance_time_ms(§2.1 全链路可追溯)
+            # 原实现硬编码 None 切断追溯链,本次改为读真值
+            lap_gct_ms = MetricsResolver._safe_int_zero(lap.get("stance_time_ms")) or None
+            if dist_m <= 0 and elapsed <= 0:
+                continue
+            pace_sec = int(round(elapsed / (dist_m / 1000.0))) if dist_m > 0 and elapsed > 0 else 0
+            rows.append({
+                "lap_no": idx + 1,
+                "distance_km": round(dist_m / 1000.0, 2) if dist_m > 0 else None,
+                "pace_sec": pace_sec if pace_sec > 0 else None,
+                "hr": lap_avg_hr if lap_avg_hr else None,
+                "cadence": lap_avg_cadence if lap_avg_cadence else None,
+                "gct_ms": lap_gct_ms,   # V9.x:从硬编码 None 改为透传 Resolver 解析值
+                "power_w": lap_avg_power if lap_avg_power else None,
+            })
+        return rows
+
+    # ══════════════════════════════════════════════════════════════════
+    # V4.0 治理: _convert_track_to_algorithm_records + _compute_advanced_metrics
+    # 业务计算下沉(6维高级指标:TRIMP/Decoupling/VAM/Threshold HR/Anaerobic Peak)
+    # §V4.0 防腐层契约:纯计算,无 IO,仅消费 dict/list 入参
+    # IO 隔离:profile_backend.get_profile() 留在 main.py
+    # ══════════════════════════════════════════════════════════════════
+
+    @staticmethod
+    def _convert_track_to_algorithm_records(track_data: list[dict]) -> list[dict]:
+        """将 FIT 引擎输出的标准轨迹点转换为 AdvancedMetricsCalc 需要的记录格式。
+
+        §V4.0 防腐层契约:本方法从 main.py 整体迁移,纯计算,无 IO
+        仅使用 track_backend.haversine_m 做纯数学计算(非 DB/文件 IO)
+        """
+        if not track_data:
+            return []
+        from datetime import datetime
+        import track_backend
+        records = []
+        cumulative_dist = 0.0
+        prev_lat, prev_lon = None, None
+        for pt in track_data:
+            ts = None
+            raw_time = pt.get("time")
+            if raw_time:
+                try:
+                    ts = datetime.fromisoformat(raw_time.replace("Z", "+00:00"))
+                except (ValueError, TypeError):
+                    pass
+            if ts is None:
+                continue
+
+            if "speed" not in pt and "enhanced_speed" in pt:
+                pt["speed"] = pt["enhanced_speed"]
+            if "altitude" not in pt and "enhanced_altitude" in pt:
+                pt["altitude"] = pt["enhanced_altitude"]
+            if "hr" not in pt and "heart_rate" in pt:
+                pt["hr"] = pt["heart_rate"]
+
+            lat = pt.get("lat")
+            lon = pt.get("lon")
+            dist_segment = 0.0
+            if lat is not None and lon is not None and prev_lat is not None and prev_lon is not None:
+                dist_segment = track_backend.haversine_m(prev_lat, prev_lon, lat, lon)
+            cumulative_dist += dist_segment
+            prev_lat, prev_lon = lat, lon
+
+            raw_speed = pt.get("speed")
+            pace = pt.get("pace")
+            calc_speed = (1000.0 / pace) if pace and pace > 0 else 0.0
+            final_speed = raw_speed if raw_speed is not None and raw_speed >= 0 else calc_speed
+
+            records.append({
+                "timestamp": ts,
+                "heart_rate": pt.get("hr"),
+                "speed": final_speed,
+                "altitude": pt.get("altitude") or pt.get("alt"),
+                "distance": cumulative_dist,
+                "power": pt.get("power"),
+            })
+        return records
+
+    @staticmethod
+    def _compute_advanced_metrics(
+        records: list[dict],
+        user_profile_dict: dict[str, Any],
+    ) -> dict[str, Any]:
+        """6 维雷达算法:TRIMP / 有氧解耦 / VAM / Threshold HR / Anaerobic Peak。
+
+        §V4.0 防腐层契约:本方法从 main.py 整体迁移,纯计算,无 IO
+        IO 隔离:user_profile_dict 由 main.py 从 profile_backend.get_profile() 预取后传入
+        严禁在 Resolver 中调用 profile_backend 或任何 SQLite 查询
+
+        Args:
+            records: _convert_track_to_algorithm_records 的输出(list of dict)
+            user_profile_dict: profile_backend.get_profile().to_dict() 的输出(含可能 None 值的字段)
+
+        Returns:
+            dict 含 trimp/decoupling/vam/threshold_hr/anaerobic_peak, 不含 metrics_version
+            (metrics_version 由 main.py 在返回后设置,保持单一真相源)
+        """
+        from utils.metrics_calc import AdvancedMetricsCalc
+        # 过滤 None 值(纯 dict 转换,与原始 main.py 行为一致)
+        user_profile_dict = {k: v for k, v in user_profile_dict.items() if v is not None}
+        calc = AdvancedMetricsCalc
+        trimp = calc.calculate_trimp(records, user_profile_dict)
+        decoupling = calc.calculate_aerobic_decoupling(records)
+        vam = calc.calculate_vam(records)
+        threshold_hr = calc.calculate_threshold_hr(records)
+        anaerobic_peak = calc.calculate_anaerobic_peak(records)
+        return {
+            "trimp": trimp,
+            "decoupling": decoupling,
+            "vam": vam,
+            "threshold_hr": threshold_hr,
+            "anaerobic_peak": anaerobic_peak,
+        }
+
+    @staticmethod
+    def _build_ai_snapshot_block(row: dict[str, Any]) -> dict[str, Any]:
+        """AI 语义快照构建器(V4.0 治理下沉)
+
+        §V4.0 防腐层契约:本方法从 main.py 整体迁移,纯计算,无 IO
+        §五 AI 边界:仅消费 dict 入参(由 main.py 从 DB row 转换),不直接连 DB
+        PURE FACT CONTRACT: 所有字段来自入参 row(DB/resolver truth)
+        禁止前端计算数据、推理结构、per-point 指标进入。
+
+        Args:
+            row: activities 表行 dict(必须已含 sport_type, sub_sport_type, dist_km,
+                 duration_sec, avg_hr, max_hr, gain_m, max_alt_m, avg_pace 等字段)
+
+        Returns:
+            AI Snapshot dict(经 _validate_ai_snapshot 校验)
+        """
+        sub_sport = str(row.get("sub_sport_type") or "").lower()
+        pace_unit = "/100m" if sub_sport in ("lap_swimming", "open_water") else "/km"
+
+        # ── Display Fields (纯格式化,不重新计算) ──
+        raw_dist_km = row.get("dist_km")
+        if raw_dist_km is not None:
+            dist_km = MetricsResolver._safe_float(raw_dist_km)
+        else:
+            raw_dist_m = row.get("distance")
+            dist_km = round(MetricsResolver._safe_float(raw_dist_m) / 1000.0, 2) if raw_dist_m is not None else None
+
+        if dist_km is not None and dist_km > 0:
+            if dist_km < 0.1:
+                distance_display = f"{int(dist_km * 1000)}m"
+            else:
+                distance_display = f"{round(dist_km, 2):.2f}km"
+        else:
+            distance_display = "-- km"
+
+        raw_avg_pace = row.get("avg_pace")
+        avg_pace = MetricsResolver._safe_float(raw_avg_pace) if raw_avg_pace is not None else None
+        if avg_pace is not None and avg_pace > 0:
+            pm = int(avg_pace // 60)
+            ps = int(avg_pace % 60)
+            avg_pace_display = f"{pm}'{ps:02d}''{pace_unit}"
+        else:
+            avg_pace_display = f"-- {pace_unit}"
+
+        snapshot: dict[str, Any] = {
+            "activity_id": row.get("activity_id") or row.get("id"),
+            "sport_type": row.get("sport_type"),
+            "sub_sport_type": row.get("sub_sport_type"),
+            "distance_km": dist_km,
+            "distance_display": distance_display,
+            "duration_sec": row.get("duration_sec") or row.get("duration"),
+            "avg_pace": avg_pace,
+            "avg_pace_display": avg_pace_display,
+            "pace_unit": pace_unit,
+            "avg_hr": row.get("avg_hr"),
+            "max_hr": row.get("max_hr"),
+            "calories": row.get("calories"),
+            "elevation_gain_m": row.get("gain_m"),
+            "max_alt_m": row.get("max_alt_m"),
+            "avg_cadence": row.get("avg_cadence"),
+            "normalized_power": row.get("normalized_power"),
+            "swolf": row.get("swolf"),
+            "tss": row.get("tss"),
+            "start_time": row.get("start_time"),
+            "start_lat": row.get("start_lat"),
+            "start_lon": row.get("start_lon"),
+            "region": row.get("region"),
+            "source": "DB Canonical / Resolver Truth",
+            "hr_decoupling": row.get("hr_decoupling"),
+            "hr_curve": row.get("hr_curve"),
+            "speed_curve": row.get("speed_curve"),
+            "device_name": row.get("device_name"),
+            "min_alt_m": row.get("min_alt_m"),
+            "total_descent_m": row.get("total_descent_m"),
+            "up_count": row.get("up_count"),
+            "down_count": row.get("down_count"),
+            "max_single_climb_m": row.get("max_single_climb_m"),
+            "difficulty_score": row.get("difficulty_score"),
+            "report_metrics_version": row.get("report_metrics_version"),
+            "avg_grade_pct": row.get("avg_grade_pct"),
+            "max_slope_pct": row.get("max_slope_pct"),
+            "min_slope_pct": row.get("min_slope_pct"),
+            "uphill_pct": row.get("uphill_pct"),
+            "downhill_pct": row.get("downhill_pct"),
+        }
+
+        MetricsResolver._validate_ai_snapshot(snapshot)
+        MetricsResolver._debug_ai_snapshot(snapshot)
+        return snapshot
+
+    @staticmethod
+    def _build_ai_snapshot_text_block(snapshot: dict[str, Any] | None) -> str:
+        """将 AI snapshot 格式化为 LLM system prompt 可嵌入的文本块(V4.0 治理下沉)
+
+        §V4.0 防腐层契约:本方法从 main.py 整体迁移,纯文本格式化,无 IO
+        用于 call_llm 路径的 LLM 输入构造
+        """
+        if not snapshot:
+            return ""
+        lines = [
+            "【运动语义快照 — 系统真值(非前端计算)】",
+            f"- 运动类型: {snapshot.get('sport_type') or '-'} / {snapshot.get('sub_sport_type') or '-'}",
+            f"- 距离: {snapshot.get('distance_display') or '-'} ({snapshot.get('distance_km')} km)",
+            f"- 用时: {snapshot.get('duration_sec')} 秒",
+            f"- 配速: {snapshot.get('avg_pace_display') or '-'} ({snapshot.get('pace_unit') or '-'})",
+            f"- 平均心率: {snapshot.get('avg_hr')} bpm / 最大: {snapshot.get('max_hr')} bpm",
+            f"- 卡路里: {snapshot.get('calories')}",
+            f"- 累计爬升: {snapshot.get('elevation_gain_m')} m / 最高海拔: {snapshot.get('max_alt_m')} m",
+        ]
+        if snapshot.get("normalized_power") is not None:
+            lines.append(f"- NP: {snapshot.get('normalized_power')} W")
+        if snapshot.get("swolf") is not None:
+            lines.append(f"- SWOLF: {snapshot.get('swolf')}")
+        if snapshot.get("avg_cadence") is not None:
+            lines.append(f"- 平均步频/踏频: {snapshot.get('avg_cadence')}")
+        if snapshot.get("tss") is not None:
+            lines.append(f"- TSS: {snapshot.get('tss')}")
+        if snapshot.get("region"):
+            lines.append(f"- 区域: {snapshot.get('region')}")
+        lines.append("")
+        lines.append("【重要】以上数值来自系统数据库(唯一真值),优先于轨迹明细表中的任何前端推算值。")
+        return "\n".join(lines)
 
     @staticmethod
     def _semicircle_to_deg(value: Any) -> float | None:
@@ -452,20 +1199,51 @@ class MetricsResolver:
         return MetricsResolver._fmt_device_display_name(product_code)
 
     @staticmethod
-    def _classify_cardio_load(avg_hr: Any, max_hr: Any) -> str:
+    def _classify_cardio_load(
+        avg_hr: Any,
+        max_hr: Any,
+        sport_type: str = "running",
+        avg_power_w: Any = None,
+    ) -> str:
+        """V7.8:HR-based Cardio Load(按 sport 路由)。
+
+        跑步/游泳/徒步:HR 比例(< 0.55 very_low ... > 0.90 extreme)
+        骑行/滑雪:优先 Power(无 power 降级 HR)
+        见 docs/physiology_reference.md §指标 2。
+        """
         if avg_hr is None or max_hr is None:
             return "unknown"
         try:
-            ratio = float(avg_hr) / float(max_hr)
-        except (TypeError, ValueError, ZeroDivisionError):
+            avg_hr_f = float(avg_hr)
+            max_hr_f = float(max_hr)
+        except (TypeError, ValueError):
             return "unknown"
-        if ratio < 0.55:
+        if max_hr_f <= 0:
+            return "unknown"
+
+        dimension = _classify_sport_dimension(sport_type)
+        hr_ratio = avg_hr_f / max_hr_f
+
+        # V7.8:骑行/滑雪优先 Power,无 power 降级 HR
+        if dimension["uses_power"] and avg_power_w is not None:
+            try:
+                power_f = float(avg_power_w)
+                # 简化:有功率时粗略按 250W FTP 标定
+                power_pct = power_f / 250.0
+                # 取 HR 比例与 power 比例的较大值(保守)
+                effective = max(hr_ratio, power_pct)
+            except (TypeError, ValueError):
+                effective = hr_ratio
+        else:
+            effective = hr_ratio
+
+        if effective < 0.55:
             return "very_low"
-        if ratio < 0.70:
+        if effective < 0.70:
             return "low"
-        if ratio < 0.80:
+        if effective < 0.80:
             return "moderate"
-        if ratio < 0.90:
+        if effective < 0.90:
             return "high"
         return "extreme"
 
@@ -481,6 +1259,61 @@ class MetricsResolver:
         if cv < 8:
             return "moderate"
         return "variable"
+
+    @staticmethod
+    def _classify_vi(
+        power_stream: list[float] | None,
+        sport_type: str = "running",
+        duration_min: float = 0.0,
+    ) -> dict[str, Any]:
+        """V7.8:Variability Index = NP / AvgPower。
+
+        见 docs/physiology_reference.md §指标 3。
+        仅对 uses_power=True 的 sport 计算(cycling/mountain_biking/skiing)。
+        返回:{"vi": float|None, "level": str, "np_w": float|None,
+              "avg_w": float|None, "confidence": "high"|"medium"|"low"|"unavailable"}
+        """
+        dimension = _classify_sport_dimension(sport_type)
+        if not dimension["uses_power"]:
+            return {
+                "vi": None, "level": "unknown", "np_w": None, "avg_w": None,
+                "confidence": "unavailable",
+            }
+        if not power_stream or len(power_stream) < 30:
+            return {
+                "vi": None, "level": "unknown", "np_w": None, "avg_w": None,
+                "confidence": "unavailable",
+            }
+        # 过滤零功率段(滑行/休息,见 reference §6 风险说明)
+        nonzero = [p for p in power_stream if p > 0]
+        if len(nonzero) < 30:
+            return {
+                "vi": None, "level": "unknown", "np_w": None, "avg_w": None,
+                "confidence": "low",
+            }
+        avg_w = sum(nonzero) / len(nonzero)
+        # NP = (1/T) * Σ(p^4) ^(1/4)
+        fourth_power_mean = sum(p ** 4 for p in nonzero) / len(nonzero)
+        np_w = fourth_power_mean ** 0.25
+        vi = np_w / avg_w if avg_w > 0 else None
+        if vi is None:
+            level, confidence = "unknown", "low"
+        elif vi < 1.05:
+            level = "stable"
+            confidence = "high" if duration_min > 10 else "medium"
+        elif vi <= 1.15:
+            level = "moderate"
+            confidence = "high" if duration_min > 10 else "medium"
+        else:
+            level = "high_variance"
+            confidence = "high" if duration_min > 10 else "medium"
+        return {
+            "vi": round(vi, 4),
+            "level": level,
+            "np_w": round(np_w, 1),
+            "avg_w": round(avg_w, 1),
+            "confidence": confidence,
+        }
 
     @staticmethod
     def _classify_elevation(gain_m: Any, distance_km: Any) -> str:
@@ -509,10 +1342,342 @@ class MetricsResolver:
         variance = sum((x - mean) ** 2 for x in values) / (len(values) - 1)
         return math.sqrt(variance)
 
+    # ── environment calibration (V4.0) ─────────────────────────
+
+    @staticmethod
+    def _get_heat_stress_tolerance(temp_c: float) -> float:
+        """
+        基于环境温度(或酷热指数)的热应激有氧解耦容忍度 (%)
+        V4.0 标准：按阶梯放宽心率漂移的判定阈值
+        """
+        if temp_c is None:
+            return 5.0  # 缺失温度时，采用常温基线
+
+        if temp_c < 20.0:
+            return 5.0   # 常温基线 (Baseline)
+        elif 20.0 <= temp_c < 25.0:
+            return 6.5   # 中度热应激 (Moderate)
+        elif 25.0 <= temp_c < 30.0:
+            return 8.0   # 重度热应激 (High)
+        else:
+            return 10.0  # 极端热应激 (Extreme)
+
+    @staticmethod
+    def _calibrate_hr_for_altitude(hr_raw: float, altitude_m: float) -> float:
+        """
+        高海拔缺氧心率代偿校准 (V4.0 标准)
+        在海拔 > 1500m 时，引入缺氧惩罚因子动态下调心率，防止模型误判效率下降
+        """
+        if hr_raw is None or hr_raw <= 0:
+            return 0.0
+
+        if altitude_m is None or altitude_m <= 1500.0:
+            return float(hr_raw)
+
+        # 超过 1500m 启动缺氧惩罚因子
+        alpha_alt = 1.0 - (max(0.0, altitude_m - 1500.0) * 0.00003)
+
+        # 兜底：防止极端错误海拔（如飞到平流层）导致除零或过度放大，限制最小为 0.7
+        alpha_alt = max(0.7, alpha_alt)
+
+        return float(hr_raw / alpha_alt)
+
+    # ── calories & bonk engine (V4.0) ─────────────────────────
+
+    @staticmethod
+    def _calculate_calories_per_minute(hr: float, weight_kg: float = 70.0, age_yrs: float = 30.0, is_male: bool = True) -> float:
+        """
+        基于 Keytel (2005) 严谨多因子心率模型的卡路里消耗推演 (kcal/min)
+        无功率时，该公式是推演糖原消耗的最佳医学依据。
+        """
+        if hr is None or hr <= 60:
+            return 0.0
+
+        if is_male:
+            ee = (-55.0969 + 0.6309 * hr + 0.1988 * weight_kg + 0.2017 * age_yrs) / 4.184
+        else:
+            ee = (-20.4022 + 0.4472 * hr + 0.1263 * weight_kg + 0.0740 * age_yrs) / 4.184
+
+        return max(0.0, ee)
+
+    # === V7.8 指标 1:Glycogen Depletion Risk(替代 _detect_bonk_event 硬阈值)===
+    # 见 docs/physiology_reference.md §指标 1
+    _GLYCOGEN_RISK_ZONES: dict[str, tuple[float, float]] = {
+        "running":         (1400.0, 1800.0),
+        "trail_running":   (1600.0, 2200.0),
+        "cycling":         (1800.0, 2400.0),
+        "mountain_biking": (1800.0, 2400.0),
+        "hiking":          (1400.0, 1800.0),
+        "swimming":        (1200.0, 1600.0),
+        "open_water":      (1200.0, 1600.0),
+        "skiing":          (1600.0, 2200.0),
+        "default":         (1400.0, 1800.0),
+    }
+
+    @staticmethod
+    def _assess_glycogen_depletion_risk(
+        total_calories: float,
+        sport_type: str = "running",
+    ) -> dict[str, Any]:
+        """V7.8 区间模型糖原耗竭风险评估。
+
+        返回 dict 字段:
+          risk_level:  "low" | "moderate" | "high" | "unknown"
+          kcal:        float
+          zone:        [lower, upper] kcal 区间
+          confidence:  "medium" | "low" | "unavailable"
+
+        不输出二元 bonk: true/false(过于绝对化,见 reference §6 风险说明)
+        """
+        kcal = float(total_calories or 0.0)
+        zone = MetricsResolver._GLYCOGEN_RISK_ZONES.get(
+            str(sport_type or "").lower(),
+            MetricsResolver._GLYCOGEN_RISK_ZONES["default"],
+        )
+        lower, upper = zone
+
+        if kcal <= 0:
+            level, confidence = "unknown", "unavailable"
+        elif kcal < lower:
+            level, confidence = "low", "medium"
+        elif kcal <= upper:
+            level, confidence = "moderate", "medium"
+        else:
+            level, confidence = "high", "medium"
+
+        return {
+            "risk_level": level,
+            "kcal": round(kcal, 1),
+            "zone": [lower, upper],
+            "confidence": confidence,
+        }
+
+    @staticmethod
+    def _calculate_track_difficulty(
+        dist_km: float,
+        gain_m: float,
+        max_alt_m: float,
+        max_single_climb_m: float,
+        sport_type: str = "running",
+    ) -> dict[str, Any]:
+        """V4.0: 多模态脉图轨迹难度指数 (MTDI)
+
+        §V4.0 防腐层契约:本方法从 main.py 下沉,纯计算,无 IO
+        §2.1 / §2.2 / §2.4: 难度为唯一可信计算,禁止前端复算、禁止 AI 重算
+
+        难度阈值(从 main.py 整体迁移):
+          1 (LV1)   score < 8
+          2 (LV2)   8  <= score < 16
+          3 (LV3)   16 <= score < 29
+          4 (LV4)   29 <= score < 46
+          5 (LV5)   46 <= score < 76
+          6 (LV6)   76 <= score < 111
+          7 (LV7)   111 <= score < 181
+          8 (LV8)   score >= 181
+        """
+        # 难度等级阈值(从 main.py MTDI_LEVEL_THRESHOLDS 迁移)
+        _MTDI_LEVEL_THRESHOLDS: tuple[float, ...] = (8, 16, 29, 46, 76, 111, 181)
+
+        dist = max(0, dist_km or 0)
+        gain = max(0, gain_m or 0)
+        max_alt = max(0, max_alt_m or 0)
+        max_climb = max(0, max_single_climb_m or 0)
+
+        sport_str = str(sport_type or "").lower()
+        if "cycl" in sport_str or "bik" in sport_str or "骑" in sport_str:
+            dist_factor = 3.0
+            gain_factor = 120.0
+            if "mountain" in sport_str or "山地" in sport_str:
+                dist_factor = 2.0
+        else:
+            dist_factor = 1.0
+            gain_factor = 100.0
+
+        base_score = (dist / dist_factor) + (gain / gain_factor)
+        k_alt = 1.0 + max(0, (max_alt - 2000) / 20000.0)
+        p_climb = max_climb / gain_factor
+        mtdi_score = (base_score * k_alt) + p_climb
+
+        level = 1
+        for threshold in _MTDI_LEVEL_THRESHOLDS:
+            if mtdi_score >= threshold:
+                level += 1
+            else:
+                break
+
+        return {
+            "score": round(mtdi_score, 1),
+            "level": int(level),
+            "level_name": f"LV {level}",
+            "factors": {
+                "dist_factor": dist_factor,
+                "gain_factor": gain_factor,
+                "base_score": round(base_score, 2),
+                "k_alt": round(k_alt, 3),
+                "p_climb": round(p_climb, 2),
+            },
+        }
+
+    @staticmethod
+    def _calculate_fatigue_zones(
+        distance_curve: list[float],
+        ei_curve: list[float],
+        sport_type: str
+    ) -> list[dict[str, Any]]:
+        """V4.0: 基于 sport_type 敏感度和真实 distance_curve 的疲劳带判定
+
+        §V4.0 防腐层契约:本方法从 main.py 下沉,消除重复业务计算
+        §§五 AI 边界:仅消费 Resolver 内部 distance_curve / ei_curve,无外部 IO
+        修复原 for 循环修改 i 无效的致命 Bug(改用 while)
+        修复原线性均摊距离错误(改用真实 distance_curve)
+        """
+        if not distance_curve or not ei_curve or len(distance_curve) != len(ei_curve):
+            return []
+
+        n = len(ei_curve)
+        if n < 10:
+            return []
+
+        sport_type = sport_type.lower()
+        if sport_type in ("running", "trail_running", "treadmill_running"):
+            window = max(3, n // 40)
+            threshold_warn = 0.10
+            threshold_high = 0.20
+        elif sport_type in ("hiking", "walking", "mountaineering"):
+            window = max(5, n // 20)
+            threshold_warn = 0.18
+            threshold_high = 0.35
+        elif sport_type in ("cycling", "road_cycling", "mountain_biking"):
+            window = max(5, n // 25)
+            threshold_warn = 0.15
+            threshold_high = 0.30
+        else:
+            window = max(3, n // 30)
+            threshold_warn = 0.15
+            threshold_high = 0.30
+
+        fatigue_zones: list[dict[str, Any]] = []
+        cur_start_idx: int | None = None
+        cur_start_val: float | None = None
+
+        i = 0
+        while i <= n - window:
+            wnd = [v for v in ei_curve[i : i + window] if v and v > 0]
+            if not wnd:
+                i += 1
+                continue
+
+            avg = sum(wnd) / len(wnd)
+
+            if cur_start_idx is None:
+                cur_start_idx = i
+                cur_start_val = avg
+            else:
+                drop_rate = (cur_start_val - avg) / cur_start_val if cur_start_val > 0 else 0
+                if drop_rate >= threshold_warn:
+                    if i - cur_start_idx >= window:
+                        level = "high" if drop_rate >= threshold_high else "medium"
+                        # 使用实际累积距离,避免线性均摊的虚假距离
+                        start_km = round(distance_curve[cur_start_idx] / 1000.0, 2)
+                        end_km = round(distance_curve[i] / 1000.0, 2)
+                        if end_km > start_km:
+                            fatigue_zones.append({
+                                "start_km": start_km,
+                                "end_km": end_km,
+                                "level": level,
+                            })
+                        cur_start_idx = i
+                        cur_start_val = avg
+                else:
+                    cur_start_val = avg
+            i += window
+
+        # 处理未收尾的最后一段
+        if cur_start_idx is not None and n - cur_start_idx >= window:
+            wnd_end = [v for v in ei_curve[cur_start_idx + window : n] if v and v > 0]
+            if wnd_end and cur_start_val:
+                avg_end = sum(wnd_end) / len(wnd_end)
+                drop_rate = (cur_start_val - avg_end) / cur_start_val if cur_start_val > 0 else 0
+                if drop_rate >= threshold_warn:
+                    level = "high" if drop_rate >= threshold_high else "medium"
+                    start_km = round(distance_curve[cur_start_idx] / 1000.0, 2)
+                    end_km = round(distance_curve[-1] / 1000.0, 2)
+                    if end_km > start_km:
+                        fatigue_zones.append({
+                            "start_km": start_km,
+                            "end_km": end_km,
+                            "level": level,
+                        })
+
+        return fatigue_zones
+
+    @staticmethod
+    def _detect_bonk_event(distance_curve: list[float], ei_curve: list[float], total_calories: float, sport_type: str = "running") -> list[dict]:
+        """
+        糖原耗尽 (Bonk/撞墙) 状态机
+        触发条件: 累计消耗 > sport 区间下界(V7.8),且后半程效率指数 (EI) 较前半程基线断崖下跌 > 15%
+        V7.8:见 docs/physiology_reference.md §指标 1
+        """
+        # V7.8:用 sport 路由的 kcal 阈值(替代硬编码 1600)
+        zone = MetricsResolver._GLYCOGEN_RISK_ZONES.get(
+            str(sport_type or "").strip().lower(),
+            MetricsResolver._GLYCOGEN_RISK_ZONES["default"],
+        )
+        kcal_threshold = zone[0]  # 用区间下界作为 bonk 触发阈值
+        if total_calories is None or total_calories < kcal_threshold:
+            return []
+
+        if not distance_curve or not ei_curve or len(distance_curve) != len(ei_curve) or len(distance_curve) < 20:
+            return []
+
+        total_dist = distance_curve[-1] - distance_curve[0]
+        if total_dist <= 0:
+            return []
+
+        half_dist = total_dist / 2.0
+
+        # 1. 计算前半程基线 EI
+        first_half_ei = [
+            ei for d, ei in zip(distance_curve, ei_curve)
+            if (d - distance_curve[0]) <= half_dist and ei > 0
+        ]
+
+        if not first_half_ei:
+            return []
+
+        baseline_ei = sum(first_half_ei) / len(first_half_ei)
+        if baseline_ei <= 0:
+            return []
+
+        # 2. 扫描后半程寻找崩溃断崖点
+        for d, ei in zip(distance_curve, ei_curve):
+            if (d - distance_curve[0]) > half_dist and ei > 0:
+                drop_rate = (baseline_ei - ei) / baseline_ei
+                if drop_rate >= 0.15:
+                    return [{
+                        "type": "BONK_WARNING",
+                        "trigger_km": round(d, 2),
+                        "value_y": round(ei, 4), # 严格遵循契约：绑定精确的 Y 轴绝对坐标
+                        "description": f"累积能耗达 {int(total_calories)} kcal，等效效率跌破基线 {int(drop_rate*100)}%，处于糖原枯竭区。"
+                    }]
+
+        return []
+
     # ── lap normalization ─────────────────────────────────────
 
     @staticmethod
     def _normalize_laps(laps: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """归一化 FIT lap_mesgs 为前端展示格式(§2.1 全链路可追溯)。
+
+        §V4.0 防腐层契约:本方法从 main.py 整体迁移,纯计算,无 IO
+        §2.1 全链路可追溯:UI 字段必须能追溯至 FIT SDK
+          - stance_time (FIT, ms) → stance_time_ms
+          - vertical_oscillation (FIT, cm) → vertical_oscillation_cm
+          - stride_length (FIT, m) → stride_length_m
+
+        Returns:
+            list[dict]: 9 字段归一化圈速字典(为未来 VO/stride 进入前端预留,当前仅 gct_ms/avg_cadence/avg_power 进入 UI)
+        """
         result: list[dict[str, Any]] = []
         for i, lap in enumerate(laps):
             if not isinstance(lap, dict):
@@ -522,6 +1687,10 @@ class MetricsResolver:
             avg_hr = MetricsResolver._num(lap.get("avg_heart_rate"))
             avg_power = MetricsResolver._num(lap.get("avg_power"))
             avg_cadence = MetricsResolver._num(lap.get("avg_cadence"))
+            # V9.x 修复:增读 FIT 步态字段,§2.1 全链路可追溯,严禁硬编码 None
+            stance_time_ms = MetricsResolver._safe_int_zero(lap.get("stance_time")) or None
+            vertical_oscillation_cm = MetricsResolver._safe_float_zero(lap.get("vertical_oscillation")) or None
+            stride_length_m = MetricsResolver._safe_float_zero(lap.get("stride_length")) or None
             if dist == 0 and elapsed == 0:
                 continue
             result.append({
@@ -531,5 +1700,858 @@ class MetricsResolver:
                 "avg_hr": avg_hr if avg_hr else None,
                 "avg_power": avg_power if avg_power else None,
                 "avg_cadence": avg_cadence if avg_cadence else None,
+                "stance_time_ms": stance_time_ms,
+                "vertical_oscillation_cm": vertical_oscillation_cm,
+                "stride_length_m": stride_length_m,
             })
         return result
+
+    # === V7.9 指标 5:Efficiency Score(21d baseline 归一化) ===
+    # 见 docs/physiology_reference.md §指标 5
+    # 21d 中位数 baseline 是脉图自建标准(reference §3 明确标注"部分")
+    _EFFICIENCY_BASELINE_WINDOW_DAYS: int = 21
+    _EFFICIENCY_SCORE_BASELINE: float = 50.0
+    _EFFICIENCY_SCORE_RANGE: float = 25.0
+    _EFFICIENCY_MIN_HISTORY: int = 3
+
+    @staticmethod
+    def _compute_efficiency_score(
+        avg_hr: float | None,
+        avg_pace_sec_per_km: float | None,
+        sport_type: str = "running",
+        duration_sec: float = 0.0,
+    ) -> dict[str, Any]:
+        """V7.9 指标 5:Efficiency Score 基础比值计算。
+
+        返回:{"score": None, "ratio": float|None, "level": "unknown",
+              "confidence": "high"|"medium"|"low"|"unavailable"}
+
+        注意:score 在 baseline 比对后才填,本函数只算 ratio。
+        见 docs/physiology_reference.md §指标 5。
+        """
+        # V7.8 复用:sport 路由(swimming 不计算,心率测量不可靠)
+        dimension = _classify_sport_dimension(sport_type)
+        if dimension["uses_swolf"]:
+            return {
+                "score": None, "ratio": None, "level": "unknown",
+                "confidence": "unavailable",
+            }
+        if avg_hr is None or avg_pace_sec_per_km is None or avg_pace_sec_per_km <= 0:
+            return {
+                "score": None, "ratio": None, "level": "unknown",
+                "confidence": "unavailable",
+            }
+        if avg_hr <= 0:
+            return {
+                "score": None, "ratio": None, "level": "unknown",
+                "confidence": "unavailable",
+            }
+        if duration_sec < 15 * 60:  # < 15 min 样本不足,见 reference §6 边界
+            return {
+                "score": None, "ratio": None, "level": "unknown",
+                "confidence": "unavailable",
+            }
+
+        # 效率 = 速度 / 心率(高 = 高效率,慢配速低心率)
+        speed_mps = 1000.0 / float(avg_pace_sec_per_km)
+        ratio = speed_mps / float(avg_hr)
+
+        return {
+            "score": None,  # 由 evaluate_efficiency 在 baseline 比对后填
+            "ratio": round(ratio, 6),
+            "level": "unknown",
+            "confidence": "high",
+        }
+
+    @staticmethod
+    def _classify_steady_aerobic(
+        records: list,
+        duration_sec: float = 0.0,
+    ) -> dict[str, Any]:
+        """V7.10:steady aerobic 前置检查(见 reference §5 前置条件)。
+
+        返回:{"is_steady_aerobic": bool, "pace_cv": float|None,
+              "pause_pct": float|None, "reasons": list[str]}
+
+        全部满足才返回 True(reference §5 全部满足才计算 hr_drift)。
+        """
+        reasons: list[str] = []
+
+        # 1. duration > 45 min
+        if duration_sec < MetricsResolver._HR_DRIFT_MIN_DURATION_MIN * 60:
+            reasons.append(
+                f"duration<{MetricsResolver._HR_DRIFT_MIN_DURATION_MIN}min"
+            )
+
+        # 2. 配速变异度 < threshold(过滤间歇/变速)
+        pace_values: list[float] = []
+        for rec in records or []:
+            if not isinstance(rec, dict):
+                continue
+            spd = MetricsResolver._num(
+                MetricsResolver._record_value(rec, "speed", "enhanced_speed")  # V8.11
+            )
+            if spd and spd > 0.1:
+                pace_values.append(16.6667 / spd)  # sec/km
+        pace_cv: float | None = None
+        if len(pace_values) >= 2:
+            stddev = MetricsResolver._stddev(pace_values)
+            avg = sum(pace_values) / len(pace_values)
+            pace_cv = (stddev / avg * 100) if avg > 0 else 0
+            if pace_cv >= MetricsResolver._HR_DRIFT_MAX_PACE_CV:
+                reasons.append(
+                    f"pace_cv={pace_cv:.1f}% >= {MetricsResolver._HR_DRIFT_MAX_PACE_CV}%"
+                )
+
+        # 3. 停顿占比 < 10%(过滤长时间休息)
+        pause_pct: float | None = None
+        if records and duration_sec > 0:
+            pause_sec = 0.0
+            for rec in records:
+                if not isinstance(rec, dict):
+                    continue
+                spd = MetricsResolver._num(
+                MetricsResolver._record_value(rec, "speed", "enhanced_speed")  # V8.11
+            )
+            if spd is not None and spd < 0.5:
+                    pause_sec += 1.0  # 简化为每条 record 1 秒
+            pause_pct = (pause_sec / duration_sec) * 100
+            if pause_pct >= MetricsResolver._HR_DRIFT_MAX_PAUSE_PCT:
+                reasons.append(
+                    f"pause_pct={pause_pct:.1f}% >= {MetricsResolver._HR_DRIFT_MAX_PAUSE_PCT}%"
+                )
+
+        return {
+            "is_steady_aerobic": len(reasons) == 0,
+            "pace_cv": pace_cv,
+            "pause_pct": pause_pct,
+            "reasons": reasons,
+        }
+
+    @staticmethod
+    def _fetch_efficiency_baseline(
+        db_path: str,
+        sport_type: str,
+        current_activity_id: int,
+        window_days: int = 21,
+    ) -> dict[str, Any]:
+        """V7.9:从 activities 表取 21d 同 sport 历史中位数 efficiency ratio。
+
+        §8 canonical DB 原则:只读,严禁写入。
+        返回:{"baseline_ratio": float|None, "sample_size": int, "window_days": int}
+        """
+        import sqlite3
+        from datetime import datetime, timedelta, timezone
+        try:
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            cutoff_ts = (datetime.now(timezone.utc) - timedelta(days=window_days)).isoformat()
+            cursor.execute(
+                """
+                SELECT avg_hr, avg_pace, duration_sec
+                FROM activities
+                WHERE sport_type = ?
+                  AND id != ?
+                  AND start_time < ?
+                  AND avg_hr IS NOT NULL
+                  AND avg_pace IS NOT NULL
+                  AND duration_sec > ?
+                ORDER BY start_time DESC
+                """,
+                (sport_type, current_activity_id, cutoff_ts, 15 * 60),
+            )
+            rows = cursor.fetchall()
+            conn.close()
+        except Exception:
+            return {"baseline_ratio": None, "sample_size": 0, "window_days": window_days}
+
+        ratios = []
+        for avg_hr, avg_pace, _dur in rows:
+            if avg_pace and float(avg_pace) > 0 and avg_hr and float(avg_hr) > 0:
+                speed_mps = 1000.0 / float(avg_pace)
+                ratios.append(speed_mps / float(avg_hr))
+
+        if len(ratios) < MetricsResolver._EFFICIENCY_MIN_HISTORY:
+            return {
+                "baseline_ratio": None,
+                "sample_size": len(ratios),
+                "window_days": window_days,
+            }
+
+        # 中位数(对异常值更鲁棒)
+        ratios.sort()
+        n = len(ratios)
+        if n % 2 == 1:
+            median = ratios[n // 2]
+        else:
+            median = (ratios[n // 2 - 1] + ratios[n // 2]) / 2
+        return {
+            "baseline_ratio": round(median, 6),
+            "sample_size": len(ratios),
+            "window_days": window_days,
+        }
+
+    # === V7.10 指标 6:HR Drift(真实算法) ===
+    # 见 docs/physiology_reference.md §指标 6
+    # 替换 V7.6 decoupling_pct 临时代理(main.py 注释 "V7.6 临时代理" 同步更新)
+    _HR_DRIFT_MIN_DURATION_MIN: int = 45   # reference §5 前置:duration > 45min
+    _HR_DRIFT_MAX_PACE_CV: float = 8.0     # 配速变异度上限(>8% 视为间歇)
+    _HR_DRIFT_MAX_PAUSE_PCT: float = 10.0  # 停顿时长占活动总时长上限(>10% 排除)
+    _HR_DRIFT_SPLIT_RATIO: float = 0.5     # 前后半程分界(50%)
+    _HR_DRIFT_MIN_RECORDS: int = 20        # 至少 20 条数据点
+
+    # === V7.11 指标 7:Durability Index(耐久指数) ===
+    # 见 docs/physiology_reference.md §指标 7
+    _DURABILITY_MIN_DURATION_MIN: int = 45   # reference §5 前置:duration > 45min
+    _DURABILITY_HEAD_RATIO: float = 0.30      # 前 30% 切片(reference §4 自建聚合)
+    _DURABILITY_TAIL_RATIO: float = 0.30      # 后 30% 切片
+    _DURABILITY_MAX_SCORE: float = 100.0      # reference §6 误用 1:必须 cap
+    _DURABILITY_BASELINE_SCORE: float = 100.0 # 不掉速 = 100 分
+
+    # === V7.12 指标 8:Cadence Stability(步频稳定性) ===
+    # 见 docs/physiology_reference.md §指标 8
+    # 脉图自建 stability 框架(std + late_run decay),区别于行业 optimal cadence
+    _CADENCE_MIN_DURATION_MIN: int = 20   # reference §7 UNAVAILABLE:duration < 20min
+    _CADENCE_MIN_DURATION_HIGH: int = 30  # reference §7 HIGH:duration > 30min
+    _CADENCE_MAX_CV: float = 6.0          # CV 上限(>6% 视为间歇训练)
+    _CADENCE_BASELINE_SCORE: float = 100.0
+    _CADENCE_STD_WEIGHT: float = 0.6      # std 部分权重
+    _CADENCE_DECAY_WEIGHT: float = 0.4    # late_decay 部分权重
+
+    # === V7.13 指标 9:Training Load(TRIMP 简化版) ===
+    # 见 docs/physiology_reference.md §指标 9
+    # Banister TRIMP 模型(Banister 1991) + HR-zone-weighted duration(脉图简化)
+    # §6 误用 2 提示:跨 sport 不可比;前端显示需 sport_type 显式标注
+    _TRAINING_LOAD_ZONE_WEIGHTS: dict = {
+        "Z1": 1.0,
+        "Z2": 2.0,
+        "Z3": 3.0,
+        "Z4": 5.0,
+        "Z5": 8.0,
+    }
+    _TRAINING_LOAD_MAX_SCORE: float = 1000.0   # clamp 上限(防止异常活动爆表)
+    _TRAINING_LOAD_MIN_DURATION_MIN: int = 5   # reference §7 推算:duration < 5min 无意义
+    _TRAINING_LOAD_HIGH_DURATION_MIN: int = 30 # HIGH confidence 阈值
+
+    @staticmethod
+    def _compute_training_load(
+        hr_zone_distribution=None,
+        avg_hr=None,
+        max_hr=None,
+        duration_sec: float = 0.0,
+        sport_type: str = "running",
+        hr_source: str = "chest_strap",
+    ) -> dict:
+        """V7.13 指标 9:Training Load(Banister TRIMP 简化版)。
+
+        算法(无 zone distribution 时的降级):
+          ratio = avg_hr / max_hr 查表映射到 zone → 用 zone 权重
+          load = duration_min * zone_weight
+
+        算法(有 zone distribution):
+          load = duration_min * SUM(zone_weight * zone_time_pct / 100)
+
+        返回:{"load": float|None, "level": str, "zone_used": str|list|None,
+              "confidence": "high"|"medium"|"low"|"unavailable"}
+
+        见 docs/physiology_reference.md §指标 9。
+        """
+        # 基础检查
+        if duration_sec < MetricsResolver._TRAINING_LOAD_MIN_DURATION_MIN * 60:
+            return {
+                "load": None, "level": "unknown", "zone_used": None,
+                "confidence": "unavailable",
+            }
+
+        duration_min = duration_sec / 60.0
+
+        if hr_zone_distribution:
+            # 完整算法:有 HR zone 分布
+            total_weighted = 0.0
+            zone_used_list = []
+            for zone_key, time_pct in hr_zone_distribution.items():
+                weight = MetricsResolver._TRAINING_LOAD_ZONE_WEIGHTS.get(zone_key, 0.0)
+                if weight > 0 and time_pct and float(time_pct) > 0:
+                    total_weighted += weight * float(time_pct) / 100.0
+                    zone_used_list.append(zone_key)
+            if not zone_used_list:
+                return {
+                    "load": None, "level": "unknown", "zone_used": None,
+                    "confidence": "unavailable",
+                }
+            load = duration_min * total_weighted
+            load = min(load, MetricsResolver._TRAINING_LOAD_MAX_SCORE)
+            zone_used = zone_used_list
+        elif avg_hr and max_hr and float(max_hr) > 0:
+            # 降级算法:用 avg_hr/max_hr 推算主要 zone
+            ratio = float(avg_hr) / float(max_hr)
+            if ratio < 0.55:
+                zone_key, weight = "Z1", 1.0
+            elif ratio < 0.70:
+                zone_key, weight = "Z2", 2.0
+            elif ratio < 0.80:
+                zone_key, weight = "Z3", 3.0
+            elif ratio < 0.90:
+                zone_key, weight = "Z4", 5.0
+            else:
+                zone_key, weight = "Z5", 8.0
+            load = duration_min * weight
+            load = min(load, MetricsResolver._TRAINING_LOAD_MAX_SCORE)
+            zone_used = zone_key
+        else:
+            return {
+                "load": None, "level": "unknown", "zone_used": None,
+                "confidence": "unavailable",
+            }
+
+        # 等级判定(脉图自建阈值,可调)
+        if load >= 400:
+            level = "very_high"
+        elif load >= 250:
+            level = "high"
+        elif load >= 120:
+            level = "moderate"
+        elif load >= 50:
+            level = "low"
+        else:
+            level = "very_low"
+
+        # confidence 校正(reference §7 4 级条件)
+        confidence = "high"
+        if hr_source == "optical":
+            confidence = "medium"
+        if not hr_zone_distribution:
+            confidence = "medium"  # MEDIUM:无 zone distribution(基于 avg_hr 推算)
+        if sport_type == "swimming":
+            confidence = "medium"  # MEDIUM:游泳 HR 可靠性标 MEDIUM
+        if duration_sec < MetricsResolver._TRAINING_LOAD_HIGH_DURATION_MIN * 60:
+            confidence = "medium"  # MEDIUM:duration 5-30min
+
+        return {
+            "load": round(load, 1),
+            "level": level,
+            "zone_used": zone_used,
+            "confidence": confidence,
+        }
+
+    @staticmethod
+    def _compute_cadence_stability(
+        cadence_stream: list | None,
+        duration_sec: float = 0.0,
+        sport_type: str = "running",
+        is_intermittent: bool = False,
+    ) -> dict:
+        """V7.12 指标 8:Cadence Stability(std + late_decay,0-100 分)。
+
+        算法:
+          std_score  = 100 * max(0, 1 - cv / 6.0)         # std 部分(CV 越小越稳)
+          decay_pct  = (avg_late - avg_early) / avg_early # 后期步频衰减
+          decay_score = 100 * max(0, 1 + decay_pct / 0.10) # 衰减 < 10% 给满分
+          score = std_score * 0.6 + decay_score * 0.4
+
+        返回:{"score": float|None, "level": str, "cv": float|None,
+              "decay_pct": float|None, "is_intermittent": bool,
+              "confidence": "high"|"medium"|"low"|"unavailable"}
+
+        见 docs/physiology_reference.md §指标 8。
+        """
+        # 仅 running / trail_running 适用(reference §5)
+        if sport_type not in ("running", "trail_running"):
+            return {
+                "score": None, "level": "unknown",
+                "cv": None, "decay_pct": None,
+                "is_intermittent": False,
+                "confidence": "unavailable",
+            }
+
+        # 前置检查
+        if not cadence_stream or len(cadence_stream) < 20:
+            return {
+                "score": None, "level": "unknown",
+                "cv": None, "decay_pct": None,
+                "is_intermittent": False,
+                "confidence": "unavailable",
+            }
+        if duration_sec < MetricsResolver._CADENCE_MIN_DURATION_MIN * 60:
+            return {
+                "score": None, "level": "unknown",
+                "cv": None, "decay_pct": None,
+                "is_intermittent": False,
+                "confidence": "unavailable",
+            }
+
+        # 过滤 0 / 异常值(Garmin 静止时输出 0)
+        valid = [c for c in cadence_stream if c and c > 30]  # 正常步频 > 30 spm
+        if len(valid) < 20:
+            return {
+                "score": None, "level": "unknown",
+                "cv": None, "decay_pct": None,
+                "is_intermittent": False,
+                "confidence": "unavailable",
+            }
+
+        n = len(valid)
+        avg_cad = sum(valid) / n
+        stddev = MetricsResolver._stddev(valid)
+        cv = (stddev / avg_cad * 100) if avg_cad > 0 else 0
+
+        # 间歇训练检测(reference §6 误用 1:CV > 6%)
+        if cv > MetricsResolver._CADENCE_MAX_CV or is_intermittent:
+            return {
+                "score": None, "level": "unknown",
+                "cv": round(cv, 2), "decay_pct": None,
+                "is_intermittent": True,
+                "confidence": "low",
+            }
+
+        # 前后半程步频均值
+        half_idx = n // 2
+        early_cad = sum(valid[:half_idx]) / half_idx
+        late_cad = sum(valid[half_idx:]) / (n - half_idx)
+        decay_pct_val: float | None
+        if early_cad <= 0:
+            decay_pct_val = None
+            decay_score = 0.0
+        else:
+            decay_pct_val = round(
+                (late_cad - early_cad) / early_cad * 100.0, 2
+            )
+            # 衰减 < 10% 给满分;每衰减 10% 扣 100 分(扣到 0)
+            decay_score = max(
+                0.0,
+                min(100.0, 100.0 * (1 + decay_pct_val / 10.0)),
+            )
+
+        # std 部分:CV 越小越稳
+        std_score = max(
+            0.0,
+            min(100.0, 100.0 * (1 - cv / MetricsResolver._CADENCE_MAX_CV)),
+        )
+
+        score = std_score * MetricsResolver._CADENCE_STD_WEIGHT +                 decay_score * MetricsResolver._CADENCE_DECAY_WEIGHT
+        score = round(max(0.0, min(100.0, score)), 1)
+
+        # 等级判定
+        if score >= 90:
+            level = "excellent"
+        elif score >= 75:
+            level = "good"
+        elif score >= 60:
+            level = "warn"
+        else:
+            level = "bad"
+
+        # confidence 校正(reference §7 4 级条件)
+        confidence = "high"
+        if sport_type == "trail_running":
+            confidence = "medium"  # MEDIUM:trail running(地形影响)
+        if duration_sec < MetricsResolver._CADENCE_MIN_DURATION_HIGH * 60:
+            confidence = "medium"  # MEDIUM:duration 20-30min
+
+        return {
+            "score": score,
+            "level": level,
+            "cv": round(cv, 2),
+            "decay_pct": decay_pct_val,
+            "is_intermittent": False,
+            "confidence": confidence,
+        }
+
+    @staticmethod
+    def _compute_durability_index(
+        speed_stream: list | None,
+        duration_sec: float = 0.0,
+        sport_type: str = "running",
+        is_race: bool = False,
+    ) -> dict:
+        """V7.11 指标 7:Durability Index(前 30% vs 后 30% 速度比,0-100 分)。
+
+        算法:
+          head_speed = avg(speed_stream[:30%])
+          tail_speed = avg(speed_stream[-30%:])
+          ratio = tail_speed / head_speed
+          score = 100 * ratio  (cap 在 [0, 100])
+
+        返回:{"score": float|None, "level": str, "head_speed": float|None,
+              "tail_speed": float|None, "is_splitable": bool,
+              "confidence": "high"|"medium"|"low"|"unavailable"}
+
+        见 docs/physiology_reference.md §指标 7。
+        """
+        # V7.8 复用:sport 路由(swimming 不计算)
+        dimension = _classify_sport_dimension(sport_type)
+        if dimension["uses_swolf"]:
+            return {
+                "score": None, "level": "unknown",
+                "head_speed": None, "tail_speed": None,
+                "is_splitable": False,
+                "confidence": "unavailable",
+            }
+
+        # 前置检查
+        if duration_sec < MetricsResolver._DURABILITY_MIN_DURATION_MIN * 60:
+            return {
+                "score": None, "level": "unknown",
+                "head_speed": None, "tail_speed": None,
+                "is_splitable": False,
+                "confidence": "unavailable",
+            }
+        if not speed_stream or len(speed_stream) < 20:
+            return {
+                "score": None, "level": "unknown",
+                "head_speed": None, "tail_speed": None,
+                "is_splitable": False,
+                "confidence": "unavailable",
+            }
+
+        # 过滤无效值(0 / 负值)
+        valid = [s for s in speed_stream if s and s > 0]
+        if len(valid) < 20:
+            return {
+                "score": None, "level": "unknown",
+                "head_speed": None, "tail_speed": None,
+                "is_splitable": False,
+                "confidence": "unavailable",
+            }
+
+        n = len(valid)
+        head_idx = max(1, int(n * MetricsResolver._DURABILITY_HEAD_RATIO))
+        tail_idx = max(1, int(n * MetricsResolver._DURABILITY_TAIL_RATIO))
+
+        head_speed = sum(valid[:head_idx]) / head_idx
+        tail_speed = sum(valid[-tail_idx:]) / tail_idx
+
+        if head_speed <= 0:
+            return {
+                "score": None, "level": "unknown",
+                "head_speed": None, "tail_speed": None,
+                "is_splitable": False,
+                "confidence": "unavailable",
+            }
+
+        ratio = tail_speed / head_speed
+        # 100 * ratio, cap [0, 100](reference §6 误用 1:negative split 不能超 100)
+        score = max(
+            0.0,
+            min(
+                MetricsResolver._DURABILITY_MAX_SCORE,
+                MetricsResolver._DURABILITY_BASELINE_SCORE * ratio,
+            ),
+        )
+
+        # 等级判定
+        if score >= 95:
+            level = "excellent"
+        elif score >= 85:
+            level = "good"
+        elif score >= 70:
+            level = "warn"
+        else:
+            level = "bad"
+
+        # confidence 校正(reference §7 4 级条件)
+        confidence = "high"
+        if duration_sec < 60 * 60:  # 45-60min → MEDIUM
+            confidence = "medium"
+        if is_race:
+            confidence = "low"  # LOW:比赛配速策略(reference §7)
+
+        return {
+            "score": round(score, 1),
+            "level": level,
+            "head_speed": round(head_speed, 4),
+            "tail_speed": round(tail_speed, 4),
+            "is_splitable": True,
+            "confidence": confidence,
+        }
+
+    @staticmethod
+    def _compute_hr_drift(
+        records: list,
+        duration_sec: float = 0.0,
+    ) -> dict[str, Any]:
+        """V7.10 指标 6:HR Drift 真实算法。
+
+        算法:drift_pct = (avg_hr_late - avg_hr_early) / avg_hr_early × 100
+        前置:duration > 45min + 配速 CV < 8% + 停顿 < 10%
+
+        返回:{"drift_pct": float|None, "level": str, "early_hr": float|None,
+              "late_hr": float|None, "is_steady_aerobic": bool,
+              "confidence": "high"|"medium"|"low"|"unavailable",
+              "reasons": list[str]}
+
+        见 docs/physiology_reference.md §指标 6。
+        """
+        # 前置检查
+        steady = MetricsResolver._classify_steady_aerobic(
+            records=records, duration_sec=duration_sec
+        )
+        if not steady["is_steady_aerobic"]:
+            return {
+                "drift_pct": None, "level": "unknown",
+                "early_hr": None, "late_hr": None,
+                "is_steady_aerobic": False,
+                "confidence": "unavailable",
+                "reasons": steady["reasons"],
+            }
+
+        if not records or duration_sec <= 0:
+            return {
+                "drift_pct": None, "level": "unknown",
+                "early_hr": None, "late_hr": None,
+                "is_steady_aerobic": False,
+                "confidence": "unavailable",
+                "reasons": ["empty records or zero duration"],
+            }
+
+        # 过滤有效 records
+        valid_recs = [r for r in records if isinstance(r, dict)]
+        n = len(valid_recs)
+        if n < MetricsResolver._HR_DRIFT_MIN_RECORDS:
+            return {
+                "drift_pct": None, "level": "unknown",
+                "early_hr": None, "late_hr": None,
+                "is_steady_aerobic": False,
+                "confidence": "unavailable",
+                "reasons": [
+                    f"records<{MetricsResolver._HR_DRIFT_MIN_RECORDS}"
+                ],
+            }
+
+        # 按 timestamp 排序(防御性,FIT 顺序应已保证)
+        sorted_recs = sorted(
+            valid_recs,
+            key=lambda r: MetricsResolver._num(
+                MetricsResolver._record_value(r, "timestamp", "time")
+            ) or 0,
+        )
+
+        # 前后半程分界
+        half_idx = int(n * MetricsResolver._HR_DRIFT_SPLIT_RATIO)
+        early_recs = sorted_recs[:half_idx]
+        late_recs = sorted_recs[half_idx:]
+
+        def _avg_hr(recs: list) -> float | None:
+            hrs: list[float] = []
+            for r in recs:
+                hr = MetricsResolver._num(
+                    MetricsResolver._record_value(r, "heart_rate", "hr")
+                )
+                if hr and hr > 30:  # 排除 0 / 异常低值
+                    hrs.append(float(hr))
+            if not hrs:
+                return None
+            return sum(hrs) / len(hrs)
+
+        early_hr = _avg_hr(early_recs)
+        late_hr = _avg_hr(late_recs)
+
+        if early_hr is None or late_hr is None or early_hr <= 0:
+            return {
+                "drift_pct": None, "level": "unknown",
+                "early_hr": early_hr, "late_hr": late_hr,
+                "is_steady_aerobic": True,
+                "confidence": "unavailable",
+                "reasons": ["no valid HR data in early/late half"],
+            }
+
+        drift_pct = round((late_hr - early_hr) / early_hr * 100.0, 2)
+
+        # 等级判定(Friel / Coggan 阈值)
+        if drift_pct < 5.0:
+            level = "excellent"
+        elif drift_pct < 10.0:
+            level = "good"
+        elif drift_pct < 15.0:
+            level = "warn"
+        else:
+            level = "bad"
+
+        # confidence 校正(reference §7 4 级条件)
+        # 当前 V7.10 已是真实算法,无需再标 "代理算法"
+        confidence = "high"
+        if duration_sec < 60 * 60:  # < 60min → MEDIUM
+            confidence = "medium"
+
+        return {
+            "drift_pct": drift_pct,
+            "level": level,
+            "early_hr": round(early_hr, 1),
+            "late_hr": round(late_hr, 1),
+            "is_steady_aerobic": True,
+            "confidence": confidence,
+            "reasons": [],
+        }
+def evaluate_efficiency(
+    avg_hr: float | None,
+    avg_pace_sec_per_km: float | None,
+    sport_type: str,
+    duration_sec: float,
+    baseline_ratio: float | None,
+    sample_size: int,
+    avg_temp_c: float | None = None,
+    max_alt_m: float | None = None,
+    hr_source: str = "chest_strap",
+) -> dict[str, Any]:
+    """V7.9 公开 API:组合 baseline 比对 + confidence 评估(reference §7 4 级条件)。
+
+    见 docs/physiology_reference.md §指标 5。
+    """
+    base = MetricsResolver._compute_efficiency_score(
+        avg_hr=avg_hr,
+        avg_pace_sec_per_km=avg_pace_sec_per_km,
+        sport_type=sport_type,
+        duration_sec=duration_sec,
+    )
+
+    if base["confidence"] == "unavailable":
+        return {
+            "score": None, "ratio": base["ratio"], "level": "unknown",
+            "confidence": "unavailable", "delta_pct": None,
+            "baseline_ratio": None, "sample_size": 0,
+        }
+
+    # 无 baseline 归一化
+    if baseline_ratio is None or baseline_ratio <= 0:
+        return {
+            "score": None, "ratio": base["ratio"], "level": "unknown",
+            "confidence": "low", "delta_pct": None,
+            "baseline_ratio": None, "sample_size": sample_size,
+        }
+
+    delta_pct = (base["ratio"] - baseline_ratio) / baseline_ratio * 100
+    # 25% 改善 → +25 分;25% 退化 → -25 分
+    score_delta = (delta_pct / 25.0) * MetricsResolver._EFFICIENCY_SCORE_RANGE
+    score = MetricsResolver._EFFICIENCY_SCORE_BASELINE + score_delta
+    score = max(0.0, min(100.0, score))  # clamp 0-100
+
+    if delta_pct > 5:
+        level = "improving"
+    elif delta_pct < -5:
+        level = "declining"
+    else:
+        level = "stable"
+
+    # confidence 校正(reference §7 4 级条件)
+    confidence = "high"
+    if hr_source == "optical":
+        confidence = "medium"
+    if duration_sec < 30 * 60:
+        confidence = "medium"
+    if avg_temp_c is not None and avg_temp_c > 28.0:
+        confidence = "low"
+    if max_alt_m is not None and max_alt_m > 2000.0:
+        confidence = "low"
+
+    return {
+        "score": round(score, 1),
+        "ratio": base["ratio"],
+        "level": level,
+        "confidence": confidence,
+        "delta_pct": round(delta_pct, 2),
+        "baseline_ratio": baseline_ratio,
+        "sample_size": sample_size,
+    }
+
+
+# ══════════════════════════════════════════════════════════════════
+# V4.0 治理: SemanticSportsEngine 业务类下沉
+# §V4.0 防腐层契约:本类从 main.py 整体迁移,纯计算,无 IO
+# 严禁在 main.py 中重新定义同名类,应使用 from metrics_resolver import SemanticSportsEngine
+# ══════════════════════════════════════════════════════════════════
+
+
+class SemanticSportsEngine:
+    """运动类型感知的展示指标引擎
+
+    V4.0 治理:从 main.py 整体下沉至 metrics_resolver.py
+    提供 build_display_metrics / get_layout / format_duration / format_pace 等纯计算方法
+    """
+
+    METRICS = {
+        "distance": {"label": "距离", "unit": "km"},
+        "duration": {"label": "时长", "unit": ""},
+        "avg_pace": {"label": "平均配速", "unit": "/km"},
+        "avg_speed": {"label": "平均速度", "unit": "km/h"},
+        "avg_hr": {"label": "平均心率", "unit": "bpm"},
+        "max_hr": {"label": "最大心率", "unit": "bpm"},
+        "elevation": {"label": "总爬升", "unit": "m"},
+        "calories": {"label": "热量", "unit": "Kcal"}
+    }
+
+    SPORT_PROFILES = {
+        "running": {
+            "summary_keys": ["distance", "avg_pace", "duration", "avg_hr"],
+            "cards": [{"type": "summary_grid"}, {"type": "pace_hr_chart"}, {"type": "elevation_chart"}]
+        },
+        "trail_running": {
+            "summary_keys": ["distance", "elevation", "duration", "avg_pace"],
+            "cards": [{"type": "summary_grid"}, {"type": "elevation_chart"}, {"type": "pace_hr_chart"}]
+        },
+        "cycling": {
+            "summary_keys": ["distance", "avg_speed", "duration", "avg_hr"],
+            "cards": [{"type": "summary_grid"}, {"type": "speed_hr_power_chart"}, {"type": "elevation_chart"}]
+        },
+        "swimming": {
+            "summary_keys": ["distance", "avg_pace", "duration", "avg_hr"],
+            "cards": [{"type": "summary_grid"}, {"type": "pace_hr_chart"}]
+        },
+        "strength": {
+            "summary_keys": ["duration", "calories", "avg_hr", "max_hr"],
+            "cards": [{"type": "summary_grid"}, {"type": "hr_zones_chart"}]
+        },
+        "hiking": {
+            "summary_keys": ["distance", "duration", "elevation", "avg_hr"],
+            "cards": [{"type": "summary_grid"}, {"type": "elevation_chart"}]
+        }
+    }
+
+    @staticmethod
+    def format_duration(seconds):
+        if not seconds or seconds < 0:
+            return "--"
+        h = seconds // 3600
+        m = (seconds % 3600) // 60
+        s = seconds % 60
+        if h > 0:
+            return f"{h}:{m:02d}:{s:02d}"
+        return f"{m:02d}:{s:02d}"
+
+    @staticmethod
+    def format_pace(pace_sec):
+        if not pace_sec or pace_sec <= 0:
+            return "--"
+        return f"{pace_sec // 60}'{pace_sec % 60:02d}\""
+
+    @classmethod
+    def build_display_metrics(cls, sport_type, raw_data):
+        profile = cls.SPORT_PROFILES.get(sport_type, cls.SPORT_PROFILES["running"])
+        display_list = []
+        for key in profile["summary_keys"]:
+            meta = cls.METRICS.get(key, {"label": key, "unit": ""})
+            val_str = "--"
+            if key == "distance":
+                val_str = f"{raw_data.get('distance_km', 0):.2f}"
+            elif key == "duration":
+                val_str = cls.format_duration(raw_data.get('duration_sec', 0))
+            elif key == "avg_pace":
+                val_str = cls.format_pace(raw_data.get('avg_pace_sec', 0))
+            elif key == "avg_speed":
+                dist = raw_data.get('distance_km', 0)
+                sec = raw_data.get('duration_sec', 0)
+                val_str = f"{(dist / sec * 3600):.1f}" if sec > 0 else "--"
+            elif key in ("avg_hr", "max_hr", "calories", "elevation"):
+                val = raw_data.get(key)
+                val_str = str(val) if val else "--"
+            display_list.append({
+                "key": key,
+                "label": meta["label"],
+                "value": val_str,
+                "unit": meta["unit"]
+            })
+        return display_list
+
+    @classmethod
+    def get_layout(cls, sport_type: str) -> dict:
+        return {"cards": cls.SPORT_PROFILES.get(sport_type, cls.SPORT_PROFILES["running"])["cards"]}
+

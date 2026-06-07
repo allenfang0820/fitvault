@@ -188,6 +188,21 @@
       "description": "单条活动详情"
     },
     {
+      "name": "get_fatigue_review",
+      "file": "main.py",
+      "line": 4604,
+      "category": "activity",
+      "parameters": [
+        { "name": "activity_id", "type": "int", "required": true }
+      ],
+      "returns": "{ code, msg, data: {sport_type, metrics: {hr_drift, decoupling, bonk_risk}, collapse_events: [{event_id, type, trigger_km, trigger_time_sec, value_y, description}], fatigue_zones: [{start_km, end_km, level: 'medium'|'high'}], curves: {efficiency, gap, grade, hr, speed}, context_tags: {}, ai_insight, advice, disclaimer}, traceId }",
+      "high_risk": true,
+      "risk_level": "medium",
+      "errors": [1001, 1004, 5001, 9001],
+      "contract": "fit-arch-contrac §3 响应结构 / §六 shadow_diff 隔离(严禁 shadow_diff/shadow_diff_json/diff/records 出现在 data) / §8 canonical 只读",
+      "description": "V6.3 运动复盘覆盖层数据源 — 7 段白名单快照,前端只读;AI 洞察经由独立 sentinel __FATIGUE_REVIEW_INSIGHT__ 走 call_llm"
+    },
+    {
       "name": "get_activity_history",
       "file": "main.py",
       "line": 2860,

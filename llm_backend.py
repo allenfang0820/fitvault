@@ -37,12 +37,22 @@ def _config_file() -> Path:
 
 
 def load_llm_config() -> dict[str, Any]:
+    """从磁盘加载 LLM 配置。
+
+    CONTRACT §2.1 / §7.2: 不做隐式默认值注入。
+    - url: 文件缺失或为空 → ""（必须由用户显式填写）
+    - model: 同上 → ""
+    - provider / agent_id: 是描述性元数据，可保留 fallback
+
+    业务调用方（call_llm / test_llm_config）必须先判 cfg.get("url") 是否为空，
+    缺失时立即返回 1001（参数校验错误），不允许静默打 localhost。
+    """
     p = _config_file()
     if not p.is_file():
         return {
             "provider": DEFAULT_PROVIDER,
-            "url": DEFAULT_URL,
-            "model": DEFAULT_MODEL,
+            "url": "",
+            "model": "",
             "api_key": "",
             "agent_id": DEFAULT_AGENT_ID,
         }
@@ -52,8 +62,8 @@ def load_llm_config() -> dict[str, Any]:
         data = {}
     return {
         "provider": str(data.get("provider") or DEFAULT_PROVIDER),
-        "url": str(data.get("url") or DEFAULT_URL).strip() or DEFAULT_URL,
-        "model": str(data.get("model") or DEFAULT_MODEL).strip() or DEFAULT_MODEL,
+        "url": str(data.get("url") or "").strip(),
+        "model": str(data.get("model") or "").strip(),
         "api_key": str(data.get("api_key") or ""),
         "agent_id": str(data.get("agent_id") or DEFAULT_AGENT_ID).strip(),
         "watch_brand": str(data.get("watch_brand") or "").strip(),
@@ -82,10 +92,17 @@ def redact_llm_config(config: dict[str, Any]) -> dict[str, Any]:
 
 
 def save_llm_config(provider: str, url: str, model: str, api_key: str, agent_id: str = "", watch_brand: str = "", local_dir: str = "", ai_notified: bool = False, ai_notified_hash: str = "") -> None:
+    """持久化 LLM 配置。
+
+    CONTRACT §2.1 / §7.2: 严格按调用方传入的 url / model 原样落盘。
+    若调用方传入空字符串，表示用户未填写，必须原样保存空值，
+    绝不允许在此处用 DEFAULT_URL / DEFAULT_MODEL 隐式回填，
+    否则下游 load_llm_config 会再次误以为"已配置"。
+    """
     cfg = {
         "provider": (provider or DEFAULT_PROVIDER).strip(),
-        "url": (url or DEFAULT_URL).strip(),
-        "model": (model or DEFAULT_MODEL).strip(),
+        "url": (url or "").strip(),
+        "model": (model or "").strip(),
         "api_key": (api_key or "").strip(),
         "agent_id": (agent_id or "").strip(),
         "watch_brand": (watch_brand or "").strip(),
@@ -221,6 +238,7 @@ def build_base_system_block(
     placemarks: list[dict[str, Any]],
     weather_context: dict[str, Any] | None = None,
     ai_snapshot_block: str = "",
+    context_tags: dict[str, Any] | None = None,
 ) -> str:
     sport_cn, role = _sport_labels(sport_type)
     table = points_to_dataframe_csv(points)
@@ -233,7 +251,17 @@ def build_base_system_block(
             "切勿向用户罗列原始历史记录全文，结论务必简短。\n"
         )
     snapshot = f"\n{ai_snapshot_block}\n" if ai_snapshot_block else ""
-    return f"""你是一位{role}与 AI 户外领队。用户活动类型：【{sport_cn}】。
+
+    # === V4.0 AI 语境标签注入 (防幻觉) ===
+    env_prompt = ""
+    if context_tags and isinstance(context_tags, dict):
+        env_prompt = "\n\n【⚠️ 系统级环境生理学约束（极其重要）】\n"
+        env_prompt += "请在分析本场运动时，严格参考以下环境与设备因素。切勿将环境引起的自然生理代偿（如高心率）误判为用户的耐力不足：\n"
+        for key, val in context_tags.items():
+            env_prompt += f"- {key}: {val}\n"
+        env_prompt += "注意：如果存在 Extreme 或 High 级别的热应激/高海拔缺氧，你的点评必须体现出对环境压力的宽容，切忌因为心率漂移而过度批评用户。\n\n"
+
+    return f"""{env_prompt}你是一位{role}与 AI 户外领队。用户活动类型：【{sport_cn}】。
 当前轨迹文件：{track_filename}
 {mcp_note}
 {snapshot}
@@ -265,6 +293,7 @@ def build_chat_system_block(
     report_json: str | None = None,
     weather_context: dict[str, Any] | None = None,
     ai_snapshot_block: str = "",
+    context_tags: dict[str, Any] | None = None,
 ) -> str:
     sport_cn, _ = _sport_labels(sport_type)
     if not points or len(points) < 2:
@@ -280,6 +309,7 @@ def build_chat_system_block(
         placemarks=placemarks,
         weather_context=weather_context,
         ai_snapshot_block=ai_snapshot_block,
+        context_tags=context_tags,
     )
     report_instruction = ""
     if report_json:
@@ -313,8 +343,21 @@ def chat_completions(
         headers["X-Agent-ID"] = str(agent_id).strip()
         headers["X-Agent-Id"] = str(agent_id).strip()
 
+    # §OpenClaw 路由契约：默认 model + 有效 agent_id 时，强制把 model 拼成
+    # openclaw/agent-{id}，让 OpenClaw 网关正确路由；用户填了非默认 model 时不覆盖。
+    # agent_id 完全来自用户配置，不写死具体值。
+    clean_agent_id = str(agent_id).strip() if agent_id else ""
+    body_model = model
+    if clean_agent_id:
+        agent_token = clean_agent_id
+        if not agent_token.startswith("agent-"):
+            agent_token = "agent-" + agent_token
+        # 仅在 model 是默认 'openclaw' 时才补齐，避免覆盖用户的自定义 model
+        if str(model).strip() == "openclaw":
+            body_model = "openclaw/" + agent_token
+
     body: dict[str, Any] = {
-        "model": model,
+        "model": body_model,
         "messages": messages,
         "temperature": 0.7,
         "stream": False,
@@ -322,9 +365,9 @@ def chat_completions(
         "chat_id": session_id,
         "user": session_id,
     }
-    if agent_id and str(agent_id).strip():
-        body["agent_id"] = str(agent_id).strip()
-        body["agentId"] = str(agent_id).strip()
+    if clean_agent_id:
+        body["agent_id"] = clean_agent_id
+        body["agentId"] = clean_agent_id
     try:
         t0 = time.time()
         r = requests.post(url, headers=headers, json=body, timeout=timeout)
@@ -746,3 +789,152 @@ def normalize_radar_insight_json(raw_text: str) -> dict[str, Any]:
             pass
 
     return schema
+
+
+# =============================================================================
+# V6.3 复盘覆盖层 AI 洞察 — 独立 sentinel
+# 契约:fit-arch-contrac §5.4 规则 1(独立 sentinel)/ §5.6.2 规则 7(empty_xxx)
+# =============================================================================
+
+FATIGUE_REVIEW_OUTPUT_SCHEMA = """{
+  "summary": "120 字以内的中文总评,聚焦本次训练的核心结论(耐力水平 / 环境压力 / 撞墙风险)",
+  "sport_type": "running|trail_running|hiking|cycling|swimming",
+  "key_dimensions": [
+    {
+      "key": "endurance|stability|bonk_risk|environment",
+      "label": "中文维度名(耐力|心肺稳定|撞墙风险|环境压力)",
+      "level": "excellent|good|warn|bad",
+      "comment": "30-60 字解读"
+    }
+  ],
+  "event_interpretation": "针对 collapse_events 的整体解读(哪些是真正的风险点,哪些是环境干扰)",
+  "training_advice": "针对本场训练的具体改进建议,120 字以内,避免空话",
+  "disclaimer": "AI 生成仅供参考,数据基于单次训练快照,需结合长期趋势"
+}"""
+
+
+def empty_fatigue_review_insight(error: str = "") -> dict[str, Any]:
+    """V6.3 复盘覆盖层空态:LLM 失败/无数据/降级时使用。§5.6.2 规则 7 强制约束。"""
+    return {
+        "summary": error or "暂无可解读的复盘数据",
+        "sport_type": "",
+        "key_dimensions": [],
+        "event_interpretation": "",
+        "training_advice": "请先完成数据加载后再生成 AI 洞察",
+        "disclaimer": "AI 生成仅供参考 · 数据来源：FIT 解析 + 后端算法",
+        "error": str(error or ""),
+    }
+
+
+def normalize_fatigue_review_json(raw_text: str) -> dict[str, Any]:
+    """V6.3 复盘覆盖层 JSON 标准化:失败时返回 empty_fatigue_review_insight。"""
+    if not raw_text:
+        return empty_fatigue_review_insight("LLM 未返回内容")
+    text = raw_text.strip()
+
+    m = re.search(r"```(?:json)?\s*\n?(.*?)\n?\s*```", text, re.DOTALL)
+    if m:
+        text = m.group(1).strip()
+
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        return empty_fatigue_review_insight(f"JSON 解析失败: {text[:120]}")
+
+    if not isinstance(data, dict):
+        return empty_fatigue_review_insight("洞察结果格式错误")
+
+    schema = empty_fatigue_review_insight()
+    schema["summary"] = str(data.get("summary") or schema["summary"])[:300]
+    schema["sport_type"] = str(data.get("sport_type") or schema["sport_type"])
+    schema["event_interpretation"] = str(data.get("event_interpretation") or "")[:500]
+    schema["training_advice"] = str(data.get("training_advice") or schema["training_advice"])[:500]
+    schema["disclaimer"] = str(data.get("disclaimer") or schema["disclaimer"])[:300]
+
+    raw_dims = data.get("key_dimensions") or []
+    if isinstance(raw_dims, list):
+        clean = []
+        for d in raw_dims[:6]:
+            if not isinstance(d, dict):
+                continue
+            clean.append({
+                "key": str(d.get("key") or ""),
+                "label": str(d.get("label") or d.get("key") or ""),
+                "level": str(d.get("level") or "unknown"),
+                "comment": str(d.get("comment") or "")[:200],
+            })
+        schema["key_dimensions"] = clean
+
+    return schema
+
+
+def build_fatigue_review_messages(
+    snapshot: dict[str, Any],
+    sport_type: str,
+    sport_cn: str,
+) -> list[dict[str, str]]:
+    """V6.3 复盘覆盖层 LLM messages 构造器。
+
+    契约:§5.4 规则 3 — 后端从 _ai_snapshot 构建 prompt,前端不参与。
+    """
+    payload = json.dumps(snapshot or {}, ensure_ascii=False, indent=2, default=str)
+    sport_mode_map = {
+        "running": "running", "trail_running": "running", "treadmill_running": "running",
+        "hiking": "general", "mountaineering": "general",
+        "cycling": "cycling", "road_cycling": "cycling", "mountain_biking": "cycling",
+        "swimming": "swimming", "lap_swimming": "swimming", "open_water": "swimming",
+    }
+    mode = sport_mode_map.get(sport_type, "general")
+
+    system = f"""你是一位资深运动表现分析师与训练科学专家,专长于{sport_cn}单次训练复盘分析。
+
+【数据边界 — DATA BOUNDARY(不可逾越)】
+以下数据由脉图系统从 SQLite canonical DB / 复盘后端引擎(V4.0)/ MetricsResolver 预计算,**绝对权威**。你只允许解释(interpret),禁止任何形式的重新推导、估算、推断。
+
+【当前功能区权威快照 — 单次训练复盘】
+```json
+{payload}
+```
+
+【运动专项约束(基于 {mode} 模式)】
+- running:重点解读有氧解耦(decoupling)、心率漂移(PA:Hr)、Bonk 撞墙(累计 kcal > 1600 + 后半程效率骤降)
+- cycling:必须依赖功率(NP)评估;若缺功率,声明数据质量不足
+- swimming:重点解读耐力持续性;Bonk 阈值与陆上有差异
+- general:均衡解读 4 维度
+
+【必须输出维度】
+key_dimensions 数组必须严格包含 endurance / stability / bonk_risk / environment 四个维度(无数据时 comment 写"暂无足够数据"而非略过)。
+
+【强行约束 — 绝对禁止行为】
+你 MUST NOT:
+- 重新计算距离、时间、配速、心率、爬升
+- 还原或推断 per-point 曲线
+- 重新计算有氧解耦率 / Bonk 风险
+- 使用前端 DOM 推导值或 UI fallback 值
+- 使用 shadow_diff / shadow_diff_json / diff / 任何 debug-only 字段
+- 生成任何 canonical 指标或写回字段建议
+- 跨运动类比(把跑步洞察写成骑行)
+- 输出 markdown 代码块标记
+- 凭空捏造事件或数值
+
+【输出格式 — 严格 JSON】
+只输出一个合法 JSON 对象,格式必须严格遵循:
+{FATIGUE_REVIEW_OUTPUT_SCHEMA}
+
+【铁律】
+1. 只使用上方【权威快照】中的数值,禁止重新计算
+2. key_dimensions 数组必须覆盖 4 维度
+3. 输出必须是纯 JSON,不要包含 markdown 代码块标记
+4. 所有数值字段必须填数字,文本字段填中文
+5. event_interpretation 必须结合 context_tags 中环境标签,体现宽容度
+6. training_advice 必须针对本场数据,避免泛泛而谈
+"""
+    user = (
+        f"请基于系统指令中提供的本次{sport_cn}单次训练复盘快照,"
+        f"生成结构化 JSON 复盘解读。只输出纯 JSON,不要输出 markdown 标记,"
+        f"不要补充额外解释,不要寒暄。"
+    )
+    return [
+        {"role": "system", "content": system},
+        {"role": "user", "content": user},
+    ]
