@@ -401,26 +401,26 @@ class TestMainPyPassthroughConstraint(unittest.TestCase):
 # ══════════════════════════════════════════════════════════════════
 
 class TestNormalizeLapsRunningDynamics(unittest.TestCase):
-    """_normalize_laps 透读 FIT 步态字段(stance_time/vertical_oscillation/stride_length)"""
+    """_normalize_laps 透读 FIT 步态字段(avg_stance_time/avg_vertical_oscillation/avg_step_length)"""
 
     def test_stance_time_parsed(self):
-        """FIT stance_time (ms) → stance_time_ms"""
+        """FIT avg_stance_time (ms) → stance_time_ms"""
         r = MetricsResolver._normalize_laps([
-            {"total_distance": 1000.0, "total_timer_time": 300.0, "stance_time": 245}
+            {"total_distance": 1000.0, "total_timer_time": 300.0, "avg_stance_time": 245}
         ])
         self.assertEqual(r[0]["stance_time_ms"], 245)
 
     def test_vertical_oscillation_parsed(self):
-        """FIT vertical_oscillation (cm) → vertical_oscillation_cm"""
+        """FIT avg_vertical_oscillation (cm) → vertical_oscillation_cm"""
         r = MetricsResolver._normalize_laps([
-            {"total_distance": 1000.0, "total_timer_time": 300.0, "vertical_oscillation": 8.7}
+            {"total_distance": 1000.0, "total_timer_time": 300.0, "avg_vertical_oscillation": 8.7}
         ])
         self.assertEqual(r[0]["vertical_oscillation_cm"], 8.7)
 
     def test_stride_length_parsed(self):
-        """FIT stride_length (m) → stride_length_m"""
+        """FIT avg_step_length (m) → stride_length_m"""
         r = MetricsResolver._normalize_laps([
-            {"total_distance": 1000.0, "total_timer_time": 300.0, "stride_length": 1.23}
+            {"total_distance": 1000.0, "total_timer_time": 300.0, "avg_step_length": 1.23}
         ])
         self.assertEqual(r[0]["stride_length_m"], 1.23)
 
@@ -437,7 +437,7 @@ class TestNormalizeLapsRunningDynamics(unittest.TestCase):
         """stance_time=0 → None(防 0 污染)"""
         r = MetricsResolver._normalize_laps([
             {"total_distance": 1000.0, "total_timer_time": 300.0,
-             "stance_time": 0, "vertical_oscillation": 0, "stride_length": 0}
+             "avg_stance_time": 0, "avg_vertical_oscillation": 0, "avg_step_length": 0}
         ])
         self.assertIsNone(r[0]["stance_time_ms"])
         self.assertIsNone(r[0]["vertical_oscillation_cm"])

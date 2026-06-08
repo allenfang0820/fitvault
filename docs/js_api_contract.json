@@ -185,7 +185,7 @@
       ],
       "returns": "{ ok, code, msg, data: {record}, traceId }",
       "high_risk": false,
-      "description": "单条活动详情"
+      "description": "单条活动详情。data.record.detail.environment_challenge 含 V_ENV.1.3 环境挑战 4 子块派生(climb/altitude/heat/technical_terrain Phase1),不进 AI snapshot,不入 ai_snapshots 表"
     },
     {
       "name": "get_fatigue_review",

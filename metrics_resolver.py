@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import math
 from typing import Any
 
@@ -117,6 +118,10 @@ ACTIVITY_SCHEMA = {
     "fatigue_zones": [],
     "insight_events": [],
     "context_tags": {},
+
+    # V_ENV.1.3:Environment Challenge 4 子块派生(climb/altitude/heat/technical_terrain)
+    # §调研报告 §3/§4;不入 AI snapshot,不进 ai_snapshots 表
+    "environment_challenge": {},
 }
 
 SEMICIRCLE_SCALE = 180.0 / (1 << 31)
@@ -280,6 +285,20 @@ class MetricsResolver:
                 )
 
         final_data["context_tags"] = context_tags
+
+        # === V_ENV.1.3:Environment Challenge 派生块(Phase 1 MVP)===
+        # 数据流:sm.total_ascent/distance_km/max_altitude_m + raw/meta.weather.humidity
+        #        + session.avg_temperature → 4 子块摘要
+        # 契约依据:fit-arch-contrac §2.1 字段可追溯 + §五 AI 边界(不进 AI Snapshot)
+        # §六 审计字段隔离:本块不读 §六 audit 字段,不写 §六 审计字段
+        # Phase 1 不实现 GPS curvature(technical_terrain.available=False)
+        final_data["environment_challenge"] = _build_environment_challenge_block(
+            sm=sm,
+            sport_type=sport_type,
+            avg_temp=avg_temp,
+            raw=raw,
+            meta=meta,
+        )
 
         return final_data
 
@@ -1663,6 +1682,99 @@ class MetricsResolver:
 
         return []
 
+    # ── LTTB downsampling ─────────────────────────────────────
+
+    @staticmethod
+    def _lttb_sample(points: list[dict[str, Any]], threshold: int = 60) -> list[dict[str, Any]]:
+        """LTTB (Largest-Triangle-Three-Buckets) 曲率感知降采样。
+
+        契约依据:
+          §2.1 字段全链路可追溯: 仅选择点的子集, 不修改经纬度
+          §V4.0 防腐层: 纯计算无 IO, 从 main.py 整体迁移
+          §十 Non-Goals: 纯本地算法, 零网络依赖
+
+        算法来源:
+          Sveinn Steinarsson 2013, "Downsampling Time Series for Visual Representation"
+          (MS thesis, University of Iceland) — 公开学术算法, 无专利
+          同实现广泛用于 ECharts/Highcharts 工业级图表库
+
+        关键不变式:
+          1. 起点 (index 0) 与终点 (index n-1) 强制保留
+          2. 中间点按"最大三角形面积"准则选择 (曲率感知)
+          3. O(n) 时间复杂度
+          4. 输出点数 = min(threshold, len(points))
+
+        Args:
+            points: GPS 轨迹点列表, 每点必须含 'lat' / 'lon' 字段
+            threshold: 目标采样点数, 默认 60 (适配 760x220 canvas 真实比例渲染)
+
+        Returns:
+            list[dict]: 降采样后的点列表 (按原顺序)
+        """
+        n = len(points)
+        # 边界: 0 / 1 个点直接返回
+        if n < 2:
+            return list(points) if n else []
+        # 边界: threshold < 2 视为 2 (LTTB 数学要求至少 2 个点)
+        if threshold < 2:
+            threshold = 2
+        # 边界: 不需要采样
+        if n <= threshold:
+            return list(points)
+        # 边界: threshold == 2 时仅保留首尾,无中间桶
+        if threshold == 2:
+            return [points[0], points[n - 1]]
+
+        # 桶大小 (排除首尾 2 个必保留点)
+        bucket_size = (n - 2) / (threshold - 2)
+
+        sampled: list[dict[str, Any]] = []
+        # 强制保留起点
+        sampled.append(points[0])
+
+        # 前一个被保留点的索引 (用于三角形面积计算)
+        prev_index = 0
+
+        # 遍历每个"选择桶"
+        for i in range(1, threshold - 1):
+            # 当前桶的索引范围 [start, end)
+            bucket_start = int((i - 1) * bucket_size) + 1
+            bucket_end = int(i * bucket_size) + 1
+            # 边界修正: 最后一桶包含到 n-1 (排除终点)
+            if i == threshold - 2:
+                bucket_end = n - 1
+            # 下一桶的第一个点 (用于三角形计算的"下一个保留点")
+            next_start = int(i * bucket_size) + 1
+            if next_start >= n - 1:
+                next_start = n - 2  # 防止越界
+
+            # 当前桶内计算最大三角形面积的点
+            prev_p = points[prev_index]
+            next_p = points[next_start]
+            ax = float(prev_p.get("lon", 0) or 0)
+            ay = float(prev_p.get("lat", 0) or 0)
+            bx = float(next_p.get("lon", 0) or 0)
+            by = float(next_p.get("lat", 0) or 0)
+
+            max_area = -1.0
+            max_index = bucket_start
+            for j in range(bucket_start, bucket_end):
+                p = points[j]
+                cx = float(p.get("lon", 0) or 0)
+                cy = float(p.get("lat", 0) or 0)
+                # 三角形面积 = |(B-A) x (C-A)| / 2 (仅需绝对值,省去 /2)
+                area = abs((bx - ax) * (cy - ay) - (cx - ax) * (by - ay))
+                if area > max_area:
+                    max_area = area
+                    max_index = j
+
+            sampled.append(points[max_index])
+            prev_index = max_index
+
+        # 强制保留终点
+        sampled.append(points[n - 1])
+        return sampled
+
     # ── lap normalization ─────────────────────────────────────
 
     @staticmethod
@@ -1671,12 +1783,14 @@ class MetricsResolver:
 
         §V4.0 防腐层契约:本方法从 main.py 整体迁移,纯计算,无 IO
         §2.1 全链路可追溯:UI 字段必须能追溯至 FIT SDK
-          - stance_time (FIT, ms) → stance_time_ms
-          - vertical_oscillation (FIT, cm) → vertical_oscillation_cm
-          - stride_length (FIT, m) → stride_length_m
+          - avg_stance_time (FIT, ms) → stance_time_ms
+          - avg_vertical_oscillation (FIT, cm) → vertical_oscillation_cm
+          - avg_step_length (FIT, m) → stride_length_m
+          - avg_vertical_ratio (FIT, %) → vertical_ratio_pct
+          - avg_stance_time_balance (FIT, %) → stance_time_balance_pct
 
         Returns:
-            list[dict]: 9 字段归一化圈速字典(为未来 VO/stride 进入前端预留,当前仅 gct_ms/avg_cadence/avg_power 进入 UI)
+            list[dict]: 11 字段归一化圈速字典(含步频/GCT/垂直振幅/步幅比/左右平衡)
         """
         result: list[dict[str, Any]] = []
         for i, lap in enumerate(laps):
@@ -1688,9 +1802,13 @@ class MetricsResolver:
             avg_power = MetricsResolver._num(lap.get("avg_power"))
             avg_cadence = MetricsResolver._num(lap.get("avg_cadence"))
             # V9.x 修复:增读 FIT 步态字段,§2.1 全链路可追溯,严禁硬编码 None
-            stance_time_ms = MetricsResolver._safe_int_zero(lap.get("stance_time")) or None
-            vertical_oscillation_cm = MetricsResolver._safe_float_zero(lap.get("vertical_oscillation")) or None
-            stride_length_m = MetricsResolver._safe_float_zero(lap.get("stride_length")) or None
+            # 字段名对齐 fit_engine._read_lap_data 输出(avg_ 前缀为 FIT lap 聚合值)
+            stance_time_ms = MetricsResolver._safe_int_zero(lap.get("avg_stance_time")) or None
+            vertical_oscillation_cm = MetricsResolver._safe_float_zero(lap.get("avg_vertical_oscillation")) or None
+            stride_length_m = MetricsResolver._safe_float_zero(lap.get("avg_step_length")) or None
+            # 额外跑步动态:垂直步幅比、左右平衡
+            vertical_ratio_pct = MetricsResolver._safe_float_zero(lap.get("avg_vertical_ratio")) or None
+            stance_time_balance_pct = MetricsResolver._safe_float_zero(lap.get("avg_stance_time_balance")) or None
             if dist == 0 and elapsed == 0:
                 continue
             result.append({
@@ -1703,6 +1821,8 @@ class MetricsResolver:
                 "stance_time_ms": stance_time_ms,
                 "vertical_oscillation_cm": vertical_oscillation_cm,
                 "stride_length_m": stride_length_m,
+                "vertical_ratio_pct": vertical_ratio_pct,
+                "stance_time_balance_pct": stance_time_balance_pct,
             })
         return result
 
@@ -2451,6 +2571,707 @@ def evaluate_efficiency(
         "delta_pct": round(delta_pct, 2),
         "baseline_ratio": baseline_ratio,
         "sample_size": sample_size,
+    }
+
+
+# ══════════════════════════════════════════════════════════════════
+# V9.4.0: Training Effect 派生层(契约 docs/training_effect_v1_contract §6.5/§6.6)
+# 真理源:FIT session message 直读 training_effect_aerobic / anaerobic_training_effect
+# Resolver 唯一做的事:读 FIT 数值 + 查表(title/label/summary)+ 字符串拼接 overall_summary
+# 8 运动 × 2 维度 × 6 TE 范围 = 96 单元(从用户原 §二 逐字填入)
+# ══════════════════════════════════════════════════════════════════
+
+# 6 等级 ID 顺序(决定 max() 优先级)
+_TE_LEVEL_ORDER = {
+    "recovery": 0,
+    "activation": 1,
+    "maintenance": 2,
+    "improvement": 3,
+    "overload": 4,
+    "extreme": 5,
+}
+
+# 6 等级 ID 列表(下标 0~5 对应 6 个 TE 范围)
+_TE_LEVEL_IDS = ["recovery", "activation", "maintenance", "improvement", "overload", "extreme"]
+
+# TE 分数 → 等级下标(0~5)映射
+_TE_RANGE_BOUNDS = [0.0, 1.0, 2.0, 3.0, 4.0, 4.5, 5.0]
+
+# 运动 × 维度 → (primary_title, secondary_title)(用户原 §四 逐字)
+_TE_SPORT_TITLE = {
+    "running":         ("有氧收益", "速度刺激"),
+    "trail_running":   ("耐力收益", "高强度刺激"),
+    "hiking":          ("耐力收益", "高强度刺激"),
+    "cycling":         ("耐力输出", "冲刺刺激"),
+    "indoor_cycling":  ("有氧输出", "功率刺激"),
+    "swimming":        ("耐力收益", "速度刺激"),
+    "strength":        ("肌肉刺激", "爆发负荷"),
+    "hiit":            ("心肺刺激", "爆发刺激"),
+}
+
+# 运动 × 维度 × 6 TE 范围 = 96 单元(用户原 §二 逐字)
+# 索引顺序:[recovery, activation, maintenance, improvement, overload, extreme]
+_TE_SPORT_MATRIX = {
+    # ─── 1. 跑步(Running) ───
+    "running": {
+        "primary": [
+            ("恢复跑", "以恢复与轻松活动为主"),
+            ("轻度耐力激活", "对心肺形成轻微刺激"),
+            ("维持有氧耐力", "保持当前耐力水平"),
+            ("提升有氧耐力", "有效增强基础耐力"),
+            ("强化心肺能力", "形成较强有氧刺激"),
+            ("极限耐力负荷", "接近极限耐力训练"),
+        ],
+        "secondary": [
+            ("无明显速度刺激", "基本为纯有氧训练"),
+            ("少量变速刺激", "包含轻度变速"),
+            ("提升速度能力", "形成一定爆发刺激"),
+            ("强化爆发能力", "高强度配速刺激明显"),
+            ("高强度间歇刺激", "对无氧系统形成较强负荷"),
+            ("极限速度训练", "接近极限冲刺负荷"),
+        ],
+    },
+    # ─── 2. 越野跑(Trail Running) ───
+    "trail_running": {
+        "primary": [
+            ("轻松山地恢复", "无明显山地负荷"),
+            ("轻度耐力刺激", "对山地体能形成轻微刺激"),
+            ("维持山地耐力", "保持当前山地能力"),
+            ("提升爬升耐力", "有效增强爬升基础耐力"),
+            ("强化长距离耐力", "形成较强山地有氧刺激"),
+            ("极限山地耐力", "接近极限山地耐力训练"),
+        ],
+        "secondary": [
+            ("无明显高强度刺激", "基本为纯耐力训练"),
+            ("少量高强度配速", "包含轻度高强度配速"),
+            ("提升爆发输出", "形成一定爆发刺激"),
+            ("强化高强度能力", "高强度输出刺激明显"),
+            ("高负荷间歇刺激", "对无氧系统形成较强负荷"),
+            ("极限山地输出", "接近极限山地爆发"),
+        ],
+    },
+    # ─── 3. 徒步(Hiking) ───
+    "hiking": {
+        "primary": [
+            ("轻松活动", "无明显长距离负荷"),
+            ("轻度长距离活动", "对长距离体能形成轻微刺激"),
+            ("维持基础体能", "保持当前基础体能"),
+            ("提升长距离耐力", "有效增强长距离基础耐力"),
+            ("强化山地体能", "形成较强长距离有氧刺激"),
+            ("极限长距离负荷", "接近极限长距离徒步"),
+        ],
+        "secondary": [
+            ("无明显高强度刺激", "基本为平坦轻松徒步"),
+            ("少量高强度活动", "包含轻度高强度活动"),
+            ("中等强度刺激", "形成一定体能刺激"),
+            ("强化高强度能力", "高强度刺激明显"),
+            ("高负荷体能刺激", "对体能系统形成较强负荷"),
+            ("极限高强度负荷", "接近极限体能挑战"),
+        ],
+    },
+    # ─── 4. 公路骑行(Cycling) ───
+    "cycling": {
+        "primary": [
+            ("恢复骑行", "以恢复与轻松骑行为主"),
+            ("轻度输出激活", "对心肺形成轻微刺激"),
+            ("维持持续输出", "保持当前持续输出能力"),
+            ("提升持续功率", "有效增强持续输出基础"),
+            ("强化耐力输出", "形成较强持续有氧刺激"),
+            ("极限耐力骑行", "接近极限持续输出"),
+        ],
+        "secondary": [
+            ("无明显冲刺刺激", "基本为匀速骑行"),
+            ("少量变速刺激", "包含轻度变速"),
+            ("提升冲刺能力", "形成一定爆发刺激"),
+            ("强化爆发输出", "高强度冲刺刺激明显"),
+            ("高强度间歇刺激", "对无氧系统形成较强负荷"),
+            ("极限冲刺负荷", "接近极限冲刺训练"),
+        ],
+    },
+    # ─── 5. 室内骑行(Indoor Cycling) ───
+    "indoor_cycling": {
+        "primary": [
+            ("轻松恢复骑行", "以恢复与轻松踩踏为主"),
+            ("轻度踩踏激活", "对心肺形成轻微刺激"),
+            ("维持有氧输出", "保持当前有氧输出能力"),
+            ("提升持续踩踏能力", "有效增强踩踏输出基础"),
+            ("强化功率耐力", "形成较强有氧刺激"),
+            ("极限功率训练", "接近极限持续功率"),
+        ],
+        "secondary": [
+            ("无明显高强度刺激", "基本为匀速踩踏"),
+            ("少量间歇刺激", "包含轻度间歇"),
+            ("提升爆发输出", "形成一定爆发刺激"),
+            ("强化高强度能力", "高强度刺激明显"),
+            ("高负荷功率间歇", "对无氧系统形成较强负荷"),
+            ("极限功率训练", "接近极限高强度踩踏"),
+        ],
+    },
+    # ─── 6. 游泳(Swimming) ───
+    "swimming": {
+        "primary": [
+            ("轻松恢复游", "以恢复与轻松游动为主"),
+            ("轻度耐力激活", "对心肺形成轻微刺激"),
+            ("维持持续游动能力", "保持当前游动耐力"),
+            ("提升游泳耐力", "有效增强基础游泳耐力"),
+            ("强化心肺能力", "形成较强游泳有氧刺激"),
+            ("极限耐力训练", "接近极限游泳耐力"),
+        ],
+        "secondary": [
+            ("无明显速度刺激", "基本为匀速游动"),
+            ("少量冲刺训练", "包含轻度冲刺"),
+            ("提升爆发能力", "形成一定划水爆发刺激"),
+            ("强化高强度划水", "高强度划水刺激明显"),
+            ("高强度速度训练", "对无氧系统形成较强负荷"),
+            ("极限速度负荷", "接近极限冲刺游动"),
+        ],
+    },
+    # ─── 7. 力量训练(Strength)— 用户原 §5.7 标注「彻底换语言」 ───
+    "strength": {
+        "primary": [
+            ("轻度肌肉激活", "对肌肉形成轻微刺激"),
+            ("基础力量刺激", "形成一定肌肉负荷"),
+            ("维持力量状态", "保持当前力量水平"),
+            ("提升肌肉负荷", "有效增强基础力量"),
+            ("强化力量刺激", "形成较强肌肉刺激"),
+            ("极限力量负荷", "接近极限力量训练"),
+        ],
+        "secondary": [
+            ("无明显爆发训练", "基本为稳定力量训练"),
+            ("少量爆发刺激", "包含轻度爆发动作"),
+            ("提升爆发能力", "形成一定爆发刺激"),
+            ("强化高强度输出", "高强度爆发刺激明显"),
+            ("高负荷力量刺激", "对爆发系统形成较强负荷"),
+            ("极限爆发训练", "接近极限爆发训练"),
+        ],
+    },
+    # ─── 8. HIIT / 功能训练 ───
+    "hiit": {
+        "primary": [
+            ("轻度活动", "无明显心肺负荷"),
+            ("轻度心肺刺激", "对心肺形成轻微刺激"),
+            ("维持有氧能力", "保持当前有氧水平"),
+            ("提升心肺能力", "有效增强基础心肺"),
+            ("强化高强度耐力", "形成较强心肺刺激"),
+            ("极限心肺负荷", "接近极限心肺训练"),
+        ],
+        "secondary": [
+            ("无明显爆发刺激", "基本为稳定有氧"),
+            ("少量高强度动作", "包含轻度高强度动作"),
+            ("提升爆发能力", "形成一定爆发刺激"),
+            ("强化高强度输出", "高强度爆发刺激明显"),
+            ("高负荷间歇刺激", "对无氧系统形成较强负荷"),
+            ("极限爆发负荷", "接近极限间歇爆发"),
+        ],
+    },
+}
+
+
+def _te_to_index(score):
+    """0.0~5.0 TE 分数 → 0~5 等级下标(用户原 §三 6 范围)"""
+    if score is None:
+        return 0
+    if score < _TE_RANGE_BOUNDS[1]:
+        return 0  # 0.0~0.9 recovery
+    if score < _TE_RANGE_BOUNDS[2]:
+        return 1  # 1.0~1.9 activation
+    if score < _TE_RANGE_BOUNDS[3]:
+        return 2  # 2.0~2.9 maintenance
+    if score < _TE_RANGE_BOUNDS[4]:
+        return 3  # 3.0~3.9 improvement
+    if score < _TE_RANGE_BOUNDS[5]:
+        return 4  # 4.0~4.5 overload
+    return 5      # 4.5~5.0 extreme
+
+
+def build_training_effect(record, sport_type):
+    """V9.4.4:消费 FIT Firstbeat TE 字段 + 查表,返回契约 §2.1 JSON 结构。
+
+    真理源:
+      1. FIT session.total_training_effect + total_anaerobic_training_effect
+         (Garmin Firstbeat 私有算法,fitparse 已应用 scale 0.1 → 0.0~5.0) — `data_source=fit_sdk`
+      2. 双字段都 None → 返回 None(走前端占位,不重算)
+
+    设计依据:
+      - 专家说明:不要从 heart_rate/pace 自己重算 Garmin TE(Firstbeat 私有,涉及长期训练状态)
+      - 脉图正确定位:消费 Garmin TE + 做语义解释
+      - 任一字段为 None 仍接受(设备部分输出场景),缺失维度走 0.0 fallback(标 fit_sdk)
+      - 双字段都 None 才返回 None
+
+    依据:docs/training_effect_v1_contract.md §6.5/§6.6
+
+    Args:
+        record: activity record dict
+        sport_type: 运动类型(原始 sport_type)
+
+    Returns:
+        dict | None: 契约 §2.1 JSON 结构(无任何可用数据时返回 None)
+    """
+    if not isinstance(record, dict):
+        return None
+    aerobic = record.get("aerobic_training_effect")
+    anaerobic = record.get("anaerobic_training_effect")
+    has_fit_te = aerobic is not None or anaerobic is not None
+
+    if not has_fit_te:
+        # V9.4.4:双字段都 None → 走前端占位(不再做启发式估算,避免与 Garmin 私有算法冲突)
+        return None
+
+    data_source = "fit_sdk"
+
+    # 规范化 sport_type
+    sport = str(sport_type or "running").strip().lower()
+
+    primary_score = float(aerobic) if aerobic is not None else 0.0
+    secondary_score = float(anaerobic) if anaerobic is not None else 0.0
+
+    primary_title, secondary_title = _TE_SPORT_TITLE.get(sport, _TE_SPORT_TITLE["running"])
+
+    matrix = _TE_SPORT_MATRIX.get(sport, _TE_SPORT_MATRIX["running"])
+    primary_idx = _te_to_index(primary_score)
+    secondary_idx = _te_to_index(secondary_score)
+    primary_label, primary_summary = matrix["primary"][primary_idx]
+    secondary_label, secondary_summary = matrix["secondary"][secondary_idx]
+
+    primary_level = _TE_LEVEL_IDS[primary_idx]
+    secondary_level = _TE_LEVEL_IDS[secondary_idx]
+    if _TE_LEVEL_ORDER[primary_level] >= _TE_LEVEL_ORDER[secondary_level]:
+        global_level = primary_level
+    else:
+        global_level = secondary_level
+
+    # overall_summary 拼接(V9.4.4:不再有 estimated 路径,只来自 FIT Firstbeat)
+    overall_summary = "本次训练{prim},并包含{seco}。".format(
+        prim=primary_summary, seco=secondary_summary
+    )
+
+    return {
+        "sport_type": sport,
+        "primary": {
+            "title": primary_title,
+            "score": round(primary_score, 1),
+            "level": primary_level,
+            "label": primary_label,
+            "summary": primary_summary,
+        },
+        "secondary": {
+            "title": secondary_title,
+            "score": round(secondary_score, 1),
+            "level": secondary_level,
+            "label": secondary_label,
+            "summary": secondary_summary,
+        },
+        "global_level": global_level,
+        "overall_summary": overall_summary,
+        "data_source": data_source,  # V9.4.4:fit_sdk 透明标记(FIT Firstbeat 直读)
+    }
+
+
+# ══════════════════════════════════════════════════════════════════
+# V_ENV.1.1:Environment Challenge 派生工具(Phase 1:climb / altitude / heat)
+# §调研报告 §3.1/§3.2/§3.3;Phase 1 不实现 GPS curvature 与 Vertical Intensity
+# 契约依据:fit-arch-contrac §2.1 字段可追溯 + §六 审计字段隔离
+# 严禁读 self.xxx / 写 DB / 写 AI snapshot
+# ══════════════════════════════════════════════════════════════════
+
+
+def calculate_climb_density(total_ascent_m, distance_km):
+    """V_ENV.1.1:爬升密度 = 累计爬升(m) / 距离(km)。
+
+    Phase 1 仅做派生,不做时间归一化(Vertical Intensity 推迟至 Phase 3)。
+
+    契约:
+      - 任一输入为 None / distance_km<=0 → 返回 0.0(降级,不抛异常)
+      - total_ascent_m < 0 → 视为 0
+      - 返回值单位: m/km(UI 侧只用于映射 level,自身不直接展示)
+    """
+    if total_ascent_m is None or distance_km is None:
+        return 0.0
+    if distance_km <= 0.0:
+        return 0.0
+    ascent = max(0.0, float(total_ascent_m))
+    return ascent / float(distance_km)
+
+
+def classify_altitude_stress(max_altitude_m):
+    """V_ENV.1.1:海拔压力 5 档分级(主指标 max_altitude,严禁替换为 avg)。
+
+    阈值与语义严格按调研报告 §3.2 表:
+      < 1500           → 0  无明显影响
+      [1500, 2500)     → 1  轻度压力
+      [2500, 3500)     → 2  中等高海拔
+      [3500, 4500)     → 3  高海拔压力
+      >= 4500          → 4  极限海拔环境
+
+    降级:
+      - max_altitude_m 为 None 或 < 0 → 返回 0
+    """
+    if max_altitude_m is None or max_altitude_m < 0:
+        return 0
+    alt = float(max_altitude_m)
+    if alt < 1500.0:
+        return 0
+    if alt < 2500.0:
+        return 1
+    if alt < 3500.0:
+        return 2
+    if alt < 4500.0:
+        return 3
+    return 4
+
+
+def classify_heat_stress(temp_c, humidity):
+    """V_ENV.1.1:热环境压力 4 档分级(Temperature × Humidity 粗分)。
+
+    公式:
+      product = temp_c * humidity    # humidity 范围 0~1
+
+    阈值与语义严格按调研报告 §3.3 表:
+      < 500           → 0  环境舒适
+      [500, 1200)     → 1  略有热感
+      [1200, 2100)    → 2  炎热环境
+      >= 2100         → 3  高温挑战
+
+    降级(单维度缺失/双维度缺失):
+      - temp_c is None → 返回 0(温度缺失无法判定)
+      - humidity is None:
+          < 25°C  → 0
+          [25, 30) → 1
+          [30, 35) → 2
+          >= 35   → 3
+      - 两者都 None → 返回 0
+
+    契约:
+      - 拒绝伪精确:不做 WBGT / Heat Index / AI 热风险
+      - 此为环境摘要,不替代生理指标
+    """
+    if temp_c is None and humidity is None:
+        return 0
+    if temp_c is None:
+        return 0
+    if humidity is None:
+        # 单维度降级:仅按温度粗分
+        t = float(temp_c)
+        if t < 25.0:
+            return 0
+        if t < 30.0:
+            return 1
+        if t < 35.0:
+            return 2
+        return 3
+    product = float(temp_c) * float(humidity)
+    if product < 500.0:
+        return 0
+    if product < 1200.0:
+        return 1
+    if product < 2100.0:
+        return 2
+    return 3
+
+
+# ══════════════════════════════════════════════════════════════════
+# V_ENV.1.2:Environment Challenge 语义路由(6 运动 × 4 模块 × 4/5 级)
+# §调研报告 §4.2~§4.7 1:1 复刻;skiing/mountaineering 第 3 模块走低温替换
+# 契约依据:fit-arch-contrac §2.1 字段可追溯 + §五 AI 边界(纯展示文案,不入 AI Snapshot)
+# 严禁读 self.xxx / 写 DB / 拼前端 payload
+# ══════════════════════════════════════════════════════════════════
+
+
+# ─── 1. 跑步(Running)— §4.2 ───
+RUNNING_SEMANTICS = {
+    "vertical": ["平路路线", "略有起伏", "持续爬升路线", "高强度爬升跑", "极限爬升挑战"],
+    "altitude": ["低海拔环境", "中低海拔跑步", "中高海拔环境", "高海拔耐力环境", "极限高海拔挑战"],
+    "heat":     ["环境舒适", "略有热感", "炎热跑步环境", "高温耐力挑战"],
+    "terrain":  ["路线平稳", "略复杂路线", "技术型路线", "高技术跑步路线", "极限技术地形"],
+}
+
+# ─── 2. 越野跑(Trail Running)— §4.3 ───
+TRAIL_RUNNING_SEMANTICS = {
+    "vertical": ["轻度山地路线", "起伏山地", "持续爬升山路", "高强度山地爬升", "极限山地挑战"],
+    "altitude": ["低海拔山地", "中低海拔路线", "中高海拔越野", "高海拔山地环境", "极限高海拔越野"],
+    "heat":     ["山地气候舒适", "略有热感", "炎热山地环境", "高温山地挑战"],
+    "terrain":  ["路况稳定", "轻度技术路线", "中等技术山路", "高技术越野路线", "极限技术地形"],
+}
+
+# ─── 3. 徒步(Hiking)— §4.4 ───
+HIKING_SEMANTICS = {
+    "vertical": ["轻松步道", "略有爬升", "持续登山路线", "高强度登山挑战", "极限长爬升路线"],
+    "altitude": ["低海拔徒步", "中低海拔环境", "中高海拔徒步", "高海拔登山环境", "极限高海拔环境"],
+    "heat":     ["徒步环境舒适", "略有热感", "炎热徒步环境", "高温登山挑战"],
+    "terrain":  ["步道路况稳定", "略复杂山路", "技术型山地路线", "高技术登山路线", "极限技术山地"],
+}
+
+# ─── 4. 公路骑行(Road Cycling)— §4.5 ───
+CYCLING_SEMANTICS = {
+    "vertical": ["平路骑行", "略有爬升", "长爬坡路线", "高强度爬坡骑行", "极限山地骑行"],
+    "altitude": ["低海拔骑行", "中低海拔路线", "中高海拔骑行", "高海拔骑行环境", "极限高海拔骑行"],
+    "heat":     ["骑行环境舒适", "略有热感", "炎热骑行环境", "高温耐力骑行"],
+    "terrain":  ["路况稳定", "略复杂路线", "多弯山路", "高技术下坡路线", "极限技术骑行路线"],
+}
+
+# ─── 5. 山地骑行(MTB)— §4.6 ───
+MOUNTAIN_BIKING_SEMANTICS = {
+    "vertical": ["轻度越野路线", "起伏土路", "持续山地爬升", "高强度越野爬升", "极限山地骑行挑战"],
+    "altitude": ["低海拔越野", "中低海拔路线", "中高海拔山地", "高海拔越野环境", "极限高海拔越野"],
+    "heat":     ["越野环境舒适", "略有热感", "炎热越野环境", "高温山地骑行"],
+    "terrain":  ["土路稳定", "轻度技术路线", "技术型林道", "高技术越野路线", "极限技术地形"],
+}
+
+# ─── 6. 低温环境(滑雪/登山 第 3 模块专用替换)— §4.7.3 ───
+# 5 档,下标 0~4;对应温度阈值(代码不消费,供前端 tooltip):
+#   0:0°C 以上 / 1:0~-10 / 2:-10~-20 / 3:-20~-30 / 4:<-30
+COLD_SEMANTICS = ["温度舒适", "略低温", "低温环境", "严寒环境", "极寒挑战"]
+
+
+# ─── 7. 路由表(对外查询入口)───
+# 项目实际枚举(L1547/L1551/metrics_resolver.py 全文扫描)已把 road_cycling 合并到 cycling;
+# 本表兼容两种写法以便未来拆分。
+# skiing/mountaineering 不在调研报告 §4.7 给 1/2/4 模块专属语义,故借越野跑/徒步兜底;
+# 第 3 模块单独走 COLD_SEMANTICS。
+_ENV_CHALLENGE_SPORT_MAP = {
+    "running":         RUNNING_SEMANTICS,
+    "trail_running":   TRAIL_RUNNING_SEMANTICS,
+    "hiking":          HIKING_SEMANTICS,
+    "cycling":         CYCLING_SEMANTICS,
+    "road_cycling":    CYCLING_SEMANTICS,
+    "mountain_biking": MOUNTAIN_BIKING_SEMANTICS,
+    "skiing":          TRAIL_RUNNING_SEMANTICS,
+    "mountaineering":  HIKING_SEMANTICS,
+}
+
+_COLD_SPORT_SET = {"skiing", "mountaineering"}
+_DEFAULT_SEMANTICS = RUNNING_SEMANTICS
+
+
+def _clamp_level(level, max_level):
+    """V_ENV.1.2:level 边界归一化。
+
+    契约:
+      - None / 非数值 / 负数 / 越界 → 0(降级,不抛异常)
+      - 正常返回 0..max_level 整数
+    """
+    if level is None:
+        return 0
+    try:
+        v = int(level)
+    except (TypeError, ValueError):
+        return 0
+    if v < 0:
+        return 0
+    if v > max_level:
+        return 0
+    return v
+
+
+def get_environment_challenge_semantic(sport_type, module, level):
+    """V_ENV.1.2:环境挑战语义查询(同等级不同运动不同语义)。
+
+    契约:
+      - sport_type: 字符串,未匹配走 RUNNING_SEMANTICS
+      - module ∈ {"vertical","altitude","heat","terrain"},未知返回 "--"
+      - level 越界/None 走最低档
+      - skiing/mountaineering 的 "heat" 模块自动切换为低温 5 档语义
+      - 查询结果仅供 UI 展示文案,严禁写入 AI Snapshot / DB
+    """
+    sport_key = (sport_type or "").strip().lower() if sport_type else ""
+    table = _ENV_CHALLENGE_SPORT_MAP.get(sport_key, _DEFAULT_SEMANTICS)
+
+    if module not in table:
+        return "--"
+
+    # 滑雪/登山 → 第 3 模块走低温 5 档替换
+    if module == "heat" and sport_key in _COLD_SPORT_SET:
+        idx = _clamp_level(level, max_level=4)
+        return COLD_SEMANTICS[idx]
+
+    # 普通运动 → 查表(heat 4 档 / 其余 5 档)
+    bucket = table[module]
+    max_level = len(bucket) - 1
+    idx = _clamp_level(level, max_level=max_level)
+    return bucket[idx]
+
+
+# ══════════════════════════════════════════════════════════════════
+# V_ENV.1.3:Environment Challenge 派生块构建器
+# §调研报告 §3 数据层 + §4 语义;被 MetricsResolver.resolve() 调用
+# 契约依据:fit-arch-contrac §2.1 字段可追溯 + §五 AI 边界(不进 AI Snapshot)
+# 严禁读 self.xxx / 写 DB / 拼前端 payload
+# ══════════════════════════════════════════════════════════════════
+
+
+def _classify_climb_density_level(density):
+    """V_ENV.1.3:climb_density → 5 档 level(§3.1 表)。
+
+    阈值(单位 m/km):
+      < 10           → 0
+      [10, 30)       → 1
+      [30, 60)       → 2
+      [60, 100)      → 3
+      >= 100         → 4
+    """
+    if density is None or density < 0:
+        return 0
+    d = float(density)
+    if d < 10.0:
+        return 0
+    if d < 30.0:
+        return 1
+    if d < 60.0:
+        return 2
+    if d < 100.0:
+        return 3
+    return 4
+
+
+def _classify_cold_level(temp_c):
+    """V_ENV.1.3:低温 5 档(滑雪/登山专用,§4.7.3 表)。
+
+    阈值(单位 °C):
+      > 0          → 0  温度舒适
+      [-10, 0)     → 1  略低温
+      [-20, -10)   → 2  低温环境
+      [-30, -20)   → 3  严寒环境
+      <= -30       → 4  极寒挑战
+
+    降级:
+      - temp_c 为 None → 返回 0(温度缺失走最高档"温度舒适")
+    """
+    if temp_c is None:
+        return 0
+    t = float(temp_c)
+    if t >= 0.0:
+        return 0
+    if t >= -10.0:
+        return 1
+    if t >= -20.0:
+        return 2
+    if t >= -30.0:
+        return 3
+    return 4
+
+
+def _resolve_humidity_0to1(raw, meta):
+    """V_ENV.1.3:从 raw/meta 双入口取 humidity,防御性归一化到 0~1。
+
+    入口优先级:
+      1. raw.get("weather").get("humidity")(主路径:parse_track_at_path / sync_local_fit_files 注入)
+      2. meta.get("weather").get("humidity")(兼容路径)
+      3. meta.get("humidity")(裸字段)
+
+    防御性归一化:
+      - 0~1 → 直接返回(用户传入的归一化值)
+      - 1~100 → 除以 100(Open-Meteo / Garmin weather_json 百分数)
+      - 100 以外异常值 → 视为 None
+
+    Returns:
+      float in [0.0, 1.0] or None
+    """
+    candidates = []
+    # 1) raw 顶层 weather
+    raw_w = raw.get("weather") if isinstance(raw, dict) else None
+    if isinstance(raw_w, dict) and raw_w.get("humidity") is not None:
+        candidates.append(raw_w.get("humidity"))
+    # 2) meta.weather
+    meta_w = meta.get("weather") if isinstance(meta, dict) else None
+    if isinstance(meta_w, dict) and meta_w.get("humidity") is not None:
+        candidates.append(meta_w.get("humidity"))
+    # 3) meta.humidity(裸)
+    if isinstance(meta, dict) and meta.get("humidity") is not None:
+        candidates.append(meta.get("humidity"))
+
+    if not candidates:
+        return None
+
+    h_raw = candidates[0]
+    try:
+        h = float(h_raw)
+    except (TypeError, ValueError):
+        return None
+
+    if h < 0:
+        return None
+    if h <= 1.0:
+        return h
+    if h <= 100.0:
+        return h / 100.0
+    return None  # > 100 视为异常
+
+
+def _build_environment_challenge_block(sm, sport_type, avg_temp, raw, meta):
+    """V_ENV.1.3:构建 environment_challenge 4 子块派生(Phase 1 MVP)。
+
+    契约:
+      - 输入全部只读(sm / sport_type / avg_temp / raw / meta)
+      - 输出结构稳定:climb/altitude/heat/technical_terrain + sport_type + phase + data_source
+      - 不进 AI snapshot,不写 DB,不读 §六 审计字段
+      - 任何字段缺失时按"最低档"降级,metric_value 标 None
+    """
+    # ── 1. 提取标量(全部防御性) ──
+    total_ascent_m = float(sm.get("total_ascent", 0) or 0) if isinstance(sm, dict) else 0.0
+    distance_km = float(sm.get("distance_km", 0) or 0) if isinstance(sm, dict) else 0.0
+    max_alt_m = 0.0
+    if isinstance(sm, dict):
+        max_alt_m = float(
+            sm.get("max_altitude_m", 0) or sm.get("max_alt_m", 0) or 0
+        )
+
+    # ── 2. climb 子块 ──
+    climb_density = calculate_climb_density(total_ascent_m, distance_km)
+    climb_level = _classify_climb_density_level(climb_density)
+    climb_label = get_environment_challenge_semantic(sport_type, "vertical", climb_level)
+
+    # ── 3. altitude 子块 ──
+    altitude_level = classify_altitude_stress(max_alt_m)
+    altitude_label = get_environment_challenge_semantic(sport_type, "altitude", altitude_level)
+
+    # ── 4. heat 子块 ──
+    humidity_0to1 = _resolve_humidity_0to1(raw or {}, meta or {})
+    sport_key = (sport_type or "").strip().lower() if sport_type else ""
+    if sport_key in _COLD_SPORT_SET:
+        # 滑雪/登山:低温 5 档只看温度(§4.7.3);与 product 计算解耦
+        heat_level = _classify_cold_level(avg_temp)
+        heat_metric_value = round(float(avg_temp), 1) if avg_temp is not None else None
+    else:
+        heat_level = classify_heat_stress(avg_temp, humidity_0to1)
+        # metric_value 还原 product(供前端展示/调试;缺失时 None)
+        heat_metric_value = None
+        if avg_temp is not None and humidity_0to1 is not None:
+            try:
+                heat_metric_value = round(float(avg_temp) * float(humidity_0to1), 1)
+            except (TypeError, ValueError):
+                heat_metric_value = None
+    heat_label = get_environment_challenge_semantic(sport_type, "heat", heat_level)
+
+    # ── 5. technical_terrain(Phase 1 占位)───
+    return {
+        "sport_type": sport_type,
+        "climb": {
+            "metric_name": "climb_density",
+            "metric_value": round(climb_density, 2),
+            "level": climb_level,
+            "label": climb_label,
+        },
+        "altitude": {
+            "metric_name": "max_altitude",
+            "metric_value": round(max_alt_m, 1),
+            "level": altitude_level,
+            "label": altitude_label,
+        },
+        "heat": {
+            "metric_name": "temp_humidity_product",
+            "metric_value": heat_metric_value,
+            "level": heat_level,
+            "label": heat_label,
+        },
+        "technical_terrain": {
+            "metric_name": "gps_curvature",
+            "metric_value": None,
+            "level": 0,
+            "label": "--",
+            "available": False,
+        },
+        "phase": 1,
+        "data_source": "fit_sdk",
     }
 
 

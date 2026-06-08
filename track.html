@@ -866,16 +866,15 @@
             display: flex;
         }
         .activity-detail-modal {
-            position: fixed !important;
-            inset: 0 !important;
-            width: 100vw !important;
-            height: 100vh !important;
-            z-index: 9999 !important;
-            background: linear-gradient(180deg, rgba(15,23,42,0.98), rgba(15,23,42,0.92)) !important;
+            /* V5.3:回归 overlay flex 流,让 overlay 的 padding: 28px 真正生效 */
+            width: 100%;
+            height: 100%;
+            z-index: 9999;
+            background: linear-gradient(180deg, rgba(15,23,42,0.98), rgba(15,23,42,0.92));
             border: 1px solid rgba(255,255,255,0.1);
             box-shadow: 0 28px 80px rgba(0,0,0,0.45);
-            border-radius: 0 !important;
-            padding: 18px 28px 22px 28px;       /* V9.2.3:左右各 28px,给最右列卡片留视觉缓冲 */
+            border-radius: 0;
+            padding: 18px 0 22px 0;             /* 水平 padding 交给 overlay 提供 */
             display: none;
             flex-direction: column;
             overflow-x: hidden;                 /* V9.2.3:启用垂直滚动,内容超出时向下滚 */
@@ -892,7 +891,7 @@
             display: flex;
             flex-direction: column;
             gap: 15px;
-            padding: 15px 0 0 0;
+            padding: 15px 24px 0 24px;          /* V5.2:左右对称 24px,与 modal 28px 合计 52px 视觉缓冲 */
             overflow: visible;                  /* V9.2.3:body 不再锁滚动,由 .activity-detail-modal 统一管 */
             min-height: 0;
         }
@@ -1915,6 +1914,85 @@
         .weather-glass-label { font-size:0.66rem; color:#94a3b8; margin-bottom:2px; }
         .weather-glass-value { font-size:0.8rem; color:#f8fafc; font-weight:700; word-break:break-word; }
         .weather-glass-empty { font-size:0.72rem; color:#94a3b8; line-height:1.6; }
+        /* V9.4.0:训练收益卡(契约 §7 玻璃态) */
+        .training-benefit-card { /* 复用 .weather-glass-card 玻璃态,本类仅语义化 */ }
+        /* V9.4.4:训练收益总结 — 与卡片主标签(0.8rem)同级,不再用 .weather-glass-empty 缩小字号 */
+        .training-effect-summary { font-size:0.85rem; color:#cbd5e1; line-height:1.7; margin-top:6px; }
+        .training-effect-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin: 8px 0 6px;
+        }
+        .training-effect-row {
+            display: flex;
+            align-items: stretch;
+            justify-content: space-between;
+            gap: 8px;
+            padding: 8px 10px;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.04);
+        }
+        .training-effect-key {
+            flex: 1;
+            min-width: 0;
+            padding-left: 8px;
+            border-left: 3px solid #64748b;  /* 默认 Gray;行内 style 覆盖 */
+        }
+        .training-effect-key-title {
+            font-size: 0.66rem;
+            color: #94a3b8;
+            margin-bottom: 2px;
+        }
+        .training-effect-key-label {
+            font-size: 0.78rem;
+            color: #e2e8f0;
+            font-weight: 600;
+            line-height: 1.3;
+        }
+        /* V_ENV.1.5:环境挑战卡片 — 复用 training-effect 行式布局 + weather-glass 玻璃态 */
+        .env-challenge-card { /* 复用 .weather-glass-card 玻璃态,本类仅语义化 */ }
+        .env-challenge-row {
+            display: flex;
+            align-items: stretch;
+            justify-content: space-between;
+            gap: 8px;
+            padding: 8px 10px;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.04);
+        }
+        .env-challenge-key {
+            flex: 1;
+            min-width: 0;
+            padding-left: 8px;
+            border-left: 3px solid #64748b;
+        }
+        .env-challenge-key-title {
+            font-size: 0.66rem;
+            color: #94a3b8;
+            margin-bottom: 2px;
+        }
+        .env-challenge-key-label {
+            font-size: 0.78rem;
+            color: #e2e8f0;
+            font-weight: 600;
+            line-height: 1.3;
+        }
+        .env-challenge-empty {
+            font-size: 0.72rem;
+            color: #94a3b8;
+            line-height: 1.6;
+        }
+        .training-effect-score {
+            font-size: 1.3rem;
+            font-weight: 800;
+            font-family: 'SF Mono', Menlo, Consolas, monospace;
+            min-width: 36px;
+            text-align: right;
+            align-self: center;
+        }
         @media (max-width: 768px) {
             .weather-glass-grid { grid-template-columns:1fr; }
         }
@@ -2732,28 +2810,30 @@
             color: #fca5a5;
         }
 
-        /* === V9.2.3 概览 Tab 2x2 grid 布局 — fit-arch-contrac §五 UI 风格 ===
-           左列(2fr):Hero(6 metric) + Map(圈速统计) 等宽垂直堆叠
-           右列(1fr):4 张卡(环境/训练收益/身体状态/活动摘要) 跨 Hero+Map 整个高度
-           仅桌面端(≥1024px),无 media query */
+        /* === V6 概览 Tab 3 列 grid 布局 — fit-arch-contrac §五 UI 风格 ===
+           左列(260px 固定):轨迹快照(正方形 260×260,左上角锚定)
+           中列(2fr):Hero(6 metric 3×2) + 圈速统计(跨左+中)
+           右列(1fr,flex 1):4 张卡(环境/训练收益/身体状态/活动摘要) 跨全高
+           仅桌面端(≥1024px),无 media query
+           V6 设计:轨迹快照固定 260px,只允许 sidebar 随窗口伸缩 */
         .overview-2x2 {
             display: grid;
-            grid-template-columns: 2fr 1fr;
+            grid-template-columns: 260px 2fr 1fr;
             grid-template-rows: auto auto;
             grid-template-areas:
-                "hero sidebar"
-                "map sidebar";
+                "track  hero  sidebar"
+                "laps   laps  sidebar";
             gap: 14px;
+        }
+        .overview-track-area {
+            grid-area: track;
+            min-width: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
         .overview-hero-area {
             grid-area: hero;
-            min-width: 0;
-        }
-        .overview-map-area {
-            grid-area: map;
-            display: flex;
-            flex-direction: column;
-            gap: 14px;
             min-width: 0;
         }
         .overview-sidebar-stack {
@@ -2762,32 +2842,20 @@
             flex-direction: column;
             gap: 10px;
             min-width: 0;
+            padding-right: 12px;     /* V5.1: 视觉补偿 16+12=28px, 与 modal 左 28px 视觉对称 */
+        }
+        .overview-laps-area {
+            grid-area: laps;
+            min-width: 0;
+            background: rgba(15, 23, 42, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 10px;
+            padding: 14px 16px;
         }
         .overview-metrics-grid {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
             gap: 10px;
-        }
-        .overview-main-visual {
-            background: rgba(15, 23, 42, 0.5);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            border-radius: 12px;
-            padding: 16px;
-            min-height: 300px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            transition: border-color 0.2s;
-        }
-        .overview-main-visual:hover {
-            border-color: rgba(108, 92, 231, 0.35);
-        }
-        .overview-laps {
-            background: rgba(15, 23, 42, 0.4);
-            border: 1px solid rgba(255, 255, 255, 0.06);
-            border-radius: 10px;
-            padding: 14px 16px;
         }
         .overview-laps-title {
             font-size: 0.8rem;
@@ -2896,23 +2964,87 @@
             margin-top: 4px;
         }
 
-        /* 主视觉轨迹地图(E11) */
-        .overview-main-visual .detail-track-thumb {
-            width: 100%;
-            height: 100%;
-            min-height: 280px;
+        /* V6 轨迹快照(E11) — 固定 260×260 正方形,左上角锚定
+           .overview-track-area 固定 260×260,不参与伸缩
+           .detail-track-thumb 固定 260×260,Canvas 一次渲染 */
+        .overview-track-area {
+            grid-area: track;
+            width: 260px;
+            height: 260px;
+            min-width: 260px;
+            display: flex;
+            align-items: stretch;
+            justify-content: stretch;
         }
-        .overview-main-visual .detail-track-thumb svg {
+        #activity-detail-track-container {
             width: 100%;
             height: 100%;
-            min-height: 280px;
+            display: flex;
+            flex-direction: column;
+            align-items: stretch;
+            justify-content: stretch;
+            gap: 8px;
+        }
+        .overview-track-area .detail-track-thumb {
+            width: 260px;
+            height: 260px;
+            min-width: 260px;
+            min-height: 260px;
+            margin: 0;
+            border-radius: 12px;
+            border: 1px solid rgba(108, 92, 231, 0.18);
+            background: rgba(15, 23, 42, 0.5);
+            overflow: hidden;
+            cursor: pointer;
+            transition: border-color 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+        .overview-track-area .detail-track-thumb:hover {
+            border-color: rgba(108, 92, 231, 0.35);
+        }
+        .overview-track-area .detail-track-thumb svg,
+        .overview-track-area .detail-track-thumb canvas {
             display: block;
         }
-        .overview-main-visual .detail-track-tip {
-            margin-top: 8px;
+        .overview-track-area .detail-track-tip {
             font-size: 0.7rem;
             color: #94a3b8;
             text-align: center;
+            flex-shrink: 0;
+        }
+
+        /* === V5 响应式: Tablet(≤1024px) 2 列, Mobile(≤640px) 单列堆叠 === */
+        @media (max-width: 1024px) {
+            .overview-2x2 {
+                grid-template-columns: 1fr 2fr;
+                grid-template-areas:
+                    "track  hero"
+                    "sidebar sidebar"
+                    "laps   laps";
+            }
+            .overview-metrics-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+        @media (max-width: 640px) {
+            .overview-2x2 {
+                grid-template-columns: 1fr;
+                grid-template-areas:
+                    "hero"
+                    "track"
+                    "sidebar"
+                    "laps";
+            }
+            .overview-metrics-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+            .overview-track-area {
+                max-width: 280px;
+                margin: 0 auto;
+            }
         }
 
         /* 副标题过长时用省略号(仅桌面端,无响应式) */
@@ -4040,42 +4172,41 @@
             <button class="detail-tab-btn" data-detail-tab="review" onclick="switchDetailTab('review', this)">🔍 复盘</button>
         </div>
         <div class="detail-cockpit-body">
-            <!-- Tab 1: 概览(默认激活) — V9.2.3 2x2 grid(hero + map 共享左列宽,4 张卡在右栏垂直堆叠) -->
+            <!-- Tab 1: 概览(默认激活) — V5 3 列 grid(track + hero + sidebar) -->
             <div class="detail-tab-panel active" id="detail-tab-overview">
                 <div class="overview-2x2">
-                    <!-- Row 1 Left:Hero 区(6 metric 3x2) -->
+                    <!-- Row 1 Col 1: 轨迹快照(正方形,左列) -->
+                    <div class="overview-track-area" id="activity-detail-track-section">
+                        <!-- E11 轨迹地图(主视觉)由 renderActivityDetail 渲染 -->
+                        <div id="activity-detail-track-container"></div>
+                    </div>
+                    <!-- Row 1 Col 2: Hero 区(6 metric 3x2) -->
                     <div class="overview-hero-area">
                         <div class="overview-metrics-grid" id="activity-detail-metrics">
                             <!-- 6 个 metric 卡片由 renderActivityDetail 渲染(E05-E10) -->
                         </div>
                     </div>
-                    <!-- Row 1+2 Right:4 张卡垂直堆叠(环境/训练收益/身体状态/活动摘要) -->
+                    <!-- Row 1+2 Col 3: 4 张卡垂直堆叠(环境/训练收益/身体状态/活动摘要) -->
                     <div class="overview-sidebar-stack" id="activity-detail-sidebar">
                         <!-- 4 张卡由 renderActivityDetailSidebar 渲染 -->
                     </div>
-                    <!-- Row 2 Left:Map 主视觉 + 圈速统计(贴图) -->
-                    <div class="overview-map-area">
-                        <div class="overview-main-visual" id="activity-detail-track-section">
-                            <!-- E11 轨迹地图(主视觉)由 renderActivityDetail 渲染 -->
-                            <div id="activity-detail-track-container"></div>
-                        </div>
-                        <div class="overview-laps">
-                            <div class="overview-laps-title">📈 圈速统计</div>
-                            <div class="lap-table-wrap">
-                                <table class="lap-table">
-                                    <thead>
-                                        <tr>
-                                            <th>圈速</th>
-                                            <th>配速</th>
-                                            <th>心率</th>
-                                            <th>步频</th>
-                                            <th>GCT</th>
-                                            <th>功率</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="activity-detail-laps"></tbody>
-                                </table>
-                            </div>
+                    <!-- Row 2 Col 1-2: 圈速统计(跨左+中列) -->
+                    <div class="overview-laps-area">
+                        <div class="overview-laps-title">📈 圈速统计</div>
+                        <div class="lap-table-wrap">
+                            <table class="lap-table">
+                                <thead>
+                                    <tr>
+                                        <th>圈速</th>
+                                        <th>配速</th>
+                                        <th>心率</th>
+                                        <th>步频</th>
+                                        <th>GCT</th>
+                                        <th>功率</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="activity-detail-laps"></tbody>
+                            </table>
                         </div>
                     </div>
                 </div>
@@ -6033,50 +6164,61 @@
     }
 
     /**
-     * 活动详情页轨迹缩略图（Canvas 2D 真实比例版）
-     * 产品定义：Geometric Activity Snapshot（几何活动快照）
+     * 活动详情页轨迹缩略图（Canvas 2D 真实比例版 v4）
+     * 产品定义：Geometric Activity Snapshot — Pure Black Edition
      *
-     * 契约：
-     *   - 入参 points: Array<{lat: number, lon: number}> 来自 record.thumbnail_points
-     *   - 返回: HTMLCanvasElement（HiDPI 感知） 或 空字符串（无数据时）
+     * v4 升级（在 v3 基础上）:
+     *   1. 纯黑底 #000000（v3 是 #0f172a slate-900）
+     *   2. 实心白 #FFFFFF 1px 正方形网格（v3 是 18% 透明 slate-400 矩形）
+     *   3. 网格单元固定 40px × 40px（v3 是 4×2 不规则）
+     *   4. 覆盖全画布（含最后一行/列，无截断）（v3 是 4 等分 + 2 等分 + 35% 边框）
+     *
+     * 保留 v3 不变:
+     *   - 真实物理宽高比自适应 (Fix 1 居中)
+     *   - 单点防御 (Fix 2)
+     *   - 动态线宽 (Fix 3, 5/4/3 加粗)
+     *   - HiDPI (devicePixelRatio)
+     *   - 抗锯齿 (imageSmoothingQuality='high')
+     *   - 二次贝塞尔曲线 (quadraticCurveTo)
+     *   - 阴影发光 (shadowBlur=8)
+     *   - 起终点标点 r=6
+     *
+     * 契约:
+     *   - 入参 points: Array<{lat, lon}> 来自 record.thumbnail_points (V9.x-LTTB 采样后)
+     *   - 返回: HTMLCanvasElement (HiDPI 感知) 或 ''
      *   - 投影: 等距矩形 + 真实物理宽高比自适应
-     *   - 性能: 48 采样点, < 3ms 单次绘制
+     *   - 性能: 60 采样点, < 5ms 单次绘制
      *   - 零依赖, 零网络
-     *   - v2 升级: 等比例居中 + 单点防御 + 动态线宽
+     *   - 缩略图职责: 静态展示 + 点击跳转 3D (无缩放/平移交互)
      */
     function buildTrackThumbnailCanvas(points, containerWidth, containerHeight) {
         const valid = (points || []).filter(p =>
             typeof p.lat === 'number' && typeof p.lon === 'number'
         );
-        // 【Fix 2】单点/零点防御：避免生成"假轨迹"
+        // 【v2 Fix 2】单点防御（v4 保留）
         if (valid.length < 2) return '';
 
-        // ---- 1. 真实物理范围（球面距离近似，缩略图尺度可接受）----
+        // ---- 1. 真实物理范围 ----
         const lats = valid.map(p => p.lat);
         const lons = valid.map(p => p.lon);
         const minLat = Math.min(...lats), maxLat = Math.max(...lats);
         const minLon = Math.min(...lons), maxLon = Math.max(...lons);
         const midLat = (minLat + maxLat) / 2;
-        // 1° 纬度 ≈ 110.54 km; 1° 经度 ≈ 111.32 km × cos(lat)
         const latSpanM = (maxLat - minLat) * 110540;
         const lonSpanM = (maxLon - minLon) * 111320 * Math.cos(midLat * Math.PI / 180);
         const realRatio = (latSpanM > 0 && lonSpanM > 0) ? (lonSpanM / latSpanM) : 1;
 
-        // ---- 2. 自适应 viewBox（保持真实比例 + 14px 边距）----
+        // ---- 2. 自适应 viewBox（v2 Fix 1 居中保留）----
         const pad = 14;
         const maxW = containerWidth || 760;
         const maxH = containerHeight || 220;
         let viewW = maxW - pad * 2;
         let viewH = maxH - pad * 2;
         if (realRatio > viewW / viewH) {
-            // 经度方向更长 → 以宽为约束, 高度收缩
             viewH = viewW / realRatio;
         } else {
-            // 纬度方向更长或正方形 → 以高为约束, 宽度收缩
             viewW = viewH * realRatio;
         }
-
-        // 【Fix 1】等比例居中：避免轨迹贴边
         const offsetX = (maxW - viewW) / 2;
         const offsetY = (maxH - viewH) / 2;
 
@@ -6090,45 +6232,93 @@
         const ctx = canvas.getContext('2d');
         ctx.scale(dpr, dpr);
 
-        // ---- 4. 真实比例投影 ----
+        // 抗锯齿
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+
+        // ---- 【v4 升级】4. 纯黑底填充 ----
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(0, 0, maxW, maxH);
+
+        // ---- 【v4 升级】5. 实心白 1px 正方形网格 ----
+        // 网格单元: 固定 40px × 40px 标准正方形
+        // 覆盖策略: 行列 = ceil(maxW/40) × ceil(maxH/40), 最后一列/行画到画布边缘
+        // 视觉: 模拟经纬线式网格, 100% 实心白色 1px
+        const CELL_SIZE = 40;  // 正方形边长(像素)
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = '#FFFFFF';  // 100% 实心白
+        // 横向网格线 (从 cellSize 像素到 maxW-1 像素, 含最后一条)
+        for (let x = CELL_SIZE; x < maxW; x += CELL_SIZE) {
+            ctx.beginPath();
+            ctx.moveTo(x + 0.5, 0);  // +0.5 是 Canvas 1px 抗锯齿技巧
+            ctx.lineTo(x + 0.5, maxH);
+            ctx.stroke();
+        }
+        // 纵向网格线 (从 cellSize 像素到 maxH-1 像素, 含最后一条)
+        for (let y = CELL_SIZE; y < maxH; y += CELL_SIZE) {
+            ctx.beginPath();
+            ctx.moveTo(0, y + 0.5);
+            ctx.lineTo(maxW, y + 0.5);
+            ctx.stroke();
+        }
+        // 【v4 删除】外边框: 白色 1px 网格已足够, 不再需要单独的 35% 半透明外框
+
+        // ---- 6. 真实比例投影（v3 保留）----
         const lonRange = (maxLon - minLon) || 0.0001;
         const latRange = (maxLat - minLat) || 0.0001;
-        // 【Fix 1】应用 offsetX / offsetY
         const scaleX = (p) => offsetX + pad + ((p.lon - minLon) / lonRange) * viewW;
         const scaleY = (p) => offsetY + pad + ((maxLat - p.lat) / latRange) * viewH;
 
-        // ---- 5. 渐变描边 ----
+        // ---- 7. 阴影发光（v3 保留）----
+        ctx.shadowColor = 'rgba(56, 189, 248, 0.45)';
+        ctx.shadowBlur = 8;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 0;
+
+        // ---- 8. 渐变描边（v3 保留）----
         const grad = ctx.createLinearGradient(0, 0, maxW, maxH);
         grad.addColorStop(0, '#34d399');
+        grad.addColorStop(0.5, '#22d3ee');
         grad.addColorStop(1, '#38bdf8');
+        ctx.strokeStyle = grad;
 
-        // ---- 6. 绘制轨迹 polyline ----
-        ctx.beginPath();
-        // 【Fix 3】动态线宽：根据 bbox 对角线长度自适应
-        const diag = Math.sqrt(viewW * viewW + viewH * viewH);
-        ctx.lineWidth = diag < 120 ? 4 : diag < 240 ? 3 : 2;
+        // ---- 9. 二次贝塞尔曲线平滑（v3 保留）----
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
-        ctx.strokeStyle = grad;
-        valid.forEach((p, i) => {
-            const x = scaleX(p), y = scaleY(p);
-            if (i === 0) ctx.moveTo(x, y);
-            else ctx.lineTo(x, y);
-        });
-        ctx.stroke();
+        const diag = Math.sqrt(viewW * viewW + viewH * viewH);
+        ctx.lineWidth = diag < 120 ? 5 : diag < 240 ? 4 : 3;
 
-        // ---- 7. 起终点标点 ----
+        if (valid.length === 2) {
+            ctx.beginPath();
+            ctx.moveTo(scaleX(valid[0]), scaleY(valid[0]));
+            ctx.lineTo(scaleX(valid[1]), scaleY(valid[1]));
+            ctx.stroke();
+        } else {
+            ctx.beginPath();
+            ctx.moveTo(scaleX(valid[0]), scaleY(valid[0]));
+            for (let i = 1; i < valid.length - 1; i++) {
+                const mx = (scaleX(valid[i]) + scaleX(valid[i + 1])) / 2;
+                const my = (scaleY(valid[i]) + scaleY(valid[i + 1])) / 2;
+                ctx.quadraticCurveTo(scaleX(valid[i]), scaleY(valid[i]), mx, my);
+            }
+            ctx.lineTo(scaleX(valid[valid.length - 1]), scaleY(valid[valid.length - 1]));
+            ctx.stroke();
+        }
+
+        // ---- 10. 重置阴影（v3 保留）----
+        ctx.shadowColor = 'transparent';
+        ctx.shadowBlur = 0;
+
+        // ---- 11. 起终点标点（v3 保留, r=6）----
         const startP = valid[0], endP = valid[valid.length - 1];
         const sx = scaleX(startP), sy = scaleY(startP);
         const ex = scaleX(endP), ey = scaleY(endP);
-        // 起点：白底
         ctx.fillStyle = '#f8fafc';
-        ctx.strokeStyle = 'rgba(15, 23, 42, 0.6)';
-        ctx.lineWidth = 1.5;
-        ctx.beginPath(); ctx.arc(sx, sy, 5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-        // 终点：黄色
+        ctx.strokeStyle = 'rgba(15, 23, 42, 0.9)';
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(sx, sy, 6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
         ctx.fillStyle = '#fbbf24';
-        ctx.beginPath(); ctx.arc(ex, ey, 5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        ctx.beginPath(); ctx.arc(ex, ey, 6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
 
         return canvas;
     }
@@ -6210,6 +6400,7 @@
                  + '</div>';
         }).join('');
 
+        // V5 轨迹快照(E11) — 正方形 Canvas,动态适配容器尺寸
         var trackSection = document.getElementById('activity-detail-track-section');
         if (trackSection) {
             trackSection.style.display = (!caps.has_gps) ? 'none' : '';
@@ -6220,22 +6411,24 @@
             return '<tr><td>' + lap.lap_no + '</td><td>' + formatPace(lap.pace_sec) + '</td><td>' + (lap.hr || '--') + '</td><td>' + (lap.cadence || '--') + '</td><td>' + (lap.gct_ms || '--') + ' ms</td><td>' + (lap.power_w || '--') + ' W</td></tr>';
         }).join('') : '<tr><td colspan="6" style="color:#64748b;">暂无圈速统计数据</td></tr>';
 
-        // V9.2 §E11 轨迹地图(主视觉)— 放大版 SVG,点击跳转 3D
+        // V6 轨迹快照(E11) — 固定 260×260 一次渲染,不再动态
         if (caps.has_gps && record.thumbnail_points && record.thumbnail_points.length) {
-            // B+ Canvas 真实比例版（替代 SVG 固定比例）
-            // v2 升级：等比例居中 + 单点防御 + 动态线宽
-            const _canvas = buildTrackThumbnailCanvas(record.thumbnail_points, 760, 220);
+            // V6 写死 260×260,与 CSS 中 .overview-track-area 固定尺寸一致
+            var SIZE = 260;
+            const _canvas = buildTrackThumbnailCanvas(record.thumbnail_points, SIZE, SIZE);
             if (_canvas) {
                 const _wrap = document.createElement('div');
                 _wrap.className = 'detail-track-thumb';
+                _wrap.style.width = SIZE + 'px';
+                _wrap.style.height = SIZE + 'px';
                 _wrap.onclick = function() { jumpToTraceFromActivityDetail(record.id); };
+                _wrap.appendChild(_canvas);
                 const _tip = document.createElement('div');
                 _tip.className = 'detail-track-tip';
                 _tip.innerText = '点击进入 3D 沉浸分析(轨迹分析工具)';
-                _wrap.appendChild(_canvas);
-                _wrap.appendChild(_tip);
                 trackContainer.innerHTML = '';
                 trackContainer.appendChild(_wrap);
+                trackContainer.appendChild(_tip);
             } else {
                 trackContainer.innerHTML = '<div class="detail-track-tip" style="color:#94a3b8;">当前活动无可用轨迹文件,无法生成轨迹地图。</div>';
             }
@@ -6272,7 +6465,8 @@
         }
         var html = '';
         html += _buildWeatherCard(weather, esc);
-        html += _buildPlaceholderSidebarCard('训练收益', '🔥', '有氧收益 / 无氧刺激将在「复盘」Tab 的 AI 洞察中呈现');
+        // V9.4.0:训练收益卡(契约 §7) — 真值从 record.detail.training_effect 读
+        html += _buildTrainingBenefitCard(record);
         html += _buildPlaceholderSidebarCard('身体状态', '❤️', '训练压力 / 恢复需求 / 当前状态将在「复盘」Tab 的 AI 洞察中呈现');
         html += _buildPlaceholderSidebarCard('活动摘要', '✨', 'AI 活动摘要将在「复盘」Tab 生成');
         sidebar.innerHTML = html;
@@ -6309,6 +6503,82 @@
         return '<div class="sidebar-card">' +
             '<div class="head">' + icon + ' ' + title + '</div>' +
             '<div class="empty-msg">⏳ ' + msg + '。</div>' +
+        '</div>';
+    }
+
+    // === V9.4.0:训练收益卡(契约 docs/training_effect_v1_contract §7) ===
+    // 数据源:record.detail.training_effect(后端 Resolver 派生,见 metrics_resolver.build_training_effect)
+    // 严格只消费,不计算;空态降级为 V9.2.2 占位卡
+    // 6 等级颜色(用户原 §三):Gray/Blue/Cyan/Green/Orange/Red
+    const _TE_LEVEL_COLORS = {
+        recovery:    '#64748b',  // Gray
+        activation:  '#3b82f6',  // Blue
+        maintenance: '#06b6d4',  // Cyan
+        improvement: '#22c55e',  // Green
+        overload:    '#f97316',  // Orange
+        extreme:     '#ef4444',  // Red
+    };
+    const _TE_LEVEL_LABELS_CN = {
+        recovery:    '恢复',
+        activation:  '激活',
+        maintenance: '维持',
+        improvement: '提升',
+        overload:    '高负荷',
+        extreme:     '极限',
+    };
+
+    // V_ENV.1.5:环境挑战 5 级颜色映射(复用训练收益 6 色:0~4 用前 5 色)
+    // Gray(0) / Blue(1) / Cyan(2) / Green(3) / Orange(4)
+    const _ENV_LEVEL_COLORS = ['#64748b', '#3b82f6', '#06b6d4', '#22c55e', '#f97316'];
+
+    function _buildTrainingBenefitCard(record) {
+        var te = record && record.detail && record.detail.training_effect;
+        // §六 shadow_diff 隔离
+        if (te && (te.shadow_diff || te.shadow_diff_json || te.diff)) {
+            return '';
+        }
+        // 空态降级(FIT 文件无 TE 字段 或 老数据)
+        if (!te || !te.primary || !te.secondary) {
+            return _buildPlaceholderSidebarCard('训练收益', '🔥',
+                '有氧收益 / 速度刺激需要 FIT 设备记录 Training Effect 字段');
+        }
+        function esc(s) {
+            if (s == null) return '';
+            return String(s).replace(/[&<>"']/g, function(c) {
+                return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+            });
+        }
+        var pColor = _TE_LEVEL_COLORS[te.primary.level] || '#64748b';
+        var sColor = _TE_LEVEL_COLORS[te.secondary.level] || '#64748b';
+        var gLabel = _TE_LEVEL_LABELS_CN[te.global_level] || te.global_level;
+        // V9.4.4:运动类型英文 → 中文(用程序内 SPORT_TYPE_CN 真理源映射)
+        var sportCn = (typeof SPORT_TYPE_CN !== 'undefined' && SPORT_TYPE_CN[te.sport_type]) || te.sport_type || '';
+        return '<div class="weather-glass-card training-benefit-card">' +
+            '<div class="weather-glass-head">' +
+                '<div>' +
+                    '<div class="weather-glass-title">🔥 训练收益</div>' +
+                    '<div class="weather-glass-subtitle">' + esc(sportCn) + ' · 全局等级:' + esc(gLabel) + '</div>' +
+                '</div>' +
+            '</div>' +
+            '<div class="training-effect-grid">' +
+                // 主收益行
+                '<div class="training-effect-row" data-level="' + esc(te.primary.level) + '">' +
+                    '<div class="training-effect-key" style="border-left-color:' + pColor + '">' +
+                        '<div class="training-effect-key-title">主收益 · ' + esc(te.primary.title) + '</div>' +
+                        '<div class="training-effect-key-label">' + esc(te.primary.label) + '</div>' +
+                    '</div>' +
+                    '<div class="training-effect-score" style="color:' + pColor + '">' + esc(te.primary.score.toFixed(1)) + '</div>' +
+                '</div>' +
+                // 次刺激行
+                '<div class="training-effect-row" data-level="' + esc(te.secondary.level) + '">' +
+                    '<div class="training-effect-key" style="border-left-color:' + sColor + '">' +
+                        '<div class="training-effect-key-title">次收益 · ' + esc(te.secondary.title) + '</div>' +
+                        '<div class="training-effect-key-label">' + esc(te.secondary.label) + '</div>' +
+                    '</div>' +
+                    '<div class="training-effect-score" style="color:' + sColor + '">' + esc(te.secondary.score.toFixed(1)) + '</div>' +
+                '</div>' +
+            '</div>' +
+            '<div class="training-effect-summary">— ' + esc(te.overall_summary) + '</div>' +
         '</div>';
     }
 
@@ -6359,6 +6629,9 @@
         indoor_cycling: ['distance', 'duration', 'avg_speed', 'avg_hr', 'calories', 'elevation_gain'],
         swimming:       ['distance', 'duration', 'avg_pace', 'avg_hr', 'calories', 'swolf'],
         strength:       ['duration', 'calories', 'avg_hr', 'max_hr', 'avg_pace', 'distance'],
+        // V9.4.0:扩到 8 运动(契约 §4 字段映射 + §11.2 范围外扩)
+        // HIIT 无距离/无配速,显示时长+心率为主,4 字段兜底 + 2 通用
+        hiit:           ['duration', 'avg_hr', 'max_hr', 'calories', 'avg_pace', 'distance'],
     };
 
     // === V9.3 §需求 1:统一 Hero 字段格式化(单点真理) ===

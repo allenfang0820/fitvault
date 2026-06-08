@@ -154,6 +154,20 @@ class TestBuildAISnapshotBlock(unittest.TestCase):
         self.assertIsNone(snapshot["avg_cadence"])
         self.assertIsNone(snapshot["normalized_power"])
 
+    def test_environment_challenge_not_in_snapshot(self):
+        """V_ENV.1.3:environment_challenge 是 UI 摘要层,严禁进入 AI snapshot(§五 5.3 白名单)"""
+        row = _make_running_row()
+        # 即使 row 含 environment_challenge 字段,snapshot 也不应透传
+        row["environment_challenge"] = {"climb": {"level": 4}}
+        snapshot = MetricsResolver._build_ai_snapshot_block(row)
+        self.assertNotIn("environment_challenge", snapshot,
+                         "environment_challenge 严禁进入 AI Snapshot")
+        # 验证:即便 _validate_ai_snapshot 拒绝也确认这是隔离生效
+        try:
+            MetricsResolver._validate_ai_snapshot(snapshot)
+        except AssertionError:
+            self.fail("snapshot 校验失败,可能引入了未白名单字段")
+
 
 class TestValidateAISnapshot(unittest.TestCase):
     """§六 防污染护栏"""

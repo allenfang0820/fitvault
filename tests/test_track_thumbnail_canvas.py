@@ -80,10 +80,11 @@ class TestCanvasFunctionStructure(unittest.TestCase):
         self.assertRegex(self.func, r"diag\s*<\s*240", "Fix 3: 缺少中距离分支 (3px)")
 
     def test_fix3_three_width_values(self):
-        """Fix 3: 线宽必须是 2 / 3 / 4 三档"""
-        # 匹配 lineWidth = N ? 4 : N ? 3 : 2
-        self.assertRegex(self.func, r"lineWidth\s*=\s*diag\s*<\s*120\s*\?\s*4\s*:\s*diag\s*<\s*240\s*\?\s*3\s*:\s*2",
-                         "Fix 3: 线宽表达式不符合 4:3:2 三档契约")
+        """Fix 3: 线宽必须是三档 (v3 升级: 5:4:3, v2 旧: 4:3:2)
+        契约:动态线宽, v3 加粗 +1 适配贝塞尔平滑视觉"""
+        # v3: 5 / 4 / 3 (v2 旧: 4 / 3 / 2, v3 加粗 +1)
+        self.assertRegex(self.func, r"lineWidth\s*=\s*diag\s*<\s*120\s*\?\s*5\s*:\s*diag\s*<\s*240\s*\?\s*4\s*:\s*3",
+                         "Fix 3: 线宽表达式不符合 v3 5:4:3 三档契约")
 
     # ---- T1/T4/T5/T6/T7: 真实比例自适应 ----
     def test_real_ratio_calculation(self):
@@ -119,11 +120,13 @@ class TestCanvasFunctionStructure(unittest.TestCase):
 
     # ---- 起终点标点 ----
     def test_start_end_markers(self):
-        """起终点标点:白底起点 + 黄底终点"""
+        """起终点标点:白底 r=6 (v3 升级),黄底 r=6 (v3 升级)
+        契约:v3 标点半径 5→6 加粗,适配阴影发光背景"""
+        # arc(x, y, 6, 0, 2π) - v3 升级
+        self.assertRegex(self.func, r"\.arc\s*\(\s*\w+\s*,\s*\w+\s*,\s*6\s*,")
+        # 起点白色 + 终点黄色
         self.assertIn("#f8fafc", self.func, "缺少起点白色 #f8fafc")
         self.assertIn("#fbbf24", self.func, "缺少终点黄色 #fbbf24")
-        # 必须有 arc(5, 0, 2π) 绘制圆形标点
-        self.assertRegex(self.func, r"\.arc\s*\(\s*\w+\s*,\s*\w+\s*,\s*5\s*,")
 
     # ---- 真实比例投影 (lat/lon → 像素) ----
     def test_projection_formula(self):
@@ -153,9 +156,9 @@ class TestCallSiteReplacement(unittest.TestCase):
 
     def test_calls_canvas_function(self):
         """renderActivityDetail 必须调 buildTrackThumbnailCanvas"""
-        # 在 trackContainer.innerHTML 附近应调用 Canvas 函数
-        self.assertIn("buildTrackThumbnailCanvas(record.thumbnail_points",
-                      self.src, "未在调用点调 buildTrackThumbnailCanvas")
+        # V6: 调用点直接传 record.thumbnail_points + SIZE 常量
+        self.assertIn("buildTrackThumbnailCanvas(record.thumbnail_points, SIZE, SIZE)",
+                      self.src, "V6 调用点应传 record.thumbnail_points + SIZE 常量")
 
     def test_old_svg_call_replaced(self):
         """原 buildTrackThumbnailSvg 调用应被替换"""
@@ -172,11 +175,31 @@ class TestCallSiteReplacement(unittest.TestCase):
         self.assertNotIn("buildTrackThumbnailSvg(record.thumbnail_points)",
                          render_fn, "renderActivityDetail 仍调旧 SVG 函数,未替换")
 
-    def test_uses_correct_container_size(self):
-        """调用点使用 760×220 (符合提示词约束)"""
+    def test_uses_fixed_260_size(self):
+        """V6:调用点使用固定 260×260 尺寸(与 CSS .overview-track-area 固定 260 对齐)"""
+        # 应包含 buildTrackThumbnailCanvas(record.thumbnail_points, SIZE, SIZE)
         self.assertRegex(self.src,
-                         r"buildTrackThumbnailCanvas\(\s*record\.thumbnail_points\s*,\s*760\s*,\s*220\s*\)",
-                         "调用点容器尺寸应为 760×220")
+                         r"buildTrackThumbnailCanvas\(\s*record\.thumbnail_points\s*,\s*SIZE\s*,\s*SIZE\s*\)",
+                         "V6 调用点应使用固定 SIZE=260")
+        # 验证 SIZE 常量定义
+        self.assertIn("var SIZE = 260", self.src, "V6 应定义 SIZE = 260 常量")
+        # V6 已移除 ResizeObserver（整个文件层面验证,无残留）
+        self.assertNotIn("ResizeObserver", self.src,
+                         "V6 已移除 ResizeObserver 动态重绘")
+        # V6: track 渲染块内不再有 rAF 动态测量(仅检查局部范围,其他模块可继续用 rAF)
+        func_start = self.src.find("function renderActivityDetail")
+        func_end = self.src.find("\n    function ", func_start + 1)
+        if func_end == -1:
+            func_end = len(self.src)
+        render_fn = self.src[func_start:func_end]
+        # 在 track 渲染块(if caps.has_gps && record.thumbnail_points ...)前后 200 字符内
+        track_idx = render_fn.find("if (caps.has_gps && record.thumbnail_points")
+        if track_idx > 0:
+            track_block = render_fn[track_idx:track_idx + 600]
+            self.assertNotIn("requestAnimationFrame", track_block,
+                             "V6 轨迹快照渲染块不应再用 rAF 动态测量")
+            self.assertNotIn("ResizeObserver", track_block,
+                             "V6 轨迹快照渲染块不应再有 ResizeObserver")
 
     def test_empty_state_preserved(self):
         """空态降级文案保留"""
@@ -256,11 +279,15 @@ class TestBehaviorContract(unittest.TestCase):
 
     # ---- T1: 48 点矩形轨迹 ----
     def test_t1_iterates_all_points(self):
-        """T1: 48 个点应被迭代绘制 (forEach 循环存在)"""
-        self.assertIn("forEach", self.func, "缺少 forEach 迭代")
-        # moveTo + lineTo 模式
-        self.assertRegex(self.func, r"if\s*\(\s*i\s*===\s*0\s*\)\s*ctx\.moveTo")
-        self.assertRegex(self.func, r"else\s*ctx\.lineTo")
+        """T1: ≥3 点应被迭代绘制 (v3 升级 for 循环 + 贝塞尔,v2 旧 forEach + 折线)"""
+        # v3: 用 for 循环 + 贝塞尔 (quadraticCurveTo)
+        self.assertIn("for (let i = 1; i < valid.length - 1", self.func,
+                      "v3: 缺少贝塞尔 for 循环")
+        # v3: 必须有 quadraticCurveTo (贝塞尔平滑)
+        self.assertIn("quadraticCurveTo", self.func, "v3: 缺少 quadraticCurveTo")
+        # 起点 moveTo + 末点 lineTo
+        self.assertRegex(self.func, r"ctx\.moveTo\s*\(\s*scaleX\s*\(\s*valid\[0\]\s*\)")
+        self.assertRegex(self.func, r"ctx\.lineTo\s*\(\s*scaleX\s*\(\s*valid\[valid\.length\s*-\s*1\]\s*\)")
 
     # ---- T2: 0 点 / null 返回空 ----
     def test_t2_empty_returns_empty(self):
@@ -294,10 +321,10 @@ class TestBehaviorContract(unittest.TestCase):
         self.assertRegex(self.func, r"viewH\s*=\s*viewW\s*/\s*realRatio")
 
     # ---- T8: 起终点标点 ----
-    def test_t8_markers_use_radius_5(self):
-        """T8: 标点半径 = 5"""
-        # arc(x, y, 5, 0, 2π)
-        self.assertRegex(self.func, r"\.arc\s*\([^)]*,\s*5\s*,")
+    def test_t8_markers_use_radius_6(self):
+        """T8 (v3 升级): 标点半径 = 6 (v2 旧为 5, v3 加粗适配阴影背景)"""
+        # arc(x, y, 6, 0, 2π) - v3 升级
+        self.assertRegex(self.func, r"\.arc\s*\([^)]*,\s*6\s*,")
         # 起点白色 + 终点黄色
         self.assertIn("#f8fafc", self.func)
         self.assertIn("#fbbf24", self.func)
@@ -310,9 +337,9 @@ class TestBehaviorContract(unittest.TestCase):
 
     # ---- T10: 动态线宽 (Fix 3) ----
     def test_t10_dynamic_width_full(self):
-        """T10: 完整 4:3:2 三档线宽"""
+        """T10 (v3 升级): 完整 5:4:3 三档线宽 (v2 旧 4:3:2)"""
         self.assertRegex(self.func,
-                         r"lineWidth\s*=\s*diag\s*<\s*120\s*\?\s*4\s*:\s*diag\s*<\s*240\s*\?\s*3\s*:\s*2")
+                         r"lineWidth\s*=\s*diag\s*<\s*120\s*\?\s*5\s*:\s*diag\s*<\s*240\s*\?\s*4\s*:\s*3")
 
 
 if __name__ == "__main__":

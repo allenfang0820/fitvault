@@ -667,6 +667,19 @@ def _init_schema(conn: sqlite3.Connection) -> None:
         except Exception:
             pass
 
+    # === V9.4.0:Training Effect 数据列(FIT 219/218 直读,见 training_effect_v1_contract §6.5) ===
+    # aerobic_training_effect: 有氧 TE(0.0~5.0,REAL)
+    # anaerobic_training_effect: 无氧 TE(0.0~5.0,REAL)
+    # 来源:FIT session message 直读;幂等 ALTER TABLE,旧记录补列后为 NULL(走 V9.2.2 占位)
+    for col, dtype in [
+        ("aerobic_training_effect", "REAL"),
+        ("anaerobic_training_effect", "REAL"),
+    ]:
+        try:
+            conn.execute(f"ALTER TABLE activities ADD COLUMN {col} {dtype}")
+        except Exception:
+            pass
+
     for col, dtype in [
         ("avg_bedtime", "TEXT"),
         ("avg_sleep_hours", "REAL"),
@@ -1466,6 +1479,9 @@ def build_activity_payload(filename: str, data: dict[str, Any], src_path: str | 
         "speed_curve": None,
         "source_type": "fit_sdk",
         "is_mock": 0,
+        # V9.4.4:Training Effect(Firstbeat 私有字段,从 fit_engine 透传)
+        "aerobic_training_effect": data.get("aerobic_training_effect"),
+        "anaerobic_training_effect": data.get("anaerobic_training_effect"),
     }
 
 

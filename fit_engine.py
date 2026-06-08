@@ -176,6 +176,10 @@ class FITCoreEngine:
                 "avg_stroke_distance": FITCoreEngine._float_or_none(session_info.get("avg_stroke_distance")),
                 "avg_hr": avg_hr,
                 "max_hr": max_hr,
+                # V9.4.4:Training Effect(Firstbeat 私有字段,直读 0.0~5.0)
+                # _read_session_info 已写入契约字段名 aerobic/anaerobic_training_effect
+                "aerobic_training_effect": FITCoreEngine._float_or_none(session_info.get("aerobic_training_effect")),
+                "anaerobic_training_effect": FITCoreEngine._float_or_none(session_info.get("anaerobic_training_effect")),
             }
             return {
                 "basic_info": basic_info,
@@ -295,6 +299,13 @@ class FITCoreEngine:
                 "max_altitude": msg.get_value("max_altitude") or fields.get("enhanced_max_altitude"),
                 "avg_stroke_distance": msg.get_value("avg_stroke_distance"),
                 "session_label": fields.get("unknown_110"),
+                # V9.4.4:Training Effect 字段(直接读 FIT session message)
+                # Garmin Firstbeat 私有算法输出两个字段:
+                #   total_training_effect(有氧,scale 0.1) → fitparse 已应用 scale,返回 0.0~5.0
+                #   total_anaerobic_training_effect(无氧,scale 0.1) → 同上
+                # 字段可能为 None(老设备/Edge 部分记录/Zwift 导出/Apple 转 FIT/第三方转换)
+                "aerobic_training_effect": msg.get_value("total_training_effect"),
+                "anaerobic_training_effect": msg.get_value("total_anaerobic_training_effect"),
             }
             break
         return info
@@ -327,7 +338,10 @@ class FITCoreEngine:
 
         返回结构:list[{total_distance, total_timer_time, avg_heart_rate,
                         max_heart_rate, avg_cadence, avg_power, total_calories,
-                        lap_start_time, lap_index}]
+                        lap_start_time, lap_index,
+                        avg_stance_time, avg_vertical_oscillation,
+                        avg_vertical_ratio, avg_stance_time_balance,
+                        avg_step_length, avg_fractional_cadence}]
         """
         laps: list[dict[str, Any]] = []
         for idx, msg in enumerate(fit.get_messages("lap")):
@@ -335,21 +349,38 @@ class FITCoreEngine:
             lap_start = values.get("start_time") or values.get("timestamp")
             if isinstance(lap_start, datetime) and lap_start.tzinfo is None:
                 lap_start = lap_start.replace(tzinfo=timezone.utc)
+            # BugFix: Garmin 跑步用 avg_running_cadence,骑行用 avg_cadence,两者字段名不同
+            raw_cadence = values.get("avg_running_cadence") or values.get("avg_cadence")
             laps.append({
                 "lap_index": values.get("index") or values.get("lap_index") or idx,
                 "total_distance": FITCoreEngine._float_or_none(values.get("total_distance")),
                 "total_timer_time": FITCoreEngine._float_or_none(values.get("total_timer_time")),
                 "avg_heart_rate": FITCoreEngine._int_or_none(values.get("avg_heart_rate")),
                 "max_heart_rate": FITCoreEngine._int_or_none(values.get("max_heart_rate")),
-                "avg_cadence": FITCoreEngine._int_or_none(values.get("avg_cadence")),
+                "avg_cadence": FITCoreEngine._int_or_none(raw_cadence),
                 "avg_power": FITCoreEngine._int_or_none(values.get("avg_power")),
                 "total_calories": FITCoreEngine._int_or_none(values.get("total_calories")),
                 "lap_start_time": FITCoreEngine._iso_utc(lap_start),
+                # 跑步动态字段 (FIT lap_mesgs, Garmin Running Dynamics)
+                "avg_stance_time": FITCoreEngine._float_or_none(values.get("avg_stance_time")),
+                "avg_vertical_oscillation": FITCoreEngine._float_or_none(values.get("avg_vertical_oscillation")),
+                "avg_vertical_ratio": FITCoreEngine._float_or_none(values.get("avg_vertical_ratio")),
+                "avg_stance_time_balance": FITCoreEngine._float_or_none(values.get("avg_stance_time_balance")),
+                "avg_step_length": FITCoreEngine._float_or_none(values.get("avg_step_length")),
+                "avg_fractional_cadence": FITCoreEngine._float_or_none(values.get("avg_fractional_cadence")),
             })
         return laps
 
     @staticmethod
     def _read_track_data(fit: FitFile) -> list[dict[str, Any]]:
+        """提取 FIT record_mesgs 为逐秒轨迹点。
+
+        字段契约(§2.1 全链路可追溯):
+          基础: lat, lon, alt, time, hr, pace
+          跑步动态: cadence, fraction_cadence, stance_time, stance_time_percent,
+                    stance_time_balance, vertical_oscillation, vertical_ratio,
+                    step_length, power
+        """
         rows: list[dict[str, Any]] = []
         for msg in fit.get_messages("record"):
             values = FITCoreEngine._message_fields_dict(msg)
@@ -383,6 +414,16 @@ class FITCoreEngine:
                     "time": FITCoreEngine._iso_utc(ts) if isinstance(ts, datetime) else None,
                     "hr": hr,
                     "pace": pace,
+                    # 跑步动态字段 — Garmin Running Dynamics (可能为 None)
+                    "cadence": FITCoreEngine._int_or_none(values.get("cadence")),
+                    "fraction_cadence": FITCoreEngine._float_or_none(values.get("fraction_cadence")),
+                    "stance_time": FITCoreEngine._float_or_none(values.get("stance_time")),
+                    "stance_time_percent": FITCoreEngine._float_or_none(values.get("stance_time_percent")),
+                    "stance_time_balance": FITCoreEngine._float_or_none(values.get("stance_time_balance")),
+                    "vertical_oscillation": FITCoreEngine._float_or_none(values.get("vertical_oscillation")),
+                    "vertical_ratio": FITCoreEngine._float_or_none(values.get("vertical_ratio")),
+                    "step_length": FITCoreEngine._float_or_none(values.get("step_length")),
+                    "power": FITCoreEngine._int_or_none(values.get("power")),
                 }
             )
         rows.sort(key=lambda row: row["_ts"] or datetime.min.replace(tzinfo=timezone.utc))
@@ -400,6 +441,16 @@ class FITCoreEngine:
                     "time": row["time"],
                     "hr": row["hr"],
                     "pace": row["pace"],
+                    # 跑步动态字段透传
+                    "cadence": row["cadence"],
+                    "fraction_cadence": row["fraction_cadence"],
+                    "stance_time": row["stance_time"],
+                    "stance_time_percent": row["stance_time_percent"],
+                    "stance_time_balance": row["stance_time_balance"],
+                    "vertical_oscillation": row["vertical_oscillation"],
+                    "vertical_ratio": row["vertical_ratio"],
+                    "step_length": row["step_length"],
+                    "power": row["power"],
                 }
             )
         return track_data

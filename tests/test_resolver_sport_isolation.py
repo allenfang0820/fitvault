@@ -269,7 +269,7 @@ class TestContextTagsCapabilityRouting:
         )
 
     def test_schema_top_level_whitelist_unchanged(self):
-        """A7:ACTIVITY_SCHEMA 顶级 key 白名单不变(V8.3: +cadence_curve)。"""
+        """A7:ACTIVITY_SCHEMA 顶级 key 白名单不变(V8.3: +cadence_curve;V_ENV.1.3: +environment_challenge)。"""
         resolver = self._build_resolver()
         session = self._build_minimal_session("running")
         result = resolver.resolve(session, {"device_meta": {}})
@@ -279,6 +279,7 @@ class TestContextTagsCapabilityRouting:
             "altitude_curve", "lat_curve", "lon_curve", "efficiency_curve",
             "fatigue_zones", "insight_events", "context_tags",
             "cadence_curve",  # V8.3
+            "environment_challenge",  # V_ENV.1.3
         }
         assert set(result.keys()) == expected_keys, (
             f"顶级 schema 变化,新增/缺失:{set(result.keys()) ^ expected_keys}"

@@ -24,7 +24,7 @@ import track_backend  # noqa: F401 -- PyInstaller bundles track_backend
 import profile_backend  # noqa: F401 -- PyInstaller bundles profile 模块
 from fit_engine import FITCoreEngine
 from garmin_fit_sdk import Decoder, Stream
-from metrics_resolver import MetricsResolver, SemanticSportsEngine  # V4.0 治理:SemanticSportsEngine 已下沉
+from metrics_resolver import MetricsResolver, SemanticSportsEngine, build_training_effect  # V9.4.0 修复 NameError:build_training_effect 已在 metrics_resolver.py:2760 定义, 此处补 import
 
 DEBUG_MODE = False
 APP_VERSION = "v0.6.0"
@@ -474,6 +474,9 @@ DETAIL_API_REQUIRED_COLUMNS: tuple[str, ...] = (
     "speed_curve",
     "cadence_curve",
     "hr_zone_distribution",
+    # V9.4.4:Training Effect 训练收益(Firstbeat 私有字段)
+    "aerobic_training_effect",
+    "anaerobic_training_effect",
     "is_race",
     "is_event",
     "is_intermittent",
@@ -1334,6 +1337,9 @@ def _parse_fit_activity_for_sync(file_path: Path) -> dict[str, Any]:
             "calories": basic.get("total_calories"),
             "gain_m": basic.get("total_ascent"),
             "max_alt_m": basic.get("max_altitude"),
+            # V9.4.4:Training Effect 透传(Firstbeat 私有字段)
+            "aerobic_training_effect": basic.get("aerobic_training_effect"),
+            "anaerobic_training_effect": basic.get("anaerobic_training_effect"),
             "total_descent_m": basic.get("total_descent"),
         },
         basic.get("sport"),
@@ -1433,6 +1439,9 @@ def _parse_fit_activity_for_sync(file_path: Path) -> dict[str, Any]:
             "weather": "enrichment" if weather else "none",
             "region": "pending" if has_gps else "indoor",
         },
+        # V9.4.4:Training Effect(Firstbeat 私有字段,从 fit_engine 透传)
+        "aerobic_training_effect": _safe_float(basic.get("aerobic_training_effect")),
+        "anaerobic_training_effect": _safe_float(basic.get("anaerobic_training_effect")),
     }
 
     # 从 FIT 文件解析设备型号
@@ -1567,11 +1576,12 @@ def _insert_activity_sync_row(conn: sqlite3.Connection, activity: dict[str, Any]
                  weather_json, file_mtime, file_size, advanced_metrics, normalized_power, swolf, device_name,
                  shadow_diff_json, source_type, is_mock, deleted_at, updated_at, hr_curve, speed_curve, cadence_curve, hr_zone_distribution, laps_json,
                  min_alt_m, total_descent_m, up_count, down_count, max_single_climb_m, difficulty_score, report_metrics_version,
-                 avg_grade_pct, max_slope_pct, min_slope_pct, uphill_pct, downhill_pct)
+                 avg_grade_pct, max_slope_pct, min_slope_pct, uphill_pct, downhill_pct,
+                 aerobic_training_effect, anaerobic_training_effect)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                     ?, ?, 'fit_sdk', 0, NULL, datetime('now'), ?, ?, ?, ?, ?,
                     ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?)
+                    ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 activity.get("file_name"),
@@ -1630,6 +1640,9 @@ def _insert_activity_sync_row(conn: sqlite3.Connection, activity: dict[str, Any]
                 activity.get("min_slope_pct"),
                 activity.get("uphill_pct"),
                 activity.get("downhill_pct"),
+                # V9.4.0:Training Effect(FIT 219/218 直读)
+                activity.get("aerobic_training_effect"),
+                activity.get("anaerobic_training_effect"),
             ),
         )
         return int(cur.lastrowid)
@@ -2596,7 +2609,8 @@ def _build_ai_snapshot(activity_id: int) -> dict[str, Any] | None:
             " tss, start_time, start_lat, start_lon, region, file_path, filename,"
             " hr_decoupling, hr_curve, speed_curve, device_name,"
             " min_alt_m, total_descent_m, up_count, down_count, max_single_climb_m, difficulty_score, report_metrics_version,"
-            " avg_grade_pct, max_slope_pct, min_slope_pct, uphill_pct, downhill_pct"
+            " avg_grade_pct, max_slope_pct, min_slope_pct, uphill_pct, downhill_pct,"
+            " aerobic_training_effect, anaerobic_training_effect"
             " FROM activities WHERE id = ? AND deleted_at IS NULL",
             (activity_id,),
         ).fetchone()
@@ -5902,18 +5916,14 @@ class Api:
         except Exception:
             return []
 
-    def _sample_thumbnail_points(self, points: list[dict], limit: int = 48) -> list[dict]:
-        if not points:
-            return []
-        step = max(1, len(points) // limit)
-        sampled = []
-        for p in points[::step]:
-            lat = p.get("lat")
-            lon = p.get("lon")
-            if lat is None or lon is None:
-                continue
-            sampled.append({"lat": float(lat), "lon": float(lon)})
-        return sampled[:limit]
+    def _sample_thumbnail_points(self, points: list[dict], limit: int = 60) -> list[dict]:
+        """活动轨迹缩略图采样(V9.x-LTTB 升级)。
+
+        契约:fit-arch-contrac §V4.0 防腐层 / §2.1 字段全链路可追溯
+        业务逻辑已下沉至 MetricsResolver._lttb_sample, 本函数仅做 1 行透传
+        采样阈值从 48 提升至 60 以适配 B+ Canvas v2 真实比例渲染
+        """
+        return MetricsResolver._lttb_sample(points, limit)
 
     def _build_lap_rows(self, dist_km: float, duration_sec: int, avg_hr: int | None, base_power: int) -> list[dict]:
         import math
@@ -6022,6 +6032,17 @@ def _build_record_from_row(api_self, row: dict, idx: int) -> dict:
         "summary": raw_for_engine,
         "laps": _build_real_laps_from_row(row, dist_km, duration_sec, avg_hr, base_power) or api_self._build_lap_rows(dist_km, duration_sec, avg_hr, base_power),
         "thumbnail_points": api_self._sample_thumbnail_points(points),
+        # V9.4.4:Training Effect 派生(契约 §2.2 路径 record.detail.training_effect)
+        # 真理源:FIT session.total_training_effect / total_anaerobic_training_effect
+        #   (Garmin Firstbeat 私有算法,fitparse 已应用 scale 0.1 → 0.0~5.0)
+        # 双字段都 None → 走概览页占位卡(不重算 Firstbeat 私有算法)
+        "training_effect": build_training_effect(
+            {
+                "aerobic_training_effect": row.get("aerobic_training_effect"),
+                "anaerobic_training_effect": row.get("anaerobic_training_effect"),
+            },
+            display_type,
+        ),
     }
 
     region_status = str(row.get("region_status") or "").strip()
