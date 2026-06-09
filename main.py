@@ -15,7 +15,7 @@ import time
 import uuid
 import zipfile
 from urllib.parse import urlparse
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -24,7 +24,7 @@ import track_backend  # noqa: F401 -- PyInstaller bundles track_backend
 import profile_backend  # noqa: F401 -- PyInstaller bundles profile 模块
 from fit_engine import FITCoreEngine
 from garmin_fit_sdk import Decoder, Stream
-from metrics_resolver import MetricsResolver, SemanticSportsEngine, build_training_effect  # V9.4.0 修复 NameError:build_training_effect 已在 metrics_resolver.py:2760 定义, 此处补 import
+from metrics_resolver import MetricsResolver, SemanticSportsEngine, build_training_effect, _build_environment_challenge_block  # V9.4.0 修复 NameError:build_training_effect 已在 metrics_resolver.py:2760 定义, 此处补 import;V_ENV.1.16:补 _build_environment_challenge_block
 
 DEBUG_MODE = False
 APP_VERSION = "v0.6.0"
@@ -76,7 +76,11 @@ SPORT_HUB_TYPE_ORDER = {
     "mountaineering": 7,
     "walking": 8,
     "swimming": 9,
+    "lap_swimming": 9,
+    "open_water": 9,
+    "open_water_swimming": 9,
     "stand_up_paddleboarding": 10,
+    "paddling": 10,
     "driving": 11,
     "cardio": 12,
     "strength_training": 13,
@@ -150,6 +154,54 @@ IRRELEVANT_LIST_METRICS: dict[str, frozenset[str]] = {
     "breathing": frozenset({"distance", "pace"}),
     "flexibility_training": frozenset({"distance", "pace"}),
 }
+
+# V9.4.5:圈速表列规则真理源(后端决定,前端只消费 detail.lap_columns)
+LAP_COLUMN_PRESETS: dict[str, list[str]] = {
+    "running": ["avg_pace", "avg_hr", "cadence", "gct", "power"],
+    "treadmill_running": ["avg_pace", "avg_hr", "cadence", "gct", "power"],
+    "trail_running": ["avg_pace", "avg_hr", "max_hr", "ascent", "descent"],
+    "hiking": ["avg_pace", "avg_hr", "max_hr", "ascent", "descent"],
+    "mountaineering": ["avg_pace", "avg_hr", "max_hr", "ascent", "descent"],
+    "walking": ["avg_pace", "avg_hr", "max_hr", "ascent", "descent"],
+    "cycling": ["avg_pace", "avg_hr", "power", "ascent", "descent"],
+    "road_cycling": ["avg_pace", "avg_hr", "power", "ascent", "descent"],
+    "mountain_biking": ["avg_pace", "avg_hr", "power", "ascent", "descent"],
+    "indoor_cycling": ["avg_pace", "avg_hr", "power"],
+    "swimming": ["avg_hr", "swolf", "stroke_style", "length_distance"],
+    "lap_swimming": ["avg_hr", "swolf", "stroke_style", "length_distance"],
+    "open_water": ["avg_hr", "stroke_distance"],
+    "open_water_swimming": ["avg_hr", "stroke_distance"],
+    "cardio": ["avg_hr", "power", "calories"],
+    "cardio_training": ["avg_hr", "power", "calories"],
+}
+
+
+def resolve_lap_columns(sport_type: str) -> list[str]:
+    """V9.4.5:详情页圈速表列真理源(后端计算,前端消费)。"""
+    sport = (sport_type or "").lower()
+    return list(LAP_COLUMN_PRESETS.get(sport, []))
+
+
+WATER_METRIC_DISPLAY_TYPES = {
+    "swimming",
+    "lap_swimming",
+    "open_water",
+    "open_water_swimming",
+    "stand_up_paddleboarding",
+    "paddling",
+}
+
+
+def _resolve_activity_list_dynamic_columns(activity_types: list[str]) -> list[str]:
+    types = set(activity_types or [])
+    dynamic_columns: list[str] = []
+    if types & LIST_GAIN_ELIGIBLE_TYPES:
+        dynamic_columns.append("gain")
+    if types & WATER_METRIC_DISPLAY_TYPES:
+        dynamic_columns.append("swolf")
+    if types & LIST_POWER_ELIGIBLE_TYPES:
+        dynamic_columns.append("np")
+    return dynamic_columns
 
 _ACTIVITY_SYNC_SCHEMA_LOCK = threading.Lock()
 _ACTIVITY_SYNC_SCHEMA_READY_FOR: str | None = None
@@ -335,6 +387,10 @@ def _normalize_activity_token(value: Any, fallback: str = "unknown") -> str:
         "hike": "hiking",
         "mountaineering": "mountaineering",
         "climb": "mountaineering",
+        "sup": "stand_up_paddleboarding",
+        "standup_paddleboarding": "stand_up_paddleboarding",
+        "stand_up_paddle": "stand_up_paddleboarding",
+        "paddleboarding": "stand_up_paddleboarding",
         "drive": "driving",
         "car": "driving",
         "auto": "driving",
@@ -358,6 +414,9 @@ def _resolve_display_sport_type(sport_type: Any, sub_sport_type: Any) -> str:
     sub_token = _normalize_activity_token(sub_sport_type, "")
     sport_token = _normalize_activity_token(sport_type)
     sub_display_map = {
+        "lap_swimming": "lap_swimming",
+        "open_water": "open_water",
+        "open_water_swimming": "open_water_swimming",
         "trail_running": "trail_running",
         "road_cycling": "road_cycling",
         "mountain_biking": "mountain_biking",
@@ -376,6 +435,81 @@ def _resolve_display_sport_type(sport_type: Any, sub_sport_type: Any) -> str:
     if sport_token in sub_display_map:
         return sub_display_map[sport_token]
     return sport_token
+
+
+def _resolve_water_metric(
+    display_type: Any,
+    sub_sport_type: Any,
+    swolf_raw: Any,
+) -> tuple[float | None, str | None, str | None]:
+    """Return display value/label/kind for water sports using the legacy swolf column."""
+    display_token = _normalize_activity_token(display_type, "")
+    sub_token = _normalize_activity_token(sub_sport_type, "")
+    value = _safe_float(swolf_raw, None)
+    if value is None or display_token not in WATER_METRIC_DISPLAY_TYPES:
+        return None, None, None
+    if sub_token == "lap_swimming" or display_token in ("swimming", "lap_swimming"):
+        return value, "平均SWOLF", "swolf"
+    return value, "平均划水距离", "stroke_distance"
+
+
+_FIT_WATER_METRIC_CACHE: dict[str, dict[str, float | None]] = {}
+
+
+def _read_water_metrics_from_fit(file_path: Any) -> dict[str, float | None]:
+    path_text = str(file_path or "").strip()
+    if not path_text:
+        return {"swolf": None, "stroke_distance": None}
+    if path_text in _FIT_WATER_METRIC_CACHE:
+        return _FIT_WATER_METRIC_CACHE[path_text]
+
+    metrics = {"swolf": None, "stroke_distance": None}
+    try:
+        path = Path(path_text).expanduser()
+        if not path.is_file():
+            _FIT_WATER_METRIC_CACHE[path_text] = metrics
+            return metrics
+
+        parsed = FITCoreEngine.parse_fit_file(path)
+        basic = parsed.get("basic_info") or {}
+        stroke_value = _safe_float(
+            parsed.get("avg_stroke_distance") or basic.get("avg_stroke_distance"),
+            None,
+        )
+        if stroke_value and stroke_value > 0:
+            metrics["stroke_distance"] = stroke_value
+
+        from fitparse import FitFile
+
+        fit = FitFile(str(path))
+        lap_swolf_values: list[float] = []
+        for msg in fit.get_messages("lap"):
+            vals = {field.name: field.value for field in msg}
+            raw_swolf = _safe_float(vals.get("avg_swolf"), None)
+            if raw_swolf and raw_swolf > 0:
+                lap_swolf_values.append(raw_swolf)
+                continue
+            lengths = _safe_float(vals.get("num_lengths"), 0.0) or 0.0
+            cycles = _safe_float(vals.get("total_strokes") or vals.get("total_cycles"), 0.0) or 0.0
+            timer = _safe_float(vals.get("total_timer_time"), 0.0) or 0.0
+            if lengths > 0 and cycles > 0 and timer > 0:
+                lap_swolf_values.append((cycles / lengths) + (timer / lengths))
+        if lap_swolf_values:
+            metrics["swolf"] = round(sum(lap_swolf_values) / len(lap_swolf_values))
+    except Exception:
+        pass
+    _FIT_WATER_METRIC_CACHE[path_text] = metrics
+    return metrics
+
+
+def _resolve_water_metric_for_row(
+    display_type: Any,
+    sub_sport_type: Any,
+    swolf_raw: Any,
+    file_path: Any = None,
+) -> tuple[float | None, str | None, str | None]:
+    value, label, kind = _resolve_water_metric(display_type, sub_sport_type, swolf_raw)
+    return value, label, kind
 
 
 def _safe_float(value: Any, default: float = 0.0) -> float:
@@ -563,73 +697,84 @@ def _safe_json_list(value: Any) -> list | None:
     return obj if isinstance(obj, list) else None
 
 
+def _sanitize_distance_curve_m(values: list) -> list[float]:
+    clean: list[float] = []
+    last = 0.0
+    for value in values or []:
+        num = _safe_float(value)
+        if num is None or num < 0:
+            num = last
+        if num < last:
+            num = last
+        clean.append(float(num))
+        last = float(num)
+    return clean
+
+
+def _build_fatigue_review_curve_bundle(row: dict[str, Any]) -> dict[str, Any]:
+    track_points = _safe_json_list(
+        row.get("track_json") or row.get("points_json") or row.get("merged_track_json")
+    ) or []
+    records = MetricsResolver._convert_track_to_algorithm_records(track_points)
+    dist_km_field = _safe_float(row.get("dist_km"))
+    dist_m_field = _safe_float(row.get("distance"))
+    total_distance_m = 0.0
+    if dist_km_field and dist_km_field > 0:
+        total_distance_m = dist_km_field * 1000.0
+    elif dist_m_field and dist_m_field > 0:
+        total_distance_m = dist_m_field
+    elif records:
+        total_distance_m = float(records[-1].get("distance") or 0.0)
+    start_ts = records[0].get("timestamp") if records else None
+    time_curve_sec: list[float] = []
+    for record in records:
+        ts = record.get("timestamp")
+        if start_ts is not None and ts is not None:
+            time_curve_sec.append(round((ts - start_ts).total_seconds(), 3))
+    return {
+        "records": records,
+        "distance_curve_m": _sanitize_distance_curve_m([r.get("distance") for r in records]),
+        "time_curve_sec": time_curve_sec,
+        "hr_curve": [r.get("heart_rate") for r in records],
+        "speed_curve_mps": [float(r.get("speed") or 0.0) for r in records],
+        "altitude_curve_m": [r.get("altitude") for r in records],
+        "cadence_curve": _safe_json_list(row.get("cadence_curve")) or [],
+        "calories": _safe_float(row.get("calories")) or 0.0,
+        "duration_sec": _safe_int(row.get("duration_sec") or row.get("duration")) or 0,
+        "total_distance_m": total_distance_m,
+        "sport_type": str(row.get("sport_type") or "running"),
+        "source": "track_json" if track_points else "canonical_db",
+    }
+
+
 def _build_resolved_payload_v81(
-    hr_curve: list[float],
-    speed_curve: list[float],
+    bundle: dict[str, Any],
     sport_type: str,
 ) -> dict[str, Any]:
-    """V8.1:从 hr_curve / speed_curve 构造 minimal record_mesgs,调 MetricsResolver.resolve()。
-
-    替代 V4.0 防腐层的 storage_model 中间列(V8.0 已确认该列不存在,
-    V6.3 主路径读不到而 4 段永远空)。
-
-    契约:
-    - §2.1 全链路可追溯:数据源 = hr_curve + speed_curve(最终来源 = FIT 解析 → fit_sdk)
-    - §6 shadow_diff 隔离:MetricsResolver 内部 shadow 层不外泄,本函数出口白名单过滤
-    - §8 canonical 只读:不写新列,纯只读计算
-
-    Args:
-        hr_curve: 心率逐点序列(单位 bpm)
-        speed_curve: 速度逐点序列(单位 m/s)
-        sport_type: 运动类型(running / cycling / ...)
-
-    Returns:
-        dict 含 4 段:{gap_curve, efficiency_curve, insight_events, context_tags}
-        任一输入为 None 或空 → 返回全空 dict
-        MetricsResolver 抛异常 → 兜底全空 dict
-    """
     empty = {
+        "distance_curve": [],
+        "time_curve": [],
+        "altitude_curve": [],
         "gap_curve": [],
         "grade_curve": [],
         "efficiency_curve": [],
         "insight_events": [],
+        "fatigue_zones": [],
         "context_tags": {},
     }
-    if not hr_curve or not speed_curve:
-        return empty
-
+    records = bundle.get("records") or []
+    distance_curve = bundle.get("distance_curve_m") or []
+    if not records or len(records) < 2 or not distance_curve:
+        return fallback
     try:
-        # 构造 minimal record_mesgs(probe V8.1 验证通过)
-        # - timestamp: 占位时间序列(用于 GapCalculator delta_t 计算)
-        # - altitude: 暂传 100.0(无真实 altitude_curve 时基线值;
-        #   Resolver 内部 "if alt else None" 会把 0.0 当 falsy 丢弃,用非零值绕过)
-        # - distance: 累积距离 = sum(speed * dt)
-        n = min(len(hr_curve), len(speed_curve))
-        if n < 2:
-            return empty
-        # 假设采样间隔 1s(V8.1 简化:dt 固定 1s,distance 累积 = 速度累加)
-        dt = 1.0
-        base_time = datetime(2024, 1, 1, 8, 0, 0, tzinfo=timezone.utc)
-        records: list[dict[str, Any]] = []
-        cum_dist = 0.0
-        for i in range(n):
-            hr_v = hr_curve[i] if hr_curve[i] is not None and hr_curve[i] > 0 else 0
-            sp_v = speed_curve[i] if speed_curve[i] is not None and speed_curve[i] > 0 else 0.0
-            if i > 0:
-                cum_dist += sp_v * dt
-            records.append({
-                "heart_rate": hr_v,
-                "speed": sp_v,
-                "timestamp": base_time + timedelta(seconds=i * dt),
-                "position_lat": None,
-                "position_long": None,
-                "altitude": 100.0,
-                "distance": cum_dist,
-            })
-
         raw = {
             "record_mesgs": records,
-            "session_mesgs": [{}],  # V8.1 走 default 兜底,sport_type 由 meta 传
+            "session_mesgs": [{
+                "sport": sport_type,
+                "total_distance": bundle.get("total_distance_m") or 0.0,
+                "total_timer_time": bundle.get("duration_sec") or 0,
+                "total_calories": bundle.get("calories") or 0.0,
+            }],
             "lap_mesgs": [],
         }
         meta = {"sport_type": sport_type}
@@ -642,17 +787,162 @@ def _build_resolved_payload_v81(
         for forbidden in ("shadow_diff", "shadow_diff_json", "diff"):
             resolved.pop(forbidden, None)
 
+        efficiency_curve = resolved.get("efficiency_curve") or []
+        fatigue_zones = MetricsResolver._calculate_fatigue_zones(
+            distance_curve=distance_curve,
+            ei_curve=efficiency_curve,
+            sport_type=sport_type,
+        )
+        insight_events = MetricsResolver._detect_bonk_event(
+            distance_curve=distance_curve,
+            ei_curve=efficiency_curve,
+            total_calories=bundle.get("calories") or 0.0,
+            sport_type=sport_type,
+        )
+
         return {
+            "distance_curve": distance_curve,
+            "time_curve": bundle.get("time_curve_sec") or [],
+            "altitude_curve": bundle.get("altitude_curve_m") or [],
             "gap_curve": resolved.get("gap_curve") or [],
             "grade_curve": resolved.get("grade_curve") or [],
-            "efficiency_curve": resolved.get("efficiency_curve") or [],
-            "insight_events": resolved.get("insight_events") or [],
-            "fatigue_zones": resolved.get("fatigue_zones") or [],  # V4.0: 从 Resolver 契约层透传
+            "efficiency_curve": efficiency_curve,
+            "insight_events": insight_events,
+            "fatigue_zones": fatigue_zones,
             "context_tags": resolved.get("context_tags") or {},
         }
     except Exception:
         logger.exception("_build_resolved_payload_v81 Resolver 调用失败,降级空 dict")
+        fallback = dict(empty)
+        fallback.update({
+            "distance_curve": distance_curve,
+            "time_curve": bundle.get("time_curve_sec") or [],
+            "altitude_curve": bundle.get("altitude_curve_m") or [],
+        })
+        try:
+            fallback["fatigue_zones"] = MetricsResolver._calculate_fatigue_zones(
+                distance_curve=distance_curve,
+                ei_curve=[],
+                sport_type=sport_type,
+            )
+        except Exception:
+            fallback["fatigue_zones"] = []
         return empty
+
+
+_FATIGUE_REVIEW_FORBIDDEN_KEYS = {
+    "records",
+    "points",
+    "raw_records",
+    "track_points",
+    "shadow_diff",
+    "shadow_diff_json",
+    "diff",
+}
+
+
+def _fatigue_review_axis_len(distance_curve_m: list) -> int:
+    if not isinstance(distance_curve_m, list) or not distance_curve_m:
+        return 0
+    numeric = [_safe_float(v) for v in distance_curve_m]
+    return len(numeric) if any(v is not None for v in numeric) else 0
+
+
+def _fatigue_review_numeric_curve(
+    values: Any,
+    axis_len: int,
+    decimals: int | None = None,
+) -> list:
+    """Normalize a drawable curve to the authoritative distance-axis length."""
+    if axis_len <= 0 or not isinstance(values, list) or len(values) != axis_len:
+        return []
+    normalized: list[Any] = []
+    has_value = False
+    for value in values:
+        num = _safe_float(value)
+        if num is None:
+            normalized.append(None)
+            continue
+        has_value = True
+        normalized.append(round(num, decimals) if decimals is not None else num)
+    return normalized if has_value else []
+
+
+def _build_fatigue_review_curves_snapshot(
+    bundle: dict[str, Any],
+    resolved: dict[str, Any],
+) -> dict[str, Any]:
+    """Build the P2 authoritative curve snapshot consumed by the frontend.
+
+    P2 rule: use the backend distance axis as truth. Curves with mismatched
+    length are omitted instead of asking the frontend to infer or pad facts.
+    """
+    distance_curve_m = resolved.get("distance_curve") or bundle.get("distance_curve_m") or []
+    axis_len = _fatigue_review_axis_len(distance_curve_m)
+    total_distance_m = _safe_float(bundle.get("total_distance_m")) or 0.0
+
+    if axis_len <= 0:
+        return {
+            "distance": [],
+            "time": [],
+            "efficiency": [],
+            "gap": [],
+            "grade": [],
+            "hr": [],
+            "altitude": [],
+            "speed": [],
+            "total_distance_m": total_distance_m,
+        }
+
+    distance = [
+        round(float(_safe_float(value) or 0.0) / 1000.0, 3)
+        for value in distance_curve_m
+    ]
+    return {
+        "distance": distance,
+        "time": _fatigue_review_numeric_curve(
+            resolved.get("time_curve") or bundle.get("time_curve_sec") or [],
+            axis_len,
+            3,
+        ),
+        "efficiency": _fatigue_review_numeric_curve(
+            resolved.get("efficiency_curve") or [],
+            axis_len,
+        ),
+        "gap": _fatigue_review_numeric_curve(
+            resolved.get("gap_curve") or [],
+            axis_len,
+        ),
+        "grade": _fatigue_review_numeric_curve(
+            resolved.get("grade_curve") or [],
+            axis_len,
+        ),
+        "hr": _fatigue_review_numeric_curve(
+            bundle.get("hr_curve") or [],
+            axis_len,
+        ),
+        "altitude": _fatigue_review_numeric_curve(
+            resolved.get("altitude_curve") or bundle.get("altitude_curve_m") or [],
+            axis_len,
+        ),
+        "speed": _fatigue_review_numeric_curve(
+            bundle.get("speed_curve_mps") or [],
+            axis_len,
+        ),
+        "total_distance_m": total_distance_m,
+    }
+
+
+def _strip_fatigue_review_forbidden_keys(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            key: _strip_fatigue_review_forbidden_keys(item)
+            for key, item in value.items()
+            if key not in _FATIGUE_REVIEW_FORBIDDEN_KEYS
+        }
+    if isinstance(value, list):
+        return [_strip_fatigue_review_forbidden_keys(item) for item in value]
+    return value
 
 
 def _compute_hr_drift_from_curve(hr_curve: list) -> float | None:
@@ -981,6 +1271,348 @@ def _compute_advanced_metrics(track_data: list[dict]) -> dict:
     if result:
         result["metrics_version"] = CURRENT_METRICS_VERSION
     return result
+
+
+def _resolve_normalized_power_for_sync(
+    basic: dict[str, Any],
+    raw_laps: list,
+    track_data: list[dict],
+    resolver_sm: dict[str, Any] | None = None,
+) -> int | None:
+    """Resolve NP from FIT canonical fields without depending on Resolver output shape."""
+    for value in (
+        basic.get("normalized_power"),
+        (resolver_sm or {}).get("normalized_power_w"),
+    ):
+        np_value = _safe_float(value, None)
+        if np_value and np_value > 0:
+            return int(round(np_value))
+
+    lap_values: list[float] = []
+    for lap in raw_laps or []:
+        if not isinstance(lap, dict):
+            continue
+        value = _safe_float(lap.get("normalized_power"), None)
+        duration = _safe_float(lap.get("total_timer_time"), None)
+        if value and value > 0:
+            if duration and duration > 0:
+                lap_values.extend([value] * max(1, int(round(duration))))
+            else:
+                lap_values.append(value)
+    if lap_values:
+        fourth_mean = sum(v ** 4 for v in lap_values) / len(lap_values)
+        return int(round(fourth_mean ** 0.25))
+
+    power_values = [
+        float(power)
+        for point in (track_data or [])
+        for power in [_safe_float(point.get("power"), None)]
+        if power is not None and power > 0
+    ]
+    if len(power_values) >= 30:
+        fourth_mean = sum(v ** 4 for v in power_values) / len(power_values)
+        return int(round(fourth_mean ** 0.25))
+    return None
+
+
+_NP_BACKFILL_LOCK = threading.Lock()
+_NP_BACKFILL_STATUS: dict[str, Any] = {
+    "running": False,
+    "total": 0,
+    "processed": 0,
+    "updated": 0,
+    "np_total": 0,
+    "np_updated": 0,
+    "water_total": 0,
+    "water_updated": 0,
+    "started_at": 0.0,
+    "finished_at": 0.0,
+    "error": "",
+}
+_NP_BACKFILL_THREAD: threading.Thread | None = None
+
+
+def _normalized_power_backfill_status() -> dict[str, Any]:
+    with _NP_BACKFILL_LOCK:
+        return dict(_NP_BACKFILL_STATUS)
+
+
+def _read_normalized_power_fast_from_fit(file_path: Any) -> int | None:
+    path_text = str(file_path or "").strip()
+    if not path_text:
+        return None
+    path = Path(path_text).expanduser()
+    if not path.is_file():
+        return None
+    try:
+        from fitparse import FitFile
+
+        fit = FitFile(str(path))
+        for msg in fit.get_messages("session"):
+            value = _safe_float(msg.get_value("normalized_power"), None)
+            if value and value > 0:
+                return int(round(value))
+
+        weighted_fourth_sum = 0.0
+        total_weight = 0.0
+        for msg in fit.get_messages("lap"):
+            value = _safe_float(msg.get_value("normalized_power"), None)
+            if not value or value <= 0:
+                continue
+            weight = _safe_float(msg.get_value("total_timer_time"), 1.0) or 1.0
+            weight = max(1.0, min(weight, 24 * 3600.0))
+            weighted_fourth_sum += (value ** 4) * weight
+            total_weight += weight
+        if total_weight > 0:
+            return int(round((weighted_fourth_sum / total_weight) ** 0.25))
+
+        record_fourth_sum = 0.0
+        record_count = 0
+        for msg in fit.get_messages("record"):
+            value = _safe_float(msg.get_value("power"), None)
+            if value and value > 0:
+                record_fourth_sum += value ** 4
+                record_count += 1
+        if record_count >= 30:
+            return int(round((record_fourth_sum / record_count) ** 0.25))
+    except Exception:
+        return None
+    return None
+
+
+def _resolve_water_metric_value_for_backfill(
+    sport_type: Any,
+    sub_sport_type: Any,
+    metrics: dict[str, float | None],
+) -> float | None:
+    display_type = _resolve_display_sport_type(sport_type, sub_sport_type)
+    display_token = _normalize_activity_token(display_type, "")
+    sub_token = _normalize_activity_token(sub_sport_type, "")
+    if sub_token == "lap_swimming" or display_token in ("swimming", "lap_swimming"):
+        return _safe_float(metrics.get("swolf"), None)
+    if display_token in WATER_METRIC_DISPLAY_TYPES:
+        return _safe_float(metrics.get("stroke_distance"), None)
+    return None
+
+
+def _run_normalized_power_backfill_worker(db_path: str) -> None:
+    started = time.time()
+    processed = 0
+    updated = 0
+    np_updated = 0
+    water_updated = 0
+    total = 0
+    error = ""
+    conn: sqlite3.Connection | None = None
+    try:
+        conn = sqlite3.connect(db_path, timeout=profile_backend.SQLITE_CONNECT_TIMEOUT_SEC)
+        conn.row_factory = sqlite3.Row
+        conn.execute(f"PRAGMA busy_timeout = {profile_backend.SQLITE_BUSY_TIMEOUT_MS}")
+        np_rows = conn.execute(
+            """
+            SELECT id, file_path
+            FROM activities
+            WHERE deleted_at IS NULL
+              AND normalized_power IS NULL
+              AND COALESCE(file_path, '') != ''
+              AND lower(COALESCE(sport_type, '')) IN (
+                  'running', 'trail_running', 'treadmill_running',
+                  'cycling', 'road_cycling', 'mountain_biking'
+              )
+            ORDER BY id DESC
+            """
+        ).fetchall()
+        water_rows = conn.execute(
+            """
+            SELECT id, file_path, sport_type, sub_sport_type
+            FROM activities
+            WHERE deleted_at IS NULL
+              AND swolf IS NULL
+              AND COALESCE(file_path, '') != ''
+              AND (
+                  lower(COALESCE(sport_type, '')) IN (
+                      'swimming', 'lap_swimming', 'open_water',
+                      'open_water_swimming', 'stand_up_paddleboarding', 'paddling'
+                  )
+                  OR lower(COALESCE(sub_sport_type, '')) IN (
+                      'lap_swimming', 'open_water', 'open_water_swimming',
+                      'stand_up_paddleboarding', 'paddling'
+                  )
+              )
+            ORDER BY id DESC
+            """
+        ).fetchall()
+        total = len(np_rows) + len(water_rows)
+        with _NP_BACKFILL_LOCK:
+            _NP_BACKFILL_STATUS.update({
+                "total": total,
+                "processed": 0,
+                "updated": 0,
+                "np_total": len(np_rows),
+                "np_updated": 0,
+                "water_total": len(water_rows),
+                "water_updated": 0,
+                "error": "",
+            })
+        for row in np_rows:
+            processed += 1
+            value = _read_normalized_power_fast_from_fit(row["file_path"])
+            if value and value > 0:
+                conn.execute(
+                    "UPDATE activities SET normalized_power = ?, updated_at = COALESCE(updated_at, datetime('now')) WHERE id = ? AND normalized_power IS NULL",
+                    (value, int(row["id"])),
+                )
+                updated += 1
+                np_updated += 1
+            if processed % 25 == 0:
+                conn.commit()
+                with _NP_BACKFILL_LOCK:
+                    _NP_BACKFILL_STATUS.update({
+                        "processed": processed,
+                        "updated": updated,
+                        "np_updated": np_updated,
+                        "water_updated": water_updated,
+                    })
+        for row in water_rows:
+            processed += 1
+            metrics = _read_water_metrics_from_fit(row["file_path"])
+            value = _resolve_water_metric_value_for_backfill(
+                row["sport_type"],
+                row["sub_sport_type"],
+                metrics,
+            )
+            if value and value > 0:
+                conn.execute(
+                    "UPDATE activities SET swolf = ?, updated_at = COALESCE(updated_at, datetime('now')) WHERE id = ? AND swolf IS NULL",
+                    (float(value), int(row["id"])),
+                )
+                updated += 1
+                water_updated += 1
+            if processed % 25 == 0:
+                conn.commit()
+                with _NP_BACKFILL_LOCK:
+                    _NP_BACKFILL_STATUS.update({
+                        "processed": processed,
+                        "updated": updated,
+                        "np_updated": np_updated,
+                        "water_updated": water_updated,
+                    })
+        conn.commit()
+    except Exception as exc:
+        error = str(exc)
+        logger.exception("normalized_power backfill failed")
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+    finally:
+        if conn:
+            conn.close()
+        with _NP_BACKFILL_LOCK:
+            _NP_BACKFILL_STATUS.update({
+                "running": False,
+                "total": total,
+                "processed": processed,
+                "updated": updated,
+                "np_updated": np_updated,
+                "water_updated": water_updated,
+                "started_at": started,
+                "finished_at": time.time(),
+                "error": error,
+            })
+
+
+def _start_normalized_power_backfill_if_needed() -> dict[str, Any]:
+    global _NP_BACKFILL_THREAD
+    with _NP_BACKFILL_LOCK:
+        if _NP_BACKFILL_STATUS.get("running"):
+            return dict(_NP_BACKFILL_STATUS)
+        finished_at = float(_NP_BACKFILL_STATUS.get("finished_at") or 0)
+        if finished_at and time.time() - finished_at < 60:
+            return dict(_NP_BACKFILL_STATUS)
+
+    db_path = _activity_schema_cache_key()
+    try:
+        conn = sqlite3.connect(db_path, timeout=profile_backend.SQLITE_CONNECT_TIMEOUT_SEC)
+        try:
+            missing_np = conn.execute(
+                """
+                SELECT COUNT(*)
+                FROM activities
+                WHERE deleted_at IS NULL
+                  AND normalized_power IS NULL
+                  AND COALESCE(file_path, '') != ''
+                  AND lower(COALESCE(sport_type, '')) IN (
+                      'running', 'trail_running', 'treadmill_running',
+                      'cycling', 'road_cycling', 'mountain_biking'
+                  )
+                """
+            ).fetchone()[0]
+            missing_water = conn.execute(
+                """
+                SELECT COUNT(*)
+                FROM activities
+                WHERE deleted_at IS NULL
+                  AND swolf IS NULL
+                  AND COALESCE(file_path, '') != ''
+                  AND (
+                      lower(COALESCE(sport_type, '')) IN (
+                          'swimming', 'lap_swimming', 'open_water',
+                          'open_water_swimming', 'stand_up_paddleboarding', 'paddling'
+                      )
+                      OR lower(COALESCE(sub_sport_type, '')) IN (
+                          'lap_swimming', 'open_water', 'open_water_swimming',
+                          'stand_up_paddleboarding', 'paddling'
+                      )
+                  )
+                """
+            ).fetchone()[0]
+        finally:
+            conn.close()
+    except Exception as exc:
+        with _NP_BACKFILL_LOCK:
+            _NP_BACKFILL_STATUS.update({"error": str(exc), "running": False})
+            return dict(_NP_BACKFILL_STATUS)
+    missing = int(missing_np or 0) + int(missing_water or 0)
+    if not missing:
+        with _NP_BACKFILL_LOCK:
+            _NP_BACKFILL_STATUS.update({
+                "total": 0,
+                "processed": 0,
+                "updated": 0,
+                "np_total": 0,
+                "np_updated": 0,
+                "water_total": 0,
+                "water_updated": 0,
+                "error": "",
+            })
+            return dict(_NP_BACKFILL_STATUS)
+
+    with _NP_BACKFILL_LOCK:
+        if _NP_BACKFILL_STATUS.get("running"):
+            return dict(_NP_BACKFILL_STATUS)
+        _NP_BACKFILL_STATUS.update({
+            "running": True,
+            "total": missing,
+            "processed": 0,
+            "updated": 0,
+            "np_total": int(missing_np or 0),
+            "np_updated": 0,
+            "water_total": int(missing_water or 0),
+            "water_updated": 0,
+            "started_at": time.time(),
+            "finished_at": 0.0,
+            "error": "",
+        })
+    _NP_BACKFILL_THREAD = threading.Thread(
+        target=_run_normalized_power_backfill_worker,
+        args=(db_path,),
+        daemon=True,
+        name="normalized-power-backfill",
+    )
+    _NP_BACKFILL_THREAD.start()
+    return _normalized_power_backfill_status()
 
 
 def _p90(values: list[float]) -> float:
@@ -1341,6 +1973,9 @@ def _parse_fit_activity_for_sync(file_path: Path) -> dict[str, Any]:
             "aerobic_training_effect": basic.get("aerobic_training_effect"),
             "anaerobic_training_effect": basic.get("anaerobic_training_effect"),
             "total_descent_m": basic.get("total_descent"),
+            "avg_power": basic.get("avg_power"),
+            "max_power": basic.get("max_power"),
+            "normalized_power": basic.get("normalized_power"),
         },
         basic.get("sport"),
         basic.get("sub_sport"),
@@ -1534,10 +2169,15 @@ def _parse_fit_activity_for_sync(file_path: Path) -> dict[str, Any]:
         sport_token = _normalize_activity_token(payload.get("sport_type") or "", "")
         if sub_sport_token == "lap_swimming":
             result["swolf"] = sm.get("swolf")
-        elif sub_sport_token in ("open_water", "open_water_swimming") or sport_token == "stand_up_paddleboarding":
+        elif sub_sport_token in ("open_water", "open_water_swimming") or sport_token in ("stand_up_paddleboarding", "paddling"):
             result["swolf"] = result["avg_stroke_distance"]
-        # Phase 2.5 — normalized_power: promote resolver-computed value from storage_model
-        result["normalized_power"] = sm.get("normalized_power_w")
+        # Phase 2.5 — normalized_power: FIT canonical first; Resolver output shape is not stable here.
+        result["normalized_power"] = _resolve_normalized_power_for_sync(
+            basic,
+            raw_laps,
+            track_data,
+            sm,
+        )
         # V8.3: 直接从 resolved 顶层取曲线(Resolver 已放 final_data)
         # 旧逻辑 ap = resolved.get("analysis_pack") 永远为空(V7.1 Resolver 未把 analysis_pack 放入 final_data)
         # 这是 V8.3 修复的副作用:hr/speed/cadence 三条曲线终于能进 DB
@@ -2915,6 +3555,8 @@ class Api:
         activity_id = obj.get("activity_id") or obj.get("activityId")
         if activity_id:
             self._ai_snapshot = _build_ai_snapshot(int(activity_id))
+            if isinstance(self._ai_snapshot, dict):
+                self._ai_snapshot["activity_id"] = int(activity_id)
         else:
             self._ai_snapshot = None
         return _api_success()
@@ -3115,6 +3757,63 @@ class Api:
            - AI 输入: _ai_snapshot (DB truth) → ai_block (system prompt)
            - 轨迹详情表: _track_points (仅作为 CSV table 供参考，不参与 AI 分析)
            - 禁止: 前端 calculateStats 输出、per-point slope、request.get_json() metrics"""
+        if prompt == self.FATIGUE_REVIEW_INSIGHT:
+            # §5.6.2 规则 4:入口处先清空 + 刷新,所有 happy / fallback 分支前执行
+            # §5.6.2 规则 6:严禁写 DB,AI 洞察只存前端内存
+            self._chat_messages = []
+            self._new_session_id()
+
+            def _fr_empty(message: str) -> dict:
+                return _api_success({
+                    "fatigue_review_insight": llm_backend.empty_fatigue_review_insight(message),
+                    "sport_type": sport_type,
+                })
+
+            activity_id = self._extract_fatigue_review_activity_id(self._ai_snapshot)
+            if not activity_id:
+                return _fr_empty("请先加载活动轨迹")
+
+            try:
+                fr_snapshot = self._build_fatigue_review_insight_snapshot(activity_id, sport_type)
+                if not fr_snapshot:
+                    return _fr_empty("未找到该活动记录")
+                if not fr_snapshot.get("metrics"):
+                    return _fr_empty("当前活动数据不足,无法生成洞察")
+
+                cfg = llm_backend.load_llm_config()
+                url = (cfg.get("url") or "").strip()
+                model = (cfg.get("model") or "").strip()
+                if not url:
+                    return _fr_empty("API 接口地址未配置，请在系统配置页填写后重试")
+                if not model:
+                    return _fr_empty("模型名未配置，请在系统配置页填写后重试")
+
+                api_key = str(cfg.get("api_key") or "")
+                agent_id = str(cfg.get("agent_id") or "")
+                sid = self._session_id
+                sport_cn = {
+                    "running": "跑步", "trail_running": "越野跑", "treadmill_running": "跑步机",
+                    "hiking": "徒步", "mountaineering": "登山",
+                    "cycling": "骑行", "road_cycling": "公路骑行", "mountain_biking": "山地车",
+                    "swimming": "游泳", "lap_swimming": "泳池游泳", "open_water": "公开水域游泳",
+                }.get(sport_type, sport_type or "该运动")
+                messages = llm_backend.build_fatigue_review_messages(fr_snapshot, sport_type, sport_cn)
+                text = llm_backend.chat_completions(
+                    url=url,
+                    api_key=api_key,
+                    model=model,
+                    messages=messages,
+                    session_id=sid,
+                    agent_id=agent_id,
+                )
+                return _api_success({
+                    "fatigue_review_insight": llm_backend.normalize_fatigue_review_json(text),
+                    "sport_type": sport_type,
+                })
+            except Exception as e:
+                logger.warning("fatigue_review_insight failed: %s", e)
+                return _fr_empty(str(e))
+
         cfg = llm_backend.load_llm_config()
         url = (cfg.get("url") or "").strip()
         # CONTRACT §2.1 / §7.2: 未配置时禁止静默 fallback 到 localhost，必须立刻阻塞。
@@ -3183,51 +3882,6 @@ class Api:
                     "radar_insight": llm_backend.normalize_radar_insight_json(text),
                     "sport_type": sport_type,
                 }
-
-            if prompt == self.FATIGUE_REVIEW_INSIGHT:
-                # §5.6.2 规则 4:复盘覆盖层洞察必须独立 sentinel,入口处先清空 + 刷新
-                # §5.6.2 规则 6:严禁写 DB,AI 洞察只存前端内存
-                # §5.6.2 规则 7:错误用 empty_fatigue_review_insight,严禁抛 promise reject
-                self._chat_messages = []
-                self._new_session_id()
-
-                if not self._ai_snapshot:
-                    return {
-                        "ok": True,
-                        "fatigue_review_insight": llm_backend.empty_fatigue_review_insight("请先加载活动轨迹"),
-                    }
-                # §5.4 规则 3:从 _ai_snapshot 构建 snapshot,严禁前端 payload
-                fr_snapshot = self._build_fatigue_review_snapshot()
-                if not fr_snapshot.get("metrics") or not fr_snapshot.get("curves"):
-                    return {
-                        "ok": True,
-                        "fatigue_review_insight": llm_backend.empty_fatigue_review_insight("当前活动数据不足,无法生成洞察"),
-                    }
-                sport_cn = {
-                    "running": "跑步", "trail_running": "越野跑", "hiking": "徒步",
-                    "cycling": "骑行", "swimming": "游泳",
-                }.get(sport_type, sport_type or "该运动")
-                try:
-                    messages = llm_backend.build_fatigue_review_messages(fr_snapshot, sport_type, sport_cn)
-                    text = llm_backend.chat_completions(
-                        url=url,
-                        api_key=api_key,
-                        model=model,
-                        messages=messages,
-                        session_id=sid,
-                        agent_id=agent_id,
-                    )
-                    return {
-                        "ok": True,
-                        "fatigue_review_insight": llm_backend.normalize_fatigue_review_json(text),
-                        "sport_type": sport_type,
-                    }
-                except Exception as e:
-                    logger.warning("fatigue_review_insight failed: %s", e)
-                    return {
-                        "ok": True,
-                        "fatigue_review_insight": llm_backend.empty_fatigue_review_insight(str(e)),
-                    }
 
             if prompt == self.SYSTEM_INSTRUCTION:
                 storage_rule = (
@@ -3597,15 +4251,14 @@ class Api:
         calories = row.get("calories")
         normalized_power = row.get("normalized_power")
         swolf_raw = row.get("swolf")
-        swolf = None
-        swolf_subtitle = None
-        if display_type == "swimming" or display_type == "stand_up_paddleboarding":
-            if sub_sport == "lap_swimming":
-                swolf = swolf_raw
-                swolf_subtitle = "平均SWOLF"
-            else:
-                swolf = swolf_raw
-                swolf_subtitle = "平均划水距离"
+        water_metric_value, water_metric_label, water_metric_kind = _resolve_water_metric_for_row(
+            display_type,
+            sub_sport,
+            swolf_raw,
+            row.get("file_path"),
+        )
+        swolf = water_metric_value
+        swolf_subtitle = water_metric_label
         display_filename = str(row.get("filename") or row.get("file_name") or "")
         title = _clean_fit_activity_title(row.get("file_name") or row.get("filename"), display_filename)
         region_status = str(row.get("region_status") or "").strip()
@@ -3676,6 +4329,14 @@ class Api:
             "normalized_power_display": power_field_display,
             "swolf": round(_safe_float(swolf), 1) if swolf is not None else None,
             "swolf_subtitle": swolf_subtitle,
+            "water_metric_value": round(_safe_float(water_metric_value), 1) if water_metric_value is not None else None,
+            "water_metric_label": water_metric_label,
+            "water_metric_kind": water_metric_kind,
+            "stroke_distance": (
+                round(_safe_float(water_metric_value), 1)
+                if water_metric_kind == "stroke_distance" and water_metric_value is not None
+                else None
+            ),
             "file_path": str(row.get("file_path") or ""),
             "region": region_raw,
             "region_display": region_raw,
@@ -4555,29 +5216,8 @@ class Api:
         """返回完整活动记录快照，供前端本地分页与筛选使用。"""
         try:
             source_dir, records, activity_types = self._query_activity_list_records(sport_filter)
-            gain_eligible = OUTDOOR_LAND_GAIN_TYPES - {"treadmill_running"}
-            swim_types = {"swimming", "stand_up_paddleboarding"}
-            power_types = POWER_ELIGIBLE_TYPES
-            has_gain = False
-            has_swim = False
-            has_power = False
-            for r in records:
-                st = r.get("display_sport_type") or r.get("sport_type") or ""
-                if not has_gain and st in gain_eligible:
-                    has_gain = True
-                if not has_swim and st in swim_types:
-                    has_swim = True
-                if not has_power and st in power_types:
-                    has_power = True
-                if has_gain and has_swim and has_power:
-                    break
-            dynamic_columns = []
-            if has_gain:
-                dynamic_columns.append("gain")
-            if has_swim:
-                dynamic_columns.append("swolf")
-            if has_power:
-                dynamic_columns.append("np")
+            np_backfill = _start_normalized_power_backfill_if_needed()
+            dynamic_columns = _resolve_activity_list_dynamic_columns(activity_types)
             return _api_success({
                 "source_dir": source_dir,
                 "total": len(records),
@@ -4586,6 +5226,8 @@ class Api:
                 "page_sizes": SPORT_HUB_PAGE_SIZES,
                 "records": records,
                 "dynamic_columns": dynamic_columns,
+                "normalized_power_backfill": np_backfill,
+                "list_metric_backfill": np_backfill,
             })
         except Exception:
             logger.exception("get_activity_list_snapshot failed")
@@ -4627,6 +5269,7 @@ class Api:
                 key=lambda item: (SPORT_HUB_TYPE_ORDER.get(item, 99), item),
             )
 
+            metric_backfill = _start_normalized_power_backfill_if_needed()
             return _api_success({
                 "page": page,
                 "page_size": page_size,
@@ -4636,6 +5279,9 @@ class Api:
                 "activity_type_labels": {t: profile_backend.translate_sport_type(t) for t in activity_types},
                 "page_sizes": SPORT_HUB_PAGE_SIZES,
                 "records": records,
+                "dynamic_columns": _resolve_activity_list_dynamic_columns(activity_types),
+                "normalized_power_backfill": metric_backfill,
+                "list_metric_backfill": metric_backfill,
             })
         except Exception:
             logger.exception("get_activity_list failed")
@@ -5247,10 +5893,13 @@ class Api:
             "collapse_events": [],
             "fatigue_zones": [],
             "curves": {
+                "distance": [],
+                "time": [],
                 "efficiency": [],
                 "gap": [],
                 "grade": [],
                 "hr": [],
+                "altitude": [],
                 "speed": [],
                 "total_distance_m": 0.0,
             },
@@ -5259,6 +5908,67 @@ class Api:
             "advice": advice_text,
             "disclaimer": "AI 生成仅供参考 · 数据来源：FIT 解析 + 后端算法",
         }
+
+    @staticmethod
+    def _extract_fatigue_review_activity_id(snapshot: dict[str, Any] | None) -> int:
+        if not isinstance(snapshot, dict):
+            return 0
+        for key in ("activity_id", "activityId", "id"):
+            aid = _safe_int(snapshot.get(key))
+            if aid:
+                return aid
+        for key in ("activity", "record"):
+            nested = snapshot.get(key)
+            if isinstance(nested, dict):
+                aid = _safe_int(nested.get("activity_id") or nested.get("activityId") or nested.get("id"))
+                if aid:
+                    return aid
+        return 0
+
+    @staticmethod
+    def _summarize_fatigue_review_curves_for_ai(curves: dict[str, Any]) -> dict[str, Any]:
+        curves = curves if isinstance(curves, dict) else {}
+        distance = curves.get("distance") if isinstance(curves.get("distance"), list) else []
+        time_curve = curves.get("time") if isinstance(curves.get("time"), list) else []
+        return {
+            "distance_points_count": len(distance),
+            "time_points_count": len(time_curve),
+            "has_hr": bool(curves.get("hr")),
+            "has_speed": bool(curves.get("speed")),
+            "has_altitude": bool(curves.get("altitude")),
+            "has_grade": bool(curves.get("grade")),
+            "has_gap": bool(curves.get("gap")),
+            "has_efficiency": bool(curves.get("efficiency")),
+            "total_distance_m": _safe_float(curves.get("total_distance_m")) or 0.0,
+        }
+
+    def _build_fatigue_review_insight_snapshot(
+        self,
+        activity_id: int,
+        sport_type: str | None = None,
+    ) -> dict[str, Any]:
+        """Build a compact AI-only snapshot from the authoritative review snapshot."""
+        aid = _safe_int(activity_id)
+        if not aid:
+            return {}
+        row = self._fetch_activity_row(aid)
+        if not row:
+            return {}
+        review_snapshot = self._build_fatigue_review_snapshot(row)
+        compact = {
+            "activity_id": aid,
+            "sport_type": sport_type or review_snapshot.get("sport_type") or row.get("sport_type") or "running",
+            "metrics": review_snapshot.get("metrics") or {},
+            "fatigue_zones": review_snapshot.get("fatigue_zones") or [],
+            "collapse_events": review_snapshot.get("collapse_events") or [],
+            "curves_summary": self._summarize_fatigue_review_curves_for_ai(
+                review_snapshot.get("curves") or {}
+            ),
+            "context_tags": review_snapshot.get("context_tags") or {},
+            "advice": review_snapshot.get("advice") or "",
+            "disclaimer": review_snapshot.get("disclaimer") or "",
+        }
+        return _strip_fatigue_review_forbidden_keys(compact)
 
     def _build_fatigue_review_snapshot(self, row: dict) -> dict:
         """V6.3 复盘覆盖层白名单快照(§六 shadow_diff 隔离)。
@@ -5293,26 +6003,30 @@ class Api:
                 total_distance_m = 0.0
             sport_type = str(row.get("sport_type") or "running")
 
-            # === V8.1: 直接调 MetricsResolver.resolve() 实时计算 ===
-            # 替代 V4.0 防腐层的 storage_model 中间列(V8.0 已确认该列不存在,
-            # V6.3 主路径读不到而 4 段永远空)。
-            # 契约:§2.1 全链路可追溯 / §6 shadow_diff 隔离 / §8 canonical 只读
-            hr_curve = _safe_json_list(row.get("hr_curve")) or []
-            speed_curve = _safe_json_list(row.get("speed_curve")) or []
+            bundle = _build_fatigue_review_curve_bundle(row)
+            total_distance_m = bundle.get("total_distance_m") or total_distance_m
+            distance_curve_m = bundle.get("distance_curve_m") or []
+            time_curve = bundle.get("time_curve_sec") or []
+            altitude_curve = bundle.get("altitude_curve_m") or []
+            hr_curve = bundle.get("hr_curve") or _safe_json_list(row.get("hr_curve")) or []
+            speed_curve = bundle.get("speed_curve_mps") or _safe_json_list(row.get("speed_curve")) or []
 
+            resolved_v81: dict[str, Any] = {}
             gap_curve: list[float] = []
             grade_curve: list[float] = []
             efficiency_curve: list[float] = []
             bonk_events: list[dict[str, Any]] = []
             context_tags: dict[str, str] = {}
 
-            if hr_curve and speed_curve:
+            if bundle.get("records"):
                 try:
                     resolved_v81 = _build_resolved_payload_v81(
-                        hr_curve=hr_curve,
-                        speed_curve=speed_curve,
+                        bundle=bundle,
                         sport_type=sport_type,
                     )
+                    distance_curve_m = resolved_v81.get("distance_curve") or distance_curve_m
+                    time_curve = resolved_v81.get("time_curve") or time_curve
+                    altitude_curve = resolved_v81.get("altitude_curve") or altitude_curve
                     gap_curve = resolved_v81.get("gap_curve") or []
                     grade_curve = resolved_v81.get("grade_curve") or []
                     efficiency_curve = resolved_v81.get("efficiency_curve") or []
@@ -5323,6 +6037,11 @@ class Api:
                     logger.exception(
                         "_build_fatigue_review_snapshot V8.1 Resolver 调用失败,降级空数组"
                     )
+
+            curves_snapshot = _build_fatigue_review_curves_snapshot(
+                bundle=bundle,
+                resolved=resolved_v81,
+            )
 
             # 4. metrics 白名单:四个核心指标
             decoupling_pct = 0.0
@@ -5723,24 +6442,18 @@ class Api:
             # 周边 metrics 白名单(decoupling / bonk_risk / events / historical_avg)完全保留
 
             # 6. 7 段白名单
-            return {
+            snapshot = {
                 "sport_type": sport_type,
                 "metrics": metrics,
                 "collapse_events": collapse_events,
                 "fatigue_zones": fatigue_zones,  # V8.11: Layer 2 疲劳背景带
-                "curves": {
-                    "efficiency": efficiency_curve,
-                    "gap": gap_curve,
-                    "grade": grade_curve,
-                    "hr": hr_curve,
-                    "speed": speed_curve,
-                    "total_distance_m": total_distance_m,  # V8.11: 供前端 ECharts xAxis 用真实距离
-                },
+                "curves": curves_snapshot,
                 "context_tags": context_tags,
                 "ai_insight": None,
                 "advice": "暂未生成",
                 "disclaimer": "AI 生成仅供参考 · 数据来源：FIT 解析 + 后端算法",
             }
+            return _strip_fatigue_review_forbidden_keys(snapshot)
         except Exception as e:
             logger.exception("_build_fatigue_review_snapshot failed: %s", e)
             # V4 Bug #1 / #2 修复: 统一空态兜底模板, 9 段白名单 + 8 维 metrics 完整
@@ -5985,6 +6698,12 @@ def _build_record_from_row(api_self, row: dict, idx: int) -> dict:
         distance_display_detail = f"{round(dist_km, 2):.2f}km"
     calories = _safe_int(row.get("calories"))
     display_type = _resolve_display_sport_type(row.get("sport_type"), row.get("sub_sport_type"))
+    water_metric_value, water_metric_label, water_metric_kind = _resolve_water_metric_for_row(
+        display_type,
+        row.get("sub_sport_type"),
+        row.get("swolf"),
+        row.get("file_path"),
+    )
     title = str(row.get("title") or "").strip()
     base_power = 245 + (idx % 5) * 8
     timestamp = row.get("start_time") or row.get("updated_at")
@@ -6031,6 +6750,8 @@ def _build_record_from_row(api_self, row: dict, idx: int) -> dict:
         "capabilities": capabilities,
         "summary": raw_for_engine,
         "laps": _build_real_laps_from_row(row, dist_km, duration_sec, avg_hr, base_power) or api_self._build_lap_rows(dist_km, duration_sec, avg_hr, base_power),
+        # V9.4.4:圈速表列真理源(后端基于 sport_type 决定,前端不再硬编码 if/else)
+        "lap_columns": resolve_lap_columns(display_type),
         "thumbnail_points": api_self._sample_thumbnail_points(points),
         # V9.4.4:Training Effect 派生(契约 §2.2 路径 record.detail.training_effect)
         # 真理源:FIT session.total_training_effect / total_anaerobic_training_effect
@@ -6042,6 +6763,21 @@ def _build_record_from_row(api_self, row: dict, idx: int) -> dict:
                 "anaerobic_training_effect": row.get("anaerobic_training_effect"),
             },
             display_type,
+        ),
+        # V_ENV.1.16:环境挑战派生(契约 docs/environment_challenge_v1_contract §1.1)
+        # 数据源:DB row.gain_m / max_alt_m / avg_temperature / weather_json
+        # 真理源:_build_environment_challenge_block(metrics_resolver L3212)
+        # §五 5.3:不进 AI snapshot;§六 审计字段隔离:本块不读 shadow_diff_json
+        "environment_challenge": _build_environment_challenge_block(
+            sm={
+                "total_ascent": _safe_float(row.get("gain_m")),
+                "distance_km": dist_km,
+                "max_altitude_m": _safe_float(row.get("max_alt_m")),
+            },
+            sport_type=display_type,
+            avg_temp=_safe_float(row.get("avg_temperature")) or None,
+            raw={"weather": _decode_weather_json(row.get("weather_json")) or {}},
+            meta={},
         ),
     }
 
@@ -6075,6 +6811,16 @@ def _build_record_from_row(api_self, row: dict, idx: int) -> dict:
         "avg_hr": avg_hr,
         "max_hr": max_hr,
         "calories": calories,
+        "swolf": round(_safe_float(water_metric_value), 1) if water_metric_value is not None else None,
+        "swolf_subtitle": water_metric_label,
+        "water_metric_value": round(_safe_float(water_metric_value), 1) if water_metric_value is not None else None,
+        "water_metric_label": water_metric_label,
+        "water_metric_kind": water_metric_kind,
+        "stroke_distance": (
+            round(_safe_float(water_metric_value), 1)
+            if water_metric_kind == "stroke_distance" and water_metric_value is not None
+            else None
+        ),
         "gain_m": int(row.get("gain_m") or 0),
         "region": region_display,
         "region_display": region_display,

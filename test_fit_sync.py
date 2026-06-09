@@ -31,6 +31,7 @@ class TestFitSync(unittest.TestCase):
         self.original_sync_state_dir = profile_backend.SYNC_STATE_DIR
         self.original_sync_state_path = profile_backend.SYNC_STATE_PATH
         self.original_profile_cache_path = profile_backend.PROFILE_CACHE_PATH
+        self.original_np_backfill_status = dict(main._NP_BACKFILL_STATUS)
 
         profile_backend.DB_PATH = self.temp_dir / "user_profile.db"
         profile_backend.DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -47,6 +48,10 @@ class TestFitSync(unittest.TestCase):
         self.api = main.Api()
 
     def tearDown(self):
+        thread = getattr(main, "_NP_BACKFILL_THREAD", None)
+        if thread and thread.is_alive():
+            thread.join(timeout=2.0)
+        main._NP_BACKFILL_THREAD = None
         profile_backend.DB_PATH = self.original_db_path
         profile_backend._SCHEMA_READY_FOR = self.original_profile_schema
         main._ACTIVITY_SYNC_SCHEMA_READY_FOR = self.original_main_schema
@@ -57,6 +62,9 @@ class TestFitSync(unittest.TestCase):
         profile_backend.SYNC_STATE_DIR = self.original_sync_state_dir
         profile_backend.SYNC_STATE_PATH = self.original_sync_state_path
         profile_backend.PROFILE_CACHE_PATH = self.original_profile_cache_path
+        with main._NP_BACKFILL_LOCK:
+            main._NP_BACKFILL_STATUS.clear()
+            main._NP_BACKFILL_STATUS.update(self.original_np_backfill_status)
         self.temp_dir_obj.cleanup()
 
     def _workspace_config(self) -> dict:
@@ -348,6 +356,155 @@ class TestFitSync(unittest.TestCase):
         self.assertEqual(activity["region_display"], "室内运动")
         self.assertEqual(activity["region"], "室内运动（无GPS）")
 
+    def test_parse_fit_activity_for_sync_persists_canonical_normalized_power(self):
+        fit_path = self.temp_dir / "np.fit"
+        fit_path.write_bytes(b"fit")
+        fake_core = {
+            "basic_info": {
+                "title": "功率跑",
+                "title_source": "sport_name",
+                "sport": "running",
+                "sub_sport": "generic",
+                "start_time": "2026-05-19T08:00:00+08:00",
+                "start_time_utc": "2026-05-19T00:00:00Z",
+                "total_distance_km": 7.0,
+                "total_timer_time": 2946,
+                "total_calories": 552,
+                "total_ascent": 10.0,
+                "max_altitude": 72.0,
+                "avg_hr": 157,
+                "max_hr": 174,
+                "avg_power": 239,
+                "max_power": 402,
+                "normalized_power": 254,
+            },
+            "track_data": [
+                {"lat": 39.9, "lon": 116.3, "alt": 70.0, "time": "2026-05-19T00:00:00Z", "hr": 150, "power": 220},
+                {"lat": 39.91, "lon": 116.31, "alt": 71.0, "time": "2026-05-19T00:00:01Z", "hr": 152, "power": 260},
+            ],
+            "lap_data": [{"normalized_power": 250, "total_timer_time": 600}],
+        }
+        fake_resolved_without_storage_model = {
+            "hr_curve": [150, 152],
+            "speed_curve": [2.4, 2.5],
+        }
+        with mock.patch.object(main.FITCoreEngine, "parse_fit_file", return_value=fake_core), \
+             mock.patch.object(main.FITCoreEngine, "parse_fit_file_raw", return_value={"raw": {}, "meta": {}}), \
+             mock.patch.object(main.MetricsResolver, "resolve", return_value=fake_resolved_without_storage_model), \
+             mock.patch.object(profile_backend, "resolve_activity_region", return_value=""):
+            activity = main._parse_fit_activity_for_sync(fit_path)
+
+        self.assertEqual(activity["normalized_power"], 254)
+
+    def test_activity_list_item_does_not_parse_fit_for_missing_normalized_power(self):
+        row = {
+            "id": 1,
+            "sport_type": "running",
+            "sub_sport_type": "generic",
+            "distance": 7000,
+            "dist_km": 7.0,
+            "duration": 2946,
+            "duration_sec": 2946,
+            "avg_pace": 420,
+            "avg_hr": 157,
+            "max_hr": 174,
+            "calories": 552,
+            "normalized_power": None,
+            "file_path": str(self.temp_dir / "np.fit"),
+            "filename": "np.fit",
+            "file_name": "np.fit",
+            "start_time": "2026-05-19T08:00:00+08:00",
+            "region_status": "none",
+        }
+        api = main.Api()
+        with mock.patch.object(
+            main.FITCoreEngine,
+            "parse_fit_file",
+            side_effect=AssertionError("活动列表不应同步解析 FIT 文件"),
+        ):
+            item = api._build_activity_list_item(row)
+
+        self.assertIsNone(item["normalized_power"])
+        self.assertEqual(item["normalized_power_display"], "/")
+
+    def test_normalized_power_backfill_worker_updates_existing_db_rows(self):
+        main.ensure_activity_sync_schema()
+        fit_path = self.temp_dir / "legacy_np.fit"
+        fit_path.write_bytes(b"fit")
+        conn = sqlite3.connect(str(profile_backend.DB_PATH))
+        try:
+            conn.execute(
+                """
+                INSERT INTO activities (
+                    filename, file_name, file_path, sport_type, sub_sport_type,
+                    dist_km, distance, duration_sec, duration, start_time,
+                    normalized_power
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "legacy_np.fit", "legacy_np.fit", str(fit_path),
+                    "running", "generic", 7.0, 7000.0, 2946, 2946,
+                    "2026-05-19T08:00:00+08:00", None,
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        with mock.patch.object(main, "_read_normalized_power_fast_from_fit", return_value=254):
+            main._run_normalized_power_backfill_worker(str(profile_backend.DB_PATH))
+
+        conn = sqlite3.connect(str(profile_backend.DB_PATH))
+        try:
+            value = conn.execute(
+                "SELECT normalized_power FROM activities WHERE filename = ?",
+                ("legacy_np.fit",),
+            ).fetchone()[0]
+        finally:
+            conn.close()
+        self.assertEqual(value, 254)
+
+    def test_water_metric_backfill_worker_updates_existing_db_rows(self):
+        main.ensure_activity_sync_schema()
+        fit_path = self.temp_dir / "legacy_water.fit"
+        fit_path.write_bytes(b"fit")
+        conn = sqlite3.connect(str(profile_backend.DB_PATH))
+        try:
+            conn.execute(
+                """
+                INSERT INTO activities (
+                    filename, file_name, file_path, sport_type, sub_sport_type,
+                    dist_km, distance, duration_sec, duration, start_time,
+                    swolf
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "legacy_water.fit", "legacy_water.fit", str(fit_path),
+                    "stand_up_paddleboarding", "generic", 3.0, 3000.0, 1800, 1800,
+                    "2026-05-19T08:00:00+08:00", None,
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        with mock.patch.object(
+            main,
+            "_read_water_metrics_from_fit",
+            return_value={"swolf": 57.0, "stroke_distance": 1.8},
+        ):
+            main._run_normalized_power_backfill_worker(str(profile_backend.DB_PATH))
+
+        conn = sqlite3.connect(str(profile_backend.DB_PATH))
+        try:
+            value = conn.execute(
+                "SELECT swolf FROM activities WHERE filename = ?",
+                ("legacy_water.fit",),
+            ).fetchone()[0]
+        finally:
+            conn.close()
+        self.assertEqual(value, 1.8)
+
     def test_activity_inserts_with_pending_region_even_when_nominatim_down(self):
         main.ensure_activity_sync_schema()
         fit_path = self.temp_dir / "nom_fail.fit"
@@ -467,17 +624,17 @@ class TestFitSync(unittest.TestCase):
         config["workspace_track_abs_path"] = ""
         with mock.patch.object(main, "resolve_workspace_track_dir", return_value=config):
             snapshot = self.api.get_activity_list_snapshot("all")
-            activity_id = snapshot["records"][0]["id"]
+            activity_id = snapshot["data"]["records"][0]["id"]
             detail = self.api.get_activity_detail(activity_id)
 
         self.assertIn(activity_res.get("op"), {"inserted", "updated"})
         self.assertTrue(snapshot["ok"], snapshot)
-        self.assertEqual(snapshot["records"][0]["region"], "成都市")
+        self.assertEqual(snapshot["data"]["records"][0]["region"], "成都市")
         self.assertTrue(detail["ok"], detail)
-        self.assertEqual(detail["record"]["region"], "成都市")
-        self.assertIn("display_metrics", detail["record"]["detail"])
-        self.assertIn("layout", detail["record"]["detail"])
-        self.assertIn("capabilities", detail["record"]["detail"])
+        self.assertEqual(detail["data"]["record"]["region"], "成都市")
+        self.assertIn("display_metrics", detail["data"]["record"]["detail"])
+        self.assertIn("layout", detail["data"]["record"]["detail"])
+        self.assertIn("capabilities", detail["data"]["record"]["detail"])
 
     def test_shadow_diff_json_persists_updates_and_returns(self):
         main.ensure_activity_sync_schema()
@@ -514,9 +671,9 @@ class TestFitSync(unittest.TestCase):
         detail = self.api.get_activity_detail(activity_res["id"])
 
         self.assertTrue(list_res["ok"], list_res)
-        self.assertEqual(list_res["records"][0]["shadow_diff"], updated_diff)
+        self.assertEqual(list_res["data"]["records"][0]["shadow_diff"], updated_diff)
         self.assertTrue(detail["ok"], detail)
-        self.assertEqual(detail["record"]["shadow_diff"], updated_diff)
+        self.assertEqual(detail["data"]["record"]["shadow_diff"], updated_diff)
 
     def test_fetch_historical_weather_uses_archive_api_and_hour_index(self):
         fake_response = mock.Mock()
@@ -620,9 +777,9 @@ class TestFitSync(unittest.TestCase):
             res = self.api.batch_import_tracks([str(zip_path)])
 
         self.assertTrue(res["ok"], res)
-        self.assertEqual(len(res["imported"]), 1)
-        self.assertTrue(Path(res["imported"][0]).is_file())
-        self.assertEqual(Path(res["imported"][0]).parent, Path(main.TRACKS_DIR))
+        self.assertEqual(len(res["data"]["imported"]), 1)
+        self.assertTrue(Path(res["data"]["imported"][0]).is_file())
+        self.assertEqual(Path(res["data"]["imported"][0]).parent, Path(main.TRACKS_DIR))
 
     def test_safe_extract_zip_rejects_path_traversal(self):
         zip_path = self.temp_dir / "traversal.zip"

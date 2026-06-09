@@ -267,7 +267,7 @@
             margin-bottom: 0;
             display: flex;
             flex-direction: column;
-            overflow: hidden;
+            overflow: visible;  /* V_3.0.1 修复:防外层裁剪分页器 */
         }
         .profile-summary-card {
             position: relative;
@@ -587,6 +587,7 @@
             border-radius: 14px;
             border: 1px solid rgba(255,255,255,0.08);
             background: rgba(2,6,23,0.2);
+            margin-bottom: 4px;  /* V_3.0.1 修复:与分页器间留 4px 视觉缓冲 */
         }
         .hub-records-table {
             width: 100%;
@@ -646,10 +647,11 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding-top: 8px;
+            padding: 8px 4px 12px 4px;  /* V_3.0.1 修复:加 4px 左右 + 12px 下缓冲,防裁剪 */
             gap: 8px;
-            overflow: hidden;
+            overflow: visible;            /* V_3.0.1 修复:防自身 overflow 裁剪 */
             min-width: 0;
+            flex-shrink: 0;               /* V_3.0.1 修复:不被 flex 挤压 */
         }
         .hub-pagination-info {
             font-size: 0.68rem;
@@ -869,6 +871,8 @@
             /* V5.3:回归 overlay flex 流,让 overlay 的 padding: 28px 真正生效 */
             width: 100%;
             height: 100%;
+            align-self: stretch;                /* V9.4.x:overlay 是 flex + center,需要 align-self 撑满高度 */
+            min-height: 0;                      /* V9.4.x:防止 flex 子项被内容撑开,让 body 真正接管高度 */
             z-index: 9999;
             background: linear-gradient(180deg, rgba(15,23,42,0.98), rgba(15,23,42,0.92));
             border: 1px solid rgba(255,255,255,0.1);
@@ -877,22 +881,22 @@
             padding: 18px 0 22px 0;             /* 水平 padding 交给 overlay 提供 */
             display: none;
             flex-direction: column;
-            overflow-x: hidden;                 /* V9.2.3:启用垂直滚动,内容超出时向下滚 */
-            overflow-y: auto;
+            overflow: hidden;
         }
         .activity-detail-modal.open,
         .activity-detail-overlay.open .activity-detail-modal {
             display: flex;
         }
 
-        /* === V4.0 基础详情舱 (V6.1 瘦身布局,V9.2.3 滚动由 modal 接管) === */
+        /* === V4.0 基础详情舱 (V6.1 瘦身布局,V9.4.x 内容区成为 Modal 唯一纵向滚动容器) === */
         .detail-cockpit-body {
             flex: 1;
             display: flex;
             flex-direction: column;
             gap: 15px;
-            padding: 15px 24px 0 24px;          /* V5.2:左右对称 24px,与 modal 28px 合计 52px 视觉缓冲 */
-            overflow: visible;                  /* V9.2.3:body 不再锁滚动,由 .activity-detail-modal 统一管 */
+            padding: 15px 24px 22px 24px;       /* V5.2:左右对称 24px;V9.4.x 底部 22px 留白 */
+            overflow-x: hidden;                 /* V9.4.x:水平方向由 body 统一管 */
+            overflow-y: auto;                   /* V9.4.x:Modal 不再滚,纵向滚动由内容区接管 */
             min-height: 0;
         }
         .detail-cockpit-left {
@@ -1251,21 +1255,22 @@
             gap: 10px;
         }
         .metric-card {
-            background: #1e293b;
-            border: 1px solid #334155;
-            border-radius: 6px;
+            background: rgba(30, 41, 59, 0.78);
+            border: 1px solid rgba(148, 163, 184, 0.15);
+            border-radius: 8px;
             padding: 10px 12px;
+            min-height: 74px;
         }
-        .metric-card .lbl { color: #94a3b8; font-size: 0.74rem; }
-        .metric-card .val { color: #f8fafc; font-size: 1.05rem; font-weight: 800; margin-top: 4px; }
-        .metric-card .sub { color: #64748b; font-size: 0.72rem; margin-top: 2px; }
+        .metric-card .lbl { color: #94a3b8; font-size: 0.72rem; }
+        .metric-card .val { color: #f8fafc; font-size: 1.12rem; font-weight: 800; margin-top: 5px; line-height: 1.15; }
+        .metric-card .sub { color: #64748b; font-size: 0.7rem; margin-top: 4px; line-height: 1.35; overflow-wrap: anywhere; }
         .chart-container {
-            background: #1e293b;
-            border: 1px solid #334155;
-            border-radius: 6px;
+            background: rgba(30, 41, 59, 0.82);
+            border: 1px solid rgba(148, 163, 184, 0.15);
+            border-radius: 8px;
             padding: 12px;
             flex: 1;
-            min-height: 320px;
+            min-height: 360px;
             position: relative;
             display: flex;
             flex-direction: column;
@@ -1324,7 +1329,12 @@
             display: flex;
             flex-direction: column;
             gap: 12px;
-            margin-bottom: 16px;
+            flex: 0 0 auto;
+            margin-bottom: 0;
+            padding: 18px 24px 12px;
+            background: rgba(15, 23, 42, 0.98);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            z-index: 20;
         }
         /* V9.2.1:head-row 改为居中左对齐(无右侧 actions,返回按钮在左) */
         .activity-detail-head .head-row {
@@ -1985,6 +1995,20 @@
             color: #94a3b8;
             line-height: 1.6;
         }
+        .env-challenge-explanation {
+            font-size: 0.7rem;
+            color: #94a3b8;
+            line-height: 1.4;
+            margin-top: 2px;
+            opacity: 0.85;
+        }
+        .env-challenge-dash {
+            font-size: 1.3rem;
+            font-weight: 600;
+            color: #94a3b8;
+            align-self: center;
+            opacity: 0.5;
+        }
         .training-effect-score {
             font-size: 1.3rem;
             font-weight: 800;
@@ -2494,7 +2518,7 @@
         .detail-tab-bar {
             display: flex;
             gap: 2px;
-            margin: 4px 0 0 0;
+            margin: 0;
             padding: 4px;
             align-items: center;
             /* 容器 3D 浮起效果:多层 box-shadow + 顶部高光 + 底部深阴影 */
@@ -2542,10 +2566,10 @@
         }
         .detail-tab-panel {
             display: none;
-            flex: 1;
+            flex: none;
             flex-direction: column;
             min-height: 0;
-            overflow: hidden;
+            overflow: visible;
         }
         .detail-tab-panel.active {
             display: flex;
@@ -2607,6 +2631,141 @@
             font-size: 0.74rem;
             cursor: pointer;
             font-family: inherit;
+        }
+        .fr-layout {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 300px;
+            gap: 12px;
+            min-height: 0;
+        }
+        .fr-main-column,
+        .fr-side-column {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            min-width: 0;
+        }
+        .fr-side-column {
+            max-height: 100%;
+            overflow-y: auto;
+        }
+        .fr-status-strip {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 12px;
+            align-items: center;
+            background: rgba(15, 23, 42, 0.72);
+            border: 1px solid rgba(148, 163, 184, 0.16);
+            border-radius: 8px;
+            padding: 12px 14px;
+        }
+        .fr-status-kicker {
+            color: #94a3b8;
+            font-size: 0.72rem;
+            margin-bottom: 4px;
+        }
+        .fr-status-title {
+            color: #f8fafc;
+            font-size: 1rem;
+            font-weight: 800;
+            line-height: 1.25;
+        }
+        .fr-status-meta {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+        .fr-pill {
+            border-radius: 999px;
+            border: 1px solid rgba(148, 163, 184, 0.22);
+            color: #cbd5e1;
+            background: rgba(30, 41, 59, 0.74);
+            padding: 4px 8px;
+            font-size: 0.7rem;
+            white-space: nowrap;
+        }
+        .fr-section-band {
+            background: rgba(15, 23, 42, 0.42);
+            border: 1px solid rgba(148, 163, 184, 0.14);
+            border-radius: 8px;
+            padding: 12px;
+        }
+        .fr-section-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .fr-section-head h4 {
+            margin: 0;
+            color: #e2e8f0;
+            font-size: 0.84rem;
+            font-weight: 700;
+        }
+        .fr-section-head span {
+            color: #64748b;
+            font-size: 0.7rem;
+        }
+        .fr-side-panel {
+            background: rgba(15, 23, 42, 0.48);
+            border: 1px solid rgba(148, 163, 184, 0.14);
+            border-radius: 8px;
+            padding: 12px;
+        }
+        .fr-side-panel h4 {
+            margin: 0 0 10px 0;
+            color: #e2e8f0;
+            font-size: 0.82rem;
+            font-weight: 700;
+        }
+        .fr-context-tags-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+        .fr-context-chip {
+            background: rgba(14, 165, 233, 0.12);
+            border: 1px solid rgba(14, 165, 233, 0.22);
+            border-radius: 999px;
+            padding: 4px 8px;
+            color: #bae6fd;
+            font-size: 0.7rem;
+        }
+        .fr-advice-block {
+            color: #cbd5e1;
+            font-size: 0.76rem;
+            line-height: 1.55;
+        }
+        .fr-disclaimer {
+            color: #64748b;
+            font-size: 0.68rem;
+            line-height: 1.45;
+            margin-top: 8px;
+        }
+        @media (max-width: 1100px) {
+            .fr-layout {
+                grid-template-columns: 1fr;
+            }
+            .fr-side-column {
+                max-height: none;
+                overflow: visible;
+            }
+        }
+        @media (max-width: 720px) {
+            .review-tab-header,
+            .fr-status-strip {
+                grid-template-columns: 1fr;
+                align-items: flex-start;
+            }
+            .review-tab-header {
+                flex-direction: column;
+                gap: 10px;
+            }
+            .fr-status-meta {
+                justify-content: flex-start;
+            }
         }
 
         /* === V9.0 复盘 AI 洞察 Modal 样式(毛玻璃 + 物理拦截) — fit-arch-contrac §5.6 Modal 化 === */
@@ -2818,12 +2977,18 @@
            V6 设计:轨迹快照固定 260px,只允许 sidebar 随窗口伸缩 */
         .overview-2x2 {
             display: grid;
-            grid-template-columns: 260px 2fr 1fr;
-            grid-template-rows: auto auto;
-            grid-template-areas:
-                "track  hero  sidebar"
-                "laps   laps  sidebar";
+            grid-template-columns: minmax(0, 2.4fr) minmax(260px, 1fr);
             gap: 14px;
+            align-items: start;
+        }
+        .overview-main-stack {
+            display: grid;
+            grid-template-columns: 260px minmax(0, 1fr);
+            grid-template-areas:
+                "track hero"
+                "laps  laps";
+            gap: 12px 14px;
+            min-width: 0;
         }
         .overview-track-area {
             grid-area: track;
@@ -2837,7 +3002,6 @@
             min-width: 0;
         }
         .overview-sidebar-stack {
-            grid-area: sidebar;
             display: flex;
             flex-direction: column;
             gap: 10px;
@@ -2847,6 +3011,7 @@
         .overview-laps-area {
             grid-area: laps;
             min-width: 0;
+            align-self: start;
             background: rgba(15, 23, 42, 0.4);
             border: 1px solid rgba(255, 255, 255, 0.06);
             border-radius: 10px;
@@ -2864,17 +3029,18 @@
             margin-bottom: 10px;
         }
 
-        /* V9.2.2:Tab Bar 提到 head 外,sticky 固定在 modal 顶部 */
-        .detail-tab-bar {
-            position: sticky;
-            top: 0;
-            z-index: 10;
+        /* V9.2.2 升级:V9.4.x Tab Bar 由 modal flex 布局固定为第二行,不再依赖 sticky */
+        .activity-detail-modal .detail-tab-bar {
+            flex: 0 0 auto;
+            position: relative;
+            top: auto;
+            z-index: 19;
+            margin: 0;
+            padding: 8px 24px;
             background: rgba(15, 23, 42, 0.96);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
             backdrop-filter: blur(8px);
             -webkit-backdrop-filter: blur(8px);
-            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-            margin: 0 -16px 14px;       /* 撑满父容器宽度 */
-            padding: 0 16px;
         }
 
         /* metric 卡片(E05-E10) */
@@ -2970,7 +3136,6 @@
         .overview-track-area {
             grid-area: track;
             width: 260px;
-            height: 260px;
             min-width: 260px;
             display: flex;
             align-items: stretch;
@@ -2978,7 +3143,6 @@
         }
         #activity-detail-track-container {
             width: 100%;
-            height: 100%;
             display: flex;
             flex-direction: column;
             align-items: stretch;
@@ -3019,24 +3183,25 @@
         /* === V5 响应式: Tablet(≤1024px) 2 列, Mobile(≤640px) 单列堆叠 === */
         @media (max-width: 1024px) {
             .overview-2x2 {
+                grid-template-columns: 1fr;
+            }
+            .overview-main-stack {
                 grid-template-columns: 1fr 2fr;
                 grid-template-areas:
-                    "track  hero"
-                    "sidebar sidebar"
-                    "laps   laps";
+                    "track hero"
+                    "laps  laps";
             }
             .overview-metrics-grid {
                 grid-template-columns: repeat(2, 1fr);
             }
         }
         @media (max-width: 640px) {
-            .overview-2x2 {
+            .overview-main-stack {
                 grid-template-columns: 1fr;
                 grid-template-areas:
-                    "hero"
                     "track"
-                    "sidebar"
-                    "laps";
+                    "laps"
+                    "hero";
             }
             .overview-metrics-grid {
                 grid-template-columns: 1fr 1fr;
@@ -4175,39 +4340,41 @@
             <!-- Tab 1: 概览(默认激活) — V5 3 列 grid(track + hero + sidebar) -->
             <div class="detail-tab-panel active" id="detail-tab-overview">
                 <div class="overview-2x2">
-                    <!-- Row 1 Col 1: 轨迹快照(正方形,左列) -->
-                    <div class="overview-track-area" id="activity-detail-track-section">
-                        <!-- E11 轨迹地图(主视觉)由 renderActivityDetail 渲染 -->
-                        <div id="activity-detail-track-container"></div>
-                    </div>
-                    <!-- Row 1 Col 2: Hero 区(6 metric 3x2) -->
-                    <div class="overview-hero-area">
-                        <div class="overview-metrics-grid" id="activity-detail-metrics">
-                            <!-- 6 个 metric 卡片由 renderActivityDetail 渲染(E05-E10) -->
+                    <div class="overview-main-stack">
+                        <!-- Row 1 Col 1: 轨迹快照(正方形,左列) -->
+                        <div class="overview-track-area" id="activity-detail-track-section">
+                            <!-- E11 轨迹地图(主视觉)由 renderActivityDetail 渲染 -->
+                            <div id="activity-detail-track-container"></div>
+                        </div>
+                        <!-- Row 1 Col 2: Hero 区(6 metric 3x2) -->
+                        <div class="overview-hero-area">
+                            <div class="overview-metrics-grid" id="activity-detail-metrics">
+                                <!-- 6 个 metric 卡片由 renderActivityDetail 渲染(E05-E10) -->
+                            </div>
+                        </div>
+                        <!-- Row 2 Col 1-2: 圈速统计(跨左+中列) -->
+                        <div class="overview-laps-area">
+                            <div class="overview-laps-title">📈 圈速统计</div>
+                            <div class="lap-table-wrap">
+                                <table class="lap-table">
+                                    <thead>
+                                        <tr id="activity-detail-laps-head">
+                                            <th>圈速</th>
+                                            <th>配速</th>
+                                            <th>心率</th>
+                                            <th>步频</th>
+                                            <th>GCT</th>
+                                            <th>功率</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="activity-detail-laps"></tbody>
+                                </table>
+                            </div>
                         </div>
                     </div>
                     <!-- Row 1+2 Col 3: 4 张卡垂直堆叠(环境/训练收益/身体状态/活动摘要) -->
                     <div class="overview-sidebar-stack" id="activity-detail-sidebar">
                         <!-- 4 张卡由 renderActivityDetailSidebar 渲染 -->
-                    </div>
-                    <!-- Row 2 Col 1-2: 圈速统计(跨左+中列) -->
-                    <div class="overview-laps-area">
-                        <div class="overview-laps-title">📈 圈速统计</div>
-                        <div class="lap-table-wrap">
-                            <table class="lap-table">
-                                <thead>
-                                    <tr>
-                                        <th>圈速</th>
-                                        <th>配速</th>
-                                        <th>心率</th>
-                                        <th>步频</th>
-                                        <th>GCT</th>
-                                        <th>功率</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="activity-detail-laps"></tbody>
-                            </table>
-                        </div>
                     </div>
                 </div>
             </div>
@@ -4219,63 +4386,111 @@
                         <div class="sub" id="fr-subtitle">加载中...</div>
                     </div>
                     <div class="review-tab-actions">
-                        <button class="btn-primary" id="fr-ai-generate-btn" onclick="onFatigueReviewAiInsight()">🤖 生成 AI 洞察</button>
+                        <button class="btn-primary" id="fr-ai-generate-btn" disabled aria-disabled="true" title="AI 洞察将在 UI 定稿后开放">🤖 AI 洞察待开放</button>
                     </div>
                 </div>
-                <div class="metric-bar">
-                    <div class="metric-card">
-                        <div class="lbl">心率漂移</div>
-                        <div class="val" id="fr-hr-drift">--</div>
-                        <div class="sub" id="fr-hr-drift-sub">--</div>
-                    </div>
-                    <div class="metric-card">
-                        <div class="lbl">解耦率</div>
-                        <div class="val" id="fr-decoupling">--</div>
-                        <div class="sub" id="fr-decoupling-sub">--</div>
-                    </div>
-                    <div class="metric-card">
-                        <div class="lbl">Bonk 风险</div>
-                        <div class="val" id="fr-bonk">--</div>
-                        <div class="sub" id="fr-bonk-sub">--</div>
-                    </div>
-                    <div class="metric-card">
-                        <div class="lbl">崩溃事件</div>
-                        <div class="val" id="fr-events-count">0</div>
-                        <div class="sub">含 0 起严重</div>
-                    </div>
-                    <div class="metric-card">
-                        <div class="lbl">运动效率</div>
-                        <div class="val" id="fr-efficiency-score">--</div>
-                        <div class="sub" id="fr-efficiency-sub">基于 21d 中位数</div>
-                    </div>
-                    <div class="metric-card">
-                        <div class="lbl">耐久指数</div>
-                        <div class="val" id="fr-durability-score">--</div>
-                        <div class="sub" id="fr-durability-sub">前 30% vs 后 30% 速度比</div>
-                    </div>
-                    <div class="metric-card">
-                        <div class="lbl">步频稳定性</div>
-                        <div class="val" id="fr-cadence-stability-score">--</div>
-                        <div class="sub" id="fr-cadence-stability-sub">std + late_decay 综合</div>
-                    </div>
-                    <div class="metric-card">
-                        <div class="lbl">训练负荷</div>
-                        <div class="val" id="fr-training-load-value">--</div>
-                        <div class="sub" id="fr-training-load-sub">TRIMP 简化版</div>
-                    </div>
-                </div>
-                <div class="chart-container">
-                    <div class="chart-title">
-                        <span>📈 效率·坡度·海拔 三层叠加</span>
-                        <div class="chart-legend">
-                            <span><span class="legend-dot" style="background:#3b82f6"></span>效率</span>
-                            <span><span class="legend-dot" style="background:#a855f7"></span>GAP</span>
-                            <span><span class="legend-dot" style="background:#64748b"></span>坡度</span>
-                            <span><span class="legend-dot" style="background:#eab308;opacity:0.4"></span>后半区</span>
-                            <span>📍 事件</span>
+                <div class="fr-layout" id="fr-review-layout">
+                    <div class="fr-main-column">
+                        <div class="fr-status-strip" id="fr-status-strip">
+                            <div>
+                                <div class="fr-status-kicker">后端权威快照</div>
+                                <div class="fr-status-title" id="fr-summary">等待复盘数据</div>
+                            </div>
+                            <div class="fr-status-meta">
+                                <span class="fr-pill" id="fr-data-source-pill">FIT + Resolver</span>
+                                <span class="fr-pill" id="fr-distance-axis-pill">距离轴 --</span>
+                                <span class="fr-pill" id="fr-event-pill">事件 0</span>
+                            </div>
+                        </div>
+
+                        <div class="fr-section-band" id="fr-core-metrics-section">
+                            <div class="fr-section-head">
+                                <h4>核心状态</h4>
+                                <span>漂移 · 解耦 · 风险 · 事件</span>
+                            </div>
+                            <div class="metric-bar">
+                                <div class="metric-card">
+                                    <div class="lbl">心率漂移</div>
+                                    <div class="val" id="fr-hr-drift">--</div>
+                                    <div class="sub" id="fr-hr-drift-sub">--</div>
+                                </div>
+                                <div class="metric-card">
+                                    <div class="lbl">解耦率</div>
+                                    <div class="val" id="fr-decoupling">--</div>
+                                    <div class="sub" id="fr-decoupling-sub">--</div>
+                                </div>
+                                <div class="metric-card">
+                                    <div class="lbl">Bonk 风险</div>
+                                    <div class="val" id="fr-bonk">--</div>
+                                    <div class="sub" id="fr-bonk-sub">--</div>
+                                </div>
+                                <div class="metric-card">
+                                    <div class="lbl">崩溃事件</div>
+                                    <div class="val" id="fr-events-count">0</div>
+                                    <div class="sub">含 0 起严重</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="fr-section-band" id="fr-capacity-metrics-section">
+                            <div class="fr-section-head">
+                                <h4>能力与负荷</h4>
+                                <span>效率 · 耐久 · 步频 · 训练负荷</span>
+                            </div>
+                            <div class="metric-bar">
+                                <div class="metric-card">
+                                    <div class="lbl">运动效率</div>
+                                    <div class="val" id="fr-efficiency-score">--</div>
+                                    <div class="sub" id="fr-efficiency-sub">基于 21d 中位数</div>
+                                </div>
+                                <div class="metric-card">
+                                    <div class="lbl">耐久指数</div>
+                                    <div class="val" id="fr-durability-score">--</div>
+                                    <div class="sub" id="fr-durability-sub">前 30% vs 后 30% 速度比</div>
+                                </div>
+                                <div class="metric-card">
+                                    <div class="lbl">步频稳定性</div>
+                                    <div class="val" id="fr-cadence-stability-score">--</div>
+                                    <div class="sub" id="fr-cadence-stability-sub">std + late_decay 综合</div>
+                                </div>
+                                <div class="metric-card">
+                                    <div class="lbl">训练负荷</div>
+                                    <div class="val" id="fr-training-load-value">--</div>
+                                    <div class="sub" id="fr-training-load-sub">TRIMP 简化版</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="chart-container">
+                            <div class="chart-title">
+                                <span>📈 疲劳带 · 事件 · 曲线</span>
+                                <div class="chart-legend">
+                                    <span><span class="legend-dot" style="background:#ef4444"></span>心率</span>
+                                    <span><span class="legend-dot" style="background:#3b82f6"></span>速度</span>
+                                    <span><span class="legend-dot" style="background:#d69e2e"></span>GAP</span>
+                                    <span><span class="legend-dot" style="background:#eab308;opacity:0.4"></span>疲劳带</span>
+                                    <span>📍 事件</span>
+                                </div>
+                            </div>
+                            <div id="fatigue-review-chart" style="width:100%; height: calc(100% - 24px);"></div>
                         </div>
                     </div>
-                    <div id="fatigue-review-chart" style="width:100%; height: calc(100% - 24px);"></div>
+
+                    <div class="fr-side-column">
+                        <div class="fr-side-panel" id="fr-context-panel">
+                            <h4>上下文标签</h4>
+                            <div id="fr-context-tags"></div>
+                        </div>
+                        <div class="fr-side-panel" id="fr-events-panel">
+                            <h4>关键事件</h4>
+                            <div class="event-list" id="fr-event-list"></div>
+                        </div>
+                        <div class="fr-side-panel" id="fr-advice-panel">
+                            <h4>建议</h4>
+                            <div class="fr-advice-block" id="fr-advice">--</div>
+                            <div class="fr-disclaimer" id="fr-disclaimer">AI 生成仅供参考 · 数据来源：FIT 解析 + 后端算法</div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -4421,6 +4636,7 @@
         selectedIds: new Set(),
         syncPromise: null,
         dynamicColumns: [],
+	        listMetricBackfillTimer: null,
         needsRefresh: false
     };
     let isMovementRecordsInitialized = false;
@@ -4534,13 +4750,8 @@
 
     // §5.4 规则 1/2/7 + §5.6 Modal 化:渲染函数只接 data 参数 + 写 modal body,不读雷达图状态、不调后端、不写 DB。
     // 设计接受 innerHTML XSS 风险(LLM 是本地 / 受信);生产硬化候选 P3(改 textContent 或 DOMPurify)。
-    // §5.6 术语本地化:运动类型中文映射表
-    const SPORT_TYPE_CN = {
-        'running': '跑步', 'trail_running': '越野跑', 'treadmill_running': '跑步机',
-        'hiking': '徒步', 'mountaineering': '登山', 'walking': '步行',
-        'cycling': '骑行', 'road_cycling': '公路骑行', 'mountain_biking': '山地骑行',
-        'swimming': '游泳', 'lap_swimming': '泳池游泳', 'open_water': '公开水域'
-    };
+    // §5.6 术语本地化:V9.4.4 删除 SPORT_TYPE_CN 重复定义,统一调 getDynamicSportMeta(type).label
+    // (16+ 运动覆盖,含 strength/yoga/pilates/hiit/breathing/flexibility)
 
     function _renderRadarInsightModal(data) {
         const modal = document.getElementById('radar-ai-insight-modal');
@@ -4562,7 +4773,7 @@
             const dimLabelMap = {};
             rawDims.forEach(function(d) { if (d.key) dimLabelMap[d.key] = d.label || d.key; });
 
-            const sportCn = SPORT_TYPE_CN[data.sport_type] || data.sport_type || '-';
+            const sportCn = getDynamicSportMeta(data.sport_type).label;
             const strongestCn = dimLabelMap[data.strongest_dim] || data.strongest_dim || '-';
             const weakestCn = dimLabelMap[data.weakest_dim] || data.weakest_dim || '-';
 
@@ -4613,6 +4824,16 @@
         }
     }
 
+    function _freezeFatigueReviewAiEntry() {
+        var aiBtn = document.getElementById('fr-ai-generate-btn');
+        if (!aiBtn) return;
+        aiBtn.disabled = true;
+        aiBtn.setAttribute('aria-disabled', 'true');
+        aiBtn.title = 'AI 洞察将在 UI 定稿后开放';
+        aiBtn.textContent = '🤖 AI 洞察待开放';
+        delete aiBtn.dataset.fromCache;
+    }
+
     function _clearFatigueAiInsight() {
         _fatigueAiInsightData = null;
         var modal = document.getElementById('fatigue-ai-insight-modal');
@@ -4626,13 +4847,8 @@
             document.removeEventListener('keydown', _fatigueAiEscHandler);
             _fatigueAiInsightEscBound = false;
         }
-        // AI 洞察 Modal 关闭:同时清空复盘 Tab 内的 AI 按钮文案(回到「生成 AI 洞察」)
-        var aiBtn = document.getElementById('fr-ai-generate-btn');
-        if (aiBtn) {
-            aiBtn.disabled = false;
-            aiBtn.textContent = '🤖 生成 AI 洞察';
-            delete aiBtn.dataset.fromCache;
-        }
+        // P6.1:后端能力保留,UI 定稿前冻结入口
+        _freezeFatigueReviewAiEntry();
     }
 
     let onboardingState = {
@@ -4712,6 +4928,7 @@
         else if (t.includes('mountain') && (t.includes('bik') || t.includes('cycl'))) { icon = '🚵'; label = '山地骑行'; paceLabel = '骑行'; }
         else if (t.includes('road') && (t.includes('bik') || t.includes('cycl'))) { icon = '🛣️'; label = '公路骑行'; paceLabel = '骑行'; }
         else if (t.includes('cycl') || t.includes('bik') || t.includes('骑')) { icon = '🚴'; label = '骑行'; paceLabel = '骑行'; }
+        else if (t.includes('open_water')) { icon = '🏊'; label = '公开水域'; paceLabel = '游动'; }
         else if (t.includes('swim') || t.includes('游')) { icon = '🏊'; label = '游泳'; paceLabel = '游动'; }
         else if (t.includes('walk') || t.includes('步')) { icon = '🚶'; label = '步行'; paceLabel = '步行'; }
         else if (t.includes('hik') || t.includes('徒')) { icon = '🥾'; label = '徒步'; paceLabel = '徒步'; }
@@ -4726,7 +4943,7 @@
         else if (t.includes('driv') || t.includes('car') || t.includes('auto') || t.includes('驾') || t.includes('车')) { icon = '🚗'; label = '驾车'; paceLabel = '车速'; }
         else if (t.includes('ski') || t.includes('雪')) { icon = '🎿'; label = '滑雪'; paceLabel = '滑行'; }
         else if (t.includes('row') || t.includes('boat') || t.includes('划')) { icon = '🚣'; label = '划船'; paceLabel = '划行'; }
-        else if (t.includes('paddle') || t.includes('板')) { icon = '🏄'; label = '桨板'; paceLabel = '划行'; }
+        else if (t.includes('paddle') || t.includes('paddling') || t === 'sup' || t.includes('板')) { icon = '🏄'; label = '桨板'; paceLabel = '划行'; }
         else if (t.includes('horse') || t.includes('equestr') || t.includes('骑')) { icon = '🐎'; label = '骑马'; paceLabel = '骑行'; }
         else if (t.includes('golf')) { icon = '🏌️'; label = '高尔夫'; paceLabel = '挥杆'; }
         else if (t.includes('tennis')) { icon = '🎾'; label = '网球'; paceLabel = '训练'; }
@@ -5669,64 +5886,90 @@
         return merged;
     }
 
-    async function loadSportHubActivityList(options = {}) {
-        const refreshSnapshot = options.refreshSnapshot !== false && (!!options.refreshSnapshot || !sportHubState.recordsReady);
-        const resetPage = !!options.resetPage;
-        const page = resetPage ? 1 : Math.max(1, Number(sportHubState.filters.page) || 1);
-        const pageSize = Number(sportHubState.filters.pageSize) || 10;
-        const filterType = String(sportHubState.filters.type || 'all');
+	    async function loadSportHubActivityList(options = {}) {
+	        const resetPage = !!options.resetPage;
+	        const forceRefresh = options.refreshSnapshot !== false && (!!options.refreshSnapshot || !sportHubState.recordsReady);
+	        const page = resetPage ? 1 : Math.max(1, Number(sportHubState.filters.page) || 1);
+	        const pageSize = Number(sportHubState.filters.pageSize) || 10;
+	        const filterType = String(sportHubState.filters.type || 'all');
 
-        if (!refreshSnapshot) {
-            applySportHubRecordFilters(resetPage);
-            renderSportHubRecords();
-            renderCurrentSportHubTab();
-            return;
-        }
+	        if (resetPage) sportHubState.filters.page = 1;
 
-        sportHubState.recordsLoading = true;
-        sportHubState.recordsError = '';
-        const requestId = ++sportHubState.requestSeq;
-        renderSportHubRecords();
-        try {
-            if (!(window.pywebview && window.pywebview.api && typeof window.pywebview.api.get_activity_list_snapshot === 'function')) {
-                sportHubState.records = [];
-                sportHubState.recordsReady = true;
-                return;
-            }
-            const res = await window.pywebview.api.get_activity_list_snapshot(filterType);
-            if (requestId !== sportHubState.requestSeq) return;
-            // §三 响应结构契约:res.code / res.data.*(任务 3 改造后)
-            if (!res || res.code !== 0) throw new Error((res && res.msg) || '运动记录加载失败');
-            var data = res.data || {};
+	        if (!forceRefresh && !(window.pywebview && window.pywebview.api && typeof window.pywebview.api.get_activity_list === 'function')) {
+	            applySportHubRecordFilters(resetPage);
+	            renderSportHubRecords();
+	            renderCurrentSportHubTab();
+	            return;
+	        }
 
-            sportHubState.activityTypes = Array.isArray(data.activity_types) ? data.activity_types : [];
-            sportHubState.activityTypeLabels = (data && data.activity_type_labels && typeof data.activity_type_labels === 'object') ? data.activity_type_labels : {};
-            sportHubState.pageSizes = Array.isArray(data.page_sizes) && data.page_sizes.length ? data.page_sizes : [10, 20, 50];
-            sportHubState.dynamicColumns = Array.isArray(data.dynamic_columns) ? data.dynamic_columns : [];
-            sportHubState.total = _safeInt(data.total, 0);
-            sportHubState.totalPages = Math.max(1, Math.ceil(sportHubState.total / pageSize));
-            setSportHubRecordSnapshot(Array.isArray(data.records) ? data.records : []);
-            sportHubState.recordsReady = true;
-            applySportHubRecordFilters(resetPage);
-        } catch (e) {
-            console.error('loadSportHubActivityList error:', e);
-            sportHubState.recordsError = String((e && e.message) || e || '运动记录加载失败');
-            if (!sportHubState.recordsReady) {
-                sportHubState.records = [];
-                sportHubState.recordsReady = true;
-            }
-        } finally {
-            if (requestId === sportHubState.requestSeq) {
-                sportHubState.recordsLoading = false;
-                renderSportHubFilterOptions();
-                renderSportHubRecords();
-                renderCurrentSportHubTab();
-            }
-        }
-    }
+	        sportHubState.recordsLoading = true;
+	        sportHubState.recordsError = '';
+	        const requestId = ++sportHubState.requestSeq;
+	        renderSportHubRecords();
+	        try {
+	            let res = null;
+	            if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.get_activity_list === 'function') {
+	                res = await window.pywebview.api.get_activity_list(page, pageSize, filterType);
+	            } else if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.get_activity_list_snapshot === 'function') {
+	                res = await window.pywebview.api.get_activity_list_snapshot(filterType);
+	            } else {
+	                sportHubState.records = [];
+	                sportHubState.recordsReady = true;
+	                return;
+	            }
+	            if (requestId !== sportHubState.requestSeq) return;
+	            if (!res || res.code !== 0) throw new Error((res && res.msg) || '运动记录加载失败');
+	            var data = res.data || {};
 
-    function updateSportHubSyncState(status) {
-        if (!status) return;
+	            sportHubState.activityTypes = Array.isArray(data.activity_types) ? data.activity_types : [];
+	            sportHubState.activityTypeLabels = (data && data.activity_type_labels && typeof data.activity_type_labels === 'object') ? data.activity_type_labels : {};
+	            sportHubState.pageSizes = Array.isArray(data.page_sizes) && data.page_sizes.length ? data.page_sizes : [10, 20, 50];
+	            sportHubState.dynamicColumns = Array.isArray(data.dynamic_columns) ? data.dynamic_columns : [];
+	            scheduleListMetricBackfillRefresh(data.list_metric_backfill || data.normalized_power_backfill);
+	            sportHubState.total = _safeInt(data.total, 0);
+	            sportHubState.totalPages = _safeInt(data.total_pages, 0) || Math.max(1, Math.ceil(sportHubState.total / pageSize));
+	            sportHubState.filters.page = _safeInt(data.page, page);
+	            sportHubState.filters.pageSize = _safeInt(data.page_size, pageSize);
+	            sportHubState.records = Array.isArray(data.records) ? data.records : [];
+	            sportHubState.filteredRecords = sportHubState.records.slice();
+	            setSportHubRecordSnapshot(sportHubState.records);
+	            sportHubState.recordsReady = true;
+	        } catch (e) {
+	            console.error('loadSportHubActivityList error:', e);
+	            sportHubState.recordsError = String((e && e.message) || e || '运动记录加载失败');
+	            if (!sportHubState.recordsReady) {
+	                sportHubState.records = [];
+	                sportHubState.recordsReady = true;
+	            }
+	        } finally {
+	            if (requestId === sportHubState.requestSeq) {
+	                sportHubState.recordsLoading = false;
+	                renderSportHubFilterOptions();
+	                renderSportHubRecords();
+	                renderCurrentSportHubTab();
+	            }
+	        }
+	    }
+
+	    function scheduleListMetricBackfillRefresh(status) {
+	        if (!status || typeof status !== 'object') return;
+	        if (sportHubState.listMetricBackfillTimer) {
+	            clearTimeout(sportHubState.listMetricBackfillTimer);
+	            sportHubState.listMetricBackfillTimer = null;
+	        }
+	        if (status.running) {
+	            sportHubState.listMetricBackfillTimer = setTimeout(function() {
+	                loadSportHubActivityList({ resetPage: false, refreshSnapshot: true });
+	            }, 1800);
+	        } else if ((Number(status.updated) || 0) > 0) {
+	            sportHubState.listMetricBackfillTimer = setTimeout(function() {
+	                loadSportHubActivityList({ resetPage: false, refreshSnapshot: true });
+	            }, 300);
+	        }
+	    }
+
+	    function updateSportHubSyncState(status) {
+	        if (!status) return;
         sportHubState.syncJobId = status.job_id || sportHubState.syncJobId || '';
         sportHubState.syncProgress = Number(status.progress) || 0;
         sportHubState.syncMessage = String(status.message || '');
@@ -5989,7 +6232,7 @@
             headerRow.innerHTML = baseHeaders.join('');
         }
 
-        if (sportHubState.recordsSyncing || sportHubState.recordsLoading || sportHubState.remoteSyncing) {
+	        if ((sportHubState.recordsSyncing || sportHubState.recordsLoading || sportHubState.remoteSyncing) && !pageItems.length) {
             let loadingText = '正在加载运动记录...';
             if (sportHubState.remoteSyncing) {
                 loadingText = sportHubState.syncMessage || '正在请求 OpenClaw 同步指定时间范围内的活动 FIT 文件...';
@@ -6022,7 +6265,10 @@
                 const npDisplay = item.normalized_power_display || '/';
                 const npCol = showNp ? `<td>${npDisplay}</td>` : '';
                 const gainCol = showGain ? `<td>${item.gain_display || '/'}</td>` : '';
-                const swolfCol = showSwolf ? `<td>${item.swolf != null ? item.swolf : '/'}${item.swolf_subtitle ? '<br><small>' + item.swolf_subtitle + '</small>' : ''}</td>` : '';
+                const waterValue = item.water_metric_value != null ? item.water_metric_value
+                    : (item.stroke_distance != null ? item.stroke_distance : item.swolf);
+                const waterLabel = item.water_metric_label || item.swolf_subtitle || '';
+                const swolfCol = showSwolf ? `<td>${waterValue != null ? waterValue : '/'}${waterLabel ? '<br><small>' + safeHtml(waterLabel) + '</small>' : ''}</td>` : '';
                 return `
                 <tr onclick="openActivityDetailModal(${item.id})">
                     <td onclick="event.stopPropagation();"><input type="checkbox" class="sport-record-select" data-id="${item.id}" ${sportHubState.selectedIds.has(item.id) ? 'checked' : ''} onchange="toggleSportHubRecordSelection(${item.id}, this.checked)"></td>
@@ -6389,14 +6635,13 @@
             var f = _formatHeroValue(item.field, item.raw, item.opts);
             var label = HERO_FIELD_LABELS[item.field] || item.field;
             var icon = HERO_FIELD_ICONS[item.field] || '';
+            var valueHtml = f.html || (f.value + (f.unit ? '<span class="unit">' + f.unit + '</span>' : ''));
             return '<div class="overview-metric-card" data-field="' + item.field + '">'
                  + '<div class="head">'
                  + '<span class="icon">' + icon + '</span>'
                  + '<span class="lbl">' + label + '</span>'
                  + '</div>'
-                 + '<div class="val">' + f.value
-                 + (f.unit ? '<span class="unit">' + f.unit + '</span>' : '')
-                 + '</div>'
+                 + '<div class="val">' + valueHtml + '</div>'
                  + '</div>';
         }).join('');
 
@@ -6406,10 +6651,35 @@
             trackSection.style.display = (!caps.has_gps) ? 'none' : '';
         }
 
+        // V9.4.4:圈速表头真理源 = 后端 resolve_lap_columns(detail.lap_columns)
+        // 列 label 走 HERO_FIELD_LABELS,格式化走 _formatHeroValue
+        // lap dict 字段名映射:后端 lap_columns 字段 → detail.laps 行字段
+        var _lapCols = (detail && Array.isArray(detail.lap_columns)) ? detail.lap_columns : [];
+        var _lapKeyMap = { avg_pace: 'pace_sec', avg_hr: 'hr', max_hr: 'max_hr', cadence: 'cadence', gct: 'gct_ms', power: 'power_w', ascent: 'ascent_m', descent: 'descent_m', swolf: 'swolf', stroke_style: 'stroke_style', length_distance: 'length_distance_m', stroke_distance: 'stroke_distance_m', calories: 'calories' };
+        var _sportOpts = (function(){
+            var s = (record.display_sport_type || record.sport_type || '').toLowerCase();
+            return (s === 'swimming' || s === 'lap_swimming' || s === 'open_water' || s === 'open_water_swimming') ? { unit_m: true, unit_per_100m: true } : {};
+        })();
+        var _headRow = document.getElementById('activity-detail-laps-head');
+        if (_headRow) {
+            _headRow.innerHTML = '<th>圈速</th>' + _lapCols.map(function(c){
+                return '<th>' + (HERO_FIELD_LABELS[c] || c) + '</th>';
+            }).join('');
+        }
         var laps = (detail.laps) || [];
+        var _colCount = _lapCols.length + 1;
         lapsBody.innerHTML = laps.length ? laps.map(function(lap) {
-            return '<tr><td>' + lap.lap_no + '</td><td>' + formatPace(lap.pace_sec) + '</td><td>' + (lap.hr || '--') + '</td><td>' + (lap.cadence || '--') + '</td><td>' + (lap.gct_ms || '--') + ' ms</td><td>' + (lap.power_w || '--') + ' W</td></tr>';
-        }).join('') : '<tr><td colspan="6" style="color:#64748b;">暂无圈速统计数据</td></tr>';
+            var cells = '<td>' + lap.lap_no + '</td>' + _lapCols.map(function(c){
+                var key = _lapKeyMap[c] || c;
+                var raw = lap[key];
+                if (c === 'stroke_distance' && raw == null && lap.avg_stroke_distance != null) {
+                    raw = lap.avg_stroke_distance;
+                }
+                var f = _formatHeroValue(c, raw, _sportOpts);
+                return '<td>' + f.value + (f.unit ? '<span class="unit">' + f.unit + '</span>' : '') + '</td>';
+            }).join('');
+            return '<tr>' + cells + '</tr>';
+        }).join('') : '<tr><td colspan="' + _colCount + '" style="color:#64748b;">暂无圈速统计数据</td></tr>';
 
         // V6 轨迹快照(E11) — 固定 260×260 一次渲染,不再动态
         if (caps.has_gps && record.thumbnail_points && record.thumbnail_points.length) {
@@ -6467,6 +6737,8 @@
         html += _buildWeatherCard(weather, esc);
         // V9.4.0:训练收益卡(契约 §7) — 真值从 record.detail.training_effect 读
         html += _buildTrainingBenefitCard(record);
+        // V_ENV.1.7:环境挑战卡 — 真值从 record.detail.environment_challenge 读
+        html += _buildEnvironmentChallengeCard(record);
         html += _buildPlaceholderSidebarCard('身体状态', '❤️', '训练压力 / 恢复需求 / 当前状态将在「复盘」Tab 的 AI 洞察中呈现');
         html += _buildPlaceholderSidebarCard('活动摘要', '✨', 'AI 活动摘要将在「复盘」Tab 生成');
         sidebar.innerHTML = html;
@@ -6548,11 +6820,15 @@
                 return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
             });
         }
-        var pColor = _TE_LEVEL_COLORS[te.primary.level] || '#64748b';
-        var sColor = _TE_LEVEL_COLORS[te.secondary.level] || '#64748b';
-        var gLabel = _TE_LEVEL_LABELS_CN[te.global_level] || te.global_level;
-        // V9.4.4:运动类型英文 → 中文(用程序内 SPORT_TYPE_CN 真理源映射)
-        var sportCn = (typeof SPORT_TYPE_CN !== 'undefined' && SPORT_TYPE_CN[te.sport_type]) || te.sport_type || '';
+        // V9.4.4:6 等级颜色/label 真理源自后端 build_training_effect 透传(V9.4.4 收敛)
+        // 前端 _TE_LEVEL_COLORS / _TE_LEVEL_LABELS_CN 保留作 fallback(防老 API)
+        var _levelColors = (te.level_colors && te.level_colors[te.primary.level]) ? te.level_colors : _TE_LEVEL_COLORS;
+        var _levelLabels = (te.level_labels_cn && te.level_labels_cn[te.global_level]) ? te.level_labels_cn : _TE_LEVEL_LABELS_CN;
+        var pColor = _levelColors[te.primary.level] || '#64748b';
+        var sColor = _levelColors[te.secondary.level] || '#64748b';
+        var gLabel = _levelLabels[te.global_level] || te.global_level;
+        // V9.4.4:运动类型英文 → 中文(统一调 getDynamicSportMeta(16+ 运动真理源))
+        var sportCn = getDynamicSportMeta(te.sport_type).label;
         return '<div class="weather-glass-card training-benefit-card">' +
             '<div class="weather-glass-head">' +
                 '<div>' +
@@ -6582,6 +6858,97 @@
         '</div>';
     }
 
+	    // === V_ENV.1.6:环境挑战卡(契约 docs/environment_challenge_v1_contract §7) ===
+	    // 数据源:record.detail.environment_challenge(后端 Resolver 派生,见 metrics_resolver._build_environment_challenge_block)
+	    // 严格只消费,不计算;空态降级为占位文案
+	    // 5 级颜色(复用 _ENV_LEVEL_COLORS):0~4 Gray/Blue/Cyan/Green/Orange
+	    function _envChallengeUsesClimb(record, ec) {
+	        var tokens = [
+	            ec && ec.sport_type,
+	            record && record.display_sport_type,
+	            record && record.sub_sport_type,
+	            record && record.sport_type,
+	        ].map(normalizeActivityToken).filter(Boolean);
+	        var sportKey = tokens.join('_');
+	        if (!sportKey || sportKey === 'unknown') return false;
+
+	        var excluded = [
+	            'indoor', 'treadmill', 'swim', 'open_water', 'water',
+	            'row', 'boat', 'kayak', 'canoe', 'surf', 'paddle', 'sup',
+	            'strength', 'hiit', 'yoga', 'pilates', 'breath', 'flex',
+	            'elliptical', 'gym',
+	        ];
+	        for (var i = 0; i < excluded.length; i++) {
+	            if (sportKey.indexOf(excluded[i]) >= 0) return false;
+	        }
+
+	        var outdoor = [
+	            'run', 'trail', 'walk', 'hik', 'cycling', 'cycl', 'bike',
+	            'bik', 'road', 'mountain', 'ski', 'mountaineering', 'climb',
+	        ];
+	        for (var j = 0; j < outdoor.length; j++) {
+	            if (sportKey.indexOf(outdoor[j]) >= 0) return true;
+	        }
+	        return false;
+	    }
+
+	    function _buildEnvironmentChallengeCard(record) {
+	        var ec = record && record.detail && record.detail.environment_challenge;
+        // §六 审计字段隔离
+        if (ec && (ec.shadow_diff || ec.shadow_diff_json || ec.diff)) {
+            return '';
+        }
+        // 空态降级(旧数据 / 未注入 / phase<1)
+        if (!ec || ec.phase < 1) {
+            return _buildPlaceholderSidebarCard('环境挑战', '⛰️',
+                '爬升/海拔/温度数据由 FIT 文件自动解析生成');
+        }
+        function esc(s) {
+            if (s == null) return '';
+            return String(s).replace(/[&<>"']/g, function(c) {
+                return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+            });
+        }
+        // 4 维度行数据(固定顺序:climb → altitude → heat → terrain)
+        var isColdSport = (ec.sport_type === 'skiing' || ec.sport_type === 'mountaineering');
+        var dims = [
+            { key: 'climb',             icon: '⛰️', title: '爬升挑战' },
+            { key: 'altitude',          icon: '🏔️', title: '海拔环境' },
+            { key: 'heat',              icon: '🌡️', title: isColdSport ? '低温环境' : '温度环境' },
+            { key: 'technical_terrain', icon: '🧭', title: '技术路线' },
+        ];
+	        var rows = '';
+	        for (var i = 0; i < dims.length; i++) {
+	            var d = dims[i];
+	            if (d.key === 'climb' && !_envChallengeUsesClimb(record, ec)) continue;
+	            var block = ec[d.key];
+	            if (!block) continue;
+            var color = _ENV_LEVEL_COLORS[Math.min(block.level, _ENV_LEVEL_COLORS.length - 1)] || '#64748b';
+            // V_ENV.2.12:metric_value 数字不在 UI 展示(§9.5 决策)
+            // technical_terrain Phase 1 占位,行末仍显示「—」
+            var showDash = (d.key === 'technical_terrain' && block.available === false);
+            rows += '<div class="env-challenge-row" data-level="' + esc(block.level) + '">' +
+                '<div class="env-challenge-key" style="border-left-color:' + color + '">' +
+                    '<div class="env-challenge-key-title">' + d.icon + ' ' + d.title + '</div>' +
+                    '<div class="env-challenge-key-label">' + esc(block.label.label) + '</div>' +
+                    (d.key === 'technical_terrain' ? '' : '<div class="env-challenge-explanation">' + esc(block.label.explanation) + '</div>') +
+                '</div>' +
+                (showDash ? '<div class="env-challenge-dash">—</div>' : '') +
+            '</div>';
+        }
+        // subtitle:运动类型(统一调 getDynamicSportMeta 真理源)
+        var sportCn = getDynamicSportMeta(ec.sport_type).label;
+        return '<div class="weather-glass-card env-challenge-card">' +
+            '<div class="weather-glass-head">' +
+                '<div>' +
+                    '<div class="weather-glass-title">⛰️ 环境挑战</div>' +
+                    '<div class="weather-glass-subtitle">' + esc(sportCn) + '</div>' +
+                '</div>' +
+            '</div>' +
+            rows +
+        '</div>';
+    }
+
     // === 兼容旧调用 ===
     function renderActivityDetailWeather(weather) {
         // V9.2.2 兼容入口,转发到新函数
@@ -6601,6 +6968,15 @@
         'calories': '热量消耗',
         'elevation_gain': '累计爬升',
         'swolf': 'SWOLF',
+        // V9.4.4:圈速表新增字段(同源映射,前端不写硬编码 label)
+        'cadence': '步频',
+        'gct': 'GCT',
+        'power': '功率',
+        'ascent': '累计爬升',
+        'descent': '累计下降',
+        'stroke_style': '泳姿',
+        'length_distance': '单趟距离',
+        'stroke_distance': '单次划水距离',
     };
 
     // === V9.3 §需求 5:Hero 字段矢量图标(M0 用 emoji) ===
@@ -6645,7 +7021,7 @@
                 if (opts.unit_m) return { value: Math.round(raw), unit: 'm' };
                 return { value: raw >= 1000 ? (raw / 1000).toFixed(2) : raw.toFixed(0), unit: 'km' };
             case 'duration':
-                return { value: formatDuration(raw), unit: '' };
+                return _formatDurationSplit(raw);
             case 'avg_pace':
                 // 游泳配速 /100m,其他 /km
                 if (opts.unit_per_100m) return { value: formatPace(raw), unit: '/100m' };
@@ -6658,9 +7034,22 @@
             case 'calories':
                 return { value: Math.round(raw), unit: 'kcal' };
             case 'elevation_gain':
+            case 'ascent':
+            case 'descent':
                 return { value: Math.round(raw), unit: 'm' };
+            case 'cadence':
+                return { value: Math.round(raw), unit: 'spm' };
+            case 'gct':
+                return { value: Math.round(raw), unit: 'ms' };
+            case 'power':
+                return { value: Math.round(raw), unit: 'W' };
             case 'swolf':
                 return { value: Math.round(raw), unit: '' };
+            case 'stroke_style':
+                return { value: String(raw), unit: '' };
+            case 'length_distance':
+            case 'stroke_distance':
+                return { value: Number(raw).toFixed(1), unit: 'm' };
             default:
                 return { value: String(raw), unit: '' };
         }
@@ -7799,6 +8188,22 @@
         const m = Math.floor((sec % 3600) / 60);
         if (h > 0) return h + 'h' + m + 'm';
         return m + 'm';
+    }
+
+    // V9.4.5:与 formatDuration 不同,返回 value/unit 分离结构
+    // h=0 → unit=m 走小号
+    // h>0 → 小时/分钟单位都走 .unit,与 km/bpm/kcal 单位字号策略一致
+    function _formatDurationSplit(sec) {
+        const h = Math.floor(sec / 3600);
+        const m = Math.floor((sec % 3600) / 60);
+        if (h > 0) {
+            return {
+                value: '',
+                unit: '',
+                html: String(h) + '<span class="unit">h</span>' + String(m).padStart(2, '0') + '<span class="unit">m</span>',
+            };
+        }
+        return { value: String(m), unit: 'm' };
     }
 
     function switchAITab(tabId) {
@@ -11102,6 +11507,7 @@ function openConfigModalFromWarning() {
             }
             // V7.7:动作 4 —— 把 curves 挂到 window 供 _renderFatigueReviewMetrics 读取 efficiency(必须在 metrics 之前)
             window._lastFatigueReviewCurves = data.curves || {};
+            _renderFatigueReviewSummary(data);
             _renderFatigueReviewMetrics(data.metrics || {});
             _renderFatigueReviewDimensions(data.metrics || {});
             _renderFatigueReviewEvents(data.collapse_events || []);
@@ -11129,7 +11535,7 @@ function openConfigModalFromWarning() {
             } else {
                 // 渲染 ECharts 三层图(复用任务 5.x 渲染函数,容器 ID 不同)
                 var chartPayload = {
-                    distance_curve: _distanceFromSpeedTime(data.curves || {}),
+                    distance_curve: Array.isArray(curvesObj.distance) ? curvesObj.distance : [],
                     hr_curve:        data.curves && data.curves.hr,
                     speed_curve:     data.curves && data.curves.speed,
                     gap_curve:       data.curves && data.curves.gap,
@@ -11276,6 +11682,38 @@ function openConfigModalFromWarning() {
         if (summary) {
             summary.textContent = '❌ ' + msg;
             summary.style.color = '#f87171';
+        }
+    }
+    function _renderFatigueReviewSummary(data) {
+        data = data || {};
+        var curves = data.curves || {};
+        var metrics = data.metrics || {};
+        var events = data.collapse_events || [];
+        var zones = data.fatigue_zones || [];
+        var summary = document.getElementById('fr-summary');
+        var sourcePill = document.getElementById('fr-data-source-pill');
+        var axisPill = document.getElementById('fr-distance-axis-pill');
+        var eventPill = document.getElementById('fr-event-pill');
+        var bonk = metrics.bonk_risk || {};
+        var drift = metrics.hr_drift || {};
+
+        if (summary) {
+            var riskText = bonk.is_at_risk ? '存在 Bonk 风险' : '未触发 Bonk 风险';
+            var driftText = drift.level && drift.level !== 'unknown'
+                ? '心率漂移 ' + drift.level
+                : '心率漂移数据不足';
+            summary.style.color = '';
+            summary.textContent = riskText + ' · ' + driftText;
+        }
+        if (sourcePill) sourcePill.textContent = 'FIT + Resolver';
+        if (axisPill) {
+            var distance = Array.isArray(curves.distance) ? curves.distance : [];
+            axisPill.textContent = distance.length
+                ? '距离轴 ' + distance.length + ' 点'
+                : '距离轴缺失';
+        }
+        if (eventPill) {
+            eventPill.textContent = '事件 ' + events.length + ' · 疲劳带 ' + zones.length;
         }
     }
     function _renderFatigueReviewMetrics(metrics) {
@@ -11519,103 +11957,38 @@ function openConfigModalFromWarning() {
         }).join('');
     }
     function _renderFatigueReviewContextTags(tags) {
-        // 注入到 insight-section 顶部(简单方案:挂在 summary 区上方)
-        var summarySection = document.getElementById('fr-section-summary');
-        if (!summarySection) return;
-        // 移除旧
-        var old = summarySection.querySelector('.fr-context-tags-row');
-        if (old) old.remove();
+        var tagsEl = document.getElementById('fr-context-tags');
+        if (!tagsEl) return;
         if (!tags || !Object.keys(tags).length) {
-            // V7.7:动作 2 —— 注入空态占位卡(挂到 summary 区上方,与有数据时同一位置)
-            var emptyRow = document.createElement('div');
-            emptyRow.className = 'fr-context-tags-row fr-context-tags-empty';
-            emptyRow.innerHTML = _frEmptyStateHtml({
+            tagsEl.innerHTML = _frEmptyStateHtml({
                 icon: '🏷️',
                 title: '本次活动未携带上下文标签',
                 desc: '后端未返回环境(温湿度/海拔)/装备(跑鞋/功率计)/训练类型等元数据',
                 tag: 'context_tags = {}'
             });
-            var h4Empty = summarySection.querySelector('h4');
-            if (h4Empty && h4Empty.nextSibling) {
-                summarySection.insertBefore(emptyRow, h4Empty.nextSibling);
-            } else {
-                summarySection.appendChild(emptyRow);
-            }
             return;
         }
-        var row = document.createElement('div');
-        row.className = 'fr-context-tags-row';
-        row.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;';
-        Object.keys(tags).forEach(function(k) {
-            var chip = document.createElement('span');
-            chip.style.cssText = 'background:rgba(220,38,38,0.15);border-left:3px solid #dc2626;padding:4px 8px;border-radius:3px;font-size:0.7rem;color:#fca5a5;';
-            chip.textContent = k + ': ' + String(tags[k]).slice(0, 60);
-            row.appendChild(chip);
-        });
-        var h4 = summarySection.querySelector('h4');
-        if (h4 && h4.nextSibling) {
-            summarySection.insertBefore(row, h4.nextSibling);
-        } else {
-            summarySection.appendChild(row);
-        }
+        tagsEl.innerHTML = '<div class="fr-context-tags-row">'
+            + Object.keys(tags).map(function(k) {
+                return '<span class="fr-context-chip">'
+                    + safeHtml(k + ': ' + String(tags[k]).slice(0, 60))
+                    + '</span>';
+            }).join('')
+            + '</div>';
     }
-    function _distanceFromSpeedTime(curves) {
-        // V8.11: 从 speed 曲线计算真实累计距离(km)
-        // 关键: Resolver 抽样后 speed 是真实 m/s,但 record 数量 N 与运动总时长 T 不一定匹配
-        // 真实距离 = sum(speed[i]) × (T / N) 累加 / 1000
-        // 优先使用后端传入的 total_distance_m(如未传则按 speed 累加降级)
-        var speed = curves.speed || [];
-        var gap = curves.gap || [];
-        var hr = curves.hr || [];
-        var n = Math.max(speed.length, gap.length, hr.length);
-        if (n === 0) return [];
-
-        // 优先用后端传入的总距离(米)
-        if (curves.total_distance_m && curves.total_distance_m > 0) {
-            var totalKm = curves.total_distance_m / 1000;
-            // 按 speed 比例分配累计距离(weight 大的部分距离多)
-            var validSpeedSum = 0;
-            for (var k = 0; k < n; k++) validSpeedSum += (speed[k] || 0);
-            var out2 = [];
-            var cum2 = 0;
-            if (validSpeedSum > 0) {
-                for (var m = 0; m < n; m++) {
-                    cum2 += ((speed[m] || 0) / validSpeedSum) * totalKm;
-                    out2.push(Math.round(cum2 * 1000) / 1000);  // 3 位小数 km
-                }
-            } else {
-                // 无速度,均匀分配
-                for (var p = 0; p < n; p++) {
-                    out2.push(Math.round((p / n * totalKm) * 1000) / 1000);
-                }
-            }
-            return out2;
-        }
-
-        // 降级: 简单 speed 累加(m/s × 1s = m, 再 / 1000 = km)
-        var out = [];
-        var cum = 0;
-        for (var i = 0; i < n; i++) {
-            cum += (speed[i] || 0) * 1.0;
-            out.push(Math.round(cum) / 1000);
-        }
-        return out;
-    }
-
     // === V6.3 AI 4 态(V9.0:所有 4 态均打开 Modal,modal 内展示 AI 内容)===
     function _renderFatigueReviewAiLoading() {
-        var sum = document.getElementById('fr-summary');
+        var sum = document.getElementById('fr-ai-summary');
         if (sum) { sum.style.color = ''; sum.textContent = '⏳ AI 正在分析...'; }
-        var aiBtn = document.getElementById('fr-ai-generate-btn');
-        if (aiBtn) { aiBtn.disabled = true; aiBtn.textContent = '⏳ 分析中...'; }
+        _freezeFatigueReviewAiEntry();
         // V9.0 §5.6 Modal 化:打开毛玻璃 Modal,展示 loading 态
         openFatigueAiInsightModal();
     }
     function _renderFatigueReviewAiSuccess(insight) {
-        var sum = document.getElementById('fr-summary');
+        var sum = document.getElementById('fr-ai-summary');
         if (sum) { sum.style.color = ''; sum.textContent = insight.summary || '--'; }
         // 把 key_dimensions 渲染到 dimensions 区
-        var dimsEl = document.getElementById('fr-dimensions');
+        var dimsEl = document.getElementById('fr-ai-dimensions');
         if (dimsEl && Array.isArray(insight.key_dimensions)) {
             dimsEl.innerHTML = insight.key_dimensions.map(function(d) {
                 var lvlClass = ({excellent:'score-good', good:'score-good', warn:'score-warn', bad:'score-bad'})[d.level] || 'score-warn';
@@ -11627,7 +12000,7 @@ function openConfigModalFromWarning() {
             }).join('');
         }
         // 事件整体解读
-        var evSection = document.getElementById('fr-section-events');
+        var evSection = document.getElementById('fr-ai-section-events');
         if (evSection && insight.event_interpretation) {
             var exist = evSection.querySelector('.ev-interpretation');
             if (!exist) {
@@ -11639,15 +12012,14 @@ function openConfigModalFromWarning() {
             exist.textContent = insight.event_interpretation;
         }
         // advice
-        var adviceEl = document.getElementById('fr-advice');
+        var adviceEl = document.getElementById('fr-ai-advice');
         if (adviceEl) adviceEl.textContent = insight.training_advice || '--';
         // disclaimer
-        var discEl = document.getElementById('fr-disclaimer');
+        var discEl = document.getElementById('fr-ai-disclaimer');
         if (discEl) discEl.textContent = insight.disclaimer || '--';
 
         _fatigueReviewInsightData = insight;
-        var aiBtn = document.getElementById('fr-ai-generate-btn');
-        if (aiBtn) { aiBtn.disabled = false; aiBtn.textContent = '🤖 重新生成 AI 洞察'; }
+        _freezeFatigueReviewAiEntry();
 
         // V7.5 写 sessionStorage 缓存(§2.2 source='session_cache',5min TTL)
         if (_fatigueReviewActivityId && insight) {
@@ -11662,34 +12034,31 @@ function openConfigModalFromWarning() {
         openFatigueAiInsightModal();
     }
     function _renderFatigueReviewAiError(msg) {
-        var sum = document.getElementById('fr-summary');
+        var sum = document.getElementById('fr-ai-summary');
         if (sum) { sum.style.color = '#f87171'; sum.textContent = '❌ AI 洞察暂不可用:' + msg; }
-        var discEl = document.getElementById('fr-disclaimer');
+        var discEl = document.getElementById('fr-ai-disclaimer');
         if (discEl) discEl.textContent = 'AI 洞察暂不可用 · 数据来源：FIT 解析 + 后端算法';
-        var aiBtn = document.getElementById('fr-ai-generate-btn');
-        if (aiBtn) { aiBtn.disabled = false; aiBtn.textContent = '🤖 重试 AI 洞察'; }
+        _freezeFatigueReviewAiEntry();
         // V9.0 §5.6 Modal 化:打开毛玻璃 Modal,展示错误态
         openFatigueAiInsightModal();
     }
     function _renderFatigueReviewAiEmpty(insight) {
-        var sum = document.getElementById('fr-summary');
+        var sum = document.getElementById('fr-ai-summary');
         if (sum) { sum.style.color = ''; sum.textContent = '📭 ' + (insight.training_advice || '数据不足,无法生成洞察'); }
-        var discEl = document.getElementById('fr-disclaimer');
+        var discEl = document.getElementById('fr-ai-disclaimer');
         if (discEl) discEl.textContent = insight.disclaimer || '--';
-        var aiBtn = document.getElementById('fr-ai-generate-btn');
-        if (aiBtn) { aiBtn.disabled = false; aiBtn.textContent = '🤖 重试 AI 洞察'; }
+        _freezeFatigueReviewAiEntry();
         // V9.0 §5.6 Modal 化:打开毛玻璃 Modal,展示空态
         openFatigueAiInsightModal();
     }
     function _clearFatigueReviewInsight() {
         _fatigueReviewInsightData = null;
-        var sum = document.getElementById('fr-summary');
+        var sum = document.getElementById('fr-ai-summary');
         if (sum) { sum.style.color = ''; sum.textContent = '点击「生成 AI 洞察」开始分析'; }
-        var dimsEl = document.getElementById('fr-dimensions');
+        var dimsEl = document.getElementById('fr-ai-dimensions');
         if (dimsEl) dimsEl.innerHTML = '--';
-        var aiBtn = document.getElementById('fr-ai-generate-btn');
-        if (aiBtn) { aiBtn.disabled = false; aiBtn.textContent = '🤖 生成 AI 洞察'; delete aiBtn.dataset.fromCache; }
-        var evSection = document.getElementById('fr-section-events');
+        _freezeFatigueReviewAiEntry();
+        var evSection = document.getElementById('fr-ai-section-events');
         if (evSection) {
             var evI = evSection.querySelector('.ev-interpretation');
             if (evI) evI.remove();
@@ -11805,32 +12174,16 @@ function openConfigModalFromWarning() {
     }
 
     function _renderFatigueReviewCacheBanner(activityId) {
-        var cache = _loadFatigueReviewCache(activityId);
         var aiBtn = document.getElementById('fr-ai-generate-btn');
         if (!aiBtn) return;
         // 移除旧 banner
         var oldBanner = document.getElementById('fr-cache-banner');
         if (oldBanner) oldBanner.remove();
-        if (!cache) return;
-
-        var banner = document.createElement('button');
-        banner.id = 'fr-cache-banner';
-        banner.className = 'fr-cache-banner';
-        banner.title = '点击恢复本次训练最近一次 AI 洞察(5 分钟内有效)';
-        banner.innerHTML = '📚 显示上次解读 (<span class="fr-cache-remaining">' +
-            _formatRemainingTime(activityId) + '</span> 后清除)';
-        banner.onclick = function() { _showCachedFatigueReviewInsight(activityId); };
-        aiBtn.parentNode.insertBefore(banner, aiBtn.nextSibling);
-        // 启动倒计时刷新(每 30s)
-        if (window._frCacheCountdownTimer) clearInterval(window._frCacheCountdownTimer);
-        window._frCacheCountdownTimer = setInterval(function() {
-            var remEl = document.querySelector('.fr-cache-remaining');
-            if (remEl) {
-                remEl.textContent = _formatRemainingTime(activityId);
-            } else {
-                clearInterval(window._frCacheCountdownTimer);
-            }
-        }, 30 * 1000);
+        if (window._frCacheCountdownTimer) {
+            clearInterval(window._frCacheCountdownTimer);
+            window._frCacheCountdownTimer = null;
+        }
+        _freezeFatigueReviewAiEntry();
     }
 
     function _showCachedFatigueReviewInsight(activityId) {
@@ -11890,6 +12243,17 @@ function openConfigModalFromWarning() {
         var gapCurve = (activityData && activityData.gap_curve) || [];
         var fatigueZones = (activityData && activityData.fatigue_zones) || [];
         var insightEvents = (activityData && activityData.insight_events) || [];
+
+        if (!Array.isArray(distanceCurve) || distanceCurve.length < 2) {
+            clearProfileAnalysisChart(targetId);
+            container.innerHTML = _frEmptyStateHtml({
+                icon: '📉',
+                title: '复盘曲线数据不足',
+                desc: '后端未返回权威距离轴',
+                tag: 'curves.distance = []'
+            });
+            return;
+        }
 
         if (!profileAnalysisChartInstances[targetId]) {
             profileAnalysisChartInstances[targetId] = echarts.init(container);
@@ -12095,21 +12459,21 @@ function openConfigModalFromWarning() {
         <div id="fatigue-ai-insight-modal-body" class="fatigue-ai-modal-body">
             <div class="insight-section" id="fr-section-summary">
                 <h4>📋 总评</h4>
-                <div class="insight-summary" id="fr-summary">点击「生成 AI 洞察」开始分析</div>
+                <div class="insight-summary" id="fr-ai-summary">点击「生成 AI 洞察」开始分析</div>
             </div>
             <div class="insight-section" id="fr-section-dimensions">
                 <h4>📊 维度评分</h4>
-                <div id="fr-dimensions">--</div>
+                <div id="fr-ai-dimensions">--</div>
             </div>
-            <div class="insight-section" id="fr-section-events">
-                <h4>⚠️ 关键事件 (<span id="fr-event-count">0</span>)</h4>
-                <div class="event-list" id="fr-event-list"></div>
+            <div class="insight-section" id="fr-ai-section-events">
+                <h4>⚠️ 关键事件 (<span id="fr-ai-event-count">0</span>)</h4>
+                <div class="event-list" id="fr-ai-event-list"></div>
             </div>
             <div class="insight-section" id="fr-section-advice">
                 <h4>💡 改进建议</h4>
-                <div class="advice-block" id="fr-advice">--</div>
+                <div class="advice-block" id="fr-ai-advice">--</div>
             </div>
-            <div class="disclaimer" id="fr-disclaimer">AI 生成仅供参考 · 数据来源：FIT 解析 + 后端算法</div>
+            <div class="disclaimer" id="fr-ai-disclaimer">AI 生成仅供参考 · 数据来源：FIT 解析 + 后端算法</div>
         </div>
     </div>
 </div>

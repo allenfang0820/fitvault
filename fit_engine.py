@@ -27,6 +27,11 @@ SPORT_TYPE_ALIASES = {
     "swimming": "swimming",
     "lap_swimming": "swimming",
     "open_water": "swimming",
+    "paddling": "paddling",
+    "stand_up_paddleboarding": "stand_up_paddleboarding",
+    "standup_paddleboarding": "stand_up_paddleboarding",
+    "paddleboarding": "stand_up_paddleboarding",
+    "sup": "stand_up_paddleboarding",
     "treadmill_running": "treadmill_running",
     "cardio": "cardio",
     "cardio_training": "cardio",
@@ -173,6 +178,9 @@ class FITCoreEngine:
                 "total_ascent": FITCoreEngine._float_or_none(session_info.get("total_ascent")),
                 "total_descent": FITCoreEngine._float_or_none(session_info.get("total_descent")),
                 "max_altitude": FITCoreEngine._float_or_none(session_info.get("max_altitude")),
+                "avg_power": FITCoreEngine._int_or_none(session_info.get("avg_power")),
+                "max_power": FITCoreEngine._int_or_none(session_info.get("max_power")),
+                "normalized_power": FITCoreEngine._int_or_none(session_info.get("normalized_power")),
                 "avg_stroke_distance": FITCoreEngine._float_or_none(session_info.get("avg_stroke_distance")),
                 "avg_hr": avg_hr,
                 "max_hr": max_hr,
@@ -223,6 +231,8 @@ class FITCoreEngine:
     @staticmethod
     def _clean_filename_title(path: Path) -> str:
         stem = re.sub(r"(?i)_activity(?:_\d+)?$", "", path.stem).strip("_- ")
+        # 去除 Garmin 常见的尾部 _纯数字ID(如"四姑娘山二峰登顶_240827288")
+        stem = re.sub(r"[_\s]+\d{6,}$", "", stem).strip("_- ")
         stem = re.sub(r"[_\s]+", " ", stem).strip()
         if not stem:
             return ""
@@ -297,6 +307,9 @@ class FITCoreEngine:
                 "total_ascent": msg.get_value("total_ascent"),
                 "total_descent": msg.get_value("total_descent"),
                 "max_altitude": msg.get_value("max_altitude") or fields.get("enhanced_max_altitude"),
+                "avg_power": msg.get_value("avg_power"),
+                "max_power": msg.get_value("max_power"),
+                "normalized_power": msg.get_value("normalized_power"),
                 "avg_stroke_distance": msg.get_value("avg_stroke_distance"),
                 "session_label": fields.get("unknown_110"),
                 # V9.4.4:Training Effect 字段(直接读 FIT session message)
@@ -359,8 +372,18 @@ class FITCoreEngine:
                 "max_heart_rate": FITCoreEngine._int_or_none(values.get("max_heart_rate")),
                 "avg_cadence": FITCoreEngine._int_or_none(raw_cadence),
                 "avg_power": FITCoreEngine._int_or_none(values.get("avg_power")),
+                "normalized_power": FITCoreEngine._int_or_none(values.get("normalized_power")),
+                "max_power": FITCoreEngine._int_or_none(values.get("max_power")),
                 "total_calories": FITCoreEngine._int_or_none(values.get("total_calories")),
+                "total_strokes": FITCoreEngine._int_or_none(values.get("total_strokes")),
+                "avg_stroke_distance": FITCoreEngine._float_or_none(values.get("avg_stroke_distance")),
+                "swolf": FITCoreEngine._int_or_none(values.get("swolf")),
+                "swim_stroke": FITCoreEngine._token(values.get("swim_stroke"), ""),
+                "lengths": FITCoreEngine._int_or_none(values.get("lengths")),
                 "lap_start_time": FITCoreEngine._iso_utc(lap_start),
+                # V9.4.4:徒步/登山圈速统计需要累计爬升/下降(FIT lap_mesgs)
+                "total_ascent": FITCoreEngine._float_or_none(values.get("total_ascent")),
+                "total_descent": FITCoreEngine._float_or_none(values.get("total_descent")),
                 # 跑步动态字段 (FIT lap_mesgs, Garmin Running Dynamics)
                 "avg_stance_time": FITCoreEngine._float_or_none(values.get("avg_stance_time")),
                 "avg_vertical_oscillation": FITCoreEngine._float_or_none(values.get("avg_vertical_oscillation")),
@@ -500,9 +523,11 @@ class FITCoreEngine:
         file_title = FITCoreEngine._clean_filename_title(path)
         sport_title = FITCoreEngine._clean_text(sport_name)
         session_title = FITCoreEngine._clean_text(session_label)
+        # 文件名通常是用户可读标题(如"四姑娘山二峰登顶"),sport.name 常只是泛化运动名(如"登山")。
+        # 只要文件名明显比 sport.name 更具体,就优先文件名,避免概览页显示成"登山/跑步"。
+        if file_title and sport_title and len(file_title) > len(sport_title):
+            return file_title, "filename"
         if sport_title:
-            if file_title and sport_title in file_title and len(file_title) > len(sport_title):
-                return file_title, "filename"
             return sport_title, "sport_name"
         if file_title:
             return file_title, "filename"
