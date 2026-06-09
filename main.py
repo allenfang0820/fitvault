@@ -135,14 +135,14 @@ OUTDOOR_LAND_GAIN_TYPES: frozenset[str] = frozenset({
 LIST_GAIN_ELIGIBLE_TYPES: frozenset[str] = frozenset({
     "running", "trail_running", "treadmill_running",
     "cycling", "road_cycling", "mountain_biking",
-    "hiking", "mountaineering",
+    "hiking", "mountaineering", "walking",
 })
 
 # 活动列表字段展示规则：仅这些类型显示标准化功率
 # 范围：跑步、骑行
 LIST_POWER_ELIGIBLE_TYPES: frozenset[str] = frozenset({
     "running", "trail_running", "treadmill_running",
-    "cycling", "road_cycling", "mountain_biking",
+    "cycling", "road_cycling", "mountain_biking", "indoor_cycling",
 })
 
 IRRELEVANT_LIST_METRICS: dict[str, frozenset[str]] = {
@@ -202,6 +202,14 @@ def _resolve_activity_list_dynamic_columns(activity_types: list[str]) -> list[st
     if types & LIST_POWER_ELIGIBLE_TYPES:
         dynamic_columns.append("np")
     return dynamic_columns
+
+
+def _resolve_activity_list_dynamic_columns_for_rows(rows: list[dict[str, Any]]) -> list[str]:
+    visible_types = [
+        _resolve_display_sport_type(row.get("sport_type"), row.get("sub_sport_type"))
+        for row in (rows or [])
+    ]
+    return _resolve_activity_list_dynamic_columns(visible_types)
 
 _ACTIVITY_SYNC_SCHEMA_LOCK = threading.Lock()
 _ACTIVITY_SYNC_SCHEMA_READY_FOR: str | None = None
@@ -574,6 +582,12 @@ DETAIL_API_REQUIRED_COLUMNS: tuple[str, ...] = (
     "max_hr",
     # 热量
     "calories",
+    # 列表/详情共用展示指标
+    "avg_power",
+    "max_power",
+    "normalized_power",
+    "avg_stroke_distance",
+    "swolf",
     # 海拔/爬升
     "gain_m",
     "max_alt_m",
@@ -1321,8 +1335,11 @@ _NP_BACKFILL_STATUS: dict[str, Any] = {
     "total": 0,
     "processed": 0,
     "updated": 0,
+    "limited": False,
     "np_total": 0,
     "np_updated": 0,
+    "power_total": 0,
+    "power_updated": 0,
     "water_total": 0,
     "water_updated": 0,
     "started_at": 0.0,
@@ -1330,6 +1347,8 @@ _NP_BACKFILL_STATUS: dict[str, Any] = {
     "error": "",
 }
 _NP_BACKFILL_THREAD: threading.Thread | None = None
+LIST_METRIC_BACKFILL_BATCH_LIMIT = 200
+LIST_METRIC_BACKFILL_VERSION = 1
 
 
 def _normalized_power_backfill_status() -> dict[str, Any]:
@@ -1380,6 +1399,89 @@ def _read_normalized_power_fast_from_fit(file_path: Any) -> int | None:
     return None
 
 
+def _read_activity_metrics_fast_from_fit(file_path: Any) -> dict[str, float | int | None]:
+    metrics: dict[str, float | int | None] = {
+        "avg_power": None,
+        "max_power": None,
+        "normalized_power": None,
+        "avg_stroke_distance": None,
+        "swolf": None,
+    }
+    path_text = str(file_path or "").strip()
+    if not path_text:
+        return metrics
+    path = Path(path_text).expanduser()
+    if not path.is_file():
+        return metrics
+
+    try:
+        from fitparse import FitFile
+
+        fit = FitFile(str(path))
+        weighted_np_fourth_sum = 0.0
+        weighted_np_total = 0.0
+        lap_swolf_values: list[float] = []
+
+        for msg in fit.get_messages("session"):
+            avg_power = _safe_float(msg.get_value("avg_power"), None)
+            if avg_power and avg_power > 0:
+                metrics["avg_power"] = int(round(avg_power))
+            max_power = _safe_float(msg.get_value("max_power"), None)
+            if max_power and max_power > 0:
+                metrics["max_power"] = int(round(max_power))
+            normalized_power = _safe_float(msg.get_value("normalized_power"), None)
+            if normalized_power and normalized_power > 0:
+                metrics["normalized_power"] = int(round(normalized_power))
+            stroke_distance = _safe_float(msg.get_value("avg_stroke_distance"), None)
+            if stroke_distance and stroke_distance > 0:
+                metrics["avg_stroke_distance"] = float(stroke_distance)
+            raw_swolf = _safe_float(msg.get_value("avg_swolf"), None)
+            if raw_swolf and raw_swolf > 0:
+                metrics["swolf"] = int(round(raw_swolf))
+
+        for msg in fit.get_messages("lap"):
+            if not metrics.get("normalized_power"):
+                value = _safe_float(msg.get_value("normalized_power"), None)
+                if value and value > 0:
+                    weight = _safe_float(msg.get_value("total_timer_time"), 1.0) or 1.0
+                    weight = max(1.0, min(weight, 24 * 3600.0))
+                    weighted_np_fourth_sum += (value ** 4) * weight
+                    weighted_np_total += weight
+            if not metrics.get("swolf"):
+                raw_swolf = _safe_float(msg.get_value("avg_swolf"), None)
+                if raw_swolf and raw_swolf > 0:
+                    lap_swolf_values.append(raw_swolf)
+                    continue
+                lengths = _safe_float(msg.get_value("num_lengths"), 0.0) or 0.0
+                cycles = _safe_float(msg.get_value("total_strokes") or msg.get_value("total_cycles"), 0.0) or 0.0
+                timer = _safe_float(msg.get_value("total_timer_time"), 0.0) or 0.0
+                if lengths > 0 and cycles > 0 and timer > 0:
+                    lap_swolf_values.append((cycles / lengths) + (timer / lengths))
+            if not metrics.get("avg_stroke_distance"):
+                stroke_distance = _safe_float(msg.get_value("avg_stroke_distance"), None)
+                if stroke_distance and stroke_distance > 0:
+                    metrics["avg_stroke_distance"] = float(stroke_distance)
+
+        if not metrics.get("normalized_power") and weighted_np_total > 0:
+            metrics["normalized_power"] = int(round((weighted_np_fourth_sum / weighted_np_total) ** 0.25))
+        if not metrics.get("swolf") and lap_swolf_values:
+            metrics["swolf"] = int(round(sum(lap_swolf_values) / len(lap_swolf_values)))
+
+        if not metrics.get("normalized_power"):
+            record_fourth_sum = 0.0
+            record_count = 0
+            for msg in fit.get_messages("record"):
+                value = _safe_float(msg.get_value("power"), None)
+                if value and value > 0:
+                    record_fourth_sum += value ** 4
+                    record_count += 1
+            if record_count >= 30:
+                metrics["normalized_power"] = int(round((record_fourth_sum / record_count) ** 0.25))
+    except Exception:
+        return metrics
+    return metrics
+
+
 def _resolve_water_metric_value_for_backfill(
     sport_type: Any,
     sub_sport_type: Any,
@@ -1391,7 +1493,7 @@ def _resolve_water_metric_value_for_backfill(
     if sub_token == "lap_swimming" or display_token in ("swimming", "lap_swimming"):
         return _safe_float(metrics.get("swolf"), None)
     if display_token in WATER_METRIC_DISPLAY_TYPES:
-        return _safe_float(metrics.get("stroke_distance"), None)
+        return _safe_float(metrics.get("avg_stroke_distance") or metrics.get("stroke_distance"), None)
     return None
 
 
@@ -1400,34 +1502,59 @@ def _run_normalized_power_backfill_worker(db_path: str) -> None:
     processed = 0
     updated = 0
     np_updated = 0
+    power_updated = 0
     water_updated = 0
     total = 0
+    limited = False
     error = ""
     conn: sqlite3.Connection | None = None
     try:
         conn = sqlite3.connect(db_path, timeout=profile_backend.SQLITE_CONNECT_TIMEOUT_SEC)
         conn.row_factory = sqlite3.Row
         conn.execute(f"PRAGMA busy_timeout = {profile_backend.SQLITE_BUSY_TIMEOUT_MS}")
-        np_rows = conn.execute(
+        limit = LIST_METRIC_BACKFILL_BATCH_LIMIT
+        power_rows = conn.execute(
             """
             SELECT id, file_path
             FROM activities
             WHERE deleted_at IS NULL
-              AND normalized_power IS NULL
+              AND (avg_power IS NULL OR max_power IS NULL OR normalized_power IS NULL)
+              AND COALESCE(list_metric_backfill_version, 0) < ?
               AND COALESCE(file_path, '') != ''
               AND lower(COALESCE(sport_type, '')) IN (
                   'running', 'trail_running', 'treadmill_running',
                   'cycling', 'road_cycling', 'mountain_biking'
               )
             ORDER BY id DESC
-            """
+            LIMIT ?
+            """,
+            (LIST_METRIC_BACKFILL_VERSION, limit),
         ).fetchall()
+        remaining_power = conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM activities
+            WHERE deleted_at IS NULL
+              AND (avg_power IS NULL OR max_power IS NULL OR normalized_power IS NULL)
+              AND COALESCE(list_metric_backfill_version, 0) < ?
+              AND COALESCE(file_path, '') != ''
+              AND lower(COALESCE(sport_type, '')) IN (
+                  'running', 'trail_running', 'treadmill_running',
+                  'cycling', 'road_cycling', 'mountain_biking'
+              )
+            """
+            ,
+            (LIST_METRIC_BACKFILL_VERSION,),
+        ).fetchall()
+        remaining_power_count = int(remaining_power[0][0] if remaining_power else 0)
+        water_limit = max(0, limit - len(power_rows))
         water_rows = conn.execute(
             """
             SELECT id, file_path, sport_type, sub_sport_type
             FROM activities
             WHERE deleted_at IS NULL
-              AND swolf IS NULL
+              AND (swolf IS NULL OR avg_stroke_distance IS NULL)
+              AND COALESCE(list_metric_backfill_version, 0) < ?
               AND COALESCE(file_path, '') != ''
               AND (
                   lower(COALESCE(sport_type, '')) IN (
@@ -1440,30 +1567,88 @@ def _run_normalized_power_backfill_worker(db_path: str) -> None:
                   )
               )
             ORDER BY id DESC
+            LIMIT ?
             """
+            ,
+            (LIST_METRIC_BACKFILL_VERSION, water_limit),
         ).fetchall()
-        total = len(np_rows) + len(water_rows)
+        remaining_water = conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM activities
+            WHERE deleted_at IS NULL
+              AND (swolf IS NULL OR avg_stroke_distance IS NULL)
+              AND COALESCE(list_metric_backfill_version, 0) < ?
+              AND COALESCE(file_path, '') != ''
+              AND (
+                  lower(COALESCE(sport_type, '')) IN (
+                      'swimming', 'lap_swimming', 'open_water',
+                      'open_water_swimming', 'stand_up_paddleboarding', 'paddling'
+                  )
+                  OR lower(COALESCE(sub_sport_type, '')) IN (
+                      'lap_swimming', 'open_water', 'open_water_swimming',
+                      'stand_up_paddleboarding', 'paddling'
+                  )
+              )
+            """
+            ,
+            (LIST_METRIC_BACKFILL_VERSION,),
+        ).fetchall()
+        remaining_water_count = int(remaining_water[0][0] if remaining_water else 0)
+        total = len(power_rows) + len(water_rows)
+        limited = (remaining_power_count + remaining_water_count) > total
         with _NP_BACKFILL_LOCK:
             _NP_BACKFILL_STATUS.update({
                 "total": total,
                 "processed": 0,
                 "updated": 0,
-                "np_total": len(np_rows),
+                "limited": limited,
+                "np_total": len(power_rows),
                 "np_updated": 0,
+                "power_total": len(power_rows),
+                "power_updated": 0,
                 "water_total": len(water_rows),
                 "water_updated": 0,
                 "error": "",
             })
-        for row in np_rows:
+        for row in power_rows:
             processed += 1
-            value = _read_normalized_power_fast_from_fit(row["file_path"])
-            if value and value > 0:
+            metrics = _read_activity_metrics_fast_from_fit(row["file_path"])
+            avg_power = _safe_float(metrics.get("avg_power"), None)
+            max_power = _safe_float(metrics.get("max_power"), None)
+            normalized_power = _safe_float(metrics.get("normalized_power"), None)
+            if any(value and value > 0 for value in (avg_power, max_power, normalized_power)):
                 conn.execute(
-                    "UPDATE activities SET normalized_power = ?, updated_at = COALESCE(updated_at, datetime('now')) WHERE id = ? AND normalized_power IS NULL",
-                    (value, int(row["id"])),
+                    """
+                    UPDATE activities
+                    SET avg_power = COALESCE(avg_power, ?),
+                        max_power = COALESCE(max_power, ?),
+                        normalized_power = COALESCE(normalized_power, ?),
+                        list_metric_backfill_version = ?,
+                        updated_at = COALESCE(updated_at, datetime('now'))
+                    WHERE id = ?
+                    """,
+                    (
+                        int(round(avg_power)) if avg_power and avg_power > 0 else None,
+                        int(round(max_power)) if max_power and max_power > 0 else None,
+                        int(round(normalized_power)) if normalized_power and normalized_power > 0 else None,
+                        LIST_METRIC_BACKFILL_VERSION,
+                        int(row["id"]),
+                    ),
                 )
                 updated += 1
                 np_updated += 1
+                power_updated += 1
+            else:
+                conn.execute(
+                    """
+                    UPDATE activities
+                    SET list_metric_backfill_version = ?,
+                        updated_at = COALESCE(updated_at, datetime('now'))
+                    WHERE id = ?
+                    """,
+                    (LIST_METRIC_BACKFILL_VERSION, int(row["id"])),
+                )
             if processed % 25 == 0:
                 conn.commit()
                 with _NP_BACKFILL_LOCK:
@@ -1471,23 +1656,47 @@ def _run_normalized_power_backfill_worker(db_path: str) -> None:
                         "processed": processed,
                         "updated": updated,
                         "np_updated": np_updated,
+                        "power_updated": power_updated,
                         "water_updated": water_updated,
                     })
         for row in water_rows:
             processed += 1
-            metrics = _read_water_metrics_from_fit(row["file_path"])
+            metrics = _read_activity_metrics_fast_from_fit(row["file_path"])
             value = _resolve_water_metric_value_for_backfill(
                 row["sport_type"],
                 row["sub_sport_type"],
                 metrics,
             )
-            if value and value > 0:
+            stroke_distance = _safe_float(metrics.get("avg_stroke_distance"), None)
+            if any(metric_value and metric_value > 0 for metric_value in (value, stroke_distance)):
                 conn.execute(
-                    "UPDATE activities SET swolf = ?, updated_at = COALESCE(updated_at, datetime('now')) WHERE id = ? AND swolf IS NULL",
-                    (float(value), int(row["id"])),
+                    """
+                    UPDATE activities
+                    SET swolf = COALESCE(swolf, ?),
+                        avg_stroke_distance = COALESCE(avg_stroke_distance, ?),
+                        list_metric_backfill_version = ?,
+                        updated_at = COALESCE(updated_at, datetime('now'))
+                    WHERE id = ?
+                    """,
+                    (
+                        float(value) if value and value > 0 else None,
+                        float(stroke_distance) if stroke_distance and stroke_distance > 0 else None,
+                        LIST_METRIC_BACKFILL_VERSION,
+                        int(row["id"]),
+                    ),
                 )
                 updated += 1
                 water_updated += 1
+            else:
+                conn.execute(
+                    """
+                    UPDATE activities
+                    SET list_metric_backfill_version = ?,
+                        updated_at = COALESCE(updated_at, datetime('now'))
+                    WHERE id = ?
+                    """,
+                    (LIST_METRIC_BACKFILL_VERSION, int(row["id"])),
+                )
             if processed % 25 == 0:
                 conn.commit()
                 with _NP_BACKFILL_LOCK:
@@ -1495,6 +1704,7 @@ def _run_normalized_power_backfill_worker(db_path: str) -> None:
                         "processed": processed,
                         "updated": updated,
                         "np_updated": np_updated,
+                        "power_updated": power_updated,
                         "water_updated": water_updated,
                     })
         conn.commit()
@@ -1515,7 +1725,9 @@ def _run_normalized_power_backfill_worker(db_path: str) -> None:
                 "total": total,
                 "processed": processed,
                 "updated": updated,
+                "limited": limited,
                 "np_updated": np_updated,
+                "power_updated": power_updated,
                 "water_updated": water_updated,
                 "started_at": started,
                 "finished_at": time.time(),
@@ -1536,25 +1748,29 @@ def _start_normalized_power_backfill_if_needed() -> dict[str, Any]:
     try:
         conn = sqlite3.connect(db_path, timeout=profile_backend.SQLITE_CONNECT_TIMEOUT_SEC)
         try:
-            missing_np = conn.execute(
+            missing_power = conn.execute(
                 """
                 SELECT COUNT(*)
                 FROM activities
                 WHERE deleted_at IS NULL
-                  AND normalized_power IS NULL
+                  AND (avg_power IS NULL OR max_power IS NULL OR normalized_power IS NULL)
+                  AND COALESCE(list_metric_backfill_version, 0) < ?
                   AND COALESCE(file_path, '') != ''
                   AND lower(COALESCE(sport_type, '')) IN (
                       'running', 'trail_running', 'treadmill_running',
                       'cycling', 'road_cycling', 'mountain_biking'
                   )
                 """
+                ,
+                (LIST_METRIC_BACKFILL_VERSION,),
             ).fetchone()[0]
             missing_water = conn.execute(
                 """
                 SELECT COUNT(*)
                 FROM activities
                 WHERE deleted_at IS NULL
-                  AND swolf IS NULL
+                  AND (swolf IS NULL OR avg_stroke_distance IS NULL)
+                  AND COALESCE(list_metric_backfill_version, 0) < ?
                   AND COALESCE(file_path, '') != ''
                   AND (
                       lower(COALESCE(sport_type, '')) IN (
@@ -1567,6 +1783,8 @@ def _start_normalized_power_backfill_if_needed() -> dict[str, Any]:
                       )
                   )
                 """
+                ,
+                (LIST_METRIC_BACKFILL_VERSION,),
             ).fetchone()[0]
         finally:
             conn.close()
@@ -1574,15 +1792,19 @@ def _start_normalized_power_backfill_if_needed() -> dict[str, Any]:
         with _NP_BACKFILL_LOCK:
             _NP_BACKFILL_STATUS.update({"error": str(exc), "running": False})
             return dict(_NP_BACKFILL_STATUS)
-    missing = int(missing_np or 0) + int(missing_water or 0)
+    missing = int(missing_power or 0) + int(missing_water or 0)
+    scheduled = min(missing, LIST_METRIC_BACKFILL_BATCH_LIMIT)
     if not missing:
         with _NP_BACKFILL_LOCK:
             _NP_BACKFILL_STATUS.update({
                 "total": 0,
                 "processed": 0,
                 "updated": 0,
+                "limited": False,
                 "np_total": 0,
                 "np_updated": 0,
+                "power_total": 0,
+                "power_updated": 0,
                 "water_total": 0,
                 "water_updated": 0,
                 "error": "",
@@ -1594,12 +1816,15 @@ def _start_normalized_power_backfill_if_needed() -> dict[str, Any]:
             return dict(_NP_BACKFILL_STATUS)
         _NP_BACKFILL_STATUS.update({
             "running": True,
-            "total": missing,
+            "total": scheduled,
             "processed": 0,
             "updated": 0,
-            "np_total": int(missing_np or 0),
+            "limited": missing > scheduled,
+            "np_total": min(int(missing_power or 0), scheduled),
             "np_updated": 0,
-            "water_total": int(missing_water or 0),
+            "power_total": min(int(missing_power or 0), scheduled),
+            "power_updated": 0,
+            "water_total": max(0, scheduled - min(int(missing_power or 0), scheduled)),
             "water_updated": 0,
             "started_at": time.time(),
             "finished_at": 0.0,
@@ -2044,6 +2269,8 @@ def _parse_fit_activity_for_sync(file_path: Path) -> dict[str, Any]:
         "calories": _safe_int(payload.get("calories")),
         "gain_m": _safe_float(payload.get("gain_m")),
         "max_alt_m": _safe_float(payload.get("max_alt_m")),
+        "avg_power": _safe_float(basic.get("avg_power")),
+        "max_power": _safe_float(basic.get("max_power")),
         "swolf": None,
         "normalized_power": None,
         "avg_stroke_distance": _safe_float(payload.get("avg_stroke_distance")),
@@ -2213,12 +2440,12 @@ def _insert_activity_sync_row(conn: sqlite3.Connection, activity: dict[str, Any]
                  distance, dist_km, duration, duration_sec, avg_pace, avg_hr, max_hr,
                  calories, track_json, points_json, file_path, gain_m, max_alt_m, start_lat, start_lon, region,
                  region_city, region_country, region_display, region_status, region_error, region_updated_at, region_attempt_count,
-                 weather_json, file_mtime, file_size, advanced_metrics, normalized_power, swolf, device_name,
+                 weather_json, file_mtime, file_size, advanced_metrics, avg_power, max_power, normalized_power, avg_stroke_distance, swolf, device_name,
                  shadow_diff_json, source_type, is_mock, deleted_at, updated_at, hr_curve, speed_curve, cadence_curve, hr_zone_distribution, laps_json,
                  min_alt_m, total_descent_m, up_count, down_count, max_single_climb_m, difficulty_score, report_metrics_version,
                  avg_grade_pct, max_slope_pct, min_slope_pct, uphill_pct, downhill_pct,
                  aerobic_training_effect, anaerobic_training_effect)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                     ?, ?, 'fit_sdk', 0, NULL, datetime('now'), ?, ?, ?, ?, ?,
                     ?, ?, ?, ?, ?, ?, ?,
                     ?, ?, ?, ?, ?, ?, ?)
@@ -2259,7 +2486,10 @@ def _insert_activity_sync_row(conn: sqlite3.Connection, activity: dict[str, Any]
                 activity.get("file_mtime"),
                 activity.get("file_size"),
                 activity.get("advanced_metrics"),
+                activity.get("avg_power"),
+                activity.get("max_power"),
                 activity.get("normalized_power"),
+                activity.get("avg_stroke_distance"),
                 activity.get("swolf"),
                 activity.get("device_name") or "Unknown Device",
                 activity.get("shadow_diff_json"),
@@ -2309,7 +2539,8 @@ def _update_activity_sync_row(conn: sqlite3.Connection, activity_id: int, activi
             region_city = ?, region_country = ?, region_display = ?, region_status = ?, region_error = ?,
             region_updated_at = ?, region_attempt_count = ?,
             weather_json = ?, file_mtime = ?, file_size = ?, advanced_metrics = ?,
-            normalized_power = ?, swolf = ?, device_name = ?, shadow_diff_json = ?, hr_curve = ?, speed_curve = ?,
+            avg_power = ?, max_power = ?, normalized_power = ?, avg_stroke_distance = ?, swolf = ?,
+            device_name = ?, shadow_diff_json = ?, hr_curve = ?, speed_curve = ?,
             laps_json = ?,
             min_alt_m = ?, total_descent_m = ?, up_count = ?, down_count = ?, max_single_climb_m = ?, difficulty_score = ?, report_metrics_version = ?,
             avg_grade_pct = ?, max_slope_pct = ?, min_slope_pct = ?, uphill_pct = ?, downhill_pct = ?,
@@ -2352,7 +2583,10 @@ def _update_activity_sync_row(conn: sqlite3.Connection, activity_id: int, activi
             activity.get("file_mtime"),
             activity.get("file_size"),
             activity.get("advanced_metrics"),
+            activity.get("avg_power"),
+            activity.get("max_power"),
             activity.get("normalized_power"),
+            activity.get("avg_stroke_distance"),
             activity.get("swolf"),
             activity.get("device_name") or "Unknown Device",
             activity.get("shadow_diff_json"),
@@ -2379,8 +2613,14 @@ def _update_activity_sync_row(conn: sqlite3.Connection, activity_id: int, activi
 def _activity_display_sql() -> str:
     return (
         "CASE "
-        "WHEN COALESCE(NULLIF(sub_sport_type, ''), 'unknown') IN ('trail_running', 'road_cycling', 'mountain_biking') THEN sub_sport_type "
-        "WHEN COALESCE(NULLIF(sport_type, ''), 'unknown') IN ('trail_running', 'road_cycling', 'mountain_biking') THEN sport_type "
+        "WHEN COALESCE(NULLIF(sub_sport_type, ''), 'unknown') IN ("
+        "'lap_swimming', 'open_water', 'open_water_swimming', "
+        "'trail_running', 'road_cycling', 'mountain_biking', 'treadmill_running'"
+        ") THEN sub_sport_type "
+        "WHEN COALESCE(NULLIF(sport_type, ''), 'unknown') IN ("
+        "'lap_swimming', 'open_water', 'open_water_swimming', "
+        "'trail_running', 'road_cycling', 'mountain_biking', 'treadmill_running'"
+        ") THEN sport_type "
         "ELSE COALESCE(NULLIF(sport_type, ''), 'unknown') "
         "END"
     )
@@ -5217,7 +5457,7 @@ class Api:
         try:
             source_dir, records, activity_types = self._query_activity_list_records(sport_filter)
             np_backfill = _start_normalized_power_backfill_if_needed()
-            dynamic_columns = _resolve_activity_list_dynamic_columns(activity_types)
+            dynamic_columns = _resolve_activity_list_dynamic_columns_for_rows(records)
             return _api_success({
                 "source_dir": source_dir,
                 "total": len(records),
@@ -5279,7 +5519,7 @@ class Api:
                 "activity_type_labels": {t: profile_backend.translate_sport_type(t) for t in activity_types},
                 "page_sizes": SPORT_HUB_PAGE_SIZES,
                 "records": records,
-                "dynamic_columns": _resolve_activity_list_dynamic_columns(activity_types),
+                "dynamic_columns": _resolve_activity_list_dynamic_columns_for_rows(records),
                 "normalized_power_backfill": metric_backfill,
                 "list_metric_backfill": metric_backfill,
             })

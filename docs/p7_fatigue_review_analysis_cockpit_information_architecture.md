@@ -1,0 +1,112 @@
+# P7 复盘分析驾驶舱信息架构稿
+
+## 1. 定位
+
+项目中的“复盘 Tab”等价于设计草图中的“分析”页。P7 只重构复盘 Tab 内部的信息架构，不改现有活动详情顶部、活动标题、时间/设备/路线信息和详情 Tab 系统。
+
+草图右侧首页、活动、日历等全局导航，以及顶部分享、导出等全局动作区不进入 P7 范围。
+
+## 2. 契约约束
+
+- `get_fatigue_review(activity_id)` 是复盘 Tab 唯一数据源。
+- 前端不得从 speed/time/total_distance_m/points/DOM 推导事实字段。
+- `curves.distance` 是图表 X 轴、疲劳带和事件定位的唯一后端权威距离来源。
+- `metrics / fatigue_zones / collapse_events / context_tags / advice / disclaimer` 只能从后端 snapshot 白名单读取。
+- 字段缺失、数组为空或运动类型不适用时展示空态、弱化态或“待接入”，不得前端补算。
+- P7 UI 改造不得写 DB，不得改 canonical 数据，不得让 AI 输出参与指标计算。
+- `shadow_diff / shadow_diff_json / diff / records / points / raw_records / track_points` 禁止进入复盘主展示和 AI 输入。
+- AI 洞察入口继续保持 P6.1 冻结态：按钮置灰、无 onclick、不触发 `call_llm`。
+
+## 3. 页面整体结构
+
+复盘 Tab 内部从上到下固定为：
+
+1. Tab 内部标题与状态行
+2. 分析摘要带
+3. 核心状态区
+4. 能力与负荷区
+5. 主图分析区
+6. 事件与疲劳区间解释区
+7. 上下文与建议区
+8. disclaimer / 数据边界说明
+
+## 4. 区块职责
+
+| 区块 | 用户看到什么 | 解决的问题 | 后端字段来源 | 缺失态 | 交互 |
+|---|---|---|---|---|---|
+| Tab 内部标题与状态行 | 复盘标题、加载状态、AI 冻结按钮 | 当前页是什么、是否加载完成 | API envelope 状态、`data.disclaimer` | 显示加载中/加载失败 | AI 按钮不可点击 |
+| 分析摘要带 | 数据来源、距离轴、曲线、事件、疲劳带状态 | 这次复盘是否可信、数据是否够用 | `curves.distance`、`fatigue_zones`、`collapse_events`、`metrics` | 状态显示“缺失/暂无/待接入” | 只展示 |
+| 核心状态区 | 心率漂移、解耦、Bonk、崩溃事件 | 本次活动是否出现明显衰退或风险 | `metrics.hr_drift`、`metrics.decoupling`、`metrics.bonk_risk`、`metrics.events` | 单卡显示数据不足 | 只展示 |
+| 能力与负荷区 | 效率、耐久、步频稳定、训练负荷 | 本次活动的能力与负荷表现 | `metrics.efficiency`、`metrics.durability`、`metrics.cadence_stability`、`metrics.training_load` | 单卡显示不适用/待接入 | 只展示 |
+| 主图分析区 | 疲劳带、事件标记、心率/速度/GAP/效率等曲线 | 衰退发生在何处、与曲线如何对应 | `curves`、`fatigue_zones`、`collapse_events` | `curves.distance` 为空时显示图表空态 | 图表 hover/tooltip 可用 |
+| 事件与疲劳区间解释区 | 关键事件列表、疲劳区间说明 | 哪些公里段或时间点需要关注 | `collapse_events`、`fatigue_zones` | 列表空态为暂无识别事件/区间 | 可折叠待后续确认 |
+| 上下文与建议区 | 环境/运动类型/算法上下文、建议文本 | 如何理解结果、下一步怎么调整 | `context_tags`、`advice` | 显示上下文不足/建议待接入 | 只展示 |
+| disclaimer / 数据边界说明 | 数据来源和 AI/算法边界说明 | 防止过度解读 | `disclaimer` | 使用固定兜底免责声明 | 只展示 |
+
+## 5. 字段来源矩阵
+
+| UI 区块 | 展示字段 | 后端来源字段 | 允许前端格式化 | 禁止前端推导 | 空态策略 |
+|---|---|---|---|---|---|
+| 标题与状态行 | 加载/成功/失败状态 | API envelope `code/msg/data` | 是 | 是 | code 非 0 显示错误态 |
+| 标题与状态行 | AI 入口状态 | P6.1 前端冻结状态 | 是 | 是 | 始终置灰待开放 |
+| 分析摘要带 | 运动类型 | `data.sport_type` | 是 | 是 | 缺失显示未知运动 |
+| 分析摘要带 | 距离轴状态 | `data.curves.distance` | 是 | 是 | 空数组显示距离轴缺失 |
+| 分析摘要带 | 曲线状态 | `data.curves` 白名单字段 | 是 | 是 | 可绘曲线不足显示曲线不足 |
+| 分析摘要带 | 事件数量 | `data.collapse_events.length` | 是 | 是 | 空数组显示暂无事件 |
+| 分析摘要带 | 疲劳区间数量 | `data.fatigue_zones.length` | 是 | 是 | 空数组显示暂无疲劳区间 |
+| 核心状态区 | 心率漂移 | `data.metrics.hr_drift` | 是 | 是 | 卡片显示数据不足 |
+| 核心状态区 | 解耦率 | `data.metrics.decoupling` | 是 | 是 | 卡片显示数据不足 |
+| 核心状态区 | Bonk 风险 | `data.metrics.bonk_risk` | 是 | 是 | 卡片显示待接入 |
+| 核心状态区 | 崩溃事件摘要 | `data.metrics.events` | 是 | 是 | 卡片显示暂无事件 |
+| 能力与负荷区 | 运动效率 | `data.metrics.efficiency` | 是 | 是 | 卡片显示不适用 |
+| 能力与负荷区 | 耐久指标 | `data.metrics.durability` | 是 | 是 | 卡片显示数据不足 |
+| 能力与负荷区 | 步频稳定 | `data.metrics.cadence_stability` | 是 | 是 | 卡片显示设备未记录 |
+| 能力与负荷区 | 训练负荷 | `data.metrics.training_load` | 是 | 是 | 卡片显示待接入 |
+| 主图分析区 | X 轴 | `data.curves.distance` | 是 | 是 | 空数组显示图表空态 |
+| 主图分析区 | 曲线 | `data.curves.hr/speed/altitude/grade/gap/efficiency` | 是 | 是 | 缺少曲线时隐藏对应图例 |
+| 主图分析区 | 疲劳带背景 | `data.fatigue_zones` | 是 | 是 | 空数组不画背景带 |
+| 主图分析区 | 事件标记 | `data.collapse_events` | 是 | 是 | 空数组不画标记 |
+| 事件与疲劳区间 | 事件列表 | `data.collapse_events` | 是 | 是 | 显示暂无识别事件 |
+| 事件与疲劳区间 | 区间列表 | `data.fatigue_zones` | 是 | 是 | 显示暂无疲劳区间 |
+| 上下文与建议 | 上下文标签 | `data.context_tags` | 是 | 是 | 显示上下文不足 |
+| 上下文与建议 | 建议 | `data.advice` | 是 | 是 | 显示建议待接入 |
+| 数据边界说明 | 免责声明 | `data.disclaimer` | 是 | 是 | 使用固定兜底文案 |
+
+## 6. 空态策略
+
+| 场景 | 展示策略 |
+|---|---|
+| `get_fatigue_review` 返回 `code != 0` | 复盘 Tab 显示错误态，保留返回按钮和 Tab 容器，不补算任何字段 |
+| `data` 为空 | 展示“复盘数据暂不可用”，各区块进入空态 |
+| `metrics` 部分缺失 | 仅对应指标卡显示数据不足，其他卡片继续展示 |
+| `curves.distance` 为空 | 主图显示“复盘曲线数据不足”，不画曲线、疲劳带和事件标记 |
+| `fatigue_zones` 为空 | 摘要带显示暂无疲劳区间，区间区块显示空态 |
+| `collapse_events` 为空 | 摘要带显示暂无关键事件，事件区块显示空态 |
+| `context_tags` 为空 | 上下文区显示上下文不足 |
+| `advice` 为空 | 建议区显示建议待接入 |
+| `sport_type` 暂不适用 | 相关指标卡显示当前运动类型暂不支持，主图仍按可用曲线展示 |
+
+## 7. 响应式骨架
+
+- 桌面端：摘要带横向展示；核心状态区和能力负荷区使用多列卡片；主图占主列，事件/上下文/建议组成右侧信息列。
+- 中等宽度：指标卡自动换行；主图占整行；事件与建议区从右侧列下移到主图下方。
+- 窄屏：所有区块单列堆叠；摘要带状态项换行；长文本使用自然换行，按钮保持固定最小宽度。
+- 长文本、长数值和空态文案不得重叠、溢出或压缩图表容器。
+- 固定格式元素如指标卡、图例、状态标签应使用稳定尺寸约束，避免加载态和空态切换造成布局跳动。
+
+## 8. P7.x 映射
+
+| 后续阶段 | 对应信息架构内容 |
+|---|---|
+| P7.2 顶部分析摘要带 | 标题与状态行、分析摘要带、AI 冻结状态 |
+| P7.3 核心指标驾驶舱 | 核心状态区、能力与负荷区 |
+| P7.4 主图容器与图例 | 主图分析区、曲线和图例策略 |
+| P7.5 事件与疲劳区间说明 | 事件列表、疲劳区间解释和空态 |
+| P7.6 建议与上下文侧栏 | 上下文标签、建议、disclaimer |
+| P7.7 响应式与可读性检查 | 桌面、中等宽度、窄屏骨架和长文本处理 |
+| P7.8 视觉回归测试与手工清单 | P7 信息架构、边界、AI 冻结和零推断门禁 |
+| P7.9 UI 定稿后 AI 入口复核 | 是否解除 AI 冻结的单独审查 |
+
+## 9. 未实现内容
+
+本稿不实现生产 UI、不修改接口、不改算法、不接 AI、不修改数据库。

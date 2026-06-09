@@ -107,6 +107,17 @@ class TestWaterMetricFrontendContract(unittest.TestCase):
         self.assertIn("data.list_metric_backfill", self.html)
         self.assertIn("scheduleListMetricBackfillRefresh", self.html)
 
+    def test_activity_list_loading_does_not_label_import_button_as_importing(self):
+        self.assertIn("const importing = sportHubState.recordsSyncing;", self.html)
+        self.assertIn("btn.innerText = importing ? '导入中...' : '导入本地 FIT 文件';", self.html)
+        self.assertNotIn("btn.innerText = busy ? '导入中...' : '导入本地 FIT 文件';", self.html)
+
+    def test_activity_list_dynamic_columns_render_in_backend_order(self):
+        self.assertIn("dynamicCols.forEach((col) =>", self.html)
+        self.assertIn("dynamicColumnDefs[col].header", self.html)
+        self.assertIn("dynamicColumnDefs[col].cell(item)", self.html)
+        self.assertNotIn("if (showNp) baseHeaders.push", self.html)
+
     def test_lap_table_handles_open_water_units_and_fallback(self):
         self.assertIn("s === 'open_water'", self.html)
         self.assertIn("s === 'open_water_swimming'", self.html)

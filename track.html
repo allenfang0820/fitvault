@@ -1215,6 +1215,7 @@
             font-size: 0.78rem;
             cursor: pointer;
             transition: all 0.2s ease;
+            min-width: 0;
         }
         .event-card:hover { background: #334155; }
         .event-card.active {
@@ -1223,6 +1224,26 @@
         }
         .event-card .ev-title { color: #fca5a5; font-weight: 700; }
         .event-card .ev-meta  { color: #94a3b8; margin-top: 2px; }
+        .fr-zone-list { display: flex; flex-direction: column; gap: 6px; }
+        .fr-zone-card {
+            background: rgba(30, 41, 59, 0.78);
+            border-left: 3px solid #eab308;
+            border-radius: 0 4px 4px 0;
+            padding: 8px 10px;
+            font-size: 0.78rem;
+            min-width: 0;
+        }
+        .fr-zone-card.high { border-left-color: #f97316; }
+        .fr-zone-card .zone-title {
+            color: #fde68a;
+            font-weight: 700;
+        }
+        .fr-zone-card .zone-meta {
+            color: #94a3b8;
+            margin-top: 2px;
+            line-height: 1.35;
+            overflow-wrap: anywhere;
+        }
         .advice-block {
             font-size: 0.82rem;
             color: #cbd5e1;
@@ -1251,7 +1272,7 @@
         }
         .metric-bar {
             display: grid;
-            grid-template-columns: repeat(4, 1fr);
+            grid-template-columns: repeat(4, minmax(0, 1fr));
             gap: 10px;
         }
         .metric-card {
@@ -1259,11 +1280,65 @@
             border: 1px solid rgba(148, 163, 184, 0.15);
             border-radius: 8px;
             padding: 10px 12px;
-            min-height: 74px;
+            min-height: 104px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            min-width: 0;
         }
-        .metric-card .lbl { color: #94a3b8; font-size: 0.72rem; }
-        .metric-card .val { color: #f8fafc; font-size: 1.12rem; font-weight: 800; margin-top: 5px; line-height: 1.15; }
-        .metric-card .sub { color: #64748b; font-size: 0.7rem; margin-top: 4px; line-height: 1.35; overflow-wrap: anywhere; }
+        .metric-card .lbl {
+            color: #94a3b8;
+            font-size: 0.72rem;
+            line-height: 1.2;
+        }
+        .metric-card .val {
+            color: #f8fafc;
+            font-size: 1.12rem;
+            font-weight: 800;
+            line-height: 1.15;
+            min-height: 1.28rem;
+            overflow-wrap: anywhere;
+        }
+        .metric-card .sub {
+            color: #64748b;
+            font-size: 0.7rem;
+            line-height: 1.35;
+            overflow-wrap: anywhere;
+        }
+        .metric-card .fr-metric-status {
+            align-self: flex-start;
+            border-radius: 999px;
+            border: 1px solid rgba(148, 163, 184, 0.18);
+            background: rgba(51, 65, 85, 0.42);
+            color: #cbd5e1;
+            padding: 2px 8px;
+            font-size: 0.66rem;
+            line-height: 1.3;
+            max-width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .metric-card .fr-metric-status.ok {
+            color: #bbf7d0;
+            border-color: rgba(34, 197, 94, 0.24);
+            background: rgba(22, 101, 52, 0.16);
+        }
+        .metric-card .fr-metric-status.warn {
+            color: #fde68a;
+            border-color: rgba(245, 158, 11, 0.28);
+            background: rgba(146, 64, 14, 0.18);
+        }
+        .metric-card .fr-metric-status.bad {
+            color: #fecaca;
+            border-color: rgba(239, 68, 68, 0.28);
+            background: rgba(127, 29, 29, 0.18);
+        }
+        .metric-card .fr-metric-status.empty {
+            color: #94a3b8;
+            border-color: rgba(100, 116, 139, 0.2);
+            background: rgba(30, 41, 59, 0.36);
+        }
         .chart-container {
             background: rgba(30, 41, 59, 0.82);
             border: 1px solid rgba(148, 163, 184, 0.15);
@@ -1276,20 +1351,57 @@
             flex-direction: column;
         }
         .chart-title {
-            font-size: 0.82rem;
             color: #cbd5e1;
-            margin-bottom: 8px;
+            margin-bottom: 10px;
             display: flex;
             justify-content: space-between;
-            align-items: center;
+            align-items: flex-start;
+            gap: 12px;
             flex-shrink: 0;
+            min-width: 0;
+        }
+        .fr-chart-title-text {
+            min-width: 0;
+        }
+        .fr-chart-title-main {
+            color: #e2e8f0;
+            font-size: 0.86rem;
+            font-weight: 800;
+            line-height: 1.25;
+        }
+        .fr-chart-subtitle,
+        .fr-chart-boundary {
+            color: #64748b;
+            font-size: 0.7rem;
+            line-height: 1.35;
+            margin-top: 3px;
+            overflow-wrap: anywhere;
+        }
+        .fr-chart-axis-note {
+            display: inline-flex;
+            align-items: center;
+            border: 1px solid rgba(14, 165, 233, 0.24);
+            background: rgba(14, 165, 233, 0.1);
+            color: #bae6fd;
+            border-radius: 999px;
+            padding: 3px 8px;
+            font-size: 0.68rem;
+            line-height: 1.2;
+            white-space: nowrap;
         }
         .chart-legend {
             display: flex;
-            gap: 10px;
+            gap: 7px;
+            flex-wrap: wrap;
             font-size: 0.7rem;
             color: #94a3b8;
             align-items: center;
+            justify-content: flex-end;
+            max-width: 46%;
+            min-width: 220px;
+        }
+        .chart-legend span {
+            white-space: nowrap;
         }
         .legend-dot {
             display: inline-block;
@@ -1297,6 +1409,15 @@
             height: 2px;
             vertical-align: middle;
             margin-right: 4px;
+        }
+        .legend-dot.band {
+            height: 6px;
+            opacity: 0.45;
+        }
+        .fr-chart-canvas {
+            width: 100%;
+            height: calc(100% - 64px);
+            min-height: 280px;
         }
 
         /* === V6.2 响应式三档 === */
@@ -1318,6 +1439,15 @@
             }
             .metric-bar {
                 grid-template-columns: repeat(2, 1fr);
+            }
+            .chart-title {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            .chart-legend {
+                justify-content: flex-start;
+                max-width: 100%;
+                min-width: 0;
             }
             .fatigue-review-head {
                 flex-direction: column;
@@ -2651,13 +2781,14 @@
         }
         .fr-status-strip {
             display: grid;
-            grid-template-columns: minmax(0, 1fr) auto;
+            grid-template-columns: minmax(220px, 1fr) minmax(260px, auto);
             gap: 12px;
             align-items: center;
             background: rgba(15, 23, 42, 0.72);
             border: 1px solid rgba(148, 163, 184, 0.16);
             border-radius: 8px;
             padding: 12px 14px;
+            min-width: 0;
         }
         .fr-status-kicker {
             color: #94a3b8;
@@ -2670,11 +2801,20 @@
             font-weight: 800;
             line-height: 1.25;
         }
+        .fr-status-desc {
+            color: #94a3b8;
+            font-size: 0.72rem;
+            line-height: 1.45;
+            margin-top: 5px;
+            max-width: 720px;
+            overflow-wrap: anywhere;
+        }
         .fr-status-meta {
             display: flex;
             gap: 6px;
             flex-wrap: wrap;
             justify-content: flex-end;
+            min-width: 0;
         }
         .fr-pill {
             border-radius: 999px;
@@ -2684,6 +2824,29 @@
             padding: 4px 8px;
             font-size: 0.7rem;
             white-space: nowrap;
+            max-width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .fr-pill.ok {
+            color: #bbf7d0;
+            border-color: rgba(34, 197, 94, 0.28);
+            background: rgba(22, 101, 52, 0.18);
+        }
+        .fr-pill.warn {
+            color: #fde68a;
+            border-color: rgba(245, 158, 11, 0.32);
+            background: rgba(146, 64, 14, 0.18);
+        }
+        .fr-pill.muted {
+            color: #cbd5e1;
+            border-color: rgba(148, 163, 184, 0.2);
+            background: rgba(51, 65, 85, 0.42);
+        }
+        .fr-pill.ai-frozen {
+            color: #ddd6fe;
+            border-color: rgba(139, 92, 246, 0.28);
+            background: rgba(91, 33, 182, 0.18);
         }
         .fr-section-band {
             background: rgba(15, 23, 42, 0.42);
@@ -2713,12 +2876,21 @@
             border: 1px solid rgba(148, 163, 184, 0.14);
             border-radius: 8px;
             padding: 12px;
+            min-width: 0;
+            overflow-wrap: anywhere;
         }
         .fr-side-panel h4 {
             margin: 0 0 10px 0;
             color: #e2e8f0;
             font-size: 0.82rem;
             font-weight: 700;
+        }
+        .fr-panel-boundary {
+            color: #64748b;
+            font-size: 0.68rem;
+            line-height: 1.35;
+            margin: -4px 0 8px;
+            overflow-wrap: anywhere;
         }
         .fr-context-tags-row {
             display: flex;
@@ -2732,11 +2904,35 @@
             padding: 4px 8px;
             color: #bae6fd;
             font-size: 0.7rem;
+            max-width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
         .fr-advice-block {
             color: #cbd5e1;
             font-size: 0.76rem;
             line-height: 1.55;
+            overflow-wrap: anywhere;
+        }
+        .fr-advice-status {
+            display: inline-flex;
+            border-radius: 999px;
+            border: 1px solid rgba(34, 197, 94, 0.24);
+            background: rgba(22, 101, 52, 0.16);
+            color: #bbf7d0;
+            padding: 2px 8px;
+            font-size: 0.66rem;
+            line-height: 1.3;
+            margin-bottom: 8px;
+            max-width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .fr-advice-status.empty {
+            color: #94a3b8;
+            border-color: rgba(100, 116, 139, 0.2);
+            background: rgba(30, 41, 59, 0.36);
         }
         .fr-disclaimer {
             color: #64748b;
@@ -2752,6 +2948,15 @@
                 max-height: none;
                 overflow: visible;
             }
+            .chart-title {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            .chart-legend {
+                justify-content: flex-start;
+                max-width: 100%;
+                min-width: 0;
+            }
         }
         @media (max-width: 720px) {
             .review-tab-header,
@@ -2765,6 +2970,26 @@
             }
             .fr-status-meta {
                 justify-content: flex-start;
+            }
+            .metric-bar {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+            .fr-chart-axis-note {
+                white-space: normal;
+                overflow-wrap: anywhere;
+            }
+        }
+        @media (max-width: 480px) {
+            .metric-bar {
+                grid-template-columns: 1fr;
+            }
+            .review-tab-actions,
+            .review-tab-actions .btn-primary {
+                width: 100%;
+            }
+            .fr-pill,
+            .fr-advice-status {
+                white-space: normal;
             }
         }
 
@@ -4395,11 +4620,15 @@
                             <div>
                                 <div class="fr-status-kicker">后端权威快照</div>
                                 <div class="fr-status-title" id="fr-summary">等待复盘数据</div>
+                                <div class="fr-status-desc" id="fr-summary-desc">仅展示后端复盘快照字段，缺失时保持空态。</div>
                             </div>
                             <div class="fr-status-meta">
-                                <span class="fr-pill" id="fr-data-source-pill">FIT + Resolver</span>
+                                <span class="fr-pill" id="fr-data-source-pill">数据源 --</span>
                                 <span class="fr-pill" id="fr-distance-axis-pill">距离轴 --</span>
-                                <span class="fr-pill" id="fr-event-pill">事件 0</span>
+                                <span class="fr-pill" id="fr-curve-status-pill">曲线 --</span>
+                                <span class="fr-pill" id="fr-risk-pill">风险 --</span>
+                                <span class="fr-pill" id="fr-event-pill">事件 0 · 疲劳带 0</span>
+                                <span class="fr-pill ai-frozen" id="fr-ai-status-pill">AI 待开放</span>
                             </div>
                         </div>
 
@@ -4409,25 +4638,29 @@
                                 <span>漂移 · 解耦 · 风险 · 事件</span>
                             </div>
                             <div class="metric-bar">
-                                <div class="metric-card">
+                                <div class="metric-card fr-metric-card" data-fr-metric="hr_drift">
                                     <div class="lbl">心率漂移</div>
                                     <div class="val" id="fr-hr-drift">--</div>
+                                    <div class="fr-metric-status empty" id="fr-hr-drift-status">待接入</div>
                                     <div class="sub" id="fr-hr-drift-sub">--</div>
                                 </div>
-                                <div class="metric-card">
+                                <div class="metric-card fr-metric-card" data-fr-metric="decoupling">
                                     <div class="lbl">解耦率</div>
                                     <div class="val" id="fr-decoupling">--</div>
+                                    <div class="fr-metric-status empty" id="fr-decoupling-status">待接入</div>
                                     <div class="sub" id="fr-decoupling-sub">--</div>
                                 </div>
-                                <div class="metric-card">
+                                <div class="metric-card fr-metric-card" data-fr-metric="bonk_risk">
                                     <div class="lbl">Bonk 风险</div>
                                     <div class="val" id="fr-bonk">--</div>
+                                    <div class="fr-metric-status empty" id="fr-bonk-status">待接入</div>
                                     <div class="sub" id="fr-bonk-sub">--</div>
                                 </div>
-                                <div class="metric-card">
+                                <div class="metric-card fr-metric-card" data-fr-metric="events">
                                     <div class="lbl">崩溃事件</div>
                                     <div class="val" id="fr-events-count">0</div>
-                                    <div class="sub">含 0 起严重</div>
+                                    <div class="fr-metric-status empty" id="fr-events-status">待接入</div>
+                                    <div class="sub" id="fr-events-sub">含 0 起严重</div>
                                 </div>
                             </div>
                         </div>
@@ -4438,55 +4671,73 @@
                                 <span>效率 · 耐久 · 步频 · 训练负荷</span>
                             </div>
                             <div class="metric-bar">
-                                <div class="metric-card">
+                                <div class="metric-card fr-metric-card" data-fr-metric="efficiency">
                                     <div class="lbl">运动效率</div>
                                     <div class="val" id="fr-efficiency-score">--</div>
+                                    <div class="fr-metric-status empty" id="fr-efficiency-status">待接入</div>
                                     <div class="sub" id="fr-efficiency-sub">基于 21d 中位数</div>
                                 </div>
-                                <div class="metric-card">
+                                <div class="metric-card fr-metric-card" data-fr-metric="durability">
                                     <div class="lbl">耐久指数</div>
                                     <div class="val" id="fr-durability-score">--</div>
+                                    <div class="fr-metric-status empty" id="fr-durability-status">待接入</div>
                                     <div class="sub" id="fr-durability-sub">前 30% vs 后 30% 速度比</div>
                                 </div>
-                                <div class="metric-card">
+                                <div class="metric-card fr-metric-card" data-fr-metric="cadence_stability">
                                     <div class="lbl">步频稳定性</div>
                                     <div class="val" id="fr-cadence-stability-score">--</div>
+                                    <div class="fr-metric-status empty" id="fr-cadence-stability-status">待接入</div>
                                     <div class="sub" id="fr-cadence-stability-sub">std + late_decay 综合</div>
                                 </div>
-                                <div class="metric-card">
+                                <div class="metric-card fr-metric-card" data-fr-metric="training_load">
                                     <div class="lbl">训练负荷</div>
                                     <div class="val" id="fr-training-load-value">--</div>
+                                    <div class="fr-metric-status empty" id="fr-training-load-status">待接入</div>
                                     <div class="sub" id="fr-training-load-sub">TRIMP 简化版</div>
                                 </div>
                             </div>
                         </div>
 
-                        <div class="chart-container">
-                            <div class="chart-title">
-                                <span>📈 疲劳带 · 事件 · 曲线</span>
-                                <div class="chart-legend">
-                                    <span><span class="legend-dot" style="background:#ef4444"></span>心率</span>
-                                    <span><span class="legend-dot" style="background:#3b82f6"></span>速度</span>
-                                    <span><span class="legend-dot" style="background:#d69e2e"></span>GAP</span>
-                                    <span><span class="legend-dot" style="background:#eab308;opacity:0.4"></span>疲劳带</span>
-                                    <span>📍 事件</span>
+                        <div class="chart-container" id="fr-chart-section">
+                            <div class="chart-title" id="fr-chart-title">
+                                <div class="fr-chart-title-text">
+                                    <div class="fr-chart-title-main">📈 疲劳带 · 事件 · 曲线</div>
+                                    <div class="fr-chart-subtitle" id="fr-chart-subtitle">X 轴来自后端 curves.distance</div>
+                                    <div class="fr-chart-boundary" id="fr-chart-boundary">曲线来自 data.curves；疲劳带来自 data.fatigue_zones；事件来自 data.collapse_events。</div>
+                                </div>
+                                <div class="chart-legend" id="fr-chart-legend">
+                                    <span><span class="legend-dot" style="background:#ef4444"></span>心率 · curves.hr</span>
+                                    <span><span class="legend-dot" style="background:#3b82f6"></span>速度 · curves.speed</span>
+                                    <span><span class="legend-dot" style="background:#d69e2e"></span>GAP · curves.gap</span>
+                                    <span><span class="legend-dot band" style="background:#eab308"></span>疲劳带 · fatigue_zones</span>
+                                    <span>📍 事件 · collapse_events</span>
                                 </div>
                             </div>
-                            <div id="fatigue-review-chart" style="width:100%; height: calc(100% - 24px);"></div>
+                            <div class="fr-chart-axis-note" id="fr-chart-axis-note">distance_curve = data.curves.distance</div>
+                            <div class="fr-chart-canvas" id="fatigue-review-chart"></div>
                         </div>
                     </div>
 
                     <div class="fr-side-column">
                         <div class="fr-side-panel" id="fr-context-panel">
                             <h4>上下文标签</h4>
+                            <div class="fr-panel-boundary" id="fr-context-boundary">来自 data.context_tags，不从活动标题、设备或 DOM 推导。</div>
                             <div id="fr-context-tags"></div>
                         </div>
                         <div class="fr-side-panel" id="fr-events-panel">
                             <h4>关键事件</h4>
+                            <div class="fr-panel-boundary" id="fr-events-boundary">来自 data.collapse_events，位置使用 trigger_km。</div>
                             <div class="event-list" id="fr-event-list"></div>
+                        </div>
+                        <div class="fr-side-panel" id="fr-fatigue-zones-panel">
+                            <h4>疲劳区间</h4>
+                            <div class="fr-panel-boundary" id="fr-fatigue-zones-boundary">来自 data.fatigue_zones，区间使用 start_km / end_km。</div>
+                            <div class="fr-zone-list" id="fr-fatigue-zone-list"></div>
                         </div>
                         <div class="fr-side-panel" id="fr-advice-panel">
                             <h4>建议</h4>
+                            <div class="fr-panel-boundary" id="fr-advice-boundary">来自 data.advice；免责声明来自 data.disclaimer。</div>
+                            <div class="fr-advice-status empty" id="fr-advice-status">建议待接入</div>
                             <div class="fr-advice-block" id="fr-advice">--</div>
                             <div class="fr-disclaimer" id="fr-disclaimer">AI 生成仅供参考 · 数据来源：FIT 解析 + 后端算法</div>
                         </div>
@@ -6137,12 +6388,13 @@
         const remoteBtn = document.getElementById('sport-records-remote-sync-btn');
         const startEl = document.getElementById('sport-sync-start-date');
         const endEl = document.getElementById('sport-sync-end-date');
-        const busy = sportHubState.recordsSyncing || sportHubState.recordsLoading || sportHubState.remoteSyncing || isMovementRecordsInitializing || isMovementRecordsRefreshing;
+        const importing = sportHubState.recordsSyncing;
+        const busy = importing || sportHubState.recordsLoading || sportHubState.remoteSyncing || isMovementRecordsInitializing || isMovementRecordsRefreshing;
         const garminReady = isGarminWatchBrand();
         const storageValidated = _validate_storage_notification();
         if (btn) {
             btn.disabled = busy;
-            btn.innerText = busy ? '导入中...' : '导入本地 FIT 文件';
+            btn.innerText = importing ? '导入中...' : '导入本地 FIT 文件';
             btn.title = '选择本地 FIT 文件或 ZIP 压缩包并导入规范目录';
         }
         if (remoteBtn) {
@@ -6205,11 +6457,27 @@
         const totalPages = Math.max(1, Number(sportHubState.totalPages) || 1);
         const pageItems = Array.isArray(sportHubState.records) ? sportHubState.records : [];
         const dynamicCols = Array.isArray(sportHubState.dynamicColumns) ? sportHubState.dynamicColumns : [];
-        const showNp = dynamicCols.includes('np');
-        const showGain = dynamicCols.includes('gain');
-        const showSwolf = dynamicCols.includes('swolf');
         const baseCols = 11;
-        const totalCols = baseCols + (showNp ? 1 : 0) + (showGain ? 1 : 0) + (showSwolf ? 1 : 0);
+        const totalCols = baseCols + dynamicCols.length;
+        const dynamicColumnDefs = {
+            gain: {
+                header: '<th>累计爬升</th>',
+                cell: (item) => `<td>${item.gain_display || '/'}</td>`
+            },
+            swolf: {
+                header: '<th>划水/SWOLF</th>',
+                cell: (item) => {
+                    const waterValue = item.water_metric_value != null ? item.water_metric_value
+                        : (item.stroke_distance != null ? item.stroke_distance : item.swolf);
+                    const waterLabel = item.water_metric_label || item.swolf_subtitle || '';
+                    return `<td>${waterValue != null ? waterValue : '/'}${waterLabel ? '<br><small>' + safeHtml(waterLabel) + '</small>' : ''}</td>`;
+                }
+            },
+            np: {
+                header: '<th>标准化功率</th>',
+                cell: (item) => `<td>${item.normalized_power_display || '/'}</td>`
+            }
+        };
 
         const headerRow = document.getElementById('sport-records-header-row');
         if (headerRow) {
@@ -6226,9 +6494,9 @@
                 '<th>心率(平均/最大)</th>',
                 '<th>热量</th>'
             ];
-            if (showNp) baseHeaders.push('<th>标准化功率</th>');
-            if (showGain) baseHeaders.push('<th>累计爬升</th>');
-            if (showSwolf) baseHeaders.push('<th>划水</th>');
+            dynamicCols.forEach((col) => {
+                if (dynamicColumnDefs[col]) baseHeaders.push(dynamicColumnDefs[col].header);
+            });
             headerRow.innerHTML = baseHeaders.join('');
         }
 
@@ -6262,13 +6530,9 @@
         } else {
             tbody.innerHTML = pageItems.map((item) => {
                 const hrDisplay = (item.avg_hr || item.max_hr) ? `${item.avg_hr || '--'} / ${item.max_hr || '--'} bpm` : '/';
-                const npDisplay = item.normalized_power_display || '/';
-                const npCol = showNp ? `<td>${npDisplay}</td>` : '';
-                const gainCol = showGain ? `<td>${item.gain_display || '/'}</td>` : '';
-                const waterValue = item.water_metric_value != null ? item.water_metric_value
-                    : (item.stroke_distance != null ? item.stroke_distance : item.swolf);
-                const waterLabel = item.water_metric_label || item.swolf_subtitle || '';
-                const swolfCol = showSwolf ? `<td>${waterValue != null ? waterValue : '/'}${waterLabel ? '<br><small>' + safeHtml(waterLabel) + '</small>' : ''}</td>` : '';
+                const dynamicCells = dynamicCols
+                    .map((col) => dynamicColumnDefs[col] ? dynamicColumnDefs[col].cell(item) : '')
+                    .join('');
                 return `
                 <tr onclick="openActivityDetailModal(${item.id})">
                     <td onclick="event.stopPropagation();"><input type="checkbox" class="sport-record-select" data-id="${item.id}" ${sportHubState.selectedIds.has(item.id) ? 'checked' : ''} onchange="toggleSportHubRecordSelection(${item.id}, this.checked)"></td>
@@ -6282,9 +6546,7 @@
                     <td>${safeHtml(item.avg_pace_display || '--')}</td>
                     <td>${hrDisplay}</td>
                     <td>${item.calories ? item.calories + ' kcal' : '--'}</td>
-                    ${npCol}
-                    ${gainCol}
-                    ${swolfCol}
+                    ${dynamicCells}
                 </tr>
             `}).join('');
         }
@@ -11505,12 +11767,11 @@ function openConfigModalFromWarning() {
                 _renderFatigueReviewError('数据契约违规');
                 return;
             }
-            // V7.7:动作 4 —— 把 curves 挂到 window 供 _renderFatigueReviewMetrics 读取 efficiency(必须在 metrics 之前)
-            window._lastFatigueReviewCurves = data.curves || {};
             _renderFatigueReviewSummary(data);
             _renderFatigueReviewMetrics(data.metrics || {});
             _renderFatigueReviewDimensions(data.metrics || {});
             _renderFatigueReviewEvents(data.collapse_events || []);
+            _renderFatigueReviewZones(data.fatigue_zones || []);
             _renderFatigueReviewContextTags(data.context_tags || {});
             // V7.7:动作 3 —— 三层图全部空时不渲染 ECharts,改展示占位卡
             var curvesObj = data.curves || {};
@@ -11550,27 +11811,7 @@ function openConfigModalFromWarning() {
                 }, 120);
             }
 
-            // 建议/disclaimer
-            var adviceEl = document.getElementById('fr-advice');
-            if (adviceEl) {
-                var adviceVal = data.advice || '';
-                // V7.7:动作 2 #6 —— advice 为空或等于默认占位符 "--" 时,改展示空态卡
-                if (!adviceVal || adviceVal === '--') {
-                    adviceEl.innerHTML = _frEmptyStateHtml({
-                        icon: '💡',
-                        title: '本次复盘无运动建议',
-                        desc: '需先点击右上角「生成 AI 洞察」,或该活动数据不足以生成建议',
-                        tag: 'advice = ""'
-                    });
-                } else {
-                    adviceEl.textContent = adviceVal;
-                }
-            }
-            var discEl = document.getElementById('fr-disclaimer');
-            if (discEl) {
-                // V7.7:disclaimer 永远非空(后端兜底),但前端再校验一次
-                discEl.textContent = data.disclaimer || 'AI 生成仅供参考 · 数据来源：FIT 解析 + 后端算法';
-            }
+            _renderFatigueReviewAdvice(data.advice, data.disclaimer);
 
             // 阅后即焚 ②:切换活动触发清空 — 清旧活动缓存
             if (_lastLoadedFatigueReviewActivityId &&
@@ -11674,6 +11915,24 @@ function openConfigModalFromWarning() {
         if (sub) sub.textContent = '正在加载复盘数据...';
         var summary = document.getElementById('fr-summary');
         if (summary) summary.textContent = '⏳ 加载中...';
+        var desc = document.getElementById('fr-summary-desc');
+        if (desc) desc.textContent = '正在读取 get_fatigue_review 后端权威快照。';
+        var axisNote = document.getElementById('fr-chart-axis-note');
+        if (axisNote) axisNote.textContent = 'distance_curve = data.curves.distance';
+        [
+            ['fr-data-source-pill', '数据源 --', 'fr-pill muted'],
+            ['fr-distance-axis-pill', '距离轴 --', 'fr-pill muted'],
+            ['fr-curve-status-pill', '曲线 --', 'fr-pill muted'],
+            ['fr-risk-pill', '风险 --', 'fr-pill muted'],
+            ['fr-event-pill', '事件 0 · 疲劳带 0', 'fr-pill muted'],
+            ['fr-ai-status-pill', 'AI 待开放', 'fr-pill ai-frozen']
+        ].forEach(function(item) {
+            var el = document.getElementById(item[0]);
+            if (el) {
+                el.textContent = item[1];
+                el.className = item[2];
+            }
+        });
     }
     function _renderFatigueReviewError(msg) {
         var sub = document.getElementById('fr-subtitle');
@@ -11683,6 +11942,24 @@ function openConfigModalFromWarning() {
             summary.textContent = '❌ ' + msg;
             summary.style.color = '#f87171';
         }
+        var desc = document.getElementById('fr-summary-desc');
+        if (desc) desc.textContent = '复盘数据暂不可用；页面不会从前端曲线或 DOM 补算事实字段。';
+        var axisNote = document.getElementById('fr-chart-axis-note');
+        if (axisNote) axisNote.textContent = '后端未返回权威距离轴';
+        [
+            ['fr-data-source-pill', '数据源不可用', 'fr-pill warn'],
+            ['fr-distance-axis-pill', '距离轴缺失', 'fr-pill warn'],
+            ['fr-curve-status-pill', '曲线不足', 'fr-pill warn'],
+            ['fr-risk-pill', '风险待接入', 'fr-pill muted'],
+            ['fr-event-pill', '事件 0 · 疲劳带 0', 'fr-pill muted'],
+            ['fr-ai-status-pill', 'AI 待开放', 'fr-pill ai-frozen']
+        ].forEach(function(item) {
+            var el = document.getElementById(item[0]);
+            if (el) {
+                el.textContent = item[1];
+                el.className = item[2];
+            }
+        });
     }
     function _renderFatigueReviewSummary(data) {
         data = data || {};
@@ -11691,11 +11968,26 @@ function openConfigModalFromWarning() {
         var events = data.collapse_events || [];
         var zones = data.fatigue_zones || [];
         var summary = document.getElementById('fr-summary');
+        var desc = document.getElementById('fr-summary-desc');
         var sourcePill = document.getElementById('fr-data-source-pill');
         var axisPill = document.getElementById('fr-distance-axis-pill');
+        var curvePill = document.getElementById('fr-curve-status-pill');
+        var riskPill = document.getElementById('fr-risk-pill');
         var eventPill = document.getElementById('fr-event-pill');
+        var aiPill = document.getElementById('fr-ai-status-pill');
         var bonk = metrics.bonk_risk || {};
         var drift = metrics.hr_drift || {};
+        var distance = Array.isArray(curves.distance) ? curves.distance : [];
+        var drawableCurveKeys = ['hr', 'speed', 'altitude', 'grade', 'gap', 'efficiency'];
+        var drawableCurveCount = drawableCurveKeys.filter(function(key) {
+            return Array.isArray(curves[key]) && curves[key].length;
+        }).length;
+        var hasAdvice = !!(data.advice && String(data.advice).trim());
+        var setPill = function(el, text, tone) {
+            if (!el) return;
+            el.textContent = text;
+            el.className = 'fr-pill' + (tone ? ' ' + tone : '');
+        };
 
         if (summary) {
             var riskText = bonk.is_at_risk ? '存在 Bonk 风险' : '未触发 Bonk 风险';
@@ -11705,199 +11997,212 @@ function openConfigModalFromWarning() {
             summary.style.color = '';
             summary.textContent = riskText + ' · ' + driftText;
         }
-        if (sourcePill) sourcePill.textContent = 'FIT + Resolver';
-        if (axisPill) {
-            var distance = Array.isArray(curves.distance) ? curves.distance : [];
-            axisPill.textContent = distance.length
-                ? '距离轴 ' + distance.length + ' 点'
-                : '距离轴缺失';
+        if (desc) {
+            var sportText = data.sport_type ? ('运动类型 ' + data.sport_type) : '运动类型未知';
+            var adviceText = hasAdvice ? '建议已接入' : '建议待接入';
+            desc.textContent = sportText + ' · ' + adviceText + ' · ' + (data.disclaimer || '数据来源：FIT 解析 + 后端算法');
         }
+        setPill(sourcePill, 'FIT + Resolver', 'ok');
+        setPill(
+            axisPill,
+            distance.length ? ('距离轴 ' + distance.length + ' 点') : '距离轴缺失',
+            distance.length ? 'ok' : 'warn'
+        );
+        var axisNote = document.getElementById('fr-chart-axis-note');
+        if (axisNote) {
+            axisNote.textContent = distance.length
+                ? 'distance_curve = data.curves.distance · ' + distance.length + ' 点'
+                : '后端未返回权威距离轴';
+        }
+        setPill(
+            curvePill,
+            drawableCurveCount ? ('曲线 ' + drawableCurveCount + ' 组') : '曲线不足',
+            drawableCurveCount ? 'ok' : 'warn'
+        );
+        setPill(
+            riskPill,
+            bonk.is_at_risk ? '风险：Bonk' : '风险：未触发',
+            bonk.is_at_risk ? 'warn' : 'ok'
+        );
         if (eventPill) {
-            eventPill.textContent = '事件 ' + events.length + ' · 疲劳带 ' + zones.length;
+            var eventTone = (events.length || zones.length) ? 'ok' : 'muted';
+            setPill(eventPill, '事件 ' + events.length + ' · 疲劳带 ' + zones.length, eventTone);
         }
+        setPill(aiPill, 'AI 待开放', 'ai-frozen');
     }
     function _renderFatigueReviewMetrics(metrics) {
         var hrDrift = metrics.hr_drift || {};
         var decoupling = metrics.decoupling || {};
         var bonk = metrics.bonk_risk || {};
         var events = metrics.events || { count: 0 };
-        // V7.7:动作 4 —— decoupling.level=unknown 且无 efficiency_curve 时,标记为"该活动未提供"
-        var noEfficiencyCurve = !(window._lastFatigueReviewCurves && window._lastFatigueReviewCurves.efficiency && window._lastFatigueReviewCurves.efficiency.length);
-        // V7.10:hr_drift 空态文案更新(真实算法启用后,空态 = 不满足 steady_aerobic)
-        var hrDriftUnknown = hrDrift && hrDrift.confidence === 'unavailable';
-        var metricEmptySuffix = (noEfficiencyCurve && (decoupling.level === 'unknown' || decoupling.level == null))
-            ? (hrDriftUnknown
-                ? '<span class="fr-metric-empty">本次活动不满足 steady_aerobic(duration &lt; 45min / 配速波动大 / 停顿过多)</span>'
-                : '<span class="fr-metric-empty">该活动未提供 efficiency_curve</span>')
-            : '';
         var pctVal = function(v) {
-            if (v == null || isNaN(v)) return metricEmptySuffix || '--';
+            if (v == null || isNaN(v)) return '--';
             return Number(v).toFixed(1) + '%';
         };
-        var lvl = function(v) { return ({excellent:'极佳', good:'良好', warn:'轻度', bad:'严重', unknown:'未知'})[v] || v || '--'; };
-        var bonkText = bonk.is_at_risk ? '高' : '低';
-
-        // V7.6 trend 渲染:红色 ↑ = 恶化,绿色 ↓ = 改善,灰色 ↔ = 持平
+        var levelText = function(v, map) {
+            return (map || {excellent:'极佳', good:'良好', warn:'轻度', bad:'严重', unknown:'未知'})[v] || v || '数据不足';
+        };
+        var levelTone = function(v, missing) {
+            if (missing || v == null || v === 'unknown') return 'empty';
+            if (v === 'excellent' || v === 'good' || v === 'improving' || v === 'stable' || v === 'low' || v === 'very_low') return 'ok';
+            if (v === 'warn' || v === 'declining' || v === 'moderate' || v === 'high') return 'warn';
+            if (v === 'bad' || v === 'very_high') return 'bad';
+            return 'empty';
+        };
+        var setMetricCard = function(valueId, statusId, subId, value, statusText, tone, subText) {
+            var valueEl = document.getElementById(valueId);
+            var statusEl = document.getElementById(statusId);
+            var subEl = document.getElementById(subId);
+            if (valueEl) valueEl.textContent = value == null || value === '' ? '--' : String(value);
+            if (statusEl) {
+                statusEl.textContent = statusText || '数据不足';
+                statusEl.className = 'fr-metric-status ' + (tone || 'empty');
+            }
+            if (subEl) subEl.textContent = subText || '待接入';
+        };
         var trendText = function(trend) {
             if (!trend || trend.compared_count == null || trend.compared_count < 3) {
-                return '<span class="trend-trend" style="color:#64748b;">数据不足（需 ≥3 次历史）</span>';
+                return '历史数据不足';
             }
             var dpct = trend.delta_pct;
             if (dpct == null) {
-                return '<span class="trend-trend" style="color:#64748b;">基线缺失</span>';
+                return '基线缺失';
             }
             if (trend.level === 'flat') {
-                return '<span class="trend-trend" style="color:#94a3b8;">↔ 较近 ' + trend.compared_count + ' 次持平</span>';
+                return '较近 ' + trend.compared_count + ' 次持平';
             }
             var isUp = trend.level === 'up';
             var arrow = isUp ? '↑' : '↓';
-            var color = isUp ? '#f87171' : '#4ade80';
             var sign = dpct > 0 ? '+' : '';
-            return '<span class="trend-trend" style="color:' + color + ';">' + arrow +
-                   ' 较近 ' + trend.compared_count + ' 次 ' + sign + dpct + '%</span>';
+            return arrow + ' 较近 ' + trend.compared_count + ' 次 ' + sign + dpct + '%';
         };
         var bonkTrendText = function(trend) {
             if (!trend || trend.compared_count == null || trend.compared_count < 3) {
-                return '<span class="trend-trend" style="color:#64748b;">数据不足（需 ≥3 次历史）</span>';
+                return '历史数据不足';
             }
             if (trend.level === 'flat') {
-                return '<span class="trend-trend" style="color:#94a3b8;">↔ 与近 ' + trend.compared_count + ' 次持平</span>';
+                return '与近 ' + trend.compared_count + ' 次持平';
             }
-            return '<span class="trend-trend" style="color:#f87171;">↑ 较近 ' + trend.compared_count + ' 次首次触发</span>';
+            return '较近 ' + trend.compared_count + ' 次首次触发';
         };
         var eventsTrendText = function(trend) {
             if (!trend || trend.compared_count == null || trend.compared_count < 3) {
-                return '<span class="trend-trend" style="color:#64748b;">数据不足（需 ≥3 次历史）</span>';
+                return '历史数据不足';
             }
             var delta = trend.delta_count || 0;
             if (delta === 0) {
-                return '<span class="trend-trend" style="color:#94a3b8;">↔ 与近 ' + trend.compared_count + ' 次持平</span>';
+                return '与近 ' + trend.compared_count + ' 次持平';
             }
             var isUp = delta > 0;
             var arrow = isUp ? '↑' : '↓';
-            var color = isUp ? '#f87171' : '#4ade80';
             var sign = delta > 0 ? '+' : '';
-            return '<span class="trend-trend" style="color:' + color + ';">' + arrow +
-                   ' 较近 ' + trend.compared_count + ' 次 ' + sign + delta + ' 起</span>';
+            return arrow + ' 较近 ' + trend.compared_count + ' 次 ' + sign + delta + ' 起';
         };
 
-        var el1 = document.getElementById('fr-hr-drift');
-        if (el1) el1.textContent = pctVal(hrDrift.pct);
-        var el1s = document.getElementById('fr-hr-drift-sub');
-        if (el1s) el1s.innerHTML = lvl(hrDrift.level) + ' | ' + trendText(hrDrift.trend);
+        var hrMissing = !metrics.hr_drift || hrDrift.confidence === 'unavailable' || hrDrift.pct == null;
+        var hrStatus = levelText(hrDrift.level);
+        setMetricCard(
+            'fr-hr-drift', 'fr-hr-drift-status', 'fr-hr-drift-sub',
+            pctVal(hrDrift.pct),
+            hrMissing ? '数据不足' : hrStatus,
+            levelTone(hrDrift.level, hrMissing),
+            hrMissing ? '不满足稳态有氧或设备未记录' : trendText(hrDrift.trend)
+        );
 
-        var el2 = document.getElementById('fr-decoupling');
-        if (el2) el2.textContent = pctVal(decoupling.pct);
-        var el2s = document.getElementById('fr-decoupling-sub');
-        if (el2s) el2s.innerHTML = lvl(decoupling.level) + ' | ' + trendText(decoupling.trend);
+        var decMissing = !metrics.decoupling || decoupling.confidence === 'unavailable' || decoupling.pct == null;
+        var decStatus = levelText(decoupling.level);
+        setMetricCard(
+            'fr-decoupling', 'fr-decoupling-status', 'fr-decoupling-sub',
+            pctVal(decoupling.pct),
+            decMissing ? '数据不足' : decStatus,
+            levelTone(decoupling.level, decMissing),
+            decMissing ? '该活动未提供足够解耦数据' : trendText(decoupling.trend)
+        );
 
-        var el3 = document.getElementById('fr-bonk');
-        if (el3) el3.textContent = bonkText;
-        var el3s = document.getElementById('fr-bonk-sub');
-        if (el3s) el3s.innerHTML = '置信度 ' + (bonk.confidence || '--') + ' | ' + bonkTrendText(bonk.trend);
+        var bonkMissing = !metrics.bonk_risk || bonk.confidence === 'unavailable';
+        var bonkText = bonkMissing ? '--' : (bonk.is_at_risk ? '高' : '低');
+        setMetricCard(
+            'fr-bonk', 'fr-bonk-status', 'fr-bonk-sub',
+            bonkText,
+            bonkMissing ? '待接入' : (bonk.is_at_risk ? '高风险' : '未触发'),
+            bonkMissing ? 'empty' : (bonk.is_at_risk ? 'bad' : 'ok'),
+            bonkMissing ? '后端未返回 Bonk 风险' : ('置信度 ' + (bonk.confidence || '--') + ' · ' + bonkTrendText(bonk.trend))
+        );
 
-        var el4 = document.getElementById('fr-events-count');
-        if (el4) el4.textContent = String(events.count != null ? events.count : 0);
-        var el4s = el4 && el4.parentNode.querySelector('.sub');
-        if (el4s) el4s.innerHTML = eventsTrendText(events.trend);
+        var eventCount = events.count != null ? events.count : 0;
+        setMetricCard(
+            'fr-events-count', 'fr-events-status', 'fr-events-sub',
+            String(eventCount),
+            eventCount > 0 ? '已识别' : '暂无事件',
+            eventCount > 0 ? 'warn' : 'ok',
+            eventsTrendText(events.trend)
+        );
 
         // V7.9 指标 5:Efficiency Score 渲染
         // §5.4 AI 边界:efficiency 仅前端展示,不进入 AI prompt
         var eff = metrics.efficiency || {};
-        var effScoreEl = document.getElementById('fr-efficiency-score');
-        var effSubEl = document.getElementById('fr-efficiency-sub');
-        if (effScoreEl) {
-            if (eff.confidence === 'unavailable' || eff.score == null) {
-                effScoreEl.textContent = '--';
-                if (effSubEl) effSubEl.textContent = '数据不足';
-            } else {
-                effScoreEl.textContent = String(eff.score);
-                var levelText = ({improving:'改善', declining:'退化', stable:'持平', unknown:'未知'})[eff.level] || '--';
-                var confText = ({high:'', medium:'（MEDIUM）', low:'（LOW）', unavailable:''})[eff.confidence] || '';
-                if (effSubEl) {
-                    var deltaStr = eff.delta_pct != null
-                        ? (eff.delta_pct > 0 ? '+' + eff.delta_pct : eff.delta_pct) + '% vs 21d'
-                        : '基线缺失';
-                    effSubEl.textContent = levelText + ' · ' + deltaStr + confText;
-                }
+        var effMissing = !metrics.efficiency || eff.confidence === 'unavailable' || eff.score == null;
+        var effStatus = levelText(eff.level, {improving:'改善', declining:'退化', stable:'持平', unknown:'未知'});
+        var effDelta = eff.delta_pct != null
+            ? (eff.delta_pct > 0 ? '+' + eff.delta_pct : eff.delta_pct) + '% vs 21d'
+            : '基线缺失';
+        setMetricCard(
+            'fr-efficiency-score', 'fr-efficiency-status', 'fr-efficiency-sub',
+            effMissing ? '--' : String(eff.score),
+            effMissing ? '数据不足' : effStatus,
+            levelTone(eff.level, effMissing),
+            effMissing ? '当前运动类型暂不支持或后端数据不足' : effDelta
+        );
 
-                // V7.11 指标 7:Durability Index 渲染
-                // §5.4 AI 边界:durability 仅前端展示,不进入 AI prompt
-                var dur = metrics.durability || {};
-                var durScoreEl = document.getElementById('fr-durability-score');
-                var durSubEl = document.getElementById('fr-durability-sub');
-                if (durScoreEl) {
-                    if (dur.confidence === 'unavailable' || dur.score == null) {
-                        durScoreEl.textContent = '--';
-                        if (durSubEl) {
-                            durSubEl.textContent = dur.head_speed == null
-                                ? '无 speed_stream'
-                                : 'duration < 45min';
-                        }
-                    } else {
-                        durScoreEl.textContent = String(dur.score);
-                        var durLevelText = ({excellent:'极佳', good:'良好', warn:'轻度退化', bad:'严重退化', unknown:'未知'})[dur.level] || '--';
-                        var durConfText = ({high:'', medium:'（MEDIUM）', low:'（LOW）', unavailable:''})[dur.confidence] || '';
-                        if (durSubEl) {
-                            var headS = dur.head_speed != null ? dur.head_speed.toFixed(2) : '?';
-                            var tailS = dur.tail_speed != null ? dur.tail_speed.toFixed(2) : '?';
-                            durSubEl.textContent = durLevelText + ' · ' + headS + '→' + tailS + ' m/s' + durConfText;
-                        }
-                    }
-                }
+        // V7.11 指标 7:Durability Index 渲染
+        // §5.4 AI 边界:durability 仅前端展示,不进入 AI prompt
+        var dur = metrics.durability || {};
+        var durMissing = !metrics.durability || dur.confidence === 'unavailable' || dur.score == null;
+        var durStatus = levelText(dur.level, {excellent:'极佳', good:'良好', warn:'轻度退化', bad:'严重退化', unknown:'未知'});
+        var durSub = dur.head_speed != null && dur.tail_speed != null
+            ? dur.head_speed.toFixed(2) + '→' + dur.tail_speed.toFixed(2) + ' m/s'
+            : 'duration < 45min 或后端数据不足';
+        setMetricCard(
+            'fr-durability-score', 'fr-durability-status', 'fr-durability-sub',
+            durMissing ? '--' : String(dur.score),
+            durMissing ? '数据不足' : durStatus,
+            levelTone(dur.level, durMissing),
+            durSub
+        );
 
-                // V7.12 指标 8:Cadence Stability 渲染
-                // §5.4 AI 边界:cadence_stability 仅前端展示,不进入 AI prompt
-                var cadStab = metrics.cadence_stability || {};
-                var cadScoreEl = document.getElementById('fr-cadence-stability-score');
-                var cadSubEl = document.getElementById('fr-cadence-stability-sub');
-                if (cadScoreEl) {
-                    if (cadStab.confidence === 'unavailable' || cadStab.score == null) {
-                        cadScoreEl.textContent = '--';
-                        if (cadSubEl) {
-                            cadSubEl.textContent = cadStab.is_intermittent
-                                ? '间歇训练不计算'
-                                : '无 cadence_stream';
-                        }
-                    } else {
-                        cadScoreEl.textContent = String(cadStab.score);
-                        var cadLevelText = ({excellent:'极佳', good:'良好', warn:'轻度波动', bad:'明显波动', unknown:'未知'})[cadStab.level] || '--';
-                        var cadConfText = ({high:'', medium:'（MEDIUM）', low:'（LOW）', unavailable:''})[cadStab.confidence] || '';
-                        if (cadSubEl) {
-                            var cvStr = cadStab.cv != null ? 'CV=' + cadStab.cv + '%' : '';
-                            var decayStr = cadStab.decay_pct != null ? ' decay=' + cadStab.decay_pct + '%' : '';
-                            cadSubEl.textContent = cadLevelText + ' · ' + cvStr + decayStr + cadConfText;
-                        }
-                    }
-                }
+        // V7.12 指标 8:Cadence Stability 渲染
+        // §5.4 AI 边界:cadence_stability 仅前端展示,不进入 AI prompt
+        var cadStab = metrics.cadence_stability || {};
+        var cadMissing = !metrics.cadence_stability || cadStab.confidence === 'unavailable' || cadStab.score == null;
+        var cadStatus = levelText(cadStab.level, {excellent:'极佳', good:'良好', warn:'轻度波动', bad:'明显波动', unknown:'未知'});
+        var cadSub = cadStab.is_intermittent
+            ? '间歇训练不计算'
+            : (cadStab.cv != null ? 'CV=' + cadStab.cv + '%' : '设备未记录步频');
+        if (cadStab.decay_pct != null) cadSub += ' · decay=' + cadStab.decay_pct + '%';
+        setMetricCard(
+            'fr-cadence-stability-score', 'fr-cadence-stability-status', 'fr-cadence-stability-sub',
+            cadMissing ? '--' : String(cadStab.score),
+            cadMissing ? '设备未记录' : cadStatus,
+            levelTone(cadStab.level, cadMissing),
+            cadSub
+        );
 
-                // V7.13 指标 9:Training Load 渲染
-                // §5.4 AI 边界:training_load 仅前端展示,不进入 AI prompt
-                // §6 误用 2:跨 sport 不可比,前端显示需 sport_type 显式标注
-                var tload = metrics.training_load || {};
-                var tloadValEl = document.getElementById('fr-training-load-value');
-                var tloadSubEl = document.getElementById('fr-training-load-sub');
-                if (tloadValEl) {
-                    if (tload.confidence === 'unavailable' || tload.load == null) {
-                        tloadValEl.textContent = '--';
-                        if (tloadSubEl) tloadSubEl.textContent = '无 avg_hr';
-                    } else {
-                        tloadValEl.textContent = String(tload.load);
-                        var tlLevelText = ({very_high:'极高', high:'高', moderate:'中', low:'低', very_low:'极低', unknown:'未知'})[tload.level] || '--';
-                        var tlConfText = ({high:'', medium:'（MEDIUM）', low:'（LOW）', unavailable:''})[tload.confidence] || '';
-                        if (tloadSubEl) {
-                            var zoneStr = tload.zone_used
-                                ? (Array.isArray(tload.zone_used) ? tload.zone_used.join('+') : tload.zone_used)
-                                : '';
-                            var ratioStr = tload.ratio_7d_42d === 'pending_v7_14'
-                                ? ' · 7d/42d 比值待 V7.14'
-                                : '';
-                            tloadSubEl.textContent = tlLevelText + ' · ' + zoneStr + tlConfText + ratioStr;
-                        }
-                    }
-                }
-            }
-        }
+        // V7.13 指标 9:Training Load 渲染
+        // §5.4 AI 边界:training_load 仅前端展示,不进入 AI prompt
+        var tload = metrics.training_load || {};
+        var tloadMissing = !metrics.training_load || tload.confidence === 'unavailable' || tload.load == null;
+        var tlStatus = levelText(tload.level, {very_high:'极高', high:'高', moderate:'中', low:'低', very_low:'极低', unknown:'未知'});
+        var zoneStr = tload.zone_used
+            ? (Array.isArray(tload.zone_used) ? tload.zone_used.join('+') : tload.zone_used)
+            : '心率区间缺失';
+        var ratioStr = tload.ratio_7d_42d === 'pending_v7_14' ? ' · 7d/42d 待接入' : '';
+        setMetricCard(
+            'fr-training-load-value', 'fr-training-load-status', 'fr-training-load-sub',
+            tloadMissing ? '--' : String(tload.load),
+            tloadMissing ? '待接入' : tlStatus,
+            levelTone(tload.level, tloadMissing),
+            tloadMissing ? '无 avg_hr' : zoneStr + ratioStr
+        );
     }
     function _renderFatigueReviewDimensions(metrics) {
         // 简化为复用 metrics 的 4 维度视图
@@ -11939,20 +12244,49 @@ function openConfigModalFromWarning() {
             // V7.7:动作 2 —— 统一空态占位
             listEl.innerHTML = _frEmptyStateHtml({
                 icon: '🟢',
-                title: '本次活动未检测到异常事件',
-                desc: '未触发 bonk 风险、配速崩塌、心率漂移阈值',
+                title: '暂无关键事件',
+                desc: '后端 collapse_events 为空，主图不绘制事件标记',
                 tag: 'collapse_events = []'
             });
             return;
         }
         listEl.innerHTML = events.map(function(ev, i) {
             var km = ev.trigger_km != null ? Number(ev.trigger_km).toFixed(1) + ' km' : '?';
+            var type = ev.type || '事件';
+            var desc = ev.description || '后端未返回事件描述';
             return '<div class="event-card' + (i === 0 ? ' active' : '') + '" '
                 + 'data-event-id="' + safeHtml(ev.event_id || ('ce_' + i)) + '" '
                 + 'data-event-index="' + i + '" '
                 + 'onclick="onFatigueReviewEventClick(this)">'
-                + '<div class="ev-title">' + safeHtml(ev.type || '事件') + ' · ' + safeHtml(km) + '</div>'
-                + '<div class="ev-meta">' + safeHtml(ev.description || '') + '</div>'
+                + '<div class="ev-title">' + safeHtml(type) + ' · ' + safeHtml(km) + '</div>'
+                + '<div class="ev-meta">' + safeHtml(desc) + '</div>'
+                + '</div>';
+        }).join('');
+    }
+    function _renderFatigueReviewZones(zones) {
+        var listEl = document.getElementById('fr-fatigue-zone-list');
+        if (!listEl) return;
+        zones = Array.isArray(zones) ? zones : [];
+        if (!zones.length) {
+            listEl.innerHTML = _frEmptyStateHtml({
+                icon: '○',
+                title: '暂无疲劳区间',
+                desc: '后端 fatigue_zones 为空，主图不绘制疲劳背景带',
+                tag: 'fatigue_zones = []'
+            });
+            return;
+        }
+        var levelText = function(level) {
+            return ({high:'高疲劳', medium:'中等疲劳', low:'轻度疲劳'})[level] || (level || '疲劳区间');
+        };
+        listEl.innerHTML = zones.map(function(zone, i) {
+            var start = zone.start_km != null ? Number(zone.start_km).toFixed(1) : '?';
+            var end = zone.end_km != null ? Number(zone.end_km).toFixed(1) : '?';
+            var level = zone.level || 'unknown';
+            var reason = zone.reason || zone.description || '后端未返回区间说明';
+            return '<div class="fr-zone-card ' + safeHtml(level) + '" data-zone-index="' + i + '">'
+                + '<div class="zone-title">' + safeHtml(levelText(level)) + ' · ' + safeHtml(start) + '-' + safeHtml(end) + ' km</div>'
+                + '<div class="zone-meta">' + safeHtml(reason) + '</div>'
                 + '</div>';
         }).join('');
     }
@@ -11975,6 +12309,31 @@ function openConfigModalFromWarning() {
                     + '</span>';
             }).join('')
             + '</div>';
+    }
+    function _renderFatigueReviewAdvice(advice, disclaimer) {
+        var adviceEl = document.getElementById('fr-advice');
+        var statusEl = document.getElementById('fr-advice-status');
+        var discEl = document.getElementById('fr-disclaimer');
+        var adviceVal = advice == null ? '' : String(advice).trim();
+        if (statusEl) {
+            statusEl.textContent = adviceVal && adviceVal !== '--' ? '建议已接入' : '建议待接入';
+            statusEl.className = 'fr-advice-status' + (adviceVal && adviceVal !== '--' ? '' : ' empty');
+        }
+        if (adviceEl) {
+            if (!adviceVal || adviceVal === '--') {
+                adviceEl.innerHTML = _frEmptyStateHtml({
+                    icon: '💡',
+                    title: '建议待接入',
+                    desc: '后端 advice 为空，复盘页不从指标或曲线生成建议',
+                    tag: 'advice = ""'
+                });
+            } else {
+                adviceEl.textContent = adviceVal;
+            }
+        }
+        if (discEl) {
+            discEl.textContent = disclaimer || 'AI 生成仅供参考 · 数据来源：FIT 解析 + 后端算法';
+        }
     }
     // === V6.3 AI 4 态(V9.0:所有 4 态均打开 Modal,modal 内展示 AI 内容)===
     function _renderFatigueReviewAiLoading() {

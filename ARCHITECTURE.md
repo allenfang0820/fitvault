@@ -465,22 +465,118 @@ is_mock
 
 主活动表。
 
-核心字段：
+> **V9.4.4 字段审计**: 早期 §4.4 仅列 12 字段,与 V8.x~V9.4.4 实际 schema 严重脱节,违反 §六 "FIT → Resolver → DB → UI 字段契约必须长期维护" 原则。
+> 本节已根据 DB 实际 schema 重写(28 + V9.4.4 新增 5 + laps/region/debug 5 = 38 字段)。
+> 完整字段契约矩阵(UI → DB → Resolver → FIT SDK)见 [docs/field_contract_matrix.md](./docs/field_contract_matrix.md)。
+
+#### 4.4.1 主活动字段(28 列,主表必需)
 
 ```text
-activity_id
-sport_type
-sub_sport
-start_time
-distance
-duration
-avg_hr
-avg_power
-calories
-ascent
-source_type
-is_mock
+id                  INTEGER   主键
+filename            TEXT      文件名(原始)
+file_name           TEXT      文件名(同 filename 兼容列)
+file_path           TEXT      完整路径
+file_mtime          REAL      文件 mtime(用于同步跳过)
+file_size           INTEGER   文件大小(用于同步跳过)
+title               TEXT      显示标题(_resolveDisplayTitle 真理源)
+title_source        TEXT      'filename' / 'sport_name' / 'session_label' / 'file_name'
+sport_type          TEXT      标准运动类型('running' / 'cycling' ...)
+sub_sport_type      TEXT      FIT sub_sport 原始值
+start_time          TEXT      起始时间(local)
+start_time_utc      TEXT      起始时间(UTC ISO 8601)
+start_lat           REAL      起点纬度
+start_lon           REAL      起点经度
+distance            REAL      距离(米,V8.x 统一单位,严禁改 km)
+dist_km             REAL      距离(公里,_formatHeroValue 真理源)
+duration            INTEGER   时长(秒,DB 端)
+duration_sec        INTEGER   时长(秒,API 端同义字段)
+avg_pace            REAL      平均配速(秒/公里)
+calories            INTEGER   卡路里
+gain_m              REAL      累计爬升(米)
+total_descent_m     REAL      累计下降(米,V8.x 之后,设备原始值)
+min_alt_m           REAL      最低海拔
+max_alt_m           REAL      最高海拔
+avg_hr              INTEGER   平均心率
+max_hr              INTEGER   最高心率
+avg_cadence         REAL      平均步频
+avg_power           REAL      平均功率
+normalized_power    REAL      标准化功率(NP)
+swolf               INTEGER   SWOLF 游泳效率
+source_type         TEXT      'fit_sdk' / 'frontend_fallback' / 'mock' / 'synthetic'(§2.2 分层)
+is_mock             INTEGER   0/1 调试标记
+deleted_at          TEXT      软删时间(§V4.0 +)
+updated_at          TEXT      最后更新时间
+device_name         TEXT      设备名(如 'Garmin Fenix 7')
+is_race             INTEGER   0/1 是否比赛
+is_event            INTEGER   0/1 是否事件活动
 ```
+
+#### 4.4.2 V9.4.4 新增字段(圈速 + 训练收益,5 列)
+
+```text
+total_ascent         REAL     累计爬升(FIT 原始,lap 级透传到 detail)
+total_descent        REAL     累计下降(FIT 原始,lap 级)
+aerobic_training_effect    REAL   Firstbeat 有氧 TE(0.0~5.0,fitparse scale 0.1)
+anaerobic_training_effect  REAL   Firstbeat 无氧 TE(0.0~5.0)
+```
+
+#### 4.4.3 圈速 / 曲线 / 分段 JSON 字段(5 列)
+
+```text
+laps_json            TEXT      圈速列表 JSON(§4.3 Resolver _normalize_laps 输出,每圈 11 字段)
+hr_curve             TEXT      心率曲线(LTTB 采样,V9.x §指标 7)
+speed_curve          TEXT      速度曲线
+cadence_curve        TEXT      步频曲线
+hr_zone_distribution TEXT      心率区间分布 JSON
+advanced_metrics     TEXT      高级指标(TRIMP/Decoupling/VAM 等)JSON
+shadow_diff_json     TEXT      §六 debug-only 审计字段,严禁进入 UI/AI Snapshot
+```
+
+#### 4.4.4 报告派生指标(7 列,V9.x 复盘用,后端 compute_report_metrics())
+
+```text
+up_count             INTEGER   累计爬升次数
+down_count           INTEGER   累计下降次数
+max_single_climb_m   REAL      单段最大爬升
+difficulty_score     INTEGER   难度评分
+report_metrics_version INTEGER  派生指标 schema 版本(§11.3 字段版本化)
+avg_grade_pct        REAL      平均坡度
+max_slope_pct        REAL      最大坡度
+min_slope_pct        REAL      最小坡度
+uphill_pct           REAL      上坡占比
+downhill_pct         REAL      下坡占比
+```
+
+#### 4.4.5 地区解析字段(8 列,profile_backend 异步写入)
+
+```text
+region               TEXT      地区全路径
+region_city          TEXT      城市
+region_country       TEXT      国家
+region_display       TEXT      地区显示字符串
+region_status        TEXT      'pending' / 'success' / 'failed'
+region_error         TEXT      错误信息
+region_updated_at    TEXT      解析时间
+region_attempt_count INTEGER   重试次数
+```
+
+#### 4.4.6 轨迹 / 天气字段(2 列)
+
+```text
+points_json          TEXT      逐秒轨迹精简版(展示用)
+track_json          TEXT      完整逐秒轨迹(分析用,V9.x 与 points_json 二选一)
+weather_json         TEXT      天气数据 JSON(运行时 API 注入)
+```
+
+#### 4.4.7 已废弃/合并字段(说明,不实现)
+
+```text
+activity_id          ✗ 实际字段是 id,旧文档误用 activity_id
+sub_sport            ✗ 实际是 sub_sport_type
+ascent               ✗ 实际是 gain_m
+```
+
+> 字段版本化: 未来引入 `schema_version` 字段(§11.3 字段版本化),用于 schema 演进检测。
 
 ### Debug-only / Audit-only 字段
 

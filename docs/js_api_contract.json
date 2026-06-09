@@ -1,13 +1,26 @@
 {
   "$schema": "https://raw.githubusercontent.com/maitu/js-api-contract/v1/schema.json",
-  "contract_version": "1.0",
+  "contract_version": "V9.4.4",
   "generated_at": "2026-05-29",
   "project": "脉图 (MaiTu) — Local AI Sports Copilot",
   "transport": "pywebview window.pywebview.api.*",
   "response_envelope": {
     "description": "统一响应结构 (过渡期同时兼容顶层 ok/error 字段)",
-    "success": { "ok": true, "code": 0, "msg": "ok", "data": {}, "traceId": "<hex12>" },
-    "error": { "ok": false, "code": 1001, "msg": "<message>", "data": {}, "traceId": "<hex12>", "error": "<message>" }
+    "success": {
+      "ok": true,
+      "code": 0,
+      "msg": "ok",
+      "data": {},
+      "traceId": "<hex12>"
+    },
+    "error": {
+      "ok": false,
+      "code": 1001,
+      "msg": "<message>",
+      "data": {},
+      "traceId": "<hex12>",
+      "error": "<message>"
+    }
   },
   "error_codes": {
     "0": "成功",
@@ -47,7 +60,11 @@
       "line": 2477,
       "category": "config",
       "parameters": [
-        { "name": "new_config_dict", "type": "dict", "required": true }
+        {
+          "name": "new_config_dict",
+          "type": "dict",
+          "required": true
+        }
       ],
       "returns": "{ ok, code, msg, data: {config_path, workspace_track_path, workspace_track_abs_path}, traceId }",
       "high_risk": false,
@@ -69,13 +86,41 @@
       "line": 2457,
       "category": "config",
       "parameters": [
-        { "name": "provider", "type": "string", "required": true },
-        { "name": "url", "type": "string", "required": true },
-        { "name": "model", "type": "string", "required": true },
-        { "name": "api_key", "type": "string", "required": true },
-        { "name": "agent_id", "type": "string", "required": false },
-        { "name": "watch_brand", "type": "string", "required": false },
-        { "name": "local_dir", "type": "string", "required": false }
+        {
+          "name": "provider",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "url",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "model",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "api_key",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "agent_id",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "watch_brand",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "local_dir",
+          "type": "string",
+          "required": false
+        }
       ],
       "returns": "{ ok:false, code:1401, msg }",
       "high_risk": true,
@@ -88,12 +133,36 @@
       "line": 2498,
       "category": "config",
       "parameters": [
-        { "name": "provider", "type": "string", "required": true },
-        { "name": "url", "type": "string", "required": true },
-        { "name": "model", "type": "string", "required": true },
-        { "name": "api_key", "type": "string", "required": true },
-        { "name": "agent_id", "type": "string", "required": false },
-        { "name": "watch_brand", "type": "string", "required": false }
+        {
+          "name": "provider",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "url",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "model",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "api_key",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "agent_id",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "watch_brand",
+          "type": "string",
+          "required": false
+        }
       ],
       "returns": "{ ok, code, msg, data: {message}, traceId }",
       "high_risk": true,
@@ -106,12 +175,21 @@
       "line": 2541,
       "category": "ai",
       "parameters": [
-        { "name": "prompt", "type": "string", "required": true },
-        { "name": "sport_type", "type": "string", "required": false, "default": "hiking" }
+        {
+          "name": "prompt",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "sport_type",
+          "type": "string",
+          "required": false,
+          "default": "hiking"
+        }
       ],
-      "returns": "普通聊天返回 { ok, content }；__REPORT_INSIGHT__ 返回 { ok, insight, history, snapshot }；__REPORT_RISK_ASSESSMENT__ 返回 { ok, risk_assessment }；__RADAR_INSIGHT__ 返回 { ok, radar_insight, sport_type }",
+      "returns": "普通聊天返回 { ok, content }；__REPORT_INSIGHT__ 返回 { ok, insight, history, snapshot }；__REPORT_RISK_ASSESSMENT__ 返回 { ok, risk_assessment }；__RADAR_INSIGHT__ 返回 { ok, radar_insight, sport_type }；__FATIGUE_REVIEW_INSIGHT__ 返回 { code, msg, data: {fatigue_review_insight, sport_type}, traceId }",
       "high_risk": false,
-      "description": "调用大模型；普通聊天走对话会话；功能区 AI 洞察必须走 sentinel。支持 __REPORT_RISK_ASSESSMENT__ 风险预警，输入来自后端 _ai_snapshot(DB truth) 与后端天气上下文，禁止前端传入 points[]、DOM 推导值、UI fallback 或拼接 prompt；风险预警结果不持久化、不写 DB、不进入 ai_snapshots、不污染普通 AI 教练聊天会话。"
+      "description": "调用大模型；普通聊天走对话会话；功能区 AI 洞察必须走 sentinel。支持 __REPORT_RISK_ASSESSMENT__ 风险预警和 __FATIGUE_REVIEW_INSIGHT__ 运动复盘洞察。复盘 AI 输入来自后端 _ai_snapshot 定位活动 + get_fatigue_review 权威快照压缩摘要，禁止前端传入 points[]、metrics、curves、DOM 推导值、UI fallback 或拼接 prompt；洞察结果不持久化、不写 DB、不进入 ai_snapshots、不污染普通 AI 教练聊天会话。"
     },
     {
       "name": "sync_track_context",
@@ -119,7 +197,11 @@
       "line": 2420,
       "category": "ai",
       "parameters": [
-        { "name": "payload_json", "type": "string", "required": true }
+        {
+          "name": "payload_json",
+          "type": "string",
+          "required": true
+        }
       ],
       "returns": "{ ok, code, msg, data, traceId }",
       "high_risk": false,
@@ -141,7 +223,12 @@
       "line": 3589,
       "category": "activity",
       "parameters": [
-        { "name": "sport_filter", "type": "string", "required": false, "default": "all" }
+        {
+          "name": "sport_filter",
+          "type": "string",
+          "required": false,
+          "default": "all"
+        }
       ],
       "returns": "{ ok, code, msg, data: {source_dir, total, activity_types, page_sizes, records, dynamic_columns}, traceId }。records 中每条含 sport_type_cn(Resolver 注入的中文运动类型标签)",
       "high_risk": false,
@@ -153,9 +240,24 @@
       "line": 3628,
       "category": "activity",
       "parameters": [
-        { "name": "page", "type": "int", "required": false, "default": 1 },
-        { "name": "page_size", "type": "int", "required": false, "default": 20 },
-        { "name": "sport_filter", "type": "string", "required": false, "default": "all" }
+        {
+          "name": "page",
+          "type": "int",
+          "required": false,
+          "default": 1
+        },
+        {
+          "name": "page_size",
+          "type": "int",
+          "required": false,
+          "default": 20
+        },
+        {
+          "name": "sport_filter",
+          "type": "string",
+          "required": false,
+          "default": "all"
+        }
       ],
       "returns": "{ ok, code, msg, data: {page, page_size, total, total_pages, activity_types, page_sizes, records}, traceId }。records 中每条含 sport_type_cn(Resolver 注入的中文运动类型标签)",
       "high_risk": false,
@@ -167,9 +269,24 @@
       "line": 3677,
       "category": "activity",
       "parameters": [
-        { "name": "page", "type": "int", "required": false, "default": 1 },
-        { "name": "page_size", "type": "int", "required": false, "default": 10 },
-        { "name": "sport_filter", "type": "string", "required": false, "default": "all" }
+        {
+          "name": "page",
+          "type": "int",
+          "required": false,
+          "default": 1
+        },
+        {
+          "name": "page_size",
+          "type": "int",
+          "required": false,
+          "default": 10
+        },
+        {
+          "name": "sport_filter",
+          "type": "string",
+          "required": false,
+          "default": "all"
+        }
       ],
       "returns": "{ ok, code, msg, data: {page, page_size, total, total_pages, activity_types, page_sizes, records}, traceId }。records 中每条含 sport_type_cn(Resolver 注入的中文运动类型标签)",
       "high_risk": false,
@@ -181,26 +298,39 @@
       "line": 3726,
       "category": "activity",
       "parameters": [
-        { "name": "activity_id", "type": "int", "required": true }
+        {
+          "name": "activity_id",
+          "type": "int",
+          "required": true
+        }
       ],
       "returns": "{ ok, code, msg, data: {record}, traceId }",
       "high_risk": false,
-      "description": "单条活动详情。data.record.detail.environment_challenge 含 V_ENV.1.3 环境挑战 4 子块派生(climb/altitude/heat/technical_terrain Phase1),不进 AI snapshot,不入 ai_snapshots 表"
+      "description": "单条活动详情。V9.4.4 新增字段:1) record.detail.training_effect(Firstbeat TE 0.0~5.0,V9.4.0 错字段已纠);2) record.detail.lap_columns(圈速表列真理源,后端 resolve_lap_columns 计算);3) record.detail.laps[i].{max_hr, ascent_m, descent_m}(FIT lap 透传)。全部走 FIT SDK 直读,无前端计算。"
     },
     {
       "name": "get_fatigue_review",
       "file": "main.py",
-      "line": 4604,
+      "line": 4761,
       "category": "activity",
       "parameters": [
-        { "name": "activity_id", "type": "int", "required": true }
+        {
+          "name": "activity_id",
+          "type": "int",
+          "required": true
+        }
       ],
-      "returns": "{ code, msg, data: {sport_type, metrics: {hr_drift, decoupling, bonk_risk}, collapse_events: [{event_id, type, trigger_km, trigger_time_sec, value_y, description}], fatigue_zones: [{start_km, end_km, level: 'medium'|'high'}], curves: {efficiency, gap, grade, hr, speed}, context_tags: {}, ai_insight, advice, disclaimer}, traceId }",
+      "returns": "{ code, msg, data: {sport_type, metrics: {hr_drift, decoupling, efficiency, durability, cadence_stability, training_load, bonk_risk, events}, collapse_events: [{event_id, type, trigger_km, trigger_time_sec, value_y, description}], fatigue_zones: [{start_km, end_km, level: 'medium'|'high'}], curves: {distance, time, hr, speed, altitude, grade, gap, efficiency, total_distance_m}, context_tags: {}, ai_insight, advice, disclaimer}, traceId }。P2 契约: curves.distance 为后端权威距离轴,单位 km; curves.time 为后端权威时间轴,单位 sec; curves.total_distance_m 单位 m; curves.* 由后端按 distance 主轴统一长度,缺失或长度不匹配的曲线返回空数组。",
       "high_risk": true,
       "risk_level": "medium",
-      "errors": [1001, 1004, 5001, 9001],
-      "contract": "fit-arch-contrac §3 响应结构 / §六 shadow_diff 隔离(严禁 shadow_diff/shadow_diff_json/diff/records 出现在 data) / §8 canonical 只读",
-      "description": "V6.3 运动复盘覆盖层数据源 — 7 段白名单快照,前端只读;AI 洞察经由独立 sentinel __FATIGUE_REVIEW_INSIGHT__ 走 call_llm"
+      "errors": [
+        1001,
+        1004,
+        5001,
+        9001
+      ],
+      "contract": "fit-arch-contrac §3 统一 envelope / §2.1 字段全链路可追溯 / §六 shadow_diff 隔离(严禁 shadow_diff/shadow_diff_json/diff/records/全量 points 出现在 data) / §8 canonical 只读 / P2 前端零推断: curves.distance 必须由后端权威输出,前端不得通过 _distanceFromSpeedTime 或 points 重建事实距离轴; fatigue_zones.start_km/end_km 与 collapse_events.trigger_km 必须和 curves.distance 同源; get_fatigue_review 是复盘页面唯一权威数据源",
+      "description": "P2 运动复盘后端快照回正 — get_fatigue_review 输出完整白名单 snapshot,后端统一曲线单位/长度/空态,前端展示留到 P3/P4,AI 洞察 __FATIGUE_REVIEW_INSIGHT__ 留到 P6"
     },
     {
       "name": "get_activity_history",
@@ -218,11 +348,36 @@
       "line": 4585,
       "category": "activity",
       "parameters": [
-        { "name": "page", "type": "int", "required": false, "default": 1 },
-        { "name": "page_size", "type": "int", "required": false, "default": 30 },
-        { "name": "sport_filter", "type": "string", "required": false, "default": "all" },
-        { "name": "time_filter", "type": "string", "required": false, "default": "all" },
-        { "name": "location_filter", "type": "string", "required": false, "default": "all" }
+        {
+          "name": "page",
+          "type": "int",
+          "required": false,
+          "default": 1
+        },
+        {
+          "name": "page_size",
+          "type": "int",
+          "required": false,
+          "default": 30
+        },
+        {
+          "name": "sport_filter",
+          "type": "string",
+          "required": false,
+          "default": "all"
+        },
+        {
+          "name": "time_filter",
+          "type": "string",
+          "required": false,
+          "default": "all"
+        },
+        {
+          "name": "location_filter",
+          "type": "string",
+          "required": false,
+          "default": "all"
+        }
       ],
       "returns": "{ ok, records, total, page, page_size, total_pages, activity_types, locations }。locations 字段：地区筛选选项，基于符合条件的全量 GPS 活动生成，不受分页影响；每项结构 { value, label, count }，按 count DESC 再按 label 排序",
       "high_risk": false,
@@ -245,8 +400,16 @@
       "line": 3331,
       "category": "sync",
       "parameters": [
-        { "name": "start_date", "type": "string", "required": true },
-        { "name": "end_date", "type": "string", "required": true }
+        {
+          "name": "start_date",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "end_date",
+          "type": "string",
+          "required": true
+        }
       ],
       "returns": "{ ok, content, prompt, start_date, end_date, target_dir }",
       "high_risk": true,
@@ -270,7 +433,11 @@
       "line": 4253,
       "category": "sync",
       "parameters": [
-        { "name": "file_paths", "type": "array<string>", "required": true }
+        {
+          "name": "file_paths",
+          "type": "array<string>",
+          "required": true
+        }
       ],
       "returns": "{ ok, code, msg, data: {imported, skipped, errors}, traceId }",
       "high_risk": true,
@@ -283,8 +450,16 @@
       "line": 3216,
       "category": "sync",
       "parameters": [
-        { "name": "activity_ids", "type": "array<int>", "required": true },
-        { "name": "confirm_token", "type": "string", "required": true }
+        {
+          "name": "activity_ids",
+          "type": "array<int>",
+          "required": true
+        },
+        {
+          "name": "confirm_token",
+          "type": "string",
+          "required": true
+        }
       ],
       "returns": "{ ok, code, msg, data: {audit_id, deleted, files_deleted, missing_ids, missing_file_paths, file_errors, skipped_unsafe_paths}, traceId }",
       "high_risk": true,
@@ -318,7 +493,11 @@
       "line": 2843,
       "category": "profile",
       "parameters": [
-        { "name": "data", "type": "dict", "required": true }
+        {
+          "name": "data",
+          "type": "dict",
+          "required": true
+        }
       ],
       "returns": "{ ok }",
       "high_risk": false,
@@ -330,7 +509,12 @@
       "line": 2822,
       "category": "profile",
       "parameters": [
-        { "name": "sport_type", "type": "string", "required": false, "default": "running" }
+        {
+          "name": "sport_type",
+          "type": "string",
+          "required": false,
+          "default": "running"
+        }
       ],
       "returns": "{ ok, metrics }",
       "high_risk": false,
@@ -342,7 +526,11 @@
       "line": 2850,
       "category": "profile",
       "parameters": [
-        { "name": "platform", "type": "string", "required": true }
+        {
+          "name": "platform",
+          "type": "string",
+          "required": true
+        }
       ],
       "returns": "{ ok, profile, hrr_zones }",
       "high_risk": false,
@@ -384,7 +572,11 @@
       "line": 2742,
       "category": "file",
       "parameters": [
-        { "name": "file_path", "type": "string", "required": true }
+        {
+          "name": "file_path",
+          "type": "string",
+          "required": true
+        }
       ],
       "returns": "{ ok, filename, data }",
       "high_risk": false,
@@ -406,8 +598,16 @@
       "line": 2770,
       "category": "file",
       "parameters": [
-        { "name": "suggested_filename", "type": "string", "required": true },
-        { "name": "content", "type": "string", "required": true }
+        {
+          "name": "suggested_filename",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "content",
+          "type": "string",
+          "required": true
+        }
       ],
       "returns": "{ ok, path } 或 { ok:false, cancelled:true }",
       "high_risk": false,
@@ -439,7 +639,11 @@
       "line": 2825,
       "category": "ai",
       "parameters": [
-        { "name": "value", "type": "boolean", "required": true }
+        {
+          "name": "value",
+          "type": "boolean",
+          "required": true
+        }
       ],
       "returns": "{ ok, ai_notified }",
       "high_risk": false,
@@ -451,7 +655,11 @@
       "line": 2844,
       "category": "config",
       "parameters": [
-        { "name": "value", "type": "string", "required": true }
+        {
+          "name": "value",
+          "type": "string",
+          "required": true
+        }
       ],
       "returns": "{ ok, watch_brand }",
       "high_risk": false,
@@ -463,7 +671,11 @@
       "line": 2862,
       "category": "ai",
       "parameters": [
-        { "name": "value", "type": "string", "required": true }
+        {
+          "name": "value",
+          "type": "string",
+          "required": true
+        }
       ],
       "returns": "{ ok, ai_notified_hash }",
       "high_risk": false,
@@ -478,6 +690,16 @@
       "returns": "{ ok, reachable, host, port } 或 { ok, reachable:false, error }",
       "high_risk": false,
       "description": "TCP 存活探测：仅检测网关端口可达，不发送 LLM 消息，不创建会话"
+    },
+    {
+      "name": "get_field_registry",
+      "file": "main.py",
+      "line": 0,
+      "category": "config",
+      "parameters": [],
+      "returns": "{ ok, code, msg, data: {fields: {key: {label, icon, unit, format}}, contract_version} }",
+      "high_risk": false,
+      "description": "V9.4.4 新增:前端字段真理源 API 占位,实际启用在下一阶段(运动复盘系统)。当前前端保留本地硬编码 fallback。"
     }
   ],
   "architectural_constraints": {

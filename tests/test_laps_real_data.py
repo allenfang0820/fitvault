@@ -89,10 +89,9 @@ class TestFitEngineLapData(unittest.TestCase):
         self.assertIsNotNone(first["lap_start_time"])
 
     def test_read_lap_data_empty_file(self):
-        with mock.patch.object(fit_engine.FitFile, "__init__", lambda self, *a, **kw: None), \
-             mock.patch.object(fit_engine.FitFile, "get_messages", lambda self, k: iter([])):
-            fake = FakeFitFile("")
-            laps = fit_engine.FITCoreEngine._read_lap_data(fake)
+        fake = FakeFitFile("")
+        fake.lap_messages = []
+        laps = fit_engine.FITCoreEngine._read_lap_data(fake)
         self.assertEqual(laps, [])
 
 
@@ -168,7 +167,7 @@ class TestSchemaLapsColumn(unittest.TestCase):
             import profile_backend
             conn = sqlite3.connect(db_path)
             try:
-                profile_backend._ensure_schema_initialized(conn)
+                profile_backend._init_schema(conn)
                 cur = conn.execute("PRAGMA table_info(activities)")
                 cols = {row[1] for row in cur.fetchall()}
                 self.assertIn("laps_json", cols, "laps_json 列未成功加入 activities 表")

@@ -537,8 +537,12 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             updated_at     TEXT DEFAULT (datetime('now')),
             avg_pace REAL,
             calories INTEGER,
+            avg_power REAL,
+            max_power REAL,
             normalized_power REAL,
+            avg_stroke_distance REAL,
             swolf REAL,
+            list_metric_backfill_version INTEGER DEFAULT 0,
             device_name TEXT,
             shadow_diff_json TEXT
         )
@@ -552,7 +556,8 @@ def _init_schema(conn: sqlite3.Connection) -> None:
         "region_city",  "region_country","region_display",
         "region_status","region_error","region_updated_at","region_attempt_count",
         "weather_json", "file_mtime",  "file_size",   "deleted_at",
-        "avg_pace",     "calories",    "normalized_power","swolf",
+        "avg_pace",     "calories",    "avg_power",   "max_power",
+        "normalized_power","avg_stroke_distance","swolf","list_metric_backfill_version",
         "device_name",  "source_type", "is_mock",     "shadow_diff_json",
         "hr_curve",     "speed_curve",
         "gain_m",       "max_alt_m",   "max_hr",      "avg_cadence",
@@ -568,6 +573,7 @@ def _init_schema(conn: sqlite3.Connection) -> None:
         "TEXT DEFAULT 'pending'","TEXT","TEXT","INTEGER DEFAULT 0",
         "TEXT",   "REAL", "INTEGER","TEXT",
         "REAL",   "INTEGER","REAL","REAL",
+        "REAL",   "REAL","REAL","INTEGER DEFAULT 0",
         "TEXT",   "TEXT", "INTEGER","TEXT",
         "TEXT",   "TEXT",
         "REAL",   "REAL",  "INTEGER","REAL",
@@ -625,8 +631,12 @@ def _init_schema(conn: sqlite3.Connection) -> None:
         ("deleted_at", "TEXT"),
         ("avg_pace", "REAL"),
         ("calories", "INTEGER"),
+        ("avg_power", "REAL"),
+        ("max_power", "REAL"),
         ("normalized_power", "REAL"),
+        ("avg_stroke_distance", "REAL"),
         ("swolf", "REAL"),
+        ("list_metric_backfill_version", "INTEGER DEFAULT 0"),
         ("device_name", "TEXT"),
         ("source_type", "TEXT"),
         ("is_mock", "INTEGER"),
@@ -978,10 +988,11 @@ def save_activity(data: dict[str, Any]) -> int:
                     (filename, title, title_source, sport_type, sub_sport_type, dist_km, duration_sec, gain_m, max_alt_m,
                      avg_hr, max_hr, avg_cadence, hr_decoupling, tss, points_json, file_path, start_time, start_time_utc,
                      start_lat, start_lon, region, region_city, region_country, region_display, region_status, region_error,
-                     region_updated_at, region_attempt_count, weather_json, avg_pace, calories, normalized_power, swolf, shadow_diff_json,
+                     region_updated_at, region_attempt_count, weather_json, avg_pace, calories, avg_power, max_power,
+                     normalized_power, avg_stroke_distance, swolf, shadow_diff_json,
                      min_alt_m, total_descent_m, up_count, down_count, max_single_climb_m, difficulty_score, report_metrics_version,
                      avg_grade_pct, max_slope_pct, min_slope_pct, uphill_pct, downhill_pct)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                         ?, ?, ?, ?, ?, ?, ?,
                         ?, ?, ?, ?, ?)
                 """,
@@ -1017,7 +1028,10 @@ def save_activity(data: dict[str, Any]) -> int:
                     data.get("weather_json"),
                     data.get("avg_pace"),
                     data.get("calories"),
+                    data.get("avg_power"),
+                    data.get("max_power"),
                     data.get("normalized_power"),
+                    data.get("avg_stroke_distance"),
                     data.get("swolf"),
                     data.get("shadow_diff_json"),
                     data.get("min_alt_m"),
@@ -1170,8 +1184,14 @@ def get_activity_list_filtered(
 ) -> tuple[list[dict[str, Any]], int]:
     display_sql = (
         "CASE "
-        "WHEN COALESCE(NULLIF(sub_sport_type, ''), 'unknown') IN ('trail_running', 'road_cycling', 'mountain_biking') THEN sub_sport_type "
-        "WHEN COALESCE(NULLIF(sport_type, ''), 'unknown') IN ('trail_running', 'road_cycling', 'mountain_biking') THEN sport_type "
+        "WHEN COALESCE(NULLIF(sub_sport_type, ''), 'unknown') IN ("
+        "'lap_swimming', 'open_water', 'open_water_swimming', "
+        "'trail_running', 'road_cycling', 'mountain_biking', 'treadmill_running'"
+        ") THEN sub_sport_type "
+        "WHEN COALESCE(NULLIF(sport_type, ''), 'unknown') IN ("
+        "'lap_swimming', 'open_water', 'open_water_swimming', "
+        "'trail_running', 'road_cycling', 'mountain_biking', 'treadmill_running'"
+        ") THEN sport_type "
         "ELSE COALESCE(NULLIF(sport_type, ''), 'unknown') "
         "END"
     )
@@ -1321,8 +1341,14 @@ def get_activity_location_options(
     """
     display_sql = (
         "CASE "
-        "WHEN COALESCE(NULLIF(sub_sport_type, ''), 'unknown') IN ('trail_running', 'road_cycling', 'mountain_biking') THEN sub_sport_type "
-        "WHEN COALESCE(NULLIF(sport_type, ''), 'unknown') IN ('trail_running', 'road_cycling', 'mountain_biking') THEN sport_type "
+        "WHEN COALESCE(NULLIF(sub_sport_type, ''), 'unknown') IN ("
+        "'lap_swimming', 'open_water', 'open_water_swimming', "
+        "'trail_running', 'road_cycling', 'mountain_biking', 'treadmill_running'"
+        ") THEN sub_sport_type "
+        "WHEN COALESCE(NULLIF(sport_type, ''), 'unknown') IN ("
+        "'lap_swimming', 'open_water', 'open_water_swimming', "
+        "'trail_running', 'road_cycling', 'mountain_biking', 'treadmill_running'"
+        ") THEN sport_type "
         "ELSE COALESCE(NULLIF(sport_type, ''), 'unknown') "
         "END"
     )
@@ -1472,7 +1498,9 @@ def build_activity_payload(filename: str, data: dict[str, Any], src_path: str | 
         "device_name": data.get("device_name") or "",
         "avg_pace": round(duration_sec / dist_km, 2) if dist_km > 0 and duration_sec > 0 else None,
         "calories": data.get("calories"),
-        "normalized_power": None,
+        "avg_power": data.get("avg_power") or (data.get("basic_info") or {}).get("avg_power"),
+        "max_power": data.get("max_power") or (data.get("basic_info") or {}).get("max_power"),
+        "normalized_power": data.get("normalized_power") or (data.get("basic_info") or {}).get("normalized_power"),
         "swolf": None,
         "avg_stroke_distance": avg_stroke_distance,
         "hr_curve": None,

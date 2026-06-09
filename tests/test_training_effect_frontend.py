@@ -190,21 +190,24 @@ class TestV9_4PlaceholderReplaced(unittest.TestCase):
 
 class TestV9_4_4SportCnAndSummarySize(unittest.TestCase):
     """V9.4.4:训练收益卡两个小调整
-    1) 副标题运动类型英文 → 中文(用程序内 SPORT_TYPE_CN 真理源)
+    1) 副标题运动类型英文 → 中文(统一调 getDynamicSportMeta 真理源,16+ 运动覆盖)
     2) 总结字号从 weather-glass-empty 0.72rem 改用专属 .training-effect-summary 0.85rem"""
 
     def setUp(self):
         self.html = _read_track_html()
 
     def test_subtitle_uses_sport_type_cn(self):
-        """V9.4.4:副标题里 te.sport_type 被包了一层 SPORT_TYPE_CN 映射"""
+        """V9.4.4:副标题里 te.sport_type 被包了一层 getDynamicSportMeta 映射"""
         idx = self.html.find("function _buildTrainingBenefitCard(")
         end = self.html.find("\n    function ", idx + 50)
         if end < 0:
             end = idx + 3000
         body = self.html[idx:end]
-        self.assertIn("SPORT_TYPE_CN", body,
-                      "V9.4.4 FAIL: 副标题未用 SPORT_TYPE_CN 中文映射,会显示英文 sport_type")
+        self.assertIn("getDynamicSportMeta", body,
+                      "V9.4.4 FAIL: 副标题未用 getDynamicSportMeta 中文映射,会显示英文 sport_type")
+        # V9.4.4 已删除 SPORT_TYPE_CN 重复真理源
+        self.assertNotIn("SPORT_TYPE_CN[", body,
+                         "V9.4.4 FAIL: 仍引用 SPORT_TYPE_CN[V9.4.4 已删], 应统一调 getDynamicSportMeta")
         # 不应再裸用 te.sport_type 进副标题
         self.assertNotIn("+ esc(te.sport_type) +", body,
                          "V9.4.4 FAIL: 副标题仍裸用 te.sport_type(英文),未走中文映射")
@@ -237,6 +240,79 @@ class TestV9_4_4SportCnAndSummarySize(unittest.TestCase):
         size = float(m.group(1))
         self.assertGreaterEqual(size, 0.8,
                                 f"V9.4.4 FAIL: .training-effect-summary 字号 {size}rem 太小,应 ≥ 0.8rem 与主标签同级")
+
+    def test_sport_type_cn_object_removed(self):
+        """V9.4.4:SPORT_TYPE_CN 重复真理源已删除,统一调 getDynamicSportMeta(16+ 运动)"""
+        # 全文不应再有 SPORT_TYPE_CN 对象定义
+        self.assertNotIn("const SPORT_TYPE_CN = {", self.html,
+                         "V9.4.4 FAIL: SPORT_TYPE_CN 对象未删除,应统一调 getDynamicSportMeta(type).label")
+        # getDynamicSportMeta 必须存在
+        self.assertIn("function getDynamicSportMeta(", self.html,
+                      "V9.4.4 FAIL: 缺 getDynamicSportMeta 真理源函数")
+
+
+class TestV9_4_4LevelLabelColorTruthSource(unittest.TestCase):
+    """V9.4.4:6 等级 label/color 真理源收敛(后端 metrics_resolver + 前端 fallback)"""
+
+    def setUp(self):
+        self.html = _read_track_html()
+        # 读 metrics_resolver.py(后端真理源)
+        resolver_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "metrics_resolver.py")
+        with open(resolver_path, encoding="utf-8") as f:
+            self.resolver_text = f.read()
+
+    def test_backend_te_level_labels_cn_exists(self):
+        """V9.4.4:后端 metrics_resolver._TE_LEVEL_LABELS_CN 真理源存在且 6 单元完整"""
+        self.assertIn("_TE_LEVEL_LABELS_CN: dict[str, str] = {", self.resolver_text,
+                      "V9.4.4 FAIL: 后端缺 _TE_LEVEL_LABELS_CN 真理源")
+        for level in ("recovery", "activation", "maintenance", "improvement", "overload", "extreme"):
+            self.assertIn(f'"{level}":', self.resolver_text,
+                          f"V9.4.4 FAIL: _TE_LEVEL_LABELS_CN 缺 {level}")
+
+    def test_backend_te_level_colors_exists(self):
+        """V9.4.4:后端 metrics_resolver._TE_LEVEL_COLORS 真理源存在且 6 单元完整"""
+        self.assertIn("_TE_LEVEL_COLORS: dict[str, str] = {", self.resolver_text,
+                      "V9.4.4 FAIL: 后端缺 _TE_LEVEL_COLORS 真理源")
+        for color in ("#64748b", "#3b82f6", "#06b6d4", "#22c55e", "#f97316", "#ef4444"):
+            self.assertIn(color, self.resolver_text,
+                          f"V9.4.4 FAIL: _TE_LEVEL_COLORS 缺色 {color}")
+
+    def test_backend_build_training_effect_returns_truth_source(self):
+        """V9.4.4:build_training_effect 返回 dict 含 level_labels_cn / level_colors"""
+        try:
+            import sys
+            project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            if project_root not in sys.path:
+                sys.path.insert(0, project_root)
+            from metrics_resolver import build_training_effect
+        except Exception as e:
+            self.skipTest(f"metrics_resolver 导入失败: {e}")
+        result = build_training_effect(
+            {"aerobic_training_effect": 4.2, "anaerobic_training_effect": 2.1},
+            "running",
+        )
+        self.assertIsNotNone(result, "V9.4.4 FAIL: TE 数据应为非 None")
+        self.assertIn("level_labels_cn", result, "V9.4.4 FAIL: build_training_effect 缺 level_labels_cn 透传")
+        self.assertIn("level_colors", result, "V9.4.4 FAIL: build_training_effect 缺 level_colors 透传")
+        self.assertEqual(len(result["level_labels_cn"]), 6, "V9.4.4 FAIL: level_labels_cn 必须 6 单元")
+        self.assertEqual(len(result["level_colors"]), 6, "V9.4.4 FAIL: level_colors 必须 6 单元")
+
+    def test_frontend_consumes_backend_truth_source_with_fallback(self):
+        """V9.4.4:前端 _buildTrainingBenefitCard 优先读 te.level_colors / te.level_labels_cn,fallback 到本地"""
+        idx = self.html.find("function _buildTrainingBenefitCard(")
+        end = self.html.find("\n    function ", idx + 50)
+        if end < 0:
+            end = idx + 3000
+        body = self.html[idx:end]
+        self.assertIn("te.level_colors", body,
+                      "V9.4.4 FAIL: 前端未优先读后端透传的 te.level_colors")
+        self.assertIn("te.level_labels_cn", body,
+                      "V9.4.4 FAIL: 前端未优先读后端透传的 te.level_labels_cn")
+        # fallback 真理源必须保留(防老 API 退化)
+        self.assertIn("_TE_LEVEL_COLORS", body,
+                      "V9.4.4 FAIL: 前端 _TE_LEVEL_COLORS fallback 已删, 老 API 退化会黑屏")
+        self.assertIn("_TE_LEVEL_LABELS_CN", body,
+                      "V9.4.4 FAIL: 前端 _TE_LEVEL_LABELS_CN fallback 已删, 老 API 退化会黑屏")
 
 
 if __name__ == "__main__":

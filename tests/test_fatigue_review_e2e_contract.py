@@ -46,7 +46,7 @@ class TestFatigueReviewBackendOutputContract(unittest.TestCase):
         "efficiency", "durability", "cadence_stability", "training_load",
     }
     EXPECTED_CURVES_KEYS = {
-        "efficiency", "gap", "grade", "hr", "speed", "total_distance_m",
+        "distance", "time", "efficiency", "gap", "grade", "hr", "altitude", "speed", "total_distance_m",
     }
     EXPECTED_HR_DRIFT_KEYS = {"pct", "level", "confidence", "trend"}
     EXPECTED_DECOUPLING_KEYS = {"pct", "level", "trend"}
@@ -137,10 +137,13 @@ class TestFatigueReviewBackendOutputContract(unittest.TestCase):
             "collapse_events": [],
             "fatigue_zones": [],
             "curves": {
+                "distance": [0.0, 2.5, 5.0, 7.5, 10.0],
+                "time": [0, 600, 1200, 1800, 2400],
                 "efficiency": [1.0, 1.05, 1.1, 1.08, 1.05],
                 "gap": [4.2, 4.3, 4.1, 4.0, 3.9],
                 "grade": [0.0, 0.5, 1.0, 0.8, 0.3],
                 "hr": [140, 145, 150, 155, 160],
+                "altitude": [100, 105, 118, 121, 116],
                 "speed": [4.0, 4.1, 4.0, 3.9, 3.8],
                 "total_distance_m": 10000.0,
             },
@@ -280,6 +283,7 @@ class TestEChartsRenderingContract(unittest.TestCase):
     def _get_sample_chart_payload(self) -> dict:
         """模拟 openFatigueReview 中的 chartPayload 构造"""
         curves = {
+            "distance": [0.0, 5.0, 10.0],
             "efficiency": [1.0, 1.05, 1.1],
             "gap": [4.2, 4.3, 4.1],
             "grade": [0.0, 0.5, 1.0],
@@ -288,7 +292,7 @@ class TestEChartsRenderingContract(unittest.TestCase):
             "total_distance_m": 10000.0,
         }
         return {
-            "distance_curve": self._distance_from_speed_time(curves),
+            "distance_curve": curves["distance"],
             "hr_curve": curves["hr"],
             "speed_curve": curves["speed"],
             "gap_curve": curves["gap"],
@@ -297,23 +301,6 @@ class TestEChartsRenderingContract(unittest.TestCase):
                 {"trigger_km": 5.5, "value_y": 150, "type": "BONK_WARNING", "description": "心率突增"},
             ],
         }
-
-    def _distance_from_speed_time(self, curves):
-        """前端 _distanceFromSpeedTime 简化模拟"""
-        speed = curves.get("speed") or []
-        n = len(speed)
-        if n == 0:
-            return []
-        total_m = curves.get("total_distance_m") or 0
-        if total_m > 0:
-            total_km = total_m / 1000
-            return [round((i / n) * total_km, 3) for i in range(n)]
-        cum = 0
-        out = []
-        for s in speed:
-            cum += s * 1.0
-            out.append(round(cum / 1000, 3))
-        return out
 
     def test_distance_curve_populated(self):
         """distance_curve 必须有数据(否则图表为空)"""
@@ -351,12 +338,10 @@ class TestEChartsRenderingContract(unittest.TestCase):
             self.assertIn("type", ev)
             self.assertIn("description", ev)
 
-    def test_total_distance_m_aligned(self):
-        """curves.total_distance_m 用于 ECharts xAxis 上限"""
+    def test_distance_axis_from_backend_curves_distance(self):
+        """P3: ECharts xAxis 直接使用后端 curves.distance"""
         p = self._get_sample_chart_payload()
-        # 这里 chartPayload 不直接传 total_distance_m(由 _distanceFromSpeedTime 内部消费)
-        # 但 ECharts xAxis.max = maxDist = distanceCurve 最大值
-        self.assertGreater(p["distance_curve"][-1], 0)
+        self.assertEqual(p["distance_curve"], [0.0, 5.0, 10.0])
 
 
 # ══════════════════════════════════════════════════════════════════

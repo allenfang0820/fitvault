@@ -395,6 +395,51 @@ class TestFitSync(unittest.TestCase):
             activity = main._parse_fit_activity_for_sync(fit_path)
 
         self.assertEqual(activity["normalized_power"], 254)
+        self.assertEqual(activity["avg_power"], 239)
+        self.assertEqual(activity["max_power"], 402)
+
+    def test_new_fit_sync_persists_canonical_power_and_stroke_distance_contract(self):
+        main.ensure_activity_sync_schema()
+        activity = self._activity("canonical_metrics.fit")
+        activity.update(
+            {
+                "sport_type": "stand_up_paddleboarding",
+                "sub_sport_type": "generic",
+                "avg_power": 116,
+                "max_power": 302,
+                "normalized_power": 128,
+                "avg_stroke_distance": 2.35,
+                "swolf": 2.35,
+            }
+        )
+
+        persisted = main._persist_sync_activity(activity)
+
+        conn = profile_backend._conn()
+        conn.row_factory = sqlite3.Row
+        try:
+            row = conn.execute(
+                """
+                SELECT avg_power, max_power, normalized_power, avg_stroke_distance, swolf
+                FROM activities
+                WHERE id = ?
+                """,
+                (persisted["id"],),
+            ).fetchone()
+        finally:
+            conn.close()
+
+        self.assertIsNotNone(row)
+        self.assertEqual(row["avg_power"], 116)
+        self.assertEqual(row["max_power"], 302)
+        self.assertEqual(row["normalized_power"], 128)
+        self.assertAlmostEqual(row["avg_stroke_distance"], 2.35)
+        self.assertAlmostEqual(row["swolf"], 2.35)
+
+        detail = self.api.get_activity_detail(persisted["id"])
+        self.assertTrue(detail["ok"], detail)
+        record = detail["data"]["record"]
+        self.assertTrue(record["detail"]["capabilities"]["has_power"])
 
     def test_activity_list_item_does_not_parse_fit_for_missing_normalized_power(self):
         row = {
@@ -427,6 +472,53 @@ class TestFitSync(unittest.TestCase):
         self.assertIsNone(item["normalized_power"])
         self.assertEqual(item["normalized_power_display"], "/")
 
+    def test_activity_detail_does_not_parse_fit_on_display_path(self):
+        main.ensure_activity_sync_schema()
+        activity = self._activity("detail_display.fit")
+        activity["normalized_power"] = 254
+        activity["swolf"] = 42
+        activity["laps_json"] = json.dumps([
+            {"distance_m": 1000.0, "elapsed_sec": 300.0, "avg_hr": 145, "avg_power": 245}
+        ])
+        persisted = main._persist_sync_activity(activity)
+
+        with mock.patch.object(
+            main.FITCoreEngine,
+            "parse_fit_file",
+            side_effect=AssertionError("详情展示路径不应同步解析 FIT 文件"),
+        ), mock.patch.object(
+            main.FITCoreEngine,
+            "parse_fit_file_raw",
+            side_effect=AssertionError("详情展示路径不应同步解析 FIT raw 文件"),
+        ):
+            detail = self.api.get_activity_detail(persisted["id"])
+
+        self.assertTrue(detail["ok"], detail)
+        record = detail["data"]["record"]
+        self.assertEqual(record["detail"]["capabilities"]["has_power"], True)
+        self.assertEqual(record["detail"]["laps"][0]["power_w"], 245)
+
+    def test_activity_detail_prefers_laps_json_over_synthetic_laps(self):
+        main.ensure_activity_sync_schema()
+        activity = self._activity("real_laps.fit")
+        activity["laps_json"] = json.dumps([
+            {"distance_m": 1000.0, "elapsed_sec": 300.0, "avg_hr": 145, "avg_power": 245}
+        ])
+        persisted = main._persist_sync_activity(activity)
+
+        with mock.patch.object(
+            main.Api,
+            "_build_lap_rows",
+            side_effect=AssertionError("有 laps_json 时详情不应生成模拟圈速"),
+        ):
+            detail = self.api.get_activity_detail(persisted["id"])
+
+        self.assertTrue(detail["ok"], detail)
+        laps = detail["data"]["record"]["detail"]["laps"]
+        self.assertEqual(len(laps), 1)
+        self.assertEqual(laps[0]["pace_sec"], 300)
+        self.assertEqual(laps[0]["power_w"], 245)
+
     def test_normalized_power_backfill_worker_updates_existing_db_rows(self):
         main.ensure_activity_sync_schema()
         fit_path = self.temp_dir / "legacy_np.fit"
@@ -451,18 +543,74 @@ class TestFitSync(unittest.TestCase):
         finally:
             conn.close()
 
-        with mock.patch.object(main, "_read_normalized_power_fast_from_fit", return_value=254):
+        with mock.patch.object(
+            main,
+            "_read_activity_metrics_fast_from_fit",
+            return_value={"avg_power": 239, "max_power": 402, "normalized_power": 254},
+        ):
             main._run_normalized_power_backfill_worker(str(profile_backend.DB_PATH))
 
         conn = sqlite3.connect(str(profile_backend.DB_PATH))
         try:
-            value = conn.execute(
-                "SELECT normalized_power FROM activities WHERE filename = ?",
+            row = conn.execute(
+                "SELECT avg_power, max_power, normalized_power FROM activities WHERE filename = ?",
                 ("legacy_np.fit",),
-            ).fetchone()[0]
+            ).fetchone()
         finally:
             conn.close()
-        self.assertEqual(value, 254)
+        self.assertEqual(row, (239.0, 402.0, 254.0))
+
+    def test_list_metric_backfill_marks_attempt_even_when_fit_has_no_metric(self):
+        main.ensure_activity_sync_schema()
+        fit_path = self.temp_dir / "legacy_empty_metrics.fit"
+        fit_path.write_bytes(b"fit")
+        conn = sqlite3.connect(str(profile_backend.DB_PATH))
+        try:
+            conn.execute(
+                """
+                INSERT INTO activities (
+                    filename, file_name, file_path, sport_type, sub_sport_type,
+                    dist_km, distance, duration_sec, duration, start_time,
+                    avg_power, max_power, normalized_power
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "legacy_empty_metrics.fit", "legacy_empty_metrics.fit", str(fit_path),
+                    "running", "generic", 7.0, 7000.0, 2946, 2946,
+                    "2026-05-19T08:00:00+08:00", None, None, None,
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        with mock.patch.object(
+            main,
+            "_read_activity_metrics_fast_from_fit",
+            return_value={"avg_power": None, "max_power": None, "normalized_power": None},
+        ):
+            main._run_normalized_power_backfill_worker(str(profile_backend.DB_PATH))
+
+        conn = sqlite3.connect(str(profile_backend.DB_PATH))
+        try:
+            row = conn.execute(
+                """
+                SELECT avg_power, max_power, normalized_power, list_metric_backfill_version
+                FROM activities
+                WHERE filename = ?
+                """,
+                ("legacy_empty_metrics.fit",),
+            ).fetchone()
+        finally:
+            conn.close()
+        self.assertEqual(row, (None, None, None, main.LIST_METRIC_BACKFILL_VERSION))
+
+        with main._NP_BACKFILL_LOCK:
+            main._NP_BACKFILL_STATUS["finished_at"] = 0.0
+            main._NP_BACKFILL_STATUS["total"] = 999
+        status = main._start_normalized_power_backfill_if_needed()
+        self.assertFalse(status["running"])
+        self.assertEqual(status["total"], 0)
 
     def test_water_metric_backfill_worker_updates_existing_db_rows(self):
         main.ensure_activity_sync_schema()
@@ -475,13 +623,13 @@ class TestFitSync(unittest.TestCase):
                 INSERT INTO activities (
                     filename, file_name, file_path, sport_type, sub_sport_type,
                     dist_km, distance, duration_sec, duration, start_time,
-                    swolf
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    swolf, avg_stroke_distance
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     "legacy_water.fit", "legacy_water.fit", str(fit_path),
                     "stand_up_paddleboarding", "generic", 3.0, 3000.0, 1800, 1800,
-                    "2026-05-19T08:00:00+08:00", None,
+                    "2026-05-19T08:00:00+08:00", None, None,
                 ),
             )
             conn.commit()
@@ -490,20 +638,61 @@ class TestFitSync(unittest.TestCase):
 
         with mock.patch.object(
             main,
-            "_read_water_metrics_from_fit",
-            return_value={"swolf": 57.0, "stroke_distance": 1.8},
+            "_read_activity_metrics_fast_from_fit",
+            return_value={"swolf": 57.0, "avg_stroke_distance": 1.8},
         ):
             main._run_normalized_power_backfill_worker(str(profile_backend.DB_PATH))
 
         conn = sqlite3.connect(str(profile_backend.DB_PATH))
         try:
-            value = conn.execute(
-                "SELECT swolf FROM activities WHERE filename = ?",
+            row = conn.execute(
+                "SELECT swolf, avg_stroke_distance FROM activities WHERE filename = ?",
                 ("legacy_water.fit",),
-            ).fetchone()[0]
+            ).fetchone()
         finally:
             conn.close()
-        self.assertEqual(value, 1.8)
+        self.assertEqual(row, (1.8, 1.8))
+
+    def test_list_metric_backfill_worker_is_batch_limited(self):
+        main.ensure_activity_sync_schema()
+        rows = []
+        for idx in range(main.LIST_METRIC_BACKFILL_BATCH_LIMIT + 5):
+            fit_path = self.temp_dir / f"batch_{idx}.fit"
+            fit_path.write_bytes(b"fit")
+            rows.append(
+                (
+                    f"batch_{idx}.fit", f"batch_{idx}.fit", str(fit_path),
+                    "running", "generic", 5.0, 5000.0, 1500, 1500,
+                    f"2026-05-19T08:{idx % 60:02d}:00+08:00", None, None, None,
+                )
+            )
+        conn = sqlite3.connect(str(profile_backend.DB_PATH))
+        try:
+            conn.executemany(
+                """
+                INSERT INTO activities (
+                    filename, file_name, file_path, sport_type, sub_sport_type,
+                    dist_km, distance, duration_sec, duration, start_time,
+                    avg_power, max_power, normalized_power
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                rows,
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        with mock.patch.object(
+            main,
+            "_read_activity_metrics_fast_from_fit",
+            return_value={"avg_power": 200, "max_power": 350, "normalized_power": 215},
+        ) as read_metrics:
+            main._run_normalized_power_backfill_worker(str(profile_backend.DB_PATH))
+
+        self.assertEqual(read_metrics.call_count, main.LIST_METRIC_BACKFILL_BATCH_LIMIT)
+        status = main._normalized_power_backfill_status()
+        self.assertTrue(status["limited"])
+        self.assertEqual(status["processed"], main.LIST_METRIC_BACKFILL_BATCH_LIMIT)
 
     def test_activity_inserts_with_pending_region_even_when_nominatim_down(self):
         main.ensure_activity_sync_schema()
@@ -635,6 +824,64 @@ class TestFitSync(unittest.TestCase):
         self.assertIn("display_metrics", detail["data"]["record"]["detail"])
         self.assertIn("layout", detail["data"]["record"]["detail"])
         self.assertIn("capabilities", detail["data"]["record"]["detail"])
+
+    def test_activity_type_filter_matches_swim_sub_sports(self):
+        main.ensure_activity_sync_schema()
+        pool = self._activity("pool_swim.fit")
+        pool.update({
+            "sport_type": "swimming",
+            "sub_sport_type": "lap_swimming",
+            "swolf": 42,
+        })
+        open_water = self._activity("open_water.fit")
+        open_water.update({
+            "sport_type": "swimming",
+            "sub_sport_type": "open_water",
+            "swolf": 2.1,
+        })
+        main._persist_sync_activity(pool)
+        main._persist_sync_activity(open_water)
+
+        pool_res = self.api.get_activity_list(page=1, page_size=10, sport_filter="lap_swimming")
+        open_water_res = self.api.get_activity_list(page=1, page_size=10, sport_filter="open_water")
+
+        self.assertTrue(pool_res["ok"], pool_res)
+        self.assertTrue(open_water_res["ok"], open_water_res)
+        self.assertEqual(pool_res["data"]["total"], 1)
+        self.assertEqual(open_water_res["data"]["total"], 1)
+        self.assertEqual(pool_res["data"]["records"][0]["sub_sport_type"], "lap_swimming")
+        self.assertEqual(open_water_res["data"]["records"][0]["sub_sport_type"], "open_water")
+
+    def test_activity_list_dynamic_columns_follow_current_page_records(self):
+        main.ensure_activity_sync_schema()
+        for idx in range(10):
+            run = self._activity(f"page_run_{idx}.fit")
+            run.update({
+                "sport_type": "running",
+                "sub_sport_type": "generic",
+                "start_time": f"2026-05-19T10:{idx:02d}:00+08:00",
+                "gain_m": 80,
+                "normalized_power": 230,
+            })
+            main._persist_sync_activity(run)
+        swim = self._activity("page_swim.fit")
+        swim.update({
+            "sport_type": "swimming",
+            "sub_sport_type": "lap_swimming",
+            "start_time": "2026-05-19T09:00:00+08:00",
+            "swolf": 42,
+        })
+        main._persist_sync_activity(swim)
+
+        page1 = self.api.get_activity_list(page=1, page_size=10, sport_filter="all")
+        page2 = self.api.get_activity_list(page=2, page_size=10, sport_filter="all")
+
+        self.assertTrue(page1["ok"], page1)
+        self.assertTrue(page2["ok"], page2)
+        self.assertTrue(all(record["sport_type"] == "running" for record in page1["data"]["records"]))
+        self.assertEqual(page1["data"]["dynamic_columns"], ["gain", "np"])
+        self.assertEqual(page2["data"]["records"][0]["sub_sport_type"], "lap_swimming")
+        self.assertEqual(page2["data"]["dynamic_columns"], ["swolf"])
 
     def test_shadow_diff_json_persists_updates_and_returns(self):
         main.ensure_activity_sync_schema()
@@ -1115,7 +1362,8 @@ class TestFitSync(unittest.TestCase):
                 "region", "region_city", "region_country", "region_display",
                 "region_status", "region_error", "region_updated_at", "region_attempt_count",
                 "weather_json", "file_mtime", "file_size", "deleted_at",
-                "avg_pace", "calories", "normalized_power", "swolf",
+                "avg_pace", "calories", "avg_power", "max_power", "normalized_power",
+                "avg_stroke_distance", "swolf", "list_metric_backfill_version",
                 "device_name", "source_type", "is_mock", "shadow_diff_json",
                 "hr_curve", "speed_curve",
                 "gain_m", "max_alt_m", "max_hr", "avg_cadence",

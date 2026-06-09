@@ -32,13 +32,13 @@ from metrics_resolver import MetricsResolver
 # ══════════════════════════════════════════════════════════════════
 
 class TestLapOutputContract(unittest.TestCase):
-    """每圈必须输出 7 个标准字段"""
+    """每圈必须输出圈速统计表登记字段"""
 
     def _make_laps_json(self, laps: list[dict]) -> str:
         return json.dumps(laps)
 
-    def test_each_lap_has_7_fields(self):
-        """每圈必须含 lap_no/distance_km/pace_sec/hr/cadence/gct_ms/power_w"""
+    def test_each_lap_has_registered_fields(self):
+        """每圈必须含圈速表可能消费的标准字段"""
         laps_data = [
             {"distance_m": 1000.0, "elapsed_sec": 300.0, "avg_hr": 150,
              "avg_cadence": 85, "avg_power": 220},
@@ -47,20 +47,28 @@ class TestLapOutputContract(unittest.TestCase):
             {"laps_json": self._make_laps_json(laps_data)})
         self.assertEqual(len(r), 1)
         lap = r[0]
-        expected_keys = {"lap_no", "distance_km", "pace_sec", "hr",
-                         "cadence", "gct_ms", "power_w"}
+        expected_keys = {
+            "lap_no", "distance_km", "pace_sec", "hr", "max_hr",
+            "cadence", "gct_ms", "power_w", "ascent_m", "descent_m",
+            "calories", "swolf", "stroke_style", "stroke_distance_m",
+            "length_distance_m",
+        }
         self.assertEqual(set(lap.keys()), expected_keys,
                          f"每圈字段必须恰好是 {expected_keys}")
 
-    def test_no_extra_fields(self):
-        """不允许出现规范外字段"""
+    def test_no_unregistered_fields(self):
+        """不允许出现圈速表未登记字段"""
         laps_data = [
             {"distance_m": 1000.0, "elapsed_sec": 300.0},
         ]
         r = MetricsResolver._build_real_laps_from_row(
             {"laps_json": self._make_laps_json(laps_data)})
-        allowed = {"lap_no", "distance_km", "pace_sec", "hr",
-                   "cadence", "gct_ms", "power_w"}
+        allowed = {
+            "lap_no", "distance_km", "pace_sec", "hr", "max_hr",
+            "cadence", "gct_ms", "power_w", "ascent_m", "descent_m",
+            "calories", "swolf", "stroke_style", "stroke_distance_m",
+            "length_distance_m",
+        }
         for lap in r:
             for key in lap:
                 self.assertIn(key, allowed,

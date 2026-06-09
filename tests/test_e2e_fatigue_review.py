@@ -415,6 +415,7 @@ class TestGetFatigueReviewBackend:
         """1004:活动不存在。"""
         from main import Api
         api = Api()
+        api._fetch_activity_row = MagicMock(return_value=None)
         res = api.get_fatigue_review(99999999)
         assert res["code"] == 1004, "不存在必须返回 1004"
 
@@ -422,6 +423,7 @@ class TestGetFatigueReviewBackend:
         """§3 响应结构:data 字段结构。"""
         from main import Api
         api = Api()
+        api._fetch_activity_row = MagicMock(return_value=None)
         res = api.get_fatigue_review(99999999)
         assert "code" in res
         assert "msg" in res
@@ -432,6 +434,7 @@ class TestGetFatigueReviewBackend:
         """§六 隔离:即使走 1004 错误路径,data 也不应含 shadow_diff。"""
         from main import Api
         api = Api()
+        api._fetch_activity_row = MagicMock(return_value=None)
         res = api.get_fatigue_review(99999999)
         # 错误响应 data 可能为 None,但不应含 forbidden keys
         if res.get("data"):

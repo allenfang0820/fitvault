@@ -189,6 +189,7 @@ class MetricsResolver:
             distance_curve=distance_curve,
             ei_curve=efficiency_curve,
             total_calories=total_calories,
+            sport_type=sport_type,
         )
 
         # 触发 Layer 2 疲劳预警带计算(V4.0 从 main.py 下沉)
@@ -207,6 +208,7 @@ class MetricsResolver:
         final_data["distance_curve"] = distance_curve
         final_data["speed_curve"] = speed_curve
         final_data["gap_curve"] = gap_curve
+        final_data["grade_curve"] = grade_curve_out
         final_data["hr_curve"] = hr_curve
         final_data["altitude_curve"] = altitude_curve
         final_data["lat_curve"] = lat_curve
@@ -488,7 +490,7 @@ class MetricsResolver:
             pack["hr_curve"].append(hr if hr else None)
             pack["speed_curve"].append(round(speed, 2) if speed else None)
             pack["altitude_curve"].append(round(alt, 1) if alt else None)
-            pack["distance_curve"].append(round(dist, 1) if dist else None)
+            pack["distance_curve"].append(round(dist, 1) if dist is not None else None)
             pack["lat_curve"].append(round(lat, 6) if lat else None)
             pack["lon_curve"].append(round(lon, 6) if lon else None)
             pack["cadence_curve"].append(int(cad) if cad and cad > 0 else None)  # V8.3
@@ -854,8 +856,16 @@ class MetricsResolver:
             dist_m = MetricsResolver._safe_float_zero(lap.get("distance_m"))
             elapsed = MetricsResolver._safe_float_zero(lap.get("elapsed_sec"))
             lap_avg_hr = MetricsResolver._safe_int_zero(lap.get("avg_hr"))
+            lap_max_hr = MetricsResolver._safe_int_zero(lap.get("max_hr"))
             lap_avg_cadence = MetricsResolver._safe_int_zero(lap.get("avg_cadence"))
             lap_avg_power = MetricsResolver._safe_int_zero(lap.get("avg_power"))
+            lap_ascent = MetricsResolver._safe_int_zero(lap.get("total_ascent"))
+            lap_descent = MetricsResolver._safe_int_zero(lap.get("total_descent"))
+            lap_calories = MetricsResolver._safe_int_zero(lap.get("total_calories"))
+            lap_swolf = MetricsResolver._safe_int_zero(lap.get("swolf"))
+            lap_stroke_distance = MetricsResolver._safe_float_zero(lap.get("avg_stroke_distance"))
+            lap_stroke_style = lap.get("swim_stroke")
+            lap_length_distance = MetricsResolver._safe_float_zero(lap.get("length_distance_m"))
             # V9.x 修复:从 normalized lap dict 读 stance_time_ms(§2.1 全链路可追溯)
             # 原实现硬编码 None 切断追溯链,本次改为读真值
             lap_gct_ms = MetricsResolver._safe_int_zero(lap.get("stance_time_ms")) or None
@@ -867,9 +877,17 @@ class MetricsResolver:
                 "distance_km": round(dist_m / 1000.0, 2) if dist_m > 0 else None,
                 "pace_sec": pace_sec if pace_sec > 0 else None,
                 "hr": lap_avg_hr if lap_avg_hr else None,
+                "max_hr": lap_max_hr if lap_max_hr else None,
                 "cadence": lap_avg_cadence if lap_avg_cadence else None,
                 "gct_ms": lap_gct_ms,   # V9.x:从硬编码 None 改为透传 Resolver 解析值
                 "power_w": lap_avg_power if lap_avg_power else None,
+                "ascent_m": lap_ascent if lap_ascent else None,
+                "descent_m": lap_descent if lap_descent else None,
+                "calories": lap_calories if lap_calories else None,
+                "swolf": lap_swolf if lap_swolf else None,
+                "stroke_style": lap_stroke_style if lap_stroke_style else None,
+                "stroke_distance_m": round(lap_stroke_distance, 2) if lap_stroke_distance else None,
+                "length_distance_m": round(lap_length_distance, 1) if lap_length_distance else None,
             })
         return rows
 
@@ -1799,8 +1817,16 @@ class MetricsResolver:
             dist = MetricsResolver._num(lap.get("total_distance"))
             elapsed = MetricsResolver._num(lap.get("total_timer_time"))
             avg_hr = MetricsResolver._num(lap.get("avg_heart_rate"))
+            max_hr = MetricsResolver._num(lap.get("max_heart_rate"))
             avg_power = MetricsResolver._num(lap.get("avg_power"))
             avg_cadence = MetricsResolver._num(lap.get("avg_cadence"))
+            total_ascent = MetricsResolver._num(lap.get("total_ascent"))
+            total_descent = MetricsResolver._num(lap.get("total_descent"))
+            total_calories = MetricsResolver._num(lap.get("total_calories"))
+            swolf = MetricsResolver._num(lap.get("swolf"))
+            stroke_distance = MetricsResolver._num(lap.get("avg_stroke_distance"))
+            swim_stroke = lap.get("swim_stroke")
+            lengths = MetricsResolver._num(lap.get("lengths"))
             # V9.x 修复:增读 FIT 步态字段,§2.1 全链路可追溯,严禁硬编码 None
             # 字段名对齐 fit_engine._read_lap_data 输出(avg_ 前缀为 FIT lap 聚合值)
             stance_time_ms = MetricsResolver._safe_int_zero(lap.get("avg_stance_time")) or None
@@ -1816,8 +1842,16 @@ class MetricsResolver:
                 "distance_m": dist,
                 "elapsed_sec": elapsed,
                 "avg_hr": avg_hr if avg_hr else None,
+                "max_hr": max_hr if max_hr else None,
                 "avg_power": avg_power if avg_power else None,
                 "avg_cadence": avg_cadence if avg_cadence else None,
+                "total_ascent": total_ascent if total_ascent else None,
+                "total_descent": total_descent if total_descent else None,
+                "total_calories": total_calories if total_calories else None,
+                "swolf": swolf if swolf else None,
+                "avg_stroke_distance": stroke_distance if stroke_distance else None,
+                "swim_stroke": swim_stroke if swim_stroke else None,
+                "length_distance_m": round(dist / lengths, 1) if dist and lengths else None,
                 "stance_time_ms": stance_time_ms,
                 "vertical_oscillation_cm": vertical_oscillation_cm,
                 "stride_length_m": stride_length_m,
@@ -2597,6 +2631,28 @@ _TE_LEVEL_IDS = ["recovery", "activation", "maintenance", "improvement", "overlo
 # TE 分数 → 等级下标(0~5)映射
 _TE_RANGE_BOUNDS = [0.0, 1.0, 2.0, 3.0, 4.0, 4.5, 5.0]
 
+# V9.4.4:训练收益 6 等级中文 label 真理源(前端 _TE_LEVEL_LABELS_CN 真理源,后端唯一)
+# 与 _TE_LEVEL_IDS 顺序严格一致
+_TE_LEVEL_LABELS_CN: dict[str, str] = {
+    "recovery":    "恢复",
+    "activation":  "激活",
+    "maintenance": "维持",
+    "improvement": "提升",
+    "overload":    "高负荷",
+    "extreme":     "极限",
+}
+
+# V9.4.4:训练收益 6 等级颜色真理源(前端 _TE_LEVEL_COLORS 真理源,后端唯一)
+# 与 _TE_LEVEL_IDS 顺序严格一致(Gray/Blue/Cyan/Green/Orange/Red,用户原 §三)
+_TE_LEVEL_COLORS: dict[str, str] = {
+    "recovery":    "#64748b",
+    "activation":  "#3b82f6",
+    "maintenance": "#06b6d4",
+    "improvement": "#22c55e",
+    "overload":    "#f97316",
+    "extreme":     "#ef4444",
+}
+
 # 运动 × 维度 → (primary_title, secondary_title)(用户原 §四 逐字)
 _TE_SPORT_TITLE = {
     "running":         ("有氧收益", "速度刺激"),
@@ -2864,6 +2920,10 @@ def build_training_effect(record, sport_type):
         "global_level": global_level,
         "overall_summary": overall_summary,
         "data_source": data_source,  # V9.4.4:fit_sdk 透明标记(FIT Firstbeat 直读)
+        # V9.4.4:6 等级 label/color 透传(真理源自 _TE_LEVEL_LABELS_CN / _TE_LEVEL_COLORS)
+        # 前端 _TE_LEVEL_LABELS_CN / _TE_LEVEL_COLORS 保留作 fallback(防回退老 API)
+        "level_labels_cn": _TE_LEVEL_LABELS_CN,
+        "level_colors": _TE_LEVEL_COLORS,
     }
 
 
@@ -2979,48 +3039,169 @@ def classify_heat_stress(temp_c, humidity):
 
 # ─── 1. 跑步(Running)— §4.2 ───
 RUNNING_SEMANTICS = {
-    "vertical": ["平路路线", "略有起伏", "持续爬升路线", "高强度爬升跑", "极限爬升挑战"],
-    "altitude": ["低海拔环境", "中低海拔跑步", "中高海拔环境", "高海拔耐力环境", "极限高海拔挑战"],
-    "heat":     ["环境舒适", "略有热感", "炎热跑步环境", "高温耐力挑战"],
-    "terrain":  ["路线平稳", "略复杂路线", "技术型路线", "高技术跑步路线", "极限技术地形"],
+    "vertical": [
+        {"label": "平路路线",         "explanation": "几乎无爬升,海拔变化小"},
+        {"label": "略有起伏",         "explanation": "海拔起伏小,对配速影响有限"},
+        {"label": "持续爬升路线",     "explanation": "持续爬升,需稳定配速策略"},
+        {"label": "高强度爬升跑",     "explanation": "爬升密度大,需重点关注心率与配速管理"},
+        {"label": "极限爬升挑战",     "explanation": "极端爬升密度,纯靠爬升能力,建议分段休息"},
+    ],
+    "altitude": [
+        {"label": "低海拔环境",       "explanation": "海拔 1500m 以下,无明显高海拔影响"},
+        {"label": "中低海拔跑步",     "explanation": "海拔 1500~2500m,部分敏感人群可能出现轻微反应"},
+        {"label": "中高海拔环境",     "explanation": "海拔 2500~3500m,需关注呼吸节奏与水分补给"},
+        {"label": "高海拔耐力环境",   "explanation": "海拔 3500~4500m,需提前适应,降低运动强度"},
+        {"label": "极限高海拔挑战",   "explanation": "海拔 4500m 以上,极高生理压力,需充分评估"},
+    ],
+    "heat": [
+        {"label": "环境舒适",         "explanation": "温湿度适宜,体感无负担"},
+        {"label": "略有热感",         "explanation": "温湿度偏高,需注意补水"},
+        {"label": "炎热跑步环境",     "explanation": "高温高湿,散热压力大,后程心率易偏高"},
+        {"label": "高温耐力挑战",     "explanation": "极端高温,需缩短运动时间,优先安全"},
+    ],
+    "terrain": [
+        {"label": "路线平稳",         "explanation": "路面平整,无技术难点"},
+        {"label": "略复杂路线",       "explanation": "偶有起伏或弯道,需注意节奏"},
+        {"label": "技术型路线",       "explanation": "出现技术路段,需关注落脚点"},
+        {"label": "高技术跑步路线",   "explanation": "频繁技术路段,需较强应变能力"},
+        {"label": "极限技术地形",     "explanation": "持续高难度技术路段,需高级别越野能力"},
+    ],
 }
 
 # ─── 2. 越野跑(Trail Running)— §4.3 ───
 TRAIL_RUNNING_SEMANTICS = {
-    "vertical": ["轻度山地路线", "起伏山地", "持续爬升山路", "高强度山地爬升", "极限山地挑战"],
-    "altitude": ["低海拔山地", "中低海拔路线", "中高海拔越野", "高海拔山地环境", "极限高海拔越野"],
-    "heat":     ["山地气候舒适", "略有热感", "炎热山地环境", "高温山地挑战"],
-    "terrain":  ["路况稳定", "轻度技术路线", "中等技术山路", "高技术越野路线", "极限技术地形"],
+    "vertical": [
+        {"label": "轻度山地路线",     "explanation": "山地起伏小,跑感流畅"},
+        {"label": "起伏山地",         "explanation": "山地有明显起伏,需调节配速"},
+        {"label": "持续爬升山路",     "explanation": "持续爬升,需稳定节奏与补给"},
+        {"label": "高强度山地爬升",   "explanation": "山地爬升密度大,需较强爬升能力"},
+        {"label": "极限山地挑战",     "explanation": "极端山地爬升,纯靠登山能力与意志"},
+    ],
+    "altitude": [
+        {"label": "低海拔山地",       "explanation": "1500m 以下山地,无明显高海拔影响"},
+        {"label": "中低海拔路线",     "explanation": "1500~2500m 山地,呼吸略急促"},
+        {"label": "中高海拔越野",     "explanation": "2500~3500m 山地,需关注节奏"},
+        {"label": "高海拔山地环境",   "explanation": "3500~4500m 山地,需提前适应"},
+        {"label": "极限高海拔越野",   "explanation": "4500m 以上山地,极高生理压力"},
+    ],
+    "heat": [
+        {"label": "山地气候舒适",     "explanation": "山地温湿度适宜,体感舒适"},
+        {"label": "略有热感",         "explanation": "山地温湿度略高,需注意补水"},
+        {"label": "炎热山地环境",     "explanation": "山地高温,需关注散热"},
+        {"label": "高温山地挑战",     "explanation": "山地极端高温,需缩短时间"},
+    ],
+    "terrain": [
+        {"label": "路况稳定",         "explanation": "山路路况稳定,无技术难点"},
+        {"label": "轻度技术路线",     "explanation": "偶有泥泞或岩石,需注意落脚"},
+        {"label": "中等技术山路",     "explanation": "出现明显技术路段,需较强应变"},
+        {"label": "高技术越野路线",   "explanation": "频繁技术路段,需高级别越野能力"},
+        {"label": "极限技术地形",     "explanation": "持续高难度技术路段,需专业级越野经验"},
+    ],
 }
 
 # ─── 3. 徒步(Hiking)— §4.4 ───
 HIKING_SEMANTICS = {
-    "vertical": ["轻松步道", "略有爬升", "持续登山路线", "高强度登山挑战", "极限长爬升路线"],
-    "altitude": ["低海拔徒步", "中低海拔环境", "中高海拔徒步", "高海拔登山环境", "极限高海拔环境"],
-    "heat":     ["徒步环境舒适", "略有热感", "炎热徒步环境", "高温登山挑战"],
-    "terrain":  ["步道路况稳定", "略复杂山路", "技术型山地路线", "高技术登山路线", "极限技术山地"],
+    "vertical": [
+        {"label": "轻松步道",         "explanation": "步道平缓,无明显爬升"},
+        {"label": "略有爬升",         "explanation": "步道有爬升,需调节呼吸"},
+        {"label": "持续登山路线",     "explanation": "持续登山,需稳定节奏"},
+        {"label": "高强度登山挑战",   "explanation": "登山爬升密度大,需较强体能"},
+        {"label": "极限长爬升路线",   "explanation": "极端爬升密度,需充分准备"},
+    ],
+    "altitude": [
+        {"label": "低海拔徒步",       "explanation": "1500m 以下徒步,无明显高反"},
+        {"label": "中低海拔环境",     "explanation": "1500~2500m,部分人有轻微反应"},
+        {"label": "中高海拔徒步",     "explanation": "2500~3500m,需关注节奏"},
+        {"label": "高海拔登山环境",   "explanation": "3500~4500m,需提前适应"},
+        {"label": "极限高海拔环境",   "explanation": "4500m 以上,极高生理压力"},
+    ],
+    "heat": [
+        {"label": "徒步环境舒适",     "explanation": "温湿度适宜,体感舒适"},
+        {"label": "略有热感",         "explanation": "温湿度略高,需注意补水"},
+        {"label": "炎热徒步环境",     "explanation": "高温高湿,需关注散热"},
+        {"label": "高温登山挑战",     "explanation": "极端高温,需缩短徒步时间"},
+    ],
+    "terrain": [
+        {"label": "步道路况稳定",     "explanation": "步道平整,无技术难点"},
+        {"label": "略复杂山路",       "explanation": "偶有起伏或陡坡,需注意"},
+        {"label": "技术型山地路线",   "explanation": "出现技术路段,需关注落脚"},
+        {"label": "高技术登山路线",   "explanation": "频繁技术路段,需较强能力"},
+        {"label": "极限技术山地",     "explanation": "持续高难度技术路段,需专业经验"},
+    ],
 }
 
 # ─── 4. 公路骑行(Road Cycling)— §4.5 ───
 CYCLING_SEMANTICS = {
-    "vertical": ["平路骑行", "略有爬升", "长爬坡路线", "高强度爬坡骑行", "极限山地骑行"],
-    "altitude": ["低海拔骑行", "中低海拔路线", "中高海拔骑行", "高海拔骑行环境", "极限高海拔骑行"],
-    "heat":     ["骑行环境舒适", "略有热感", "炎热骑行环境", "高温耐力骑行"],
-    "terrain":  ["路况稳定", "略复杂路线", "多弯山路", "高技术下坡路线", "极限技术骑行路线"],
+    "vertical": [
+        {"label": "平路骑行",         "explanation": "路线平直,无明显爬升"},
+        {"label": "略有爬升",         "explanation": "偶有缓坡,影响有限"},
+        {"label": "长爬坡路线",       "explanation": "持续爬坡,需调节档位与节奏"},
+        {"label": "高强度爬坡骑行",   "explanation": "爬坡密度大,需较强爬坡能力"},
+        {"label": "极限山地骑行",     "explanation": "极端爬坡,纯靠爬坡能力与体能"},
+    ],
+    "altitude": [
+        {"label": "低海拔骑行",       "explanation": "1500m 以下,无明显高反"},
+        {"label": "中低海拔路线",     "explanation": "1500~2500m,呼吸略急促"},
+        {"label": "中高海拔骑行",     "explanation": "2500~3500m,需关注节奏"},
+        {"label": "高海拔骑行环境",   "explanation": "3500~4500m,需提前适应"},
+        {"label": "极限高海拔骑行",   "explanation": "4500m 以上,极高生理压力"},
+    ],
+    "heat": [
+        {"label": "骑行环境舒适",     "explanation": "骑行时风冷效应,体感舒适"},
+        {"label": "略有热感",         "explanation": "温湿度略高,需注意补水"},
+        {"label": "炎热骑行环境",     "explanation": "高温,需关注核心体温"},
+        {"label": "高温耐力骑行",     "explanation": "极端高温,需缩短骑行时间"},
+    ],
+    "terrain": [
+        {"label": "路况稳定",         "explanation": "路面平整,无技术难点"},
+        {"label": "略复杂路线",       "explanation": "偶有弯道或破损,需注意"},
+        {"label": "多弯山路",         "explanation": "弯道频繁,需控速"},
+        {"label": "高技术下坡路线",   "explanation": "下坡技术要求高,需强控车能力"},
+        {"label": "极限技术骑行路线", "explanation": "持续高难度技术路段,需专业经验"},
+    ],
 }
 
 # ─── 5. 山地骑行(MTB)— §4.6 ───
 MOUNTAIN_BIKING_SEMANTICS = {
-    "vertical": ["轻度越野路线", "起伏土路", "持续山地爬升", "高强度越野爬升", "极限山地骑行挑战"],
-    "altitude": ["低海拔越野", "中低海拔路线", "中高海拔山地", "高海拔越野环境", "极限高海拔越野"],
-    "heat":     ["越野环境舒适", "略有热感", "炎热越野环境", "高温山地骑行"],
-    "terrain":  ["土路稳定", "轻度技术路线", "技术型林道", "高技术越野路线", "极限技术地形"],
+    "vertical": [
+        {"label": "轻度越野路线",     "explanation": "起伏小,越野流畅"},
+        {"label": "起伏土路",         "explanation": "有明显起伏,需调节节奏"},
+        {"label": "持续山地爬升",     "explanation": "持续爬升,需稳定踏频"},
+        {"label": "高强度越野爬升",   "explanation": "爬升密度大,需较强爬坡能力"},
+        {"label": "极限山地骑行挑战", "explanation": "极端爬升,纯靠爬坡能力"},
+    ],
+    "altitude": [
+        {"label": "低海拔越野",       "explanation": "1500m 以下,无明显高反"},
+        {"label": "中低海拔路线",     "explanation": "1500~2500m,呼吸略急促"},
+        {"label": "中高海拔山地",     "explanation": "2500~3500m,需关注节奏"},
+        {"label": "高海拔越野环境",   "explanation": "3500~4500m,需提前适应"},
+        {"label": "极限高海拔越野",   "explanation": "4500m 以上,极高生理压力"},
+    ],
+    "heat": [
+        {"label": "越野环境舒适",     "explanation": "温湿度适宜,体感舒适"},
+        {"label": "略有热感",         "explanation": "温湿度略高,需注意补水"},
+        {"label": "炎热越野环境",     "explanation": "高温,需关注散热"},
+        {"label": "高温山地骑行",     "explanation": "极端高温,需缩短骑行时间"},
+    ],
+    "terrain": [
+        {"label": "土路稳定",         "explanation": "土路平整,无技术难点"},
+        {"label": "轻度技术路线",     "explanation": "偶有泥泞或岩石,需注意"},
+        {"label": "技术型林道",       "explanation": "出现明显技术路段,需较强控车能力"},
+        {"label": "高技术越野路线",   "explanation": "频繁技术路段,需高级别越野能力"},
+        {"label": "极限技术地形",     "explanation": "持续高难度技术路段,需专业经验"},
+    ],
 }
 
 # ─── 6. 低温环境(滑雪/登山 第 3 模块专用替换)— §4.7.3 ───
 # 5 档,下标 0~4;对应温度阈值(代码不消费,供前端 tooltip):
 #   0:0°C 以上 / 1:0~-10 / 2:-10~-20 / 3:-20~-30 / 4:<-30
-COLD_SEMANTICS = ["温度舒适", "略低温", "低温环境", "严寒环境", "极寒挑战"]
+COLD_SEMANTICS = [
+    {"label": "温度舒适",   "explanation": "0°C 以上,无明显冷应激"},
+    {"label": "略低温",     "explanation": "0~-10°C,需注意手/脚保暖"},
+    {"label": "低温环境",   "explanation": "-10~-20°C,需全套防寒装备"},
+    {"label": "严寒环境",   "explanation": "-20~-30°C,暴露皮肤有冻伤风险"},
+    {"label": "极寒挑战",   "explanation": "-30°C 以下,极高冻伤风险,需专业防寒"},
+]
 
 
 # ─── 7. 路由表(对外查询入口)───
@@ -3064,20 +3245,21 @@ def _clamp_level(level, max_level):
 
 
 def get_environment_challenge_semantic(sport_type, module, level):
-    """V_ENV.1.2:环境挑战语义查询(同等级不同运动不同语义)。
+    """V_ENV.1.2 + 2.2:环境挑战语义查询,返回 {label, explanation} 字典。
 
     契约:
       - sport_type: 字符串,未匹配走 RUNNING_SEMANTICS
-      - module ∈ {"vertical","altitude","heat","terrain"},未知返回 "--"
+      - module ∈ {"vertical","altitude","heat","terrain"},未知返回 {"label": "--", "explanation": "--"}
       - level 越界/None 走最低档
       - skiing/mountaineering 的 "heat" 模块自动切换为低温 5 档语义
-      - 查询结果仅供 UI 展示文案,严禁写入 AI Snapshot / DB
+      - 返回 dict 含 label + explanation 两字段,供前端成对消费
+      - 严禁进入 AI Snapshot / DB(§五 5.3 / §八)
     """
     sport_key = (sport_type or "").strip().lower() if sport_type else ""
     table = _ENV_CHALLENGE_SPORT_MAP.get(sport_key, _DEFAULT_SEMANTICS)
 
     if module not in table:
-        return "--"
+        return {"label": "--", "explanation": "--"}
 
     # 滑雪/登山 → 第 3 模块走低温 5 档替换
     if module == "heat" and sport_key in _COLD_SPORT_SET:
@@ -3375,4 +3557,3 @@ class SemanticSportsEngine:
     @classmethod
     def get_layout(cls, sport_type: str) -> dict:
         return {"cards": cls.SPORT_PROFILES.get(sport_type, cls.SPORT_PROFILES["running"])["cards"]}
-

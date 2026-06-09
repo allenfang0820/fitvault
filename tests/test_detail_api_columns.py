@@ -44,6 +44,10 @@ class TestDetailApiColumnWhitelist(unittest.TestCase):
         for col in ["id", "sport_type", "sub_sport_type", "start_time", "gain_m", "avg_hr", "max_hr", "device_name"]:
             self.assertIn(col, DETAIL_API_REQUIRED_COLUMNS, f"{col} 应在白名单中")
 
+    def test_required_display_metric_columns(self):
+        for col in ["avg_power", "max_power", "normalized_power", "avg_stroke_distance", "swolf"]:
+            self.assertIn(col, DETAIL_API_REQUIRED_COLUMNS, f"{col} 是详情展示实际消费字段,必须在白名单中")
+
     def test_task1_laps_json_kept(self):
         self.assertIn("laps_json", DETAIL_API_REQUIRED_COLUMNS, "任务 1 引入的 laps_json 必须保留")
 
@@ -61,8 +65,6 @@ class TestDetailApiColumnWhitelist(unittest.TestCase):
         self.assertNotIn("avg_cadence", DETAIL_API_REQUIRED_COLUMNS)
         self.assertNotIn("hr_decoupling", DETAIL_API_REQUIRED_COLUMNS)
         self.assertNotIn("tss", DETAIL_API_REQUIRED_COLUMNS)
-        self.assertNotIn("normalized_power", DETAIL_API_REQUIRED_COLUMNS)
-        self.assertNotIn("swolf", DETAIL_API_REQUIRED_COLUMNS)
         self.assertNotIn("region_city", DETAIL_API_REQUIRED_COLUMNS)
         self.assertNotIn("region_country", DETAIL_API_REQUIRED_COLUMNS)
         self.assertNotIn("region_error", DETAIL_API_REQUIRED_COLUMNS)
