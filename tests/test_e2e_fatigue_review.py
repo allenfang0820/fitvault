@@ -556,14 +556,17 @@ class TestFatigueReviewEmptyStates:
     def test_events_empty_triggers_empty_state(self):
         """A4 / 动作 2 #3:collapse_events=[] 时,_renderFatigueReviewEvents 渲染空态占位。"""
         html = self._load_track_html()
-        assert "暂无关键事件" in html, "缺少 events 空态文案"
-        assert '暂无事件' in html, "缺少 events 空态 tag"
+        assert "状态平稳" in html, "缺少 events 平稳空态文案"
+        assert '无突变' in html, "缺少 events 平稳空态 tag"
 
-    def test_context_tags_empty_triggers_empty_state(self):
-        """A4 / 动作 2 #4:context_tags={} 时,_renderFatigueReviewContextTags 渲染空态占位。"""
+    def test_context_tags_empty_does_not_render_standalone_empty_state(self):
+        """P8.1:context_tags={} 时不渲染独立上下文卡片或空态占位。"""
         html = self._load_track_html()
-        assert "本次活动未携带上下文标签" in html, "缺少 context_tags 空态文案"
-        assert '暂无上下文' in html, "缺少 context_tags 空态 tag"
+        assert "本次活动未携带上下文标签" not in html
+        assert "暂无上下文" not in html
+        assert 'id="fr-context-panel"' not in html
+        assert "_renderFatigueReviewContextFactors(contextTags)" in html
+        assert "影响因素" in html
 
     def test_curves_all_empty_skips_echarts(self):
         """A2 / 动作 3:5 条 curve 全空时,复盘覆盖层不渲染 ECharts,展示占位卡。"""

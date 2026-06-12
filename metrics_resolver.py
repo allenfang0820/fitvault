@@ -169,6 +169,12 @@ class MetricsResolver:
 
         # 提取标量字段
         sport_type = sm.get("sport_type", "running")
+        profile_max_hr = self._num(meta.get("profile_max_hr")) if isinstance(meta, dict) else 0.0
+        if profile_max_hr > 0:
+            sm["profile_max_hr"] = profile_max_hr
+        profile_resting_hr = self._num(meta.get("profile_resting_hr")) if isinstance(meta, dict) else 0.0
+        if profile_resting_hr > 0:
+            sm["profile_resting_hr"] = profile_resting_hr
         total_distance = float(sm.get("distance_m", 0))
         total_calories = float(sm.get("calories", 0))
         decoupling_rate = 0.0  # 待后续引擎计算(GapCalculator 串联后)
@@ -197,6 +203,9 @@ class MetricsResolver:
             distance_curve=distance_curve,
             ei_curve=efficiency_curve,
             sport_type=sport_type,
+            avg_hr=sm.get("avg_hr"),
+            profile_max_hr=sm.get("profile_max_hr"),
+            profile_resting_hr=sm.get("profile_resting_hr"),
         )
 
         # 2. 映射至 Schema
@@ -222,7 +231,21 @@ class MetricsResolver:
 
         # === V4.0 环境标签生成 (供 LLM 防幻觉使用) ===
         # 从 FIT session 提取平均温度(多数 Garmin 设备提供)
-        avg_temp_raw = self._extract(session, "avg_temperature") or self._extract(session, "temperature")
+        weather = {}
+        if isinstance(raw, dict):
+            weather = self._decode_weather_json(raw.get("weather_json")) or raw.get("weather") or {}
+        if not isinstance(weather, dict):
+            weather = {}
+        meta_weather = meta.get("weather") if isinstance(meta, dict) else {}
+        if isinstance(meta_weather, dict):
+            weather = {**weather, **meta_weather}
+        avg_temp_raw = (
+            self._extract(session, "avg_temperature")
+            or self._extract(session, "temperature")
+            or weather.get("temperature_c")
+            or weather.get("temperature")
+            or weather.get("avg_temperature")
+        )
         avg_temp = self._num(avg_temp_raw) if avg_temp_raw is not None else None
 
         max_alt = max((a for a in altitude_curve if a is not None), default=0.0) if altitude_curve else 0.0
@@ -263,14 +286,23 @@ class MetricsResolver:
             )
 
         # 4. V7.8 指标 2:心肺负荷标签(全 sport 注入,但仅 cardio != unknown)
+        cardio_max_hr = sm.get("profile_max_hr")
         cardio = MetricsResolver._classify_cardio_load(
             avg_hr=sm.get("avg_hr"),
-            max_hr=sm.get("max_hr"),
+            max_hr=cardio_max_hr,
+            resting_hr=sm.get("profile_resting_hr"),
             sport_type=sport_type,
             avg_power_w=sm.get("avg_power_w"),
         )
-        if cardio != "unknown":
-            context_tags["心肺负荷 (Cardio Load)"] = f"{cardio} (avg_hr/max_hr)"
+        if cardio in ("high", "extreme"):
+            avg_hr_val = self._num(sm.get("avg_hr"))
+            max_hr_val = self._num(cardio_max_hr)
+            resting_hr_val = self._num(sm.get("profile_resting_hr"))
+            hrr_denominator = max_hr_val - resting_hr_val
+            ratio_pct = ((avg_hr_val - resting_hr_val) / hrr_denominator * 100.0) if hrr_denominator > 0 else 0.0
+            context_tags["心肺负荷 (Cardio Load)"] = (
+                f"{cardio} (HRR={(ratio_pct):.0f}%, avg_hr={avg_hr_val:.0f}, resting_hr={resting_hr_val:.0f}, profile_max_hr={max_hr_val:.0f})"
+            )
 
         # 5. V7.8 指标 3:功率变异性标签(仅 uses_power sport;power_stream 暂传 None → unavailable)
         # V7.13 升级:从 records 提 power 数组后,真正计算 VI
@@ -529,7 +561,9 @@ class MetricsResolver:
 
         semantic = {
             "cardio_load": self._classify_cardio_load(
-                sm.get("avg_hr"), sm.get("max_hr")
+                sm.get("avg_hr"),
+                sm.get("profile_max_hr"),
+                resting_hr=sm.get("profile_resting_hr"),
             ),
             "pace_stability": self._classify_pace_stability(pace_values),
             "elevation_profile": self._classify_elevation(sm.get("elevation_gain_m"), sm.get("distance_km")),
@@ -1239,27 +1273,30 @@ class MetricsResolver:
     def _classify_cardio_load(
         avg_hr: Any,
         max_hr: Any,
+        resting_hr: Any = None,
         sport_type: str = "running",
         avg_power_w: Any = None,
     ) -> str:
-        """V7.8:HR-based Cardio Load(按 sport 路由)。
+        """V7.8:HRR-based Cardio Load(按 sport 路由)。
 
-        跑步/游泳/徒步:HR 比例(< 0.55 very_low ... > 0.90 extreme)
+        跑步/游泳/徒步:HRR 比例(< 0.55 very_low ... > 0.90 extreme)
         骑行/滑雪:优先 Power(无 power 降级 HR)
         见 docs/physiology_reference.md §指标 2。
         """
-        if avg_hr is None or max_hr is None:
+        if avg_hr is None or max_hr is None or resting_hr is None:
             return "unknown"
         try:
             avg_hr_f = float(avg_hr)
             max_hr_f = float(max_hr)
+            resting_hr_f = float(resting_hr)
         except (TypeError, ValueError):
             return "unknown"
-        if max_hr_f <= 0:
+        hrr_denominator = max_hr_f - resting_hr_f
+        if hrr_denominator <= 0:
             return "unknown"
 
         dimension = _classify_sport_dimension(sport_type)
-        hr_ratio = avg_hr_f / max_hr_f
+        hr_ratio = (avg_hr_f - resting_hr_f) / hrr_denominator
 
         # V7.8:骑行/滑雪优先 Power,无 power 降级 HR
         if dimension["uses_power"] and avg_power_w is not None:
@@ -1633,7 +1670,10 @@ class MetricsResolver:
     def _calculate_fatigue_zones(
         distance_curve: list[float],
         ei_curve: list[float],
-        sport_type: str
+        sport_type: str,
+        avg_hr: Any = None,
+        profile_max_hr: Any = None,
+        profile_resting_hr: Any = None,
     ) -> list[dict[str, Any]]:
         """V4.0: 基于 sport_type 敏感度和真实 distance_curve 的疲劳带判定
 
@@ -1650,10 +1690,29 @@ class MetricsResolver:
             return []
 
         sport_type = sport_type.lower()
+        hrr_ratio: float | None = None
+        try:
+            avg_hr_f = float(avg_hr)
+            max_hr_f = float(profile_max_hr)
+            resting_hr_f = float(profile_resting_hr)
+            denominator = max_hr_f - resting_hr_f
+            if avg_hr_f > 0 and denominator > 0:
+                hrr_ratio = (avg_hr_f - resting_hr_f) / denominator
+        except (TypeError, ValueError):
+            hrr_ratio = None
+
         if sport_type in ("running", "trail_running", "treadmill_running"):
+            # Easy aerobic runs often have noisy EI/GAP early in the activity. If the
+            # personal HRR intensity is clearly easy, avoid turning curve noise into
+            # a sustained "fatigue/pressure" claim.
+            if hrr_ratio is not None and hrr_ratio < 0.65:
+                return []
             window = max(3, n // 40)
             threshold_warn = 0.10
             threshold_high = 0.20
+            if hrr_ratio is not None and hrr_ratio < 0.75:
+                threshold_warn = 0.16
+                threshold_high = 0.28
         elif sport_type in ("hiking", "walking", "mountaineering"):
             window = max(5, n // 20)
             threshold_warn = 0.18
@@ -2166,6 +2225,9 @@ class MetricsResolver:
         hr_zone_distribution=None,
         avg_hr=None,
         max_hr=None,
+        resting_hr=None,
+        profile_max_hr=None,
+        profile_resting_hr=None,
         duration_sec: float = 0.0,
         sport_type: str = "running",
         hr_source: str = "chest_strap",
@@ -2173,7 +2235,8 @@ class MetricsResolver:
         """V7.13 指标 9:Training Load(Banister TRIMP 简化版)。
 
         算法(无 zone distribution 时的降级):
-          ratio = avg_hr / max_hr 查表映射到 zone → 用 zone 权重
+          HRR = (avg_hr - resting_hr) / (profile_max_hr - resting_hr)
+          用 HRR 查表映射到 zone → 用 zone 权重
           load = duration_min * zone_weight
 
         算法(有 zone distribution):
@@ -2189,6 +2252,7 @@ class MetricsResolver:
             return {
                 "load": None, "level": "unknown", "zone_used": None,
                 "confidence": "unavailable",
+                "reasons": ["duration<5min"],
             }
 
         duration_min = duration_sec / 60.0
@@ -2206,13 +2270,37 @@ class MetricsResolver:
                 return {
                     "load": None, "level": "unknown", "zone_used": None,
                     "confidence": "unavailable",
+                    "reasons": ["empty_zone_distribution"],
                 }
             load = duration_min * total_weighted
             load = min(load, MetricsResolver._TRAINING_LOAD_MAX_SCORE)
             zone_used = zone_used_list
-        elif avg_hr and max_hr and float(max_hr) > 0:
-            # 降级算法:用 avg_hr/max_hr 推算主要 zone
-            ratio = float(avg_hr) / float(max_hr)
+        elif avg_hr:
+            max_hr_for_hrr = profile_max_hr
+            resting_hr_for_hrr = (
+                profile_resting_hr
+                if profile_resting_hr is not None
+                else resting_hr
+            )
+            try:
+                avg_hr_f = float(avg_hr)
+                max_hr_f = float(max_hr_for_hrr)
+                resting_hr_f = float(resting_hr_for_hrr)
+            except (TypeError, ValueError):
+                return {
+                    "load": None, "level": "unknown", "zone_used": None,
+                    "confidence": "unavailable",
+                    "reasons": ["missing_profile_max_hr_or_resting_hr"],
+                }
+            denominator = max_hr_f - resting_hr_f
+            if avg_hr_f <= 0 or denominator <= 0:
+                return {
+                    "load": None, "level": "unknown", "zone_used": None,
+                    "confidence": "unavailable",
+                    "reasons": ["invalid_hrr_denominator"],
+                }
+            # 降级算法:用个人 HRR 推算主要 zone,不得用单次活动 max_hr 冒充最大心率。
+            ratio = (avg_hr_f - resting_hr_f) / denominator
             if ratio < 0.55:
                 zone_key, weight = "Z1", 1.0
             elif ratio < 0.70:
@@ -2230,6 +2318,7 @@ class MetricsResolver:
             return {
                 "load": None, "level": "unknown", "zone_used": None,
                 "confidence": "unavailable",
+                "reasons": ["missing_hr"],
             }
 
         # 等级判定(脉图自建阈值,可调)
@@ -2260,6 +2349,7 @@ class MetricsResolver:
             "level": level,
             "zone_used": zone_used,
             "confidence": confidence,
+            "reasons": [],
         }
 
     @staticmethod

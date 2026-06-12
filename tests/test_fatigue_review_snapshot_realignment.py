@@ -65,7 +65,7 @@ class TestFatigueReviewP2SnapshotRealignment(unittest.TestCase):
                 "cadence": 84,
             }
             if include_altitude:
-                point["alt"] = 100.0 + i * 1.4
+                point["alt"] = 1500.0 + i * 1.4
             points.append(point)
         return {
             "id": 42,
@@ -80,6 +80,13 @@ class TestFatigueReviewP2SnapshotRealignment(unittest.TestCase):
             "hr_curve": json.dumps([p["hr"] for p in points]),
             "speed_curve": json.dumps([p["speed"] for p in points]),
             "cadence_curve": json.dumps([p["cadence"] for p in points]),
+            "avg_hr": 156,
+            "max_hr": 184,
+            "gain_m": 420,
+            "max_alt_m": 1600 if include_altitude else None,
+            "avg_power": 235,
+            "normalized_power": 252,
+            "weather_json": json.dumps({"temperature_c": 27.5}),
         }
 
     def test_snapshot_curves_are_authoritative_and_length_aligned(self):
@@ -147,7 +154,7 @@ class TestFatigueReviewP2SnapshotRealignment(unittest.TestCase):
         )
 
         self.assertEqual(zones, [
-            {"start_km": 0.3, "end_km": 0.5, "level": "high", "reason": "drop"},
+            {"start_km": 0.3, "end_km": 0.5, "level": "high", "reason": "drop", "startup_trimmed": True},
         ])
 
     def test_startup_guard_keeps_mid_run_zone(self):
@@ -160,6 +167,28 @@ class TestFatigueReviewP2SnapshotRealignment(unittest.TestCase):
         )
 
         self.assertEqual(zones, [{"start_km": 1.0, "end_km": 2.0, "level": "high"}])
+
+    def test_startup_trimmed_zone_is_not_user_visible_pressure_zone(self):
+        from main import _filter_trusted_fatigue_zones_for_review
+
+        zones = _filter_trusted_fatigue_zones_for_review(
+            [{"start_km": 0.3, "end_km": 3.0, "level": "high", "startup_trimmed": True}],
+            sport_type="running",
+            total_distance_m=10000.0,
+        )
+
+        self.assertEqual(zones, [])
+
+    def test_mid_run_zone_is_user_visible_pressure_zone(self):
+        from main import _filter_trusted_fatigue_zones_for_review
+
+        zones = _filter_trusted_fatigue_zones_for_review(
+            [{"start_km": 3.0, "end_km": 4.0, "level": "high"}],
+            sport_type="running",
+            total_distance_m=10000.0,
+        )
+
+        self.assertEqual(zones, [{"start_km": 3.0, "end_km": 4.0, "level": "high"}])
 
     def test_startup_guard_does_not_trim_raw_curves(self):
         snapshot = self._api()._build_fatigue_review_snapshot(self._row())
@@ -416,6 +445,65 @@ class TestFatigueReviewP2SnapshotRealignment(unittest.TestCase):
         self.assertIsInstance(curves["altitude"], list)
         for key in ("metrics", "collapse_events", "fatigue_zones", "context_tags", "advice"):
             self.assertIn(key, snapshot)
+
+    def test_snapshot_context_tags_use_backend_session_and_weather_fields(self):
+        profile = MagicMock(max_hr=184, resting_hr=52, lactate_threshold_hr=166)
+        row = self._row()
+        row["avg_hr"] = 172
+        with patch("profile_backend.get_profile", return_value=profile):
+            snapshot = self._api()._build_fatigue_review_snapshot(row)
+
+        tags = snapshot["context_tags"]
+        self.assertTrue(tags)
+        encoded = json.dumps(tags, ensure_ascii=False)
+        self.assertIn("热应激", encoded)
+        self.assertIn("心肺负荷", encoded)
+        self.assertIn("HRR=91%", encoded)
+        self.assertIn("海拔缺氧", encoded)
+
+    def test_snapshot_context_tags_skip_moderate_cardio_load(self):
+        row = self._row(calories=600, include_altitude=False)
+        row["avg_hr"] = 150
+        row["max_hr"] = 200
+        row["weather_json"] = json.dumps({"temperature_c": 12.0})
+
+        profile = MagicMock(max_hr=200, resting_hr=52, lactate_threshold_hr=166)
+        with patch("profile_backend.get_profile", return_value=profile):
+            snapshot = self._api()._build_fatigue_review_snapshot(row)
+        encoded = json.dumps(snapshot["context_tags"], ensure_ascii=False)
+
+        self.assertNotIn("心肺负荷", encoded)
+
+    def test_snapshot_context_tags_skip_cardio_load_without_profile_max_hr(self):
+        row = self._row(calories=600, include_altitude=False)
+        row["avg_hr"] = 150
+        row["max_hr"] = 150
+        row["weather_json"] = json.dumps({"temperature_c": 12.0})
+
+        profile = MagicMock(max_hr=None, resting_hr=52, lactate_threshold_hr=166)
+        with patch("profile_backend.get_profile", return_value=profile):
+            snapshot = self._api()._build_fatigue_review_snapshot(row)
+        encoded = json.dumps(snapshot["context_tags"], ensure_ascii=False)
+
+        self.assertNotIn("心肺负荷", encoded)
+
+    def test_resolved_payload_short_records_returns_safe_fallback(self):
+        from main import _build_resolved_payload_v81
+
+        payload = _build_resolved_payload_v81(
+            bundle={
+                "records": [{"distance": 0.0, "heart_rate": 120}],
+                "distance_curve_m": [0.0],
+                "time_curve_sec": [0.0],
+                "altitude_curve_m": [100.0],
+            },
+            sport_type="running",
+        )
+
+        self.assertEqual(payload["distance_curve"], [0.0])
+        self.assertEqual(payload["time_curve"], [0.0])
+        self.assertEqual(payload["altitude_curve"], [100.0])
+        self.assertEqual(payload["context_tags"], {})
 
     def test_snapshot_recursively_strips_forbidden_fields(self):
         from main import _strip_fatigue_review_forbidden_keys

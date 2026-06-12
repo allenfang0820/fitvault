@@ -108,6 +108,13 @@ class TestFitSync(unittest.TestCase):
             "region": "成都市",
         }
 
+    def _duplicate_points(self, start_minute: int = 0) -> list[dict]:
+        return [
+            {"time": f"2026-05-19T08:{start_minute:02d}:00Z", "lat": 30.6700, "lon": 104.0600, "alt": 500},
+            {"time": f"2026-05-19T08:{start_minute + 1:02d}:00Z", "lat": 30.6705, "lon": 104.0605, "alt": 510},
+            {"time": f"2026-05-19T08:{start_minute + 2:02d}:00Z", "lat": 30.6710, "lon": 104.0610, "alt": 505},
+        ]
+
     def _wait_job_done(self, job_id: str, timeout_sec: float = 5.0) -> dict:
         deadline = time.time() + timeout_sec
         while time.time() < deadline:
@@ -435,11 +442,102 @@ class TestFitSync(unittest.TestCase):
         self.assertEqual(row["normalized_power"], 128)
         self.assertAlmostEqual(row["avg_stroke_distance"], 2.35)
         self.assertAlmostEqual(row["swolf"], 2.35)
-
         detail = self.api.get_activity_detail(persisted["id"])
         self.assertTrue(detail["ok"], detail)
         record = detail["data"]["record"]
         self.assertTrue(record["detail"]["capabilities"]["has_power"])
+
+    def test_persist_sync_activity_reuses_semantic_duplicate_with_different_file_identity(self):
+        main.ensure_activity_sync_schema()
+        points = self._duplicate_points()
+        first = self._activity("2023-04-22_四姑娘山二峰登顶_mountaineering_8.34km.fit")
+        first.update({
+            "title": "2023-04-22_四姑娘山二峰登顶_mountaineering_8.34km",
+            "sport_type": "mountaineering",
+            "dist_km": 8.34,
+            "distance": 8340.0,
+            "duration": 26054,
+            "duration_sec": 26054,
+            "points": points,
+            "points_json": json.dumps(points),
+            "track_json": json.dumps(points),
+        })
+        second = self._activity("四姑娘山二峰登顶.fit")
+        second.update({
+            "title": "四姑娘山二峰登顶",
+            "sport_type": "mountaineering",
+            "dist_km": 8.34,
+            "distance": 8340.0,
+            "duration": 26054,
+            "duration_sec": 26054,
+            "points": list(points),
+            "points_json": json.dumps(points),
+            "track_json": json.dumps(points),
+        })
+
+        inserted = main._persist_sync_activity(first)
+        updated = main._persist_sync_activity(second)
+
+        conn = profile_backend._conn()
+        try:
+            count = conn.execute("SELECT COUNT(*) FROM activities").fetchone()[0]
+            row = conn.execute("SELECT id, title, file_name, filename FROM activities").fetchone()
+        finally:
+            conn.close()
+
+        self.assertEqual(inserted["op"], "inserted")
+        self.assertEqual(updated["op"], "updated")
+        self.assertEqual(updated.get("dedupe"), "semantic")
+        self.assertEqual(updated["id"], inserted["id"])
+        self.assertEqual(count, 1)
+        self.assertEqual(row["id"], inserted["id"])
+        self.assertEqual(row["title"], "四姑娘山二峰登顶")
+
+    def test_persist_sync_activity_allows_same_distance_at_different_start_time(self):
+        main.ensure_activity_sync_schema()
+        first_points = self._duplicate_points()
+        second_points = [
+            {**point, "time": point["time"].replace("08:", "10:")}
+            for point in first_points
+        ]
+        first = self._activity("morning.fit")
+        first.update({
+            "start_time": "2026-05-19T08:00:00Z",
+            "start_time_utc": "2026-05-19T08:00:00Z",
+            "dist_km": 10.0,
+            "distance": 10000.0,
+            "duration": 3600,
+            "duration_sec": 3600,
+            "points": first_points,
+            "points_json": json.dumps(first_points),
+            "track_json": json.dumps(first_points),
+        })
+        second = self._activity("later.fit")
+        second.update({
+            "start_time": "2026-05-19T10:00:00Z",
+            "start_time_utc": "2026-05-19T10:00:00Z",
+            "dist_km": 10.0,
+            "distance": 10000.0,
+            "duration": 3600,
+            "duration_sec": 3600,
+            "points": second_points,
+            "points_json": json.dumps(second_points),
+            "track_json": json.dumps(second_points),
+        })
+
+        first_res = main._persist_sync_activity(first)
+        second_res = main._persist_sync_activity(second)
+
+        conn = profile_backend._conn()
+        try:
+            count = conn.execute("SELECT COUNT(*) FROM activities").fetchone()[0]
+        finally:
+            conn.close()
+
+        self.assertEqual(first_res["op"], "inserted")
+        self.assertEqual(second_res["op"], "inserted")
+        self.assertNotEqual(first_res["id"], second_res["id"])
+        self.assertEqual(count, 2)
 
     def test_activity_list_item_does_not_parse_fit_for_missing_normalized_power(self):
         row = {

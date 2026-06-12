@@ -10,22 +10,55 @@ def test_startup_fatigue_zone_does_not_create_collapse_event():
     )
 
     fatigue_event_types = {
-        "FATIGUE_DRIFT_START",
+        "FATIGUE_PRESSURE_START",
         "EFFICIENCY_DROP",
         "SUSTAINED_FATIGUE",
     }
     assert not any(ev["type"] in fatigue_event_types for ev in events)
 
 
+def test_startup_trimmed_zone_does_not_create_pressure_start_event():
+    events = _build_fatigue_review_collapse_events(
+        bonk_events=[],
+        fatigue_zones=[{"start_km": 0.3, "end_km": 2.0, "level": "high", "startup_trimmed": True}],
+    )
+
+    assert not any(ev["type"] == "FATIGUE_PRESSURE_START" for ev in events)
+
+
 def test_mid_run_fatigue_zone_still_creates_collapse_event():
     events = _build_fatigue_review_collapse_events(
         bonk_events=[],
         fatigue_zones=[{"start_km": 3.0, "end_km": 4.0, "level": "high"}],
+        sport_type="running",
+        total_distance_m=10000,
     )
 
     event_types = {ev["type"] for ev in events}
-    assert "FATIGUE_DRIFT_START" in event_types
+    assert "FATIGUE_PRESSURE_START" in event_types
     assert events[0]["trigger_km"] == 3.0
+
+
+def test_early_non_trimmed_zone_does_not_create_turning_point_event():
+    events = _build_fatigue_review_collapse_events(
+        bonk_events=[],
+        fatigue_zones=[{"start_km": 0.35, "end_km": 1.6, "level": "high"}],
+        sport_type="running",
+        total_distance_m=10000,
+    )
+
+    assert not any(ev["type"] == "FATIGUE_PRESSURE_START" for ev in events)
+
+
+def test_short_mid_zone_does_not_create_turning_point_event():
+    events = _build_fatigue_review_collapse_events(
+        bonk_events=[],
+        fatigue_zones=[{"start_km": 3.0, "end_km": 3.25, "level": "high"}],
+        sport_type="running",
+        total_distance_m=10000,
+    )
+
+    assert not any(ev["type"] == "FATIGUE_PRESSURE_START" for ev in events)
 
 
 def test_startup_bonk_event_is_not_filtered():

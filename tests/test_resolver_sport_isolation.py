@@ -116,18 +116,45 @@ class TestClassifyCardioLoad:
 
     def test_running_hr_ratio(self):
         from metrics_resolver import MetricsResolver
-        # running:HR 比例 0.75 → moderate
+        # running:HRR=(150-50)/(200-50)=0.667 → low
+        level = MetricsResolver._classify_cardio_load(avg_hr=150, max_hr=200, resting_hr=50, sport_type="running")
+        assert level == "low"
+
+    def test_running_hrr_ratio(self):
+        from metrics_resolver import MetricsResolver
+        # running:HRR=(170-50)/(200-50)=0.8 → high
+        level = MetricsResolver._classify_cardio_load(avg_hr=170, max_hr=200, resting_hr=50, sport_type="running")
+        assert level == "high"
+
+    def test_missing_resting_hr_returns_unknown(self):
+        from metrics_resolver import MetricsResolver
         level = MetricsResolver._classify_cardio_load(avg_hr=150, max_hr=200, sport_type="running")
+        assert level == "unknown"
+
+    def test_invalid_hrr_range_returns_unknown(self):
+        from metrics_resolver import MetricsResolver
+        level = MetricsResolver._classify_cardio_load(avg_hr=150, max_hr=50, resting_hr=50, sport_type="running")
+        assert level == "unknown"
+
+    def test_hrr_lsd_not_high_when_activity_max_hr_is_low(self):
+        from metrics_resolver import MetricsResolver
+        # LSD:活动内 max_hr 很低也不参与分母,个人 HRR 仍是 very_low
+        level = MetricsResolver._classify_cardio_load(avg_hr=120, max_hr=190, resting_hr=50, sport_type="running")
+        assert level == "very_low"
+
+    def test_hrr_moderate_threshold(self):
+        from metrics_resolver import MetricsResolver
+        level = MetricsResolver._classify_cardio_load(avg_hr=155, max_hr=200, resting_hr=50, sport_type="running")
         assert level == "moderate"
 
     def test_cycling_uses_power(self):
         from metrics_resolver import MetricsResolver
         # cycling:有功率时取 max(hr_ratio, power_pct)
-        # avg_hr=120, max_hr=200 → hr_ratio=0.6
+        # avg_hr=120, resting_hr=50, max_hr=200 → HRR=0.467
         # avg_power_w=300 → power_pct=300/250=1.2
-        # effective = max(0.6, 1.2) = 1.2 → extreme
+        # effective = max(0.467, 1.2) = 1.2 → extreme
         level = MetricsResolver._classify_cardio_load(
-            avg_hr=120, max_hr=200, sport_type="cycling", avg_power_w=300
+            avg_hr=120, max_hr=200, resting_hr=50, sport_type="cycling", avg_power_w=300
         )
         assert level == "extreme"
 
@@ -135,24 +162,24 @@ class TestClassifyCardioLoad:
         from metrics_resolver import MetricsResolver
         # cycling 无功率数据,降级 HR only
         level = MetricsResolver._classify_cardio_load(
-            avg_hr=120, max_hr=200, sport_type="cycling", avg_power_w=None
+            avg_hr=120, max_hr=200, resting_hr=50, sport_type="cycling", avg_power_w=None
         )
-        # 0.6 → low
-        assert level == "low"
+        # HRR=0.467 → very_low
+        assert level == "very_low"
 
     def test_swimming_hr_only(self):
         from metrics_resolver import MetricsResolver
         # swimming:无 power,只用 HR
         level = MetricsResolver._classify_cardio_load(
-            avg_hr=140, max_hr=180, sport_type="swimming"
+            avg_hr=140, max_hr=180, resting_hr=50, sport_type="swimming"
         )
-        # 140/180=0.778 → moderate
-        assert level == "moderate"
+        # HRR=(140-50)/(180-50)=0.692 → low
+        assert level == "low"
 
     def test_invalid_inputs_return_unknown(self):
         from metrics_resolver import MetricsResolver
-        assert MetricsResolver._classify_cardio_load(None, 200) == "unknown"
-        assert MetricsResolver._classify_cardio_load(150, 0) == "unknown"
+        assert MetricsResolver._classify_cardio_load(None, 200, resting_hr=50) == "unknown"
+        assert MetricsResolver._classify_cardio_load(150, 0, resting_hr=50) == "unknown"
         assert MetricsResolver._classify_cardio_load("bad", "bad") == "unknown"
 
 
@@ -277,6 +304,7 @@ class TestContextTagsCapabilityRouting:
             "sport", "total_distance", "total_calories", "decoupling_rate",
             "distance_curve", "speed_curve", "gap_curve", "hr_curve",
             "altitude_curve", "lat_curve", "lon_curve", "efficiency_curve",
+            "grade_curve",
             "fatigue_zones", "insight_events", "context_tags",
             "cadence_curve",  # V8.3
             "environment_challenge",  # V_ENV.1.3
@@ -838,16 +866,66 @@ class TestTrainingLoad:
         assert "Z3" in result["zone_used"]
         assert "Z4" in result["zone_used"]
 
-    def test_avg_hr_fallback_to_zone_estimation(self):
-        """无 zone_dist + avg_hr=150 + max_hr=200 → Z3(0.75)推算,load=180。"""
+    def test_avg_hr_fallback_uses_profile_hrr_zone_estimation(self):
+        """无 zone_dist 时用 profile HRR 推算 zone,不用活动 max_hr。"""
+        from metrics_resolver import MetricsResolver
+        result = MetricsResolver._compute_training_load(
+            avg_hr=150,
+            max_hr=170,
+            profile_max_hr=200,
+            profile_resting_hr=50,
+            duration_sec=60 * 60,
+        )
+        # HRR=(150-50)/(200-50)=0.667 → Z2 weight=2.0 → 60 * 2.0 = 120
+        assert result["load"] == 120.0
+        assert result["zone_used"] == "Z2"
+        assert result["confidence"] == "medium"  # MEDIUM:无 zone distribution(推算)
+
+    def test_avg_hr_activity_max_hr_no_longer_used_as_profile_max(self):
+        """无 profile max/resting 时,不得用活动 max_hr 冒充个人最大心率。"""
         from metrics_resolver import MetricsResolver
         result = MetricsResolver._compute_training_load(
             avg_hr=150, max_hr=200, duration_sec=60 * 60
         )
-        # ratio=0.75 → Z3 weight=3.0 → 60 * 3.0 = 180
+        assert result["confidence"] == "unavailable"
+        assert result["load"] is None
+        assert "missing_profile_max_hr_or_resting_hr" in result["reasons"]
+
+    def test_avg_hr_fallback_requires_resting_hr(self):
+        """缺 resting_hr 时 HRR fallback 不可用。"""
+        from metrics_resolver import MetricsResolver
+        result = MetricsResolver._compute_training_load(
+            avg_hr=150, profile_max_hr=200, duration_sec=60 * 60
+        )
+        assert result["confidence"] == "unavailable"
+        assert result["load"] is None
+
+    def test_avg_hr_fallback_accepts_legacy_resting_hr_alias(self):
+        """resting_hr 参数作为 profile_resting_hr 的兼容别名。"""
+        from metrics_resolver import MetricsResolver
+        result = MetricsResolver._compute_training_load(
+            avg_hr=150,
+            profile_max_hr=200,
+            resting_hr=50,
+            duration_sec=60 * 60,
+        )
+        # HRR=(150-50)/(200-50)=0.667 → Z2
+        assert result["load"] == 120.0
+        assert result["zone_used"] == "Z2"
+        assert result["confidence"] == "medium"
+
+    def test_higher_profile_hrr_maps_to_z3(self):
+        """HRR 达到 Z3 门槛时仍能给出更高训练负荷。"""
+        from metrics_resolver import MetricsResolver
+        result = MetricsResolver._compute_training_load(
+            avg_hr=165,
+            profile_max_hr=200,
+            profile_resting_hr=50,
+            duration_sec=60 * 60,
+        )
+        # HRR=(165-50)/(200-50)=0.767 → Z3
         assert result["load"] == 180.0
         assert result["zone_used"] == "Z3"
-        assert result["confidence"] == "medium"  # MEDIUM:无 zone distribution(推算)
 
     def test_short_duration_unavailable(self):
         """duration 3min < 5min → unavailable。"""
@@ -869,7 +947,11 @@ class TestTrainingLoad:
         """sport_type=swimming → confidence=medium(HR 可靠性)。"""
         from metrics_resolver import MetricsResolver
         result = MetricsResolver._compute_training_load(
-            avg_hr=150, max_hr=200, duration_sec=60 * 60, sport_type="swimming"
+            avg_hr=150,
+            profile_max_hr=200,
+            profile_resting_hr=50,
+            duration_sec=60 * 60,
+            sport_type="swimming",
         )
         # swimming 走 MEDIUM(无 zone_dist 已经 MEDIUM,不会升 HIGH)
         assert result["confidence"] == "medium"
@@ -1025,9 +1107,7 @@ class TestV714TrendBaseline:
         """)
         from datetime import datetime, timedelta, timezone
         now = datetime.now(timezone.utc)
-        # 6 周内每 7d 一条,avg_hr=150, max_hr=200 → Z3(3.0)× 60min=180 load/条
-        # 累积 42d = 6 条 × 180 = 1080;7d 累积 = 1 条 × 180 = 180
-        # ratio = 180 / (1080/6) = 180 / 180 = 1.0 → balanced
+        # 6 周内每 7d 一条,avg_hr=150, profile HRR=(150-50)/(200-50)=0.667 → Z2×60min=120 load/条
         for i in range(6):
             ts = (now - timedelta(days=7 * i + 3)).isoformat()  # 3, 10, 17, 24, 31, 38 天前
             conn.execute(
@@ -1038,19 +1118,22 @@ class TestV714TrendBaseline:
         conn.close()
 
         import profile_backend
+        from unittest.mock import MagicMock
         monkeypatch.setattr(profile_backend, "DB_PATH", db_path)
+        monkeypatch.setattr(
+            profile_backend,
+            "get_profile",
+            lambda: MagicMock(max_hr=200, resting_hr=50),
+        )
 
         from main import Api
         api = Api.__new__(Api)
-        # 当前活动:Z2 (weight=2) × 60min = 120 load
+        # 当前活动同样按 profile HRR 推算为 Z2 (weight=2) × 60min = 120 load
         row = {
             "id": 999, "sport_type": "running",
             "avg_hr": 150, "max_hr": 200, "duration_sec": 60 * 60,
         }
         result = api._fetch_load_ratio_7d_42d(row)
-        # acute_7d(180 + 120 = 300)/chronic_42d(1080 + 120 = 1200) / 6 = 200
-        # ratio = 300 / (1200/6) = 300/200 = 1.5
-        # 实际是 balanced/balanced 之间,1.5 是 boundary
         assert result["ratio"] is not None
         assert result["level"] in ("balanced", "caution", "danger", "under_training")
 

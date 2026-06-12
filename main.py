@@ -746,7 +746,7 @@ def _build_fatigue_review_curve_bundle(row: dict[str, Any]) -> dict[str, Any]:
         ts = record.get("timestamp")
         if start_ts is not None and ts is not None:
             time_curve_sec.append(round((ts - start_ts).total_seconds(), 3))
-    return {
+    bundle = {
         "records": records,
         "distance_curve_m": _sanitize_distance_curve_m([r.get("distance") for r in records]),
         "time_curve_sec": time_curve_sec,
@@ -759,7 +759,25 @@ def _build_fatigue_review_curve_bundle(row: dict[str, Any]) -> dict[str, Any]:
         "total_distance_m": total_distance_m,
         "sport_type": str(row.get("sport_type") or "running"),
         "source": "track_json" if track_points else "canonical_db",
+        "avg_heart_rate": _safe_float(row.get("avg_hr") or row.get("avg_heart_rate")),
+        "max_heart_rate": _safe_float(row.get("max_hr") or row.get("max_heart_rate")),
+        "total_ascent": _safe_float(row.get("gain_m") or row.get("total_ascent")),
+        "max_altitude": _safe_float(row.get("max_alt_m") or row.get("max_altitude")),
+        "avg_power": _safe_float(row.get("avg_power")),
+        "normalized_power": _safe_float(row.get("normalized_power")),
+        "avg_temperature": _safe_float(row.get("avg_temperature")),
+        "weather_json": row.get("weather_json"),
     }
+    try:
+        prof = profile_backend.get_profile()
+        bundle["profile_max_hr"] = _safe_float(prof.max_hr) if prof and prof.max_hr else None
+        bundle["profile_resting_hr"] = _safe_float(prof.resting_hr) if prof and prof.resting_hr else None
+        bundle["lactate_threshold_hr"] = _safe_float(prof.lactate_threshold_hr) if prof and prof.lactate_threshold_hr else None
+    except Exception:
+        bundle["profile_max_hr"] = None
+        bundle["profile_resting_hr"] = None
+        bundle["lactate_threshold_hr"] = None
+    return bundle
 
 
 def _build_resolved_payload_v81(
@@ -779,9 +797,26 @@ def _build_resolved_payload_v81(
     }
     records = bundle.get("records") or []
     distance_curve = bundle.get("distance_curve_m") or []
+    fallback = dict(empty)
+    fallback.update({
+        "distance_curve": distance_curve,
+        "time_curve": bundle.get("time_curve_sec") or [],
+        "altitude_curve": bundle.get("altitude_curve_m") or [],
+    })
     if not records or len(records) < 2 or not distance_curve:
         return fallback
     try:
+        weather = _decode_weather_json(bundle.get("weather_json")) or {}
+        weather_temp = (
+            weather.get("temperature_c")
+            or weather.get("temperature")
+            or weather.get("avg_temperature")
+        )
+        avg_temperature = (
+            bundle.get("avg_temperature")
+            if bundle.get("avg_temperature") is not None
+            else weather_temp
+        )
         raw = {
             "record_mesgs": records,
             "session_mesgs": [{
@@ -789,10 +824,24 @@ def _build_resolved_payload_v81(
                 "total_distance": bundle.get("total_distance_m") or 0.0,
                 "total_timer_time": bundle.get("duration_sec") or 0,
                 "total_calories": bundle.get("calories") or 0.0,
+                "avg_heart_rate": bundle.get("avg_heart_rate"),
+                "max_heart_rate": bundle.get("max_heart_rate"),
+                "total_ascent": bundle.get("total_ascent"),
+                "max_altitude": bundle.get("max_altitude"),
+                "avg_power": bundle.get("avg_power"),
+                "normalized_power": bundle.get("normalized_power"),
+                "avg_temperature": avg_temperature,
             }],
             "lap_mesgs": [],
+            "weather_json": bundle.get("weather_json"),
         }
-        meta = {"sport_type": sport_type}
+        meta = {
+            "sport_type": sport_type,
+            "weather": weather,
+            "profile_max_hr": bundle.get("profile_max_hr"),
+            "profile_resting_hr": bundle.get("profile_resting_hr"),
+            "lactate_threshold_hr": bundle.get("lactate_threshold_hr"),
+        }
 
         resolved = MetricsResolver().resolve(raw, meta)
         if not isinstance(resolved, dict):
@@ -807,6 +856,9 @@ def _build_resolved_payload_v81(
             distance_curve=distance_curve,
             ei_curve=efficiency_curve,
             sport_type=sport_type,
+            avg_hr=bundle.get("avg_heart_rate"),
+            profile_max_hr=bundle.get("profile_max_hr"),
+            profile_resting_hr=bundle.get("profile_resting_hr"),
         )
         insight_events = MetricsResolver._detect_bonk_event(
             distance_curve=distance_curve,
@@ -828,12 +880,6 @@ def _build_resolved_payload_v81(
         }
     except Exception:
         logger.exception("_build_resolved_payload_v81 Resolver 调用失败,降级空 dict")
-        fallback = dict(empty)
-        fallback.update({
-            "distance_curve": distance_curve,
-            "time_curve": bundle.get("time_curve_sec") or [],
-            "altitude_curve": bundle.get("altitude_curve_m") or [],
-        })
         try:
             fallback["fatigue_zones"] = MetricsResolver._calculate_fatigue_zones(
                 distance_curve=distance_curve,
@@ -842,7 +888,7 @@ def _build_resolved_payload_v81(
             )
         except Exception:
             fallback["fatigue_zones"] = []
-        return empty
+        return fallback
 
 
 _FATIGUE_REVIEW_FORBIDDEN_KEYS = {
@@ -858,6 +904,30 @@ _FATIGUE_REVIEW_FORBIDDEN_KEYS = {
 }
 
 _FATIGUE_REVIEW_STARTUP_EVENT_MIN_KM = 0.1
+_FATIGUE_REVIEW_TURNING_POINT_MIN_KM_BY_SPORT = {
+    "running": 1.0,
+    "trail_running": 1.0,
+    "treadmill_running": 1.0,
+    "hiking": 1.0,
+    "walking": 0.8,
+    "mountaineering": 1.0,
+    "cycling": 3.0,
+    "road_cycling": 3.0,
+    "mountain_biking": 2.0,
+}
+_FATIGUE_REVIEW_TURNING_POINT_MIN_DISTANCE_RATIO = 0.15
+_FATIGUE_REVIEW_TURNING_POINT_MIN_ZONE_KM_BY_SPORT = {
+    "running": 0.5,
+    "trail_running": 0.5,
+    "treadmill_running": 0.5,
+    "hiking": 0.8,
+    "walking": 0.5,
+    "mountaineering": 0.8,
+    "cycling": 1.5,
+    "road_cycling": 1.5,
+    "mountain_biking": 1.0,
+}
+_FATIGUE_REVIEW_TURNING_POINT_MIN_ZONE_RATIO = 0.08
 _FATIGUE_REVIEW_STARTUP_GUARD_KM_BY_SPORT = {
     "running": 0.3,
     "trail_running": 0.3,
@@ -872,9 +942,84 @@ _FATIGUE_REVIEW_STARTUP_GUARD_KM_BY_SPORT = {
 _FATIGUE_REVIEW_DEFAULT_STARTUP_GUARD_KM = 0.3
 
 
+def _fatigue_review_total_km(total_distance_m: Any = None) -> float:
+    return (_safe_float(total_distance_m, None) or 0.0) / 1000.0
+
+
+def _fatigue_review_turning_point_min_km(
+    sport_type: str,
+    total_distance_m: Any = None,
+) -> float:
+    sport = str(sport_type or "").strip().lower()
+    total_km = _fatigue_review_total_km(total_distance_m)
+    base = _FATIGUE_REVIEW_TURNING_POINT_MIN_KM_BY_SPORT.get(sport, 1.0)
+    if total_km > 0:
+        base = min(base, max(0.0, total_km * 0.35))
+        base = max(base, total_km * _FATIGUE_REVIEW_TURNING_POINT_MIN_DISTANCE_RATIO)
+    return round(max(_FATIGUE_REVIEW_STARTUP_EVENT_MIN_KM, base), 2)
+
+
+def _fatigue_review_turning_point_min_zone_km(
+    sport_type: str,
+    total_distance_m: Any = None,
+) -> float:
+    sport = str(sport_type or "").strip().lower()
+    total_km = _fatigue_review_total_km(total_distance_m)
+    base = _FATIGUE_REVIEW_TURNING_POINT_MIN_ZONE_KM_BY_SPORT.get(sport, 0.5)
+    if total_km > 0:
+        base = min(base, max(0.15, total_km * 0.25))
+        base = max(base, total_km * _FATIGUE_REVIEW_TURNING_POINT_MIN_ZONE_RATIO)
+    return round(max(0.1, base), 2)
+
+
+def _fatigue_review_zone_trigger_km(zone: dict[str, Any]) -> float:
+    start = _safe_float(zone.get("start_km")) or 0.0
+    end = _safe_float(zone.get("end_km")) or start
+    return start if start >= 0.05 else round((start + end) / 2.0, 2)
+
+
+def _is_fatigue_review_trusted_pressure_zone(
+    zone: dict[str, Any],
+    sport_type: str,
+    total_distance_m: Any = None,
+) -> bool:
+    if not isinstance(zone, dict) or zone.get("startup_trimmed"):
+        return False
+    start = _safe_float(zone.get("start_km"), None)
+    end = _safe_float(zone.get("end_km"), None)
+    if start is None or end is None or end <= start:
+        return False
+    if end - start < _fatigue_review_turning_point_min_zone_km(sport_type, total_distance_m):
+        return False
+    return _fatigue_review_zone_trigger_km(zone) >= _fatigue_review_turning_point_min_km(
+        sport_type,
+        total_distance_m,
+    )
+
+
+def _filter_trusted_fatigue_zones_for_review(
+    zones: Any,
+    sport_type: str,
+    total_distance_m: Any = None,
+) -> list[dict[str, Any]]:
+    """Keep only user-visible, credible pressure zones for review surfaces."""
+    if not isinstance(zones, list):
+        return []
+    trusted: list[dict[str, Any]] = []
+    for zone in zones:
+        if not isinstance(zone, dict):
+            continue
+        if not _is_fatigue_review_trusted_pressure_zone(zone, sport_type, total_distance_m):
+            continue
+        trusted.append(dict(zone))
+    return trusted
+
+
 def _build_fatigue_review_collapse_events(
     bonk_events: Optional[list[dict[str, Any]]],
     fatigue_zones: Optional[list[dict[str, Any]]],
+    sport_type: str = "running",
+    total_distance_m: Any = None,
 ) -> list[dict[str, Any]]:
     """Build backend-authoritative event anchors for the review chart.
 
@@ -932,13 +1077,12 @@ def _build_fatigue_review_collapse_events(
         zones.append(normalized)
     zones.sort(key=lambda item: (item["start_km"], item["end_km"]))
 
-    def zone_trigger(zone: dict[str, Any]) -> float:
-        start = _safe_float(zone.get("start_km")) or 0.0
-        end = _safe_float(zone.get("end_km")) or start
-        return start if start >= 0.05 else round((start + end) / 2.0, 2)
-
     def is_review_fatigue_event_zone(zone: dict[str, Any]) -> bool:
-        return zone_trigger(zone) >= _FATIGUE_REVIEW_STARTUP_EVENT_MIN_KM
+        return _is_fatigue_review_trusted_pressure_zone(
+            zone,
+            sport_type=sport_type,
+            total_distance_m=total_distance_m,
+        )
 
     def zone_desc(zone: dict[str, Any], fallback: str) -> str:
         start = _safe_float(zone.get("start_km")) or 0.0
@@ -947,17 +1091,17 @@ def _build_fatigue_review_collapse_events(
         return str(
             zone.get("reason")
             or zone.get("description")
-            or f"{fallback}: 后端 fatigue_zones 标记 {level} 区间 {start:.1f}-{end:.1f} km"
+            or f"{fallback}: 识别到 {level} 压力区间 {start:.1f}-{end:.1f} km"
         )
 
     event_zones = [zone for zone in zones if is_review_fatigue_event_zone(zone)]
     if event_zones:
         first = event_zones[0]
         add_event(
-            "FATIGUE_DRIFT_START",
-            zone_trigger(first),
-            "漂移开始",
-            zone_desc(first, "疲劳漂移开始"),
+            "FATIGUE_PRESSURE_START",
+            _fatigue_review_zone_trigger_km(first),
+            "状态压力开始",
+            zone_desc(first, "状态压力开始: 强度和效率变化都达到转折点门槛"),
         )
 
         high_levels = {"high", "collapse", "critical", "severe"}
@@ -969,7 +1113,7 @@ def _build_fatigue_review_collapse_events(
             first_high = high_zones[0]
             add_event(
                 "EFFICIENCY_DROP",
-                zone_trigger(first_high),
+                _fatigue_review_zone_trigger_km(first_high),
                 "效率下降",
                 zone_desc(first_high, "效率下降"),
             )
@@ -977,7 +1121,7 @@ def _build_fatigue_review_collapse_events(
             last_high = high_zones[-1]
             add_event(
                 "SUSTAINED_FATIGUE",
-                zone_trigger(last_high),
+                _fatigue_review_zone_trigger_km(last_high),
                 "疲劳加深",
                 zone_desc(last_high, "后段疲劳加深"),
             )
@@ -1041,6 +1185,7 @@ def _filter_fatigue_zones_after_startup(
         item = dict(zone)
         if start < guard_km:
             item["start_km"] = guard_km
+            item["startup_trimmed"] = True
         filtered.append(item)
     return filtered
 
@@ -1152,6 +1297,46 @@ def _build_review_hr_drift_records(
             }
         })
     return records
+
+
+def _review_metric_reasons(metric_key: str, **kwargs: Any) -> list[str]:
+    duration_sec = _safe_int(kwargs.get("duration_sec")) or 0
+    sport_type = str(kwargs.get("sport_type") or "")
+    reasons: list[str] = []
+    if metric_key == "efficiency":
+        if sport_type in ("swimming",):
+            reasons.append("unsupported_sport_swim")
+        if duration_sec < 15 * 60:
+            reasons.append("duration<15min")
+        if not _safe_float(kwargs.get("avg_hr")):
+            reasons.append("missing_hr")
+        if not _safe_float(kwargs.get("avg_pace")):
+            reasons.append("missing_pace")
+    elif metric_key == "durability":
+        if sport_type in ("swimming",):
+            reasons.append("unsupported_sport_swim")
+        if duration_sec < 45 * 60:
+            reasons.append("duration<45min")
+        if _safe_int(kwargs.get("speed_points")) < 20:
+            reasons.append("points<20")
+    elif metric_key == "cadence_stability":
+        if sport_type not in ("running", "trail_running"):
+            reasons.append("unsupported_sport")
+        if duration_sec < 20 * 60:
+            reasons.append("duration<20min")
+        if _safe_int(kwargs.get("cadence_points")) < 20:
+            reasons.append("points<20")
+    elif metric_key == "training_load":
+        if duration_sec < 5 * 60:
+            reasons.append("duration<5min")
+        if not _safe_float(kwargs.get("avg_hr")):
+            reasons.append("missing_hr")
+        if not kwargs.get("has_zone_distribution"):
+            if not _safe_float(kwargs.get("profile_max_hr")):
+                reasons.append("missing_profile_max_hr")
+            if not _safe_float(kwargs.get("profile_resting_hr")):
+                reasons.append("missing_resting_hr")
+    return reasons
 
 
 def _merge_fatigue_zones_for_review(
@@ -3223,6 +3408,50 @@ def _dedupe_activity_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return deduped
 
 
+def _activity_points_for_duplicate_check(activity: dict[str, Any]) -> list[dict[str, Any]]:
+    for key in ("points", "points_json", "track_json"):
+        raw = activity.get(key)
+        if not raw:
+            continue
+        try:
+            obj = json.loads(raw) if isinstance(raw, str) else raw
+        except Exception:
+            continue
+        if isinstance(obj, dict):
+            obj = obj.get("points") or obj.get("track_data") or []
+        if isinstance(obj, list):
+            return [dict(p) for p in obj if isinstance(p, dict)]
+    return []
+
+
+def _find_semantic_duplicate_activity(activity: dict[str, Any]) -> dict[str, Any] | None:
+    dist_km = _safe_float(activity.get("dist_km"))
+    duration_sec = _safe_int(activity.get("duration_sec") if activity.get("duration_sec") is not None else activity.get("duration"))
+    start_time = activity.get("start_time")
+    start_time_utc = activity.get("start_time_utc")
+    if not (dist_km and dist_km > 0 and duration_sec and duration_sec > 0 and (start_time or start_time_utc)):
+        return None
+    try:
+        dup_res = profile_backend.check_duplicate_activity(
+            start_time=start_time,
+            dist_km=float(dist_km),
+            duration_sec=int(duration_sec),
+            points_json=_activity_points_for_duplicate_check(activity),
+            start_time_utc=start_time_utc,
+        )
+    except Exception as exc:
+        logger.warning("[dedup] semantic duplicate check skipped for %s: %s", activity.get("file_name") or activity.get("filename"), exc)
+        return None
+    if not dup_res.get("is_duplicate"):
+        return None
+    duplicate = dup_res.get("duplicate_record") or {}
+    duplicate_id = _safe_int(duplicate.get("id"))
+    if not duplicate_id:
+        return None
+    duplicate["duplicate_score"] = dup_res.get("score")
+    return duplicate
+
+
 def check_activity_data_integrity() -> dict[str, Any]:
     config = resolve_workspace_track_dir(auto_recover=True)
     source_dir = str(config.get("workspace_track_abs_path") or "")
@@ -3409,15 +3638,38 @@ def _persist_sync_activity(activity: dict[str, Any]) -> dict[str, Any]:
                     return {"op": "skipped", "id": int(existing["id"])}
             if not existing and file_name:
                 existing = _find_activity_by_file_name(conn, file_name, include_deleted=True)
+            semantic_duplicate = None
+            if not existing:
+                semantic_duplicate = _find_semantic_duplicate_activity(activity)
+                duplicate_id = _safe_int((semantic_duplicate or {}).get("id"))
+                if duplicate_id:
+                    row = conn.execute(
+                        """
+                        SELECT id, file_name, filename, file_path, deleted_at
+                        FROM activities
+                        WHERE id = ?
+                          AND deleted_at IS NULL
+                          AND COALESCE(source_type, 'fit_sdk') = 'fit_sdk'
+                          AND COALESCE(is_mock, 0) = 0
+                        """,
+                        (duplicate_id,),
+                    ).fetchone()
+                    existing = dict(row) if row else None
             if existing:
                 _update_activity_sync_row(conn, int(existing["id"]), activity)
                 op = "updated"
                 activity_id = int(existing["id"])
+                dedupe = "semantic" if semantic_duplicate else None
             else:
                 activity_id = _insert_activity_sync_row(conn, activity)
                 op = "inserted"
+                dedupe = None
             conn.commit()
-            return {"op": op, "id": activity_id}
+            res = {"op": op, "id": activity_id}
+            if dedupe:
+                res["dedupe"] = dedupe
+                res["duplicate_score"] = semantic_duplicate.get("duplicate_score") if semantic_duplicate else None
+            return res
         except Exception:
             conn.rollback()
             raise
@@ -5070,7 +5322,9 @@ class Api:
 
     def save_user_profile(self, data: dict) -> dict:
         try:
-            profile_backend.upsert_profile(data)
+            existing = profile_backend.get_profile().to_dict()
+            existing.update(data or {})
+            profile_backend.upsert_profile(existing)
         except Exception as e:
             return {"ok": False, "error": str(e)}
         return {"ok": True}
@@ -6548,14 +6802,14 @@ class Api:
         算法:
           1. 查询同 sport_type 的最近 21d 活动
           2. 对每条活动,解析 hr_zone_distribution → 调 _compute_training_load
-          3. 失败时降级:用 avg_hr/max_hr 推算主要 zone weight
+          3. 失败时降级:用 avg_hr + 用户画像 HRR 推算主要 zone weight
           4. 取中位数 load 作为 baseline
 
         复用 V7.9 21d baseline 模式 + V7.13 训练负荷降级路径。
         见 docs/physiology_reference.md §指标 9。
 
         契约:
-        - §2.1 全链路可追溯:trend baseline 来源 = 21d hr_zone_distribution / avg_hr / max_hr
+        - §2.1 全链路可追溯:trend baseline 来源 = 21d hr_zone_distribution / avg_hr + profile HRR
         - §8 canonical 只读:仅 SELECT
         - §6 SQL 严禁 SELECT shadow_diff_json
         """
@@ -6565,6 +6819,9 @@ class Api:
             import json as _json_v85
             from datetime import datetime, timedelta, timezone
             from metrics_resolver import MetricsResolver as _MR_v85
+            profile = profile_backend.get_profile()
+            profile_max_hr = _safe_float(profile.max_hr) if profile and profile.max_hr else None
+            profile_resting_hr = _safe_float(profile.resting_hr) if profile and profile.resting_hr else None
 
             sport_type = str(row.get("sport_type") or "running")
             current_id = _safe_int(row.get("id")) or 0
@@ -6574,14 +6831,13 @@ class Api:
             cutoff_ts = (datetime.now(timezone.utc) - timedelta(days=21)).isoformat()
             cursor.execute(
                 """
-                SELECT hr_zone_distribution, avg_hr, max_hr, duration_sec
+                SELECT hr_zone_distribution, avg_hr, duration_sec
                 FROM activities
                 WHERE sport_type = ?
                   AND id != ?
                   AND start_time >= ?
                   AND duration_sec > ?
                   AND avg_hr IS NOT NULL
-                  AND max_hr IS NOT NULL
                 ORDER BY start_time DESC
                 """,
                 (sport_type, current_id, cutoff_ts, 5 * 60),
@@ -6592,7 +6848,7 @@ class Api:
             return {"baseline_load": None, "compared_count": 0, "level": "flat"}
 
         loads: list[float] = []
-        for zone_json, avg_hr, max_hr, dur in rows:
+        for zone_json, avg_hr, dur in rows:
             hr_zone_dist = None
             if zone_json:
                 try:
@@ -6602,7 +6858,8 @@ class Api:
             load_result = _MR_v85._compute_training_load(
                 hr_zone_distribution=hr_zone_dist,
                 avg_hr=float(avg_hr) if avg_hr else None,
-                max_hr=float(max_hr) if max_hr else None,
+                profile_max_hr=profile_max_hr,
+                profile_resting_hr=profile_resting_hr,
                 duration_sec=float(dur) if dur else 0.0,
                 sport_type=sport_type,
             )
@@ -6641,6 +6898,9 @@ class Api:
             import sqlite3
             from datetime import datetime, timedelta, timezone
             from metrics_resolver import MetricsResolver as _MR_v714
+            profile = profile_backend.get_profile()
+            profile_max_hr = _safe_float(profile.max_hr) if profile and profile.max_hr else None
+            profile_resting_hr = _safe_float(profile.resting_hr) if profile and profile.resting_hr else None
 
             sport_type = str(row.get("sport_type") or "running")
             current_id = _safe_int(row.get("id")) or 0
@@ -6657,7 +6917,8 @@ class Api:
             current_load_result = _MR_v714._compute_training_load(
                 hr_zone_distribution=hr_zone_dist,
                 avg_hr=_safe_float(row.get("avg_hr")),
-                max_hr=_safe_float(row.get("max_hr")),
+                profile_max_hr=profile_max_hr,
+                profile_resting_hr=profile_resting_hr,
                 duration_sec=float(duration_sec),
                 sport_type=sport_type,
             )
@@ -6673,14 +6934,13 @@ class Api:
             def _query_period_load(cutoff_ts):
                 cursor.execute(
                     """
-                    SELECT avg_hr, max_hr, duration_sec
+                    SELECT avg_hr, duration_sec
                     FROM activities
                     WHERE sport_type = ?
                       AND id != ?
                       AND start_time <= ?
                       AND start_time >= ?
                       AND avg_hr IS NOT NULL
-                      AND max_hr IS NOT NULL
                       AND duration_sec > ?
                     """,
                     (sport_type, current_id, now.isoformat(), cutoff_ts, 5 * 60),
@@ -6688,9 +6948,12 @@ class Api:
                 period_rows = cursor.fetchall()
                 total = 0.0
                 count = 0
-                for h, mx, d in period_rows:
+                for h, d in period_rows:
                     load = _MR_v714._compute_training_load(
-                        avg_hr=float(h), max_hr=float(mx), duration_sec=float(d),
+                        avg_hr=float(h),
+                        profile_max_hr=profile_max_hr,
+                        profile_resting_hr=profile_resting_hr,
+                        duration_sec=float(d),
                         sport_type=sport_type,
                     )
                     if load.get("load") is not None:
@@ -6754,7 +7017,8 @@ class Api:
             "sport_type": sport_type,
             "metrics": {
                 "hr_drift": {
-                    "pct": 0.0, "level": "unknown", "confidence": "unavailable",
+                    "pct": None, "level": "unknown", "confidence": "unavailable",
+                    "reasons": ["review snapshot unavailable"],
                     "trend": {"level": "flat", "compared_count": 0, "delta_pct": None, "is_improving": None, "source": "historical_avg"},
                 },
                 "decoupling": {
@@ -6772,22 +7036,22 @@ class Api:
                 # V7.9 - V7.13 4 个新指标完整兜底
                 "efficiency": {
                     "score": None, "level": "unknown", "confidence": "unavailable",
-                    "delta_pct": None, "sample_size": 0,
+                    "delta_pct": None, "sample_size": 0, "reasons": ["review snapshot unavailable"],
                     "trend": {"level": "flat", "compared_count": 0, "baseline_ratio": None, "source": "v7_14_error"},
                 },
                 "durability": {
                     "score": None, "level": "unknown", "confidence": "unavailable",
-                    "head_speed": None, "tail_speed": None,
+                    "head_speed": None, "tail_speed": None, "reasons": ["review snapshot unavailable"],
                     "trend": {"level": "flat", "compared_count": 0, "baseline_ratio": None, "source": "v7_14_error"},
                 },
                 "cadence_stability": {
                     "score": None, "level": "unknown", "confidence": "unavailable",
-                    "cv": None, "decay_pct": None, "is_intermittent": False,
+                    "cv": None, "decay_pct": None, "is_intermittent": False, "reasons": ["review snapshot unavailable"],
                     "trend": {"level": "flat", "compared_count": 0, "is_improving": None, "baseline_cv": None, "source": "v8_5_error"},
                 },
                 "training_load": {
                     "load": None, "level": "unknown", "zone_used": None, "confidence": "unavailable",
-                    "load_ratio": None, "ratio_7d_42d": "v7_14_error",
+                    "load_ratio": None, "ratio_7d_42d": "v7_14_error", "reasons": ["review snapshot unavailable"],
                     "trend": {"level": "flat", "compared_count": 0, "is_improving": None, "baseline_load": None, "source": "v8_5_error"},
                 },
             },
@@ -6948,6 +7212,11 @@ class Api:
                         sport_type=sport_type,
                         total_distance_m=total_distance_m,
                     )
+                    fatigue_zones = _filter_trusted_fatigue_zones_for_review(
+                        fatigue_zones,
+                        sport_type=sport_type,
+                        total_distance_m=total_distance_m,
+                    )
                     fatigue_zones = _merge_fatigue_zones_for_review(fatigue_zones)
                     context_tags = resolved_v81.get("context_tags") or {}
                 except Exception:
@@ -7021,16 +7290,19 @@ class Api:
                 _drift_pct = _drift_result.get("drift_pct")
                 _drift_level = _drift_result.get("level", "unknown")
                 _drift_confidence = _drift_result.get("confidence", "unavailable")
+                _drift_reasons = _drift_result.get("reasons") or []
             except Exception:
-                _drift_pct = 0.0
+                _drift_pct = None
                 _drift_level = "unknown"
                 _drift_confidence = "unavailable"
+                _drift_reasons = ["hr drift calculation failed"]
 
             metrics = {
                 "hr_drift": {
-                    "pct": _drift_pct if _drift_pct is not None else 0.0,
+                    "pct": _drift_pct,
                     "level": _drift_level,
                     "confidence": _drift_confidence,  # V7.10 新增 confidence
+                    "reasons": _drift_reasons,
                 },
                 "decoupling": decoupling,
                 "bonk_risk": bonk_risk,
@@ -7040,6 +7312,8 @@ class Api:
             collapse_events = _build_fatigue_review_collapse_events(
                 bonk_events=bonk_events,
                 fatigue_zones=fatigue_zones,
+                sport_type=sport_type,
+                total_distance_m=total_distance_m,
             )
 
             # V7.6 trend 派生:挂在 metrics 子字段,不扩展 V6.3 顶级 7 段白名单
@@ -7126,6 +7400,13 @@ class Api:
                     "confidence": _eff_result.get("confidence"),
                     "delta_pct": _eff_result.get("delta_pct"),
                     "sample_size": _eff_result.get("sample_size"),
+                    "reasons": _review_metric_reasons(
+                        "efficiency",
+                        duration_sec=_safe_int(row.get("duration_sec") or row.get("duration")) or 0,
+                        sport_type=sport_type,
+                        avg_hr=row.get("avg_hr"),
+                        avg_pace=row.get("avg_pace") or row.get("avg_pace_sec"),
+                    ) if _eff_result.get("confidence") == "unavailable" else [],
                 }
             except Exception:
                 # V7.9:efficiency 注入失败不影响其他 metric,降级为 unavailable
@@ -7135,6 +7416,7 @@ class Api:
                     "confidence": "unavailable",
                     "delta_pct": None,
                     "sample_size": 0,
+                    "reasons": ["efficiency calculation failed"],
                 }
 
             # V7.14:efficiency trend 真实查询(21d baseline)
@@ -7173,6 +7455,12 @@ class Api:
                     "confidence": _durability_result.get("confidence"),
                     "head_speed": _durability_result.get("head_speed"),
                     "tail_speed": _durability_result.get("tail_speed"),
+                    "reasons": _review_metric_reasons(
+                        "durability",
+                        duration_sec=_duration_v711,
+                        sport_type=sport_type,
+                        speed_points=len(review_speed_curve),
+                    ) if _durability_result.get("confidence") == "unavailable" else [],
                 }
                 # V7.14:durability trend 真实查询(21d baseline)
                 # 见 docs/physiology_reference.md §指标 7 + §五未来指标入源流程
@@ -7198,6 +7486,7 @@ class Api:
                     "confidence": "unavailable",
                     "head_speed": None,
                     "tail_speed": None,
+                    "reasons": ["durability calculation failed"],
                 }
 
             # V7.12 指标 8:Cadence Stability(步频稳定性)
@@ -7219,6 +7508,12 @@ class Api:
                     "cv": _cadence_result.get("cv"),
                     "decay_pct": _cadence_result.get("decay_pct"),
                     "is_intermittent": _cadence_result.get("is_intermittent"),
+                    "reasons": _review_metric_reasons(
+                        "cadence_stability",
+                        duration_sec=_duration_v712,
+                        sport_type=sport_type,
+                        cadence_points=len(review_cadence_curve),
+                    ) if _cadence_result.get("confidence") == "unavailable" else [],
                 }
                 # V8.5:21d 中位数 cadence CV baseline trend
                 # 语义与 4 个老指标不同:CV 越小越稳(is_improving 方向反转)
@@ -7263,6 +7558,7 @@ class Api:
                     "cv": None,
                     "decay_pct": None,
                     "is_intermittent": False,
+                    "reasons": ["cadence stability calculation failed"],
                 }
 
             # V7.13 指标 9:Training Load(TRIMP 简化版)
@@ -7281,16 +7577,28 @@ class Api:
                 _load_result = _MR_v713._compute_training_load(
                     hr_zone_distribution=_hr_zone_dist,
                     avg_hr=_safe_float(row.get("avg_hr")),
-                    max_hr=_safe_float(row.get("max_hr")),
+                    profile_max_hr=bundle.get("profile_max_hr"),
+                    profile_resting_hr=bundle.get("profile_resting_hr"),
                     duration_sec=float(_duration_v713),
                     sport_type=sport_type,
                     hr_source="chest_strap",  # 简化:假设胸带
                 )
+                _load_reasons = []
+                if _load_result.get("confidence") == "unavailable":
+                    _load_reasons = _review_metric_reasons(
+                        "training_load",
+                        duration_sec=_duration_v713,
+                        avg_hr=row.get("avg_hr"),
+                        profile_max_hr=bundle.get("profile_max_hr"),
+                        profile_resting_hr=bundle.get("profile_resting_hr"),
+                        has_zone_distribution=bool(_hr_zone_dist),
+                    ) or _load_result.get("reasons") or []
                 metrics["training_load"] = {
                     "load": _load_result.get("load"),
                     "level": _load_result.get("level"),
                     "zone_used": _load_result.get("zone_used"),
                     "confidence": _load_result.get("confidence"),
+                    "reasons": _load_reasons,
                     # V7.14:load_ratio = 7d/42d 真实计算(Gabbett 2016 行业惯例)
                     "load_ratio": None,
                     "ratio_7d_42d": "pending_v7_14_compute",
@@ -7346,6 +7654,7 @@ class Api:
                     "level": "unknown",
                     "zone_used": None,
                     "confidence": "unavailable",
+                    "reasons": ["training load calculation failed"],
                     "load_ratio": None,
                     "ratio_7d_42d": "v7_14_error",
                 }

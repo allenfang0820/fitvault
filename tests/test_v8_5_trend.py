@@ -75,9 +75,10 @@ class TestV8_5TrendHelpersExist(unittest.TestCase):
         self.assertIn("c > 30", fn_src)
 
     def test_v8_5_load_trend_fallback(self):
-        """load trend 失败时降级为 avg_hr/max_hr 推算(与 V7.13 一致)。"""
+        """load trend 失败时降级为 avg_hr + profile HRR 推算(与 V7.13 一致)。"""
         fn_src = _get_fn_body(self.main, "_fetch_training_load_trend")
         self.assertIn("_compute_training_load", fn_src)
+        self.assertIn("profile_max_hr", fn_src)
 
 
 class TestV8_5InjectBlocks(unittest.TestCase):

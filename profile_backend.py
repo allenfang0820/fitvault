@@ -312,6 +312,7 @@ def _is_user_profile_effective(data: dict[str, Any]) -> bool:
         "ftp_watts", "lactate_threshold_pace", "pb_1km", "longest_run_km",
         "longest_ride_time", "cycling_40km_time", "cycling_80km_time",
         "longest_cycle_km", "longest_swim_distance_m", "swimming_100m_pb",
+        "total_run_km", "total_hike_km", "total_cycle_km", "total_swim_km",
     }
     return any(data.get(k) is not None for k in keys)
 
@@ -717,6 +718,10 @@ def _init_schema(conn: sqlite3.Connection) -> None:
         ("longest_cycle_km", "REAL"),
         ("longest_swim_distance_m", "REAL"),
         ("swimming_100m_pb", "TEXT"),
+        ("total_run_km", "REAL"),
+        ("total_hike_km", "REAL"),
+        ("total_cycle_km", "REAL"),
+        ("total_swim_km", "REAL"),
     ]:
         try:
             conn.execute(f"ALTER TABLE user_profile ADD COLUMN {col} {dtype}")
@@ -780,6 +785,10 @@ class UserProfile:
     longest_cycle_km: float | None = None
     longest_swim_distance_m: float | None = None
     swimming_100m_pb: str | None = None
+    total_run_km: float | None = None
+    total_hike_km: float | None = None
+    total_cycle_km: float | None = None
+    total_swim_km: float | None = None
     last_updated: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -822,6 +831,10 @@ class UserProfile:
             "longest_cycle_km": self.longest_cycle_km,
             "longest_swim_distance_m": self.longest_swim_distance_m,
             "swimming_100m_pb": self.swimming_100m_pb,
+            "total_run_km": self.total_run_km,
+            "total_hike_km": self.total_hike_km,
+            "total_cycle_km": self.total_cycle_km,
+            "total_swim_km": self.total_swim_km,
             "last_updated": self.last_updated,
         }
 
@@ -879,6 +892,10 @@ def get_profile() -> UserProfile:
         longest_cycle_km=row["longest_cycle_km"] if "longest_cycle_km" in row.keys() else None,
         longest_swim_distance_m=row["longest_swim_distance_m"] if "longest_swim_distance_m" in row.keys() else None,
         swimming_100m_pb=row["swimming_100m_pb"] if "swimming_100m_pb" in row.keys() else None,
+        total_run_km=row["total_run_km"] if "total_run_km" in row.keys() else None,
+        total_hike_km=row["total_hike_km"] if "total_hike_km" in row.keys() else None,
+        total_cycle_km=row["total_cycle_km"] if "total_cycle_km" in row.keys() else None,
+        total_swim_km=row["total_swim_km"] if "total_swim_km" in row.keys() else None,
         last_updated=row["updated_at"] if "updated_at" in row.keys() else None,
     )
 
@@ -895,9 +912,10 @@ def upsert_profile(data: dict[str, Any]) -> UserProfile:
              pb_full_marathon, lactate_threshold_hr, ftp, ftp_watts,
              lactate_threshold_pace, pb_1km, longest_run_km,
              longest_ride_time, cycling_40km_time, cycling_80km_time, longest_cycle_km,
-             longest_swim_distance_m, swimming_100m_pb)
+             longest_swim_distance_m, swimming_100m_pb,
+             total_run_km, total_hike_km, total_cycle_km, total_swim_km)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             data.get("name"),
@@ -933,6 +951,10 @@ def upsert_profile(data: dict[str, Any]) -> UserProfile:
             data.get("longest_cycle_km"),
             data.get("longest_swim_distance_m"),
             data.get("swimming_100m_pb"),
+            data.get("total_run_km"),
+            data.get("total_hike_km"),
+            data.get("total_cycle_km"),
+            data.get("total_swim_km"),
         ),
     )
     conn.commit()
@@ -973,6 +995,10 @@ def upsert_profile(data: dict[str, Any]) -> UserProfile:
         longest_cycle_km=data.get("longest_cycle_km"),
         longest_swim_distance_m=data.get("longest_swim_distance_m"),
         swimming_100m_pb=data.get("swimming_100m_pb"),
+        total_run_km=data.get("total_run_km"),
+        total_hike_km=data.get("total_hike_km"),
+        total_cycle_km=data.get("total_cycle_km"),
+        total_swim_km=data.get("total_swim_km"),
         last_updated=last_updated["updated_at"] if last_updated else None,
     )
 
@@ -2886,6 +2912,8 @@ def fetch_mcp_persona(platform: str, trigger_type: str = "manual") -> dict[str, 
         mark_profile_sync_failed("模型名未配置，请在设置页填写")
         return {"ok": False, "error": "模型名未配置，请在设置页填写"}
     api_key = str(cfg.get("api_key") or "")
+    existing_profile = get_profile()
+    preserved_max_hr = existing_profile.max_hr if existing_profile else None
 
     if platform == "coros":
         step1_prompt = (
@@ -2894,6 +2922,7 @@ def fetch_mcp_persona(platform: str, trigger_type: str = "manual") -> dict[str, 
             "调用 querySportRecords 工具，参数固定为：\n"
             '{ "startDate": "20100101", "sportTypeCodes": [104, 105], "limit": 20 }\n'
             "取返回记录中 distance 最大值（单位km，保留两位小数）作为 longest_hike_km。若无记录设为 null。\n\n"
+            "同时把返回记录中 distance 求和（单位km，保留两位小数）作为 total_hike_km。若无记录设为 null。\n\n"
             "【第二步】获取体能评估：\n"
             "调用 queryFitnessAssessmentOverview 工具，取 vo2max 字段。若无数据则设为 null。\n\n"
             "【第三步】获取基础生理数据：\n"
@@ -2903,16 +2932,19 @@ def fetch_mcp_persona(platform: str, trigger_type: str = "manual") -> dict[str, 
             "调用 querySportRecords 工具，参数为：\n"
             '{ "startDate": "20100101", "sportTypeCodes": [101, 102, 103], "limit": 20 }\n'
             "取返回记录中 distance 最大值（单位km，保留两位小数）作为 longest_run_km。若无记录设为 null。\n"
+            "把返回记录中 distance 求和（单位km，保留两位小数）作为 total_run_km。若无记录设为 null。\n"
             "此外，若返回记录中包含跑步时长信息，取最大值作为 longest_running_duration（格式 mm:ss 或 h:mm:ss）。若无则设为 null。\n\n"
             "【第五步】获取骑行记录：\n"
             "调用 querySportRecords 工具，参数为：\n"
             '{ "startDate": "20100101", "sportTypeCodes": [201, 202], "limit": 20 }\n'
             "取返回记录中 distance 最大值（单位km，保留两位小数）作为 longest_cycle_km。若无记录设为 null。\n"
+            "把返回记录中 distance 求和（单位km，保留两位小数）作为 total_cycle_km。若无记录设为 null。\n"
             "取返回记录中时长最大值（格式 h:mm:ss）作为 longest_ride_time。若无则设为 null。\n\n"
             "【第六步】获取游泳记录：\n"
             "调用 querySportRecords 工具，参数为：\n"
             '{ "startDate": "20100101", "sportTypeCodes": [301, 302], "limit": 20 }\n'
             "取返回记录中 distance 最大值（单位m）作为 longest_swim_distance_m。若无记录设为 null。\n"
+            "把返回记录中 distance 求和（单位km，保留两位小数）作为 total_swim_km。若返回 distance 单位为米，先换算为公里。若无记录设为 null。\n"
             "若存在 100m 游泳记录，取其用时（格式 mm:ss）作为 swimming_100m_pb。若无则设为 null。\n\n"
             "【输出格式】输出一个完整 JSON，绝对不输出任何其他文字：\n"
             "{\n"
@@ -2925,11 +2957,15 @@ def fetch_mcp_persona(platform: str, trigger_type: str = "manual") -> dict[str, 
             '  "avg_sleep_hours": 浮点数或null,\n'
             '  "lactate_threshold_pace": "字符串或null",\n'
             '  "longest_run_km": 浮点数或null,\n'
+            '  "total_run_km": 浮点数或null,\n'
+            '  "total_hike_km": 浮点数或null,\n'
             '  "pb_1km": "字符串或null",\n'
             '  "longest_ride_time": "字符串或null",\n'
             '  "longest_cycle_km": 浮点数或null,\n'
+            '  "total_cycle_km": 浮点数或null,\n'
             '  "swimming_100m_pb": "字符串或null",\n'
-            '  "longest_swim_distance_m": 整数或null\n'
+            '  "longest_swim_distance_m": 整数或null,\n'
+            '  "total_swim_km": 浮点数或null\n'
             "}"
         )
         messages = [
@@ -2976,13 +3012,18 @@ def fetch_mcp_persona(platform: str, trigger_type: str = "manual") -> dict[str, 
                     data_map[item["name"]] = item["value"]
             
             ftp = _validate_int(data_map.get("ftp_watts"))
+            synced_max_hr = (
+                _validate_int(data_map.get("max_hr"))
+                or _validate_int(data_map.get("max_heart_rate"))
+                or _validate_int(data_map.get("maximum_heart_rate"))
+            )
             profile_data = {
                 "name": str(data_map.get("username")) if data_map.get("username") is not None else None,
                 "gender": str(data_map.get("gender")) if data_map.get("gender") is not None else None,
                 "age": _validate_int(data_map.get("age")),
                 "weight": _validate_number(data_map.get("weight_kg")),
                 "resting_hr": _validate_int(data_map.get("resting_heart_rate")),
-                "max_hr": None,
+                "max_hr": synced_max_hr or preserved_max_hr,
                 "hrv_baseline": _validate_number(data_map.get("hrv")),
                 "vo2max": _validate_number(data_map.get("vo2_max")),
                 "avg_bedtime": str(data_map.get("avg_bedtime")).strip() if data_map.get("avg_bedtime") is not None else None,
@@ -3010,6 +3051,10 @@ def fetch_mcp_persona(platform: str, trigger_type: str = "manual") -> dict[str, 
                 "longest_cycle_km": _validate_number(data_map.get("longest_cycle_km")),
                 "swimming_100m_pb": _validate_time_format(data_map.get("swimming_100m_pb")),
                 "longest_swim_distance_m": _validate_number(data_map.get("longest_swim_distance_m")),
+                "total_run_km": _validate_number(data_map.get("total_run_km")),
+                "total_hike_km": _validate_number(data_map.get("total_hike_km")),
+                "total_cycle_km": _validate_number(data_map.get("total_cycle_km")),
+                "total_swim_km": _validate_number(data_map.get("total_swim_km")),
             }
         else:
             persona = parsed_json
@@ -3019,7 +3064,7 @@ def fetch_mcp_persona(platform: str, trigger_type: str = "manual") -> dict[str, 
                 "age": _validate_int(persona.get("age")),
                 "weight": _validate_number(persona.get("weight")),
                 "resting_hr": _validate_int(persona.get("resting_hr")),
-                "max_hr": None,
+                "max_hr": _validate_int(persona.get("max_hr")) or preserved_max_hr,
                 "hrv_baseline": _validate_number(persona.get("hrv_baseline")),
                 "vo2max": _validate_number(persona.get("vo2max")),
                 "avg_sleep_hours": _validate_number(persona.get("avg_sleep_hours")),
@@ -3038,6 +3083,10 @@ def fetch_mcp_persona(platform: str, trigger_type: str = "manual") -> dict[str, 
                 "longest_cycle_km": _validate_number(persona.get("longest_cycle_km")),
                 "swimming_100m_pb": _validate_time_format(persona.get("swimming_100m_pb")),
                 "longest_swim_distance_m": _validate_number(persona.get("longest_swim_distance_m")),
+                "total_run_km": _validate_number(persona.get("total_run_km")),
+                "total_hike_km": _validate_number(persona.get("total_hike_km")),
+                "total_cycle_km": _validate_number(persona.get("total_cycle_km")),
+                "total_swim_km": _validate_number(persona.get("total_swim_km")),
             }
 
         upsert_profile(profile_data)

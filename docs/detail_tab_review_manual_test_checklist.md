@@ -40,7 +40,7 @@
 | FR-TC-009A | 切到复盘 Tab | 顶部出现“后端权威快照”摘要带,含数据来源、距离轴、事件/疲劳带状态 | ☐ |
 | FR-TC-009B | 查看复盘指标 | 指标分为“核心状态”和“能力与负荷”两组,共 8 张卡 | ☐ |
 | FR-TC-009C | 查看主图 | 主图区标题为“多维时间轴分析”,图例包含心率/速度/海拔/效率/GAP/坡度/疲劳带/事件 | ☐ |
-| FR-TC-009D | 查看右侧信息列 | 右侧显示上下文标签、关键事件、建议和 disclaimer | ☐ |
+| FR-TC-009D | 查看右侧信息列 | 右侧显示关键摘要、状态下滑线索、建议和 disclaimer；有 `context_tags` 时在关键摘要显示“影响因素” | ☐ |
 | FR-TC-009E | 缩窄窗口 | 右侧信息列下移为单列,无文字重叠或按钮溢出 | ☐ |
 
 ### 1.1.2 P7.0 复盘分析驾驶舱设计边界
@@ -116,12 +116,12 @@
 
 | 用例 ID | 操作 | 预期结果 | 通过 |
 |---|---|---|---|
-| FR-TC-009AS | 查看上下文面板 | 面板说明上下文来自 `data.context_tags`,不从活动标题、设备或 DOM 推导 | ☐ |
-| FR-TC-009AT | 后端 `context_tags = {}` | 上下文面板显示空态,不从其他字段补标签 | ☐ |
+| FR-TC-009AS | 查看关键摘要影响因素 | 有 `context_tags` 时，关键摘要显示“影响因素”，只读 `data.context_tags`,不从活动标题、设备或 DOM 推导 | ☐ |
+| FR-TC-009AT | 后端 `context_tags = {}` | 不显示独立上下文卡片、不显示上下文空态、不从其他字段补标签 | ☐ |
 | FR-TC-009AU | 查看建议面板 | 面板说明建议来自 `data.advice`,免责声明来自 `data.disclaimer` | ☐ |
 | FR-TC-009AV | 后端 `advice = ""` | 建议面板显示“建议待接入”,不从 metrics/curves 生成建议 | ☐ |
 | FR-TC-009AW | 后端 `disclaimer` 缺失 | 前端使用固定兜底免责声明,不抛错 | ☐ |
-| FR-TC-009AX | 缩窄窗口 | 上下文标签、建议和免责声明自然换行,无重叠或溢出 | ☐ |
+| FR-TC-009AX | 缩窄窗口 | 影响因素、建议和免责声明自然换行,无重叠或溢出 | ☐ |
 | FR-TC-009AY | 检查 AI 入口 | AI 按钮仍置灰且无 onclick,不触发 `call_llm` | ☐ |
 
 ### 1.1.9 P7.7 响应式与可读性检查
@@ -433,11 +433,11 @@
 
 | 门禁 | 检查内容 | 通过 |
 |---|---|---|
-| 上下文来源 | 上下文标签只读取 `data.context_tags`,不从标题/设备/DOM 推导 | ☐ |
+| 上下文来源 | 关键摘要“影响因素”只读取 `data.context_tags`,不从标题/设备/DOM 推导 | ☐ |
 | 建议来源 | 建议只读取 `data.advice`,免责声明只读取 `data.disclaimer` 或固定兜底 | ☐ |
-| 空态 | 空 context_tags 和空 advice 均展示空态,不补算、不生成 | ☐ |
+| 空态 | 空 context_tags 不展示独立卡片或空态；空 advice 展示建议空态；均不补算、不生成 | ☐ |
 | 零推断 | 不从 metrics/curves/collapse_events/fatigue_zones/points/DOM 生成建议 | ☐ |
-| 响应式 | 标签、建议、免责声明窄屏不重叠不溢出 | ☐ |
+| 响应式 | 影响因素、建议、免责声明窄屏不重叠不溢出 | ☐ |
 | AI 冻结 | P7.6 不开放 AI 入口,不触发 `call_llm` | ☐ |
 
 ### 6.9 P7.7 响应式与可读性门禁
@@ -628,7 +628,7 @@
 | 点段关系 | 用户能看到“事件是点,区间是段；点帮助定位,段帮助理解持续压力”的关系说明 | ☐ |
 | 生理冲击点 | 右侧栏出现 `生理冲击点`,只读 `metrics.hr_drift / decoupling / training_load / bonk_risk / events` | ☐ |
 | 建议来源 | 建议仍只来自 `data.advice`,免责声明来自 `data.disclaimer` | ☐ |
-| ID 兼容 | `fr-context-panel / fr-events-panel / fr-fatigue-zones-panel / fr-advice-panel` 等既有 ID 保留 | ☐ |
+| 上下文降噪 | 不再保留独立 `fr-context-panel`；`context_tags` 有值时并入 `fr-side-summary-panel` 的“影响因素” | ☐ |
 | 零推断 | 不从 DOM / 截图 / ECharts / 曲线走势 / 活动标题 / 设备 / points 推导右侧结论 | ☐ |
 | AI 冻结 | P7.16 不开放 AI 入口,不触发 `call_llm` | ☐ |
 

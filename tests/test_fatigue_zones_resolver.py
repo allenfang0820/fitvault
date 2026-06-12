@@ -97,6 +97,34 @@ class TestFatigueZonesThresholds(unittest.TestCase):
         zones = MetricsResolver._calculate_fatigue_zones(distance_curve, ei_curve, "trail_running")
         self.assertGreater(len(zones), 0)
 
+    def test_easy_running_hrr_suppresses_efficiency_noise(self):
+        """低强度轻松跑不应只因 EI 波动被标成持续状态压力。"""
+        n = 400
+        distance_curve, ei_curve = _make_curves(n, "drop_mid")
+        zones = MetricsResolver._calculate_fatigue_zones(
+            distance_curve,
+            ei_curve,
+            "running",
+            avg_hr=131,
+            profile_max_hr=186,
+            profile_resting_hr=52,
+        )
+        self.assertEqual(zones, [])
+
+    def test_harder_running_hrr_keeps_fatigue_zone(self):
+        """强度足够时，明显 EI 下滑仍应保留疲劳带。"""
+        n = 400
+        distance_curve, ei_curve = _make_curves(n, "drop_mid")
+        zones = MetricsResolver._calculate_fatigue_zones(
+            distance_curve,
+            ei_curve,
+            "running",
+            avg_hr=155,
+            profile_max_hr=186,
+            profile_resting_hr=52,
+        )
+        self.assertGreater(len(zones), 0)
+
 
 class TestFatigueZonesDistanceAccuracy(unittest.TestCase):
     """真实 distance_curve 距离(非线性均摊)"""

@@ -48,14 +48,14 @@ class TestFatigueReviewBackendOutputContract(unittest.TestCase):
     EXPECTED_CURVES_KEYS = {
         "distance", "time", "efficiency", "gap", "grade", "terrain_load", "hr", "altitude", "speed", "total_distance_m",
     }
-    EXPECTED_HR_DRIFT_KEYS = {"pct", "level", "confidence", "trend"}
+    EXPECTED_HR_DRIFT_KEYS = {"pct", "level", "confidence", "trend", "reasons"}
     EXPECTED_DECOUPLING_KEYS = {"pct", "level", "trend"}
     EXPECTED_BONK_RISK_KEYS = {"is_at_risk", "confidence", "trend"}
     EXPECTED_EVENTS_KEYS = {"count", "trend"}
-    EXPECTED_EFFICIENCY_KEYS = {"score", "level", "confidence", "delta_pct", "sample_size", "trend"}
-    EXPECTED_DURABILITY_KEYS = {"score", "level", "confidence", "head_speed", "tail_speed", "trend"}
-    EXPECTED_CADENCE_KEYS = {"score", "level", "confidence", "cv", "decay_pct", "is_intermittent", "trend"}
-    EXPECTED_TRAINING_LOAD_KEYS = {"load", "level", "zone_used", "confidence", "load_ratio", "trend"}
+    EXPECTED_EFFICIENCY_KEYS = {"score", "level", "confidence", "delta_pct", "sample_size", "trend", "reasons"}
+    EXPECTED_DURABILITY_KEYS = {"score", "level", "confidence", "head_speed", "tail_speed", "trend", "reasons"}
+    EXPECTED_CADENCE_KEYS = {"score", "level", "confidence", "cv", "decay_pct", "is_intermittent", "trend", "reasons"}
+    EXPECTED_TRAINING_LOAD_KEYS = {"load", "level", "zone_used", "confidence", "load_ratio", "trend", "reasons"}
 
     def test_top_level_whitelist(self):
         """7+2 段顶级白名单必须存在"""
@@ -119,18 +119,23 @@ class TestFatigueReviewBackendOutputContract(unittest.TestCase):
             "sport_type": "running",
             "metrics": {
                 "hr_drift": {"pct": 5.2, "level": "good", "confidence": "high",
+                            "reasons": [],
                             "trend": {"delta_pct": 2.0, "level": "flat", "compared_count": 5, "is_improving": None, "source": "historical_avg"}},
                 "decoupling": {"pct": 8.0, "level": "good", "trend": {"delta_pct": -3.0, "level": "down", "compared_count": 5, "is_improving": True, "source": "historical_avg"}},
                 "bonk_risk": {"is_at_risk": False, "confidence": "low",
                               "trend": {"is_increasing": False, "compared_count": 5, "level": "flat", "source": "historical_avg"}},
                 "events": {"count": 0, "trend": {"delta_count": 0, "level": "flat", "compared_count": 5, "source": "historical_avg"}},
                 "efficiency": {"score": 75.0, "level": "stable", "confidence": "high", "delta_pct": 1.5, "sample_size": 5,
+                              "reasons": [],
                               "trend": {"level": "flat", "compared_count": 5, "baseline_ratio": 1.05, "source": "v7_14_baseline"}},
                 "durability": {"score": 88.0, "level": "good", "confidence": "high", "head_speed": 4.2, "tail_speed": 3.7,
+                               "reasons": [],
                                "trend": {"level": "flat", "compared_count": 5, "baseline_ratio": 0.95, "source": "v7_14_baseline"}},
                 "cadence_stability": {"score": 82.0, "level": "good", "confidence": "high", "cv": 3.5, "decay_pct": -1.2, "is_intermittent": False,
+                                      "reasons": [],
                                       "trend": {"delta_pct": 2.0, "level": "flat", "compared_count": 5, "is_improving": None, "baseline_cv": 3.6, "source": "v8_5_21d_median_cadence_cv"}},
                 "training_load": {"load": 120.5, "level": "high", "zone_used": "z2+z3", "confidence": "high", "load_ratio": 1.15,
+                                 "reasons": [],
                                  "ratio_7d_42d": "optimal", "acute_7d": 350, "chronic_42d": 305, "ratio_compared_count": 5,
                                  "trend": {"delta_pct": 8.0, "level": "flat", "compared_count": 5, "is_improving": None, "baseline_load": 110, "source": "v8_5_21d_median_daily_load"}},
             },
@@ -165,18 +170,23 @@ class TestFrontendConsumptionContract(unittest.TestCase):
     def _get_sample_metrics(self) -> dict:
         return {
             "hr_drift": {"pct": 5.2, "level": "good", "confidence": "high",
+                        "reasons": [],
                         "trend": {"delta_pct": 2.0, "level": "flat", "compared_count": 5, "is_improving": None, "source": "historical_avg"}},
             "decoupling": {"pct": 8.0, "level": "good", "trend": {"delta_pct": -3.0, "level": "down", "compared_count": 5, "is_improving": True, "source": "historical_avg"}},
             "bonk_risk": {"is_at_risk": False, "confidence": "low",
                           "trend": {"is_increasing": False, "compared_count": 5, "level": "flat", "source": "historical_avg"}},
             "events": {"count": 0, "trend": {"delta_count": 0, "level": "flat", "compared_count": 5, "source": "historical_avg"}},
             "efficiency": {"score": 75.0, "level": "stable", "confidence": "high", "delta_pct": 1.5, "sample_size": 5,
+                          "reasons": [],
                           "trend": {"level": "flat", "compared_count": 5, "baseline_ratio": 1.05, "source": "v7_14_baseline"}},
             "durability": {"score": 88.0, "level": "good", "confidence": "high", "head_speed": 4.2, "tail_speed": 3.7,
+                           "reasons": [],
                            "trend": {"level": "flat", "compared_count": 5, "baseline_ratio": 0.95, "source": "v7_14_baseline"}},
             "cadence_stability": {"score": 82.0, "level": "good", "confidence": "high", "cv": 3.5, "decay_pct": -1.2, "is_intermittent": False,
+                                  "reasons": [],
                                   "trend": {"delta_pct": 2.0, "level": "flat", "compared_count": 5, "is_improving": None, "baseline_cv": 3.6, "source": "v8_5_21d_median_cadence_cv"}},
             "training_load": {"load": 120.5, "level": "high", "zone_used": "z2+z3", "confidence": "high", "load_ratio": 1.15,
+                             "reasons": [],
                              "trend": {"delta_pct": 8.0, "level": "flat", "compared_count": 5, "is_improving": None, "baseline_load": 110, "source": "v8_5_21d_median_daily_load"}},
         }
 
@@ -358,7 +368,7 @@ class TestDegradedScenarios(unittest.TestCase):
         snap = {
             "sport_type": "running",
             "metrics": {
-                "hr_drift": {"pct": 0.0, "level": "unknown", "confidence": "unavailable", "trend": {}},
+                "hr_drift": {"pct": None, "level": "unknown", "confidence": "unavailable", "trend": {}, "reasons": ["duration<45min"]},
                 "decoupling": {"pct": 0.0, "level": "unknown", "trend": {}},
                 "bonk_risk": {"is_at_risk": False, "confidence": "low", "trend": {}},
                 "events": {"count": 0, "trend": {}},
@@ -385,7 +395,7 @@ class TestDegradedScenarios(unittest.TestCase):
         snap = {
             "sport_type": "running",
             "metrics": {
-                "hr_drift": {"pct": 0.0, "level": "unknown", "confidence": "unavailable", "trend": {"delta_pct": None, "level": "unknown", "compared_count": 0, "is_improving": None, "source": "historical_avg"}},
+                "hr_drift": {"pct": None, "level": "unknown", "confidence": "unavailable", "reasons": ["hr drift calculation failed"], "trend": {"delta_pct": None, "level": "unknown", "compared_count": 0, "is_improving": None, "source": "historical_avg"}},
                 "decoupling": {"pct": 0.0, "level": "unknown", "trend": {"delta_pct": None, "level": "unknown", "compared_count": 0, "is_improving": None, "source": "historical_avg"}},
                 "bonk_risk": {"is_at_risk": False, "confidence": "low", "trend": {"is_increasing": False, "compared_count": 0, "level": "unknown", "source": "historical_avg"}},
                 "events": {"count": 0, "trend": {"delta_count": 0, "level": "unknown", "compared_count": 0, "source": "historical_avg"}},
