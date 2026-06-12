@@ -1767,7 +1767,7 @@ class MetricsResolver:
                 if drop_rate >= 0.15:
                     return [{
                         "type": "BONK_WARNING",
-                        "trigger_km": round(d, 2),
+                        "trigger_km": round(d / 1000.0, 2),
                         "value_y": round(ei, 4), # 严格遵循契约：绑定精确的 Y 轴绝对坐标
                         "description": f"累积能耗达 {int(total_calories)} kcal，等效效率跌破基线 {int(drop_rate*100)}%，处于糖原枯竭区。"
                     }]

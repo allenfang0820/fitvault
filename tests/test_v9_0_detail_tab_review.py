@@ -90,6 +90,21 @@ class TestV9DetailTabHtml(unittest.TestCase):
                           f"P7.3 FAIL: 指标卡缺解释容器 #{sub_id}")
         self.assertEqual(self.html.count('class="metric-card fr-metric-card"'), 8)
 
+    def test_metric_card_user_copy_and_tooltips_exist(self):
+        """指标卡标题应使用用户语言,并提供桌面 hover 说明。"""
+        for text in [
+            "后程效率变化",
+            "能量断档风险",
+            "fr-metric-info",
+            "data-tooltip=\"看后半程心率是否比前半程更难控制",
+            "data-tooltip=\"看这次运动给身体带来的整体刺激大小",
+            "getFatigueReviewSportCopyGroup",
+            "sport === 'mountaineering'",
+        ]:
+            self.assertIn(text, self.html)
+        self.assertNotIn("<div class=\"lbl\">解耦率</div>", self.html)
+        self.assertNotIn("<div class=\"lbl\">Bonk 风险</div>", self.html)
+
     def test_fatigue_review_overlay_removed(self):
         """#fatigue-review-overlay 必须已被删除(合并入 detail Modal)。"""
         self.assertNotIn('id="fatigue-review-overlay"', self.html,
@@ -180,6 +195,17 @@ class TestV9AiInsightModalHtml(unittest.TestCase):
         for text in ["本次复盘概览", "汇总本次活动的疲劳、风险和建议状态。", "AI 待开放"]:
             self.assertIn(text, self.html)
 
+    def test_review_placeholder_header_is_removed(self):
+        """复盘顶部旧占位头部不得占用可视空间。"""
+        review_idx = self.html.find('id="detail-tab-review"')
+        layout_idx = self.html.find('id="fr-review-layout"', review_idx)
+        self.assertGreater(review_idx, 0)
+        self.assertGreater(layout_idx, review_idx)
+        review_lead = self.html[review_idx:layout_idx]
+        self.assertNotIn("review-tab-header", review_lead)
+        self.assertNotIn("fr-subtitle", review_lead)
+        self.assertNotIn("正在加载复盘数据", review_lead)
+
     def test_p7_2_summary_band_uses_backend_snapshot_only(self):
         """P7.2:摘要带只展示后端 snapshot 字段,不得引入前端事实推导。"""
         idx = self.html.find("function _renderFatigueReviewSummary(data)")
@@ -207,8 +233,8 @@ class TestV9AiInsightModalHtml(unittest.TestCase):
             self.assertNotIn(forbidden, body)
 
     def test_p7_3_metric_render_uses_metrics_only(self):
-        """P7.3:指标驾驶舱渲染只消费 metrics,不得从曲线/DOM 推导业务状态。"""
-        idx = self.html.find("function _renderFatigueReviewMetrics(metrics)")
+        """P7.3:指标驾驶舱渲染只消费 metrics 和 sportType 文案分组,不得从曲线/DOM 推导业务状态。"""
+        idx = self.html.find("function _renderFatigueReviewMetrics(metrics, sportType)")
         self.assertGreater(idx, 0)
         end = self.html.find("\n    function _renderFatigueReviewDimensions", idx)
         body = self.html[idx:end]
@@ -216,6 +242,7 @@ class TestV9AiInsightModalHtml(unittest.TestCase):
             "metrics.hr_drift", "metrics.decoupling", "metrics.bonk_risk",
             "metrics.events", "metrics.efficiency", "metrics.durability",
             "metrics.cadence_stability", "metrics.training_load",
+            "getFatigueReviewSportCopyGroup(sportType)",
         ]:
             self.assertIn(required, body)
         for forbidden in [
@@ -348,19 +375,51 @@ class TestV9AiInsightModalHtml(unittest.TestCase):
         ]:
             self.assertIn('id="' + el_id + '"', self.html,
                           f"P7.11 FAIL: 缺少 #{el_id}")
-        self.assertIn("_renderFatigueReviewStageOverview(data.fatigue_zones || [])", self.html)
-        fn_idx = self.html.find("function _renderFatigueReviewStageOverview(zones)")
+        self.assertIn("var reviewTotalDistanceKm = _fatigueReviewTotalDistanceKm(data)", self.html)
+        self.assertIn("_renderFatigueReviewStageOverview(data.fatigue_zones || [], data.sport_type, reviewTotalDistanceKm)", self.html)
+        fn_idx = self.html.find("function _renderFatigueReviewStageOverview(zones, sportType, totalDistanceKm)")
         self.assertGreater(fn_idx, 0)
         fn_body = self.html[fn_idx:self.html.find("\n    function _renderFatigueReviewContextTags", fn_idx)]
         for text in [
             "zone.start_km", "zone.end_km", "zone.level",
-            "zone.reason || zone.description",
+            "_fatigueReviewZoneDisplayCopy(zone, sportGroup, totalDistanceKm)",
+            "_fatigueReviewStageTooltip(zone, sportGroup, totalDistanceKm, stageItems.length)",
             "fr-stage-segment", "暂无阶段",
         ]:
             self.assertIn(text, fn_body)
         for forbidden in [
             "curves.", "speed", "time", "total_distance_m", "points",
             "querySelector", "getBoundingClientRect", "innerText", "call_llm",
+        ]:
+            self.assertNotIn(forbidden, fn_body)
+
+    def test_p2_stage_bar_hover_explains_raw_fragments(self):
+        """P2:阶段条 hover/说明应解释原始片段与右侧摘要的关系。"""
+        for text in [
+            "阶段条保留系统识别到的原始片段；右侧状态区间已合并为阅读摘要。",
+            "阶段条保留多个原始片段；右侧状态区间已将碎片合并为阅读摘要。",
+            "function _fatigueReviewStageTooltip(zone, sportGroup, totalDistanceKm, fragmentCount)",
+            "这是系统识别到的原始片段之一",
+            "这是系统识别到的一个原始状态片段",
+            "不代表身体状态在该公里点突然变化",
+            "右侧状态区间摘要",
+            "title=\"' + safeHtml(tooltip) + '\"",
+            "aria-label=\"' + safeHtml(title + '，' + start + ' 到 ' + end + ' 公里。' + tooltip) + '\"",
+        ]:
+            self.assertIn(text, self.html)
+        fn_idx = self.html.find("function _fatigueReviewStageTooltip(zone, sportGroup, totalDistanceKm, fragmentCount)")
+        self.assertGreater(fn_idx, 0)
+        fn_body = self.html[fn_idx:self.html.find("\n    function _renderFatigueReviewStageOverview", fn_idx)]
+        for text in [
+            "配速、心率和恢复段",
+            "爬升、路况和心率",
+            "爬升、补给和停歇",
+            "心率、坡度和功率输出",
+        ]:
+            self.assertIn(text, self.html)
+        for forbidden in [
+            "speed", "time", "points", "querySelector",
+            "getBoundingClientRect", "innerText", "echarts",
         ]:
             self.assertNotIn(forbidden, fn_body)
 
@@ -374,7 +433,7 @@ class TestV9AiInsightModalHtml(unittest.TestCase):
             "flex: var(--fr-stage-grow, 1) 1 var(--fr-stage-basis, 0)",
         ]:
             self.assertIn(text, self.html)
-        fn_idx = self.html.find("function _renderFatigueReviewStageOverview(zones)")
+        fn_idx = self.html.find("function _renderFatigueReviewStageOverview(zones, sportType, totalDistanceKm)")
         self.assertGreater(fn_idx, 0)
         fn_body = self.html[fn_idx:self.html.find("\n    function _renderFatigueReviewContextTags", fn_idx)]
         for text in [
@@ -413,17 +472,18 @@ class TestV9AiInsightModalHtml(unittest.TestCase):
             self.assertIn('id="' + el_id + '"', self.html,
                           f"P7.5 FAIL: 缺少 #{el_id}")
         for text in [
-            "标记活动中值得回看的关键变化点。",
-            "展示疲劳出现、加重或缓解的距离区间。",
+            "事件是系统识别到的参考点，用来定位值得回看的位置；不代表身体状态在该公里点突然变化。",
+            "区间表示状态压力持续出现的路段；右侧摘要用于理解分布，不是精确结论。",
         ]:
             self.assertIn(text, self.html)
 
     def test_p7_5_event_and_zone_render_use_backend_arrays_only(self):
-        """P7.5:事件和疲劳区间只消费后端数组。"""
-        self.assertIn("_renderFatigueReviewEvents(data.collapse_events || [])", self.html)
-        self.assertIn("_renderFatigueReviewZones(data.fatigue_zones || [])", self.html)
-        event_idx = self.html.find("function _renderFatigueReviewEvents(events)")
-        zone_idx = self.html.find("function _renderFatigueReviewZones(zones)")
+        """P7.5:事件和疲劳区间只消费后端数组,sportType 仅用于文案分组。"""
+        self.assertIn("var hasSustainedZone = _fatigueReviewHasSustainedZone(data.fatigue_zones || [], reviewTotalDistanceKm)", self.html)
+        self.assertIn("_renderFatigueReviewEvents(data.collapse_events || [], data.sport_type, hasSustainedZone)", self.html)
+        self.assertIn("_renderFatigueReviewZones(data.fatigue_zones || [], data.sport_type, reviewTotalDistanceKm)", self.html)
+        event_idx = self.html.find("function _renderFatigueReviewEvents(events, sportType, hasSustainedZone)")
+        zone_idx = self.html.find("function _renderFatigueReviewZones(zones, sportType, totalDistanceKm)")
         self.assertGreater(event_idx, 0)
         self.assertGreater(zone_idx, 0)
         event_body = self.html[event_idx:self.html.find("\n    function _renderFatigueReviewZones", event_idx)]
@@ -431,12 +491,12 @@ class TestV9AiInsightModalHtml(unittest.TestCase):
         for required in [
             "trigger_km",
             "event_id",
-            "ev.title || ev.label || ev.type || '事件'",
-            "description",
+            "_fatigueReviewEventTitle(ev)",
+            "_fatigueReviewEventDisplayCopy(ev, sportGroup, hasSustainedZone)",
             "暂无事件",
         ]:
             self.assertIn(required, event_body)
-        for required in ["start_km", "end_km", "level", "暂无区间"]:
+        for required in ["_fatigueReviewZoneSummaryItems(zones, sportType, totalDistanceKm)", "summaryItems.slice(0, 3)", "sourceCount", "暂无区间"]:
             self.assertIn(required, zone_body)
         for body in (event_body, zone_body):
             for forbidden in [
@@ -445,6 +505,170 @@ class TestV9AiInsightModalHtml(unittest.TestCase):
                 "getBoundingClientRect", "innerText",
             ]:
                 self.assertNotIn(forbidden, body)
+        for forbidden_text in [
+            "fatigue_zones 标记",
+            "medium 区间",
+            "high 区间",
+            "暂无区间说明",
+            "暂无阶段说明",
+        ]:
+            self.assertNotIn(forbidden_text, self.html)
+
+    def test_p0_sustained_zone_display_semantics(self):
+        """P0:覆盖大部分全程的状态区间应显示为整体状态,避免误导为某个点开始吃力。"""
+        for text in [
+            "function _fatigueReviewTotalDistanceKm(data)",
+            "curves.total_distance_m",
+            "Array.isArray(curves.distance) ? curves.distance : []",
+            "function _fatigueReviewZoneCoverageState(zone, totalDistanceKm)",
+            "var coverage = (end - start) / total",
+            "var startsEarly = start <= Math.max(0.5, total * 0.1)",
+            "coverage >= 0.7 && startsEarly",
+            "FATIGUE_REVIEW_SUSTAINED_ZONE_COPY",
+            "整体偏吃力",
+            "本次大部分路段都处在较吃力状态，建议重点看心率、配速和恢复段。",
+            "本次大部分路段体能压力偏高，建议重点看爬升、补给和停歇安排。",
+        ]:
+            self.assertIn(text, self.html)
+        coverage_idx = self.html.find("function _fatigueReviewZoneCoverageState(zone, totalDistanceKm)")
+        self.assertGreater(coverage_idx, 0)
+        coverage_body = self.html[coverage_idx:self.html.find("\n    function _fatigueReviewSustainedZoneCopy", coverage_idx)]
+        for forbidden in [
+            "speed", "time", "points", "querySelector",
+            "getBoundingClientRect", "innerText", "echarts",
+        ]:
+            self.assertNotIn(forbidden, coverage_body)
+
+    def test_p0b_sustained_zone_event_anchor_is_softened(self):
+        """P0-b:全程型区间下,事件说明应弱化为参考点,但仍保留 trigger_km。"""
+        for text in [
+            "FATIGUE_REVIEW_SUSTAINED_EVENT_COPY",
+            "function _fatigueReviewHasSustainedZone(zones, totalDistanceKm)",
+            "function _fatigueReviewEventDisplayCopy(ev, sportGroup, hasSustainedZone)",
+            "_fatigueReviewEventDisplayCopy(ev, sportGroup, hasSustainedZone)",
+            "这个位置是系统识别到的参考点；本次状态压力更像是在大部分路段持续存在，建议结合整段配速、心率和恢复段回看。",
+            "这个位置是系统识别到的参考点；本次体能压力更像在较长路段中持续累积，建议结合爬升、补给和停歇安排回看。",
+            "return _fatigueReviewEventCopy(ev, sportGroup)",
+        ]:
+            self.assertIn(text, self.html)
+        event_idx = self.html.find("function _renderFatigueReviewEvents(events, sportType, hasSustainedZone)")
+        self.assertGreater(event_idx, 0)
+        event_body = self.html[event_idx:self.html.find("\n    function _renderFatigueReviewZones", event_idx)]
+        self.assertIn("ev.trigger_km != null ? Number(ev.trigger_km).toFixed(1) + ' km' : '?'", event_body)
+        self.assertIn("safeHtml(type) + ' · ' + safeHtml(km)", event_body)
+        for forbidden in [
+            "_distanceFromSpeedTime", "speed_curve", "time_curve",
+            "points", "querySelector", "getBoundingClientRect",
+            "innerText", "markLine",
+        ]:
+            self.assertNotIn(forbidden, event_body)
+
+    def test_p3_event_and_zone_relation_copy_is_unified(self):
+        """P3:事件点与状态区间的关系说明应统一且用户化。"""
+        for text in [
+            'id="fr-signal-relation-note"',
+            "function _fatigueReviewSignalRelationCopy(hasEvents, hasZones)",
+            "function _renderFatigueReviewSignalRelation(events, zones)",
+            "_renderFatigueReviewSignalRelation(data.collapse_events || [], data.fatigue_zones || [])",
+            "事件是点，区间是段",
+            "点帮助定位，段帮助理解持续压力",
+            "两者都是回看线索，不是精确结论",
+            "本次只识别到参考点，建议结合主图查看附近曲线变化。",
+            "本次只识别到状态路段，建议结合主图查看压力持续位置。",
+            "本次暂无明显事件点或状态路段。",
+            "快速查看风险状态、事件点和状态路段。",
+        ]:
+            self.assertIn(text, self.html)
+        self.assertNotIn("崩溃触发因素", self.html)
+        self.assertNotIn("突然崩", self.html)
+        self.assertNotIn("精确诊断", self.html)
+        fn_idx = self.html.find("function _fatigueReviewSignalRelationCopy(hasEvents, hasZones)")
+        self.assertGreater(fn_idx, 0)
+        fn_body = self.html[fn_idx:self.html.find("\n    function _renderFatigueReviewEvents", fn_idx)]
+        for forbidden in [
+            "speed", "time", "points", "querySelector",
+            "getBoundingClientRect", "innerText", "echarts",
+        ]:
+            self.assertNotIn(forbidden, fn_body)
+
+    def test_p1_zone_summary_items_reduce_fragmented_zones(self):
+        """P1:右侧状态区间应先摘要化,避免逐条铺开碎片区间。"""
+        for text in [
+            "function _fatigueReviewZoneSummaryItems(zones, sportType, totalDistanceKm)",
+            "function _fatigueReviewValidZoneItems(zones)",
+            "function _fatigueReviewMergeZoneItems(items, totalDistanceKm)",
+            "FATIGUE_REVIEW_FRAGMENTED_ZONE_COPY",
+            "多段波动",
+            "sourceCount",
+            "由 ' + item.sourceCount + ' 个状态片段合并",
+            "summaryItems.slice(0, 3)",
+            "前段开始吃力",
+            "中后段压力持续存在",
+            "末段状态下滑更明显",
+            "末段输出压力更明显",
+        ]:
+            self.assertIn(text, self.html)
+        summary_idx = self.html.find("function _fatigueReviewZoneSummaryItems(zones, sportType, totalDistanceKm)")
+        render_idx = self.html.find("function _renderFatigueReviewZones(zones, sportType, totalDistanceKm)")
+        self.assertGreater(summary_idx, 0)
+        self.assertGreater(render_idx, 0)
+        summary_body = self.html[summary_idx:self.html.find("\n    function _fatigueReviewEventKind", summary_idx)]
+        render_body = self.html[render_idx:self.html.find("\n    function _renderFatigueReviewStageOverview", render_idx)]
+        self.assertIn("return [{", summary_body)
+        self.assertIn("title: '整体偏吃力'", summary_body)
+        self.assertIn("title: '多段波动'", summary_body)
+        self.assertIn("_fatigueReviewZoneSummaryFromItem(item, sportGroup, totalDistanceKm)", summary_body)
+        self.assertNotIn("zones.map(function(zone", render_body)
+        for forbidden in [
+            "_distanceFromSpeedTime", "speed_curve", "time_curve",
+            "points", "querySelector", "getBoundingClientRect",
+            "innerText", "echarts",
+        ]:
+            self.assertNotIn(forbidden, summary_body)
+            self.assertNotIn(forbidden, render_body)
+
+    def test_p4_review_copy_regression_real_world_acceptance_contract(self):
+        """P4:P0-P3 文案应一致,运动类型不串味,旧开发语言不回流。"""
+        for text in [
+            "整体偏吃力",
+            "这个位置是系统识别到的参考点",
+            "多段波动",
+            "由 ' + item.sourceCount + ' 个状态片段合并",
+            "阶段条保留系统识别到的原始片段",
+            "不代表身体状态在该公里点突然变化",
+            "事件是点，区间是段",
+            "两者都是回看线索，不是精确结论",
+            "本次暂无明显事件点或状态路段。",
+            "事件点",
+            "参考位置：",
+        ]:
+            self.assertIn(text, self.html)
+        for text in [
+            "配速、心率和恢复段",
+            "爬升、补给和停歇",
+            "心率、坡度和功率",
+            "这个参考点附近出现能量断档风险",
+            "这个参考点附近出现乏力风险",
+            "这个参考点附近出现掉功率风险",
+        ]:
+            self.assertIn(text, self.html)
+        forbidden_visible_copy = [
+            "崩溃触发因素",
+            "触发因素",
+            "<div class=\"lbl\">解耦率</div>",
+            "<div class=\"lbl\">Bonk 风险</div>",
+            "暂无阶段说明",
+            "medium 区间",
+            "high 区间",
+            "fatigue_zones 标记",
+            "精确诊断",
+            "突然崩",
+            "这里出现明显掉电风险",
+            "从这里开始",
+            "这里之后",
+        ]
+        for text in forbidden_visible_copy:
+            self.assertNotIn(text, self.html)
 
     def test_p7_6_context_advice_sidebar_exists(self):
         """P7.6:上下文与建议侧栏必须有边界说明和状态。"""

@@ -1194,6 +1194,7 @@ def get_activity_list_filtered(
     gps_only: bool = False,
     time_filter: str = "all",
     location_filter: str = "all",
+    title_keyword: str = "",
 ) -> tuple[list[dict[str, Any]], int]:
     display_sql = (
         "CASE "
@@ -1245,6 +1246,12 @@ def get_activity_list_filtered(
             "OR COALESCE(NULLIF(region_city, ''), '') = ?)"
         )
         params.extend([location_filter, location_filter, location_filter])
+
+    # title 模糊搜索——参数化绑定,转义 % _ \ 防止通配符注入
+    title_keyword = str(title_keyword or "").strip()[:64]
+    if title_keyword:
+        where_parts.append("COALESCE(title, '') LIKE ? ESCAPE '\\'")
+        params.append("%" + re.sub(r"([%_\\])", r"\\\1", title_keyword) + "%")
 
     if gps_only:
         where_parts.append(

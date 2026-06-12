@@ -46,6 +46,29 @@ class TestActivityAdvicePayload(unittest.TestCase):
         self.assertEqual(payload["planning_context"]["planned_start_time"], "")
         self.assertEqual(payload["planning_context"]["planned_time_source"], "missing")
 
+    def test_temporary_snapshot_source_is_allowed_but_raw_route_context_is_filtered(self):
+        raw = llm_backend._activity_advice_payload(
+            {
+                "distance_km": 19.19,
+                "elevation_gain_m": 1118,
+                "max_alt_m": 1019,
+                "source": "temporary_track_context",
+                "points": [{"lat": 40, "lon": 116, "time": "2020-01-01T08:00:00"}],
+                "placemarks": [{"name": "cp1"}],
+                "weather": {"temperature_c": 20},
+                "start_time": "2020-01-01T08:00:00",
+            },
+            {"planned_start_time": ""},
+        )
+        payload = json.loads(raw)
+        route_facts = payload["route_facts"]
+
+        self.assertEqual(route_facts["source"], "temporary_track_context")
+        self.assertEqual(route_facts["distance_km"], 19.19)
+        for forbidden in ("points", "placemarks", "weather", "start_time", "time"):
+            self.assertNotIn(forbidden, route_facts)
+        self.assertEqual(payload["planning_context"]["planned_time_source"], "missing")
+
 
 class TestActivityAdvicePrompt(unittest.TestCase):
     def test_schema_contains_four_advice_dimensions(self):

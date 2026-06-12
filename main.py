@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import shutil
 import socket
 import sqlite3
@@ -857,6 +858,18 @@ _FATIGUE_REVIEW_FORBIDDEN_KEYS = {
 }
 
 _FATIGUE_REVIEW_STARTUP_EVENT_MIN_KM = 0.1
+_FATIGUE_REVIEW_STARTUP_GUARD_KM_BY_SPORT = {
+    "running": 0.3,
+    "trail_running": 0.3,
+    "treadmill_running": 0.3,
+    "hiking": 0.5,
+    "walking": 0.5,
+    "mountaineering": 0.5,
+    "cycling": 1.0,
+    "road_cycling": 1.0,
+    "mountain_biking": 1.0,
+}
+_FATIGUE_REVIEW_DEFAULT_STARTUP_GUARD_KM = 0.3
 
 
 def _build_fatigue_review_collapse_events(
@@ -983,6 +996,162 @@ def _build_fatigue_review_collapse_events(
             "description": str(ev.get("description") or ""),
         })
     return collapse_events
+
+
+def _fatigue_review_startup_guard_km(
+    sport_type: str,
+    total_distance_m: Any = None,
+) -> float:
+    """Display-layer warmup guard for review fatigue zones."""
+    sport = str(sport_type or "").strip().lower()
+    guard_km = _FATIGUE_REVIEW_STARTUP_GUARD_KM_BY_SPORT.get(
+        sport,
+        _FATIGUE_REVIEW_DEFAULT_STARTUP_GUARD_KM,
+    )
+    total_m = _safe_float(total_distance_m, None)
+    if total_m is not None and total_m > 0:
+        # Keep the guard bounded for very short activities.
+        guard_km = min(guard_km, max(0.0, (total_m / 1000.0) * 0.1))
+    return round(max(0.0, guard_km), 2)
+
+
+def _filter_fatigue_zones_after_startup(
+    zones: Any,
+    sport_type: str,
+    total_distance_m: Any = None,
+) -> list[dict[str, Any]]:
+    """Drop or trim startup/warmup fatigue zones before review display."""
+    if not isinstance(zones, list):
+        return []
+
+    guard_km = _fatigue_review_startup_guard_km(sport_type, total_distance_m)
+    if guard_km <= 0:
+        return [dict(zone) for zone in zones if isinstance(zone, dict)]
+
+    filtered: list[dict[str, Any]] = []
+    for zone in zones:
+        if not isinstance(zone, dict):
+            continue
+        start = _safe_float(zone.get("start_km"), None)
+        end = _safe_float(zone.get("end_km"), None)
+        if start is None or end is None or end <= start:
+            continue
+        if end <= guard_km:
+            continue
+        item = dict(zone)
+        if start < guard_km:
+            item["start_km"] = guard_km
+        filtered.append(item)
+    return filtered
+
+
+def _fatigue_review_startup_index(
+    distance_curve_km: Any,
+    sport_type: str,
+    total_distance_m: Any = None,
+) -> int:
+    """Return the first distance-axis index outside the review startup guard."""
+    return int(_build_review_input_window(
+        distance_curve_km,
+        sport_type,
+        total_distance_m,
+    ).get("start_idx", 0))
+
+
+def _build_review_input_window(
+    distance_curve_km: Any,
+    sport_type: str,
+    total_distance_m: Any = None,
+) -> dict[str, Any]:
+    """Build a review-only startup guard window shared by fatigue metrics."""
+    guard_km = _fatigue_review_startup_guard_km(sport_type, total_distance_m)
+    has_aligned_axis = isinstance(distance_curve_km, list) and bool(distance_curve_km)
+    if not has_aligned_axis or guard_km <= 0:
+        return {
+            "start_idx": 0,
+            "guard_km": guard_km,
+            "has_aligned_axis": has_aligned_axis,
+        }
+
+    start_idx = len(distance_curve_km)
+    for idx, value in enumerate(distance_curve_km):
+        dist_km = _safe_float(value, None)
+        if dist_km is not None and dist_km >= guard_km:
+            start_idx = idx
+            break
+
+    return {
+        "start_idx": start_idx,
+        "guard_km": guard_km,
+        "has_aligned_axis": has_aligned_axis,
+    }
+
+
+def _trim_review_series_by_window(series: Any, window: Any, distance_curve_km: Any = None) -> list:
+    """Trim a review metric input by the shared startup window."""
+    if not isinstance(series, list):
+        return []
+    if not isinstance(window, dict) or not window.get("has_aligned_axis"):
+        return series
+    if distance_curve_km is not None and (
+        not isinstance(distance_curve_km, list) or len(distance_curve_km) != len(series)
+    ):
+        return series
+    start_idx = _safe_int(window.get("start_idx"))
+    return series[start_idx:]
+
+
+def _trim_review_series_after_startup(
+    series: Any,
+    distance_curve_km: Any,
+    sport_type: str,
+    total_distance_m: Any = None,
+) -> list:
+    """Trim review metric inputs only; raw chart curves remain intact."""
+    window = _build_review_input_window(distance_curve_km, sport_type, total_distance_m)
+    return _trim_review_series_by_window(series, window, distance_curve_km)
+
+
+def _build_review_hr_drift_records(
+    hr_curve: Any,
+    speed_curve: Any,
+    distance_curve_km: Any,
+    sport_type: str,
+    total_distance_m: Any = None,
+    window: Any = None,
+) -> list[dict[str, Any]]:
+    """Build review-only HR drift records from real HR and speed streams."""
+    if not (
+        isinstance(hr_curve, list)
+        and isinstance(speed_curve, list)
+        and isinstance(distance_curve_km, list)
+    ):
+        return []
+    if not (len(hr_curve) == len(speed_curve) == len(distance_curve_km)):
+        return []
+
+    review_window = (
+        window
+        if isinstance(window, dict)
+        else _build_review_input_window(distance_curve_km, sport_type, total_distance_m)
+    )
+    if not review_window.get("has_aligned_axis"):
+        return []
+    start_idx = _safe_int(review_window.get("start_idx"))
+    records: list[dict[str, Any]] = []
+    for idx in range(start_idx, len(hr_curve)):
+        hr = _safe_float(hr_curve[idx], None)
+        speed = _safe_float(speed_curve[idx], None)
+        if hr is None or hr <= 30 or speed is None or speed <= 0:
+            continue
+        records.append({
+            "raw": {
+                "heart_rate": hr,
+                "speed": speed,
+                "timestamp": idx,
+            }
+        })
+    return records
 
 
 def _merge_fatigue_zones_for_review(
@@ -3816,19 +3985,6 @@ def _build_ai_snapshot_block(snapshot: dict[str, Any] | None) -> str:
     return MetricsResolver._build_ai_snapshot_text_block(snapshot)
 
 
-def _build_risk_assessment_messages(snapshot: dict[str, Any], weather_context: dict[str, Any] | None) -> list[dict[str, str]]:
-    return [
-        {
-            "role": "system",
-            "content": llm_backend.build_risk_assessment_system_prompt(snapshot, weather_context),
-        },
-        {
-            "role": "user",
-            "content": llm_backend.build_risk_assessment_user_prompt(),
-        },
-    ]
-
-
 def _parse_activity_advice_context(raw_context: Any) -> dict[str, str]:
     """Parse user-provided planning context; never infer from track history."""
     data: dict[str, Any] = {}
@@ -3854,6 +4010,124 @@ def _parse_activity_advice_context(raw_context: Any) -> dict[str, str]:
         "activity_type_source": "user_input" if user_activity_type else "missing",
         "planned_time_source": "user_input" if planned_start_time else "missing",
     }
+
+
+_ACTIVITY_ADVICE_SNAPSHOT_KEYS: tuple[str, ...] = (
+    "activity_id", "distance_km", "distance_display", "duration_sec",
+    "elevation_gain_m", "total_descent_m", "max_alt_m", "min_alt_m",
+    "avg_grade_pct", "max_slope_pct", "min_slope_pct", "uphill_pct",
+    "downhill_pct", "up_count", "down_count", "max_single_climb_m",
+    "difficulty_score", "region", "start_lat", "start_lon", "source",
+)
+
+
+def _activity_advice_float(value: Any) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if number != number:
+        return None
+    return number
+
+
+def _activity_advice_format_distance(distance_km: float | None) -> str | None:
+    if distance_km is None or distance_km <= 0:
+        return None
+    if distance_km < 0.1:
+        return f"{int(round(distance_km * 1000))}m"
+    return f"{distance_km:.2f}km"
+
+
+def _build_activity_advice_snapshot_from_ai_snapshot(snapshot: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Build the activity-advice-only route facts snapshot from DB truth."""
+    if not isinstance(snapshot, dict):
+        return None
+    advice_snapshot = {key: snapshot.get(key) for key in _ACTIVITY_ADVICE_SNAPSHOT_KEYS if key in snapshot}
+    if not advice_snapshot.get("source"):
+        advice_snapshot["source"] = "DB Canonical / Resolver Truth"
+    return advice_snapshot or None
+
+
+def _build_activity_advice_snapshot_from_overview_route_facts(obj: dict[str, Any]) -> dict[str, Any] | None:
+    """Build activity advice route facts from the same aggregate facts shown in the overview."""
+    raw_facts = obj.get("activityAdviceRouteFacts") if isinstance(obj, dict) else None
+    if not isinstance(raw_facts, dict):
+        raw_facts = obj.get("activity_advice_route_facts") if isinstance(obj, dict) else None
+    if not isinstance(raw_facts, dict):
+        return None
+
+    advice_snapshot: dict[str, Any] = {}
+    for key in _ACTIVITY_ADVICE_SNAPSHOT_KEYS:
+        if key in raw_facts and raw_facts.get(key) is not None:
+            advice_snapshot[key] = raw_facts.get(key)
+
+    if not advice_snapshot.get("distance_display"):
+        advice_snapshot["distance_display"] = _activity_advice_format_distance(
+            _activity_advice_float(advice_snapshot.get("distance_km"))
+        )
+    if not advice_snapshot.get("source"):
+        advice_snapshot["source"] = "overview_route_facts"
+    return {key: value for key, value in advice_snapshot.items() if value is not None}
+
+
+def _build_activity_advice_snapshot_from_track_context(obj: dict[str, Any]) -> dict[str, Any] | None:
+    """Aggregate temporary route facts from synced track context without retaining raw points."""
+    raw_points = obj.get("points") if isinstance(obj, dict) else None
+    if not isinstance(raw_points, list) or len(raw_points) < 2:
+        return None
+
+    distance_m = 0.0
+    elevation_gain_m = 0.0
+    total_descent_m = 0.0
+    altitudes: list[float] = []
+    first_lat: float | None = None
+    first_lon: float | None = None
+    previous: tuple[float, float, float | None] | None = None
+
+    for point in raw_points:
+        if not isinstance(point, dict):
+            continue
+        lat = _activity_advice_float(point.get("lat"))
+        lon = _activity_advice_float(point.get("lon"))
+        if lat is None or lon is None:
+            continue
+        alt = _activity_advice_float(point.get("alt"))
+        if alt is not None:
+            altitudes.append(alt)
+        if first_lat is None or first_lon is None:
+            first_lat = lat
+            first_lon = lon
+        if previous is not None:
+            prev_lat, prev_lon, prev_alt = previous
+            try:
+                distance_m += track_backend.haversine_m(prev_lat, prev_lon, lat, lon)
+            except Exception:
+                pass
+            if alt is not None and prev_alt is not None:
+                delta = alt - prev_alt
+                if delta > 0:
+                    elevation_gain_m += delta
+                elif delta < 0:
+                    total_descent_m += abs(delta)
+        previous = (lat, lon, alt)
+
+    if first_lat is None or first_lon is None or distance_m <= 0:
+        return None
+
+    distance_km = round(distance_m / 1000.0, 2)
+    snapshot: dict[str, Any] = {
+        "distance_km": distance_km,
+        "distance_display": _activity_advice_format_distance(distance_km),
+        "elevation_gain_m": round(elevation_gain_m) if altitudes else None,
+        "total_descent_m": round(total_descent_m) if altitudes else None,
+        "max_alt_m": round(max(altitudes)) if altitudes else None,
+        "min_alt_m": round(min(altitudes)) if altitudes else None,
+        "start_lat": round(first_lat, 6),
+        "start_lon": round(first_lon, 6),
+        "source": "temporary_track_context",
+    }
+    return {key: value for key, value in snapshot.items() if value is not None}
 
 
 def _build_activity_advice_messages(
@@ -3928,7 +4202,6 @@ class Api:
 
     SYSTEM_INSTRUCTION = "__SYSTEM_INSTRUCTION__"
     REPORT_ACTIVITY_ADVICE = "__REPORT_ACTIVITY_ADVICE__"
-    REPORT_RISK_ASSESSMENT = "__REPORT_RISK_ASSESSMENT__"
     RADAR_INSIGHT = "__RADAR_INSIGHT__"
     FATIGUE_REVIEW_INSIGHT = "__FATIGUE_REVIEW_INSIGHT__"
 
@@ -3945,6 +4218,7 @@ class Api:
         self._notification_lock = threading.Lock()
         self._watch_service: FITFolderWatchService | None = None
         self._ai_snapshot: dict[str, Any] | None = None
+        self._activity_advice_snapshot: dict[str, Any] | None = None
         self._profile_startup_sync_scheduled = False
         self._profile_sync_timer: threading.Timer | None = None
         self._region_enrichment_timer: threading.Timer | None = None
@@ -4128,10 +4402,10 @@ class Api:
 
     def sync_track_context(self, payload_json: str) -> dict:
         """前端完成渲染后同步轨迹上下文。
-           AI Input Governance (Task 3.4 finalized):
-           - 仅 activity_id 进入 AI snapshot，前端 points/placemarks 仅用于轨迹详情表
-           - snapshot 由 _build_ai_snapshot() 从 DB 构建，不依赖任何前端计算值
-           - 前端 track.html 角色: Visualization Layer ONLY"""
+           AI Input Governance:
+           - 通用 AI snapshot 仍仅来自 activity_id / DB truth
+           - 活动建议使用后端白名单 route facts,临时轨迹只保留聚合事实
+           - 前端 track.html 角色: Visualization Layer + current track sync"""
         try:
             obj = json.loads(payload_json)
         except json.JSONDecodeError:
@@ -4142,8 +4416,7 @@ class Api:
         self._track_weather = obj.get("weather") if isinstance(obj.get("weather"), dict) else None
         self._chat_messages = []
         self._new_session_id()
-        # AI Input Governance: 从 DB 构建语义快照，取代前端计算数据
-        # CONTRACT: _ai_snapshot 是 call_llm 中 AI 相关请求的唯一合法数据源
+        # 通用 AI 仍使用 DB truth；活动建议优先使用概览同源 route facts。
         activity_id = obj.get("activity_id") or obj.get("activityId")
         if activity_id:
             self._ai_snapshot = _build_ai_snapshot(int(activity_id))
@@ -4151,6 +4424,11 @@ class Api:
                 self._ai_snapshot["activity_id"] = int(activity_id)
         else:
             self._ai_snapshot = None
+        self._activity_advice_snapshot = (
+            _build_activity_advice_snapshot_from_overview_route_facts(obj)
+            or _build_activity_advice_snapshot_from_track_context(obj)
+            or _build_activity_advice_snapshot_from_ai_snapshot(self._ai_snapshot)
+        )
         return _api_success()
 
     def reset_llm_session(self) -> dict:
@@ -4345,9 +4623,9 @@ class Api:
         return brand in {"garmin", "佳明"}
 
     def call_llm(self, prompt: str, sport_type: str = "hiking") -> dict:
-        """对话或路书。AI 数据边界 (Task 3.4):
-           - AI 输入: _ai_snapshot (DB truth) → ai_block (system prompt)
-           - 轨迹详情表: _track_points (仅作为 CSV table 供参考，不参与 AI 分析)
+        """对话或路书。AI 数据边界:
+           - 普通 AI 输入: _ai_snapshot (DB truth) → ai_block (system prompt)
+           - 活动建议输入: _activity_advice_snapshot + 用户显式 planning context
            - 禁止: 前端 calculateStats 输出、per-point slope、request.get_json() metrics"""
         if prompt == self.FATIGUE_REVIEW_INSIGHT:
             # §5.6.2 规则 4:入口处先清空 + 刷新,所有 happy / fallback 分支前执行
@@ -4418,7 +4696,8 @@ class Api:
                 }
 
             planning_context = _parse_activity_advice_context(sport_type)
-            if not self._ai_snapshot:
+            snapshot = self._activity_advice_snapshot
+            if not snapshot:
                 return _activity_advice_empty("请先加载活动轨迹")
 
             cfg = llm_backend.load_llm_config()
@@ -4432,7 +4711,7 @@ class Api:
             api_key = str(cfg.get("api_key") or "")
             agent_id = str(cfg.get("agent_id") or "")
             sid = self._session_id
-            messages = _build_activity_advice_messages(self._ai_snapshot, planning_context)
+            messages = _build_activity_advice_messages(snapshot, planning_context)
             try:
                 text = llm_backend.chat_completions(
                     url=url,
@@ -4469,23 +4748,6 @@ class Api:
         fn = self._track_filename or "轨迹"
 
         try:
-            if prompt == self.REPORT_RISK_ASSESSMENT:
-                if not self._ai_snapshot:
-                    return {"ok": True, "risk_assessment": llm_backend.empty_risk_assessment("请先加载活动轨迹")}
-                messages = _build_risk_assessment_messages(self._ai_snapshot, self._track_weather)
-                text = llm_backend.chat_completions(
-                    url=url,
-                    api_key=api_key,
-                    model=model,
-                    messages=messages,
-                    session_id=sid,
-                    agent_id=agent_id,
-                )
-                self._chat_messages = []
-                self._new_session_id()
-                risk_assessment = llm_backend.normalize_risk_assessment_json(text)
-                return {"ok": True, "risk_assessment": risk_assessment}
-
             if prompt == self.RADAR_INSIGHT:
                 # §5.4 规则 5:洞察调用后清空 + 刷新 session,避免污染 AI 教练会话
                 # 必须在所有分支(happy / 降级)前执行,否则降级路径会留下旧 session
@@ -5754,12 +6016,13 @@ class Api:
     def get_sync_local_fit_files_status(self, job_id: str = "") -> dict:
         return FIT_SYNC_JOB_MANAGER.get_status(job_id)
 
-    def _query_activity_list_records(self, sport_filter: str = "all") -> tuple[str, list[dict[str, Any]], list[str]]:
+    def _query_activity_list_records(self, sport_filter: str = "all", title_keyword: str = "") -> tuple[str, list[dict[str, Any]], list[str]]:
         try:
             ensure_activity_sync_schema()
             config = resolve_workspace_track_dir(auto_recover=True)
             source_dir = str(config.get("workspace_track_abs_path") or "")
             sport_filter = str(sport_filter or "all").strip() or "all"
+            title_keyword = str(title_keyword or "").strip()[:64]
 
             display_sql = _activity_display_sql()
             where_parts: list[str] = []
@@ -5771,6 +6034,9 @@ class Api:
             if sport_filter != "all":
                 where_parts.append(f"{display_sql} = ?")
                 params.append(sport_filter)
+            if title_keyword:
+                where_parts.append("COALESCE(title, '') LIKE ? ESCAPE '\\'")
+                params.append("%" + re.sub(r"([%_\\])", r"\\\1", title_keyword) + "%")
             where_sql = f"WHERE {' AND '.join(where_parts)}" if where_parts else ""
 
             conn = profile_backend._conn()
@@ -5847,10 +6113,10 @@ class Api:
         except Exception as e:
             raise RuntimeError(str(e)) from e
 
-    def get_activity_list_snapshot(self, sport_filter: str = "all") -> dict:
+    def get_activity_list_snapshot(self, sport_filter: str = "all", title_keyword: str = "") -> dict:
         """返回完整活动记录快照，供前端本地分页与筛选使用。"""
         try:
-            source_dir, records, activity_types = self._query_activity_list_records(sport_filter)
+            source_dir, records, activity_types = self._query_activity_list_records(sport_filter, title_keyword)
             np_backfill = _start_normalized_power_backfill_if_needed()
             dynamic_columns = _resolve_activity_list_dynamic_columns_for_rows(records)
             return _api_success({
@@ -5868,14 +6134,14 @@ class Api:
             logger.exception("get_activity_list_snapshot failed")
             return _api_error(API_CODE_DB, "活动列表快照查询失败")
 
-    def get_activity_list(self, page: int = 1, page_size: int = 20, sport_filter: str = "all") -> dict:
+    def get_activity_list(self, page: int = 1, page_size: int = 20, sport_filter: str = "all", title_keyword: str = "") -> dict:
         """后端分页返回活动记录基础字段。"""
         try:
             page = max(1, _safe_int(page, 1))
             requested_page_size = _safe_int(page_size, 20)
             page_size = requested_page_size if requested_page_size in SPORT_HUB_PAGE_SIZES else 20
             offset = (page - 1) * page_size
-            db_rows, total_count = profile_backend.get_activity_list_filtered(offset, page_size, sport_filter)
+            db_rows, total_count = profile_backend.get_activity_list_filtered(offset, page_size, sport_filter, title_keyword=title_keyword)
             deduped_rows = _dedupe_activity_rows(db_rows)
             records = [self._build_activity_list_item(row) for row in deduped_rows]
             total_pages = max(1, (total_count + page_size - 1) // page_size)
@@ -5922,14 +6188,14 @@ class Api:
             logger.exception("get_activity_list failed")
             return _api_error(API_CODE_DB, "活动列表查询失败")
 
-    def get_sport_hub_activity_page(self, page: int = 1, page_size: int = 10, sport_filter: str = "all") -> dict:
+    def get_sport_hub_activity_page(self, page: int = 1, page_size: int = 10, sport_filter: str = "all", title_keyword: str = "") -> dict:
         """个人运动数据 - 后端分页活动记录。"""
         try:
             page = max(1, _safe_int(page, 1))
             requested_page_size = _safe_int(page_size, 10)
             page_size = requested_page_size if requested_page_size in SPORT_HUB_PAGE_SIZES else 10
             offset = (page - 1) * page_size
-            db_rows, total_count = profile_backend.get_activity_list_filtered(offset, page_size, sport_filter)
+            db_rows, total_count = profile_backend.get_activity_list_filtered(offset, page_size, sport_filter, title_keyword=title_keyword)
             deduped_rows = _dedupe_activity_rows(db_rows)
             records = [self._build_activity_list_item(row) for row in deduped_rows]
             total_pages = max(1, (total_count + page_size - 1) // page_size)
@@ -6677,6 +6943,11 @@ class Api:
                     efficiency_curve = resolved_v81.get("efficiency_curve") or []
                     bonk_events = resolved_v81.get("insight_events") or []
                     fatigue_zones = resolved_v81.get("fatigue_zones") or []  # V4.0: 从 Resolver 契约层透传
+                    fatigue_zones = _filter_fatigue_zones_after_startup(
+                        fatigue_zones,
+                        sport_type=sport_type,
+                        total_distance_m=total_distance_m,
+                    )
                     fatigue_zones = _merge_fatigue_zones_for_review(fatigue_zones)
                     context_tags = resolved_v81.get("context_tags") or {}
                 except Exception:
@@ -6695,9 +6966,30 @@ class Api:
                 axis_len=axis_len,
             )
             display_meta = _build_fatigue_review_display_meta()
+            distance_curve_km = curves_snapshot.get("distance") or []
+            review_input_window = _build_review_input_window(
+                distance_curve_km,
+                sport_type=sport_type,
+                total_distance_m=total_distance_m,
+            )
+            review_efficiency_curve = _trim_review_series_by_window(
+                efficiency_curve,
+                review_input_window,
+                distance_curve_km,
+            )
+            review_speed_curve = _trim_review_series_by_window(
+                _safe_json_list(row.get("speed_curve")) or [],
+                review_input_window,
+                distance_curve_km,
+            )
+            review_cadence_curve = _trim_review_series_by_window(
+                _safe_json_list(row.get("cadence_curve")) or [],
+                review_input_window,
+                distance_curve_km,
+            )
 
             # 4. metrics 白名单:四个核心指标
-            decoupling = MetricsResolver._build_review_decoupling(efficiency_curve)
+            decoupling = MetricsResolver._build_review_decoupling(review_efficiency_curve)
             decoupling_pct = _safe_float(decoupling.get("pct")) or 0.0
 
             bonk_risk = MetricsResolver._build_bonk_risk(
@@ -6712,21 +7004,15 @@ class Api:
             # 注:decoupling 字段继续使用 efficiency_curve 计算的 decoupling_pct
             # hr_drift 字段改为从 hr_curve 提取 records 后用 _compute_hr_drift 计算
             try:
-                import json as _json_v710
                 from metrics_resolver import MetricsResolver as _MR_v710
-                _hr_curve_raw = _safe_json_list(row.get("hr_curve")) or []
-                _records_v710 = []
-                for _i, _hr_v in enumerate(_hr_curve_raw):
-                    if _hr_v is None or _hr_v <= 0:
-                        continue
-                    _records_v710.append({
-                        "raw": {
-                            "heart_rate": _hr_v,
-                            "timestamp": _i,  # 简化为索引(用于排序,值不参与计算)
-                            # 给一个稳态非零速度值,避免被 pace CV 过滤(reference §5)
-                            "speed": 3.0,
-                        }
-                    })
+                _records_v710 = _build_review_hr_drift_records(
+                    hr_curve=curves_snapshot.get("hr") or [],
+                    speed_curve=curves_snapshot.get("speed") or [],
+                    distance_curve_km=distance_curve_km,
+                    sport_type=sport_type,
+                    total_distance_m=total_distance_m,
+                    window=review_input_window,
+                )
                 _duration_v710 = _safe_int(row.get("duration_sec") or row.get("duration")) or 0
                 _drift_result = _MR_v710._compute_hr_drift(
                     records=_records_v710,
@@ -6872,12 +7158,11 @@ class Api:
             # 见 docs/physiology_reference.md §指标 7
             try:
                 from metrics_resolver import MetricsResolver as _MR_v711
-                _speed_curve_raw = _safe_json_list(row.get("speed_curve")) or []
                 _duration_v711 = _safe_int(row.get("duration_sec") or row.get("duration")) or 0
                 # race 标志:row 可能不含,默认 False
                 _is_race_v711 = bool(row.get("is_race") or row.get("is_event") or False)
                 _durability_result = _MR_v711._compute_durability_index(
-                    speed_stream=_speed_curve_raw,
+                    speed_stream=review_speed_curve,
                     duration_sec=float(_duration_v711),
                     sport_type=sport_type,
                     is_race=_is_race_v711,
@@ -6919,11 +7204,10 @@ class Api:
             # 见 docs/physiology_reference.md §指标 8
             try:
                 from metrics_resolver import MetricsResolver as _MR_v712
-                _cadence_curve_raw = _safe_json_list(row.get("cadence_curve")) or []
                 _duration_v712 = _safe_int(row.get("duration_sec") or row.get("duration")) or 0
                 _is_intermittent_v712 = bool(row.get("is_intermittent") or False)
                 _cadence_result = _MR_v712._compute_cadence_stability(
-                    cadence_stream=_cadence_curve_raw,
+                    cadence_stream=review_cadence_curve,
                     duration_sec=float(_duration_v712),
                     sport_type=sport_type,
                     is_intermittent=_is_intermittent_v712,

@@ -621,6 +621,47 @@
             font-size: 0.68rem;
             outline: none;
         }
+        .hub-input-wrap { position: relative; display: inline-flex; align-items: center; }
+        .hub-input {
+            background: rgba(15,23,42,0.7);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: #f8fafc;
+            border-radius: 8px;
+            padding: 6px 28px 6px 30px;
+            min-width: 220px;
+            font-size: 0.68rem;
+            outline: none;
+            transition: border-color .15s;
+        }
+        .hub-input:focus { border-color: rgba(56,189,248,0.6); }
+        .hub-input::placeholder { color: rgba(248,250,252,0.4); }
+        .hub-input-icon {
+            position: absolute;
+            left: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: rgba(248,250,252,0.45);
+            pointer-events: none;
+        }
+        .hub-input-clear {
+            position: absolute;
+            right: 6px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 18px;
+            height: 18px;
+            border: 0;
+            background: transparent;
+            color: rgba(248,250,252,0.55);
+            cursor: pointer;
+            font-size: 16px;
+            line-height: 1;
+            display: none;
+            border-radius: 4px;
+            padding: 0;
+        }
+        .hub-input-clear:hover { background: rgba(255,255,255,0.08); color: #f8fafc; }
+        .hub-input-wrap.has-value .hub-input-clear { display: block; }
         .hub-records-table-wrap {
             flex: 1;
             min-height: 0;
@@ -1331,6 +1372,82 @@
             color: #94a3b8;
             font-size: 0.72rem;
             line-height: 1.2;
+        }
+        .fr-metric-label {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            min-width: 0;
+        }
+        .fr-metric-info {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 15px;
+            height: 15px;
+            border-radius: 999px;
+            border: 1px solid rgba(148, 163, 184, 0.42);
+            color: #cbd5e1;
+            background: rgba(15, 23, 42, 0.72);
+            font-size: 0.62rem;
+            font-weight: 800;
+            line-height: 1;
+            cursor: help;
+            flex: 0 0 auto;
+        }
+        .fr-metric-info::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            left: 50%;
+            bottom: calc(100% + 8px);
+            transform: translateX(-50%) translateY(4px);
+            width: 260px;
+            max-width: min(260px, 72vw);
+            border: 1px solid rgba(125, 211, 252, 0.26);
+            border-radius: 8px;
+            background: rgba(15, 23, 42, 0.96);
+            color: #dbeafe;
+            box-shadow: 0 14px 30px rgba(2, 6, 23, 0.34);
+            padding: 8px 10px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            line-height: 1.45;
+            white-space: normal;
+            pointer-events: none;
+            opacity: 0;
+            visibility: hidden;
+            z-index: 50;
+            transition: opacity 0.16s ease, transform 0.16s ease, visibility 0.16s ease;
+        }
+        .fr-metric-info::before {
+            content: "";
+            position: absolute;
+            left: 50%;
+            bottom: calc(100% + 3px);
+            transform: translateX(-50%) translateY(4px) rotate(45deg);
+            width: 9px;
+            height: 9px;
+            border-right: 1px solid rgba(125, 211, 252, 0.26);
+            border-bottom: 1px solid rgba(125, 211, 252, 0.26);
+            background: rgba(15, 23, 42, 0.96);
+            pointer-events: none;
+            opacity: 0;
+            visibility: hidden;
+            z-index: 51;
+            transition: opacity 0.16s ease, transform 0.16s ease, visibility 0.16s ease;
+        }
+        .fr-metric-info:hover::after,
+        .fr-metric-info:hover::before,
+        .fr-metric-info:focus-visible::after,
+        .fr-metric-info:focus-visible::before {
+            opacity: 1;
+            visibility: visible;
+            transform: translateX(-50%) translateY(0);
+        }
+        .fr-metric-info:hover::before,
+        .fr-metric-info:focus-visible::before {
+            transform: translateX(-50%) translateY(0) rotate(45deg);
         }
         .metric-card .val {
             color: #f8fafc;
@@ -2430,19 +2547,31 @@
         .ai-insight-btn { float: right; padding: 2px 8px; border-radius: 999px; border: 1px solid rgba(168,85,247,0.42); background: rgba(124,58,237,0.16); color: #ddd6fe; font-size: 0.68rem; font-weight: 800; cursor: pointer; transition: all 0.15s ease; }
         .ai-insight-btn:hover { background: rgba(124,58,237,0.28); border-color: rgba(196,181,253,0.65); color: #fff; }
         .ai-insight-btn:disabled { opacity: 0.48; cursor: not-allowed; background: rgba(71,85,105,0.16); border-color: rgba(100,116,139,0.28); color: #94a3b8; }
-        .risk-assessment-container { display: flex; flex-direction: column; gap: 8px; }
-        .risk-category { padding: 8px 9px; border-radius: 9px; background: rgba(15,23,42,0.48); border: 1px solid rgba(148,163,184,0.12); border-left-width: 3px; }
-        .risk-category-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 5px; color: #e2e8f0; font-size: 0.74rem; font-weight: 800; }
-        .risk-category.risk-high { border-left-color: #ef4444; }
-        .risk-category.risk-moderate { border-left-color: #f59e0b; }
-        .risk-category.risk-low { border-left-color: #22c55e; }
-        .risk-level-badge { flex-shrink: 0; padding: 1px 7px; border-radius: 999px; font-size: 0.62rem; font-weight: 800; }
-        .risk-level-badge.risk-high { color: #fca5a5; background: rgba(239,68,68,0.14); }
-        .risk-level-badge.risk-moderate { color: #fbbf24; background: rgba(245,158,11,0.14); }
-        .risk-level-badge.risk-low { color: #86efac; background: rgba(34,197,94,0.14); }
-        .risk-advice { color: #cbd5e1; font-size: 0.72rem; line-height: 1.55; word-break: break-word; }
-        .risk-disclaimer { color: #94a3b8; font-size: 0.66rem; line-height: 1.5; padding-top: 2px; }
-        .risk-error { color: #fca5a5; font-size: 0.68rem; line-height: 1.5; }
+        .activity-advice-plan-copy { margin: 7px 0 6px; }
+        .activity-advice-plan-title { color: #e2e8f0; font-size: 0.72rem; font-weight: 800; line-height: 1.3; }
+        .activity-advice-plan-hint { color: #94a3b8; font-size: 0.66rem; line-height: 1.45; margin-top: 2px; }
+        .activity-advice-controls { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 7px; margin: 6px 0 8px; }
+        .activity-advice-select,
+        .activity-advice-time { width: 100%; min-width: 0; padding: 6px 8px; border-radius: 7px; border: 1px solid rgba(148,163,184,0.18); background: rgba(15,23,42,0.62); color: #e2e8f0; font-size: 0.7rem; outline: none; }
+        .activity-advice-select:focus,
+        .activity-advice-time:focus { border-color: rgba(147,197,253,0.55); box-shadow: 0 0 0 2px rgba(59,130,246,0.14); }
+        .activity-advice-container { display: flex; flex-direction: column; gap: 8px; }
+        .activity-advice-card { padding: 8px 9px; border-radius: 9px; background: rgba(15,23,42,0.48); border: 1px solid rgba(148,163,184,0.12); border-left-width: 3px; border-left-color: #38bdf8; }
+        .activity-advice-card.advice-attention { border-left-color: #f59e0b; }
+        .activity-advice-card.advice-focus { border-left-color: #ef4444; }
+        .activity-advice-card.advice-missing { border-left-color: #64748b; }
+        .activity-advice-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 5px; color: #e2e8f0; font-size: 0.74rem; font-weight: 800; }
+        .activity-advice-status { flex-shrink: 0; padding: 1px 7px; border-radius: 999px; font-size: 0.62rem; font-weight: 800; color: #bae6fd; background: rgba(14,165,233,0.14); }
+        .activity-advice-status.advice-attention { color: #fbbf24; background: rgba(245,158,11,0.14); }
+        .activity-advice-status.advice-focus { color: #fca5a5; background: rgba(239,68,68,0.14); }
+        .activity-advice-status.advice-missing { color: #cbd5e1; background: rgba(100,116,139,0.16); }
+        .activity-advice-basis { color: #94a3b8; font-size: 0.66rem; line-height: 1.5; margin-bottom: 3px; word-break: break-word; }
+        .activity-advice-text { color: #cbd5e1; font-size: 0.72rem; line-height: 1.55; word-break: break-word; }
+        .activity-advice-disclaimer { color: #94a3b8; font-size: 0.66rem; line-height: 1.5; padding-top: 2px; }
+        .activity-advice-error { color: #fca5a5; font-size: 0.68rem; line-height: 1.5; }
+        @media (max-width: 768px) {
+            .activity-advice-controls { grid-template-columns: 1fr; }
+        }
         .rest-point { padding: 4px 6px; background: rgba(52,152,219,0.08); border-radius: 4px; margin-bottom: 4px; border-left: 2px solid #3498db; }
         .rest-point-title { font-weight: 600; color: #3498db; font-size: 0.75rem; }
         .rest-point-info { font-size: 0.7rem; color: #94a3b8; }
@@ -2967,57 +3096,8 @@
         }
 
         /* === V9.0 复盘 Tab 内布局(原 V6.2 fatigue-review-body 的两栏改造为上下两段) === */
-        .review-tab-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 12px 16px;
-            background: rgba(15, 23, 42, 0.6);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            border-radius: 8px;
-            margin-bottom: 12px;
-        }
-        .review-tab-title-block .main {
-            font-size: 0.95rem;
-            font-weight: 700;
-            color: #f8fafc;
-        }
-        .review-tab-title-block .sub {
-            font-size: 0.72rem;
-            color: #94a3b8;
-            margin-top: 2px;
-        }
-        .review-tab-actions {
-            display: flex;
-            gap: 8px;
-            align-items: center;
-        }
-        .review-tab-actions .btn-primary {
-            background: linear-gradient(135deg, #6c5ce7 0%, #a29bfe 100%);
-            color: #fff;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 6px;
-            font-size: 0.8rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: opacity 0.2s;
-            font-family: inherit;
-        }
-        .review-tab-actions .btn-primary:hover { opacity: 0.88; }
-        .review-tab-actions .btn-primary:disabled {
-            opacity: 0.5;
-            cursor: wait;
-        }
-        .review-tab-actions .fr-cache-banner {
-            background: rgba(108, 92, 231, 0.15);
-            color: #c4b5fd;
-            border: 1px solid rgba(108, 92, 231, 0.3);
-            border-radius: 6px;
-            padding: 6px 12px;
-            font-size: 0.74rem;
-            cursor: pointer;
-            font-family: inherit;
+        .fr-ai-entry-compat {
+            display: none;
         }
         .fr-layout {
             display: grid;
@@ -3339,7 +3419,6 @@
             }
         }
         @media (max-width: 720px) {
-            .review-tab-header,
             .fr-status-strip {
                 grid-template-columns: 1fr;
                 align-items: flex-start;
@@ -3350,10 +3429,6 @@
             }
             .fr-layer-toggle-row {
                 justify-content: flex-start;
-            }
-            .review-tab-header {
-                flex-direction: column;
-                gap: 10px;
             }
             .fr-status-meta {
                 justify-content: flex-start;
@@ -3400,10 +3475,6 @@
         @media (max-width: 480px) {
             .metric-bar {
                 grid-template-columns: 1fr;
-            }
-            .review-tab-actions,
-            .review-tab-actions .btn-primary {
-                width: 100%;
             }
             .fr-pill,
             .fr-advice-status {
@@ -4452,6 +4523,16 @@
                                         <select id="sport-record-type-filter" class="hub-select" onchange="onSportHubFilterChange()">
                                             <option value="all">全部活动类型</option>
                                         </select>
+                                        <div class="hub-input-wrap" id="sport-record-title-filter-wrap">
+                                            <svg class="hub-input-icon" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+                                                <path d="M10 4a6 6 0 1 1-3.873 10.59l-3.768 3.768-1.414-1.414 3.768-3.768A6 6 0 0 1 10 4zm0 2a4 4 0 1 0 0 8 4 4 0 0 0 0-8z" fill="currentColor"/>
+                                            </svg>
+                                            <input type="text" id="sport-record-title-filter" class="hub-input"
+                                                   placeholder="搜索活动标题" maxlength="64"
+                                                   oninput="onSportHubTitleFilterChange()" />
+                                            <button type="button" class="hub-input-clear" id="sport-record-title-filter-clear"
+                                                    onclick="onSportHubTitleFilterClear()" title="清空" aria-label="清空搜索">×</button>
+                                        </div>
                                         <span class="hub-date-range">
                                             <input type="date" id="sport-sync-start-date" class="hub-date-input" aria-label="同步开始日期">
                                             <span class="hub-date-separator">至</span>
@@ -5032,14 +5113,8 @@
             </div>
             <!-- Tab 2: 复盘(lazy load,首次激活时拉 get_fatigue_review) -->
             <div class="detail-tab-panel" id="detail-tab-review">
-                <div class="review-tab-header">
-                    <div class="review-tab-title-block">
-                        <div class="main">🔍 运动复盘</div>
-                        <div class="sub" id="fr-subtitle">加载中...</div>
-                    </div>
-                    <div class="review-tab-actions">
-                        <button class="btn-primary" id="fr-ai-generate-btn" disabled aria-disabled="true" title="AI 洞察功能即将开放">🤖 AI 洞察待开放</button>
-                    </div>
+                <div class="fr-ai-entry-compat" hidden>
+                    <button class="btn-primary" id="fr-ai-generate-btn" disabled aria-disabled="true" title="AI 洞察功能即将开放">🤖 AI 洞察待开放</button>
                 </div>
                 <div class="fr-layout" id="fr-review-layout">
                     <div class="fr-main-column">
@@ -5062,32 +5137,32 @@
                         <div class="fr-section-band fr-derived-metrics-strip" id="fr-core-metrics-section">
                             <div class="fr-section-head">
                                 <h4>核心状态</h4>
-                                <span>漂移 · 解耦 · 风险 · 事件</span>
+                                <span>漂移 · 效率变化 · 风险 · 事件</span>
                             </div>
                             <div class="metric-bar">
                                 <div class="metric-card fr-metric-card" data-fr-metric="hr_drift">
-                                    <div class="lbl">心率漂移</div>
+                                    <div class="lbl fr-metric-label">心率漂移 <span class="fr-metric-info" tabindex="0" aria-label="心率漂移说明" data-tooltip="看后半程心率是否比前半程更难控制。越稳定，通常说明体能分配越合理。">i</span></div>
                                     <div class="val" id="fr-hr-drift">--</div>
                                     <div class="fr-metric-status empty" id="fr-hr-drift-status">待接入</div>
-                                    <div class="sub" id="fr-hr-drift-sub">--</div>
+                                    <div class="sub" id="fr-hr-drift-sub">等待本次后程心率数据。</div>
                                 </div>
                                 <div class="metric-card fr-metric-card" data-fr-metric="decoupling">
-                                    <div class="lbl">解耦率</div>
+                                    <div class="lbl fr-metric-label">后程效率变化 <span class="fr-metric-info" tabindex="0" aria-label="后程效率变化说明" data-tooltip="看后半程是否需要更高的心肺负担，才能维持前半程的速度或输出。这个指标也常叫有氧解耦率。">i</span></div>
                                     <div class="val" id="fr-decoupling">--</div>
                                     <div class="fr-metric-status empty" id="fr-decoupling-status">待接入</div>
-                                    <div class="sub" id="fr-decoupling-sub">--</div>
+                                    <div class="sub" id="fr-decoupling-sub">等待本次后程效率数据。</div>
                                 </div>
                                 <div class="metric-card fr-metric-card" data-fr-metric="bonk_risk">
-                                    <div class="lbl">Bonk 风险</div>
+                                    <div class="lbl fr-metric-label">能量断档风险 <span class="fr-metric-info" tabindex="0" aria-label="能量断档风险说明" data-tooltip="看后半程是否出现明显能量不足迹象，例如乏力、掉速或掉输出。它是风险提示，不等于已经发生危险。">i</span></div>
                                     <div class="val" id="fr-bonk">--</div>
                                     <div class="fr-metric-status empty" id="fr-bonk-status">待接入</div>
-                                    <div class="sub" id="fr-bonk-sub">--</div>
+                                    <div class="sub" id="fr-bonk-sub">等待本次能量风险判断。</div>
                                 </div>
                                 <div class="metric-card fr-metric-card" data-fr-metric="events">
-                                    <div class="lbl">崩溃事件</div>
+                                    <div class="lbl fr-metric-label">崩溃事件 <span class="fr-metric-info" tabindex="0" aria-label="崩溃事件说明" data-tooltip="系统识别出的明显状态下滑点，通常对应掉速、掉输出或疲劳突增。">i</span></div>
                                     <div class="val" id="fr-events-count">0</div>
                                     <div class="fr-metric-status empty" id="fr-events-status">待接入</div>
-                                    <div class="sub" id="fr-events-sub">含 0 起严重</div>
+                                    <div class="sub" id="fr-events-sub">等待本次状态下滑识别。</div>
                                 </div>
                             </div>
                         </div>
@@ -5099,28 +5174,28 @@
                             </div>
                             <div class="metric-bar">
                                 <div class="metric-card fr-metric-card" data-fr-metric="efficiency">
-                                    <div class="lbl">运动效率</div>
+                                    <div class="lbl fr-metric-label">运动效率 <span class="fr-metric-info" tabindex="0" aria-label="运动效率说明" data-tooltip="看体能投入是否有效转成速度、推进或输出表现。">i</span></div>
                                     <div class="val" id="fr-efficiency-score">--</div>
                                     <div class="fr-metric-status empty" id="fr-efficiency-status">待接入</div>
-                                    <div class="sub" id="fr-efficiency-sub">基于 21d 中位数</div>
+                                    <div class="sub" id="fr-efficiency-sub">等待本次效率判断。</div>
                                 </div>
                                 <div class="metric-card fr-metric-card" data-fr-metric="durability">
-                                    <div class="lbl">耐久指数</div>
+                                    <div class="lbl fr-metric-label">耐久指数 <span class="fr-metric-info" tabindex="0" aria-label="耐久指数说明" data-tooltip="看到了后半程，还能不能维持住前半程的表现。">i</span></div>
                                     <div class="val" id="fr-durability-score">--</div>
                                     <div class="fr-metric-status empty" id="fr-durability-status">待接入</div>
-                                    <div class="sub" id="fr-durability-sub">前 30% vs 后 30% 速度比</div>
+                                    <div class="sub" id="fr-durability-sub">等待本次后程保持能力判断。</div>
                                 </div>
                                 <div class="metric-card fr-metric-card" data-fr-metric="cadence_stability">
-                                    <div class="lbl">步频稳定性</div>
+                                    <div class="lbl fr-metric-label">步频稳定性 <span class="fr-metric-info" tabindex="0" aria-label="步频稳定性说明" data-tooltip="看动作或节奏是否稳定，不代表步频越高越好。">i</span></div>
                                     <div class="val" id="fr-cadence-stability-score">--</div>
                                     <div class="fr-metric-status empty" id="fr-cadence-stability-status">待接入</div>
-                                    <div class="sub" id="fr-cadence-stability-sub">std + late_decay 综合</div>
+                                    <div class="sub" id="fr-cadence-stability-sub">等待本次节奏稳定性判断。</div>
                                 </div>
                                 <div class="metric-card fr-metric-card" data-fr-metric="training_load">
-                                    <div class="lbl">训练负荷</div>
+                                    <div class="lbl fr-metric-label">训练负荷 <span class="fr-metric-info" tabindex="0" aria-label="训练负荷说明" data-tooltip="看这次运动给身体带来的整体刺激大小，不等于运动质量好坏。">i</span></div>
                                     <div class="val" id="fr-training-load-value">--</div>
                                     <div class="fr-metric-status empty" id="fr-training-load-status">待接入</div>
-                                    <div class="sub" id="fr-training-load-sub">TRIMP 简化版</div>
+                                    <div class="sub" id="fr-training-load-sub">等待本次负荷判断。</div>
                                 </div>
                             </div>
                         </div>
@@ -5149,7 +5224,7 @@
                                     <h4>状态阶段概览</h4>
                                     <span>按距离展示状态变化</span>
                                 </div>
-                                <div class="fr-panel-boundary" id="fr-stage-boundary">查看稳定、漂移和疲劳阶段分别出现在活动的哪些路段。</div>
+                                <div class="fr-panel-boundary" id="fr-stage-boundary">阶段条保留系统识别到的原始片段；右侧状态区间已合并为阅读摘要。</div>
                                 <div class="fr-stage-track" id="fr-stage-track">
                                     <div class="fr-empty-state" role="status" aria-live="polite">
                                         <div class="fr-empty-icon">○</div>
@@ -5186,7 +5261,7 @@
                     <div class="fr-side-column">
                         <div class="fr-side-panel emphasis" id="fr-side-summary-panel">
                             <h4>关键摘要</h4>
-                            <div class="fr-panel-boundary" id="fr-side-summary-boundary">快速查看风险状态、触发因素和疲劳路段。</div>
+                            <div class="fr-panel-boundary" id="fr-side-summary-boundary">快速查看风险状态、事件点和状态路段。</div>
                             <div class="fr-side-summary-list" id="fr-side-summary-list"></div>
                         </div>
                         <div class="fr-side-panel" id="fr-context-panel">
@@ -5195,8 +5270,8 @@
                             <div id="fr-context-tags"></div>
                         </div>
                         <div class="fr-side-panel warning" id="fr-events-panel">
-                            <h4>崩溃触发因素</h4>
-                            <div class="fr-panel-boundary" id="fr-events-boundary">标记活动中值得回看的关键变化点。</div>
+                            <h4>状态下滑线索</h4>
+                            <div class="fr-panel-boundary" id="fr-events-boundary">事件是系统识别到的参考点，用来定位值得回看的位置；不代表身体状态在该公里点突然变化。</div>
                             <div class="event-list" id="fr-event-list"></div>
                         </div>
                         <div class="fr-side-panel emphasis" id="fr-phys-impact-panel">
@@ -5206,7 +5281,8 @@
                         </div>
                         <div class="fr-side-panel" id="fr-fatigue-zones-panel">
                             <h4>状态区间</h4>
-                            <div class="fr-panel-boundary" id="fr-fatigue-zones-boundary">展示疲劳出现、加重或缓解的距离区间。</div>
+                            <div class="fr-panel-boundary" id="fr-fatigue-zones-boundary">区间表示状态压力持续出现的路段；右侧摘要用于理解分布，不是精确结论。</div>
+                            <div class="fr-panel-boundary" id="fr-signal-relation-note">复盘里，事件是点，区间是段；点帮助定位，段帮助理解持续压力。两者都是回看线索，不是精确结论。</div>
                             <div class="fr-zone-list" id="fr-fatigue-zone-list"></div>
                         </div>
                         <div class="fr-side-panel" id="fr-advice-panel">
@@ -5316,8 +5392,8 @@
         persistenceMode: 'temporary_session',
         currentWeather: null,
         activityMetrics: null,
-        currentRiskAssessment: null,
-        riskAssessmentLoading: false,
+        currentActivityAdvice: null,
+        activityAdviceLoading: false,
         DEBUG_MODE: false,
         historyFilters: {
             time: 'all',
@@ -5340,7 +5416,7 @@
         recordMap: {},
         activityTypes: [],
         pageSizes: [10, 20, 50],
-        filters: { type: 'all', pageSize: 10, page: 1 },
+        filters: { type: 'all', pageSize: 10, page: 1, title: '' },
         results: { entries: [] },
         honors: [],
         activeDetailId: null,
@@ -5380,7 +5456,7 @@
     let latestDetectedTrack = { filePath: '', activityId: 0 };
 
     const LLM_DEFAULT_URL = 'http://localhost:3000/v1/chat/completions';
-    const PY_REPORT_RISK_ASSESSMENT = '__REPORT_RISK_ASSESSMENT__';
+    const PY_REPORT_ACTIVITY_ADVICE = '__REPORT_ACTIVITY_ADVICE__';
     let currentLLMConfig = { provider: 'local_mcp', model: 'openclaw', url: LLM_DEFAULT_URL, apiKey: '', agentId: '' };
 
     let _currentRadarSportType = 'running';
@@ -6323,6 +6399,18 @@
         // V8.8 修复:同时清空复盘覆盖层 AI 洞察(§5.6.2 规则 5 阅后即焚 ④ 切 Tab)
         // 切活动 / 切 Tab / 重新点击 3 触发点契约补齐
         _clearFatigueReviewInsight();
+        resetActivityAdviceState();
+        // 同步 title 搜索框 UI(不触发重查,只回填 input.value 与 has-value class)
+        syncSportHubTitleFilterUI();
+    }
+
+    function syncSportHubTitleFilterUI() {
+        const input = document.getElementById('sport-record-title-filter');
+        const wrap = document.getElementById('sport-record-title-filter-wrap');
+        if (!input || !wrap) return;
+        const current = String(sportHubState.filters.title || '');
+        if (input.value !== current) input.value = current;
+        wrap.classList.toggle('has-value', current.length > 0);
     }
 
     function getCurrentActivePanel() {
@@ -6630,12 +6718,38 @@
         return merged;
     }
 
+    let _titleFilterTimer = null;
+
+    function onSportHubTitleFilterChange() {
+        const input = document.getElementById('sport-record-title-filter');
+        if (!input) return;
+        const wrap = document.getElementById('sport-record-title-filter-wrap');
+        if (wrap) wrap.classList.toggle('has-value', input.value.length > 0);
+        if (_titleFilterTimer) clearTimeout(_titleFilterTimer);
+        _titleFilterTimer = setTimeout(function () {
+            sportHubState.filters.title = String(input.value || '').trim().slice(0, 64);
+            sportHubState.filters.page = 1;
+            if (typeof loadSportHubActivityList === 'function') {
+                loadSportHubActivityList({ resetPage: true });
+            }
+        }, 250);
+    }
+
+    function onSportHubTitleFilterClear() {
+        const input = document.getElementById('sport-record-title-filter');
+        if (input) input.value = '';
+        const wrap = document.getElementById('sport-record-title-filter-wrap');
+        if (wrap) wrap.classList.remove('has-value');
+        onSportHubTitleFilterChange();
+    }
+
 	    async function loadSportHubActivityList(options = {}) {
 	        const resetPage = !!options.resetPage;
 	        const forceRefresh = options.refreshSnapshot !== false && (!!options.refreshSnapshot || !sportHubState.recordsReady);
 	        const page = resetPage ? 1 : Math.max(1, Number(sportHubState.filters.page) || 1);
 	        const pageSize = Number(sportHubState.filters.pageSize) || 10;
 	        const filterType = String(sportHubState.filters.type || 'all');
+	        const titleKeyword = String(sportHubState.filters.title || '');
 
 	        if (resetPage) sportHubState.filters.page = 1;
 
@@ -6653,9 +6767,9 @@
 	        try {
 	            let res = null;
 	            if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.get_activity_list === 'function') {
-	                res = await window.pywebview.api.get_activity_list(page, pageSize, filterType);
+	                res = await window.pywebview.api.get_activity_list(page, pageSize, filterType, titleKeyword);
 	            } else if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.get_activity_list_snapshot === 'function') {
-	                res = await window.pywebview.api.get_activity_list_snapshot(filterType);
+	                res = await window.pywebview.api.get_activity_list_snapshot(filterType, titleKeyword);
 	            } else {
 	                sportHubState.records = [];
 	                sportHubState.recordsReady = true;
@@ -8266,7 +8380,7 @@
                 updateMovementRecordsSyncButton();
             }
         } else {
-            // 首次进入：先加载 DB 数据（无等待），再后台静默同步新增文件
+            // 首次进入：只加载 DB 数据；新增文件由 watchdog 处理，历史目录同步由用户主动触发。
             try {
                 await loadSportHubActivityList({ resetPage: true });
                 isMovementRecordsInitialized = true;
@@ -8287,26 +8401,6 @@
             isMovementRecordsInitializing = false;
             hideSportHubLoadingSpinner();
             updateMovementRecordsSyncButton();
-
-            if (window.pywebview && window.pywebview.api) {
-                try {
-                    const syncRes = await runSportHubSyncJob();
-                    if (syncRes && (syncRes.inserted > 0 || syncRes.updated > 0)) {
-                        await loadSportHubActivityList({ resetPage: false });
-                        renderSportHubFilterOptions();
-                        renderSportHubRecords();
-                    }
-                    if (typeof window.pywebview.api.notify_frontend_ready === 'function') {
-                        try {
-                            await window.pywebview.api.notify_frontend_ready();
-                        } catch (e) {
-                            console.warn('notify_frontend_ready after sync error:', e);
-                        }
-                    }
-                } catch (e) {
-                    console.warn('onSwitchToMovementRecords background sync error:', e);
-                }
-            }
         }
     }
 
@@ -9863,6 +9957,7 @@
             updateCpTempNotice();
             renderCpList();
         }
+        if (tab !== 'report') resetActivityAdviceState();
     }
 
     function flyToCp(cpId) {
@@ -10093,7 +10188,18 @@
             maxAlt = Math.round(maxFromPoints);
         }
 
-        return { dist: distDisplay, gain: gainDisplay, max: Math.round(maxAlt) + ' m', time: timeStr, kmMarkers: kmMarkers, peakMarkers: peakMarkers, _source: 'canonical' };
+        return {
+            dist: distDisplay,
+            gain: gainDisplay,
+            max: Math.round(maxAlt) + ' m',
+            time: timeStr,
+            kmMarkers: kmMarkers,
+            peakMarkers: peakMarkers,
+            _source: 'canonical',
+            _distance_km: distKm,
+            _elevation_gain_m: gainM,
+            _max_alt_m: Math.round(maxAlt)
+        };
     }
 
     function _previewStatsOnly(points) {
@@ -10134,7 +10240,47 @@
         }
 
         var peakMarkers = _detectPeakMarkers(points);
-        return { dist: dist.toFixed(2) + ' km', gain: Math.round(gain) + ' m', max: Math.round(maxAlt) + ' m', time: timeStr, kmMarkers: kmMarkers, peakMarkers: peakMarkers, _previewOnly: true };
+        return {
+            dist: dist.toFixed(2) + ' km',
+            gain: Math.round(gain) + ' m',
+            max: Math.round(maxAlt) + ' m',
+            time: timeStr,
+            kmMarkers: kmMarkers,
+            peakMarkers: peakMarkers,
+            _previewOnly: true,
+            _distance_km: Number(dist.toFixed(2)),
+            _elevation_gain_m: Math.round(gain),
+            _max_alt_m: Math.round(maxAlt)
+        };
+    }
+
+    function buildActivityAdviceRouteFactsFromOverview(stats, activityMetrics, points) {
+        if (!stats || typeof stats !== 'object') return null;
+        var routeFacts = {};
+        var m = activityMetrics || null;
+        var firstPoint = points && points.length ? points[0] : null;
+        var distanceKm = Number(stats._distance_km);
+        var elevationGainM = Number(stats._elevation_gain_m);
+        var maxAltM = Number(appState.maxAltitude);
+        var minAltM = Number(appState.minAltitude);
+
+        if (Number.isFinite(distanceKm) && distanceKm > 0) {
+            routeFacts.distance_km = Number(distanceKm.toFixed(2));
+            routeFacts.distance_display = stats.dist || (routeFacts.distance_km.toFixed(2) + 'km');
+        }
+        if (Number.isFinite(elevationGainM)) routeFacts.elevation_gain_m = Math.round(elevationGainM);
+        if (Number.isFinite(maxAltM)) routeFacts.max_alt_m = Math.round(maxAltM);
+        if (Number.isFinite(minAltM)) routeFacts.min_alt_m = Math.round(minAltM);
+        if (m && m.duration_sec != null) routeFacts.duration_sec = Number(m.duration_sec);
+        if (m && m.total_descent_m != null) routeFacts.total_descent_m = Math.round(Number(m.total_descent_m));
+        if (m && m.region) routeFacts.region = m.region;
+        if (firstPoint) {
+            if (Number.isFinite(Number(firstPoint.lat))) routeFacts.start_lat = Number(Number(firstPoint.lat).toFixed(6));
+            if (Number.isFinite(Number(firstPoint.lon))) routeFacts.start_lon = Number(Number(firstPoint.lon).toFixed(6));
+        }
+        if (appState.currentActivityId) routeFacts.activity_id = appState.currentActivityId;
+        routeFacts.source = m ? 'overview_canonical_metrics' : 'overview_temporary_track';
+        return routeFacts;
     }
 
     function _detectPeakMarkers(points) {
@@ -10316,52 +10462,6 @@
         }
         var estH = Math.floor(estMinutes / 60), estM = Math.round(estMinutes % 60);
 
-        // 配速分段（NARRATIVE_LAYER: 使用后端 per-point dist_km 做分段展示，非 canonical 指标计算）
-        var totalDistM = totalDistKm * 1000, paceSegs = [];
-        if (points[0].dist_km != null && totalDistM > 0) {
-            var segCount = Math.min(5, Math.max(1, Math.floor(totalDistKm / 2)));
-            var segDistTarget = totalDistKm / segCount;
-            var segEndIdx = 0, accumulatedDistKm = 0;
-            for (var pi = 0; pi < segCount && segEndIdx < points.length - 1; pi++) {
-                var segStartIdx = segEndIdx, startAlt = points[segStartIdx].alt;
-                var targetKm = accumulatedDistKm + segDistTarget;
-                while (segEndIdx < points.length - 1 && (points[segEndIdx].dist_km || 0) < targetKm) segEndIdx++;
-                if (segEndIdx === segStartIdx) { segEndIdx = Math.min(segStartIdx + 1, points.length - 1); }
-                var segDistM = (points[segEndIdx].dist_km - points[segStartIdx].dist_km) * 1000;
-                if (segDistM < 50) continue;
-                var segSlope = ((points[segEndIdx].alt - startAlt) / segDistM) * 100;
-                var startKmStr = accumulatedDistKm.toFixed(1);
-                accumulatedDistKm = points[segEndIdx].dist_km;
-                var endKmStr = accumulatedDistKm.toFixed(1);
-                var baseSegPace2 = isTrailRunning ? 7.5 : 17;
-                var segPaceVal = segSlope > 15 ? baseSegPace2 * 1.8 : segSlope > 10 ? baseSegPace2 * 1.5 : segSlope > 5 ? baseSegPace2 * 1.25 : segSlope > 2 ? baseSegPace2 * 1.1 : segSlope > -2 ? baseSegPace2 * 1.0 : segSlope > -8 ? baseSegPace2 * 0.9 : baseSegPace2 * 1.15;
-                var paceLabel = segSlope > 5 ? '上坡' : segSlope > 2 ? '微上' : segSlope < -8 ? '陡下' : segSlope < -2 ? '下坡' : '平路';
-                paceSegs.push({ seg: paceLabel + ' ' + startKmStr + '-' + endKmStr + 'km', pace: Math.floor(segPaceVal) + ':' + String(Math.floor((segPaceVal%1)*60)).padStart(2,'0') + '/km' });
-            }
-        }
-
-        // 补给建议（NARRATIVE_LAYER: 规则引擎，不涉及运动学核心计算）
-        var supplies = [];
-        if (totalDistKm > 3)  supplies.push({icon:'💧', name:'水 500ml', note:'基本补水'});
-        if (totalDistKm > 5)  supplies.push({icon:'💧', name:'水 1.5L', note:'定时补充'});
-        if (totalDistKm > 10) supplies.push({icon:'💧', name:'水 3L', note:'务必充足'});
-        if (totalDistKm > 5)  supplies.push({icon:'🍌', name:'能量胶/棒', note:'定期补充'});
-        if (totalDistKm > 12) supplies.push({icon:'🔋', name:'电解质', note:'防止抽筋'});
-        if (totalAscent > 500) supplies.push({icon:'🧂', name:'盐丸', note:'出汗补充'});
-
-        // 休息点建议（使用后端 per-point dist_km）
-        var restPoints = [];
-        if (points[0].dist_km != null && totalDistKm > 0) {
-            var restCount = Math.min(4, Math.max(1, Math.floor(totalDistKm / 3)));
-            var restDistTargetKm = totalDistKm / (restCount + 1);
-            for (var r = 1; r < points.length && restPoints.length < restCount; r++) {
-                var dkm = points[r].dist_km || 0;
-                if (dkm >= restDistTargetKm * (restPoints.length + 1)) {
-                    restPoints.push({ name: dkm.toFixed(1) + 'km 处', distance: '海拔 ' + Math.round(points[r].alt) + 'm', altitude: Math.round(points[r].alt), duration: isTrailRunning ? '1-3分钟' : '5-10分钟', suggestion: isTrailRunning ? '快补水、调整呼吸' : '补水、拉伸、进食' });
-                }
-            }
-        }
-
         var met = isTrailRunning ? (8.0 + totalAscent / 100 * 1.5) : (4.0 + totalAscent / 100 * 1.0);
         var totalCal = Math.round(met * 72 * (estMinutes / 60 || totalDistKm / 4));
         var energy = Math.min(100, Math.round(totalDistKm * 3 + totalAscent / 20));
@@ -10375,7 +10475,7 @@
             maxSlope: (m.max_slope_pct != null ? Number(m.max_slope_pct) : null), minSlope: (m.min_slope_pct != null ? Number(m.min_slope_pct) : null),
             uphillPct: (m.uphill_pct != null ? Number(m.uphill_pct) : null), downhillPct: (m.downhill_pct != null ? Number(m.downhill_pct) : null),
             diffLabel: diffLabel, diffBadge: diffBadge, diffScore: diffScore,
-            estTime: estH + '小时' + estM + '分钟', paceSegs: paceSegs, supplies: supplies, restPoints: restPoints,
+            estTime: estH + '小时' + estM + '分钟',
             totalCal: totalCal, energy: energy, energyLevel: energy > 80 ? '极高' : energy > 60 ? '较高' : energy > 40 ? '中等' : '较低',
             energyColor: energy > 80 ? '#ef4444' : energy > 60 ? '#f59e0b' : energy > 40 ? '#3b82f6' : '#22c55e',
             altRange: Math.round(altRange),
@@ -10436,59 +10536,73 @@
         return html;
     }
 
-    function normalizeRiskLevel(level) {
-        var text = String(level || '').trim();
-        return (text === '低' || text === '中' || text === '高') ? text : '中';
+    function getActivityAdviceStatusClass(status) {
+        var text = String(status || '').trim();
+        if (text === '重点关注') return 'advice-focus';
+        if (text === '注意') return 'advice-attention';
+        if (text === '信息不足') return 'advice-missing';
+        return 'advice-tip';
     }
 
-    function getRiskLevelClass(level) {
-        var normalized = normalizeRiskLevel(level);
-        if (normalized === '高') return 'risk-high';
-        if (normalized === '低') return 'risk-low';
-        return 'risk-moderate';
-    }
-
-    function getRiskItem(risk, key) {
-        var defaultAdvice = '暂无足够数据，建议结合实际路线和个人状态谨慎判断。';
-        var item = risk && typeof risk === 'object' && risk[key] && typeof risk[key] === 'object' ? risk[key] : {};
+    function getActivityAdviceItem(advice, key, defaultStatus) {
+        var item = advice && typeof advice === 'object' && advice[key] && typeof advice[key] === 'object' ? advice[key] : {};
         return {
-            level: normalizeRiskLevel(item.level),
-            advice: String(item.advice || defaultAdvice)
+            status: String(item.status || defaultStatus || '提示'),
+            basis: String(item.basis || '当前路线事实或用户计划信息不足。'),
+            advice: String(item.advice || '建议结合实际路线、个人状态和出发前最新信息谨慎准备。')
         };
     }
 
-    function buildRiskAssessmentHTML(risk) {
-        if (!risk || typeof risk !== 'object') {
-            return '<div class="ai-empty">暂无可展示的风险预警结果</div>';
+    function buildActivityAdviceHTML(advice) {
+        if (!advice || typeof advice !== 'object') {
+            return '<div class="ai-empty">暂无可展示的活动建议</div>';
         }
         var items = [
-            { key: 'supply_risk', title: '🎒 补给风险' },
-            { key: 'weather_risk', title: '🌦️ 天气风险' },
-            { key: 'equipment_risk', title: '🎽 装备风险' },
-            { key: 'physical_risk', title: '💪 体力风险' }
+            { key: 'supply_advice', title: '🎒 补给建议', status: '提示' },
+            { key: 'weather_check', title: '🌦️ 天气检查', status: '信息不足' },
+            { key: 'equipment_advice', title: '🎽 装备建议', status: '提示' },
+            { key: 'physical_plan', title: '💪 体力安排', status: '提示' }
         ];
-        var html = '<div class="risk-assessment-container">';
+        var html = '<div class="activity-advice-container">';
         for (var i = 0; i < items.length; i++) {
-            var item = getRiskItem(risk, items[i].key);
-            var levelClass = getRiskLevelClass(item.level);
-            html += '<div class="risk-category ' + levelClass + '">';
-            html += '<div class="risk-category-head"><span>' + safeHtml(items[i].title) + '</span><span class="risk-level-badge ' + levelClass + '">' + safeHtml(item.level) + '风险</span></div>';
-            html += '<div class="risk-advice">' + safeHtml(item.advice) + '</div>';
+            var item = getActivityAdviceItem(advice, items[i].key, items[i].status);
+            var statusClass = getActivityAdviceStatusClass(item.status);
+            html += '<div class="activity-advice-card ' + statusClass + '">';
+            html += '<div class="activity-advice-head"><span>' + safeHtml(items[i].title) + '</span><span class="activity-advice-status ' + statusClass + '">' + safeHtml(item.status) + '</span></div>';
+            html += '<div class="activity-advice-basis">' + safeHtml(item.basis) + '</div>';
+            html += '<div class="activity-advice-text">' + safeHtml(item.advice) + '</div>';
             html += '</div>';
         }
-        html += '<div class="risk-disclaimer">' + safeHtml(risk.disclaimer || '以上建议由 AI 生成，仅供参考。请结合自身经验和实际情况判断。') + '</div>';
-        if (risk.error) html += '<div class="risk-error">' + safeHtml(risk.error) + '</div>';
+        html += '<div class="activity-advice-disclaimer">' + safeHtml(advice.disclaimer || '以上建议由 AI 基于当前轨迹和用户填写的计划信息生成，仅供出行准备参考。') + '</div>';
+        if (advice.error) html += '<div class="activity-advice-error">' + safeHtml(advice.error) + '</div>';
         html += '</div>';
         return html;
     }
 
-    function resetRiskAssessmentState() {
-        appState.currentRiskAssessment = null;
-        appState.riskAssessmentLoading = false;
-        var resultEl = document.getElementById('risk-assessment-result');
+    function getActivityAdviceTypeInput() {
+        var el = document.getElementById('activity-advice-type');
+        return el ? String(el.value || '').trim() : '';
+    }
+
+    function getActivityAdvicePlannedTimeInput() {
+        var el = document.getElementById('activity-advice-planned-time');
+        return el ? String(el.value || '').trim() : '';
+    }
+
+    function resetActivityAdviceState(options) {
+        var clearInputs = !(options && options.keepInputs);
+        appState.currentActivityAdvice = null;
+        appState.activityAdviceLoading = false;
+        if (clearInputs) {
+            var typeEl = document.getElementById('activity-advice-type');
+            var timeEl = document.getElementById('activity-advice-planned-time');
+            if (typeEl) typeEl.value = '';
+            if (timeEl) timeEl.value = '';
+        }
+        var resultEl = document.getElementById('activity-advice-result');
         if (resultEl) {
             resultEl.className = 'ai-empty';
-            resultEl.innerHTML = '点击“AI分析”按钮，获取智能风险预警';
+            resultEl.innerHTML = '可选填写活动类型和计划时间后，生成补给、天气检查、装备和体力安排建议';
         }
     }
 
@@ -10518,19 +10632,26 @@
         // 字号 0.75rem 与 .ai-stat 同级；高亮 .alt-keyword 相对论放大 1.15em 自动联动
         html += '<div style="font-size:0.75rem;color:#94a3b8;margin-top:3px;line-height:1.5;">' + report.altAnalysis + '</div></div>';
 
-        const meta = getDynamicSportMeta(appState.sportType);
-        html += '<div class="ai-section"><h3>' + meta.icon + ' 配速建议 (' + meta.paceLabel + ')</h3>';
-        for (var i = 0; i < report.paceSegs.length; i++) html += '<div class="pace-row"><span class="pace-seg-name">' + report.paceSegs[i].seg + '</span><span class="pace-seg-val">' + report.paceSegs[i].pace + '</span></div>';
+        html += '<div class="ai-section activity-advice-section">';
+        html += '<h3>🧭 活动建议 <button type="button" class="ai-insight-btn" onclick="requestActivityAdvice()">✨ AI 生成建议</button></h3>';
+        html += '<div class="activity-advice-plan-copy">';
+        html += '<div class="activity-advice-plan-title">出发计划（可选）</div>';
+        html += '<div class="activity-advice-plan-hint">填写活动类型和计划时间，AI 会生成更贴近天气、补给和体力安排的建议。</div>';
         html += '</div>';
-
-        if (report.supplies.length > 0) {
-            html += '<div class="ai-section"><h3>🎒 补给</h3>';
-            for (var j = 0; j < report.supplies.length; j++) html += '<div class="supply-item"><span>' + report.supplies[j].icon + '</span><span><b>' + report.supplies[j].name + '</b> <span style="color:#64748b;font-size:0.65rem;">' + report.supplies[j].note + '</span></span></div>';
-            html += '</div>';
-        }
-        html += '<div class="ai-section risk-assessment-section">';
-        html += '<h3>⚠️ 风险预警 <button type="button" class="ai-insight-btn" onclick="requestRiskAssessment()">🤖 AI分析</button></h3>';
-        html += '<div id="risk-assessment-result" class="ai-empty">点击“AI分析”按钮，获取智能风险预警</div>';
+        html += '<div class="activity-advice-controls">';
+        html += '<select id="activity-advice-type" class="activity-advice-select" aria-label="活动类型">';
+        html += '<option value="">活动类型（可选）</option>';
+        html += '<option value="hiking">徒步</option>';
+        html += '<option value="mountaineering">登山</option>';
+        html += '<option value="trail_running">越野跑</option>';
+        html += '<option value="running">跑步</option>';
+        html += '<option value="cycling">骑行</option>';
+        html += '<option value="mountain_biking">山地车</option>';
+        html += '<option value="other">其他</option>';
+        html += '</select>';
+        html += '<input id="activity-advice-planned-time" class="activity-advice-time" type="datetime-local" aria-label="计划活动时间">';
+        html += '</div>';
+        html += '<div id="activity-advice-result" class="ai-empty">可选填写活动类型和计划时间后，生成补给、天气检查、装备和体力安排建议</div>';
         html += '</div>';
         return html;
     }
@@ -10594,51 +10715,56 @@
         sidebarEl.classList.remove('collapsed');
     }
 
-    async function requestRiskAssessment() {
-        if (appState.riskAssessmentLoading) return;
+    async function requestActivityAdvice() {
+        if (appState.activityAdviceLoading) return;
         if (!window.pywebview || !window.pywebview.api || !window.pywebview.api.call_llm) {
-            showToast('⚠️ AI 风险预警仅在桌面应用中可用');
+            showToast('⚠️ AI 活动建议仅在桌面应用中可用');
             return;
         }
         if (!currentLLMConfig.url) { showToast('⚠️ 请先在配置中填写 API 地址'); return; }
 
-        const resultEl = document.getElementById('risk-assessment-result');
-        const btn = document.querySelector('.risk-assessment-section .ai-insight-btn');
-        appState.riskAssessmentLoading = true;
+        const resultEl = document.getElementById('activity-advice-result');
+        const btn = document.querySelector('.activity-advice-section .ai-insight-btn');
+        const planningContext = {
+            user_activity_type: getActivityAdviceTypeInput(),
+            planned_start_time: getActivityAdvicePlannedTimeInput()
+        };
+        resetActivityAdviceState({ keepInputs: true });
+        appState.activityAdviceLoading = true;
         if (btn) {
             btn.disabled = true;
-            btn.textContent = 'AI分析中...';
+            btn.textContent = '生成中...';
         }
         if (resultEl) {
             resultEl.className = 'ai-empty';
-            resultEl.innerHTML = '<div class="spinner" style="border-left-color:#a855f7;width:24px;height:24px;border-width:3px;margin:0 auto 10px;"></div><div>AI 正在分析风险...</div>';
+            resultEl.innerHTML = '<div class="spinner" style="border-left-color:#38bdf8;width:24px;height:24px;border-width:3px;margin:0 auto 10px;"></div><div>AI 正在生成活动建议...</div>';
         }
 
         try {
             const res = await withTimeout(
-                window.pywebview.api.call_llm(PY_REPORT_RISK_ASSESSMENT, appState.sportType || 'general'),
+                window.pywebview.api.call_llm(PY_REPORT_ACTIVITY_ADVICE, JSON.stringify(planningContext)),
                 60000
             );
-            if (!res || !res.ok || !res.risk_assessment) {
-                throw new Error((res && res.error) ? String(res.error) : '无风险预警结果');
+            if (!res || !res.ok || !res.activity_advice) {
+                throw new Error((res && res.error) ? String(res.error) : '无活动建议结果');
             }
-            appState.currentRiskAssessment = res.risk_assessment;
+            appState.currentActivityAdvice = res.activity_advice;
             if (resultEl) {
                 resultEl.className = '';
-                resultEl.innerHTML = buildRiskAssessmentHTML(res.risk_assessment);
+                resultEl.innerHTML = buildActivityAdviceHTML(res.activity_advice);
             }
         } catch (e) {
             if (resultEl) {
                 var errorMsg = e && e.message ? e.message : String(e);
                 resultEl.className = 'ai-empty';
-                resultEl.innerHTML = '<div style="color:#fca5a5;margin-bottom:10px;">风险预警生成失败：' + safeHtml(errorMsg) + '</div><button type="button" class="ai-insight-btn" onclick="requestRiskAssessment()">重试</button>';
+                resultEl.innerHTML = '<div style="color:#fca5a5;margin-bottom:10px;">活动建议生成失败：' + safeHtml(errorMsg) + '</div><button type="button" class="ai-insight-btn" onclick="requestActivityAdvice()">重试</button>';
             }
-            showToast('⚠️ 风险预警请求超时或失败');
+            showToast('⚠️ 活动建议请求超时或失败');
         } finally {
-            appState.riskAssessmentLoading = false;
+            appState.activityAdviceLoading = false;
             if (btn) {
                 btn.disabled = false;
-                btn.textContent = '🤖 AI分析';
+                btn.textContent = '✨ AI 生成建议';
             }
         }
     }
@@ -10882,7 +11008,7 @@
             showToast('⚠️ 轨迹数据无效，无法渲染');
             return;
         }
-        resetRiskAssessmentState();
+        resetActivityAdviceState();
         setCurrentWeather(data.weather || null);
         appState.points = data.points;
         appState.placemarks = (data.placemarks || []).map(function(pm) { return normalizePlacemark(pm, appState.persistenceMode === 'canonical_activity' ? 'user' : 'gpx_wpt'); });
@@ -10897,6 +11023,17 @@
         } else {
             stats = _previewStatsOnly(appState.points);
         }
+        // 防栈溢出
+        let minAlt = Infinity, maxAlt = -Infinity, minLon = Infinity, maxLon = -Infinity, minLat = Infinity, maxLat = -Infinity;
+        for (let i = 0; i < appState.points.length; i++) {
+            let p = appState.points[i];
+            if (p.alt < minAlt) minAlt = p.alt; if (p.alt > maxAlt) maxAlt = p.alt;
+            if (p.lon < minLon) minLon = p.lon; if (p.lon > maxLon) maxLon = p.lon;
+            if (p.lat < minLat) minLat = p.lat; if (p.lat > maxLat) maxLat = p.lat;
+        }
+        appState.minAltitude = minAlt === Infinity ? 0 : minAlt; appState.maxAltitude = maxAlt === -Infinity ? 0 : maxAlt;
+        document.getElementById('val-max').innerText = Math.round(appState.maxAltitude) + ' m';
+        const activityAdviceRouteFacts = buildActivityAdviceRouteFactsFromOverview(stats, appState.activityMetrics, appState.points);
         appState.kmMarkers = stats.kmMarkers; appState.peakMarkers = stats.peakMarkers; 
 
         document.getElementById('val-dist').innerText = stats.dist; document.getElementById('val-gain').innerText = stats.gain;
@@ -10912,17 +11049,6 @@
         }
         document.getElementById('track-title').innerText = displayTitle;
         document.getElementById('track-title').title = displayTitle;
-
-        // 防栈溢出
-        let minAlt = Infinity, maxAlt = -Infinity, minLon = Infinity, maxLon = -Infinity, minLat = Infinity, maxLat = -Infinity;
-        for (let i = 0; i < appState.points.length; i++) {
-            let p = appState.points[i];
-            if (p.alt < minAlt) minAlt = p.alt; if (p.alt > maxAlt) maxAlt = p.alt;
-            if (p.lon < minLon) minLon = p.lon; if (p.lon > maxLon) maxLon = p.lon;
-            if (p.lat < minLat) minLat = p.lat; if (p.lat > maxLat) maxLat = p.lat;
-        }
-        appState.minAltitude = minAlt === Infinity ? 0 : minAlt; appState.maxAltitude = maxAlt === -Infinity ? 0 : maxAlt;
-        document.getElementById('val-max').innerText = Math.round(appState.maxAltitude) + ' m';
         
         appState.centerPosition = Cesium.Cartesian3.fromDegrees((minLon + maxLon) / 2, (minLat + maxLat) / 2);
         currentRange = Math.max((maxLon - minLon) * 100000, (maxLat - minLat) * 111000, 1000) * 1.5; 
@@ -10938,7 +11064,8 @@
                 placemarks: appState.placemarks,
                 filename: filename,
                 weather: appState.currentWeather,
-                activityId: appState.currentActivityId || null
+                activityId: appState.currentActivityId || null,
+                activityAdviceRouteFacts: activityAdviceRouteFacts
             })).catch(function () {});
         }
 
@@ -12246,7 +12373,7 @@ function openConfigModalFromWarning() {
         _fatigueReviewActivityId = activityId;
 
         // V9.0:复盘已合并入 #detail-tab-review,不再有独立 overlay
-        // 渲染 loading 占位(数据加载中状态,展示在 #fr-subtitle / metric cards)
+        // 渲染 loading 状态,展示在摘要带和指标卡。
         _renderFatigueReviewLoading();
 
         try {
@@ -12268,11 +12395,14 @@ function openConfigModalFromWarning() {
                 return;
             }
             _renderFatigueReviewSummary(data);
-            _renderFatigueReviewMetrics(data.metrics || {});
+            _renderFatigueReviewMetrics(data.metrics || {}, data.sport_type);
             _renderFatigueReviewDimensions(data.metrics || {});
-            _renderFatigueReviewEvents(data.collapse_events || []);
-            _renderFatigueReviewZones(data.fatigue_zones || []);
-            _renderFatigueReviewStageOverview(data.fatigue_zones || []);
+            var reviewTotalDistanceKm = _fatigueReviewTotalDistanceKm(data);
+            var hasSustainedZone = _fatigueReviewHasSustainedZone(data.fatigue_zones || [], reviewTotalDistanceKm);
+            _renderFatigueReviewSignalRelation(data.collapse_events || [], data.fatigue_zones || []);
+            _renderFatigueReviewEvents(data.collapse_events || [], data.sport_type, hasSustainedZone);
+            _renderFatigueReviewZones(data.fatigue_zones || [], data.sport_type, reviewTotalDistanceKm);
+            _renderFatigueReviewStageOverview(data.fatigue_zones || [], data.sport_type, reviewTotalDistanceKm);
             _renderFatigueReviewSideSummary(data);
             _renderFatigueReviewContextTags(data.context_tags || {});
             _renderFatigueReviewChartFooter(data);
@@ -12428,9 +12558,7 @@ function openConfigModalFromWarning() {
 
     function _renderFatigueReviewLoading() {
         var title = document.getElementById('fr-title');
-        var sub = document.getElementById('fr-subtitle');
         if (title) title.textContent = '🔍 运动复盘';
-        if (sub) sub.textContent = '正在加载复盘数据...';
         var summary = document.getElementById('fr-summary');
         if (summary) summary.textContent = '⏳ 加载中...';
         var desc = document.getElementById('fr-summary-desc');
@@ -12457,8 +12585,6 @@ function openConfigModalFromWarning() {
         });
     }
     function _renderFatigueReviewError(msg) {
-        var sub = document.getElementById('fr-subtitle');
-        if (sub) sub.textContent = '⚠️ ' + msg;
         var summary = document.getElementById('fr-summary');
         if (summary) {
             summary.textContent = '❌ ' + msg;
@@ -12516,7 +12642,7 @@ function openConfigModalFromWarning() {
         };
 
         if (summary) {
-            var riskText = bonk.is_at_risk ? '存在 Bonk 风险' : '未触发 Bonk 风险';
+            var riskText = bonk.is_at_risk ? '存在能量断档风险' : '未触发能量断档风险';
             var driftText = drift.level && drift.level !== 'unknown'
                 ? '心率漂移 ' + drift.level
                 : '心率漂移数据不足';
@@ -12547,7 +12673,7 @@ function openConfigModalFromWarning() {
         );
         setPill(
             riskPill,
-            bonk.is_at_risk ? '风险：Bonk' : '风险：未触发',
+            bonk.is_at_risk ? '风险：能量断档' : '风险：未触发',
             bonk.is_at_risk ? 'warn' : 'ok'
         );
         if (eventPill) {
@@ -12556,11 +12682,194 @@ function openConfigModalFromWarning() {
         }
         setPill(aiPill, 'AI 待开放', 'ai-frozen');
     }
-    function _renderFatigueReviewMetrics(metrics) {
+    function getFatigueReviewSportCopyGroup(sportType) {
+        var sport = String(sportType || '').toLowerCase();
+        if (sport === 'trail_running') return 'trail_running';
+        if (sport === 'cycling' || sport === 'road_cycling') return 'cycling';
+        if (sport === 'hiking' || sport === 'walking' || sport === 'mountaineering') return 'hiking';
+        if (sport === 'mountain_biking') return 'cycling';
+        return 'running';
+    }
+    var FATIGUE_REVIEW_METRIC_COPY = {
+        hr_drift: {
+            normal: {
+                running: '后半程心率控制较稳，节奏保持不错。',
+                trail_running: '在爬升和路况变化下，后半程心率仍算稳定。',
+                hiking: '长时间行进后，体能分配还算均匀。',
+                cycling: '持续输出时，心率反应基本稳定。'
+            },
+            risk: {
+                running: '后半程心率更难压住，说明越跑越吃力。',
+                trail_running: '后程心率控制变差，地形消耗开始放大。',
+                hiking: '走到后半段，体能消耗开始明显累积。',
+                cycling: '后半程心率抬升更明显，持续输出压力偏大。'
+            },
+            missing: {
+                running: '这次记录不足，暂时看不出后程心率变化。',
+                trail_running: '这次记录不足，暂时无法判断后程心率变化。',
+                hiking: '这次记录不足，暂时看不出体能分配变化。',
+                cycling: '这次记录不足，暂时无法判断后程心率稳定性。'
+            }
+        },
+        decoupling: {
+            normal: {
+                running: '后半程速度和心率配合还比较稳定。',
+                trail_running: '地形变难后，推进效率整体还可控。',
+                hiking: '后半程虽然更累，但还能维持基本节奏。',
+                cycling: '后半程输出没有明显散掉。'
+            },
+            risk: {
+                running: '后半程效率下降，说明同样心肺负担下跑得更吃力。',
+                trail_running: '后半程推进效率下降，说明地形和疲劳影响变大。',
+                hiking: '后半程走得更费劲，体能利用效率在下降。',
+                cycling: '后半程输出效率下降，说明越骑越吃力。'
+            },
+            missing: {
+                running: '这次数据不足，暂时看不出后半程效率变化。',
+                trail_running: '这次数据不足，暂时无法判断地形下的推进效率变化。',
+                hiking: '这次数据不足，暂时无法判断后半程是否越走越吃力。',
+                cycling: '这次数据不足，暂时无法判断后程输出效率变化。'
+            }
+        },
+        bonk_risk: {
+            normal: {
+                running: '当前未见明显掉电风险，补给节奏基本合理。',
+                trail_running: '当前未见明显体力断档，后程控制较稳。',
+                hiking: '当前未见明显乏力断档，体能分配较平稳。',
+                cycling: '当前未见明显掉功率风险，续航还可以。'
+            },
+            risk: {
+                running: '后半程有能量掉下来的风险，补给和配速要更早安排。',
+                trail_running: '爬升和时长叠加，后程更容易出现体力断档。',
+                hiking: '长时间消耗后，后程可能出现明显乏力。',
+                cycling: '持续输出时间偏长，后半程有掉功率风险。'
+            },
+            missing: {
+                running: '这次信息不足，暂时无法判断是否有掉电风险。',
+                trail_running: '这次信息不足，暂时无法判断是否有体力断档风险。',
+                hiking: '这次信息不足，暂时无法判断后程乏力风险。',
+                cycling: '这次信息不足，暂时无法判断后程掉功率风险。'
+            }
+        },
+        events: {
+            normal: {
+                running: '本次没有识别到明显掉速点。',
+                trail_running: '本次没有识别到明显状态塌陷。',
+                hiking: '本次没有识别到明显体能回落点。',
+                cycling: '本次没有识别到明显输出下滑点。'
+            },
+            risk: {
+                running: '这次识别到明显掉速点，都是状态下滑信号。',
+                trail_running: '这次有几段状态明显下滑，可能和爬升或技术路段有关。',
+                hiking: '这次有几次明显体能回落，后程要留意节奏。',
+                cycling: '这次出现了几次输出突然下滑，说明后程有压力。'
+            },
+            missing: {
+                running: '这次暂未识别到明确状态下滑点。',
+                trail_running: '这次暂未识别到明确状态塌陷点。',
+                hiking: '这次暂未识别到明确体能回落点。',
+                cycling: '这次暂未识别到明确输出下滑点。'
+            }
+        },
+        efficiency: {
+            normal: {
+                running: '这次心肺投入基本转成了有效速度。',
+                trail_running: '在复杂地形里，整体推进效率还不错。',
+                hiking: '体能更多转成了稳定前进。',
+                cycling: '这次输出转化比较顺。'
+            },
+            risk: {
+                running: '这次投入了不少体能，但转成速度的效果一般。',
+                trail_running: '地形消耗偏大，推进效率被明显拉低。',
+                hiking: '体能更多花在对抗地形和疲劳上。',
+                cycling: '输出不少，但转成有效速度的表现一般。'
+            },
+            missing: {
+                running: '当前数据不足，暂时无法判断投入和速度的转化效果。',
+                trail_running: '当前数据不足，暂时无法判断复杂地形下的推进效率。',
+                hiking: '当前数据不足，暂时无法判断体能利用效果。',
+                cycling: '当前数据不足，暂时无法判断输出转化效果。'
+            }
+        },
+        durability: {
+            normal: {
+                running: '到了后半程，还能基本维持住节奏。',
+                trail_running: '长距离和爬升之后，后程仍有持续推进能力。',
+                hiking: '走到后半段，体能没有明显垮掉。',
+                cycling: '长时间输出后，后程保持能力还可以。'
+            },
+            risk: {
+                running: '到了后半程，节奏保持开始吃力。',
+                trail_running: '后程推进能力下滑，长距离承受力不足。',
+                hiking: '走到后半段，体能保持能力明显变弱。',
+                cycling: '骑到后程，持续输出能力开始下滑。'
+            },
+            missing: {
+                running: '时长或记录不足，暂时看不出后程保持能力。',
+                trail_running: '时长或记录不足，暂时看不出长距离保持能力。',
+                hiking: '时长或记录不足，暂时看不出后半段体能保持能力。',
+                cycling: '时长或记录不足，暂时看不出后程持续输出能力。'
+            }
+        },
+        cadence_stability: {
+            normal: {
+                running: '步频节奏比较稳，跑姿控制不错。',
+                trail_running: '虽然地形会打断节奏，但整体步频还算稳定。',
+                hiking: '行进节奏没有明显忽快忽慢。',
+                cycling: '踩踏节奏比较稳，输出更顺。'
+            },
+            risk: {
+                running: '步频波动偏大，节奏控制不够稳。',
+                trail_running: '地形和疲劳让节奏被频繁打断。',
+                hiking: '行进节奏波动较大，说明状态不够稳定。',
+                cycling: '踩踏节奏不够稳，输出连续性一般。'
+            },
+            missing: {
+                running: '设备没记到足够步频，暂时无法判断节奏稳定性。',
+                trail_running: '步频记录不足，暂时无法判断节奏是否稳定。',
+                hiking: '步频记录不足，暂时无法判断行进节奏稳定性。',
+                cycling: '踩踏节奏记录不足，暂时无法判断输出稳定性。'
+            }
+        },
+        training_load: {
+            normal: {
+                running: '这次是一次比较实在的训练刺激。',
+                trail_running: '时长和爬升叠加，整体负荷偏高。',
+                hiking: '这次更偏耐力消耗，恢复时间可能更长。',
+                cycling: '这次属于持续输出型负荷。'
+            },
+            risk: {
+                running: '这次刺激偏大，建议给身体更多恢复时间。',
+                trail_running: '这次负荷较重，恢复安排要更谨慎。',
+                hiking: '这次耐力消耗偏大，短期内别连续堆量。',
+                cycling: '这次整体负荷偏高，腿部和心肺恢复都要跟上。'
+            },
+            missing: {
+                running: '心率或时长信息不足，暂时无法评估这次负荷。',
+                trail_running: '心率或时长信息不足，暂时无法评估这次负荷。',
+                hiking: '心率或时长信息不足，暂时无法评估这次消耗。',
+                cycling: '心率或时长信息不足，暂时无法评估这次负荷。'
+            }
+        }
+    };
+    function _fatigueReviewMetricCopy(metricKey, state, sportGroup) {
+        var metricCopy = FATIGUE_REVIEW_METRIC_COPY[metricKey] || {};
+        var stateCopy = metricCopy[state] || metricCopy.normal || metricCopy.missing || {};
+        return stateCopy[sportGroup] || stateCopy.running || '本次指标说明暂不可用。';
+    }
+    function _fatigueReviewMetricState(missing, level, isRisk) {
+        if (missing) return 'missing';
+        if (isRisk) return 'risk';
+        var normalized = String(level || '').toLowerCase();
+        if (/^(warn|bad|declining|high|very_high|danger|collapse|critical|severe)$/.test(normalized)) return 'risk';
+        return 'normal';
+    }
+    function _renderFatigueReviewMetrics(metrics, sportType) {
         var hrDrift = metrics.hr_drift || {};
         var decoupling = metrics.decoupling || {};
         var bonk = metrics.bonk_risk || {};
         var events = metrics.events || { count: 0 };
+        var sportGroup = getFatigueReviewSportCopyGroup(sportType);
         var pctVal = function(v) {
             if (v == null || isNaN(v)) return '--';
             return Number(v).toFixed(1) + '%';
@@ -12586,82 +12895,47 @@ function openConfigModalFromWarning() {
             }
             if (subEl) subEl.textContent = subText || '待接入';
         };
-        var trendText = function(trend) {
-            if (!trend || trend.compared_count == null || trend.compared_count < 3) {
-                return '历史数据不足';
-            }
-            var dpct = trend.delta_pct;
-            if (dpct == null) {
-                return '基线缺失';
-            }
-            if (trend.level === 'flat') {
-                return '较近 ' + trend.compared_count + ' 次持平';
-            }
-            var isUp = trend.level === 'up';
-            var arrow = isUp ? '↑' : '↓';
-            var sign = dpct > 0 ? '+' : '';
-            return arrow + ' 较近 ' + trend.compared_count + ' 次 ' + sign + dpct + '%';
-        };
-        var bonkTrendText = function(trend) {
-            if (!trend || trend.compared_count == null || trend.compared_count < 3) {
-                return '历史数据不足';
-            }
-            if (trend.level === 'flat') {
-                return '与近 ' + trend.compared_count + ' 次持平';
-            }
-            return '较近 ' + trend.compared_count + ' 次首次触发';
-        };
-        var eventsTrendText = function(trend) {
-            if (!trend || trend.compared_count == null || trend.compared_count < 3) {
-                return '历史数据不足';
-            }
-            var delta = trend.delta_count || 0;
-            if (delta === 0) {
-                return '与近 ' + trend.compared_count + ' 次持平';
-            }
-            var isUp = delta > 0;
-            var arrow = isUp ? '↑' : '↓';
-            var sign = delta > 0 ? '+' : '';
-            return arrow + ' 较近 ' + trend.compared_count + ' 次 ' + sign + delta + ' 起';
-        };
-
         var hrMissing = !metrics.hr_drift || hrDrift.confidence === 'unavailable' || hrDrift.pct == null;
         var hrStatus = levelText(hrDrift.level);
+        var hrState = _fatigueReviewMetricState(hrMissing, hrDrift.level);
         setMetricCard(
             'fr-hr-drift', 'fr-hr-drift-status', 'fr-hr-drift-sub',
             pctVal(hrDrift.pct),
             hrMissing ? '数据不足' : hrStatus,
             levelTone(hrDrift.level, hrMissing),
-            hrMissing ? '不满足稳态有氧或设备未记录' : trendText(hrDrift.trend)
+            _fatigueReviewMetricCopy('hr_drift', hrState, sportGroup)
         );
 
         var decMissing = !metrics.decoupling || decoupling.confidence === 'unavailable' || decoupling.pct == null;
         var decStatus = levelText(decoupling.level);
+        var decState = _fatigueReviewMetricState(decMissing, decoupling.level);
         setMetricCard(
             'fr-decoupling', 'fr-decoupling-status', 'fr-decoupling-sub',
             pctVal(decoupling.pct),
             decMissing ? '数据不足' : decStatus,
             levelTone(decoupling.level, decMissing),
-            decMissing ? '该活动未提供足够解耦数据' : trendText(decoupling.trend)
+            _fatigueReviewMetricCopy('decoupling', decState, sportGroup)
         );
 
         var bonkMissing = !metrics.bonk_risk || bonk.confidence === 'unavailable';
         var bonkText = bonkMissing ? '--' : (bonk.is_at_risk ? '高' : '低');
+        var bonkState = _fatigueReviewMetricState(bonkMissing, null, bonk.is_at_risk);
         setMetricCard(
             'fr-bonk', 'fr-bonk-status', 'fr-bonk-sub',
             bonkText,
             bonkMissing ? '待接入' : (bonk.is_at_risk ? '高风险' : '未触发'),
             bonkMissing ? 'empty' : (bonk.is_at_risk ? 'bad' : 'ok'),
-            bonkMissing ? '暂未识别 Bonk 风险' : ('置信度 ' + (bonk.confidence || '--') + ' · ' + bonkTrendText(bonk.trend))
+            _fatigueReviewMetricCopy('bonk_risk', bonkState, sportGroup)
         );
 
         var eventCount = events.count != null ? events.count : 0;
+        var eventsState = _fatigueReviewMetricState(false, null, eventCount > 0);
         setMetricCard(
             'fr-events-count', 'fr-events-status', 'fr-events-sub',
             String(eventCount),
             eventCount > 0 ? '已识别' : '暂无事件',
             eventCount > 0 ? 'warn' : 'ok',
-            eventsTrendText(events.trend)
+            _fatigueReviewMetricCopy('events', eventsState, sportGroup)
         );
 
         // V7.9 指标 5:Efficiency Score 渲染
@@ -12669,15 +12943,13 @@ function openConfigModalFromWarning() {
         var eff = metrics.efficiency || {};
         var effMissing = !metrics.efficiency || eff.confidence === 'unavailable' || eff.score == null;
         var effStatus = levelText(eff.level, {improving:'改善', declining:'退化', stable:'持平', unknown:'未知'});
-        var effDelta = eff.delta_pct != null
-            ? (eff.delta_pct > 0 ? '+' + eff.delta_pct : eff.delta_pct) + '% vs 21d'
-            : '基线缺失';
+        var effState = _fatigueReviewMetricState(effMissing, eff.level);
         setMetricCard(
             'fr-efficiency-score', 'fr-efficiency-status', 'fr-efficiency-sub',
             effMissing ? '--' : String(eff.score),
             effMissing ? '数据不足' : effStatus,
             levelTone(eff.level, effMissing),
-            effMissing ? '当前运动类型暂不支持或后端数据不足' : effDelta
+            _fatigueReviewMetricCopy('efficiency', effState, sportGroup)
         );
 
         // V7.11 指标 7:Durability Index 渲染
@@ -12685,15 +12957,13 @@ function openConfigModalFromWarning() {
         var dur = metrics.durability || {};
         var durMissing = !metrics.durability || dur.confidence === 'unavailable' || dur.score == null;
         var durStatus = levelText(dur.level, {excellent:'极佳', good:'良好', warn:'轻度退化', bad:'严重退化', unknown:'未知'});
-        var durSub = dur.head_speed != null && dur.tail_speed != null
-            ? dur.head_speed.toFixed(2) + '→' + dur.tail_speed.toFixed(2) + ' m/s'
-            : 'duration < 45min 或后端数据不足';
+        var durState = _fatigueReviewMetricState(durMissing, dur.level);
         setMetricCard(
             'fr-durability-score', 'fr-durability-status', 'fr-durability-sub',
             durMissing ? '--' : String(dur.score),
             durMissing ? '数据不足' : durStatus,
             levelTone(dur.level, durMissing),
-            durSub
+            _fatigueReviewMetricCopy('durability', durState, sportGroup)
         );
 
         // V7.12 指标 8:Cadence Stability 渲染
@@ -12701,16 +12971,13 @@ function openConfigModalFromWarning() {
         var cadStab = metrics.cadence_stability || {};
         var cadMissing = !metrics.cadence_stability || cadStab.confidence === 'unavailable' || cadStab.score == null;
         var cadStatus = levelText(cadStab.level, {excellent:'极佳', good:'良好', warn:'轻度波动', bad:'明显波动', unknown:'未知'});
-        var cadSub = cadStab.is_intermittent
-            ? '间歇训练不计算'
-            : (cadStab.cv != null ? 'CV=' + cadStab.cv + '%' : '设备未记录步频');
-        if (cadStab.decay_pct != null) cadSub += ' · decay=' + cadStab.decay_pct + '%';
+        var cadState = _fatigueReviewMetricState(cadMissing, cadStab.level);
         setMetricCard(
             'fr-cadence-stability-score', 'fr-cadence-stability-status', 'fr-cadence-stability-sub',
             cadMissing ? '--' : String(cadStab.score),
             cadMissing ? '设备未记录' : cadStatus,
             levelTone(cadStab.level, cadMissing),
-            cadSub
+            _fatigueReviewMetricCopy('cadence_stability', cadState, sportGroup)
         );
 
         // V7.13 指标 9:Training Load 渲染
@@ -12718,16 +12985,13 @@ function openConfigModalFromWarning() {
         var tload = metrics.training_load || {};
         var tloadMissing = !metrics.training_load || tload.confidence === 'unavailable' || tload.load == null;
         var tlStatus = levelText(tload.level, {very_high:'极高', high:'高', moderate:'中', low:'低', very_low:'极低', unknown:'未知'});
-        var zoneStr = tload.zone_used
-            ? (Array.isArray(tload.zone_used) ? tload.zone_used.join('+') : tload.zone_used)
-            : '心率区间缺失';
-        var ratioStr = tload.ratio_7d_42d === 'pending_v7_14' ? ' · 7d/42d 待接入' : '';
+        var tloadState = _fatigueReviewMetricState(tloadMissing, tload.level);
         setMetricCard(
             'fr-training-load-value', 'fr-training-load-status', 'fr-training-load-sub',
             tloadMissing ? '--' : String(tload.load),
             tloadMissing ? '待接入' : tlStatus,
             levelTone(tload.level, tloadMissing),
-            tloadMissing ? '无 avg_hr' : zoneStr + ratioStr
+            _fatigueReviewMetricCopy('training_load', tloadState, sportGroup)
         );
     }
     function _renderFatigueReviewDimensions(metrics) {
@@ -12747,8 +13011,8 @@ function openConfigModalFromWarning() {
         }
         var items = [
             { key: '心率漂移', m: metrics.hr_drift },
-            { key: '解耦率',   m: metrics.decoupling },
-            { key: 'Bonk 风险', m: metrics.bonk_risk },
+            { key: '后程效率变化',   m: metrics.decoupling },
+            { key: '能量断档风险', m: metrics.bonk_risk },
         ];
         dimsEl.innerHTML = items.map(function(it) {
             var m = it.m || {};
@@ -12761,9 +13025,356 @@ function openConfigModalFromWarning() {
                 + '</div>';
         }).join('');
     }
-    function _renderFatigueReviewEvents(events) {
+    var FATIGUE_REVIEW_ZONE_COPY = {
+        medium: {
+            running: '这段开始比前面更费力，建议回看当时配速和心率。',
+            trail_running: '这段推进开始变吃力，可能受爬升或技术路段影响。',
+            hiking: '这段开始更耗体力，可能和爬升、路况或时长累积有关。',
+            cycling: '这段持续输出开始变吃力，建议回看踏频、心率或坡度。'
+        },
+        high: {
+            running: '这段状态下滑更明显，可能是间歇、掉速或心率压力集中出现。',
+            trail_running: '这段状态下滑更明显，地形和疲劳影响开始放大。',
+            hiking: '这段体能压力明显加重，后续要更注意节奏和补给。',
+            cycling: '这段输出压力明显加重，可能出现掉功率或恢复不足。'
+        },
+        low: {
+            running: '这段整体还算稳定，可以作为前后状态变化的参照。',
+            trail_running: '这段整体还算稳定，地形影响暂时不明显。',
+            hiking: '这段行进状态相对平稳，体能消耗还可控。',
+            cycling: '这段输出相对平稳，可以作为前后状态变化的参照。'
+        },
+        unknown: {
+            running: '这段状态变化不够明确，建议结合主图曲线一起查看。',
+            trail_running: '这段状态变化不够明确，建议结合爬升和心率一起查看。',
+            hiking: '这段状态变化不够明确，建议结合爬升、步速和心率一起查看。',
+            cycling: '这段状态变化不够明确，建议结合心率、坡度和输出一起查看。'
+        }
+    };
+    var FATIGUE_REVIEW_EVENT_COPY = {
+        drift: {
+            title: '心率压力开始上来',
+            running: '这个参考点附近，后半程心率压力变得更明显。',
+            trail_running: '这个参考点附近，爬升或路况对心率的影响更明显。',
+            hiking: '这个参考点附近，长时间行进的体能消耗开始显现。',
+            cycling: '这个参考点附近，持续输出对心率的压力更明显。'
+        },
+        efficiency_drop: {
+            title: '推进效率开始下降',
+            running: '这个参考点附近，同样心肺负担下速度保持变难。',
+            trail_running: '这个参考点附近，地形和疲劳让推进效率变差。',
+            hiking: '这个参考点附近，继续前进变得更费体力。',
+            cycling: '这个参考点附近，输出转成速度的效率变差。'
+        },
+        fatigue_deepening: {
+            title: '体能压力明显加重',
+            running: '这个参考点后的一段状态下滑更明显，建议重点回看配速和心率变化。',
+            trail_running: '这个参考点后的一段状态下滑更明显，建议回看爬升、路况和心率变化。',
+            hiking: '这个参考点后的一段体能压力明显加重，建议回看爬升、补给和停歇。',
+            cycling: '这个参考点后的一段输出压力更集中，建议回看坡度、心率和功率变化。'
+        },
+        energy_gap: {
+            title: '能量断档风险出现',
+            running: '这个参考点附近出现能量断档风险，建议复盘补给、配速和前半程消耗。',
+            trail_running: '这个参考点附近出现体力断档风险，建议复盘补给、爬升和前半程消耗。',
+            hiking: '这个参考点附近出现乏力风险，建议复盘补给、节奏和停歇安排。',
+            cycling: '这个参考点附近出现掉功率风险，建议复盘补给、输出节奏和前半程消耗。'
+        },
+        generic: {
+            title: '状态变化点',
+            running: '这个参考点附近出现值得回看的状态变化，建议结合配速、心率和主图曲线判断。',
+            trail_running: '这个参考点附近出现值得回看的状态变化，建议结合爬升、心率和主图曲线判断。',
+            hiking: '这个参考点附近出现值得回看的状态变化，建议结合爬升、心率和停歇判断。',
+            cycling: '这个参考点附近出现值得回看的状态变化，建议结合心率、坡度和输出判断。'
+        }
+    };
+    var FATIGUE_REVIEW_SUSTAINED_ZONE_COPY = {
+        running: '本次大部分路段都处在较吃力状态，建议重点看心率、配速和恢复段。',
+        trail_running: '本次大部分路段都偏吃力，建议重点看爬升、路况和心率变化。',
+        hiking: '本次大部分路段体能压力偏高，建议重点看爬升、补给和停歇安排。',
+        cycling: '本次大部分路段输出压力偏高，建议重点看心率、坡度和功率变化。'
+    };
+    var FATIGUE_REVIEW_SUSTAINED_EVENT_COPY = {
+        running: '这个位置是系统识别到的参考点；本次状态压力更像是在大部分路段持续存在，建议结合整段配速、心率和恢复段回看。',
+        trail_running: '这个位置是系统识别到的参考点；本次压力更像和爬升、路况及持续时间共同相关，建议结合整段曲线回看。',
+        hiking: '这个位置是系统识别到的参考点；本次体能压力更像在较长路段中持续累积，建议结合爬升、补给和停歇安排回看。',
+        cycling: '这个位置是系统识别到的参考点；本次输出压力更像在大部分路段持续存在，建议结合心率、坡度和功率回看。'
+    };
+    var FATIGUE_REVIEW_FRAGMENTED_ZONE_COPY = {
+        running: '本次状态变化分布在多个路段，建议结合主图逐段查看配速、心率和恢复段。',
+        trail_running: '本次状态变化分布在多个路段，建议结合主图逐段查看爬升、路况和心率变化。',
+        hiking: '本次体能压力分布在多个路段，建议结合主图逐段查看爬升、补给和停歇安排。',
+        cycling: '本次输出压力分布在多个路段，建议结合主图逐段查看心率、坡度和功率变化。'
+    };
+    function _fatigueReviewZoneLevel(level) {
+        var normalized = String(level || 'unknown').toLowerCase();
+        if (/^(medium|moderate|warn|drift)$/.test(normalized)) return 'medium';
+        if (/^(high|fatigue|collapse|severe|critical)$/.test(normalized)) return 'high';
+        if (/^(low|stable|ok)$/.test(normalized)) return 'low';
+        return 'unknown';
+    }
+    function _fatigueReviewZoneTitle(level) {
+        return ({
+            low: '相对平稳',
+            medium: '开始吃力',
+            high: '明显吃力',
+            unknown: '状态变化'
+        })[_fatigueReviewZoneLevel(level)] || '状态变化';
+    }
+    function _fatigueReviewZoneCopy(level, sportGroup) {
+        var group = FATIGUE_REVIEW_ZONE_COPY[_fatigueReviewZoneLevel(level)] || FATIGUE_REVIEW_ZONE_COPY.unknown;
+        return group[sportGroup] || group.running;
+    }
+    function _fatigueReviewTotalDistanceKm(data) {
+        var curves = data && data.curves ? data.curves : {};
+        var totalMeters = Number(curves.total_distance_m);
+        if (isFinite(totalMeters) && totalMeters > 0) return totalMeters / 1000;
+        var distance = Array.isArray(curves.distance) ? curves.distance : [];
+        for (var i = distance.length - 1; i >= 0; i--) {
+            var value = Number(distance[i]);
+            if (isFinite(value) && value > 0) return value;
+        }
+        return null;
+    }
+    function _fatigueReviewZoneCoverageState(zone, totalDistanceKm) {
+        zone = zone || {};
+        var start = Number(zone.start_km);
+        var end = Number(zone.end_km);
+        var total = Number(totalDistanceKm);
+        if (!isFinite(start) || !isFinite(end) || end <= start) return 'segment';
+        if (!isFinite(total) || total <= 0) total = end;
+        if (end > total) total = end;
+        if (total <= 0) return 'segment';
+        var coverage = (end - start) / total;
+        var startsEarly = start <= Math.max(0.5, total * 0.1);
+        return (coverage >= 0.7 && startsEarly) ? 'sustained' : 'segment';
+    }
+    function _fatigueReviewHasSustainedZone(zones, totalDistanceKm) {
+        zones = Array.isArray(zones) ? zones : [];
+        for (var i = 0; i < zones.length; i++) {
+            if (_fatigueReviewZoneCoverageState(zones[i], totalDistanceKm) === 'sustained') return true;
+        }
+        return false;
+    }
+    function _fatigueReviewSustainedZoneCopy(sportGroup) {
+        return FATIGUE_REVIEW_SUSTAINED_ZONE_COPY[sportGroup] || FATIGUE_REVIEW_SUSTAINED_ZONE_COPY.running;
+    }
+    function _fatigueReviewZoneDisplayTitle(zone, totalDistanceKm) {
+        if (_fatigueReviewZoneCoverageState(zone, totalDistanceKm) === 'sustained') return '整体偏吃力';
+        return _fatigueReviewZoneTitle(zone && zone.level);
+    }
+    function _fatigueReviewZoneDisplayCopy(zone, sportGroup, totalDistanceKm) {
+        if (_fatigueReviewZoneCoverageState(zone, totalDistanceKm) === 'sustained') {
+            return _fatigueReviewSustainedZoneCopy(sportGroup);
+        }
+        return _fatigueReviewZoneCopy(zone && zone.level, sportGroup);
+    }
+    function _fatigueReviewZoneRangeText(startKm, endKm) {
+        if (!isFinite(startKm) || !isFinite(endKm)) return '覆盖距离待确认';
+        return '覆盖 ' + startKm.toFixed(1) + '-' + endKm.toFixed(1) + ' km';
+    }
+    function _fatigueReviewZonePositionText(startKm, endKm, totalDistanceKm) {
+        var total = Number(totalDistanceKm);
+        if (!isFinite(total) || total <= 0) total = Number(endKm);
+        if (!isFinite(total) || total <= 0) return '';
+        var startRatio = startKm / total;
+        var endRatio = endKm / total;
+        if (startRatio < 0.25) return '前段';
+        if (startRatio < 0.6 && endRatio > 0.8) return '中后段';
+        if (startRatio < 0.6) return '中段';
+        if (endRatio > 0.8) return '末段';
+        return '后段';
+    }
+    function _fatigueReviewZoneSummaryTitle(zone, totalDistanceKm) {
+        if (_fatigueReviewZoneCoverageState(zone, totalDistanceKm) === 'sustained') return '整体偏吃力';
+        var start = Number(zone && zone.start_km);
+        var end = Number(zone && zone.end_km);
+        var position = _fatigueReviewZonePositionText(start, end, totalDistanceKm);
+        var level = _fatigueReviewZoneLevel(zone && zone.level);
+        var title = ({
+            low: '相对平稳',
+            medium: '开始吃力',
+            high: '明显吃力',
+            unknown: '状态变化'
+        })[level] || '状态变化';
+        return position ? position + title : title;
+    }
+    function _fatigueReviewZoneSummaryDesc(zone, sportGroup, totalDistanceKm) {
+        var title = _fatigueReviewZoneSummaryTitle(zone, totalDistanceKm);
+        if (/前段开始吃力/.test(title)) {
+            return ({
+                running: '较早就出现吃力迹象，建议回看开局配速是否偏急。',
+                trail_running: '较早就出现吃力迹象，建议回看开局爬升、路况和心率变化。',
+                hiking: '较早就出现体能压力，建议回看开局爬升、负重和停歇安排。',
+                cycling: '较早就出现输出压力，建议回看开局坡度、心率和功率变化。'
+            })[sportGroup] || '较早就出现吃力迹象，建议回看开局节奏是否偏急。';
+        }
+        if (/中后段/.test(title)) {
+            return ({
+                running: '中后段压力持续存在，建议结合心率、配速和补给回看。',
+                trail_running: '中后段压力持续存在，建议结合爬升、路况和心率回看。',
+                hiking: '中后段体能压力持续存在，建议结合爬升、补给和停歇安排回看。',
+                cycling: '中后段输出压力持续存在，建议结合心率、坡度和功率回看。'
+            })[sportGroup] || '中后段压力持续存在，建议结合心率、节奏和补给回看。';
+        }
+        if (/末段/.test(title)) {
+            return ({
+                running: '末段状态下滑更明显，建议关注后程体能和恢复安排。',
+                trail_running: '末段状态下滑更明显，建议关注后程爬升、技术路段和恢复安排。',
+                hiking: '末段体能压力更明显，建议关注后程补给、停歇和下撤节奏。',
+                cycling: '末段输出压力更明显，建议关注后程功率分配和恢复安排。'
+            })[sportGroup] || '末段状态下滑更明显，建议关注后程体能和恢复安排。';
+        }
+        return _fatigueReviewZoneDisplayCopy(zone, sportGroup, totalDistanceKm);
+    }
+    function _fatigueReviewValidZoneItems(zones) {
+        zones = Array.isArray(zones) ? zones : [];
+        return zones.map(function(zone) {
+            zone = zone || {};
+            var start = Number(zone.start_km);
+            var end = Number(zone.end_km);
+            if (!isFinite(start) || !isFinite(end) || end <= start) return null;
+            return {
+                zone: zone,
+                start: start,
+                end: end,
+                level: _fatigueReviewZoneLevel(zone.level),
+                sourceCount: 1
+            };
+        }).filter(Boolean).sort(function(a, b) {
+            return a.start - b.start;
+        });
+    }
+    function _fatigueReviewZoneSummaryFromItem(item, sportGroup, totalDistanceKm) {
+        var zone = item.zone || {};
+        return {
+            title: _fatigueReviewZoneSummaryTitle(zone, totalDistanceKm),
+            rangeText: _fatigueReviewZoneRangeText(item.start, item.end),
+            desc: _fatigueReviewZoneSummaryDesc(zone, sportGroup, totalDistanceKm),
+            level: item.level || 'unknown',
+            sourceCount: item.sourceCount || 1
+        };
+    }
+    function _fatigueReviewMergeZoneItems(items, totalDistanceKm) {
+        var total = Number(totalDistanceKm);
+        var gapLimit = isFinite(total) && total > 0 ? Math.max(0.2, total * 0.03) : 0.2;
+        var merged = [];
+        for (var i = 0; i < items.length; i++) {
+            var item = items[i];
+            var last = merged[merged.length - 1];
+            if (last && last.level === item.level && item.start - last.end <= gapLimit) {
+                last.end = Math.max(last.end, item.end);
+                last.sourceCount += item.sourceCount;
+                last.zone = {
+                    start_km: last.start,
+                    end_km: last.end,
+                    level: last.level
+                };
+            } else {
+                merged.push({
+                    zone: {
+                        start_km: item.start,
+                        end_km: item.end,
+                        level: item.level
+                    },
+                    start: item.start,
+                    end: item.end,
+                    level: item.level,
+                    sourceCount: item.sourceCount
+                });
+            }
+        }
+        return merged;
+    }
+    function _fatigueReviewZoneSummaryItems(zones, sportType, totalDistanceKm) {
+        var sportGroup = getFatigueReviewSportCopyGroup(sportType);
+        var items = _fatigueReviewValidZoneItems(zones);
+        if (!items.length) return [];
+        for (var i = 0; i < items.length; i++) {
+            if (_fatigueReviewZoneCoverageState(items[i].zone, totalDistanceKm) === 'sustained') {
+                return [{
+                    title: '整体偏吃力',
+                    rangeText: _fatigueReviewZoneRangeText(items[i].start, items[i].end),
+                    desc: _fatigueReviewSustainedZoneCopy(sportGroup),
+                    level: items[i].level,
+                    sourceCount: items.length
+                }];
+            }
+        }
+        if (items.length <= 3) {
+            return items.map(function(item) {
+                return _fatigueReviewZoneSummaryFromItem(item, sportGroup, totalDistanceKm);
+            });
+        }
+        var merged = _fatigueReviewMergeZoneItems(items, totalDistanceKm);
+        if (merged.length <= 3) {
+            return merged.map(function(item) {
+                return _fatigueReviewZoneSummaryFromItem(item, sportGroup, totalDistanceKm);
+            });
+        }
+        return [{
+            title: '多段波动',
+            rangeText: _fatigueReviewZoneRangeText(items[0].start, items[items.length - 1].end),
+            desc: FATIGUE_REVIEW_FRAGMENTED_ZONE_COPY[sportGroup] || FATIGUE_REVIEW_FRAGMENTED_ZONE_COPY.running,
+            level: 'unknown',
+            sourceCount: items.length
+        }];
+    }
+    function _fatigueReviewEventKind(ev) {
+        ev = ev || {};
+        var raw = [
+            ev.type,
+            ev.title,
+            ev.label,
+            ev.description
+        ].map(function(value) {
+            return String(value || '').toLowerCase();
+        }).join(' ');
+        if (/bonk|energy|能量|断档|掉电/.test(raw)) return 'energy_gap';
+        if (/效率|efficiency|drop/.test(raw)) return 'efficiency_drop';
+        if (/疲劳|fatigue|high|加深|加重/.test(raw)) return 'fatigue_deepening';
+        if (/漂移|drift|心率/.test(raw)) return 'drift';
+        return 'generic';
+    }
+    function _fatigueReviewEventTitle(ev) {
+        var kind = _fatigueReviewEventKind(ev);
+        return (FATIGUE_REVIEW_EVENT_COPY[kind] || FATIGUE_REVIEW_EVENT_COPY.generic).title;
+    }
+    function _fatigueReviewEventCopy(ev, sportGroup) {
+        var kind = _fatigueReviewEventKind(ev);
+        var group = FATIGUE_REVIEW_EVENT_COPY[kind] || FATIGUE_REVIEW_EVENT_COPY.generic;
+        return group[sportGroup] || group.running;
+    }
+    function _fatigueReviewEventDisplayCopy(ev, sportGroup, hasSustainedZone) {
+        if (hasSustainedZone) {
+            return FATIGUE_REVIEW_SUSTAINED_EVENT_COPY[sportGroup] || FATIGUE_REVIEW_SUSTAINED_EVENT_COPY.running;
+        }
+        return _fatigueReviewEventCopy(ev, sportGroup);
+    }
+    function _fatigueReviewSignalRelationCopy(hasEvents, hasZones) {
+        if (hasEvents && hasZones) {
+            return '复盘里，事件是点，区间是段；点帮助定位，段帮助理解持续压力。两者都是回看线索，不是精确结论。';
+        }
+        if (hasEvents) {
+            return '本次只识别到参考点，建议结合主图查看附近曲线变化。';
+        }
+        if (hasZones) {
+            return '本次只识别到状态路段，建议结合主图查看压力持续位置。';
+        }
+        return '本次暂无明显事件点或状态路段。';
+    }
+    function _renderFatigueReviewSignalRelation(events, zones) {
+        var noteEl = document.getElementById('fr-signal-relation-note');
+        if (!noteEl) return;
+        noteEl.textContent = _fatigueReviewSignalRelationCopy(
+            Array.isArray(events) && events.length > 0,
+            Array.isArray(zones) && zones.length > 0
+        );
+    }
+    function _renderFatigueReviewEvents(events, sportType, hasSustainedZone) {
         var listEl = document.getElementById('fr-event-list');
         var countEl = document.getElementById('fr-event-count');
+        var sportGroup = getFatigueReviewSportCopyGroup(sportType);
         if (countEl) countEl.textContent = String(events.length);
         if (!listEl) return;
         if (!events.length) {
@@ -12778,8 +13389,8 @@ function openConfigModalFromWarning() {
         }
         listEl.innerHTML = events.map(function(ev, i) {
             var km = ev.trigger_km != null ? Number(ev.trigger_km).toFixed(1) + ' km' : '?';
-            var type = ev.title || ev.label || ev.type || '事件';
-            var desc = ev.description || '暂无事件说明';
+            var type = _fatigueReviewEventTitle(ev);
+            var desc = _fatigueReviewEventDisplayCopy(ev, sportGroup, hasSustainedZone);
             return '<div class="event-card' + (i === 0 ? ' active' : '') + '" '
                 + 'data-event-id="' + safeHtml(ev.event_id || ('ce_' + i)) + '" '
                 + 'data-event-index="' + i + '" '
@@ -12789,11 +13400,11 @@ function openConfigModalFromWarning() {
                 + '</div>';
         }).join('');
     }
-    function _renderFatigueReviewZones(zones) {
+    function _renderFatigueReviewZones(zones, sportType, totalDistanceKm) {
         var listEl = document.getElementById('fr-fatigue-zone-list');
         if (!listEl) return;
-        zones = Array.isArray(zones) ? zones : [];
-        if (!zones.length) {
+        var summaryItems = _fatigueReviewZoneSummaryItems(zones, sportType, totalDistanceKm);
+        if (!summaryItems.length) {
             listEl.innerHTML = _frEmptyStateHtml({
                 icon: '○',
                 title: '暂无疲劳区间',
@@ -12802,22 +13413,37 @@ function openConfigModalFromWarning() {
             });
             return;
         }
-        var levelText = function(level) {
-            return ({high:'高疲劳', medium:'中等疲劳', low:'轻度疲劳'})[level] || (level || '疲劳区间');
-        };
-        listEl.innerHTML = zones.map(function(zone, i) {
-            var start = zone.start_km != null ? Number(zone.start_km).toFixed(1) : '?';
-            var end = zone.end_km != null ? Number(zone.end_km).toFixed(1) : '?';
-            var level = zone.level || 'unknown';
-            var reason = zone.reason || zone.description || '暂无区间说明';
-            return '<div class="fr-zone-card ' + safeHtml(level) + '" data-zone-index="' + i + '">'
-                + '<div class="zone-title">' + safeHtml(levelText(level)) + ' · ' + safeHtml(start) + '-' + safeHtml(end) + ' km</div>'
-                + '<div class="zone-meta">' + safeHtml(reason) + '</div>'
+        listEl.innerHTML = summaryItems.slice(0, 3).map(function(item, i) {
+            var sourceText = item.sourceCount > 1 ? '由 ' + item.sourceCount + ' 个状态片段合并' : '由 1 个状态片段生成';
+            return '<div class="fr-zone-card ' + safeHtml(item.level || 'unknown') + '" data-zone-index="' + i + '">'
+                + '<div class="zone-title">' + safeHtml(item.title) + ' · ' + safeHtml(item.rangeText) + '</div>'
+                + '<div class="zone-meta">' + safeHtml(item.desc) + '</div>'
+                + '<div class="zone-meta">' + safeHtml(sourceText) + '</div>'
                 + '</div>';
         }).join('');
     }
-    function _renderFatigueReviewStageOverview(zones) {
+    function _fatigueReviewStageFocusText(sportGroup) {
+        return ({
+            running: '配速、心率和恢复段',
+            trail_running: '爬升、路况和心率',
+            hiking: '爬升、补给和停歇',
+            cycling: '心率、坡度和功率输出'
+        })[sportGroup] || '主图曲线和右侧摘要';
+    }
+    function _fatigueReviewStageTooltip(zone, sportGroup, totalDistanceKm, fragmentCount) {
+        var focus = _fatigueReviewStageFocusText(sportGroup);
+        if (_fatigueReviewZoneCoverageState(zone, totalDistanceKm) === 'sustained') {
+            return '这是系统识别到的原始片段之一；本次整体更接近“整体偏吃力”，请结合右侧状态区间摘要和主图' + focus + '回看。';
+        }
+        if (fragmentCount > 3) {
+            return '这是系统识别到的一个原始状态片段；小片段代表回看线索，不代表身体状态在该公里点突然变化，碎片已在右侧状态区间合并为摘要。';
+        }
+        return '这是系统识别到的状态片段，建议结合主图' + focus + '和右侧状态区间摘要一起判断。';
+    }
+    function _renderFatigueReviewStageOverview(zones, sportType, totalDistanceKm) {
         var trackEl = document.getElementById('fr-stage-track');
+        var boundaryEl = document.getElementById('fr-stage-boundary');
+        var sportGroup = getFatigueReviewSportCopyGroup(sportType);
         if (!trackEl) return;
         zones = Array.isArray(zones) ? zones : [];
         if (!zones.length) {
@@ -12828,6 +13454,11 @@ function openConfigModalFromWarning() {
                 tag: '暂无阶段'
             });
             return;
+        }
+        if (boundaryEl) {
+            boundaryEl.textContent = zones.length > 3
+                ? '阶段条保留多个原始片段；右侧状态区间已将碎片合并为阅读摘要。'
+                : '阶段条按系统识别片段展示；右侧状态区间提供阅读摘要。';
         }
         var normalizeLevel = function(level) {
             var normalized = String(level || 'unknown').toLowerCase();
@@ -12841,16 +13472,16 @@ function openConfigModalFromWarning() {
                 low: '稳定阶段',
                 stable: '稳定阶段',
                 ok: '稳定阶段',
-                medium: '漂移阶段',
-                moderate: '漂移阶段',
-                warn: '漂移阶段',
-                drift: '漂移阶段',
-                high: '疲劳阶段',
-                fatigue: '疲劳阶段',
-                collapse: '崩溃阶段',
-                severe: '崩溃阶段',
-                critical: '崩溃阶段',
-                unknown: '未知阶段'
+                medium: '心率压力上升',
+                moderate: '心率压力上升',
+                warn: '心率压力上升',
+                drift: '心率压力上升',
+                high: '体能压力增加',
+                fatigue: '体能压力增加',
+                collapse: '明显状态下滑',
+                severe: '明显状态下滑',
+                critical: '明显状态下滑',
+                unknown: '状态变化'
             }[normalized] || normalized;
         };
         var stageItems = [];
@@ -12890,11 +13521,15 @@ function openConfigModalFromWarning() {
             var basis = fullSpan > 0 ? Math.max(7, item.span / fullSpan * 100) : 10;
             zone = zone || {};
             var level = normalizeLevel(zone.level);
-            var reason = zone.reason || zone.description || '暂无阶段说明';
+            var title = _fatigueReviewZoneCoverageState(zone, totalDistanceKm) === 'sustained'
+                ? _fatigueReviewZoneDisplayTitle(zone, totalDistanceKm)
+                : levelText(zone.level);
+            var reason = _fatigueReviewZoneDisplayCopy(zone, sportGroup, totalDistanceKm);
+            var tooltip = _fatigueReviewStageTooltip(zone, sportGroup, totalDistanceKm, stageItems.length);
             var compact = item.span < 0.35 ? ' compact' : '';
             var style = '--fr-stage-grow:' + String(grow) + ';--fr-stage-basis:' + String(basis) + '%;';
-            return '<div class="fr-stage-segment ' + safeHtml(level + compact) + '" style="' + safeHtml(style) + '">'
-                + '<div class="fr-stage-title">' + safeHtml(levelText(zone.level)) + '</div>'
+            return '<div class="fr-stage-segment ' + safeHtml(level + compact) + '" style="' + safeHtml(style) + '" title="' + safeHtml(tooltip) + '" aria-label="' + safeHtml(title + '，' + start + ' 到 ' + end + ' 公里。' + tooltip) + '">'
+                + '<div class="fr-stage-title">' + safeHtml(title) + '</div>'
                 + '<div class="fr-stage-range">' + safeHtml(start + ' - ' + end + ' km') + '</div>'
                 + '<div class="fr-stage-share">' + safeHtml(String(share) + '%') + '</div>'
                 + '<div class="fr-stage-desc">' + safeHtml(reason) + '</div>'
@@ -13070,6 +13705,49 @@ function openConfigModalFromWarning() {
             if (/^(bad|very_high|collapse|critical|severe)$/.test(normalized)) return 'bad';
             return fallback || 'empty';
         };
+        var levelSummary = function(level) {
+            var normalized = String(level || '').toLowerCase();
+            return ({
+                excellent: '表现很稳',
+                good: '表现良好',
+                stable: '整体稳定',
+                improving: '近期有改善',
+                low: '压力较低',
+                very_low: '压力很低',
+                moderate: '压力适中',
+                medium: '需要留意',
+                warn: '出现波动',
+                declining: '有下滑迹象',
+                high: '压力偏高',
+                very_high: '压力很高',
+                bad: '下滑明显',
+                danger: '风险较高',
+                unknown: '数据不足',
+                unavailable: '数据不足'
+            })[normalized] || '数据不足';
+        };
+        var confidenceSummary = function(confidence) {
+            var normalized = String(confidence || '').toLowerCase();
+            return ({
+                high: '判断依据较充分',
+                medium: '判断依据中等',
+                low: '判断依据较少',
+                unavailable: '判断依据不足'
+            })[normalized] || '判断依据不足';
+        };
+        var loadRatioSummary = function(ratio) {
+            var normalized = String(ratio || '').toLowerCase();
+            return ({
+                balanced: '近期负荷较均衡',
+                safe: '近期负荷可控',
+                caution: '近期负荷偏高',
+                danger: '近期负荷过高',
+                insufficient_data: '近期历史不足',
+                pending_v7_14: '近期负荷趋势待接入',
+                pending_v7_14_compute: '近期负荷趋势待接入',
+                v7_14_error: '近期负荷趋势暂不可用'
+            })[normalized] || '近期负荷趋势暂不可用';
+        };
         var factHtml = function(label, value, desc, tone) {
             return '<div class="fr-side-fact ' + safeHtml(tone || 'empty') + '">'
                 + '<div class="fr-side-fact-top">'
@@ -13107,14 +13785,14 @@ function openConfigModalFromWarning() {
                 summaryEl.innerHTML = [
                     factHtml(
                         '风险状态',
-                        bonk.confidence === 'unavailable' ? '--' : (bonk.is_at_risk ? 'Bonk 风险' : '未触发'),
-                        '判断置信度：' + (bonk.confidence || '--'),
+                        bonk.confidence === 'unavailable' ? '--' : (bonk.is_at_risk ? '能量断档风险' : '未触发'),
+                        confidenceSummary(bonk.confidence),
                         bonk.is_at_risk ? 'bad' : toneFromLevel(bonk.confidence, 'ok')
                     ),
                     factHtml(
-                        '触发因素',
+                        '事件点',
                         collapseEvents.length ? (firstEvent.title || firstEvent.label || firstEvent.type || '关键事件') : '暂无事件',
-                        collapseEvents.length ? ('出现位置：' + eventKm) : '未发现明显触发点',
+                        collapseEvents.length ? ('参考位置：' + eventKm) : '未发现明显参考点',
                         collapseEvents.length ? 'warn' : 'ok'
                     ),
                     factHtml(
@@ -13138,19 +13816,19 @@ function openConfigModalFromWarning() {
                 factHtml(
                     '心率漂移',
                     pctVal(drift.pct),
-                    'level=' + (drift.level || 'unknown') + ' · confidence=' + (drift.confidence || '--'),
+                    levelSummary(drift.level) + ' · ' + confidenceSummary(drift.confidence),
                     toneFromLevel(drift.level)
                 ),
                 factHtml(
-                    '解耦率',
+                    '后程效率变化',
                     pctVal(decoupling.pct),
-                    'level=' + (decoupling.level || 'unknown') + ' · events=' + eventCount,
+                    levelSummary(decoupling.level) + ' · 状态下滑点 ' + eventCount + ' 个',
                     toneFromLevel(decoupling.level)
                 ),
                 factHtml(
                     '训练负荷',
                     load.load == null ? '--' : String(load.load),
-                    'level=' + (load.level || 'unknown') + ' · ratio=' + (load.ratio_7d_42d || '--'),
+                    levelSummary(load.level) + ' · ' + loadRatioSummary(load.ratio_7d_42d),
                     toneFromLevel(load.level)
                 ),
                 factHtml(

@@ -249,21 +249,20 @@ class TestAiFourStates:
 class TestSentinelUniqueness:
     """__FATIGUE_REVIEW_INSIGHT__ 必须全局唯一,严禁复用 sentinel。"""
 
-    def test_four_sentinels_unique(self):
+    def test_sentinels_unique(self):
         from main import Api
         sentinels = {
             Api.SYSTEM_INSTRUCTION,
-            Api.REPORT_RISK_ASSESSMENT,
+            Api.REPORT_ACTIVITY_ADVICE,
             Api.RADAR_INSIGHT,
             Api.FATIGUE_REVIEW_INSIGHT,
         }
-        assert len(sentinels) == 4, f"sentinel 必须 4 个独立,实际 {len(sentinels)}"
+        assert len(sentinels) == 4, f"sentinel 必须保持独立,实际 {len(sentinels)}"
 
     def test_fatigue_review_sentinel_format(self):
         """sentinel 必须以双下划线包裹,符合现有命名规范。"""
         from main import Api
-        for s in [Api.SYSTEM_INSTRUCTION, Api.REPORT_RISK_ASSESSMENT,
-                  Api.RADAR_INSIGHT, Api.FATIGUE_REVIEW_INSIGHT]:
+        for s in [Api.SYSTEM_INSTRUCTION, Api.REPORT_ACTIVITY_ADVICE, Api.RADAR_INSIGHT, Api.FATIGUE_REVIEW_INSIGHT]:
             assert s.startswith("__") and s.endswith("__"), \
                 f"sentinel 命名违规:{s}"
 

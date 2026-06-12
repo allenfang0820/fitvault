@@ -14,6 +14,17 @@ if _PROJECT_ROOT not in sys.path:
 from main import Api  # noqa: E402
 
 
+def _sample_points(distance_lon_delta=0.01, with_alt=True):
+    first = {"lat": 40.0, "lon": 116.0}
+    second = {"lat": 40.0, "lon": 116.0 + distance_lon_delta}
+    third = {"lat": 40.0, "lon": 116.0 + distance_lon_delta * 2}
+    if with_alt:
+        first["alt"] = 100
+        second["alt"] = 160
+        third["alt"] = 120
+    return [first, second, third]
+
+
 class TestActivityAdviceIntegration(unittest.TestCase):
     def setUp(self):
         self.api = Api()
@@ -23,6 +34,12 @@ class TestActivityAdviceIntegration(unittest.TestCase):
             "elevation_gain_m": 600,
             "start_time": "2020-01-01T08:00:00",
             "start_time_utc": "2020-01-01T00:00:00Z",
+        }
+        self.api._activity_advice_snapshot = {
+            "activity_id": 1,
+            "distance_km": 12.0,
+            "elevation_gain_m": 600,
+            "source": "DB Canonical / Resolver Truth",
         }
         self.api._track_weather = {"temperature_c": 20}
         self.api._track_filename = "route.fit"
@@ -58,6 +75,7 @@ class TestActivityAdviceIntegration(unittest.TestCase):
     def test_empty_without_snapshot_clears_session(self):
         old_sid = self.api._session_id
         self.api._ai_snapshot = None
+        self.api._activity_advice_snapshot = None
         self.api._chat_messages = [{"role": "user", "content": "stale"}]
 
         with patch("llm_backend.load_llm_config", return_value={"url": "http://llm", "model": "m"}):
@@ -118,6 +136,147 @@ class TestActivityAdviceIntegration(unittest.TestCase):
 
         args, _kwargs = builder.call_args
         self.assertEqual(len(args), 2)
+
+    def test_sync_db_activity_builds_whitelisted_activity_advice_snapshot(self):
+        db_snapshot = {
+            "activity_id": 9,
+            "distance_km": 21.1,
+            "elevation_gain_m": 900,
+            "max_alt_m": 1019,
+            "start_time": "2020-01-01T08:00:00",
+            "weather_json": {"temperature_c": 20},
+            "hr_curve": [1, 2, 3],
+        }
+
+        with patch("main._build_ai_snapshot", return_value=db_snapshot):
+            res = self.api.sync_track_context(json.dumps({
+                "activityId": 9,
+                "points": [],
+                "placemarks": [{"name": "cp1"}],
+                "weather": {"temperature_c": 20},
+                "filename": "route.fit",
+            }))
+
+        self.assertTrue(res["ok"])
+        snapshot = self.api._activity_advice_snapshot
+        self.assertEqual(snapshot["activity_id"], 9)
+        self.assertEqual(snapshot["distance_km"], 21.1)
+        self.assertEqual(snapshot["elevation_gain_m"], 900)
+        for forbidden in ("points", "placemarks", "weather", "weather_json", "start_time", "time", "hr_curve"):
+            self.assertNotIn(forbidden, snapshot)
+
+    def test_sync_track_context_prefers_overview_route_facts_for_activity_advice(self):
+        db_snapshot = {
+            "activity_id": 9,
+            "distance_km": 18.82,
+            "elevation_gain_m": 1349,
+            "max_alt_m": 4241,
+        }
+
+        with patch("main._build_ai_snapshot", return_value=db_snapshot):
+            res = self.api.sync_track_context(json.dumps({
+                "activityId": 9,
+                "points": _sample_points(),
+                "filename": "route.fit",
+                "activityAdviceRouteFacts": {
+                    "activity_id": 9,
+                    "distance_km": 17.24,
+                    "distance_display": "17.24km",
+                    "elevation_gain_m": 1152,
+                    "max_alt_m": 4241,
+                    "source": "overview_canonical_metrics",
+                },
+            }))
+
+        self.assertTrue(res["ok"])
+        snapshot = self.api._activity_advice_snapshot
+        self.assertEqual(self.api._ai_snapshot["distance_km"], 18.82)
+        self.assertEqual(snapshot["distance_km"], 17.24)
+        self.assertEqual(snapshot["distance_display"], "17.24km")
+        self.assertEqual(snapshot["elevation_gain_m"], 1152)
+        self.assertEqual(snapshot["max_alt_m"], 4241)
+        self.assertEqual(snapshot["source"], "overview_canonical_metrics")
+
+    def test_activity_advice_overview_route_facts_are_whitelisted(self):
+        res = self.api.sync_track_context(json.dumps({
+            "points": _sample_points(),
+            "filename": "route.gpx",
+            "activityAdviceRouteFacts": {
+                "distance_km": 8.34,
+                "elevation_gain_m": 896,
+                "max_alt_m": 5337,
+                "points": [{"lat": 1, "lon": 2}],
+                "placemarks": [{"name": "cp"}],
+                "weather_json": {"rain": True},
+                "start_time": "2020-01-01T08:00:00",
+                "diff": {"distance_km": 10},
+            },
+        }))
+
+        self.assertTrue(res["ok"])
+        snapshot = self.api._activity_advice_snapshot
+        self.assertEqual(snapshot["distance_km"], 8.34)
+        self.assertEqual(snapshot["elevation_gain_m"], 896)
+        self.assertEqual(snapshot["max_alt_m"], 5337)
+        for forbidden in ("points", "placemarks", "weather_json", "start_time", "diff"):
+            self.assertNotIn(forbidden, snapshot)
+
+    def test_temporary_track_context_builds_route_facts_for_activity_advice(self):
+        captured = {}
+
+        def fake_messages(snapshot, planning_context):
+            captured["snapshot"] = snapshot
+            captured["planning_context"] = planning_context
+            return [{"role": "system", "content": "{}"}, {"role": "user", "content": "go"}]
+
+        self.api.sync_track_context(json.dumps({
+            "points": _sample_points(),
+            "placemarks": [{"name": "cp1"}],
+            "weather": {"temperature_c": 20},
+            "filename": "route.gpx",
+        }))
+
+        with patch("llm_backend.load_llm_config", return_value={"url": "http://llm", "model": "m"}):
+            with patch("main._build_activity_advice_messages", side_effect=fake_messages):
+                with patch("llm_backend.chat_completions", return_value="{}") as chat:
+                    res = self.api.call_llm(self.api.REPORT_ACTIVITY_ADVICE, "{}")
+
+        self.assertTrue(res["ok"])
+        chat.assert_called_once()
+        snapshot = captured["snapshot"]
+        self.assertGreater(snapshot["distance_km"], 0)
+        self.assertEqual(snapshot["elevation_gain_m"], 60)
+        self.assertEqual(snapshot["total_descent_m"], 40)
+        self.assertEqual(snapshot["max_alt_m"], 160)
+        self.assertEqual(snapshot["source"], "temporary_track_context")
+        for forbidden in ("points", "placemarks", "weather", "start_time", "time", "timestamp"):
+            self.assertNotIn(forbidden, snapshot)
+
+    def test_empty_without_track_context_returns_load_track_message(self):
+        api = Api()
+
+        with patch("llm_backend.load_llm_config", return_value={"url": "http://llm", "model": "m"}):
+            res = api.call_llm(api.REPORT_ACTIVITY_ADVICE, "{}")
+
+        self.assertTrue(res["ok"])
+        self.assertIn("请先加载活动轨迹", res["activity_advice"]["error"])
+
+    def test_sync_track_context_overwrites_activity_advice_snapshot(self):
+        self.api.sync_track_context(json.dumps({
+            "points": _sample_points(distance_lon_delta=0.01, with_alt=True),
+            "filename": "first.gpx",
+        }))
+        first_snapshot = dict(self.api._activity_advice_snapshot)
+
+        self.api.sync_track_context(json.dumps({
+            "points": _sample_points(distance_lon_delta=0.02, with_alt=False),
+            "filename": "second.gpx",
+        }))
+        second_snapshot = self.api._activity_advice_snapshot
+
+        self.assertNotEqual(first_snapshot["distance_km"], second_snapshot["distance_km"])
+        self.assertNotIn("elevation_gain_m", second_snapshot)
+        self.assertEqual(second_snapshot["source"], "temporary_track_context")
 
 
 if __name__ == "__main__":

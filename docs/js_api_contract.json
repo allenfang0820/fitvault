@@ -187,9 +187,9 @@
           "default": "hiking"
         }
       ],
-      "returns": "普通聊天返回 { ok, content }；__REPORT_INSIGHT__ 返回 { ok, insight, history, snapshot }；__REPORT_ACTIVITY_ADVICE__ 返回 { ok, activity_advice }；__REPORT_RISK_ASSESSMENT__ 已废弃(旧风险预警兼容名,待 cleanup 删除)；__RADAR_INSIGHT__ 返回 { ok, radar_insight, sport_type }；__FATIGUE_REVIEW_INSIGHT__ 返回 { code, msg, data: {fatigue_review_insight, sport_type}, traceId }",
+      "returns": "普通聊天返回 { ok, content }；__REPORT_INSIGHT__ 返回 { ok, insight, history, snapshot }；__REPORT_ACTIVITY_ADVICE__ 返回 { ok, activity_advice }；__RADAR_INSIGHT__ 返回 { ok, radar_insight, sport_type }；__FATIGUE_REVIEW_INSIGHT__ 返回 { code, msg, data: {fatigue_review_insight, sport_type}, traceId }",
       "high_risk": false,
-      "description": "调用大模型；普通聊天走对话会话；功能区 AI 洞察必须走独立 sentinel。__FATIGUE_REVIEW_INSIGHT__ 用于复盘 AI 洞察,前端只允许传 sentinel + sport_type 控制参数；后端只消费由 get_fatigue_review(activity_id) 同源事实构建的 compact snapshot(activity_id/sport_type/metrics/fatigue_zones/collapse_events/curves_summary/context_tags/advice/disclaimer),禁止消费 DOM、ECharts、截图、活动标题、设备、路线、points[]、records/raw_records/track_points/fit_records/gpx_points、shadow_diff/diff 或前端曲线 payload；输出只进入 fatigue_review_insight 展示结构,不写 DB、不写 localStorage/sessionStorage、不改 metrics/curves/fatigue_zones/collapse_events。__REPORT_ACTIVITY_ADVICE__ 用于轨迹报告活动建议,AI 输入只能来自后端路线事实白名单 + 用户显式填写的 planning context(活动类型、计划活动时间),禁止消费 FIT/GPX 历史 start_time、历史天气、points[]、metrics、curves、DOM 推导值、UI fallback 或前端拼 prompt；活动建议结果不持久化、不写 DB、不进入 ai_snapshots、不污染普通 AI 教练聊天会话。__REPORT_RISK_ASSESSMENT__ 为旧风险预警兼容名,已废弃。"
+      "description": "调用大模型；普通聊天走对话会话；功能区 AI 洞察必须走独立 sentinel。__FATIGUE_REVIEW_INSIGHT__ 用于复盘 AI 洞察,前端只允许传 sentinel + sport_type 控制参数；后端只消费由 get_fatigue_review(activity_id) 同源事实构建的 compact snapshot(activity_id/sport_type/metrics/fatigue_zones/collapse_events/curves_summary/context_tags/advice/disclaimer),禁止消费 DOM、ECharts、截图、活动标题、设备、路线、points[]、records/raw_records/track_points/fit_records/gpx_points、shadow_diff/diff 或前端曲线 payload；输出只进入 fatigue_review_insight 展示结构,不写 DB、不写 localStorage/sessionStorage、不改 metrics/curves/fatigue_zones/collapse_events。__REPORT_ACTIVITY_ADVICE__ 用于轨迹报告活动建议,AI 输入只能来自后端路线事实白名单 + 用户显式填写的 planning context(活动类型、计划活动时间),禁止消费 FIT/GPX 历史 start_time、历史天气、points[]、metrics、curves、DOM 推导值、UI fallback 或前端拼 prompt；活动建议结果不持久化、不写 DB、不进入 ai_snapshots、不污染普通 AI 教练聊天会话。旧风险评估 sentinel 生产链路已删除；轨迹报告建议功能只支持 __REPORT_ACTIVITY_ADVICE__ 和 { ok, activity_advice }。"
     },
     {
       "name": "sync_track_context",
@@ -205,7 +205,7 @@
       ],
       "returns": "{ ok, code, msg, data, traceId }",
       "high_risk": false,
-      "description": "前端渲染完成后同步轨迹上下文；构建 AI snapshot"
+      "description": "前端渲染完成后同步轨迹上下文；构建 DB AI snapshot 与活动建议专用白名单 route facts snapshot"
     },
     {
       "name": "reset_llm_session",
@@ -228,6 +228,14 @@
           "type": "string",
           "required": false,
           "default": "all"
+        },
+        {
+          "name": "title_keyword",
+          "type": "string",
+          "required": false,
+          "default": "",
+          "maxLength": 64,
+          "description": "活动标题模糊搜索关键字"
         }
       ],
       "returns": "{ ok, code, msg, data: {source_dir, total, activity_types, page_sizes, records, dynamic_columns}, traceId }。records 中每条含 sport_type_cn(Resolver 注入的中文运动类型标签)",
@@ -257,6 +265,14 @@
           "type": "string",
           "required": false,
           "default": "all"
+        },
+        {
+          "name": "title_keyword",
+          "type": "string",
+          "required": false,
+          "default": "",
+          "maxLength": 64,
+          "description": "活动标题模糊搜索关键字"
         }
       ],
       "returns": "{ ok, code, msg, data: {page, page_size, total, total_pages, activity_types, page_sizes, records}, traceId }。records 中每条含 sport_type_cn(Resolver 注入的中文运动类型标签)",
@@ -286,6 +302,14 @@
           "type": "string",
           "required": false,
           "default": "all"
+        },
+        {
+          "name": "title_keyword",
+          "type": "string",
+          "required": false,
+          "default": "",
+          "maxLength": 64,
+          "description": "活动标题模糊搜索关键字"
         }
       ],
       "returns": "{ ok, code, msg, data: {page, page_size, total, total_pages, activity_types, page_sizes, records}, traceId }。records 中每条含 sport_type_cn(Resolver 注入的中文运动类型标签)",
@@ -705,11 +729,11 @@
   "architectural_constraints": {
     "field_contract": "FIT → Resolver(唯一语义翻译层) → DB(系统标准字段) → UI(契约字段, 禁止fallback推断)",
     "data_flow": "所有字段必须兜底，禁止 None/null/undefined 污染展示",
-    "ai_boundary": "AI 输入仅来自 _ai_snapshot(DB truth)，前端计算值不进入 AI 链路",
+    "ai_boundary": "普通 AI 输入仅来自 _ai_snapshot(DB truth)；活动建议输入仅来自 _activity_advice_snapshot(后端路线事实白名单) + 用户显式 planning context；前端计算值不进入 LLM 链路",
     "ai_insight_pattern": "功能区 AI 洞察按钮必须通过 call_llm(SENTINEL, control_context) + 后端权威数据白名单 + prompt builder + normalizer 实现；禁止前端 points[] 拼 prompt，调用后必须隔离普通 AI 教练会话，结果默认只存在前端内存，不写 localStorage/sessionStorage。control_context 只能是控制参数或用户显式 planning context,不得携带前端推导事实字段。sentinel 必须独立：__REPORT_INSIGHT__ 用于单次活动，__RADAR_INSIGHT__ 用于 90 天雷达滚动聚合，__REPORT_ACTIVITY_ADVICE__ 用于轨迹报告活动建议，__FATIGUE_REVIEW_INSIGHT__ 用于复盘 AI 洞察。",
     "fatigue_review_ai_contract": "__FATIGUE_REVIEW_INSIGHT__ 仅用于复盘 AI 洞察，前端只传 sentinel + sport_type；后端只消费 compact snapshot(activity_id/sport_type/metrics/fatigue_zones/collapse_events/curves_summary/context_tags/advice/disclaimer)，禁止 DOM/ECharts/截图/活动标题/设备/路线/points/records/raw_records/track_points/fit_records/gpx_points/shadow_diff/diff；输出只做解释层，不写 DB、不写 localStorage/sessionStorage、不改 metrics/curves/fatigue_zones/collapse_events。",
-    "activity_advice_contract": "__REPORT_ACTIVITY_ADVICE__ 仅用于轨迹报告活动建议，返回 {ok,activity_advice}；只消费后端路线事实白名单 + 用户显式填写的活动类型/计划活动时间；禁止使用 FIT/GPX 历史 start_time、start_time_utc、历史天气、points[]、placemarks[]、shadow_diff；结果不持久化、不写 canonical、不写 ai_snapshots、不污染普通 AI 教练会话，切换轨迹或导入新 GPX/FIT 即丢弃。",
-    "risk_assessment_contract": "__REPORT_RISK_ASSESSMENT__ 已废弃，仅作为旧风险预警兼容名保留到 cleanup 任务；新功能必须使用 __REPORT_ACTIVITY_ADVICE__ 和 {ok,activity_advice}",
+    "activity_advice_contract": "__REPORT_ACTIVITY_ADVICE__ 仅用于轨迹报告活动建议，返回 {ok,activity_advice}；只消费 _activity_advice_snapshot 中的后端路线事实白名单 + 用户显式填写的活动类型/计划活动时间；DB 活动快照来自 Resolver truth 白名单，无 activity_id 的当前轨迹只允许由后端从 sync_track_context 聚合临时路线事实；禁止使用 FIT/GPX 历史 start_time、start_time_utc、历史天气、points[]、placemarks[]、shadow_diff；结果不持久化、不写 canonical、不写 ai_snapshots、不污染普通 AI 教练会话，切换轨迹或导入新 GPX/FIT 即丢弃。",
+    "removed_legacy_contracts": "旧风险评估/预警生产链路已删除；轨迹报告建议功能只支持 __REPORT_ACTIVITY_ADVICE__ 和 {ok,activity_advice}",
     "report_metrics_v2": "load_activity_track 返回的 activity 对象中新增 avg_grade_pct/max_slope_pct/min_slope_pct/uphill_pct/downhill_pct/report_metrics_version；字段来源为 DB canonical compute_report_metrics() 窗口算法派生，禁止前端从 points[] 或 gain_m/dist_km 计算，AI snapshot 消费同名 DB truth 字段且不要求 LLM 重算坡度",
     "security": "高风险接口(deletion/import/snapshot_rebuild)必须具备鉴权/确认门禁",
     "response": "所有接口响应逐步向 {code,msg,data,traceId} 统一结构演进"

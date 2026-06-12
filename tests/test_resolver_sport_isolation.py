@@ -320,6 +320,8 @@ class TestLegacyCompatibility:
             sport_type="running",
         )
         assert len(events) >= 1
+        assert events[0]["trigger_km"] <= 3.0, "trigger_km 必须输出公里,不能把米轴直接透传"
+        assert events[0]["trigger_km"] == 1.6
 
     def test_detect_bonk_event_swimming_higher_threshold(self):
         from metrics_resolver import MetricsResolver

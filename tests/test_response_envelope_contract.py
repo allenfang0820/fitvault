@@ -209,10 +209,10 @@ class TestCallLLMDirectReturnPattern(unittest.TestCase):
 
     def test_direct_return_dict_passes_through(self):
         """直接返回 dict 不走 _api_success,顶层字段不会被 _api_* 过滤"""
-        direct = {"ok": True, "risk_assessment": {"level": "high"}}
+        direct = {"ok": True, "activity_advice": {"weather_check": {"status": "信息不足"}}}
         # 直接返回 dict 不经过 _api_success 处理
         # 契约 §3.1 允许(过渡期兼容)
-        self.assertIn("risk_assessment", direct)
+        self.assertIn("activity_advice", direct)
 
 
 class TestStaticNoResponseUpdatePayload(unittest.TestCase):

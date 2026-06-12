@@ -5,7 +5,7 @@ import os
 import sys
 import unittest
 from datetime import datetime, timedelta, timezone
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _PROJECT_ROOT not in sys.path:
@@ -125,6 +125,279 @@ class TestFatigueReviewP2SnapshotRealignment(unittest.TestCase):
             {"start_km": 1.2, "end_km": 1.5, "level": "high"},
             {"start_km": 1.5, "end_km": 2.4, "level": "medium"},
         ])
+
+    def test_startup_guard_filters_running_warmup_zone(self):
+        from main import _filter_fatigue_zones_after_startup
+
+        zones = _filter_fatigue_zones_after_startup(
+            [{"start_km": 0.0, "end_km": 0.15, "level": "medium"}],
+            sport_type="running",
+            total_distance_m=6326.0,
+        )
+
+        self.assertEqual(zones, [])
+
+    def test_startup_guard_trims_zone_crossing_running_guard(self):
+        from main import _filter_fatigue_zones_after_startup
+
+        zones = _filter_fatigue_zones_after_startup(
+            [{"start_km": 0.0, "end_km": 0.5, "level": "high", "reason": "drop"}],
+            sport_type="running",
+            total_distance_m=6326.0,
+        )
+
+        self.assertEqual(zones, [
+            {"start_km": 0.3, "end_km": 0.5, "level": "high", "reason": "drop"},
+        ])
+
+    def test_startup_guard_keeps_mid_run_zone(self):
+        from main import _filter_fatigue_zones_after_startup
+
+        zones = _filter_fatigue_zones_after_startup(
+            [{"start_km": 1.0, "end_km": 2.0, "level": "high"}],
+            sport_type="running",
+            total_distance_m=6326.0,
+        )
+
+        self.assertEqual(zones, [{"start_km": 1.0, "end_km": 2.0, "level": "high"}])
+
+    def test_startup_guard_does_not_trim_raw_curves(self):
+        snapshot = self._api()._build_fatigue_review_snapshot(self._row())
+
+        distance = snapshot["curves"]["distance"]
+        self.assertGreater(len(distance), 0)
+        self.assertEqual(distance[0], 0.0)
+
+    def test_trim_review_series_after_startup_running_guard(self):
+        from main import _trim_review_series_after_startup
+
+        trimmed = _trim_review_series_after_startup(
+            [1, 2, 3, 4],
+            [0.0, 0.1, 0.3, 0.4],
+            sport_type="running",
+            total_distance_m=4000.0,
+        )
+
+        self.assertEqual(trimmed, [3, 4])
+
+    def test_trim_review_series_keeps_original_when_axis_missing_or_mismatch(self):
+        from main import _trim_review_series_after_startup
+
+        self.assertEqual(
+            _trim_review_series_after_startup([1, 2, 3], [], "running", 3000.0),
+            [1, 2, 3],
+        )
+        self.assertEqual(
+            _trim_review_series_after_startup([1, 2, 3], [0.0, 0.3], "running", 3000.0),
+            [1, 2, 3],
+        )
+
+    def test_trim_review_series_uses_sport_specific_guard(self):
+        from main import _trim_review_series_after_startup
+
+        hiking = _trim_review_series_after_startup(
+            [1, 2, 3, 4],
+            [0.0, 0.3, 0.5, 0.8],
+            sport_type="hiking",
+            total_distance_m=8000.0,
+        )
+        cycling = _trim_review_series_after_startup(
+            [1, 2, 3, 4],
+            [0.0, 0.5, 1.0, 1.5],
+            sport_type="cycling",
+            total_distance_m=20000.0,
+        )
+
+        self.assertEqual(hiking, [3, 4])
+        self.assertEqual(cycling, [3, 4])
+
+    def test_review_input_window_caps_guard_for_short_activity(self):
+        from main import _build_review_input_window
+
+        window = _build_review_input_window(
+            [0.0, 0.05, 0.1, 0.2, 0.3],
+            sport_type="running",
+            total_distance_m=1000.0,
+        )
+
+        self.assertEqual(window["guard_km"], 0.1)
+        self.assertEqual(window["start_idx"], 2)
+        self.assertTrue(window["has_aligned_axis"])
+
+    def test_decoupling_uses_startup_trimmed_efficiency_curve(self):
+        api = self._api()
+        row = self._row(point_count=6)
+        resolved = {
+            "distance_curve": [0.0, 100.0, 300.0, 400.0, 500.0, 600.0],
+            "time_curve": [0, 20, 40, 60, 80, 100],
+            "altitude_curve": [100, 101, 102, 103, 104, 105],
+            "gap_curve": [3, 3, 3, 3, 3, 3],
+            "grade_curve": [0, 0, 0, 0, 0, 0],
+            "efficiency_curve": [100, 1, 10, 10, 10, 10],
+            "insight_events": [],
+            "fatigue_zones": [],
+            "context_tags": {},
+        }
+
+        with patch("main._build_resolved_payload_v81", return_value=resolved), \
+             patch("main.MetricsResolver._build_review_decoupling", return_value={"pct": 0.0, "level": "excellent"}) as decoupling_mock:
+            api._build_fatigue_review_snapshot(row)
+
+        self.assertEqual(decoupling_mock.call_args.args[0], [10, 10, 10, 10])
+
+    def test_durability_uses_startup_trimmed_speed_curve(self):
+        api = self._api()
+        row = self._row(point_count=6)
+        row["speed_curve"] = json.dumps([0.2, 0.4, 3.0, 3.1, 3.2, 3.3])
+        resolved = {
+            "distance_curve": [0.0, 100.0, 300.0, 400.0, 500.0, 600.0],
+            "time_curve": [0, 20, 40, 60, 80, 100],
+            "altitude_curve": [100, 101, 102, 103, 104, 105],
+            "gap_curve": [3, 3, 3, 3, 3, 3],
+            "grade_curve": [0, 0, 0, 0, 0, 0],
+            "efficiency_curve": [10, 10, 10, 10, 10, 10],
+            "insight_events": [],
+            "fatigue_zones": [],
+            "context_tags": {},
+        }
+
+        with patch("main._build_resolved_payload_v81", return_value=resolved), \
+             patch("main.MetricsResolver._compute_durability_index", return_value={"score": 100, "level": "excellent"}) as durability_mock:
+            api._build_fatigue_review_snapshot(row)
+
+        self.assertEqual(durability_mock.call_args.kwargs["speed_stream"], [3.0, 3.1, 3.2, 3.3])
+
+    def test_cadence_stability_uses_startup_trimmed_cadence_curve(self):
+        api = self._api()
+        row = self._row(point_count=6)
+        row["cadence_curve"] = json.dumps([40, 60, 84, 85, 86, 87])
+        resolved = {
+            "distance_curve": [0.0, 100.0, 300.0, 400.0, 500.0, 600.0],
+            "time_curve": [0, 20, 40, 60, 80, 100],
+            "altitude_curve": [100, 101, 102, 103, 104, 105],
+            "gap_curve": [3, 3, 3, 3, 3, 3],
+            "grade_curve": [0, 0, 0, 0, 0, 0],
+            "efficiency_curve": [10, 10, 10, 10, 10, 10],
+            "insight_events": [],
+            "fatigue_zones": [],
+            "context_tags": {},
+        }
+
+        with patch("main._build_resolved_payload_v81", return_value=resolved), \
+             patch("main.MetricsResolver._compute_cadence_stability", return_value={"score": 95, "level": "excellent"}) as cadence_mock:
+            api._build_fatigue_review_snapshot(row)
+
+        self.assertEqual(cadence_mock.call_args.kwargs["cadence_stream"], [84, 85, 86, 87])
+
+    def test_review_hr_drift_records_use_real_speed_after_startup(self):
+        from main import _build_review_hr_drift_records
+
+        records = _build_review_hr_drift_records(
+            hr_curve=[100, 110, 120, 130],
+            speed_curve=[0.2, 0.4, 2.8, 3.1],
+            distance_curve_km=[0.0, 0.1, 0.3, 0.4],
+            sport_type="running",
+            total_distance_m=4000.0,
+        )
+
+        self.assertEqual(
+            [r["raw"] for r in records],
+            [
+                {"heart_rate": 120.0, "speed": 2.8, "timestamp": 2},
+                {"heart_rate": 130.0, "speed": 3.1, "timestamp": 3},
+            ],
+        )
+
+    def test_review_hr_drift_records_return_empty_when_lengths_mismatch(self):
+        from main import _build_review_hr_drift_records
+
+        records = _build_review_hr_drift_records(
+            hr_curve=[100, 110, 120],
+            speed_curve=[2.8, 3.1],
+            distance_curve_km=[0.0, 0.3, 0.4],
+            sport_type="running",
+            total_distance_m=4000.0,
+        )
+
+        self.assertEqual(records, [])
+
+    def test_review_hr_drift_records_use_sport_specific_startup_guard(self):
+        from main import _build_review_hr_drift_records
+
+        hiking = _build_review_hr_drift_records(
+            hr_curve=[100, 110, 120, 130],
+            speed_curve=[1.0, 1.1, 1.2, 1.3],
+            distance_curve_km=[0.0, 0.3, 0.5, 0.8],
+            sport_type="hiking",
+            total_distance_m=8000.0,
+        )
+        cycling = _build_review_hr_drift_records(
+            hr_curve=[100, 110, 120, 130],
+            speed_curve=[5.0, 5.5, 6.0, 6.5],
+            distance_curve_km=[0.0, 0.5, 1.0, 1.5],
+            sport_type="cycling",
+            total_distance_m=20000.0,
+        )
+
+        self.assertEqual([r["raw"]["heart_rate"] for r in hiking], [120.0, 130.0])
+        self.assertEqual([r["raw"]["heart_rate"] for r in cycling], [120.0, 130.0])
+
+    def test_snapshot_hr_drift_uses_real_speed_records_after_startup(self):
+        api = self._api()
+        row = self._row(point_count=6)
+        resolved = {
+            "distance_curve": [0.0, 100.0, 300.0, 400.0, 500.0, 600.0],
+            "time_curve": [0, 20, 40, 60, 80, 100],
+            "altitude_curve": [100, 101, 102, 103, 104, 105],
+            "gap_curve": [3, 3, 3, 3, 3, 3],
+            "grade_curve": [0, 0, 0, 0, 0, 0],
+            "efficiency_curve": [10, 10, 10, 10, 10, 10],
+            "insight_events": [],
+            "fatigue_zones": [],
+            "context_tags": {},
+        }
+
+        with patch("main._build_resolved_payload_v81", return_value=resolved), \
+             patch("main.MetricsResolver._compute_hr_drift", return_value={"drift_pct": None, "level": "unknown", "confidence": "unavailable"}) as drift_mock:
+            api._build_fatigue_review_snapshot(row)
+
+        records = drift_mock.call_args.kwargs["records"]
+        self.assertEqual([r["raw"]["heart_rate"] for r in records], [137.0, 138.0, 139.0, 140.0])
+        self.assertEqual([r["raw"]["speed"] for r in records], [3.2, 3.2, 3.2, 3.2])
+        self.assertNotIn(3.0, [r["raw"]["speed"] for r in records])
+
+    def test_snapshot_metrics_share_single_review_input_window(self):
+        import main
+
+        api = self._api()
+        row = self._row(point_count=6)
+        row["speed_curve"] = json.dumps([0.2, 0.4, 3.0, 3.1, 3.2, 3.3])
+        row["cadence_curve"] = json.dumps([40, 60, 84, 85, 86, 87])
+        resolved = {
+            "distance_curve": [0.0, 100.0, 300.0, 400.0, 500.0, 600.0],
+            "time_curve": [0, 20, 40, 60, 80, 100],
+            "altitude_curve": [100, 101, 102, 103, 104, 105],
+            "gap_curve": [3, 3, 3, 3, 3, 3],
+            "grade_curve": [0, 0, 0, 0, 0, 0],
+            "efficiency_curve": [100, 1, 10, 10, 10, 10],
+            "insight_events": [],
+            "fatigue_zones": [],
+            "context_tags": {},
+        }
+
+        with patch("main._build_resolved_payload_v81", return_value=resolved), \
+             patch("main._build_review_input_window", wraps=main._build_review_input_window) as window_mock, \
+             patch("main.MetricsResolver._build_review_decoupling", return_value={"pct": 0.0, "level": "excellent"}) as decoupling_mock, \
+             patch("main.MetricsResolver._compute_hr_drift", return_value={"drift_pct": None, "level": "unknown", "confidence": "unavailable"}) as drift_mock, \
+             patch("main.MetricsResolver._compute_durability_index", return_value={"score": 100, "level": "excellent"}) as durability_mock, \
+             patch("main.MetricsResolver._compute_cadence_stability", return_value={"score": 95, "level": "excellent"}) as cadence_mock:
+            api._build_fatigue_review_snapshot(row)
+
+        self.assertEqual(window_mock.call_count, 1)
+        self.assertEqual(decoupling_mock.call_args.args[0], [10, 10, 10, 10])
+        self.assertEqual(durability_mock.call_args.kwargs["speed_stream"], [3.0, 3.1, 3.2, 3.3])
+        self.assertEqual(cadence_mock.call_args.kwargs["cadence_stream"], [84, 85, 86, 87])
+        self.assertEqual([r["raw"]["heart_rate"] for r in drift_mock.call_args.kwargs["records"]], [137.0, 138.0, 139.0, 140.0])
 
     def test_snapshot_missing_calories_keeps_curves_and_disables_bonk_risk(self):
         snapshot = self._api()._build_fatigue_review_snapshot(self._row(calories=None))
