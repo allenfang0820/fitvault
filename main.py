@@ -17,7 +17,7 @@ import zipfile
 from urllib.parse import urlparse
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import llm_backend  # noqa: F401 -- PyInstaller bundles LLM 模块
 import track_backend  # noqa: F401 -- PyInstaller bundles track_backend
@@ -849,10 +849,197 @@ _FATIGUE_REVIEW_FORBIDDEN_KEYS = {
     "points",
     "raw_records",
     "track_points",
+    "fit_records",
+    "gpx_points",
     "shadow_diff",
     "shadow_diff_json",
     "diff",
 }
+
+_FATIGUE_REVIEW_STARTUP_EVENT_MIN_KM = 0.1
+
+
+def _build_fatigue_review_collapse_events(
+    bonk_events: Optional[list[dict[str, Any]]],
+    fatigue_zones: Optional[list[dict[str, Any]]],
+) -> list[dict[str, Any]]:
+    """Build backend-authoritative event anchors for the review chart.
+
+    Bonk events stay first-class. When Bonk is absent, we expose a small,
+    deduplicated set of fatigue transition anchors from backend fatigue_zones.
+    """
+    raw_events: list[dict[str, Any]] = []
+
+    def add_event(
+        event_type: str,
+        trigger_km: Any,
+        title: str,
+        description: str,
+        value_y: Any = None,
+    ) -> None:
+        trigger = _safe_float(trigger_km)
+        if trigger is None or trigger < 0:
+            return
+        for existing in raw_events:
+            existing_km = _safe_float(existing.get("trigger_km"))
+            if existing_km is not None and abs(existing_km - trigger) < 0.05:
+                return
+        raw_events.append({
+            "type": event_type,
+            "title": title,
+            "label": title,
+            "trigger_km": round(trigger, 2),
+            "trigger_time_sec": None,
+            "value_y": value_y,
+            "description": description,
+        })
+
+    for ev in bonk_events or []:
+        if not isinstance(ev, dict):
+            continue
+        add_event(
+            event_type=str(ev.get("type") or "BONK_WARNING"),
+            trigger_km=ev.get("trigger_km"),
+            title=str(ev.get("title") or ev.get("label") or "撞墙风险"),
+            description=str(ev.get("description") or "后端 Bonk 检测触发关键事件"),
+            value_y=ev.get("value_y"),
+        )
+
+    zones: list[dict[str, Any]] = []
+    for zone in fatigue_zones or []:
+        if not isinstance(zone, dict):
+            continue
+        start = _safe_float(zone.get("start_km"), None)
+        end = _safe_float(zone.get("end_km"), None)
+        if start is None or end is None or end <= start:
+            continue
+        normalized = dict(zone)
+        normalized["start_km"] = start
+        normalized["end_km"] = end
+        zones.append(normalized)
+    zones.sort(key=lambda item: (item["start_km"], item["end_km"]))
+
+    def zone_trigger(zone: dict[str, Any]) -> float:
+        start = _safe_float(zone.get("start_km")) or 0.0
+        end = _safe_float(zone.get("end_km")) or start
+        return start if start >= 0.05 else round((start + end) / 2.0, 2)
+
+    def is_review_fatigue_event_zone(zone: dict[str, Any]) -> bool:
+        return zone_trigger(zone) >= _FATIGUE_REVIEW_STARTUP_EVENT_MIN_KM
+
+    def zone_desc(zone: dict[str, Any], fallback: str) -> str:
+        start = _safe_float(zone.get("start_km")) or 0.0
+        end = _safe_float(zone.get("end_km")) or start
+        level = str(zone.get("level") or "fatigue")
+        return str(
+            zone.get("reason")
+            or zone.get("description")
+            or f"{fallback}: 后端 fatigue_zones 标记 {level} 区间 {start:.1f}-{end:.1f} km"
+        )
+
+    event_zones = [zone for zone in zones if is_review_fatigue_event_zone(zone)]
+    if event_zones:
+        first = event_zones[0]
+        add_event(
+            "FATIGUE_DRIFT_START",
+            zone_trigger(first),
+            "漂移开始",
+            zone_desc(first, "疲劳漂移开始"),
+        )
+
+        high_levels = {"high", "collapse", "critical", "severe"}
+        high_zones = [
+            zone for zone in event_zones
+            if str(zone.get("level") or "").lower() in high_levels
+        ]
+        if high_zones:
+            first_high = high_zones[0]
+            add_event(
+                "EFFICIENCY_DROP",
+                zone_trigger(first_high),
+                "效率下降",
+                zone_desc(first_high, "效率下降"),
+            )
+
+            last_high = high_zones[-1]
+            add_event(
+                "SUSTAINED_FATIGUE",
+                zone_trigger(last_high),
+                "疲劳加深",
+                zone_desc(last_high, "后段疲劳加深"),
+            )
+
+    collapse_events: list[dict[str, Any]] = []
+    for idx, ev in enumerate(raw_events[:4]):
+        title = str(ev.get("title") or ev.get("label") or ev.get("type") or "关键事件")
+        collapse_events.append({
+            "event_id": f"ce_{idx:02d}",
+            "type": str(ev.get("type") or "FATIGUE_EVENT"),
+            "title": title,
+            "label": str(ev.get("label") or title),
+            "trigger_km": ev.get("trigger_km"),
+            "trigger_time_sec": ev.get("trigger_time_sec"),
+            "value_y": ev.get("value_y"),
+            "description": str(ev.get("description") or ""),
+        })
+    return collapse_events
+
+
+def _merge_fatigue_zones_for_review(
+    zones: Any,
+    merge_gap_km: float = 0.05,
+) -> list[dict[str, Any]]:
+    """Normalize review fatigue zones for consistent UI consumption.
+
+    Resolver may emit short adjacent windows for interval sessions. The review
+    snapshot exposes user-facing zones, so contiguous same-level windows are
+    merged before they drive chart bands, stage overview, side cards, and event
+    anchors.
+    """
+    if not isinstance(zones, list):
+        return []
+
+    normalized: list[dict[str, Any]] = []
+    for zone in zones:
+        if not isinstance(zone, dict):
+            continue
+        start = _safe_float(zone.get("start_km"), None)
+        end = _safe_float(zone.get("end_km"), None)
+        if start is None or end is None or end <= start:
+            continue
+        level = str(zone.get("level") or "unknown").strip().lower() or "unknown"
+        item = {
+            "start_km": round(start, 2),
+            "end_km": round(end, 2),
+            "level": level,
+        }
+        for optional_key in ("reason", "description"):
+            if zone.get(optional_key):
+                item[optional_key] = str(zone.get(optional_key))
+                break
+        normalized.append(item)
+
+    normalized.sort(key=lambda item: (item["start_km"], item["end_km"], item["level"]))
+
+    merged: list[dict[str, Any]] = []
+    gap = max(0.0, _safe_float(merge_gap_km) or 0.0)
+    for zone in normalized:
+        if not merged:
+            merged.append(dict(zone))
+            continue
+        previous = merged[-1]
+        same_level = previous.get("level") == zone.get("level")
+        touches = zone["start_km"] <= (previous["end_km"] + gap)
+        if same_level and touches:
+            previous["end_km"] = round(max(previous["end_km"], zone["end_km"]), 2)
+            if not previous.get("reason") and zone.get("reason"):
+                previous["reason"] = zone["reason"]
+            if not previous.get("description") and zone.get("description"):
+                previous["description"] = zone["description"]
+            continue
+        merged.append(dict(zone))
+
+    return merged
 
 
 def _fatigue_review_axis_len(distance_curve_m: list) -> int:
@@ -882,6 +1069,117 @@ def _fatigue_review_numeric_curve(
     return normalized if has_value else []
 
 
+def _build_fatigue_review_terrain_load_curve(
+    grade_curve: Any,
+    speed_curve: Any,
+    time_curve: Any,
+    axis_len: int,
+) -> list:
+    """Build backend-authoritative Terrain Load from grade, speed, and duration."""
+    if axis_len <= 0:
+        return []
+    if not (
+        isinstance(grade_curve, list)
+        and isinstance(speed_curve, list)
+        and isinstance(time_curve, list)
+    ):
+        return []
+    if len(grade_curve) != axis_len or len(speed_curve) != axis_len or len(time_curve) != axis_len:
+        return []
+
+    terrain_load: list[float] = []
+    has_source_value = False
+    previous_time: float | None = None
+    for i in range(axis_len):
+        grade_pct = _safe_float(grade_curve[i], None)
+        speed_mps = _safe_float(speed_curve[i], None)
+        current_time = _safe_float(time_curve[i], None)
+        if grade_pct is None or speed_mps is None or current_time is None:
+            terrain_load.append(0.0)
+            previous_time = current_time if current_time is not None else previous_time
+            continue
+
+        if previous_time is None:
+            dt_sec = 0.0
+        else:
+            dt_sec = max(0.0, current_time - previous_time)
+        previous_time = current_time
+
+        grade_ratio = abs(grade_pct) / 100.0
+        load = grade_ratio * max(0.0, speed_mps) * dt_sec
+        if load > 0:
+            has_source_value = True
+        terrain_load.append(round(load, 4))
+
+    return terrain_load if has_source_value else []
+
+
+_FATIGUE_REVIEW_PACE_DISPLAY_CAP_SEC = 15 * 60
+
+
+def _build_fatigue_review_pace_display_curve(
+    speed_curve: Any,
+    axis_len: int,
+    cap_sec_per_km: float = _FATIGUE_REVIEW_PACE_DISPLAY_CAP_SEC,
+) -> dict[str, list]:
+    """Build display-only pace curves from backend speed m/s.
+
+    `raw` preserves the truthful sec/km value for tooltip use, while `chart`
+    caps very slow/stopped points so Garmin-style pace lanes stay readable.
+    """
+    if axis_len <= 0 or not isinstance(speed_curve, list) or len(speed_curve) != axis_len:
+        return {"chart": [], "raw": [], "capped": []}
+
+    chart: list[Any] = []
+    raw: list[Any] = []
+    capped: list[bool] = []
+    has_value = False
+    cap = float(cap_sec_per_km)
+    for value in speed_curve:
+        speed_mps = _safe_float(value, None)
+        if speed_mps is None or speed_mps <= 0:
+            raw.append(None)
+            chart.append(None)
+            capped.append(False)
+            continue
+        pace_sec = 1000.0 / speed_mps
+        pace_rounded = round(pace_sec, 1)
+        is_capped = pace_rounded > cap
+        raw.append(pace_rounded)
+        chart.append(cap if is_capped else pace_rounded)
+        capped.append(is_capped)
+        has_value = True
+
+    if not has_value:
+        return {"chart": [], "raw": [], "capped": []}
+    return {"chart": chart, "raw": raw, "capped": capped}
+
+
+def _build_fatigue_review_display_curves(
+    speed_curve: Any,
+    gap_curve: Any,
+    axis_len: int,
+) -> dict[str, Any]:
+    pace = _build_fatigue_review_pace_display_curve(speed_curve, axis_len)
+    gap_pace = _build_fatigue_review_pace_display_curve(gap_curve, axis_len)
+    return {
+        "pace_sec_per_km": pace["chart"],
+        "pace_raw_sec_per_km": pace["raw"],
+        "pace_capped": pace["capped"],
+        "gap_pace_sec_per_km": gap_pace["chart"],
+        "gap_pace_raw_sec_per_km": gap_pace["raw"],
+        "gap_pace_capped": gap_pace["capped"],
+    }
+
+
+def _build_fatigue_review_display_meta() -> dict[str, Any]:
+    return {
+        "pace_display_cap_sec_per_km": _FATIGUE_REVIEW_PACE_DISPLAY_CAP_SEC,
+        "pace_display_cap_label": "15'00''/km",
+        "pace_cap_strategy": "cap_slow_points_for_chart_only",
+    }
+
+
 def _build_fatigue_review_curves_snapshot(
     bundle: dict[str, Any],
     resolved: dict[str, Any],
@@ -902,6 +1200,7 @@ def _build_fatigue_review_curves_snapshot(
             "efficiency": [],
             "gap": [],
             "grade": [],
+            "terrain_load": [],
             "hr": [],
             "altitude": [],
             "speed": [],
@@ -912,13 +1211,22 @@ def _build_fatigue_review_curves_snapshot(
         round(float(_safe_float(value) or 0.0) / 1000.0, 3)
         for value in distance_curve_m
     ]
+    time_curve = _fatigue_review_numeric_curve(
+        resolved.get("time_curve") or bundle.get("time_curve_sec") or [],
+        axis_len,
+        3,
+    )
+    grade_curve = _fatigue_review_numeric_curve(
+        resolved.get("grade_curve") or [],
+        axis_len,
+    )
+    speed_curve = _fatigue_review_numeric_curve(
+        bundle.get("speed_curve_mps") or [],
+        axis_len,
+    )
     return {
         "distance": distance,
-        "time": _fatigue_review_numeric_curve(
-            resolved.get("time_curve") or bundle.get("time_curve_sec") or [],
-            axis_len,
-            3,
-        ),
+        "time": time_curve,
         "efficiency": _fatigue_review_numeric_curve(
             resolved.get("efficiency_curve") or [],
             axis_len,
@@ -927,9 +1235,12 @@ def _build_fatigue_review_curves_snapshot(
             resolved.get("gap_curve") or [],
             axis_len,
         ),
-        "grade": _fatigue_review_numeric_curve(
-            resolved.get("grade_curve") or [],
-            axis_len,
+        "grade": grade_curve,
+        "terrain_load": _build_fatigue_review_terrain_load_curve(
+            grade_curve=grade_curve,
+            speed_curve=speed_curve,
+            time_curve=time_curve,
+            axis_len=axis_len,
         ),
         "hr": _fatigue_review_numeric_curve(
             bundle.get("hr_curve") or [],
@@ -939,10 +1250,7 @@ def _build_fatigue_review_curves_snapshot(
             resolved.get("altitude_curve") or bundle.get("altitude_curve_m") or [],
             axis_len,
         ),
-        "speed": _fatigue_review_numeric_curve(
-            bundle.get("speed_curve_mps") or [],
-            axis_len,
-        ),
+        "speed": speed_curve,
         "total_distance_m": total_distance_m,
     }
 
@@ -3521,6 +3829,49 @@ def _build_risk_assessment_messages(snapshot: dict[str, Any], weather_context: d
     ]
 
 
+def _parse_activity_advice_context(raw_context: Any) -> dict[str, str]:
+    """Parse user-provided planning context; never infer from track history."""
+    data: dict[str, Any] = {}
+    if isinstance(raw_context, dict):
+        data = raw_context
+    elif isinstance(raw_context, str):
+        text = raw_context.strip()
+        if text:
+            try:
+                parsed = json.loads(text)
+                if isinstance(parsed, dict):
+                    data = parsed
+                else:
+                    data = {"user_activity_type": text}
+            except json.JSONDecodeError:
+                data = {"user_activity_type": text}
+
+    user_activity_type = str(data.get("user_activity_type") or data.get("activity_type") or "").strip()
+    planned_start_time = str(data.get("planned_start_time") or data.get("planned_time") or "").strip()
+    return {
+        "user_activity_type": user_activity_type,
+        "planned_start_time": planned_start_time,
+        "activity_type_source": "user_input" if user_activity_type else "missing",
+        "planned_time_source": "user_input" if planned_start_time else "missing",
+    }
+
+
+def _build_activity_advice_messages(
+    snapshot: dict[str, Any] | None,
+    planning_context: dict[str, Any] | None,
+) -> list[dict[str, str]]:
+    return [
+        {
+            "role": "system",
+            "content": llm_backend.build_activity_advice_system_prompt(snapshot, planning_context),
+        },
+        {
+            "role": "user",
+            "content": llm_backend.build_activity_advice_user_prompt(),
+        },
+    ]
+
+
 
 
 
@@ -3576,6 +3927,7 @@ class Api:
     """pywebview js_api：轨迹文件、导出、大模型（OpenAI 兼容）等。"""
 
     SYSTEM_INSTRUCTION = "__SYSTEM_INSTRUCTION__"
+    REPORT_ACTIVITY_ADVICE = "__REPORT_ACTIVITY_ADVICE__"
     REPORT_RISK_ASSESSMENT = "__REPORT_RISK_ASSESSMENT__"
     RADAR_INSIGHT = "__RADAR_INSIGHT__"
     FATIGUE_REVIEW_INSIGHT = "__FATIGUE_REVIEW_INSIGHT__"
@@ -4053,6 +4405,49 @@ class Api:
             except Exception as e:
                 logger.warning("fatigue_review_insight failed: %s", e)
                 return _fr_empty(str(e))
+
+        if prompt == self.REPORT_ACTIVITY_ADVICE:
+            # 活动建议是一次性计划上下文,必须在任何 happy / fallback 分支前隔离普通 AI 教练会话。
+            self._chat_messages = []
+            self._new_session_id()
+
+            def _activity_advice_empty(message: str) -> dict:
+                return {
+                    "ok": True,
+                    "activity_advice": llm_backend.empty_activity_advice(message),
+                }
+
+            planning_context = _parse_activity_advice_context(sport_type)
+            if not self._ai_snapshot:
+                return _activity_advice_empty("请先加载活动轨迹")
+
+            cfg = llm_backend.load_llm_config()
+            url = (cfg.get("url") or "").strip()
+            model = (cfg.get("model") or "").strip()
+            if not url:
+                return _activity_advice_empty("API 接口地址未配置，请在系统配置页填写后重试")
+            if not model:
+                return _activity_advice_empty("模型名未配置，请在系统配置页填写后重试")
+
+            api_key = str(cfg.get("api_key") or "")
+            agent_id = str(cfg.get("agent_id") or "")
+            sid = self._session_id
+            messages = _build_activity_advice_messages(self._ai_snapshot, planning_context)
+            try:
+                text = llm_backend.chat_completions(
+                    url=url,
+                    api_key=api_key,
+                    model=model,
+                    messages=messages,
+                    session_id=sid,
+                    agent_id=agent_id,
+                )
+            except Exception as exc:
+                return _activity_advice_empty(f"LLM 调用失败: {exc}")
+            return {
+                "ok": True,
+                "activity_advice": llm_backend.normalize_activity_advice_json(text),
+            }
 
         cfg = llm_backend.load_llm_config()
         url = (cfg.get("url") or "").strip()
@@ -6138,11 +6533,21 @@ class Api:
                 "efficiency": [],
                 "gap": [],
                 "grade": [],
+                "terrain_load": [],
                 "hr": [],
                 "altitude": [],
                 "speed": [],
                 "total_distance_m": 0.0,
             },
+            "display_curves": {
+                "pace_sec_per_km": [],
+                "pace_raw_sec_per_km": [],
+                "pace_capped": [],
+                "gap_pace_sec_per_km": [],
+                "gap_pace_raw_sec_per_km": [],
+                "gap_pace_capped": [],
+            },
+            "display_meta": _build_fatigue_review_display_meta(),
             "context_tags": {},
             "ai_insight": None,
             "advice": advice_text,
@@ -6272,6 +6677,7 @@ class Api:
                     efficiency_curve = resolved_v81.get("efficiency_curve") or []
                     bonk_events = resolved_v81.get("insight_events") or []
                     fatigue_zones = resolved_v81.get("fatigue_zones") or []  # V4.0: 从 Resolver 契约层透传
+                    fatigue_zones = _merge_fatigue_zones_for_review(fatigue_zones)
                     context_tags = resolved_v81.get("context_tags") or {}
                 except Exception:
                     logger.exception(
@@ -6282,26 +6688,24 @@ class Api:
                 bundle=bundle,
                 resolved=resolved_v81,
             )
+            axis_len = len(curves_snapshot.get("distance") or [])
+            display_curves = _build_fatigue_review_display_curves(
+                speed_curve=curves_snapshot.get("speed") or [],
+                gap_curve=curves_snapshot.get("gap") or [],
+                axis_len=axis_len,
+            )
+            display_meta = _build_fatigue_review_display_meta()
 
             # 4. metrics 白名单:四个核心指标
-            decoupling_pct = 0.0
-            decoupling_level = "unknown"
-            if efficiency_curve and len(efficiency_curve) >= 2:
-                first_half = [v for v in efficiency_curve[: len(efficiency_curve) // 2] if v and v > 0]
-                second_half = [v for v in efficiency_curve[len(efficiency_curve) // 2 :] if v and v > 0]
-                if first_half and second_half:
-                    fh = sum(first_half) / len(first_half)
-                    sh = sum(second_half) / len(second_half)
-                    if fh > 0:
-                        decoupling_pct = round(abs(fh - sh) / fh * 100.0, 2)
-                        decoupling_level = (
-                            "excellent" if decoupling_pct < 5
-                            else "good" if decoupling_pct < 10
-                            else "warn" if decoupling_pct < 15
-                            else "bad"
-                        )
+            decoupling = MetricsResolver._build_review_decoupling(efficiency_curve)
+            decoupling_pct = _safe_float(decoupling.get("pct")) or 0.0
 
-            bonk_at_risk = bool(bonk_events) and total_calories >= 1600.0
+            bonk_risk = MetricsResolver._build_bonk_risk(
+                total_calories=total_calories,
+                sport_type=sport_type,
+                bonk_events=bonk_events,
+            )
+            bonk_at_risk = bool(bonk_risk.get("is_at_risk"))
 
             # === V7.10 指标 6:HR Drift 真实算法(替代 V7.6 decoupling_pct 代理) ===
             # 见 docs/physiology_reference.md §指标 6
@@ -6342,29 +6746,15 @@ class Api:
                     "level": _drift_level,
                     "confidence": _drift_confidence,  # V7.10 新增 confidence
                 },
-                "decoupling": {
-                    "pct": decoupling_pct,
-                    "level": decoupling_level,
-                },
-                "bonk_risk": {
-                    "is_at_risk": bonk_at_risk,
-                    "confidence": "medium" if bonk_at_risk else "low",
-                },
+                "decoupling": decoupling,
+                "bonk_risk": bonk_risk,
             }
 
             # 5. collapse_events 白名单(每条带 event_id 联动标识)
-            collapse_events: list[dict[str, Any]] = []
-            for idx, ev in enumerate(bonk_events or []):
-                if not isinstance(ev, dict):
-                    continue
-                collapse_events.append({
-                    "event_id": f"ce_{idx:02d}",
-                    "type": str(ev.get("type", "BONK_WARNING")),
-                    "trigger_km": ev.get("trigger_km"),
-                    "trigger_time_sec": None,
-                    "value_y": ev.get("value_y"),
-                    "description": str(ev.get("description", "")),
-                })
+            collapse_events = _build_fatigue_review_collapse_events(
+                bonk_events=bonk_events,
+                fatigue_zones=fatigue_zones,
+            )
 
             # V7.6 trend 派生:挂在 metrics 子字段,不扩展 V6.3 顶级 7 段白名单
             _TREND_COMPARE_COUNT = 5
@@ -6417,7 +6807,7 @@ class Api:
             # 见 docs/physiology_reference.md §指标 5
             try:
                 from metrics_resolver import (
-                    MetricsResolver,
+                    MetricsResolver as _MR_efficiency,
                     evaluate_efficiency,
                 )
                 _eff_avg_hr = _safe_float(row.get("avg_hr"))
@@ -6426,7 +6816,7 @@ class Api:
                 # baseline 查询(用 profile_backend.DB_PATH,与项目其他读取一致)
                 try:
                     from profile_backend import DB_PATH
-                    _eff_baseline = MetricsResolver._fetch_efficiency_baseline(
+                    _eff_baseline = _MR_efficiency._fetch_efficiency_baseline(
                         db_path=str(DB_PATH),
                         sport_type=sport_type,
                         current_activity_id=_safe_int(row.get("id")) or 0,
@@ -6688,6 +7078,8 @@ class Api:
                 "collapse_events": collapse_events,
                 "fatigue_zones": fatigue_zones,  # V8.11: Layer 2 疲劳背景带
                 "curves": curves_snapshot,
+                "display_curves": display_curves,
+                "display_meta": display_meta,
                 "context_tags": context_tags,
                 "ai_insight": None,
                 "advice": "暂未生成",
@@ -6908,6 +7300,30 @@ def _build_real_laps_from_row(row: dict, dist_km: float = 0, duration_sec: int =
     return MetricsResolver._build_real_laps_from_row(row)
 
 
+FULL_ACTIVITY_LAP_FALLBACK_DISPLAY_TYPES = frozenset({"hiking", "mountaineering", "walking"})
+
+
+def _build_detail_laps(api_self, row: dict, display_type: str, dist_km: float, duration_sec: int, avg_hr = None, base_power: int = 0) -> list[dict[str, Any]]:
+    """详情页圈速数据契约:徒步类无真实 FIT lap 时展示全程汇总,不按公里模拟拆分。"""
+    real_laps = _build_real_laps_from_row(row, dist_km, duration_sec, avg_hr, base_power)
+    if real_laps:
+        return real_laps
+    if (display_type or "").lower() in FULL_ACTIVITY_LAP_FALLBACK_DISPLAY_TYPES:
+        if dist_km <= 0 or duration_sec <= 0:
+            return []
+        pace_sec = _safe_int(row.get("avg_pace")) or int(round(duration_sec / max(dist_km, 0.001)))
+        return [{
+            "lap_no": 1,
+            "distance_km": round(dist_km, 2),
+            "pace_sec": pace_sec,
+            "hr": avg_hr,
+            "max_hr": _safe_int(row.get("max_hr")) or None,
+            "ascent_m": _safe_int(row.get("gain_m")) if row.get("gain_m") is not None else None,
+            "descent_m": _safe_int(row.get("total_descent_m")) if row.get("total_descent_m") is not None else None,
+        }]
+    return api_self._build_lap_rows(dist_km, duration_sec, avg_hr, base_power)
+
+
 def _build_record_from_row(api_self, row: dict, idx: int) -> dict:
     points = api_self._decode_points_json(row.get("track_json") or row.get("points_json") or row.get("merged_track_json"))
     # V8.x 修复: distance 已对齐米单位, dist_km 是真公里值
@@ -6951,7 +7367,7 @@ def _build_record_from_row(api_self, row: dict, idx: int) -> dict:
     try:
         dt = datetime.fromisoformat(str(timestamp).replace("Z", "+00:00")) if timestamp else None
         month_key = dt.strftime("%Y-%m") if dt else "--"
-        date_label = dt.strftime("%Y-%m-%d %H:%M") if dt else "--"
+        date_label = dt.strftime("%Y-%m-%d") if dt else "--"
     except Exception:
         month_key = "--"
         date_label = str(timestamp or "--")
@@ -6989,7 +7405,7 @@ def _build_record_from_row(api_self, row: dict, idx: int) -> dict:
         "layout": SemanticSportsEngine.get_layout(display_type),
         "capabilities": capabilities,
         "summary": raw_for_engine,
-        "laps": _build_real_laps_from_row(row, dist_km, duration_sec, avg_hr, base_power) or api_self._build_lap_rows(dist_km, duration_sec, avg_hr, base_power),
+        "laps": _build_detail_laps(api_self, row, display_type, dist_km, duration_sec, avg_hr, base_power),
         # V9.4.4:圈速表列真理源(后端基于 sport_type 决定,前端不再硬编码 if/else)
         "lap_columns": resolve_lap_columns(display_type),
         "thumbnail_points": api_self._sample_thumbnail_points(points),

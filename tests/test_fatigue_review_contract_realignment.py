@@ -24,7 +24,7 @@ class TestFatigueReviewP0ApiContract(unittest.TestCase):
         item = self._fatigue_review_contract()
         returns = item.get("returns", "")
         for field in (
-            "curves: {distance, time, hr, speed, altitude, grade, gap, efficiency, total_distance_m}",
+            "curves: {distance, time, hr, speed, altitude, grade, gap, efficiency, terrain_load, total_distance_m}",
             "curves.distance 为后端权威距离轴",
             "curves.time 为后端权威时间轴",
             "curves.total_distance_m 单位 m",
@@ -63,7 +63,7 @@ class TestFatigueReviewP0SnapshotShape(unittest.TestCase):
 
         snapshot = Api._empty_fatigue_review_snapshot()
         curves = snapshot.get("curves", {})
-        for key in ("distance", "time", "hr", "speed", "altitude", "grade", "gap", "efficiency", "total_distance_m"):
+        for key in ("distance", "time", "hr", "speed", "altitude", "grade", "gap", "efficiency", "terrain_load", "total_distance_m"):
             self.assertIn(key, curves)
         self.assertEqual(curves["distance"], [])
         self.assertEqual(curves["time"], [])

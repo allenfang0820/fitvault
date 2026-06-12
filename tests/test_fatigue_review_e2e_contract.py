@@ -46,7 +46,7 @@ class TestFatigueReviewBackendOutputContract(unittest.TestCase):
         "efficiency", "durability", "cadence_stability", "training_load",
     }
     EXPECTED_CURVES_KEYS = {
-        "distance", "time", "efficiency", "gap", "grade", "hr", "altitude", "speed", "total_distance_m",
+        "distance", "time", "efficiency", "gap", "grade", "terrain_load", "hr", "altitude", "speed", "total_distance_m",
     }
     EXPECTED_HR_DRIFT_KEYS = {"pct", "level", "confidence", "trend"}
     EXPECTED_DECOUPLING_KEYS = {"pct", "level", "trend"}
@@ -142,6 +142,7 @@ class TestFatigueReviewBackendOutputContract(unittest.TestCase):
                 "efficiency": [1.0, 1.05, 1.1, 1.08, 1.05],
                 "gap": [4.2, 4.3, 4.1, 4.0, 3.9],
                 "grade": [0.0, 0.5, 1.0, 0.8, 0.3],
+                "terrain_load": [0.0, 0.21, 0.24, 0.19, 0.07],
                 "hr": [140, 145, 150, 155, 160],
                 "altitude": [100, 105, 118, 121, 116],
                 "speed": [4.0, 4.1, 4.0, 3.9, 3.8],

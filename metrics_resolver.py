@@ -1490,6 +1490,80 @@ class MetricsResolver:
         }
 
     @staticmethod
+    def _build_bonk_risk(
+        total_calories: float,
+        sport_type: str = "running",
+        bonk_events: list[dict] | None = None,
+    ) -> dict[str, Any]:
+        """Build the review-facing Bonk risk object from Resolver truth."""
+        risk = MetricsResolver._assess_glycogen_depletion_risk(
+            total_calories=total_calories,
+            sport_type=sport_type,
+        )
+        risk_level = str(risk.get("risk_level") or "unknown")
+        has_event = bool(bonk_events)
+        is_at_risk = has_event and risk_level in {"moderate", "high"}
+        if risk.get("confidence") == "unavailable":
+            confidence = "unavailable"
+        else:
+            confidence = "medium" if is_at_risk else "low"
+
+        return {
+            "is_at_risk": bool(is_at_risk),
+            "confidence": confidence,
+            "risk_level": risk_level,
+            "kcal": risk.get("kcal"),
+            "zone": risk.get("zone"),
+        }
+
+    @staticmethod
+    def _build_review_decoupling(efficiency_curve: list) -> dict[str, Any]:
+        """Build the review-facing decoupling metric from efficiency curve."""
+        result: dict[str, Any] = {
+            "pct": 0.0,
+            "level": "unknown",
+        }
+        if not efficiency_curve or len(efficiency_curve) < 2:
+            return result
+
+        split_idx = len(efficiency_curve) // 2
+        first_half = [
+            float(v)
+            for v in efficiency_curve[:split_idx]
+            if v and v > 0
+        ]
+        second_half = [
+            float(v)
+            for v in efficiency_curve[split_idx:]
+            if v and v > 0
+        ]
+        if not first_half or not second_half:
+            return result
+
+        early_efficiency = sum(first_half) / len(first_half)
+        late_efficiency = sum(second_half) / len(second_half)
+        if early_efficiency <= 0:
+            return result
+
+        pct = round(abs(early_efficiency - late_efficiency) / early_efficiency * 100.0, 2)
+        if pct < 5:
+            level = "excellent"
+        elif pct < 10:
+            level = "good"
+        elif pct < 15:
+            level = "warn"
+        else:
+            level = "bad"
+
+        return {
+            "pct": pct,
+            "level": level,
+            "confidence": "medium",
+            "early_efficiency": round(early_efficiency, 4),
+            "late_efficiency": round(late_efficiency, 4),
+        }
+
+    @staticmethod
     def _calculate_track_difficulty(
         dist_km: float,
         gain_m: float,

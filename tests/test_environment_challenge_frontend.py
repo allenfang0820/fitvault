@@ -164,18 +164,15 @@ class TestEnvironmentChallengeSidebarOrder(unittest.TestCase):
                       "V_ENV FAIL: 侧栏未调 _buildEnvironmentChallengeCard")
 
     def test_sidebar_order_after_training_benefit(self):
-        """环境挑战必须出现在训练收益之后、身体状态占位卡之前"""
+        """环境挑战必须出现在训练收益之后"""
         body = _slice_function_body(self.html, "renderActivityDetailSidebar")
         idx_te = body.find("_buildTrainingBenefitCard(record)")
         idx_ec = body.find("_buildEnvironmentChallengeCard(record)")
         self.assertGreater(idx_ec, idx_te,
             "V_ENV FAIL: 环境挑战应在训练收益之后")
-        idx_body_state = body.find("_buildPlaceholderSidebarCard('身体状态'")
-        self.assertLess(idx_ec, idx_body_state,
-            "V_ENV FAIL: 环境挑战应在身体状态占位卡之前")
 
-    def test_all_five_sidebar_cards_in_order(self):
-        """5 张卡完整顺序:天气 → 训练收益 → 环境挑战 → 身体状态 → 活动摘要"""
+    def test_all_three_sidebar_cards_in_order(self):
+        """3 张卡完整顺序:天气 → 训练收益 → 环境挑战"""
         body = _slice_function_body(self.html, "renderActivityDetailSidebar")
         for fn in ("_buildWeatherCard", "_buildTrainingBenefitCard",
                    "_buildEnvironmentChallengeCard"):
@@ -183,12 +180,8 @@ class TestEnvironmentChallengeSidebarOrder(unittest.TestCase):
         idx_weather = body.find("_buildWeatherCard")
         idx_te = body.find("_buildTrainingBenefitCard")
         idx_ec = body.find("_buildEnvironmentChallengeCard")
-        idx_body = body.find("_buildPlaceholderSidebarCard('身体状态'")
-        idx_sum = body.find("_buildPlaceholderSidebarCard('活动摘要'")
         self.assertLess(idx_weather, idx_te)
         self.assertLess(idx_te, idx_ec)
-        self.assertLess(idx_ec, idx_body)
-        self.assertLess(idx_body, idx_sum)
 
 
 class TestEnvironmentChallengeNoCrossPollution(unittest.TestCase):

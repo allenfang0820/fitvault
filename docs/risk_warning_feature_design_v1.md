@@ -1,10 +1,13 @@
 # 轨迹报告「风险预警」功能调研与设计方案 v1
 
-> **状态**: 调研完成,待评审
+> **废弃声明(2026-06-10)**: 本方案已被 [activity_advice_feature_design_v2.md](./activity_advice_feature_design_v2.md) 替代。功能语义从「风险预警」调整为「活动建议」,计划活动时间只允许来自用户显式输入,不得从 FIT/GPX 历史 `start_time` 或历史天气推断。
+
+> **状态**: 已废弃,仅作历史调研记录
 > **Workspace**: /Users/fanglei/应用开发/AI track
 > **契约基线**: fit-arch-contrac §5.5 轨迹报告 v3 边界 / §5.6 AI 洞察功能开发标准流程
 > **调研日期**: 2026-06-09
-> **调研范围**: 已实现 sentinel `__REPORT_RISK_ASSESSMENT__` / prompt builder / normalizer / 前端面板
+> **版本**: v1.1(2026-06-09 新增 §11 维度与数据源评审)
+> **调研范围**: 已实现 sentinel `__REPORT_RISK_ASSESSMENT__` / prompt builder / normalizer / 前端面板 / **数据源覆盖度**
 
 ---
 
@@ -667,4 +670,172 @@ python3 -c "import json; json.load(open('docs/js_api_contract.json'))"
 
 ---
 
+## 11. 维度与数据源评审(v1.1 新增)
+
+### 11.1 一句话结论
+
+**4 维度划分本身合理,无须扩展;但数据源满足度从 50%~75% 不等,3 处显著缺口需补强(均为「后端已有但 risk 白名单未拉 / 未消费」类,不需新增外部依赖)。**
+
+### 11.2 4 维度评估
+
+| 维度 | 核心判据 | 与用户心智匹配 | 与运动类型耦合 | 边界互斥 | 评估 |
+|---|---|---|---|---|---|
+| 🎒 补给 | 吃喝、水、电解质 | ✅ 自然语言可直接表达 | 低(公式普适) | ✅ 与其他 3 维无重叠 | **保留** |
+| 🌦️ 天气 | 温度、湿度、风、雨、雪、雷 | ✅ | 中(滑雪/登山有低温分支) | ✅ | **保留** |
+| 🎽 装备 | 衣物、防晒、防雨、头灯、急救 | ✅ | 中(越野跑 vs 公路跑) | ✅ | **保留** |
+| 💪 体力 | 爬升、心率、节奏、衰减 | ✅ | 中(骑行看 NP,游泳看 SWOLF) | ✅ | **保留** |
+
+**是否扩到 5/6 维度?**
+
+| 候选维度 | 评估 | 结论 |
+|---|---|---|
+| 🧭 路线/导航风险 | 长距离越野、夜间迷路 | ❌ **不扩**——`region / start_lat / start_lon` 可在 advice 文案中带过,不必单列维度;且当前 `environment_challenge.technical_terrain` 还在 Phase 2 占位,字段基础不足 |
+| 🩺 健康/医学风险 | 心脏异常、热射病 | ❌ **不扩**——超出 AI 解读边界,属于医生诊断范畴,AI 不应给医学建议 |
+| 🌡️ 环境挑战(单独列) | 高反、严寒、酷热 | ❌ **不扩**——已在 `environment_challenge` 模块独立处理,但按契约 §5.3 **不进 AI snapshot**;风险预警中以 narrative 形式带过即可 |
+
+**结论:4 维度维持不变。**
+
+### 11.3 数据源盘点
+
+#### 11.3.1 `_risk_snapshot_payload` 当前白名单([llm_backend.py L428-L446](file:///Users/fanglei/应用开发/AI%20track/llm_backend.py#L428-L446))
+
+```
+activity_id, sport_type, sub_sport_type,
+distance_km, distance_display, duration_sec,
+avg_pace, avg_pace_display, pace_unit,
+avg_hr, max_hr, calories,
+elevation_gain_m, max_alt_m, min_alt_m, total_descent_m,
+avg_cadence, normalized_power, swolf, tss,
+start_time, region,
+hr_decoupling, device_name,
+up_count, down_count, max_single_climb_m,
+difficulty_score, report_metrics_version, source
+```
+
+#### 11.3.2 AI snapshot 大白名单(39 项, [_AI_SNAPSHOT_FIELD_WHITELIST](file:///Users/fanglei/应用开发/AI%20track/metrics_resolver.py#L611-L646))中 risk_payload **未拉但相关**的字段
+
+| 字段 | AI snapshot 已有 | risk 白名单已拉 | 对哪个维度有用 | 是否补 |
+|---|---|---|---|---|
+| `start_time_utc` | ✅ | ❌ | 装备(夜间判定) | **建议补** |
+| `start_lat` / `start_lon` | ✅ | ❌ | narrative 增强 | 可选 |
+| `weight` | ✅ | ❌ | 补给(水分/能量需求) | **建议补** |
+| `height_cm` | ✅ | ❌ | 补给 | 可选 |
+| `lactate_threshold_hr` | ✅ | ❌ | 体力(心率压力比) | **建议补** |
+| `resting_hr` | ✅ | ❌ | 体力 | **建议补** |
+| `vo2max` | ✅ | ❌ | 体力 | 可选 |
+| `ftp_watts` | ✅ | ❌ | 体力(骑行) | 可选 |
+| `avg_sleep_hours` | ✅ | ❌ | 体力(恢复状态) | **建议补** |
+| `avg_grade_pct` / `max_slope_pct` | ✅ | ❌ | 装备(技术地形)+ 体力 | **建议补** |
+| `uphill_pct` / `downhill_pct` | ✅ | ❌ | 装备 + 体力 | **建议补** |
+| `hr_curve` / `speed_curve` | ✅ | ❌ | 体力(后程衰减) | **不补**(曲线数据量大,风险预警用 avg/max 已足够;若需要再做专用 snapshot 变体) |
+| `pb_*` / `race_predict_*` | ✅ | ❌ | 体力(强度合理性) | 可选 |
+| `longest_*` | ✅ | ❌ | 体力(经验) | 可选 |
+
+#### 11.3.3 `_track_weather` 实际字段([utils/weather_api.py](file:///Users/fanglei/应用开发/AI%20track/utils/weather_api.py))
+
+当前实现通过 `fetch_historical_weather` 从 Open-Meteo archive API 取**单点(运动开始时刻)**的:
+- `temperature_c` / `humidity` / `wind_speed_kmh` / `weather_code` / `weather_label` / `observed_hour` / `observed_date`
+
+**关键缺口(数据浪费)**:Open-Meteo archive API 实际返回了完整 `hourly[]` 数组(24 个时刻的温度/湿度/风速),但当前代码只取了 `match_index` 一个时刻(见 [weather_api.py L88-L117](file:///Users/fanglei/应用开发/AI%20track/utils/weather_api.py#L88-L117))。**长时间运动(8h 徒步)后续时段天气完全丢失**,导致天气维度判断只能基于"运动开始那一刻"。
+
+#### 11.3.4 周边可消费但未消费的后端能力
+
+| 能力 | 位置 | 对风险维度的价值 | 当前是否消费 |
+|---|---|---|---|
+| `environment_challenge` 子块(climb/altitude/heat/cold) | [metrics_resolver.py _build_environment_challenge_block](file:///Users/fanglei/应用开发/AI%20track/metrics_resolver.py#L3382) | 天气(heat/cold)+ 装备(altitude)+ 体力(climb) | ❌ 但按 §5.3 **不进 AI snapshot** |
+| `calculate_track_difficulty` 派生 | [main.py L6721-L6730](file:///Users/fanglei/应用开发/AI%20track/main.py#L6721-L6730) | 装备(技术地形) | ⚠️ 仅写入 `mtdi_score`,未进 risk payload |
+| `start_time_utc` 已有 UTC 标准化 | [main.py L1072-L1076](file:///Users/fanglei/应用开发/AI%20track/main.py#L1072-L1076) | 装备(夜间标志) | ❌ |
+| 用户 PB / race_predict | profile_backend | 体力(强度是否超 PB) | ❌ |
+
+### 11.4 维度 × 数据源匹配矩阵(关键审计)
+
+| 维度 | 应有判据 | 当前可用数据源 | 满足度 | 主要缺口 |
+|---|---|---|---|---|
+| **🎒 补给** | 时长、距离、强度、卡路里、温度、湿度、海拔 | `duration_sec / distance_km / avg_hr / max_hr / calories / temperature_c / humidity / max_alt_m` | **70%** | 缺:用户体重(水分需求)、LT 心率(强度区间判定) |
+| **🌦️ 天气** | 温度、湿度、风、雨雪、雷电、体感 | `temperature_c / humidity / wind_speed_kmh / weather_label`(仅运动开始单点) | **50%** | 缺:**时间序列天气**(Open-Meteo hourly 数组已取回但未消费)、UV 指数、降雨概率 |
+| **🎽 装备** | 时长、海拔跨度、天气、夜间、技术地形、运动类型 | `duration_sec / max_alt_m / total_descent_m / temperature_c / weather_label / difficulty_score / sub_sport_type` | **65%** | 缺:**夜间标志**(需从 `start_time` + `duration_sec` 推算太阳位置)、高反等级(`environment_challenge.altitude` 存在但不进 AI) |
+| **💪 体力** | 爬升、心率、TSS、hr_decoupling、时长、配速、PB 对比 | `elevation_gain_m / max_single_climb_m / up_count / avg_hr / max_hr / tss / hr_decoupling / difficulty_score / duration_sec` | **75%** | 缺:用户 LT / resting_hr(心率压力比)、`hr_curve` 后程衰减(数据已取回但未进 risk 白名单) |
+
+### 11.5 数据源补强方案
+
+#### A. **零成本补强(只动白名单列表,不动 DB / API)** — P0-N-3 增量
+
+把以下字段加入 `_risk_snapshot_payload.allowed_keys`:
+
+```python
+allowed_keys = (
+    # 原 28 项不动
+    ...,
+    # 新增(均已在 AI snapshot 白名单内,无需修改 Resolver)
+    "start_time_utc",      # 装备:夜间判定(LLM 用 start_time_utc + duration_sec 自推太阳位置)
+    "weight",              # 补给:水分需求估算(kg × 30~50ml/h)
+    "lactate_threshold_hr",# 体力:心率压力比
+    "resting_hr",          # 体力:HRR / 心率储备
+    "avg_sleep_hours",     # 体力:恢复状态提示
+    "avg_grade_pct",       # 装备 + 体力:技术地形 / 爬升压力
+    "max_slope_pct",       # 装备 + 体力
+    "uphill_pct",          # 体力:上坡占比
+)
+```
+
+**工时估计**:`llm_backend.py` 1 处白名单修改 + `test_risk_assessment_prompts.py` 1 个白名单字段存在性测试 ≈ 30 行。
+
+**预期效果**:补给满足度 70%→85%;体力满足度 75%→90%;装备满足度 65%→75%(夜间判定仍需后端辅助)。
+
+#### B. **轻量级后端派生(夜间标志)** — P0-N-3.5(可选)
+
+新增 Resolver 字段 `_is_night_activity(start_time_utc, duration_sec, start_lat, start_lon) -> bool`,基于太阳高度角粗算(可简化用日出日落表或 Astral 库)。
+
+**优点**:LLM 不用算太阳位置,降低 prompt 复杂度。
+**缺点**:新增依赖 / 增加 Resolver 职责;**评估为「可选」**,可放在 P0-N 之后做。
+
+#### C. **时间序列天气补强(显著缺口,但工作量大)** — 列入 §9 不在本方案范围
+
+把 Open-Meteo hourly 数组全量消费,在 `_track_weather` 中额外存 `temperature_range_c / humidity_avg / wind_max_kmh / precipitation_mm` 等聚合字段。
+
+**为什么暂不做**:
+- 工作量大,涉及 DB 字段扩展、`fetch_historical_weather` 升级、weather_json schema 演进。
+- 当前实现采用"运动开始单点天气"是 v1 简化策略,数据已写入 `weather_json`,未来扩展无破坏性。
+- LLM 在 prompt 中能基于 `observed_hour + duration_sec` 自行推理"运动跨越午后温度峰值"等场景,准确度可接受。
+
+### 11.6 §11 与 §5 P0-N 的关系
+
+| 项 | 关联 | 处理 |
+|---|---|---|
+| §5 P0-N-3(snapshot 构建器白名单已合规,不动) | 与 §11.5 A 冲突 | **修正**——把 §5 P0-N-3 改为「扩展白名单,补 7 字段」 |
+| §7 P2-N-1(prompt 单元测试) | 与 §11.4 匹配矩阵相关 | **追加**——新增 `test_snapshot_payload_includes_extended_fields`,覆盖 7 字段从空 snapshot → 有 snapshot → 缺字段 3 种场景 |
+| §9 不在本方案范围 | §11.5 B/C 列入 | **已覆盖** |
+
+### 11.7 维度评审小结
+
+| 评审项 | 结论 |
+|---|---|
+| 4 维度划分 | ✅ 合理,不扩不缩 |
+| 维度边界互斥性 | ✅ 良好(补给/天气/装备/体力无重叠) |
+| 维度覆盖度 | ✅ 户外运动四大风险域基本覆盖;路线/医学不扩 |
+| 数据源满足度 | ⚠️ 4 维度 50%~75% 不等,需补 7 字段(均为零成本) |
+| 夜间标志 | ⚠️ P0-N 范围外(可选 Phase 2) |
+| 时间序列天气 | ⚠️ 显著缺口,不在本方案范围(可作 v2 任务) |
+| 体感/UV/降雨概率 | ⚠️ 后端未计算,需新增 Resolver 派生;不在本方案范围 |
+
+---
+
+## 12. 评审 checklist(v1.1 更新)
+
+请评审者确认以下问题后,本方案进入实施态:
+
+- [ ] §3.1 / §3.2 / §3.3 三个偏离修复方向是否同意?
+- [ ] §5 P0-N / P1-N / P2-N 任务粒度是否合适?
+- [ ] §7 P2-N-4 集成测试 5 个用例是否覆盖所有 §5.6 规则 4 分支?
+- [ ] §9 不在本方案范围的事项是否需要扩入?
+- [ ] §11.2 4 维度维持不扩是否同意?
+- [ ] §11.5 A 白名单补 7 字段(零成本)是否同意进入 P0-N-3?
+- [ ] §11.5 B 夜间标志派生(Phase 2 可选)是否同意延后?
+- [ ] §11.5 C 时间序列天气(v2 任务)是否同意延后?
+- [ ] 是否同意按 P0-N → P1-N → P2-N 顺序合并到一次提交?
+
+---
+
 > **结束**: 本方案基于现有实现回正,不引入新文件结构,所有改动收敛在 [main.py](file:///Users/fanglei/应用开发/AI%20track/main.py) / [track.html](file:///Users/fanglei/应用开发/AI%20track/track.html) / [docs/js_api_contract.json](file:///Users/fanglei/应用开发/AI%20track/docs/js_api_contract.json) / [llm_backend.py](file:///Users/fanglei/应用开发/AI%20track/llm_backend.py) / 新建 2 个测试文件,符合契约 §5.6 「P0 后端 → P1 前端 → P2 测试」顺序。
+>
+> **v1.1 增量**: §11 维度评审确认 4 维度划分合理、数据源 50%~75% 满足、补 7 字段即可提至 75%~90%;B/C 两类缺口(夜间派生、时间序列天气)列入 Phase 2 / v2。

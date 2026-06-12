@@ -49,6 +49,7 @@ GEOCODE_REQUEST_INTERVAL_MAX_SEC = 5.0
 GEOCODE_REQUEST_TIMEOUT_SEC = 8
 GEOCODE_LANG = "zh-CN"
 GEOCODE_USER_AGENT = "FitVault/1.0"
+GPX_FALLBACK_GAIN_THRESHOLD_M = 0.1
 _REGION_CACHE_LOCK = threading.Lock()
 _REGION_CACHE: dict[tuple[float, float], str] = {}
 _REGION_ENRICH_LOCK = threading.Lock()
@@ -1114,6 +1115,10 @@ SPORT_TYPE_CN_MAP: dict[str, str] = {
     "road_cycling": "公路骑行",
     "mountain_biking": "山地骑行",
     "e_biking": "电助力骑行",
+    "e_mountain_biking": "电助力山地骑行",
+    "gravel_cycling": "砾石骑行",
+    "track_cycling": "场地骑行",
+    "hand_cycling": "手摇车",
     "swimming": "游泳",
     "lap_swimming": "泳池游泳",
     "open_water": "公开水域",
@@ -1127,6 +1132,7 @@ SPORT_TYPE_CN_MAP: dict[str, str] = {
     "alpine_skiing": "高山滑雪",
     "cross_country_skiing": "越野滑雪",
     "snowboarding": "单板滑雪",
+    "snowshoeing": "雪鞋行走",
     "rowing": "划船",
     "paddling": "桨板",
     "stand_up_paddleboarding": "立式桨板",
@@ -1137,6 +1143,13 @@ SPORT_TYPE_CN_MAP: dict[str, str] = {
     "hunting": "狩猎",
     "inline_skating": "轮滑",
     "rock_climbing": "攀岩",
+    "indoor_climbing": "室内攀爬",
+    "stair_climbing": "爬楼",
+    "floor_climbing": "爬楼",
+    "elliptical": "椭圆机",
+    "indoor_walking": "室内步行",
+    "wheelchair_walk": "轮椅步行",
+    "wheelchair_run": "轮椅竞速",
     "kayaking": "皮划艇",
     "rafting": "漂流",
     "diving": "潜水",
@@ -1876,8 +1889,9 @@ def parse_gpx_for_preview(src_path: str) -> dict[str, Any]:
     data = track_backend.parse_track_file(str(p))
     points = data.get("points") or []
 
-    # 复用 build_activity_payload 的计算逻辑（距离/时间/爬升/心率等）
+    # 复用 build_activity_payload 的计算逻辑（距离/时间/心率等）
     activity = build_activity_payload(p.name, data, str(p))
+    activity["gain_m"] = float(_compute_gpx_fallback_gain_m(points))
 
     # ====== Region 解析（geocode_cache 只读，不写 DB，不触发 enrichment 线程）====== 
     start_lat = activity.get("start_lat")
@@ -1895,6 +1909,7 @@ def parse_gpx_for_preview(src_path: str) -> dict[str, Any]:
     dist_km_val = float(activity.get("dist_km") or 0.0)
     gain_m_val = float(activity.get("gain_m") or 0.0)
     report = compute_report_metrics(points, dist_km_val, gain_m_val)
+    _attach_gpx_preview_mtdi(activity, report)
 
     return {
         "ok": True,
@@ -1924,6 +1939,9 @@ def parse_gpx_for_preview(src_path: str) -> dict[str, Any]:
             "down_count": report.get("down_count"),
             "max_single_climb_m": report.get("max_single_climb_m"),
             "difficulty_score": report.get("difficulty_score"),
+            "mtdi_score": activity.get("mtdi_score"),
+            "mtdi_level": activity.get("mtdi_level"),
+            "mtdi_level_name": activity.get("mtdi_level_name"),
             "avg_hr": activity["avg_hr"],
             "max_hr": activity["max_hr"],
             "calories": activity["calories"],
@@ -2166,6 +2184,61 @@ def _compute_grade_metrics(
             result["downhill_pct"] = round((downhill_m / valid_m) * 100.0, 1)
 
     return result
+
+
+def _compute_gpx_fallback_gain_m(points: list[dict[str, Any]]) -> int:
+    """GPX preview-only cumulative gain for dense, disposable track data."""
+    gain_m = 0.0
+    for idx in range(1, len(points)):
+        p0, p1 = points[idx - 1], points[idx]
+        if p0.get("alt") is None or p1.get("alt") is None:
+            continue
+        dalt = float(p1.get("alt") or 0.0) - float(p0.get("alt") or 0.0)
+        if dalt > GPX_FALLBACK_GAIN_THRESHOLD_M:
+            gain_m += dalt
+    return int(round(gain_m))
+
+
+def _resolve_gpx_preview_sport_type(activity: dict[str, Any], report: dict[str, Any]) -> str:
+    """Correct disposable GPX sport semantics when device metadata is too generic."""
+    sport_type = str(activity.get("sport_type") or "unknown")
+    dist_km = float(activity.get("dist_km") or 0.0)
+    duration_sec = float(activity.get("duration_sec") or 0.0)
+    gain_m = float(activity.get("gain_m") or 0.0)
+    max_alt_m = float(activity.get("max_alt_m") or 0.0)
+    max_single_climb_m = float(report.get("max_single_climb_m") or 0.0)
+    speed_kmh = (dist_km / (duration_sec / 3600.0)) if duration_sec > 0 else 0.0
+
+    generic_running = sport_type in {"running", "trail_running", "walking", "unknown"}
+    long_high_climb = (
+        duration_sec >= 2 * 3600
+        and speed_kmh > 0
+        and speed_kmh <= 5.5
+        and gain_m >= 500
+        and max_alt_m >= 2500
+        and max_single_climb_m >= 100
+    )
+    if generic_running and long_high_climb:
+        return "hiking"
+    return sport_type
+
+
+def _attach_gpx_preview_mtdi(activity: dict[str, Any], report: dict[str, Any]) -> None:
+    """Attach MTDI fields for GPX preview so frontend narrative does not fall back to LV1."""
+    from metrics_resolver import MetricsResolver
+
+    sport_type = _resolve_gpx_preview_sport_type(activity, report)
+    activity["sport_type"] = sport_type
+    mtdi = MetricsResolver._calculate_track_difficulty(
+        dist_km=activity.get("dist_km"),
+        gain_m=activity.get("gain_m"),
+        max_alt_m=activity.get("max_alt_m"),
+        max_single_climb_m=report.get("max_single_climb_m"),
+        sport_type=sport_type,
+    )
+    activity["mtdi_score"] = mtdi["score"]
+    activity["mtdi_level"] = mtdi["level"]
+    activity["mtdi_level_name"] = mtdi["level_name"]
 
 
 def _summarize_track_points(points: list[dict[str, Any]], track_backend_module: Any) -> tuple[float, int, int]:

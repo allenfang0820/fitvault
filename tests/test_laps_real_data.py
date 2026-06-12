@@ -157,6 +157,86 @@ class TestBuildRealLapsFromRow(unittest.TestCase):
         self.assertEqual(len(result), 1)
 
 
+class TestDetailLapsBySportContract(unittest.TestCase):
+    """详情页圈速展示契约:徒步类不使用按公里模拟圈速兜底。"""
+
+    class _FakeApi:
+        def __init__(self):
+            self.fallback_called = False
+
+        def _build_lap_rows(self, dist_km, duration_sec, avg_hr, base_power):
+            self.fallback_called = True
+            return [{
+                "lap_no": 1,
+                "distance_km": 1.0,
+                "pace_sec": 360,
+                "hr": avg_hr or 150,
+            }]
+
+    def test_hiking_without_laps_json_returns_full_activity_summary_lap(self):
+        from main import _build_detail_laps
+        api = self._FakeApi()
+
+        laps = _build_detail_laps(
+            api,
+            {
+                "sport_type": "hiking",
+                "laps_json": None,
+                "avg_pace": 951,
+                "max_hr": 174,
+                "gain_m": 396,
+                "total_descent_m": 380,
+            },
+            "hiking",
+            dist_km=11.45,
+            duration_sec=10891,
+            avg_hr=114,
+            base_power=245,
+        )
+
+        self.assertEqual(len(laps), 1)
+        self.assertEqual(laps[0]["lap_no"], 1)
+        self.assertEqual(laps[0]["distance_km"], 11.45)
+        self.assertEqual(laps[0]["pace_sec"], 951)
+        self.assertEqual(laps[0]["hr"], 114)
+        self.assertEqual(laps[0]["max_hr"], 174)
+        self.assertEqual(laps[0]["ascent_m"], 396)
+        self.assertEqual(laps[0]["descent_m"], 380)
+        self.assertFalse(api.fallback_called, "徒步无真实 laps_json 时不应生成按公里模拟圈速")
+
+    def test_hiking_with_real_laps_json_keeps_real_fit_lap(self):
+        from main import _build_detail_laps
+        api = self._FakeApi()
+        row = {
+            "sport_type": "hiking",
+            "laps_json": json.dumps([{
+                "lap_index": 0,
+                "distance_m": 17240.78,
+                "elapsed_sec": 21710.897,
+                "avg_hr": 135,
+                "max_hr": 171,
+                "total_ascent": 1152,
+                "total_descent": 112,
+            }]),
+        }
+
+        laps = _build_detail_laps(api, row, "hiking", 17.24, 21711, 135, 245)
+
+        self.assertEqual(len(laps), 1)
+        self.assertEqual(laps[0]["lap_no"], 1)
+        self.assertEqual(laps[0]["ascent_m"], 1152)
+        self.assertFalse(api.fallback_called)
+
+    def test_running_without_laps_json_keeps_existing_synthetic_fallback(self):
+        from main import _build_detail_laps
+        api = self._FakeApi()
+
+        laps = _build_detail_laps(api, {"sport_type": "running"}, "running", 5.0, 1800, 150, 245)
+
+        self.assertEqual(len(laps), 1)
+        self.assertTrue(api.fallback_called)
+
+
 class TestSchemaLapsColumn(unittest.TestCase):
     """步骤 1.3: 验证 activities 表已有 laps_json 列"""
 

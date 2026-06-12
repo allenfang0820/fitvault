@@ -79,7 +79,7 @@ class TestFatigueReviewP6AiInsight(unittest.TestCase):
 
         self.assertIn("curves_summary", snapshot)
         self.assertNotIn("curves", snapshot)
-        for key in ("records", "points", "raw_records", "track_points", "shadow_diff", "shadow_diff_json", "diff"):
+        for key in ("records", "points", "raw_records", "track_points", "fit_records", "gpx_points", "shadow_diff", "shadow_diff_json", "diff"):
             self.assertNotIn('"' + key + '"', encoded)
         summary = snapshot["curves_summary"]
         self.assertGreater(summary["distance_points_count"], 0)

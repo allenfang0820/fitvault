@@ -404,29 +404,29 @@ class TestV9_2_2Sidebar4Cards(unittest.TestCase):
         self.assertIn("function _buildPlaceholderSidebarCard(", self.html,
                       "V9.2.2 FAIL: 缺 _buildPlaceholderSidebarCard 函数")
 
-    def test_4_card_titles_in_sidebar_render(self):
-        """V9.2.2:renderActivityDetailSidebar 必须输出 4 张卡的标题"""
+    def test_3_card_titles_in_sidebar_render(self):
+        """V9.2.2:renderActivityDetailSidebar 必须输出 3 张卡的标题"""
         idx = self.html.find("function renderActivityDetailSidebar(")
         end = self.html.find("\n    function ", idx + 50)
         if end < 0:
             end = idx + 5000
         body = self.html[idx:end]
-        for title in ['环境', '训练收益', '身体状态', '活动摘要']:
+        for title in ['天气', '训练收益', '环境挑战']:
             self.assertIn(title, body,
                           f"V9.2.2 FAIL: renderActivityDetailSidebar 缺 {title} 卡")
 
-    def test_placeholder_message_includes_review_tab_hint(self):
-        """V9.2.2:占位文案应提示用户在「复盘」Tab 查看 AI 数据
-        占位文案在 renderActivityDetailSidebar 的 call site(不是 _buildPlaceholderSidebarCard 定义)
+    def test_training_effect_placeholder_message_includes_review_tab_hint(self):
+        """V9.2.2:训练收益占位文案应提示需要 FIT 设备记录 Training Effect 字段
+        占位文案在 _buildTrainingBenefitCard 的降级路径(不是 renderActivityDetailSidebar)
         """
-        idx = self.html.find("function renderActivityDetailSidebar(")
+        idx = self.html.find("function _buildTrainingBenefitCard(")
         end = self.html.find("\n    function ", idx + 50)
         if end < 0:
             end = idx + 5000
         body = self.html[idx:end]
-        # 占位文案应暗示数据来自复盘
-        self.assertTrue('复盘' in body or 'AI' in body,
-                        "V9.2.2 FAIL: 占位卡未暗示数据源(复盘/AI)")
+        # 占位文案应提示需要 FIT 设备
+        self.assertTrue('Training Effect' in body or 'FIT' in body,
+                        "V9.2.2 FAIL: 训练收益占位卡未提示需要 FIT 设备")
 
     def test_shadow_diff_isolation_preserved(self):
         """V9.2.2:renderActivityDetailSidebar 必须保留 §六 shadow_diff 隔离"""

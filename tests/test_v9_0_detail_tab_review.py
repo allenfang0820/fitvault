@@ -20,10 +20,17 @@ import unittest
 
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TRACK_HTML = os.path.join(_PROJECT_ROOT, "track.html")
+PLAN_MD = os.path.join(_PROJECT_ROOT, "docs", "fatigue_review_realignment_plan_v1.md")
+P7_IA_MD = os.path.join(_PROJECT_ROOT, "docs", "p7_fatigue_review_analysis_cockpit_information_architecture.md")
 
 
 def _read_track_html() -> str:
     with open(TRACK_HTML, encoding="utf-8") as f:
+        return f.read()
+
+
+def _read_doc(path: str) -> str:
+    with open(path, encoding="utf-8") as f:
         return f.read()
 
 
@@ -138,12 +145,13 @@ class TestV9AiInsightModalHtml(unittest.TestCase):
         for el_id in [
             "fr-review-layout", "fr-status-strip",
             "fr-core-metrics-section", "fr-capacity-metrics-section",
+            "fr-stage-overview-section", "fr-stage-track",
             "fr-context-panel", "fr-events-panel", "fr-advice-panel",
             "fr-context-tags", "fr-event-list", "fr-advice", "fr-disclaimer",
         ]:
             self.assertIn('id="' + el_id + '"', self.html,
                           f"P4 FAIL: 复盘主页面缺 #{el_id}")
-        for text in ["核心状态", "能力与负荷", "疲劳带 · 事件 · 曲线", "后端权威快照"]:
+        for text in ["核心状态", "能力与负荷", "多维时间轴分析", "本次复盘概览"]:
             self.assertIn(text, self.html)
 
     def test_p6_1_ai_entry_is_frozen(self):
@@ -156,7 +164,7 @@ class TestV9AiInsightModalHtml(unittest.TestCase):
         self.assertIn("disabled", button)
         self.assertIn('aria-disabled="true"', button)
         self.assertIn("AI 洞察待开放", button)
-        self.assertIn("AI 洞察将在 UI 定稿后开放", button)
+        self.assertIn("AI 洞察功能即将开放", button)
         self.assertNotIn("onclick=", button)
 
     def test_p7_2_summary_band_exists(self):
@@ -169,7 +177,7 @@ class TestV9AiInsightModalHtml(unittest.TestCase):
         ]:
             self.assertIn('id="' + el_id + '"', self.html,
                           f"P7.2 FAIL: 摘要带缺 #{el_id}")
-        for text in ["后端权威快照", "仅展示后端复盘快照字段", "AI 待开放"]:
+        for text in ["本次复盘概览", "汇总本次活动的疲劳、风险和建议状态。", "AI 待开放"]:
             self.assertIn(text, self.html)
 
     def test_p7_2_summary_band_uses_backend_snapshot_only(self):
@@ -227,13 +235,43 @@ class TestV9AiInsightModalHtml(unittest.TestCase):
             self.assertIn('id="' + el_id + '"', self.html,
                           f"P7.4 FAIL: 主图区缺 #{el_id}")
         for text in [
-            "疲劳带 · 事件 · 曲线",
-            "X 轴来自后端 curves.distance",
-            "distance_curve = data.curves.distance",
-            "curves.hr", "curves.speed", "curves.gap",
-            "fatigue_zones", "collapse_events",
+            "多维时间轴分析",
+            "按距离展开本次活动的关键变化",
+            "心率、配速、海拔和疲劳阶段会在同一条距离轴上对照显示。",
+            "心率", "配速", "坡度修正配速（GAP）",
+            "疲劳阶段", "关键事件",
         ]:
             self.assertIn(text, self.html)
+
+    def test_p7_20_review_static_ui_hides_engineering_labels(self):
+        """P7.20:复盘 Tab 静态 UI 不再向用户暴露契约字段名。"""
+        start = self.html.find('id="detail-tab-review"')
+        end = self.html.find('<input type="file"', start)
+        self.assertGreater(start, 0)
+        self.assertGreater(end, start)
+        review_template = self.html[start:end]
+        for forbidden in (
+            "data.curves",
+            "data.metrics",
+            "data.fatigue_zones",
+            "data.collapse_events",
+            "get_fatigue_review 后端权威快照",
+            "后端权威快照",
+            "curves.hr",
+            "curves.speed",
+            "curves.gap",
+            "curves.terrain_load",
+            "fatigue_zones",
+            "collapse_events",
+            "distance_curve",
+            "context_tags",
+            "trigger_km",
+            "start_km",
+            "end_km",
+            "DOM 推导",
+            "Resolver",
+        ):
+            self.assertNotIn(forbidden, review_template)
 
     def test_p7_4_chart_payload_uses_backend_sources(self):
         """P7.4:主图 payload 必须只使用后端 curves/fatigue_zones/collapse_events。"""
@@ -243,8 +281,14 @@ class TestV9AiInsightModalHtml(unittest.TestCase):
         body = self.html[idx:end]
         self.assertIn("distance_curve: Array.isArray(curvesObj.distance) ? curvesObj.distance : []", body)
         self.assertIn("hr_curve:        data.curves && data.curves.hr", body)
-        self.assertIn("speed_curve:     data.curves && data.curves.speed", body)
-        self.assertIn("gap_curve:       data.curves && data.curves.gap", body)
+        self.assertIn("pace_curve:      data.display_curves && data.display_curves.pace_sec_per_km", body)
+        self.assertIn("pace_raw_curve:  data.display_curves && data.display_curves.pace_raw_sec_per_km", body)
+        self.assertIn("altitude_curve:  data.curves && data.curves.altitude", body)
+        self.assertIn("efficiency_curve:data.curves && data.curves.efficiency", body)
+        self.assertIn("gap_pace_curve:  data.display_curves && data.display_curves.gap_pace_sec_per_km", body)
+        self.assertIn("gap_pace_raw_curve:data.display_curves && data.display_curves.gap_pace_raw_sec_per_km", body)
+        self.assertIn("grade_curve:     data.curves && data.curves.grade", body)
+        self.assertIn("display_meta:    data.display_meta || {}", body)
         self.assertIn("fatigue_zones:   data.fatigue_zones || []", body)
         self.assertIn("insight_events:  data.collapse_events || []", body)
         for forbidden in [
@@ -252,6 +296,112 @@ class TestV9AiInsightModalHtml(unittest.TestCase):
             "points", "querySelector", "getBoundingClientRect",
         ]:
             self.assertNotIn(forbidden, body)
+
+    def test_p7_10_layered_echarts_branch_exists(self):
+        """P7.10:复盘主图必须使用多 grid / 多 yAxis 分层 ECharts。"""
+        self.assertIn("function _renderFatigueReviewLayeredEcharts(activityData, targetId, distanceCurve)", self.html)
+        self.assertIn("if (targetId === 'fatigue-review-chart')", self.html)
+        fn_idx = self.html.find("function _renderFatigueReviewLayeredEcharts")
+        self.assertGreater(fn_idx, 0)
+        fn_body = self.html[fn_idx:self.html.find("\n    function clearProfileAnalysisChart", fn_idx)]
+        for text in [
+            "var grid = []",
+            "var xAxis = []",
+            "var yAxis = []",
+            "grid.push({",
+            "xAxis.push({",
+            "yAxis.push({",
+            "xAxisIndex: laneIndex",
+            "yAxisIndex: laneIndex",
+            "axisPointer: { link: [{ xAxisIndex: 'all' }] }",
+            "grid: grid",
+            "xAxis: xAxis",
+            "yAxis: yAxis",
+        ]:
+            self.assertIn(text, fn_body)
+
+    def test_p7_10_layered_echarts_uses_backend_curves_and_layers(self):
+        """P7.10:分层主图消费后端曲线、展示曲线、疲劳带和事件。"""
+        fn_idx = self.html.find("function _renderFatigueReviewLayeredEcharts")
+        self.assertGreater(fn_idx, 0)
+        fn_body = self.html[fn_idx:self.html.find("\n    function clearProfileAnalysisChart", fn_idx)]
+        for text in [
+            "hr_curve", "pace_curve", "altitude_curve",
+            "efficiency_curve", "gap_pace_curve", "grade_curve",
+            "_frLayeredMarkArea(fatigueZones)",
+            "_frLayeredEventMarkLine(insightEvents)",
+            "markArea: { silent: true, data: markAreaData }",
+            "markLine:",
+        ]:
+            self.assertIn(text, fn_body)
+        for forbidden in [
+            "_distanceFromSpeedTime", "total_distance_m", "points",
+            "querySelector", "getBoundingClientRect", "innerText",
+            "call_llm",
+        ]:
+            self.assertNotIn(forbidden, fn_body)
+
+    def test_p7_11_stage_overview_exists_and_uses_fatigue_zones_only(self):
+        """P7.11:状态阶段概览只能消费 data.fatigue_zones。"""
+        for el_id in [
+            "fr-stage-overview-section", "fr-stage-boundary", "fr-stage-track",
+        ]:
+            self.assertIn('id="' + el_id + '"', self.html,
+                          f"P7.11 FAIL: 缺少 #{el_id}")
+        self.assertIn("_renderFatigueReviewStageOverview(data.fatigue_zones || [])", self.html)
+        fn_idx = self.html.find("function _renderFatigueReviewStageOverview(zones)")
+        self.assertGreater(fn_idx, 0)
+        fn_body = self.html[fn_idx:self.html.find("\n    function _renderFatigueReviewContextTags", fn_idx)]
+        for text in [
+            "zone.start_km", "zone.end_km", "zone.level",
+            "zone.reason || zone.description",
+            "fr-stage-segment", "暂无阶段",
+        ]:
+            self.assertIn(text, fn_body)
+        for forbidden in [
+            "curves.", "speed", "time", "total_distance_m", "points",
+            "querySelector", "getBoundingClientRect", "innerText", "call_llm",
+        ]:
+            self.assertNotIn(forbidden, fn_body)
+
+    def test_p7_15_stage_bar_uses_weighted_backend_zones(self):
+        """P7.15:状态阶段条按 fatigue_zones 区间长度形成连续分段带。"""
+        for text in [
+            "--fr-stage-grow",
+            "--fr-stage-basis",
+            "fr-stage-share",
+            ".fr-stage-segment.compact",
+            "flex: var(--fr-stage-grow, 1) 1 var(--fr-stage-basis, 0)",
+        ]:
+            self.assertIn(text, self.html)
+        fn_idx = self.html.find("function _renderFatigueReviewStageOverview(zones)")
+        self.assertGreater(fn_idx, 0)
+        fn_body = self.html[fn_idx:self.html.find("\n    function _renderFatigueReviewContextTags", fn_idx)]
+        for text in [
+            "var stageItems = []",
+            "zone.start_km",
+            "zone.end_km",
+            "item.span / fullSpan * 100",
+            "Math.max(7, item.span / fullSpan * 100)",
+            "暂无有效阶段",
+            "compact",
+        ]:
+            self.assertIn(text, fn_body)
+        for forbidden in [
+            "curves.", "speed", "time", "total_distance_m", "points",
+            "querySelector", "getBoundingClientRect", "innerText", "call_llm",
+        ]:
+            self.assertNotIn(forbidden, fn_body)
+
+    def test_p7_11_derived_metrics_strip_preserves_metric_targets(self):
+        """P7.11:派生指标向横向条收敛,但不破坏既有 8 个主值 DOM。"""
+        self.assertIn("fr-derived-metrics-strip", self.html)
+        for element_id in [
+            "fr-hr-drift", "fr-decoupling", "fr-bonk", "fr-events-count",
+            "fr-efficiency-score", "fr-durability-score",
+            "fr-cadence-stability-score", "fr-training-load-value",
+        ]:
+            self.assertIn('id="' + element_id + '"', self.html)
 
     def test_p7_5_event_and_zone_panels_exist(self):
         """P7.5:关键事件和疲劳区间说明区必须存在。"""
@@ -263,10 +413,8 @@ class TestV9AiInsightModalHtml(unittest.TestCase):
             self.assertIn('id="' + el_id + '"', self.html,
                           f"P7.5 FAIL: 缺少 #{el_id}")
         for text in [
-            "来自 data.collapse_events",
-            "位置使用 trigger_km",
-            "来自 data.fatigue_zones",
-            "区间使用 start_km / end_km",
+            "标记活动中值得回看的关键变化点。",
+            "展示疲劳出现、加重或缓解的距离区间。",
         ]:
             self.assertIn(text, self.html)
 
@@ -280,9 +428,15 @@ class TestV9AiInsightModalHtml(unittest.TestCase):
         self.assertGreater(zone_idx, 0)
         event_body = self.html[event_idx:self.html.find("\n    function _renderFatigueReviewZones", event_idx)]
         zone_body = self.html[zone_idx:self.html.find("\n    function _renderFatigueReviewContextTags", zone_idx)]
-        for required in ["trigger_km", "event_id", "type", "description", "collapse_events = []"]:
+        for required in [
+            "trigger_km",
+            "event_id",
+            "ev.title || ev.label || ev.type || '事件'",
+            "description",
+            "暂无事件",
+        ]:
             self.assertIn(required, event_body)
-        for required in ["start_km", "end_km", "level", "fatigue_zones = []"]:
+        for required in ["start_km", "end_km", "level", "暂无区间"]:
             self.assertIn(required, zone_body)
         for body in (event_body, zone_body):
             for forbidden in [
@@ -302,10 +456,8 @@ class TestV9AiInsightModalHtml(unittest.TestCase):
             self.assertIn('id="' + el_id + '"', self.html,
                           f"P7.6 FAIL: 缺少 #{el_id}")
         for text in [
-            "来自 data.context_tags",
-            "来自 data.advice",
-            "data.disclaimer",
-            "不从活动标题、设备或 DOM 推导",
+            "环境、装备和训练背景会帮助解释本次表现。",
+            "结合本次复盘给出下一步训练建议。",
         ]:
             self.assertIn(text, self.html)
 
@@ -319,9 +471,9 @@ class TestV9AiInsightModalHtml(unittest.TestCase):
         self.assertGreater(adv_idx, 0)
         ctx_body = self.html[ctx_idx:self.html.find("\n    function _renderFatigueReviewAdvice", ctx_idx)]
         adv_body = self.html[adv_idx:self.html.find("\n    // === V6.3 AI", adv_idx)]
-        for required in ["context_tags = {}", "Object.keys(tags)", "fr-context-chip"]:
+        for required in ["暂无上下文", "Object.keys(tags)", "fr-context-chip"]:
             self.assertIn(required, ctx_body)
-        for required in ["advice = \"\"", "fr-advice-status", "fr-disclaimer", "disclaimer"]:
+        for required in ["暂无建议", "fr-advice-status", "fr-disclaimer", "disclaimer"]:
             self.assertIn(required, adv_body)
         for body in (ctx_body, adv_body):
             for forbidden in [
@@ -375,6 +527,65 @@ class TestV9AiInsightModalHtml(unittest.TestCase):
             positions.append(pos)
         self.assertEqual(positions, sorted(positions),
                          "P7.8 FAIL: 复盘驾驶舱区块顺序偏离 P7.1 信息架构")
+
+    def test_p7_12_chart_owns_stage_summary(self):
+        """P7.12:第一视觉必须先进入多维时间轴主图,状态阶段只是主图内摘要。"""
+        chart_idx = self.html.find('id="fr-chart-section"')
+        title_idx = self.html.find('id="fr-chart-title"')
+        stage_idx = self.html.find('id="fr-stage-overview-section"')
+        canvas_idx = self.html.find('id="fatigue-review-chart"')
+        self.assertGreater(chart_idx, 0)
+        self.assertGreater(title_idx, chart_idx)
+        self.assertGreater(stage_idx, title_idx)
+        self.assertGreater(canvas_idx, stage_idx)
+
+    def test_p7_13_lane_rail_binds_to_chart(self):
+        """P7.13:左侧指标轨道必须位于主图 body 内,并由实际 lanes 渲染。"""
+        for el_id in ["fr-chart-body", "fr-lane-rail", "fatigue-review-chart"]:
+            self.assertIn('id="' + el_id + '"', self.html)
+        body_idx = self.html.find('id="fr-chart-body"')
+        rail_idx = self.html.find('id="fr-lane-rail"')
+        canvas_idx = self.html.find('id="fatigue-review-chart"')
+        self.assertGreater(body_idx, 0)
+        self.assertGreater(rail_idx, body_idx)
+        self.assertGreater(canvas_idx, rail_idx)
+        self.assertIn("function _renderFatigueReviewLaneRail(lanes)", self.html)
+        self.assertIn("_renderFatigueReviewLaneRail(lanes)", self.html)
+        self.assertIn("_renderFatigueReviewLaneRail([])", self.html)
+
+    def test_p7_14_event_pins_bind_to_collapse_events(self):
+        """P7.14:关键事件必须以 trigger_km 生成图钉气泡和跨泳道参考线。"""
+        fn_idx = self.html.find("function _frLayeredEventMarkLine(insightEvents)")
+        self.assertGreater(fn_idx, 0)
+        fn_body = self.html[fn_idx:self.html.find("\n    function _renderFatigueReviewLaneRail", fn_idx)]
+        for text in [
+            "_frLayeredEventMarkLine(insightEvents)",
+            "_frLayeredEventPinMarkLine(insightEvents)",
+            "event.trigger_km",
+            "event.title || event.label || event.type || event.event_id || '关键事件'",
+            "event.description",
+            "event.event_id",
+            "eventTitle",
+            "eventKmLabel",
+            "position: 'end'",
+        ]:
+            self.assertIn(text, fn_body)
+        chart_idx = self.html.find("function _renderFatigueReviewLayeredEcharts")
+        chart_body = self.html[chart_idx:self.html.find("\n    function clearProfileAnalysisChart", chart_idx)]
+        for text in [
+            "var eventReferenceLineData = _frLayeredEventMarkLine(insightEvents)",
+            "var eventPinLineData = _frLayeredEventPinMarkLine(insightEvents)",
+            "data: eventReferenceLineData",
+            "data: eventPinLineData",
+            "symbol: ['none', 'pin']",
+            "symbolSize: [24, 24]",
+        ]:
+            self.assertIn(text, chart_body)
+        for forbidden in [
+            "querySelector", "getBoundingClientRect", "innerText",
+            "total_distance_m", "points", "call_llm",
+        ]:
+            self.assertNotIn(forbidden, fn_body)
 
     def test_p7_8_visual_regression_sketch_boundaries_preserved(self):
         """P7.8:视觉回归不得引入草图右侧全局导航或分享导出动作。"""
@@ -544,10 +755,8 @@ class TestV9ContractCompliance(unittest.TestCase):
         body = self.html[idx:end]
         self.assertIn("distanceCurve.length < 2", body,
                       "P3 FAIL: 图表缺 distance_curve 时必须空态")
-        self.assertIn("后端未返回权威距离轴", body,
-                      "P3 FAIL: 缺权威距离轴时应展示空态原因")
-        self.assertIn("curves.distance = []", body,
-                      "P3 FAIL: 空态 tag 应指向 curves.distance")
+        self.assertIn("距离轴暂不可用", body,
+                      "P3 FAIL: 缺权威距离轴时应展示产品化空态原因")
 
     def test_global_switch_tab_still_clears(self):
         """全局 switchTab(用户已确认的 V8.8 行为)仍调用 _clearFatigueReviewInsight。"""
@@ -603,6 +812,45 @@ class TestV9SentinelUnchanged(unittest.TestCase):
         """__FATIGUE_REVIEW_INSIGHT__ sentinel 必须保留(不复用、不新建)。"""
         self.assertIn("__FATIGUE_REVIEW_INSIGHT__", self.html,
                       "V9.0 FAIL: __FATIGUE_REVIEW_INSIGHT__ sentinel 必须保留")
+
+
+class TestP79DesignCorrectionDocs(unittest.TestCase):
+    """P7.9 源头纠偏文档门禁。"""
+
+    def setUp(self) -> None:
+        self.plan = _read_doc(PLAN_MD)
+        self.ia = _read_doc(P7_IA_MD)
+
+    def test_p7_9_design_correction_reorders_ai_review(self):
+        """P7.9:AI 入口复核必须顺延到 P8,不得跳过视觉回正。"""
+        for text in [
+            "P7 后续任务纠偏提示",
+            "P7.9 | 复盘 UI 设计稿视觉回正与源头纠偏",
+            "P7.10 | 分层 ECharts 主图实现",
+            "P7.11 | 状态阶段与派生指标模块回正",
+            "P7.12 | 主图信息架构纠偏",
+            "P7.13 | 左侧指标轨道与分层泳道回正",
+            "P7.14 | 关键事件图钉与竖向参考线",
+            "P7.18 | 视觉回归与草图对照验收",
+            "P8 | UI 定稿后 AI 入口复核",
+        ]:
+            self.assertIn(text, self.plan)
+
+    def test_p7_9_design_correction_names_missing_design_requirements(self):
+        """P7.9:文档必须记录当前 UI 遗漏,防止把工程骨架当完成态。"""
+        for text in [
+            "当前 UI 已覆盖复盘数据骨架和基础展示",
+            "不能视为设计稿完成态",
+            "当前叠加式 ECharts 主图不是设计稿完成态",
+            "身体状态如何变化",
+            "为什么失衡",
+            "在哪里开始崩",
+            "什么因素导致崩溃",
+            "Layer 1 疲劳带",
+            "Layer 2 事件标记",
+            "Layer 3 派生指标曲线",
+        ]:
+            self.assertIn(text, self.plan + self.ia)
 
 
 if __name__ == "__main__":

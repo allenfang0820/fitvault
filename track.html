@@ -17,6 +17,9 @@
             --bg: #0f172a;
             --panel: rgba(15, 23, 42, 0.85);
             --text: #f8fafc;
+            /* === V_TOKEN_P1: 全局根字号基准,所有 rem 派生自此 ===
+               v1.0 落地:19px,正文 0.72rem ≈ 13.7px(桌面端舒适阅读) */
+            font-size: 19px;
         }
         body {
             margin: 0; padding: 0; overflow: hidden; background-color: var(--bg);
@@ -503,10 +506,48 @@
             height: 100%;
             min-height: 300px;
             padding: 8px;
+            position: relative;
         }
         .profile-tab-panel.active {
             display: flex;
             flex-direction: column;
+        }
+        /* V1.0:三个预留 tab(成长趋势/荣誉墙/预留分析)显示半透明蒙板 */
+        .coming-soon-overlay {
+            display: none;
+        }
+        .coming-soon-overlay.is-shown {
+            display: flex !important;
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            width: auto;
+            height: auto;
+            z-index: 50;
+            align-items: center;
+            justify-content: center;
+            background: rgba(15, 23, 42, 0.78);
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+            border-radius: 8px;
+            pointer-events: auto;
+        }
+        .coming-soon-overlay.is-shown .coming-soon-text {
+            font-size: 1.1rem;
+            color: #f8fafc;
+            letter-spacing: 2px;
+            padding: 14px 22px;
+            border-radius: 8px;
+            background: rgba(15, 23, 42, 0.55);
+            border: 1px solid rgba(148, 163, 184, 0.25);
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+            animation: coming-soon-pulse 1.6s ease-in-out infinite;
+        }
+        @keyframes coming-soon-pulse {
+            0%, 100% { opacity: 0.85; }
+            50% { opacity: 1; }
         }
         .sport-hub-toolbar {
             display: flex;
@@ -946,7 +987,7 @@
         /* === V4.0 3D 地图返回详情舱悬浮按钮 (FAB) === */
         .return-detail-fab {
             position: absolute;
-            top: 20px;
+            top: 56px;
             left: 20px;
             z-index: 1000;
             background: rgba(15, 23, 42, 0.85);
@@ -1279,11 +1320,11 @@
             background: rgba(30, 41, 59, 0.78);
             border: 1px solid rgba(148, 163, 184, 0.15);
             border-radius: 8px;
-            padding: 10px 12px;
-            min-height: 104px;
+            padding: 8px 10px;
+            min-height: 86px;
             display: flex;
             flex-direction: column;
-            gap: 6px;
+            gap: 5px;
             min-width: 0;
         }
         .metric-card .lbl {
@@ -1293,11 +1334,152 @@
         }
         .metric-card .val {
             color: #f8fafc;
-            font-size: 1.12rem;
+            font-size: 1.06rem;
             font-weight: 800;
             line-height: 1.15;
             min-height: 1.28rem;
             overflow-wrap: anywhere;
+        }
+        .fr-derived-metrics-strip .fr-section-head {
+            margin-bottom: 8px;
+        }
+        .fr-derived-metrics-strip .metric-card {
+            background: linear-gradient(180deg, rgba(30, 41, 59, 0.78), rgba(15, 23, 42, 0.54));
+        }
+        .fr-stage-overview {
+            background: linear-gradient(180deg, rgba(15, 23, 42, 0.34), rgba(15, 23, 42, 0.18));
+            border: 1px solid rgba(148, 163, 184, 0.1);
+            border-radius: 8px;
+            padding: 7px 9px;
+            flex: 0 0 auto;
+            display: grid;
+            grid-template-columns: 136px minmax(0, 1fr);
+            gap: 9px;
+            align-items: center;
+            margin: 0 0 8px;
+        }
+        .fr-stage-overview .fr-section-head {
+            margin: 0;
+            display: block;
+        }
+        .fr-stage-overview .fr-section-head h4 {
+            font-size: 0.72rem;
+            line-height: 1.2;
+        }
+        .fr-stage-overview .fr-section-head span {
+            display: block;
+            font-size: 0.62rem;
+            line-height: 1.25;
+            margin-top: 2px;
+        }
+        .fr-stage-overview .fr-panel-boundary {
+            display: none;
+        }
+        .fr-stage-track {
+            display: flex;
+            min-height: 64px;
+            border-radius: 7px;
+            overflow: hidden;
+            border: 1px solid rgba(148, 163, 184, 0.12);
+            background: rgba(15, 23, 42, 0.72);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+        }
+        .fr-stage-track .fr-empty-state {
+            min-height: 64px;
+            padding: 7px 10px;
+            flex-direction: row;
+            gap: 10px;
+            justify-content: flex-start;
+            text-align: left;
+            border: none;
+            border-radius: 0;
+            background: transparent;
+        }
+        .fr-stage-track .fr-empty-icon {
+            font-size: 1.1rem;
+            margin: 0;
+        }
+        .fr-stage-track .fr-empty-title,
+        .fr-stage-track .fr-empty-desc,
+        .fr-stage-track .fr-empty-tag {
+            margin: 0;
+        }
+        .fr-stage-track .fr-empty-desc {
+            max-width: none;
+        }
+        .fr-stage-segment {
+            min-width: 78px;
+            flex: var(--fr-stage-grow, 1) 1 var(--fr-stage-basis, 0);
+            padding: 9px 10px;
+            color: #f8fafc;
+            border-right: 1px dashed rgba(248, 250, 252, 0.26);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            gap: 2px;
+            position: relative;
+            overflow: hidden;
+        }
+        .fr-stage-segment:last-child {
+            border-right: none;
+        }
+        .fr-stage-segment.low,
+        .fr-stage-segment.stable,
+        .fr-stage-segment.ok {
+            background: linear-gradient(90deg, rgba(22, 163, 74, 0.76), rgba(34, 197, 94, 0.52));
+        }
+        .fr-stage-segment.medium,
+        .fr-stage-segment.moderate,
+        .fr-stage-segment.warn,
+        .fr-stage-segment.drift {
+            background: linear-gradient(90deg, rgba(202, 138, 4, 0.76), rgba(234, 179, 8, 0.48));
+        }
+        .fr-stage-segment.high,
+        .fr-stage-segment.fatigue {
+            background: linear-gradient(90deg, rgba(234, 88, 12, 0.82), rgba(249, 115, 22, 0.52));
+        }
+        .fr-stage-segment.collapse,
+        .fr-stage-segment.severe,
+        .fr-stage-segment.critical {
+            background: linear-gradient(90deg, rgba(185, 28, 28, 0.86), rgba(239, 68, 68, 0.58));
+        }
+        .fr-stage-segment.unknown {
+            background: linear-gradient(90deg, rgba(71, 85, 105, 0.82), rgba(100, 116, 139, 0.48));
+        }
+        .fr-stage-title {
+            font-size: 0.74rem;
+            font-weight: 800;
+            line-height: 1.2;
+            white-space: nowrap;
+            max-width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .fr-stage-range,
+        .fr-stage-share,
+        .fr-stage-desc {
+            font-size: 0.62rem;
+            line-height: 1.2;
+            color: rgba(248, 250, 252, 0.86);
+            overflow-wrap: anywhere;
+        }
+        .fr-stage-share {
+            font-weight: 800;
+            color: rgba(255, 255, 255, 0.92);
+        }
+        .fr-stage-desc {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 100%;
+        }
+        .fr-stage-segment.compact .fr-stage-desc {
+            display: none;
+        }
+        .fr-stage-segment.compact .fr-stage-title {
+            font-size: 0.68rem;
         }
         .metric-card .sub {
             color: #64748b;
@@ -1340,15 +1522,22 @@
             background: rgba(30, 41, 59, 0.36);
         }
         .chart-container {
-            background: rgba(30, 41, 59, 0.82);
-            border: 1px solid rgba(148, 163, 184, 0.15);
+            background:
+                linear-gradient(180deg, rgba(30, 41, 59, 0.9), rgba(15, 23, 42, 0.82)),
+                radial-gradient(circle at 70% 10%, rgba(14, 165, 233, 0.1), transparent 30%);
+            border: 1px solid rgba(125, 211, 252, 0.18);
             border-radius: 8px;
-            padding: 12px;
+            padding: 14px;
             flex: 1;
-            min-height: 360px;
+            min-height: 640px;
             position: relative;
             display: flex;
             flex-direction: column;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03), 0 16px 36px rgba(2, 6, 23, 0.24);
+        }
+        #fr-chart-section.chart-container {
+            flex: 0 0 auto;
+            min-height: auto;
         }
         .chart-title {
             color: #cbd5e1;
@@ -1365,7 +1554,7 @@
         }
         .fr-chart-title-main {
             color: #e2e8f0;
-            font-size: 0.86rem;
+            font-size: 0.94rem;
             font-weight: 800;
             line-height: 1.25;
         }
@@ -1380,6 +1569,7 @@
         .fr-chart-axis-note {
             display: inline-flex;
             align-items: center;
+            align-self: flex-start;
             border: 1px solid rgba(14, 165, 233, 0.24);
             background: rgba(14, 165, 233, 0.1);
             color: #bae6fd;
@@ -1388,17 +1578,80 @@
             font-size: 0.68rem;
             line-height: 1.2;
             white-space: nowrap;
+            margin-bottom: 8px;
+        }
+        .fr-chart-body {
+            --fr-chart-height: 360px;
+            display: grid;
+            grid-template-columns: 132px minmax(0, 1fr);
+            gap: 10px;
+            flex: 0 0 var(--fr-chart-height);
+            min-height: 0;
+            height: var(--fr-chart-height);
+        }
+        .fr-lane-rail {
+            position: relative;
+            min-width: 0;
+            min-height: var(--fr-chart-height);
+            height: var(--fr-chart-height);
+        }
+        .fr-lane-rail-empty {
+            min-height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #64748b;
+            font-size: 0.68rem;
+            text-align: center;
+            border: 1px dashed rgba(148, 163, 184, 0.16);
+            border-radius: 8px;
+            background: rgba(15, 23, 42, 0.28);
+            padding: 10px;
+            overflow-wrap: anywhere;
+        }
+        .fr-lane-rail-item {
+            position: absolute;
+            left: 0;
+            right: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0 4px;
+            min-width: 0;
+        }
+        .fr-lane-rail-main {
+            min-width: 0;
+            text-align: center;
+        }
+        .fr-lane-rail-name {
+            color: #e2e8f0;
+            font-size: 0.74rem;
+            font-weight: 800;
+            line-height: 1.2;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .fr-lane-rail-unit {
+            color: #64748b;
+            font-size: 0.62rem;
+            line-height: 1.25;
+            margin-top: 2px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
         .chart-legend {
             display: flex;
             gap: 7px;
             flex-wrap: wrap;
-            font-size: 0.7rem;
+            font-size: 0.66rem;
             color: #94a3b8;
             align-items: center;
             justify-content: flex-end;
-            max-width: 46%;
+            max-width: 38%;
             min-width: 220px;
+            opacity: 0.72;
         }
         .chart-legend span {
             white-space: nowrap;
@@ -1416,8 +1669,12 @@
         }
         .fr-chart-canvas {
             width: 100%;
-            height: calc(100% - 64px);
-            min-height: 280px;
+            height: 100%;
+            min-height: 360px;
+            min-width: 0;
+        }
+        #fatigue-review-chart.fr-chart-canvas {
+            min-height: 360px;
         }
 
         /* === V6.2 响应式三档 === */
@@ -2764,7 +3021,7 @@
         }
         .fr-layout {
             display: grid;
-            grid-template-columns: minmax(0, 1fr) 300px;
+            grid-template-columns: minmax(0, 1fr) 260px;
             gap: 12px;
             min-height: 0;
         }
@@ -2885,6 +3142,67 @@
             font-size: 0.82rem;
             font-weight: 700;
         }
+        .fr-side-panel.emphasis {
+            background: linear-gradient(180deg, rgba(15, 23, 42, 0.72), rgba(15, 23, 42, 0.48));
+            border-color: rgba(45, 212, 191, 0.22);
+            box-shadow: inset 2px 0 0 rgba(45, 212, 191, 0.42);
+        }
+        .fr-side-panel.warning {
+            border-color: rgba(245, 158, 11, 0.2);
+            box-shadow: inset 2px 0 0 rgba(245, 158, 11, 0.44);
+        }
+        .fr-side-summary-list,
+        .fr-phys-impact-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .fr-side-fact {
+            border: 1px solid rgba(148, 163, 184, 0.14);
+            background: rgba(30, 41, 59, 0.36);
+            border-radius: 6px;
+            padding: 8px 9px;
+            min-width: 0;
+        }
+        .fr-side-fact.ok {
+            border-left: 2px solid rgba(34, 197, 94, 0.78);
+        }
+        .fr-side-fact.warn {
+            border-left: 2px solid rgba(245, 158, 11, 0.86);
+        }
+        .fr-side-fact.bad {
+            border-left: 2px solid rgba(248, 113, 113, 0.9);
+        }
+        .fr-side-fact.empty {
+            border-left: 2px solid rgba(100, 116, 139, 0.72);
+        }
+        .fr-side-fact-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            gap: 8px;
+            min-width: 0;
+        }
+        .fr-side-fact-label {
+            color: #94a3b8;
+            font-size: 0.68rem;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+        .fr-side-fact-value {
+            color: #f8fafc;
+            font-size: 0.86rem;
+            font-weight: 800;
+            text-align: right;
+            overflow-wrap: anywhere;
+        }
+        .fr-side-fact-desc {
+            color: #94a3b8;
+            font-size: 0.68rem;
+            line-height: 1.4;
+            margin-top: 4px;
+            overflow-wrap: anywhere;
+        }
         .fr-panel-boundary {
             color: #64748b;
             font-size: 0.68rem;
@@ -2940,6 +3258,68 @@
             line-height: 1.45;
             margin-top: 8px;
         }
+        .fr-chart-footer {
+            border-top: 1px solid rgba(148, 163, 184, 0.08);
+            margin-top: 8px;
+            padding-top: 7px;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 8px 12px;
+            align-items: center;
+            min-width: 0;
+        }
+        .fr-layer-toggle-row,
+        .fr-layer-chip-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            min-width: 0;
+        }
+        .fr-layer-toggle-row {
+            justify-content: flex-end;
+        }
+        .fr-layer-toggle-row label {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            border: 1px solid rgba(148, 163, 184, 0.16);
+            background: rgba(15, 23, 42, 0.44);
+            color: var(--fr-layer-color, #cbd5e1);
+            border-radius: 999px;
+            padding: 3px 8px;
+            font-size: 0.64rem;
+            font-weight: 800;
+            white-space: nowrap;
+            cursor: pointer;
+        }
+        .fr-layer-toggle-row input {
+            width: 12px;
+            height: 12px;
+            margin: 0;
+            accent-color: var(--fr-layer-color, #14b8a6);
+        }
+        .fr-layer-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            border: 1px solid rgba(148, 163, 184, 0.16);
+            background: rgba(15, 23, 42, 0.24);
+            color: #cbd5e1;
+            border-radius: 999px;
+            padding: 3px 7px;
+            font-size: 0.63rem;
+            max-width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .fr-layer-chip.available {
+            color: #bbf7d0;
+            border-color: rgba(34, 197, 94, 0.24);
+        }
+        .fr-layer-chip.missing {
+            color: #94a3b8;
+            opacity: 0.72;
+        }
         @media (max-width: 1100px) {
             .fr-layout {
                 grid-template-columns: 1fr;
@@ -2964,6 +3344,13 @@
                 grid-template-columns: 1fr;
                 align-items: flex-start;
             }
+            .fr-chart-footer {
+                grid-template-columns: 1fr;
+                align-items: flex-start;
+            }
+            .fr-layer-toggle-row {
+                justify-content: flex-start;
+            }
             .review-tab-header {
                 flex-direction: column;
                 gap: 10px;
@@ -2977,6 +3364,37 @@
             .fr-chart-axis-note {
                 white-space: normal;
                 overflow-wrap: anywhere;
+            }
+            .fr-chart-canvas,
+            #fatigue-review-chart.fr-chart-canvas {
+                min-height: 280px;
+            }
+            .fr-chart-body {
+                grid-template-columns: 1fr;
+            }
+            .fr-lane-rail {
+                display: flex;
+                position: relative;
+                flex-direction: row;
+                gap: 6px;
+                overflow-x: auto;
+                padding: 0 0 6px;
+                min-height: 0;
+                height: auto;
+            }
+            .fr-lane-rail-item {
+                position: static;
+                flex: 0 0 112px;
+                min-height: 44px;
+            }
+            .fr-stage-track {
+                overflow-x: auto;
+            }
+            .fr-stage-overview {
+                grid-template-columns: 1fr;
+            }
+            .fr-stage-segment {
+                min-width: 140px;
             }
         }
         @media (max-width: 480px) {
@@ -3197,7 +3615,7 @@
         /* === V6 概览 Tab 3 列 grid 布局 — fit-arch-contrac §五 UI 风格 ===
            左列(260px 固定):轨迹快照(正方形 260×260,左上角锚定)
            中列(2fr):Hero(6 metric 3×2) + 圈速统计(跨左+中)
-           右列(1fr,flex 1):4 张卡(环境/训练收益/身体状态/活动摘要) 跨全高
+           右列(1fr,flex 1):3 张卡(天气/训练收益/环境挑战) 跨全高
            仅桌面端(≥1024px),无 media query
            V6 设计:轨迹快照固定 260px,只允许 sidebar 随窗口伸缩 */
         .overview-2x2 {
@@ -4092,9 +4510,15 @@
                                     <span class="hub-legend-chip"><i class="hub-legend-dot" style="background:rgba(248,113,113,0.9);"></i>平均心率</span>
                                 </div>
                                 <div id="sport-results-chart" class="hub-chart-container"></div>
+                                <div class="coming-soon-overlay">
+                                    <div class="coming-soon-text">代码疯狂产生中……</div>
+                                </div>
                             </div>
                             <div class="profile-tab-panel" id="sport-hub-tab-honors">
                                 <div id="sport-honor-wall" class="honor-wall"></div>
+                                <div class="coming-soon-overlay">
+                                    <div class="coming-soon-text">代码疯狂产生中……</div>
+                                </div>
                             </div>
                             <div class="profile-tab-panel" id="sport-hub-tab-reserved">
                                 <div class="reserve-analysis">
@@ -4114,6 +4538,9 @@
                                         <h4>多模态赛事档案</h4>
                                         <p id="reserved-analysis-4">可连接照片、比赛证书、海报与社交媒体文案生成，沉淀完整的个人赛事档案馆。</p>
                                     </div>
+                                </div>
+                                <div class="coming-soon-overlay">
+                                    <div class="coming-soon-text">代码疯狂产生中……</div>
                                 </div>
                             </div>
                         </div>
@@ -4597,9 +5024,9 @@
                             </div>
                         </div>
                     </div>
-                    <!-- Row 1+2 Col 3: 4 张卡垂直堆叠(环境/训练收益/身体状态/活动摘要) -->
+                    <!-- Row 1+2 Col 3: 3 张卡垂直堆叠(天气/训练收益/环境挑战) -->
                     <div class="overview-sidebar-stack" id="activity-detail-sidebar">
-                        <!-- 4 张卡由 renderActivityDetailSidebar 渲染 -->
+                        <!-- 3 张卡由 renderActivityDetailSidebar 渲染 -->
                     </div>
                 </div>
             </div>
@@ -4611,16 +5038,16 @@
                         <div class="sub" id="fr-subtitle">加载中...</div>
                     </div>
                     <div class="review-tab-actions">
-                        <button class="btn-primary" id="fr-ai-generate-btn" disabled aria-disabled="true" title="AI 洞察将在 UI 定稿后开放">🤖 AI 洞察待开放</button>
+                        <button class="btn-primary" id="fr-ai-generate-btn" disabled aria-disabled="true" title="AI 洞察功能即将开放">🤖 AI 洞察待开放</button>
                     </div>
                 </div>
                 <div class="fr-layout" id="fr-review-layout">
                     <div class="fr-main-column">
                         <div class="fr-status-strip" id="fr-status-strip">
                             <div>
-                                <div class="fr-status-kicker">后端权威快照</div>
+                                <div class="fr-status-kicker">本次复盘概览</div>
                                 <div class="fr-status-title" id="fr-summary">等待复盘数据</div>
-                                <div class="fr-status-desc" id="fr-summary-desc">仅展示后端复盘快照字段，缺失时保持空态。</div>
+                                <div class="fr-status-desc" id="fr-summary-desc">汇总本次活动的疲劳、风险和建议状态。</div>
                             </div>
                             <div class="fr-status-meta">
                                 <span class="fr-pill" id="fr-data-source-pill">数据源 --</span>
@@ -4632,7 +5059,7 @@
                             </div>
                         </div>
 
-                        <div class="fr-section-band" id="fr-core-metrics-section">
+                        <div class="fr-section-band fr-derived-metrics-strip" id="fr-core-metrics-section">
                             <div class="fr-section-head">
                                 <h4>核心状态</h4>
                                 <span>漂移 · 解耦 · 风险 · 事件</span>
@@ -4665,7 +5092,7 @@
                             </div>
                         </div>
 
-                        <div class="fr-section-band" id="fr-capacity-metrics-section">
+                        <div class="fr-section-band fr-derived-metrics-strip" id="fr-capacity-metrics-section">
                             <div class="fr-section-head">
                                 <h4>能力与负荷</h4>
                                 <span>效率 · 耐久 · 步频 · 训练负荷</span>
@@ -4701,42 +5128,90 @@
                         <div class="chart-container" id="fr-chart-section">
                             <div class="chart-title" id="fr-chart-title">
                                 <div class="fr-chart-title-text">
-                                    <div class="fr-chart-title-main">📈 疲劳带 · 事件 · 曲线</div>
-                                    <div class="fr-chart-subtitle" id="fr-chart-subtitle">X 轴来自后端 curves.distance</div>
-                                    <div class="fr-chart-boundary" id="fr-chart-boundary">曲线来自 data.curves；疲劳带来自 data.fatigue_zones；事件来自 data.collapse_events。</div>
+                                    <div class="fr-chart-title-main">📈 多维时间轴分析</div>
+                                    <div class="fr-chart-subtitle" id="fr-chart-subtitle">按距离展开本次活动的关键变化</div>
+                                    <div class="fr-chart-boundary" id="fr-chart-boundary">心率、配速、海拔和疲劳阶段会在同一条距离轴上对照显示。</div>
                                 </div>
                                 <div class="chart-legend" id="fr-chart-legend">
-                                    <span><span class="legend-dot" style="background:#ef4444"></span>心率 · curves.hr</span>
-                                    <span><span class="legend-dot" style="background:#3b82f6"></span>速度 · curves.speed</span>
-                                    <span><span class="legend-dot" style="background:#d69e2e"></span>GAP · curves.gap</span>
-                                    <span><span class="legend-dot band" style="background:#eab308"></span>疲劳带 · fatigue_zones</span>
-                                    <span>📍 事件 · collapse_events</span>
+                                    <span><span class="legend-dot" style="background:#ef4444"></span>心率</span>
+                                    <span><span class="legend-dot" style="background:#3b82f6"></span>配速</span>
+                                    <span><span class="legend-dot" style="background:#94a3b8"></span>海拔</span>
+                                    <span><span class="legend-dot" style="background:#22c55e"></span>效率</span>
+                                    <span><span class="legend-dot" style="background:#d69e2e"></span>坡度修正配速（GAP）</span>
+                                    <span><span class="legend-dot" style="background:#f97316"></span>坡度</span>
+                                    <span><span class="legend-dot" style="background:#14b8a6"></span>地形负荷</span>
+                                    <span><span class="legend-dot band" style="background:#eab308"></span>疲劳阶段</span>
+                                    <span>📍 关键事件</span>
                                 </div>
                             </div>
-                            <div class="fr-chart-axis-note" id="fr-chart-axis-note">distance_curve = data.curves.distance</div>
-                            <div class="fr-chart-canvas" id="fatigue-review-chart"></div>
+                            <div class="fr-stage-overview" id="fr-stage-overview-section">
+                                <div class="fr-section-head">
+                                    <h4>状态阶段概览</h4>
+                                    <span>按距离展示状态变化</span>
+                                </div>
+                                <div class="fr-panel-boundary" id="fr-stage-boundary">查看稳定、漂移和疲劳阶段分别出现在活动的哪些路段。</div>
+                                <div class="fr-stage-track" id="fr-stage-track">
+                                    <div class="fr-empty-state" role="status" aria-live="polite">
+                                        <div class="fr-empty-icon">○</div>
+                                        <div class="fr-empty-title">等待后端疲劳阶段</div>
+                                        <div class="fr-empty-desc">不会从曲线前端推导阶段</div>
+                                        <div class="fr-empty-tag">暂无阶段</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="fr-chart-axis-note" id="fr-chart-axis-note">距离轴等待加载</div>
+                            <div class="fr-chart-body" id="fr-chart-body">
+                                <div class="fr-lane-rail" id="fr-lane-rail">
+                                    <div class="fr-lane-rail-empty">等待曲线</div>
+                                </div>
+                                <div class="fr-chart-canvas" id="fatigue-review-chart"></div>
+                            </div>
+                            <div class="fr-chart-footer" id="fr-chart-footer">
+                                <div class="fr-layer-chip-row" id="fr-layer-chip-row"></div>
+                                <div class="fr-layer-toggle-row" id="fr-layer-toggle-row">
+                                    <label style="--fr-layer-color:#ef4444"><input type="checkbox" data-fr-layer-toggle="hr" checked onchange="onFatigueReviewLayerToggle(this)"> 心率</label>
+                                    <label style="--fr-layer-color:#3b82f6"><input type="checkbox" data-fr-layer-toggle="speed" checked onchange="onFatigueReviewLayerToggle(this)"> 配速</label>
+                                    <label style="--fr-layer-color:#eab308"><input type="checkbox" data-fr-layer-toggle="gap" checked onchange="onFatigueReviewLayerToggle(this)"> 坡度修正配速（GAP）</label>
+                                    <label style="--fr-layer-color:#22c55e"><input type="checkbox" data-fr-layer-toggle="efficiency" checked onchange="onFatigueReviewLayerToggle(this)"> 效率</label>
+                                    <label style="--fr-layer-color:#94a3b8"><input type="checkbox" data-fr-layer-toggle="altitude" checked onchange="onFatigueReviewLayerToggle(this)"> 海拔</label>
+                                    <label style="--fr-layer-color:#f97316"><input type="checkbox" data-fr-layer-toggle="grade" checked onchange="onFatigueReviewLayerToggle(this)"> 坡度</label>
+                                    <label style="--fr-layer-color:#14b8a6"><input type="checkbox" data-fr-layer-toggle="terrainLoad" checked onchange="onFatigueReviewLayerToggle(this)"> 地形负荷</label>
+                                    <label style="--fr-layer-color:#facc15"><input type="checkbox" data-fr-layer-toggle="zones" checked onchange="onFatigueReviewLayerToggle(this)"> 疲劳带</label>
+                                    <label style="--fr-layer-color:#f87171"><input type="checkbox" data-fr-layer-toggle="events" checked onchange="onFatigueReviewLayerToggle(this)"> 事件</label>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
                     <div class="fr-side-column">
+                        <div class="fr-side-panel emphasis" id="fr-side-summary-panel">
+                            <h4>关键摘要</h4>
+                            <div class="fr-panel-boundary" id="fr-side-summary-boundary">快速查看风险状态、触发因素和疲劳路段。</div>
+                            <div class="fr-side-summary-list" id="fr-side-summary-list"></div>
+                        </div>
                         <div class="fr-side-panel" id="fr-context-panel">
                             <h4>上下文标签</h4>
-                            <div class="fr-panel-boundary" id="fr-context-boundary">来自 data.context_tags，不从活动标题、设备或 DOM 推导。</div>
+                            <div class="fr-panel-boundary" id="fr-context-boundary">环境、装备和训练背景会帮助解释本次表现。</div>
                             <div id="fr-context-tags"></div>
                         </div>
-                        <div class="fr-side-panel" id="fr-events-panel">
-                            <h4>关键事件</h4>
-                            <div class="fr-panel-boundary" id="fr-events-boundary">来自 data.collapse_events，位置使用 trigger_km。</div>
+                        <div class="fr-side-panel warning" id="fr-events-panel">
+                            <h4>崩溃触发因素</h4>
+                            <div class="fr-panel-boundary" id="fr-events-boundary">标记活动中值得回看的关键变化点。</div>
                             <div class="event-list" id="fr-event-list"></div>
                         </div>
+                        <div class="fr-side-panel emphasis" id="fr-phys-impact-panel">
+                            <h4>生理冲击点</h4>
+                            <div class="fr-panel-boundary" id="fr-phys-impact-boundary">用几个核心指标概括本次训练对身体的影响。</div>
+                            <div class="fr-phys-impact-list" id="fr-phys-impact-list"></div>
+                        </div>
                         <div class="fr-side-panel" id="fr-fatigue-zones-panel">
-                            <h4>疲劳区间</h4>
-                            <div class="fr-panel-boundary" id="fr-fatigue-zones-boundary">来自 data.fatigue_zones，区间使用 start_km / end_km。</div>
+                            <h4>状态区间</h4>
+                            <div class="fr-panel-boundary" id="fr-fatigue-zones-boundary">展示疲劳出现、加重或缓解的距离区间。</div>
                             <div class="fr-zone-list" id="fr-fatigue-zone-list"></div>
                         </div>
                         <div class="fr-side-panel" id="fr-advice-panel">
                             <h4>建议</h4>
-                            <div class="fr-panel-boundary" id="fr-advice-boundary">来自 data.advice；免责声明来自 data.disclaimer。</div>
+                            <div class="fr-panel-boundary" id="fr-advice-boundary">结合本次复盘给出下一步训练建议。</div>
                             <div class="fr-advice-status empty" id="fr-advice-status">建议待接入</div>
                             <div class="fr-advice-block" id="fr-advice">--</div>
                             <div class="fr-disclaimer" id="fr-disclaimer">AI 生成仅供参考 · 数据来源：FIT 解析 + 后端算法</div>
@@ -5183,6 +5658,9 @@
         else if (t.includes('swim') || t.includes('游')) { icon = '🏊'; label = '游泳'; paceLabel = '游动'; }
         else if (t.includes('walk') || t.includes('步')) { icon = '🚶'; label = '步行'; paceLabel = '步行'; }
         else if (t.includes('hik') || t.includes('徒')) { icon = '🥾'; label = '徒步'; paceLabel = '徒步'; }
+        else if (t.includes('stair') || t.includes('floor_climb') || t.includes('爬楼') || t.includes('楼梯')) { icon = '🪜'; label = '爬楼'; paceLabel = '攀爬'; }
+        else if (t.includes('rock') && t.includes('climb')) { icon = '🧗'; label = '攀岩'; paceLabel = '攀登'; }
+        else if (t.includes('indoor') && t.includes('climb')) { icon = '🧗'; label = '室内攀爬'; paceLabel = '攀登'; }
         else if (t.includes('mount') || t.includes('climb') || t.includes('登')) { icon = '🧗'; label = '登山'; paceLabel = '攀登'; }
         else if (t.includes('strength') || t.includes('力量')) { icon = '💪'; label = '力量训练'; paceLabel = '训练'; }
         else if (t.includes('yoga') || t.includes('瑜伽')) { icon = '🧘'; label = '瑜伽'; paceLabel = '训练'; }
@@ -5192,6 +5670,8 @@
         else if (t.includes('flex') || t.includes('柔韧')) { icon = '🤸'; label = '柔韧训练'; paceLabel = '训练'; }
         else if (t.includes('cardio') || t.includes('aerobic')) { icon = '💓'; label = '有氧运动'; paceLabel = '配速'; }
         else if (t.includes('driv') || t.includes('car') || t.includes('auto') || t.includes('驾') || t.includes('车')) { icon = '🚗'; label = '驾车'; paceLabel = '车速'; }
+        else if (t.includes('elliptical')) { icon = '💓'; label = '椭圆机'; paceLabel = '训练'; }
+        else if (t.includes('snowshoe')) { icon = '🥾'; label = '雪鞋行走'; paceLabel = '行进'; }
         else if (t.includes('ski') || t.includes('雪')) { icon = '🎿'; label = '滑雪'; paceLabel = '滑行'; }
         else if (t.includes('row') || t.includes('boat') || t.includes('划')) { icon = '🚣'; label = '划船'; paceLabel = '划行'; }
         else if (t.includes('paddle') || t.includes('paddling') || t === 'sup' || t.includes('板')) { icon = '🏄'; label = '桨板'; paceLabel = '划行'; }
@@ -5208,7 +5688,6 @@
         else if (t.includes('fly')) { icon = '✈️'; label = '飞行'; paceLabel = '航速'; }
         else if (t.includes('kayak')) { icon = '🛶'; label = '皮划艇'; paceLabel = '划行'; }
         else if (t.includes('raft')) { icon = '🛟'; label = '漂流'; paceLabel = '漂流'; }
-        else if (t.includes('rock') && t.includes('climb')) { icon = '🧗'; label = '攀岩'; paceLabel = '攀登'; }
         
         if (label === typeStr) {
             label = typeStr.charAt(0).toUpperCase() + typeStr.slice(1).replace(/[_-]/g, ' ');
@@ -5300,6 +5779,20 @@
     let _fatigueReviewLoading = false;
     // V7.5:记录最近一次加载的活动 ID(用于阅后即焚 ② 切换活动清旧缓存)
     let _lastLoadedFatigueReviewActivityId = null;
+    let _lastFatigueReviewChartPayload = null;
+    let _fatigueReviewChartResizeObserver = null;
+    let _fatigueReviewChartResizeBound = false;
+    let _fatigueReviewLayerVisibility = {
+        hr: true,
+        speed: true,
+        altitude: true,
+        efficiency: true,
+        gap: true,
+        grade: true,
+        zones: true,
+        events: true,
+        terrainLoad: true
+    };
 
     // === V9.0 Tab 化 + AI 洞察 Modal 化 — fit-arch-contrac §5.4 AI 边界 / §5.6.2 阅后即焚 ===
     // 当前激活的详情 Tab('overview' | 'review'),打开详情时强制重置为 'overview'
@@ -6968,7 +7461,7 @@
             trackContainer.innerHTML = '<div class="detail-track-tip" style="color:#94a3b8;">当前活动无可用轨迹文件,无法生成轨迹地图。</div>';
         }
 
-        // V9.2.2 §E12 侧栏 4 张卡(环境/训练收益/身体状态/活动摘要)
+        // V9.2.2 §E12 侧栏 3 张卡(天气/训练收益/环境挑战)
         if (typeof renderActivityDetailSidebar === 'function') {
             renderActivityDetailSidebar(_wx, record);
         } else if (typeof renderActivityDetailWeather === 'function') {
@@ -6977,8 +7470,8 @@
         }
     }
 
-    // === V9.2.2 §E12 侧栏 4 张卡(环境/训练收益/身体状态/活动摘要) ===
-    // 决策:3 张新卡(训练收益/身体状态/活动摘要)数据源延后解决,V9.2.2 M0 显示占位
+    // === V9.2.2 §E12 侧栏 3 张卡(天气/训练收益/环境挑战); 训练收益/环境挑战有空态降级占位 ===
+    // 决策:训练收益/环境挑战为空态降级占位;身体状态/活动摘要两张占位卡已于本次清理删除
     // §六 shadow_diff 隔离:渲染前校验,任何违规字段直接清空容器
     function renderActivityDetailSidebar(weather, record) {
         var sidebar = document.getElementById('activity-detail-sidebar');
@@ -7001,8 +7494,6 @@
         html += _buildTrainingBenefitCard(record);
         // V_ENV.1.7:环境挑战卡 — 真值从 record.detail.environment_challenge 读
         html += _buildEnvironmentChallengeCard(record);
-        html += _buildPlaceholderSidebarCard('身体状态', '❤️', '训练压力 / 恢复需求 / 当前状态将在「复盘」Tab 的 AI 洞察中呈现');
-        html += _buildPlaceholderSidebarCard('活动摘要', '✨', 'AI 活动摘要将在「复盘」Tab 生成');
         sidebar.innerHTML = html;
     }
 
@@ -7031,7 +7522,7 @@
         '</div>';
     }
 
-    // V9.2.2 §E12b 侧栏占位卡(训练收益/身体状态/活动摘要)
+    // V9.2.2 §E12b 侧栏占位卡(训练收益/环境挑战空态降级用)
     // 占位文案统一,等数据源就绪后由具体 card 替换
     function _buildPlaceholderSidebarCard(title, icon, msg) {
         return '<div class="sidebar-card">' +
@@ -7477,10 +7968,7 @@
         }
         // 4. 切到复盘时 ECharts 容器 resize(从 display:none 切出时需要校正宽度)
         if (tab === 'review') {
-            setTimeout(function() {
-                var inst = profileAnalysisChartInstances && profileAnalysisChartInstances['fatigue-review-chart'];
-                if (inst) inst.resize();
-            }, 50);
+            _resizeFatigueReviewChartWhenStable();
         }
     }
 
@@ -7733,6 +8221,18 @@
         document.querySelectorAll('.profile-tab-btn').forEach((btn) => btn.classList.toggle('active', btn.getAttribute('data-hub-tab') === sportHubState.activeTab));
         const panel = document.getElementById(`sport-hub-tab-${sportHubState.activeTab}`);
         if (panel) panel.classList.add('active');
+        // V1.0:三个预留 tab(成长趋势/荣誉墙/预留分析)显示半透明蒙板
+        const reservedTabs = new Set(['results', 'honors', 'reserved']);
+        document.querySelectorAll('.profile-tab-panel .coming-soon-overlay').forEach(function(ov) {
+            ov.classList.remove('is-shown');
+        });
+        if (reservedTabs.has(sportHubState.activeTab)) {
+            const activePanel = document.getElementById('sport-hub-tab-' + sportHubState.activeTab);
+            if (activePanel) {
+                const ov = activePanel.querySelector('.coming-soon-overlay');
+                if (ov) ov.classList.add('is-shown');
+            }
+        }
     }
 
     async function onSwitchToMovementRecords(options = {}) {
@@ -11772,14 +12272,20 @@ function openConfigModalFromWarning() {
             _renderFatigueReviewDimensions(data.metrics || {});
             _renderFatigueReviewEvents(data.collapse_events || []);
             _renderFatigueReviewZones(data.fatigue_zones || []);
+            _renderFatigueReviewStageOverview(data.fatigue_zones || []);
+            _renderFatigueReviewSideSummary(data);
             _renderFatigueReviewContextTags(data.context_tags || {});
-            // V7.7:动作 3 —— 三层图全部空时不渲染 ECharts,改展示占位卡
+            _renderFatigueReviewChartFooter(data);
+            // P7.10:分层主图全部空时不渲染 ECharts,改展示占位卡
             var curvesObj = data.curves || {};
             var allCurvesEmpty = (
                 !(curvesObj.gap && curvesObj.gap.length) &&
                 !(curvesObj.hr && curvesObj.hr.length) &&
                 !(curvesObj.efficiency && curvesObj.efficiency.length) &&
-                !(curvesObj.speed && curvesObj.speed.length)
+                !(curvesObj.speed && curvesObj.speed.length) &&
+                !(curvesObj.altitude && curvesObj.altitude.length) &&
+                !(curvesObj.grade && curvesObj.grade.length) &&
+                !(curvesObj.terrain_load && curvesObj.terrain_load.length)
             );
             var chartContainer = document.getElementById('fatigue-review-chart');
             if (allCurvesEmpty && chartContainer) {
@@ -11787,40 +12293,51 @@ function openConfigModalFromWarning() {
                 if (typeof clearProfileAnalysisChart === 'function') {
                     clearProfileAnalysisChart('fatigue-review-chart');
                 }
+                _unbindFatigueReviewChartAutoResize();
+                _renderFatigueReviewLaneRail([]);
                 chartContainer.innerHTML = _frEmptyStateHtml({
                     icon: '📉',
                     title: '本次活动未记录曲线数据',
-                    desc: '该 FIT 文件可能不含 GAP / HR / 配速逐秒记录,无法绘制三层图',
-                    tag: 'curves.{gap|hr|efficiency|speed} = []'
+                    desc: '该活动缺少可绘制的心率、配速、海拔、效率、GAP、坡度或地形负荷曲线。',
+                    tag: '暂无可用曲线'
                 });
             } else {
-                // 渲染 ECharts 三层图(复用任务 5.x 渲染函数,容器 ID 不同)
+                // 渲染 P7.10 分层 ECharts 主图(复用渲染函数,容器 ID 区分)
                 var chartPayload = {
                     distance_curve: Array.isArray(curvesObj.distance) ? curvesObj.distance : [],
                     hr_curve:        data.curves && data.curves.hr,
-                    speed_curve:     data.curves && data.curves.speed,
-                    gap_curve:       data.curves && data.curves.gap,
+                    pace_curve:      data.display_curves && data.display_curves.pace_sec_per_km,
+                    pace_raw_curve:  data.display_curves && data.display_curves.pace_raw_sec_per_km,
+                    pace_capped_curve:data.display_curves && data.display_curves.pace_capped,
+                    altitude_curve:  data.curves && data.curves.altitude,
+                    efficiency_curve:data.curves && data.curves.efficiency,
+                    gap_pace_curve:  data.display_curves && data.display_curves.gap_pace_sec_per_km,
+                    gap_pace_raw_curve:data.display_curves && data.display_curves.gap_pace_raw_sec_per_km,
+                    gap_pace_capped_curve:data.display_curves && data.display_curves.gap_pace_capped,
+                    grade_curve:     data.curves && data.curves.grade,
+                    terrain_load_curve:data.curves && data.curves.terrain_load,
+                    display_meta:    data.display_meta || {},
                     fatigue_zones:   data.fatigue_zones || [],
                     insight_events:  data.collapse_events || [],
                 };
+                _lastFatigueReviewChartPayload = chartPayload;
+                chartPayload = _applyFatigueReviewLayerVisibility(chartPayload);
                 renderProfileAnalysisChart(chartPayload, 'fatigue-review-chart');
-                // 解决从 display:none 切出来的 ECharts 宽度塌陷
-                setTimeout(function() {
-                    var inst = profileAnalysisChartInstances['fatigue-review-chart'];
-                    if (inst) inst.resize();
-                }, 120);
+                // 解决从 display:none 或布局变更切出来的 ECharts 宽度塌陷
+                _bindFatigueReviewChartAutoResize();
+                _resizeFatigueReviewChartWhenStable();
             }
 
             _renderFatigueReviewAdvice(data.advice, data.disclaimer);
 
-            // 阅后即焚 ②:切换活动触发清空 — 清旧活动缓存
+            // 阅后即焚 ②:切换活动触发清空。
             if (_lastLoadedFatigueReviewActivityId &&
                 _lastLoadedFatigueReviewActivityId !== activityId) {
                 _clearFatigueReviewCache(_lastLoadedFatigueReviewActivityId);
             }
             _lastLoadedFatigueReviewActivityId = activityId;
 
-            // V7.5:渲染"显示上次解读"banner(若 5min 内有缓存)
+            // P8.0:AI 洞察不再使用 sessionStorage 缓存,此处仅清理旧 banner。
             setTimeout(function() {
                 _renderFatigueReviewCacheBanner(activityId);
             }, 50);
@@ -11845,6 +12362,7 @@ function openConfigModalFromWarning() {
             _clearFatigueAiInsight();
         }
         _clearFatigueReviewInsight();
+        _unbindFatigueReviewChartAutoResize();
         if (typeof clearProfileAnalysisChart === 'function') {
             clearProfileAnalysisChart('fatigue-review-chart');
         }
@@ -11916,9 +12434,13 @@ function openConfigModalFromWarning() {
         var summary = document.getElementById('fr-summary');
         if (summary) summary.textContent = '⏳ 加载中...';
         var desc = document.getElementById('fr-summary-desc');
-        if (desc) desc.textContent = '正在读取 get_fatigue_review 后端权威快照。';
+        if (desc) desc.textContent = '正在读取本次活动的复盘数据。';
         var axisNote = document.getElementById('fr-chart-axis-note');
-        if (axisNote) axisNote.textContent = 'distance_curve = data.curves.distance';
+        if (axisNote) axisNote.textContent = '距离轴等待加载';
+        _renderFatigueReviewStageOverview([]);
+        _renderFatigueReviewSideSummary({});
+        _renderFatigueReviewChartFooter({});
+        _lastFatigueReviewChartPayload = null;
         [
             ['fr-data-source-pill', '数据源 --', 'fr-pill muted'],
             ['fr-distance-axis-pill', '距离轴 --', 'fr-pill muted'],
@@ -11945,7 +12467,11 @@ function openConfigModalFromWarning() {
         var desc = document.getElementById('fr-summary-desc');
         if (desc) desc.textContent = '复盘数据暂不可用；页面不会从前端曲线或 DOM 补算事实字段。';
         var axisNote = document.getElementById('fr-chart-axis-note');
-        if (axisNote) axisNote.textContent = '后端未返回权威距离轴';
+        if (axisNote) axisNote.textContent = '距离轴暂不可用';
+        _renderFatigueReviewStageOverview([]);
+        _renderFatigueReviewSideSummary({});
+        _renderFatigueReviewChartFooter({});
+        _lastFatigueReviewChartPayload = null;
         [
             ['fr-data-source-pill', '数据源不可用', 'fr-pill warn'],
             ['fr-distance-axis-pill', '距离轴缺失', 'fr-pill warn'],
@@ -12000,9 +12526,9 @@ function openConfigModalFromWarning() {
         if (desc) {
             var sportText = data.sport_type ? ('运动类型 ' + data.sport_type) : '运动类型未知';
             var adviceText = hasAdvice ? '建议已接入' : '建议待接入';
-            desc.textContent = sportText + ' · ' + adviceText + ' · ' + (data.disclaimer || '数据来源：FIT 解析 + 后端算法');
+            desc.textContent = sportText + ' · ' + adviceText + ' · ' + (data.disclaimer || '建议仅供参考，请结合身体感受判断');
         }
-        setPill(sourcePill, 'FIT + Resolver', 'ok');
+        setPill(sourcePill, '运动文件解析完成', 'ok');
         setPill(
             axisPill,
             distance.length ? ('距离轴 ' + distance.length + ' 点') : '距离轴缺失',
@@ -12011,8 +12537,8 @@ function openConfigModalFromWarning() {
         var axisNote = document.getElementById('fr-chart-axis-note');
         if (axisNote) {
             axisNote.textContent = distance.length
-                ? 'distance_curve = data.curves.distance · ' + distance.length + ' 点'
-                : '后端未返回权威距离轴';
+                ? '距离轴已校准 · ' + distance.length + ' 个采样点'
+                : '距离轴暂不可用';
         }
         setPill(
             curvePill,
@@ -12126,7 +12652,7 @@ function openConfigModalFromWarning() {
             bonkText,
             bonkMissing ? '待接入' : (bonk.is_at_risk ? '高风险' : '未触发'),
             bonkMissing ? 'empty' : (bonk.is_at_risk ? 'bad' : 'ok'),
-            bonkMissing ? '后端未返回 Bonk 风险' : ('置信度 ' + (bonk.confidence || '--') + ' · ' + bonkTrendText(bonk.trend))
+            bonkMissing ? '暂未识别 Bonk 风险' : ('置信度 ' + (bonk.confidence || '--') + ' · ' + bonkTrendText(bonk.trend))
         );
 
         var eventCount = events.count != null ? events.count : 0;
@@ -12214,7 +12740,7 @@ function openConfigModalFromWarning() {
             dimsEl.innerHTML = _frEmptyStateHtml({
                 icon: '○',
                 title: '本次复盘无 metrics 字段',
-                desc: '后端未返回 hr_drift / decoupling / bonk_risk / events 中的任何一项',
+                desc: '活动数据不足，暂时无法判断漂移、解耦和风险状态。',
                 tag: 'metrics = {}'
             });
             return;
@@ -12245,15 +12771,15 @@ function openConfigModalFromWarning() {
             listEl.innerHTML = _frEmptyStateHtml({
                 icon: '🟢',
                 title: '暂无关键事件',
-                desc: '后端 collapse_events 为空，主图不绘制事件标记',
-                tag: 'collapse_events = []'
+                desc: '本次活动没有识别到明显的崩溃或突变点。',
+                tag: '暂无事件'
             });
             return;
         }
         listEl.innerHTML = events.map(function(ev, i) {
             var km = ev.trigger_km != null ? Number(ev.trigger_km).toFixed(1) + ' km' : '?';
-            var type = ev.type || '事件';
-            var desc = ev.description || '后端未返回事件描述';
+            var type = ev.title || ev.label || ev.type || '事件';
+            var desc = ev.description || '暂无事件说明';
             return '<div class="event-card' + (i === 0 ? ' active' : '') + '" '
                 + 'data-event-id="' + safeHtml(ev.event_id || ('ce_' + i)) + '" '
                 + 'data-event-index="' + i + '" '
@@ -12271,8 +12797,8 @@ function openConfigModalFromWarning() {
             listEl.innerHTML = _frEmptyStateHtml({
                 icon: '○',
                 title: '暂无疲劳区间',
-                desc: '后端 fatigue_zones 为空，主图不绘制疲劳背景带',
-                tag: 'fatigue_zones = []'
+                desc: '本次活动暂未识别到明确的疲劳路段。',
+                tag: '暂无区间'
             });
             return;
         }
@@ -12283,10 +12809,95 @@ function openConfigModalFromWarning() {
             var start = zone.start_km != null ? Number(zone.start_km).toFixed(1) : '?';
             var end = zone.end_km != null ? Number(zone.end_km).toFixed(1) : '?';
             var level = zone.level || 'unknown';
-            var reason = zone.reason || zone.description || '后端未返回区间说明';
+            var reason = zone.reason || zone.description || '暂无区间说明';
             return '<div class="fr-zone-card ' + safeHtml(level) + '" data-zone-index="' + i + '">'
                 + '<div class="zone-title">' + safeHtml(levelText(level)) + ' · ' + safeHtml(start) + '-' + safeHtml(end) + ' km</div>'
                 + '<div class="zone-meta">' + safeHtml(reason) + '</div>'
+                + '</div>';
+        }).join('');
+    }
+    function _renderFatigueReviewStageOverview(zones) {
+        var trackEl = document.getElementById('fr-stage-track');
+        if (!trackEl) return;
+        zones = Array.isArray(zones) ? zones : [];
+        if (!zones.length) {
+            trackEl.innerHTML = _frEmptyStateHtml({
+                icon: '○',
+                title: '暂无后端疲劳阶段',
+                desc: '本次活动暂未识别到明确的状态阶段。',
+                tag: '暂无阶段'
+            });
+            return;
+        }
+        var normalizeLevel = function(level) {
+            var normalized = String(level || 'unknown').toLowerCase();
+            return (/^(low|stable|ok|medium|moderate|warn|drift|high|fatigue|collapse|severe|critical)$/.test(normalized))
+                ? normalized
+                : 'unknown';
+        };
+        var levelText = function(level) {
+            var normalized = String(level || 'unknown').toLowerCase();
+            return {
+                low: '稳定阶段',
+                stable: '稳定阶段',
+                ok: '稳定阶段',
+                medium: '漂移阶段',
+                moderate: '漂移阶段',
+                warn: '漂移阶段',
+                drift: '漂移阶段',
+                high: '疲劳阶段',
+                fatigue: '疲劳阶段',
+                collapse: '崩溃阶段',
+                severe: '崩溃阶段',
+                critical: '崩溃阶段',
+                unknown: '未知阶段'
+            }[normalized] || normalized;
+        };
+        var stageItems = [];
+        for (var i = 0; i < zones.length; i++) {
+            var zone = zones[i] || {};
+            var startNum = zone.start_km != null ? Number(zone.start_km) : NaN;
+            var endNum = zone.end_km != null ? Number(zone.end_km) : NaN;
+            if (!isFinite(startNum) || !isFinite(endNum) || endNum <= startNum) continue;
+            stageItems.push({
+                zone: zone,
+                start: startNum,
+                end: endNum,
+                span: endNum - startNum
+            });
+        }
+        if (!stageItems.length) {
+            trackEl.innerHTML = _frEmptyStateHtml({
+                icon: '○',
+                title: '暂无可绘制阶段',
+                desc: '当前状态区间缺少有效距离范围。',
+                tag: '暂无有效阶段'
+            });
+            return;
+        }
+        stageItems.sort(function(a, b) {
+            return a.start - b.start;
+        });
+        var fullSpan = stageItems.reduce(function(sum, item) {
+            return sum + item.span;
+        }, 0);
+        trackEl.innerHTML = stageItems.map(function(item) {
+            var zone = item.zone || {};
+            var start = item.start.toFixed(1);
+            var end = item.end.toFixed(1);
+            var share = fullSpan > 0 ? Math.round(item.span / fullSpan * 100) : 0;
+            var grow = Math.max(item.span, 0.05);
+            var basis = fullSpan > 0 ? Math.max(7, item.span / fullSpan * 100) : 10;
+            zone = zone || {};
+            var level = normalizeLevel(zone.level);
+            var reason = zone.reason || zone.description || '暂无阶段说明';
+            var compact = item.span < 0.35 ? ' compact' : '';
+            var style = '--fr-stage-grow:' + String(grow) + ';--fr-stage-basis:' + String(basis) + '%;';
+            return '<div class="fr-stage-segment ' + safeHtml(level + compact) + '" style="' + safeHtml(style) + '">'
+                + '<div class="fr-stage-title">' + safeHtml(levelText(zone.level)) + '</div>'
+                + '<div class="fr-stage-range">' + safeHtml(start + ' - ' + end + ' km') + '</div>'
+                + '<div class="fr-stage-share">' + safeHtml(String(share) + '%') + '</div>'
+                + '<div class="fr-stage-desc">' + safeHtml(reason) + '</div>'
                 + '</div>';
         }).join('');
     }
@@ -12297,8 +12908,8 @@ function openConfigModalFromWarning() {
             tagsEl.innerHTML = _frEmptyStateHtml({
                 icon: '🏷️',
                 title: '本次活动未携带上下文标签',
-                desc: '后端未返回环境(温湿度/海拔)/装备(跑鞋/功率计)/训练类型等元数据',
-                tag: 'context_tags = {}'
+                desc: '暂时没有环境、装备或训练类型等背景信息。',
+                tag: '暂无上下文'
             });
             return;
         }
@@ -12324,8 +12935,8 @@ function openConfigModalFromWarning() {
                 adviceEl.innerHTML = _frEmptyStateHtml({
                     icon: '💡',
                     title: '建议待接入',
-                    desc: '后端 advice 为空，复盘页不从指标或曲线生成建议',
-                    tag: 'advice = ""'
+                    desc: '暂时没有可展示的训练建议。',
+                    tag: '暂无建议'
                 });
             } else {
                 adviceEl.textContent = adviceVal;
@@ -12380,12 +12991,7 @@ function openConfigModalFromWarning() {
         _fatigueReviewInsightData = insight;
         _freezeFatigueReviewAiEntry();
 
-        // V7.5 写 sessionStorage 缓存(§2.2 source='session_cache',5min TTL)
-        if (_fatigueReviewActivityId && insight) {
-            var sportType = (appState && appState.sportType) || '';
-            _saveFatigueReviewCache(_fatigueReviewActivityId, insight, sportType);
-        }
-        // 隐藏 cache banner(已成功生成新洞察,缓存被覆盖)
+        // P8.0:AI 洞察只保留在前端内存,不写 sessionStorage / localStorage。
         var oldBanner = document.getElementById('fr-cache-banner');
         if (oldBanner) oldBanner.remove();
 
@@ -12422,14 +13028,14 @@ function openConfigModalFromWarning() {
             var evI = evSection.querySelector('.ev-interpretation');
             if (evI) evI.remove();
         }
-        // V7.5 关闭触发:清除 cache banner(但不删 sessionStorage,5min 内仍可恢复)
+        // P8.0:关闭触发只清内存和旧 banner,不保留可恢复缓存。
         var banner = document.getElementById('fr-cache-banner');
         if (banner) banner.remove();
         if (window._frCacheCountdownTimer) {
             clearInterval(window._frCacheCountdownTimer);
             window._frCacheCountdownTimer = null;
         }
-        // §5.6.2 规则 5 阅后即焚 ③:重新点击触发清空当前活动缓存
+        // §5.6.2 规则 5 阅后即焚 ③:重新点击触发清空旧缓存兼容入口。
         if (_fatigueReviewActivityId) {
             _clearFatigueReviewCache(_fatigueReviewActivityId);
         }
@@ -12443,93 +13049,141 @@ function openConfigModalFromWarning() {
         }
     }
 
-    // === V7.5 sessionStorage 临时缓存(5min TTL,§2.2 source='session_cache') ===
-    const FATIGUE_REVIEW_CACHE_TTL_MS = 5 * 60 * 1000;  // 5 分钟
-    const FATIGUE_REVIEW_CACHE_KEY_PREFIX = 'fatigue_review_ai:';
+    function _renderFatigueReviewSideSummary(data) {
+        data = data || {};
+        var metrics = data.metrics || {};
+        var collapseEvents = Array.isArray(data.collapse_events) ? data.collapse_events : [];
+        var fatigueZones = Array.isArray(data.fatigue_zones) ? data.fatigue_zones : [];
+        var contextTags = data.context_tags || {};
+        var adviceText = data.advice == null ? '' : String(data.advice).trim();
+        var summaryEl = document.getElementById('fr-side-summary-list');
+        var impactEl = document.getElementById('fr-phys-impact-list');
 
-    function _fatigueReviewCacheKey(activityId) {
-        return FATIGUE_REVIEW_CACHE_KEY_PREFIX + String(activityId);
+        var pctVal = function(value) {
+            return value == null || isNaN(value) ? '--' : Number(value).toFixed(1) + '%';
+        };
+        var toneFromLevel = function(level, fallback) {
+            var normalized = String(level || '').toLowerCase();
+            if (!normalized || normalized === 'unknown' || normalized === 'unavailable') return fallback || 'empty';
+            if (/^(excellent|good|stable|low|very_low|ok)$/.test(normalized)) return 'ok';
+            if (/^(warn|moderate|medium|high|drift)$/.test(normalized)) return 'warn';
+            if (/^(bad|very_high|collapse|critical|severe)$/.test(normalized)) return 'bad';
+            return fallback || 'empty';
+        };
+        var factHtml = function(label, value, desc, tone) {
+            return '<div class="fr-side-fact ' + safeHtml(tone || 'empty') + '">'
+                + '<div class="fr-side-fact-top">'
+                + '<span class="fr-side-fact-label">' + safeHtml(label) + '</span>'
+                + '<span class="fr-side-fact-value">' + safeHtml(value == null || value === '' ? '--' : String(value)) + '</span>'
+                + '</div>'
+                + '<div class="fr-side-fact-desc">' + safeHtml(desc || '后端字段暂缺') + '</div>'
+                + '</div>';
+        };
+        var firstEvent = collapseEvents.length ? (collapseEvents[0] || {}) : {};
+        var firstZone = fatigueZones.length ? (fatigueZones[0] || {}) : {};
+        var bonk = metrics.bonk_risk || {};
+        var eventCount = metrics.events && metrics.events.count != null
+            ? metrics.events.count
+            : collapseEvents.length;
+        var highZone = fatigueZones.filter(function(zone) {
+            return /^(high|collapse|critical|severe)$/.test(String((zone || {}).level || '').toLowerCase());
+        })[0];
+
+        if (summaryEl) {
+            if (!Object.keys(metrics).length && !collapseEvents.length && !fatigueZones.length) {
+                summaryEl.innerHTML = _frEmptyStateHtml({
+                    icon: '○',
+                    title: '关键摘要待接入',
+                    desc: '本次活动暂时没有可汇总的风险、事件或疲劳区间。',
+                    tag: 'summary source = []'
+                });
+            } else {
+                var eventKm = firstEvent.trigger_km != null ? Number(firstEvent.trigger_km).toFixed(1) + ' km' : '--';
+                var zoneRange = highZone
+                    ? Number(highZone.start_km || 0).toFixed(1) + '-' + Number(highZone.end_km || 0).toFixed(1) + ' km'
+                    : (firstZone.start_km != null && firstZone.end_km != null
+                        ? Number(firstZone.start_km).toFixed(1) + '-' + Number(firstZone.end_km).toFixed(1) + ' km'
+                        : '--');
+                summaryEl.innerHTML = [
+                    factHtml(
+                        '风险状态',
+                        bonk.confidence === 'unavailable' ? '--' : (bonk.is_at_risk ? 'Bonk 风险' : '未触发'),
+                        '判断置信度：' + (bonk.confidence || '--'),
+                        bonk.is_at_risk ? 'bad' : toneFromLevel(bonk.confidence, 'ok')
+                    ),
+                    factHtml(
+                        '触发因素',
+                        collapseEvents.length ? (firstEvent.title || firstEvent.label || firstEvent.type || '关键事件') : '暂无事件',
+                        collapseEvents.length ? ('出现位置：' + eventKm) : '未发现明显触发点',
+                        collapseEvents.length ? 'warn' : 'ok'
+                    ),
+                    factHtml(
+                        '疲劳区间',
+                        fatigueZones.length ? zoneRange : '暂无区间',
+                        fatigueZones.length ? ('识别到 ' + fatigueZones.length + ' 段状态区间') : '未识别到明确疲劳路段',
+                        highZone ? 'warn' : (fatigueZones.length ? 'ok' : 'empty')
+                    )
+                ].join('');
+            }
+        }
+
+        if (impactEl) {
+            var drift = metrics.hr_drift || {};
+            var decoupling = metrics.decoupling || {};
+            var load = metrics.training_load || {};
+            var adviceState = adviceText && adviceText !== '--' && adviceText !== '暂未生成'
+                ? '建议已接入'
+                : '建议待接入';
+            impactEl.innerHTML = [
+                factHtml(
+                    '心率漂移',
+                    pctVal(drift.pct),
+                    'level=' + (drift.level || 'unknown') + ' · confidence=' + (drift.confidence || '--'),
+                    toneFromLevel(drift.level)
+                ),
+                factHtml(
+                    '解耦率',
+                    pctVal(decoupling.pct),
+                    'level=' + (decoupling.level || 'unknown') + ' · events=' + eventCount,
+                    toneFromLevel(decoupling.level)
+                ),
+                factHtml(
+                    '训练负荷',
+                    load.load == null ? '--' : String(load.load),
+                    'level=' + (load.level || 'unknown') + ' · ratio=' + (load.ratio_7d_42d || '--'),
+                    toneFromLevel(load.level)
+                ),
+                factHtml(
+                    '建议状态',
+                    adviceState,
+                    '背景信息 ' + Object.keys(contextTags).length + ' 项 · ' + (data.disclaimer ? '含注意事项' : '暂无额外注意事项'),
+                    adviceState === '建议已接入' ? 'ok' : 'empty'
+                )
+            ].join('');
+        }
     }
 
+    // === P8.0 AI 洞察缓存兼容层 ===
+    // 开放前复核结论:复盘 AI 洞察只允许存在前端内存,不写 sessionStorage/localStorage。
+    // 保留函数名,避免旧调用点异常；所有缓存函数均 no-op。
     function _saveFatigueReviewCache(activityId, insight, sportType) {
-        // §11 审查门禁:严禁缓存 canonical 字段(metrics/curves/collapse_events/context_tags)
-        if (!activityId || !insight) return;
-        var safeInsight = {
-            summary: insight.summary || '',
-            sport_type: insight.sport_type || sportType || '',
-            key_dimensions: Array.isArray(insight.key_dimensions) ? insight.key_dimensions : [],
-            event_interpretation: insight.event_interpretation || '',
-            training_advice: insight.training_advice || '',
-            disclaimer: insight.disclaimer || '',
-            // §六 隔离:严禁 shadow_diff 出现
-        };
-        var payload = {
-            timestamp: Date.now(),
-            sport_type: sportType || '',
-            insight: safeInsight,
-            // §2.2 数据可信分层标记
-            source: 'session_cache',
-            version: 1,
-        };
-        try {
-            sessionStorage.setItem(_fatigueReviewCacheKey(activityId), JSON.stringify(payload));
-        } catch (e) {
-            // sessionStorage 满 / 隐私模式 / quota exceeded
-            console.warn('_saveFatigueReviewCache failed:', e);
-        }
+        return;
     }
 
     function _loadFatigueReviewCache(activityId) {
-        // §11 严格校验:超期 / 缺失 / 解析失败 → 返回 null
-        if (!activityId) return null;
-        try {
-            var raw = sessionStorage.getItem(_fatigueReviewCacheKey(activityId));
-            if (!raw) return null;
-            var payload = JSON.parse(raw);
-            if (!payload || payload.source !== 'session_cache' || payload.version !== 1) {
-                return null;
-            }
-            var age = Date.now() - (payload.timestamp || 0);
-            if (age > FATIGUE_REVIEW_CACHE_TTL_MS) {
-                // §11 自然过期
-                sessionStorage.removeItem(_fatigueReviewCacheKey(activityId));
-                return null;
-            }
-            return payload;
-        } catch (e) {
-            console.warn('_loadFatigueReviewCache failed:', e);
-            return null;
-        }
+        return null;
     }
 
     function _clearFatigueReviewCache(activityId) {
-        if (!activityId) return;
-        try {
-            sessionStorage.removeItem(_fatigueReviewCacheKey(activityId));
-        } catch (e) {
-            console.warn('_clearFatigueReviewCache failed:', e);
-        }
+        return;
     }
 
     function _hasFatigueReviewCache(activityId) {
-        return _loadFatigueReviewCache(activityId) !== null;
+        return false;
     }
 
     function _formatRemainingTime(activityId) {
-        // 倒计时格式化:4:32 / 0:05
-        if (!activityId) return '0:00';
-        try {
-            var raw = sessionStorage.getItem(_fatigueReviewCacheKey(activityId));
-            if (!raw) return '0:00';
-            var payload = JSON.parse(raw);
-            var remaining = FATIGUE_REVIEW_CACHE_TTL_MS - (Date.now() - (payload.timestamp || 0));
-            if (remaining <= 0) return '0:00';
-            var m = Math.floor(remaining / 60000);
-            var s = Math.floor((remaining % 60000) / 1000);
-            return m + ':' + (s < 10 ? '0' + s : s);
-        } catch (e) {
-            return '0:00';
-        }
+        return '0:00';
     }
 
     function _renderFatigueReviewCacheBanner(activityId) {
@@ -12546,23 +13200,7 @@ function openConfigModalFromWarning() {
     }
 
     function _showCachedFatigueReviewInsight(activityId) {
-        var cache = _loadFatigueReviewCache(activityId);
-        if (!cache || !cache.insight) {
-            // 缓存已过期(用户点击时刚好 5min 临界)
-            _renderFatigueReviewAiEmpty({
-                training_advice: '上次解读已过期,请重新生成',
-                disclaimer: 'AI 生成仅供参考',
-            });
-            return;
-        }
-        // §11 严格校验:缓存 content 仅展示,绝不重发 LLM
-        _renderFatigueReviewAiSuccess(cache.insight);
-        // 标记"上次解读"状态:不调 LLM,只是展示
-        var aiBtn = document.getElementById('fr-ai-generate-btn');
-        if (aiBtn) {
-            aiBtn.textContent = '🤖 重新生成 AI 洞察';
-            aiBtn.dataset.fromCache = '1';
-        }
+        _renderFatigueReviewCacheBanner(activityId);
     }
 
     // === V6.3 双向联动(事件卡片 ↔ markPoint)===
@@ -12578,14 +13216,127 @@ function openConfigModalFromWarning() {
         var chart = profileAnalysisChartInstances && profileAnalysisChartInstances['fatigue-review-chart'];
         if (chart) {
             _fatigueReviewLinkageActive = true;
-            chart.dispatchAction({ type: 'downplay', seriesIndex: 2 });
-            chart.dispatchAction({ type: 'highlight', seriesIndex: 2, dataIndex: idx });
+            chart.dispatchAction({ type: 'downplay', seriesName: '关键事件' });
+            chart.dispatchAction({ type: 'highlight', seriesName: '关键事件', dataIndex: idx });
             if (_fatigueReviewLinkageTimer) clearTimeout(_fatigueReviewLinkageTimer);
             _fatigueReviewLinkageTimer = setTimeout(function() {
                 _fatigueReviewLinkageActive = false;
             }, 1500);
         }
         console.log('event click → highlight markPoint', { eventId: eventId, index: idx });
+    }
+
+    function _applyFatigueReviewLayerVisibility(chartPayload) {
+        chartPayload = chartPayload || {};
+        var visible = _fatigueReviewLayerVisibility || {};
+        var next = {};
+        Object.keys(chartPayload).forEach(function(key) {
+            next[key] = chartPayload[key];
+        });
+        if (!visible.hr) next.hr_curve = [];
+        if (!visible.speed) next.pace_curve = [];
+        if (!visible.altitude) next.altitude_curve = [];
+        if (!visible.efficiency) next.efficiency_curve = [];
+        if (!visible.gap) next.gap_pace_curve = [];
+        if (!visible.grade) next.grade_curve = [];
+        if (!visible.terrainLoad) next.terrain_load_curve = [];
+        if (!visible.zones) next.fatigue_zones = [];
+        if (!visible.events) next.insight_events = [];
+        return next;
+    }
+
+    function onFatigueReviewLayerToggle(inputEl) {
+        if (!inputEl) return;
+        var key = inputEl.getAttribute('data-fr-layer-toggle');
+        if (!key || !_fatigueReviewLayerVisibility.hasOwnProperty(key)) return;
+        _fatigueReviewLayerVisibility[key] = !!inputEl.checked;
+        if (_lastFatigueReviewChartPayload) {
+            renderProfileAnalysisChart(
+                _applyFatigueReviewLayerVisibility(_lastFatigueReviewChartPayload),
+                'fatigue-review-chart'
+            );
+            _resizeFatigueReviewChartWhenStable();
+        }
+    }
+
+    function _resizeFatigueReviewChartWhenStable() {
+        var chart = profileAnalysisChartInstances && profileAnalysisChartInstances['fatigue-review-chart'];
+        var container = document.getElementById('fatigue-review-chart');
+        if (!chart || !container) return;
+        var resizeOnce = function() {
+            if (!profileAnalysisChartInstances || profileAnalysisChartInstances['fatigue-review-chart'] !== chart) return;
+            if (!container.clientWidth || !container.clientHeight) return;
+            chart.resize();
+        };
+        resizeOnce();
+        if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+            window.requestAnimationFrame(resizeOnce);
+        }
+        setTimeout(resizeOnce, 80);
+        setTimeout(resizeOnce, 220);
+    }
+
+    function _bindFatigueReviewChartAutoResize() {
+        if (!_fatigueReviewChartResizeBound) {
+            window.addEventListener('resize', _resizeFatigueReviewChartWhenStable);
+            _fatigueReviewChartResizeBound = true;
+        }
+        if (typeof ResizeObserver === 'undefined') return;
+        if (_fatigueReviewChartResizeObserver) return;
+        var chartBody = document.getElementById('fr-chart-body');
+        var chartCanvas = document.getElementById('fatigue-review-chart');
+        _fatigueReviewChartResizeObserver = new ResizeObserver(function() {
+            _resizeFatigueReviewChartWhenStable();
+        });
+        if (chartBody) _fatigueReviewChartResizeObserver.observe(chartBody);
+        if (chartCanvas) _fatigueReviewChartResizeObserver.observe(chartCanvas);
+    }
+
+    function _unbindFatigueReviewChartAutoResize() {
+        if (_fatigueReviewChartResizeBound) {
+            window.removeEventListener('resize', _resizeFatigueReviewChartWhenStable);
+            _fatigueReviewChartResizeBound = false;
+        }
+        if (_fatigueReviewChartResizeObserver) {
+            _fatigueReviewChartResizeObserver.disconnect();
+            _fatigueReviewChartResizeObserver = null;
+        }
+    }
+
+    function _renderFatigueReviewChartFooter(data) {
+        data = data || {};
+        var curves = data.curves || {};
+        var fatigueZones = Array.isArray(data.fatigue_zones) ? data.fatigue_zones : [];
+        var chipsEl = document.getElementById('fr-layer-chip-row');
+        var curveFields = [
+            ['hr', '心率'],
+            ['speed', '配速'],
+            ['gap', 'GAP'],
+            ['efficiency', '效率'],
+            ['altitude', '海拔'],
+            ['grade', '坡度'],
+            ['terrain_load', '地形负荷']
+        ];
+        if (chipsEl) {
+            var availableCurves = 0;
+            var curvePointMax = 0;
+            curveFields.forEach(function(item) {
+                var key = item[0];
+                var n = Array.isArray(curves[key]) ? curves[key].length : 0;
+                if (n) availableCurves += 1;
+                if (n > curvePointMax) curvePointMax = n;
+            });
+            var axisN = Array.isArray(curves.distance) ? curves.distance.length : 0;
+            var chips = [
+                '<span class="fr-layer-chip ' + (availableCurves ? 'available' : 'missing') + '">'
+                    + safeHtml('曲线 ' + availableCurves + '/' + curveFields.length + (curvePointMax ? (' · ' + curvePointMax + ' 点') : '')) + '</span>',
+                '<span class="fr-layer-chip ' + (axisN ? 'available' : 'missing') + '">'
+                    + safeHtml('距离轴 ' + (axisN ? (axisN + ' 点') : '缺失')) + '</span>',
+                '<span class="fr-layer-chip ' + (fatigueZones.length ? 'available' : 'missing') + '">'
+                    + safeHtml('疲劳带 ' + fatigueZones.length) + '</span>',
+            ];
+            chipsEl.innerHTML = chips.join('');
+        }
     }
 
     // === V4.0 运动剖面分析 ECharts 双 Y 轴渲染 (HR + Speed + GAP) ===
@@ -12605,11 +13356,14 @@ function openConfigModalFromWarning() {
 
         if (!Array.isArray(distanceCurve) || distanceCurve.length < 2) {
             clearProfileAnalysisChart(targetId);
+            if (targetId === 'fatigue-review-chart') {
+                _renderFatigueReviewLaneRail([]);
+            }
             container.innerHTML = _frEmptyStateHtml({
                 icon: '📉',
                 title: '复盘曲线数据不足',
                 desc: '后端未返回权威距离轴',
-                tag: 'curves.distance = []'
+                tag: '距离轴暂不可用'
             });
             return;
         }
@@ -12618,6 +13372,11 @@ function openConfigModalFromWarning() {
             profileAnalysisChartInstances[targetId] = echarts.init(container);
         }
         profileAnalysisChartInstance = profileAnalysisChartInstances[targetId]; // 兼容旧引用
+
+        if (targetId === 'fatigue-review-chart') {
+            _renderFatigueReviewLayeredEcharts(activityData, targetId, distanceCurve);
+            return;
+        }
 
         // Layer 2: 疲劳背景带 markArea
         var markAreaData = [];
@@ -12771,9 +13530,526 @@ function openConfigModalFromWarning() {
         profileAnalysisChartInstance.setOption(option, true);
     }
 
+    function _frNumberOrNull(value) {
+        return (typeof value === 'number' && isFinite(value)) ? value : null;
+    }
+
+    function _frPairDistanceCurve(distanceCurve, valueCurve) {
+        var points = [];
+        if (!Array.isArray(distanceCurve) || !Array.isArray(valueCurve)) return points;
+        var n = Math.min(distanceCurve.length, valueCurve.length);
+        for (var i = 0; i < n; i++) {
+            var dist = _frNumberOrNull(distanceCurve[i]);
+            var val = _frNumberOrNull(valueCurve[i]);
+            if (dist == null || val == null) {
+                points.push([dist, null]);
+            } else {
+                points.push([dist, val]);
+            }
+        }
+        return points;
+    }
+
+    function _frFormatPaceSecPerKm(value) {
+        var paceSec = _frNumberOrNull(value);
+        if (paceSec == null || paceSec <= 0) return '--';
+        var rounded = Math.round(paceSec);
+        var minutes = Math.floor(rounded / 60);
+        var seconds = rounded % 60;
+        return String(minutes) + "'" + (seconds < 10 ? '0' : '') + String(seconds) + "''/km";
+    }
+
+    function _frFormatPaceAxisSecPerKm(value) {
+        var formatted = _frFormatPaceSecPerKm(value);
+        return formatted === '--' ? formatted : formatted.replace('/km', '');
+    }
+
+    function _frFormatPaceTooltip(value, capped, capLabel) {
+        var formatted = _frFormatPaceSecPerKm(value);
+        if (!capped || formatted === '--') return formatted;
+        return '&gt;' + safeHtml(capLabel || formatted);
+    }
+
+    function _frPairDistanceDisplayCurve(distanceCurve, displayCurve) {
+        var points = [];
+        if (!Array.isArray(distanceCurve) || !Array.isArray(displayCurve)) return points;
+        var n = Math.min(distanceCurve.length, displayCurve.length);
+        for (var i = 0; i < n; i++) {
+            var dist = _frNumberOrNull(distanceCurve[i]);
+            var val = _frNumberOrNull(displayCurve[i]);
+            points.push([dist, val]);
+        }
+        return points;
+    }
+
+    function _frDownsampleTerrainLoadBars(distanceCurve, terrainLoadCurve) {
+        var paired = _frPairDistanceCurve(distanceCurve, terrainLoadCurve);
+        var valid = [];
+        for (var i = 0; i < paired.length; i++) {
+            if (paired[i][0] == null || paired[i][1] == null) continue;
+            valid.push(paired[i]);
+        }
+        if (valid.length <= 24) return valid;
+
+        // Display-only aggregation: equal-distance bins keep bars visually uniform.
+        var minDist = valid[0][0];
+        var maxDist = valid[valid.length - 1][0];
+        var rangeKm = maxDist - minDist;
+        if (!isFinite(rangeKm) || rangeKm <= 0) return valid;
+        var targetBars = Math.min(128, Math.max(96, Math.round(rangeKm * 18)));
+        var bucketWidthKm = rangeKm / targetBars;
+        var bars = [];
+        var cursor = 0;
+        for (var bucketIndex = 0; bucketIndex < targetBars; bucketIndex++) {
+            var bucketStart = minDist + bucketIndex * bucketWidthKm;
+            var bucketEnd = bucketIndex === targetBars - 1 ? maxDist + 0.000001 : bucketStart + bucketWidthKm;
+            var bucketCenter = bucketStart + bucketWidthKm / 2;
+            var maxValue = null;
+            while (cursor < valid.length && valid[cursor][0] < bucketStart) {
+                cursor += 1;
+            }
+            var scan = cursor;
+            while (scan < valid.length && valid[scan][0] < bucketEnd) {
+                maxValue = maxValue == null ? valid[scan][1] : Math.max(maxValue, valid[scan][1]);
+                scan += 1;
+            }
+            if (maxValue != null) {
+                bars.push([Number(bucketCenter.toFixed(3)), Number(maxValue.toFixed(4))]);
+            }
+        }
+        return bars;
+    }
+
+    function _frMaxDistance(distanceCurve) {
+        var maxDist = 0;
+        if (!Array.isArray(distanceCurve)) return maxDist;
+        for (var i = 0; i < distanceCurve.length; i++) {
+            var dist = _frNumberOrNull(distanceCurve[i]);
+            if (dist != null && dist > maxDist) maxDist = dist;
+        }
+        return maxDist;
+    }
+
+    function _frFormatTooltipNumber(value) {
+        var num = _frNumberOrNull(value);
+        if (num == null) return '--';
+        var rounded = Math.round(num * 10) / 10;
+        if (Math.abs(rounded - Math.round(rounded)) < 0.000001) {
+            return String(Math.round(rounded));
+        }
+        return rounded.toFixed(1);
+    }
+
+    function _frZoneColor(level) {
+        var normalized = String(level || '').toLowerCase();
+        if (normalized === 'low' || normalized === 'stable' || normalized === 'ok') return 'rgba(34, 197, 94, 0.12)';
+        if (normalized === 'medium' || normalized === 'moderate' || normalized === 'warn') return 'rgba(234, 179, 8, 0.14)';
+        if (normalized === 'high') return 'rgba(249, 115, 22, 0.16)';
+        if (normalized === 'collapse' || normalized === 'critical' || normalized === 'severe') return 'rgba(239, 68, 68, 0.18)';
+        return 'rgba(234, 179, 8, 0.12)';
+    }
+
+    function _frLayeredMarkArea(fatigueZones) {
+        var data = [];
+        if (!Array.isArray(fatigueZones)) return data;
+        for (var i = 0; i < fatigueZones.length; i++) {
+            var zone = fatigueZones[i] || {};
+            var start = _frNumberOrNull(zone.start_km);
+            var end = _frNumberOrNull(zone.end_km);
+            if (start == null || end == null) continue;
+            data.push([
+                {
+                    xAxis: start,
+                    itemStyle: { color: _frZoneColor(zone.level) },
+                    label: { show: false }
+                },
+                { xAxis: end }
+            ]);
+        }
+        return data;
+    }
+
+    function _frLayeredEventMarkLine(insightEvents) {
+        var data = [];
+        if (!Array.isArray(insightEvents)) return data;
+        for (var i = 0; i < insightEvents.length; i++) {
+            var event = insightEvents[i] || {};
+            var trigger = _frNumberOrNull(event.trigger_km);
+            if (trigger == null) continue;
+            var title = _frLayeredEventTitle(event);
+            data.push({
+                xAxis: trigger,
+                name: title,
+                eventId: event.event_id || '',
+                eventIndex: i,
+                eventTitle: title,
+                eventKmLabel: _frLayeredEventKmLabel(trigger),
+                label: { show: false },
+                lineStyle: {
+                    color: 'rgba(248, 113, 113, 0.58)',
+                    type: 'dashed',
+                    width: 1
+                },
+                tooltip: { formatter: _frLayeredEventTooltip(event, trigger, title) }
+            });
+        }
+        return data;
+    }
+
+    function _frLayeredEventTitle(event) {
+        event = event || {};
+        return String(event.title || event.label || event.type || event.event_id || '关键事件');
+    }
+
+    function _frLayeredEventKmLabel(triggerKm) {
+        return Number(triggerKm).toFixed(1) + ' km';
+    }
+
+    function _frLayeredEventTooltip(event, triggerKm, title) {
+        return function() {
+            return '<div style="font-weight:bold;margin-bottom:4px;">'
+                + safeHtml(title) + ' · ' + safeHtml(_frLayeredEventKmLabel(triggerKm)) + '</div>'
+                + '<div style="max-width:260px;white-space:normal;">'
+                + safeHtml(event.description || '关键事件标记') + '</div>';
+        };
+    }
+
+    function _frLayeredEventPinMarkLine(insightEvents) {
+        var data = _frLayeredEventMarkLine(insightEvents);
+        for (var i = 0; i < data.length; i++) {
+            data[i].label = {
+                show: true,
+                position: 'end',
+                distance: 8,
+                formatter: function(params) {
+                    var item = (params && params.data) || {};
+                    return (item.eventTitle || item.name || '关键事件') + '\n' + (item.eventKmLabel || '事件');
+                },
+                color: '#fee2e2',
+                fontSize: 10,
+                fontWeight: 800,
+                lineHeight: 14,
+                backgroundColor: 'rgba(127, 29, 29, 0.88)',
+                borderColor: 'rgba(248, 113, 113, 0.86)',
+                borderWidth: 1,
+                borderRadius: 6,
+                padding: [5, 7],
+                shadowColor: 'rgba(0, 0, 0, 0.28)',
+                shadowBlur: 10
+            };
+            data[i].lineStyle = {
+                color: 'rgba(248, 113, 113, 0.86)',
+                type: 'dashed',
+                width: 1.2
+            };
+        }
+        return data;
+    }
+
+    function _renderFatigueReviewLaneRail(lanes) {
+        var railEl = document.getElementById('fr-lane-rail');
+        if (!railEl) return;
+        lanes = Array.isArray(lanes) ? lanes : [];
+        if (!lanes.length) {
+            railEl.innerHTML = '<div class="fr-lane-rail-empty">等待后端曲线</div>';
+            return;
+        }
+        railEl.innerHTML = lanes.map(function(lane, index) {
+            lane = lane || {};
+            var color = lane.color || '#64748b';
+            var unit = lane.unit ? lane.unit : '后端曲线';
+            var style = '';
+            if (lane.layout && lane.layout.top != null && lane.layout.height != null) {
+                style = ' style="top:' + safeHtml(String(lane.layout.top)) + '%;height:' + safeHtml(String(lane.layout.height)) + '%"';
+            }
+            return '<div class="fr-lane-rail-item" data-fr-lane-key="' + safeHtml(lane.key || '') + '"' + style + '>'
+                + '<span class="fr-lane-rail-main">'
+                + '<span class="fr-lane-rail-name" style="color:' + safeHtml(color) + '">' + safeHtml(lane.name || '曲线') + '</span>'
+                + '<span class="fr-lane-rail-unit">' + safeHtml(unit) + '</span>'
+                + '</span>'
+                + '</div>';
+        }).join('');
+    }
+
+    function _renderFatigueReviewLayeredEcharts(activityData, targetId, distanceCurve) {
+        var chart = profileAnalysisChartInstances[targetId];
+        if (!chart) return;
+
+        var fatigueZones = (activityData && activityData.fatigue_zones) || [];
+        var insightEvents = (activityData && activityData.insight_events) || [];
+        var displayMeta = (activityData && activityData.display_meta) || {};
+        var maxDist = _frMaxDistance(distanceCurve);
+        var laneDefs = [
+            { key: 'hr_curve', name: '心率', unit: 'bpm', color: '#ef4444', area: 'rgba(239, 68, 68, 0.08)' },
+            { key: 'pace_curve', name: '配速', unit: '/km', color: '#3b82f6', area: 'rgba(59, 130, 246, 0.08)', displayAsPace: true, rawKey: 'pace_raw_curve', cappedKey: 'pace_capped_curve' },
+            { key: 'gap_pace_curve', name: '坡度修正配速（GAP）', unit: '/km', color: '#eab308', area: 'rgba(234, 179, 8, 0.08)', displayAsPace: true, rawKey: 'gap_pace_raw_curve', cappedKey: 'gap_pace_capped_curve' },
+            { key: 'efficiency_curve', name: '效率', unit: 'Speed/HR', color: '#22c55e', area: 'rgba(34, 197, 94, 0.08)' },
+            { key: 'altitude_curve', name: '海拔', unit: 'm', color: '#94a3b8', area: 'rgba(148, 163, 184, 0.08)' },
+            { key: 'grade_curve', name: '坡度', unit: '%', color: '#f97316', area: 'rgba(249, 115, 22, 0.08)' },
+            { key: 'terrain_load_curve', name: '地形负荷', unit: 'grade×speed×s', color: '#14b8a6', area: 'rgba(20, 184, 166, 0.12)', seriesType: 'bar' }
+        ];
+
+        var lanes = [];
+        for (var i = 0; i < laneDefs.length; i++) {
+            var def = laneDefs[i];
+            var curve = activityData && activityData[def.key];
+            if (!Array.isArray(curve) || curve.length === 0) continue;
+            var pairedData = def.displayAsPace
+                ? _frPairDistanceDisplayCurve(distanceCurve, curve)
+                : _frPairDistanceCurve(distanceCurve, curve);
+            if (!pairedData.length) continue;
+            lanes.push({
+                key: def.key,
+                name: def.name,
+                unit: def.unit,
+                color: def.color,
+                area: def.area,
+                valueFormatter: def.displayAsPace ? _frFormatPaceSecPerKm : _frFormatTooltipNumber,
+                axisValueFormatter: def.displayAsPace ? _frFormatPaceAxisSecPerKm : _frFormatTooltipNumber,
+                inverseAxis: !!def.displayAsPace,
+                rawCurve: def.rawKey ? (activityData && activityData[def.rawKey]) : null,
+                cappedCurve: def.cappedKey ? (activityData && activityData[def.cappedKey]) : null,
+                capLabel: displayMeta.pace_display_cap_label || "15'00''/km",
+                seriesType: def.seriesType || 'line',
+                data: pairedData
+            });
+        }
+
+        if (!lanes.length) {
+            _renderFatigueReviewLaneRail(lanes);
+            clearProfileAnalysisChart(targetId);
+            var container = document.getElementById(targetId);
+            if (container) {
+                container.innerHTML = _frEmptyStateHtml({
+                    icon: '📉',
+                    title: '复盘曲线数据不足',
+                    desc: '后端未返回可绘制的分层曲线',
+                    tag: '暂无可用曲线'
+                });
+            }
+            return;
+        }
+
+        var containerEl = document.getElementById(targetId);
+        if (containerEl) {
+            var lanePx = lanes.length <= 3 ? 96 : (lanes.length <= 5 ? 90 : 88);
+            var computedHeight = Math.max(420, Math.min(760, lanes.length * lanePx + 72));
+            var chartBodyEl = document.getElementById('fr-chart-body');
+            if (chartBodyEl) {
+                chartBodyEl.style.setProperty('--fr-chart-height', computedHeight + 'px');
+            }
+            containerEl.style.height = computedHeight + 'px';
+            // ECharts may have been initialized before this dynamic height is applied.
+            if (chart && typeof chart.resize === 'function') {
+                chart.resize({ height: computedHeight });
+            }
+        }
+
+        var grid = [];
+        var xAxis = [];
+        var yAxis = [];
+        var series = [];
+        var laneGap = 2.0;
+        var topStart = 6;
+        var bottomPad = 7;
+        var laneHeight = (100 - topStart - bottomPad - laneGap * (lanes.length - 1)) / lanes.length;
+        for (var layoutIndex = 0; layoutIndex < lanes.length; layoutIndex++) {
+            lanes[layoutIndex].layout = {
+                top: topStart + layoutIndex * (laneHeight + laneGap),
+                height: laneHeight
+            };
+        }
+        _renderFatigueReviewLaneRail(lanes);
+        var markAreaData = _frLayeredMarkArea(fatigueZones);
+        var eventReferenceLineData = _frLayeredEventMarkLine(insightEvents);
+        var eventPinLineData = _frLayeredEventPinMarkLine(insightEvents);
+
+        for (var laneIndex = 0; laneIndex < lanes.length; laneIndex++) {
+            var lane = lanes[laneIndex];
+            grid.push({
+                left: 46,
+                right: 56,
+                top: lane.layout.top + '%',
+                height: lane.layout.height + '%',
+                containLabel: false
+            });
+            xAxis.push({
+                type: 'value',
+                gridIndex: laneIndex,
+                min: 0,
+                max: maxDist > 0 ? maxDist : undefined,
+                axisLabel: {
+                    show: laneIndex === lanes.length - 1,
+                    color: '#94a3b8',
+                    formatter: '{value}'
+                },
+                axisLine: { show: laneIndex === lanes.length - 1, lineStyle: { color: 'rgba(148,163,184,0.24)' } },
+                axisTick: { show: laneIndex === lanes.length - 1 },
+                splitLine: { lineStyle: { color: 'rgba(148,163,184,0.08)' } },
+                name: laneIndex === lanes.length - 1 ? '距离 (km)' : '',
+                nameTextStyle: { color: '#94a3b8' }
+            });
+            yAxis.push({
+                type: 'value',
+                gridIndex: laneIndex,
+                name: '',
+                nameLocation: 'middle',
+                nameGap: 0,
+                min: 'dataMin',
+                max: 'dataMax',
+                inverse: !!lane.inverseAxis,
+                axisLabel: {
+                    color: lane.color,
+                    fontSize: 10,
+                    formatter: lane.axisValueFormatter || _frFormatTooltipNumber
+                },
+                axisLine: { lineStyle: { color: lane.color } },
+                axisTick: { show: false },
+                splitLine: { lineStyle: { color: 'rgba(148,163,184,0.08)' } },
+                nameTextStyle: { color: lane.color, fontSize: 11, fontWeight: 700 }
+            });
+            if (lane.seriesType === 'bar') {
+                var terrainBarData = _frDownsampleTerrainLoadBars(
+                    distanceCurve,
+                    activityData && activityData.terrain_load_curve
+                );
+                series.push({
+                    name: lane.name,
+                    type: 'bar',
+                    xAxisIndex: laneIndex,
+                    yAxisIndex: laneIndex,
+                    data: terrainBarData,
+                    barWidth: 4,
+                    barGap: '45%',
+                    barCategoryGap: '38%',
+                    barMinHeight: 1,
+                    large: true,
+                    itemStyle: {
+                        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                            { offset: 0, color: '#064e3b' },
+                            { offset: 0.42, color: '#0f766e' },
+                            { offset: 1, color: '#99f6e4' }
+                        ]),
+                        opacity: 0.96,
+                        borderRadius: [2, 2, 0, 0]
+                    },
+                    emphasis: { itemStyle: { opacity: 0.96 } },
+                    markArea: { silent: true, data: markAreaData },
+                    markLine: {
+                        silent: false,
+                        symbol: ['none', 'none'],
+                        data: eventReferenceLineData,
+                        emphasis: { disabled: true }
+                    }
+                });
+                continue;
+            }
+            series.push({
+                name: lane.name,
+                type: 'line',
+                xAxisIndex: laneIndex,
+                yAxisIndex: laneIndex,
+                data: lane.data,
+                smooth: true,
+                symbol: 'none',
+                lineStyle: { width: 1.8, color: lane.color },
+                itemStyle: { color: lane.color },
+                areaStyle: { color: lane.area },
+                markArea: { silent: true, data: markAreaData },
+                markLine: {
+                    silent: false,
+                    symbol: ['none', 'none'],
+                    data: eventReferenceLineData,
+                    emphasis: { disabled: true }
+                }
+            });
+        }
+
+        if (eventPinLineData.length) {
+            series.push({
+                name: '关键事件',
+                type: 'line',
+                xAxisIndex: 0,
+                yAxisIndex: 0,
+                data: [],
+                symbol: 'none',
+                lineStyle: { opacity: 0 },
+                markLine: {
+                    silent: false,
+                    symbol: ['none', 'pin'],
+                    symbolSize: [24, 24],
+                    labelLine: { show: true },
+                    data: eventPinLineData
+                }
+            });
+        }
+
+        var option = {
+            backgroundColor: 'transparent',
+            color: lanes.map(function(lane) { return lane.color; }),
+            animation: false,
+            tooltip: {
+                trigger: 'axis',
+                axisPointer: { type: 'line', link: [{ xAxisIndex: 'all' }] },
+                backgroundColor: 'rgba(15,23,42,0.96)',
+                borderColor: 'rgba(148,163,184,0.24)',
+                textStyle: { color: '#f8fafc' },
+                formatter: function(params) {
+                    params = Array.isArray(params) ? params : [params];
+                    var byName = {};
+                    for (var p = 0; p < params.length; p++) {
+                        if (params[p] && params[p].seriesName) {
+                            byName[params[p].seriesName] = params[p];
+                        }
+                    }
+                    var rows = [];
+                    for (var l = 0; l < lanes.length; l++) {
+                        var laneParam = byName[lanes[l].name];
+                        if (!laneParam) continue;
+                        var data = laneParam.data || [];
+                        var value = Array.isArray(data) ? data[1] : laneParam.value;
+                        var formatValue = lanes[l].valueFormatter || _frFormatTooltipNumber;
+                        var tooltipValue = formatValue(value);
+                        if (lanes[l].rawCurve && lanes[l].cappedCurve) {
+                            var dataIndex = laneParam.dataIndex;
+                            var rawValue = Array.isArray(lanes[l].rawCurve) ? lanes[l].rawCurve[dataIndex] : value;
+                            var isCapped = Array.isArray(lanes[l].cappedCurve) && !!lanes[l].cappedCurve[dataIndex];
+                            tooltipValue = _frFormatPaceTooltip(rawValue, isCapped, lanes[l].capLabel);
+                        }
+                        rows.push(
+                            '<div style="display:flex;align-items:center;justify-content:space-between;gap:18px;min-width:150px;margin:3px 0;">'
+                            + '<span><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:' + safeHtml(lanes[l].color) + ';margin-right:6px;"></span>'
+                            + safeHtml(lanes[l].name) + '</span>'
+                            + '<strong>' + tooltipValue + '</strong>'
+                            + '</div>'
+                        );
+                    }
+                    var axisValue = params[0] && params[0].axisValue != null
+                        ? _frFormatTooltipNumber(Number(params[0].axisValue))
+                        : '--';
+                    return '<div style="font-weight:800;margin-bottom:6px;">' + safeHtml(axisValue) + ' km</div>' + rows.join('');
+                }
+            },
+            axisPointer: { link: [{ xAxisIndex: 'all' }] },
+            grid: grid,
+            xAxis: xAxis,
+            yAxis: yAxis,
+            series: series
+        };
+
+        chart.setOption(option, true);
+        if (containerEl && chart && typeof chart.resize === 'function') {
+            chart.resize({ height: containerEl.clientHeight || computedHeight });
+        }
+        _resizeFatigueReviewChartWhenStable();
+    }
+
     function clearProfileAnalysisChart(containerId) {
         if (containerId) {
             // 清理指定实例
+            if (containerId === 'fatigue-review-chart' && typeof _unbindFatigueReviewChartAutoResize === 'function') {
+                _unbindFatigueReviewChartAutoResize();
+            }
             if (profileAnalysisChartInstances[containerId]) {
                 profileAnalysisChartInstances[containerId].dispose();
                 delete profileAnalysisChartInstances[containerId];

@@ -30,7 +30,7 @@
 | FR-TC-005 | 点击「复盘」Tab | Tab 切换,概览 Tab 内容消失,复盘 Tab 内容出现 | ☐ |
 | FR-TC-006 | 复盘 Tab 头部 | 显示「🔍 运动复盘」+ 副标题(加载中/已加载)+「🤖 生成 AI 洞察」按钮 | ☐ |
 | FR-TC-007 | 复盘 Tab 主体 | 显示 8 个 metric cards(心率漂移/解耦率/Bonk/崩溃事件/运动效率/耐久/步频稳定/训练负荷) | ☐ |
-| FR-TC-008 | 复盘 Tab 主体 | 显示 ECharts 三层图(效率·坡度·海拔)或空态占位卡 | ☐ |
+| FR-TC-008 | 复盘 Tab 主体 | 显示分层 ECharts 主图(心率/速度/海拔/效率/GAP/坡度按可用曲线分层)或空态占位卡 | ☐ |
 | FR-TC-009 | 复盘 → 概览 → 复盘 | 复盘 Tab 不再触发 API 调用(已 lazy load) | ☐ |
 
 ### 1.1.1 P4 复盘页面结构
@@ -39,7 +39,7 @@
 |---|---|---|---|
 | FR-TC-009A | 切到复盘 Tab | 顶部出现“后端权威快照”摘要带,含数据来源、距离轴、事件/疲劳带状态 | ☐ |
 | FR-TC-009B | 查看复盘指标 | 指标分为“核心状态”和“能力与负荷”两组,共 8 张卡 | ☐ |
-| FR-TC-009C | 查看主图 | 主图区标题为“疲劳带 · 事件 · 曲线”,图例包含心率/速度/GAP/疲劳带/事件 | ☐ |
+| FR-TC-009C | 查看主图 | 主图区标题为“多维时间轴分析”,图例包含心率/速度/海拔/效率/GAP/坡度/疲劳带/事件 | ☐ |
 | FR-TC-009D | 查看右侧信息列 | 右侧显示上下文标签、关键事件、建议和 disclaimer | ☐ |
 | FR-TC-009E | 缩窄窗口 | 右侧信息列下移为单列,无文字重叠或按钮溢出 | ☐ |
 
@@ -90,7 +90,7 @@
 
 | 用例 ID | 操作 | 预期结果 | 通过 |
 |---|---|---|---|
-| FR-TC-009AC | 查看主图标题 | 显示“疲劳带 · 事件 · 曲线”,并有 X 轴来自后端 `curves.distance` 的说明 | ☐ |
+| FR-TC-009AC | 查看主图标题 | 显示“多维时间轴分析”,并有分层泳道共用后端 `curves.distance` 的说明 | ☐ |
 | FR-TC-009AD | 查看主图边界说明 | 显示曲线来自 `data.curves`、疲劳带来自 `data.fatigue_zones`、事件来自 `data.collapse_events` | ☐ |
 | FR-TC-009AE | 查看图例 | 图例能区分心率、速度、GAP、疲劳带、事件 | ☐ |
 | FR-TC-009AF | 后端 `curves.distance = []` | 主图显示“后端未返回权威距离轴”空态,不补算距离轴 | ☐ |
@@ -150,6 +150,46 @@
 | FR-TC-009BN | mock 空 metrics / 空 distance / 空事件 / 空疲劳区间 | 各区块显示空态,不从前端补算事实字段 | ☐ |
 | FR-TC-009BO | 静态检查视觉回归门禁 | P7.8 测试覆盖区块顺序、草图边界、AI 冻结和响应式可读性 | ☐ |
 | FR-TC-009BP | 检查 AI 入口 | AI 按钮仍 disabled、`aria-disabled="true"`、无 onclick、不触发 `call_llm` | ☐ |
+
+### 1.1.11 P7.9 复盘 UI 设计稿视觉回正与源头纠偏
+
+| 用例 ID | 操作 | 预期结果 | 通过 |
+|---|---|---|---|
+| FR-TC-009BQ | 对照交付手册复核当前复盘 Tab | 明确当前 UI 尚未完整回答“身体状态如何变化 / 为什么失衡 / 在哪里开始崩 / 什么因素导致崩溃” | ☐ |
+| FR-TC-009BR | 对照三层输出复核主图 | 明确当前主图未完成 Layer 1 疲劳带、Layer 2 事件标记、Layer 3 派生指标曲线的设计稿主视觉层级 | ☐ |
+| FR-TC-009BS | 对照设计稿主图 | 当前叠加图不得被标记为设计稿分层时间轴完成态,分层 ECharts 顺延到 P7.10 | ☐ |
+| FR-TC-009BT | 对照设计稿状态阶段 | 独立状态阶段概览横条尚待 P7.11 补齐,只能消费 `data.fatigue_zones` | ☐ |
+| FR-TC-009BU | 对照设计稿派生指标条 | 派生指标横向条和小趋势视觉尚待 P7.11 补齐,不得前端生成事实趋势 | ☐ |
+| FR-TC-009BV | 对照设计稿右侧模块 | 关键摘要、崩溃触发因素、基准核心因素、生理冲击点顺延到 P7.16 补齐 | ☐ |
+| FR-TC-009BW | 对照设计稿底部模块 | 事件时间线、负荷与能量分析、状态解释 / 建议、对比分析顺延到 P7.16/P7.17 补齐 | ☐ |
+| FR-TC-009BX | 检查路线图 | AI 入口复核已从 P7.9 顺延到 P8,P7.10-P7.18 先完成视觉回正和截图验收 | ☐ |
+| FR-TC-009BY | 检查 AI 入口 | AI 按钮仍 disabled、`aria-disabled="true"`、无 onclick、不触发 `call_llm` | ☐ |
+
+### 1.1.12 P7.10 分层 ECharts 主图实现
+
+| 用例 ID | 操作 | 预期结果 | 通过 |
+|---|---|---|---|
+| FR-TC-009BZ | 查看复盘主图标题 | 标题为“多维时间轴分析”,不是旧的叠加图标题 | ☐ |
+| FR-TC-009CA | 查看复盘主图结构 | 心率、速度、海拔、效率、GAP、坡度按后端可用曲线分层显示,不互相遮挡 | ☐ |
+| FR-TC-009CB | 检查 X 轴 | 所有泳道共用后端 `curves.distance`,缺距离轴时展示空态 | ☐ |
+| FR-TC-009CC | 检查疲劳带 | `data.fatigue_zones` 作为背景区间覆盖分层主图,空数组时不画 | ☐ |
+| FR-TC-009CD | 检查事件标记 | `data.collapse_events` 以竖向参考线按 `trigger_km` 跨泳道对齐,空数组时不画 | ☐ |
+| FR-TC-009CE | mock 缺少某条曲线 | 仅隐藏对应泳道或保持弱空态,不得从其他字段补算 | ☐ |
+| FR-TC-009CF | 静态检查分层实现 | `fatigue-review-chart` 使用多 `grid` / 多 `yAxis`,非复盘容器不受影响 | ☐ |
+| FR-TC-009CG | 检查 AI 入口 | AI 按钮仍 disabled、`aria-disabled="true"`、无 onclick、不触发 `call_llm` | ☐ |
+
+### 1.1.13 P7.11 状态阶段与派生指标模块回正
+
+| 用例 ID | 操作 | 预期结果 | 通过 |
+|---|---|---|---|
+| FR-TC-009CH | 查看状态阶段概览 | 复盘 Tab 出现状态阶段概览横条,作为主图标题下方的辅助摘要 | ☐ |
+| FR-TC-009CI | 检查状态阶段来源 | 阶段条明确只来自 `data.fatigue_zones`,不从曲线前端推导 | ☐ |
+| FR-TC-009CJ | 后端返回疲劳区间 | 阶段条显示 `start_km / end_km / level / reason 或 description` | ☐ |
+| FR-TC-009CK | 后端 `fatigue_zones = []` | 显示“暂无后端疲劳阶段”空态,不补算稳定/漂移/崩溃阶段 | ☐ |
+| FR-TC-009CL | 检查派生指标区 | 核心状态与能力负荷区更紧凑,接近设计稿横向 Derived Metrics 条 | ☐ |
+| FR-TC-009CM | 静态检查指标 DOM | 8 个既有指标主值 DOM id 均保留 | ☐ |
+| FR-TC-009CN | 静态检查事实推导 | 状态阶段函数不读取 curves/speed/time/total_distance_m/points/DOM | ☐ |
+| FR-TC-009CO | 检查 AI 入口 | AI 按钮仍 disabled、`aria-disabled="true"`、无 onclick、不触发 `call_llm` | ☐ |
 
 ### 1.2 返回路径
 
@@ -226,7 +266,7 @@
 
 | sport_type | 活动示例 | 复盘 Tab 数据 | AI Modal 响应 | 通过 |
 |---|---|---|---|---|
-| `running` | 5km 慢跑 | metric 8 项 + 三层图 | AI 解读正常 | ☐ |
+| `running` | 5km 慢跑 | metric 8 项 + 分层主图 | AI 解读正常 | ☐ |
 | `trail_running` | 20km 越野 | 含爬升/坡度数据 | AI 解读正常 | ☐ |
 | `hiking` | 10km 徒步 | metric 8 项(HR 较低) | AI 解读正常 | ☐ |
 | `cycling` | 30km 骑行 | 含功率数据 | AI 解读正常 | ☐ |
@@ -264,7 +304,7 @@
 
 | 验收点 | 检查方式 | 通过 |
 |---|---|---|
-| AI 洞察结果只存在前端内存 | 关闭 Modal 后 sessionStorage 不增加新键(仅 `fatigue_review_ai:*` 5min 缓存) | ☐ |
+| AI 洞察结果只存在前端内存 | 关闭 Modal 后 sessionStorage 不增加 `fatigue_review_ai:*` 或其它复盘 AI 结果键 | ☐ |
 | 关闭 Modal 后复盘 Tab 无残留 AI 状态 | 关闭再打开,默认显示「点击「生成 AI 洞察」开始分析」 | ☐ |
 
 ### 4.4 §5.6.2 阅后即焚
@@ -302,6 +342,7 @@
 |---|---|---|
 | P5 质量门禁 | `pytest tests/test_fatigue_review_quality_gate.py -v` | ☐ |
 | P6 AI 洞察 | `pytest tests/test_fatigue_review_ai_insight_p6.py -v` | ☐ |
+| P8.0 AI 开放前复核 | `pytest tests/test_fatigue_review_ai_preflight_p8.py -v` | ☐ |
 | `tests/test_e2e_fatigue_review.py` | `pytest tests/test_e2e_fatigue_review.py -v` | ☐ |
 | `tests/test_v8_8_switch_tab.py` | `pytest tests/test_v8_8_switch_tab.py -v`(V8.8 全局 switchTab 行为未变) | ☐ |
 | `tests/test_v9_0_detail_tab_review.py` | `pytest tests/test_v9_0_detail_tab_review.py -v`(本次新增) | ☐ |
@@ -423,6 +464,178 @@
 | 零推断 | 前端不从 speed/time/total_distance_m/points/DOM 推导距离、指标、事件或建议 | ☐ |
 | 响应式兜底 | 桌面、中宽、窄屏、小屏和长文本场景都有手工验收项 | ☐ |
 | 自动门禁 | `tests/test_fatigue_review_quality_gate.py` 和 `tests/test_v9_0_detail_tab_review.py` 覆盖 P7.8 视觉回归 | ☐ |
+
+### 6.11 P7.9 源头纠偏门禁
+
+| 门禁 | 检查内容 | 通过 |
+|---|---|---|
+| 当前 UI 非完成态 | 文档明确当前 UI 是阶段性工程骨架,不能等同设计稿完成态 | ☐ |
+| 四个问题 | 后续任务必须覆盖身体状态变化、失衡原因、崩溃起点、触发因素 | ☐ |
+| 三层输出 | 后续任务必须核对疲劳带、事件标记、派生指标曲线 | ☐ |
+| 分层主图 | P7.10 明确负责多 grid / 多 yAxis 分层 ECharts,当前叠加图不得误判通过 | ☐ |
+| 状态阶段 | P7.11 明确负责状态阶段概览横条,只消费 `fatigue_zones` | ☐ |
+| 派生指标 | P7.11 明确负责派生指标横向条和小趋势视觉,不前端生成事实结论 | ☐ |
+| 主图信息架构 | P7.12 明确负责主图视觉中心、状态阶段降权、右侧辅助栏收敛 | ☐ |
+| 左侧轨道 | P7.13 明确负责左侧指标编号、颜色、名称和分层泳道可读性 | ☐ |
+| 事件图钉 | P7.14 明确负责关键事件图钉和竖向参考线 | ☐ |
+| 状态阶段精修 | P7.15 明确负责状态阶段连续分段条视觉回正 | ☐ |
+| 右侧摘要 | P7.16 明确负责关键摘要、生理冲击点和建议面板重组 | ☐ |
+| 底部图例 | P7.17 明确负责底部图例、开关和轻交互控件 | ☐ |
+| 截图验收 | P7.18 明确负责截图验收,未通过不得进入 AI 入口复核 | ☐ |
+| AI 顺延 | AI 入口复核顺延到 P8,`fr-ai-generate-btn` 继续冻结 | ☐ |
+
+### 6.23 P8.0 复盘 AI 洞察开放前契约复核门禁
+
+| 门禁 | 检查内容 | 通过 |
+|---|---|---|
+| 入口不开放 | `fr-ai-generate-btn` 仍 disabled、`aria-disabled="true"`、无 onclick | ☐ |
+| Sentinel 唯一 | 复盘 AI 只使用 `__FATIGUE_REVIEW_INSIGHT__`,不新增第二个复盘 sentinel | ☐ |
+| 前端调用参数 | `onFatigueReviewAiInsight()` 未来打开时只传 sentinel + `sportType` | ☐ |
+| 禁止前端事实输入 | 不传 DOM、ECharts option、截图、活动标题、设备、路线、`points`、`curves`、`metrics` | ☐ |
+| 后端 compact snapshot | AI 输入只包含 `activity_id / sport_type / metrics / fatigue_zones / collapse_events / curves_summary / context_tags / advice / disclaimer` | ☐ |
+| Forbidden 隔离 | compact snapshot 任意层级不含 `points / records / raw_records / track_points / fit_records / gpx_points / shadow_diff / diff` | ☐ |
+| 不持久化 AI 事实 | 复盘 AI 结果不写 DB、不写 `localStorage`、不写 `sessionStorage` | ☐ |
+| 输出只解释 | AI 输出只进入 `fatigue_review_insight`,不改 `metrics / curves / fatigue_zones / collapse_events` | ☐ |
+| 清空态 | 关闭 Modal、关闭详情、切活动、切 Tab、重新点击均清空旧 AI 结果 | ☐ |
+| P7 UI 保护 | AI Modal 不挤压分层主图、泳道、图层控制、右侧摘要和状态阶段概览 | ☐ |
+
+### 6.12 P7.10 分层 ECharts 主图门禁
+
+| 门禁 | 检查内容 | 通过 |
+|---|---|---|
+| 分层分支 | `fatigue-review-chart` 使用 `_renderFatigueReviewLayeredEcharts` 分支 | ☐ |
+| 多 grid | 分层主图使用多个 `grid` 泳道 | ☐ |
+| 多 yAxis | 分层主图使用多个 `yAxis` 与各泳道绑定 | ☐ |
+| 后端曲线 | 分层主图只读取 `hr/speed/altitude/efficiency/gap/grade` 后端曲线 | ☐ |
+| 距离轴 | 所有泳道共用 `curves.distance`,不前端重建距离 | ☐ |
+| 疲劳带 | `fatigue_zones` 作为 `markArea` 背景区间 | ☐ |
+| 事件标记 | `collapse_events` 作为 `markLine` 事件参考线 | ☐ |
+| 零推断 | 不从 `speed/time/total_distance_m/points/DOM` 推导事实字段 | ☐ |
+| AI 冻结 | P7.10 不开放 AI 入口,不触发 `call_llm` | ☐ |
+
+### 6.13 P7.11 状态阶段与派生指标门禁
+
+| 门禁 | 检查内容 | 通过 |
+|---|---|---|
+| 状态阶段 DOM | `fr-stage-overview-section / fr-stage-boundary / fr-stage-track` 存在 | ☐ |
+| 阶段来源 | 状态阶段只调用 `_renderFatigueReviewStageOverview(data.fatigue_zones || [])` | ☐ |
+| 阶段字段 | 使用 `start_km / end_km / level / reason / description` | ☐ |
+| 阶段空态 | 空 `fatigue_zones` 显示空态,不补算阶段 | ☐ |
+| 阶段零推导 | 状态阶段函数不读取 curves/speed/time/total_distance_m/points/DOM | ☐ |
+| 派生指标条 | 指标区具备 `fr-derived-metrics-strip` 紧凑横向条样式 | ☐ |
+| DOM 兼容 | 8 个既有指标主值 DOM id 保留 | ☐ |
+| AI 冻结 | P7.11 不开放 AI 入口,不触发 `call_llm` | ☐ |
+
+### 6.14 P7.12 主图信息架构纠偏门禁
+
+| 门禁 | 检查内容 | 通过 |
+|---|---|---|
+| 设计图关联 | 完成报告必须说明本任务对应设计图“状态阶段概览 / 多维时间轴分析 / 右侧关键摘要” | ☐ |
+| 主图视觉中心 | `fr-chart-section` 最小高度提升,主图明显成为复盘主体 | ☐ |
+| ECharts 空间 | 分层 ECharts 内部网格顶部和底部留白降低,泳道获得主要垂直空间 | ☐ |
+| 状态区降权 | `fr-stage-overview-section` 位于 `fr-chart-section` 内部,标题之后、画布之前,不抢主图首屏中心 | ☐ |
+| 右侧辅助位 | `fr-side-column` 宽度收敛为辅助栏,不反客为主 | ☐ |
+| 范围不越界 | 不实现左侧指标轨道、不深化事件图钉、不重构右侧深层摘要 | ☐ |
+| 契约不变 | 曲线只读 `data.curves`,状态只读 `fatigue_zones`,事件只读 `collapse_events` | ☐ |
+| AI 冻结 | P7.12 不开放 AI 入口,不触发 `call_llm` | ☐ |
+
+### 6.15 P7.13 左侧指标轨道与分层泳道门禁
+
+| 门禁 | 检查内容 | 通过 |
+|---|---|---|
+| 设计图关联 | 完成报告必须说明本任务对应设计图“多维时间轴分析 / 左侧指标列表 / 分层泳道” | ☐ |
+| 轨道 DOM | `fr-chart-body / fr-lane-rail / fatigue-review-chart` 存在且同属主图容器 | ☐ |
+| 轨道来源 | 左侧轨道只由 `_renderFatigueReviewLayeredEcharts(...)` 实际生成的 `lanes` 渲染 | ☐ |
+| 轨道信息 | 每个轨道项包含编号、颜色、指标名、单位 | ☐ |
+| 空态策略 | 空 `lanes` 或缺距离轴时调用 `_renderFatigueReviewLaneRail([])`,不残留旧活动轨道 | ☐ |
+| 图例降权 | 顶部图例保留但不再承担主识别职责 | ☐ |
+| yAxis 弱化 | ECharts `yAxis.name` 不再重复显示指标名称,避免左侧文字堆叠 | ☐ |
+| 响应式 | 720px 以下左侧轨道转为横向滚动,不挤压图表 | ☐ |
+| 范围不越界 | 不实现事件图钉、不重做状态阶段条、不重构右侧摘要 | ☐ |
+| AI 冻结 | P7.13 不开放 AI 入口,不触发 `call_llm` | ☐ |
+
+### 6.16 P7.14 关键事件图钉与竖向参考线门禁
+
+| 门禁 | 检查内容 | 通过 |
+|---|---|---|
+| 设计图关联 | 完成报告必须说明本任务对应设计图“多维时间轴分析”主图上方事件气泡 / 图钉与跨泳道竖向虚线 | ☐ |
+| 事件来源 | 事件标记只读取 `data.collapse_events` | ☐ |
+| 后端事件锚点 | 有 `fatigue_zones` 关键转折时,后端应压缩生成 `collapse_events`,避免主图事件层长期为空 | ☐ |
+| 事件位置 | 图钉和参考线只使用 `collapse_events[].trigger_km` 定位 | ☐ |
+| 事件标题 | 气泡标题只读取 `title / label / type / event_id`,不前端伪造事件名 | ☐ |
+| 事件说明 | tooltip / 侧栏说明只读取 `description` 或后端空态文案 | ☐ |
+| 跨泳道参考线 | 每个有效事件在各泳道绘制竖向虚线,并与顶部气泡对齐 | ☐ |
+| 空态策略 | 空 `collapse_events` 或非数字 `trigger_km` 不绘制事件层 | ☐ |
+| 范围不越界 | 不重做左侧轨道、不重做状态阶段条、不重构右侧摘要 | ☐ |
+| AI 冻结 | P7.14 不开放 AI 入口,不触发 `call_llm` | ☐ |
+
+### 6.17 P7.15 状态阶段条视觉回正门禁
+
+| 门禁 | 检查内容 | 通过 |
+|---|---|---|
+| 设计图关联 | 完成报告必须说明本任务对应设计图“状态阶段概览”横向连续分段条 | ☐ |
+| 阶段来源 | 阶段条只读取 `data.fatigue_zones` | ☐ |
+| 阶段字段 | 阶段条只使用 `start_km / end_km / level / reason / description` | ☐ |
+| 分段占比 | 每段宽度按 `end_km - start_km` 的相对区间长度计算 | ☐ |
+| 视觉连续 | 阶段条呈现连续横向状态带,不再像散乱卡片 | ☐ |
+| 窄段策略 | 过窄区间进入 compact 样式,文本不重叠不撑破容器 | ☐ |
+| 空态策略 | 空 `fatigue_zones` 或无有效区间显示空态,不补算阶段 | ☐ |
+| 范围不越界 | 不重做左侧轨道、不重做事件图钉、不重构右侧摘要 | ☐ |
+| AI 冻结 | P7.15 不开放 AI 入口,不触发 `call_llm` | ☐ |
+
+### 6.18 P7.16A Terrain Load 柱形泳道接入门禁
+
+| 门禁 | 检查内容 | 通过 |
+|---|---|---|
+| 设计图关联 | 对照设计图“多维时间轴分析”主图确认 Terrain Load 为柱形波浪泳道 | ☐ |
+| 后端字段 | `get_fatigue_review.data.curves.terrain_load` 存在,缺失时为空数组 | ☐ |
+| 数据来源 | Terrain Load 由后端 `grade × speed × duration` 构建,不读 DOM / 截图 / 前端 payload | ☐ |
+| 独立泳道 | Terrain Load 出现在左侧指标轨道,且在 ECharts 中独立成一条泳道 | ☐ |
+| 柱形视觉 | Terrain Load 使用柱形/波浪视觉,不是普通折线 | ☐ |
+| 图例同步 | 顶部图例包含 `地形负荷 · curves.terrain_load` | ☐ |
+| 空态策略 | 所有曲线为空时空态文案包含 `terrain_load` | ☐ |
+| AI 冻结 | P7.16A 不开放 AI 入口,不触发 `call_llm` | ☐ |
+
+### 6.19 P7.16B Terrain Load 柱间距与离散柱视觉回正门禁
+
+| 门禁 | 检查内容 | 通过 |
+|---|---|---|
+| 设计图关联 | 对照设计图“多维时间轴分析”主图确认 Terrain Load 是一根根离散柱,不是粘连色带 | ☐ |
+| 事实来源 | Terrain Load 仍只来自 `get_fatigue_review.data.curves.terrain_load` | ☐ |
+| X 轴来源 | 柱体位置仍只来自 `data.curves.distance` | ☐ |
+| 显示层聚合 | 允许且仅允许前端做显示层降采样 / 分桶,不回写事实字段 | ☐ |
+| 柱间距 | Terrain Load 柱体之间有可见间隔,整体形成并排柱形波浪 | ☐ |
+| 渐变方向 | 柱体为纵向渐变,上深下浅 | ☐ |
+| 事件与疲劳带 | 降采样不影响 `fatigue_zones` 背景带和 `collapse_events.trigger_km` 事件参考线 | ☐ |
+| AI 冻结 | P7.16B 不开放 AI 入口,不触发 `call_llm` | ☐ |
+
+### 6.20 P7.16 右侧关键摘要面板纠偏门禁
+
+| 门禁 | 检查内容 | 通过 |
+|---|---|---|
+| 设计图关联 | 对照设计图右侧分析摘要区域,确认本任务只处理右侧栏 | ☐ |
+| 关键摘要 | 右侧栏出现 `关键摘要`,内容来自 `metrics / collapse_events / fatigue_zones` | ☐ |
+| 崩溃触发因素 | 事件面板语义为崩溃触发因素,仍只读 `collapse_events.trigger_km / title / label / type / description` | ☐ |
+| 生理冲击点 | 右侧栏出现 `生理冲击点`,只读 `metrics.hr_drift / decoupling / training_load / bonk_risk / events` | ☐ |
+| 建议来源 | 建议仍只来自 `data.advice`,免责声明来自 `data.disclaimer` | ☐ |
+| ID 兼容 | `fr-context-panel / fr-events-panel / fr-fatigue-zones-panel / fr-advice-panel` 等既有 ID 保留 | ☐ |
+| 零推断 | 不从 DOM / 截图 / ECharts / 曲线走势 / 活动标题 / 设备 / points 推导右侧结论 | ☐ |
+| AI 冻结 | P7.16 不开放 AI 入口,不触发 `call_llm` | ☐ |
+
+### 6.21 P7.17 底部图例与交互控件回正门禁
+
+| 门禁 | 检查内容 | 通过 |
+|---|---|---|
+| 设计图关联 | 对照设计图主图下方 / 底部辅助区域,确认本任务只处理底部图例和辅助模块 | ☐ |
+| Footer 容器 | 主图下方存在 `fr-chart-footer` | ☐ |
+| 图层状态 | 图层 chip 展示 `curves` 字段存在性和长度、距离轴、疲劳带、事件数量 | ☐ |
+| 轻交互 | 图层开关只影响当前 ECharts 视图,不请求后端、不写 DB、不触发 AI | ☐ |
+| 事件时间线 | 底部事件时间线只来自 `collapse_events` | ☐ |
+| 负荷与能量 | 负荷与能量只来自 `metrics.training_load / metrics.bonk_risk` | ☐ |
+| 状态解释 | 状态解释只来自 `fatigue_zones / metrics.hr_drift / metrics.decoupling` | ☐ |
+| 建议状态 | 建议只来自 `data.advice`,免责声明来自 `data.disclaimer` | ☐ |
+| 曲线边界 | `curves` 只用于存在性和长度状态,不根据曲线值推导结论 | ☐ |
+| AI 冻结 | P7.17 不开放 AI 入口,不触发 `call_llm` | ☐ |
 
 ---
 

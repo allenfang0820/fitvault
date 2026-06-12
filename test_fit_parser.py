@@ -74,6 +74,33 @@ class TestFitParser(unittest.TestCase):
     def test_filename_like_gpx_name_is_not_preserved_as_sport_type(self):
         self.assertIsNone(track_backend.normalize_sport_type("COURSE_443798.gpx"))
 
+    def test_structured_climbing_sports_do_not_collapse_to_hiking(self):
+        cases = {
+            "stair_climbing": "stair_climbing",
+            "floor_climbing": "stair_climbing",
+            "爬楼": "stair_climbing",
+            "indoor_climbing": "indoor_climbing",
+            "rock_climbing": "rock_climbing",
+            "elliptical": "elliptical",
+            "gravel_cycling": "gravel_cycling",
+        }
+        for raw, expected in cases.items():
+            with self.subTest(raw=raw):
+                self.assertEqual(track_backend.normalize_sport_type(raw), expected)
+
+    def test_fit_activity_type_prefers_structured_sub_sport(self):
+        cases = [
+            ("fitness_equipment", "stair_climbing", "stair_climbing"),
+            ("floor_climbing", "unknown", "stair_climbing"),
+            ("fitness_equipment", "indoor_climbing", "indoor_climbing"),
+            ("rock_climbing", "unknown", "rock_climbing"),
+            ("cycling", "gravel_cycling", "gravel_cycling"),
+            ("fitness_equipment", "elliptical", "elliptical"),
+        ]
+        for sport, sub_sport, expected in cases:
+            with self.subTest(sport=sport, sub_sport=sub_sport):
+                self.assertEqual(fit_engine.FITCoreEngine._resolve_activity_type(sport, sub_sport), expected)
+
     def test_gpx_activity_type_metadata_is_preserved_for_mountaineering(self):
         gpx_text = """<?xml version="1.0" encoding="UTF-8"?>
 <gpx version="1.1" creator="unit-test">

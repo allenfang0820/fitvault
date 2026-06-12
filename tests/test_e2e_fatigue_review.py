@@ -61,6 +61,19 @@ def mock_pywebview_api():
                 "hr":         [142, 148, 155, 161, 168, 172, 175],
                 "speed":      [3.1, 3.2, 3.0, 2.8, 2.5, 2.2, 1.9],
             },
+            "display_curves": {
+                "pace_sec_per_km": [322.6, 312.5, 333.3, 357.1, 400.0, 454.5, 526.3],
+                "pace_raw_sec_per_km": [322.6, 312.5, 333.3, 357.1, 400.0, 454.5, 526.3],
+                "pace_capped": [False, False, False, False, False, False, False],
+                "gap_pace_sec_per_km": [312.5, 303.0, 322.6, 344.8, 384.6, 434.8, 500.0],
+                "gap_pace_raw_sec_per_km": [312.5, 303.0, 322.6, 344.8, 384.6, 434.8, 500.0],
+                "gap_pace_capped": [False, False, False, False, False, False, False],
+            },
+            "display_meta": {
+                "pace_display_cap_sec_per_km": 900,
+                "pace_display_cap_label": "15'00''/km",
+                "pace_cap_strategy": "cap_slow_points_for_chart_only",
+            },
             "context_tags": {
                 "热应激 (Heat Stress)": "High (28.5°C) - 会导致散热受阻...",
             },
@@ -152,7 +165,7 @@ class TestSevenSegmentWhitelist:
         res = mock_pywebview_api.get_fatigue_review(123)
         data = res["data"]
         whitelist = [
-            "metrics", "collapse_events", "curves", "context_tags",
+            "metrics", "collapse_events", "curves", "display_curves", "display_meta", "context_tags",
             "ai_insight", "advice", "disclaimer",
         ]
         for seg in whitelist:
@@ -471,7 +484,7 @@ class TestBuildFatigueReviewSnapshot:
         snapshot = api._build_fatigue_review_snapshot(mock_row)
         whitelist = [
             "sport_type", "metrics", "collapse_events", "curves",
-            "context_tags", "ai_insight", "advice", "disclaimer",
+            "display_curves", "display_meta", "context_tags", "ai_insight", "advice", "disclaimer",
         ]
         for seg in whitelist:
             assert seg in snapshot, f"7 段白名单缺:{seg}"
@@ -544,36 +557,36 @@ class TestFatigueReviewEmptyStates:
     def test_events_empty_triggers_empty_state(self):
         """A4 / 动作 2 #3:collapse_events=[] 时,_renderFatigueReviewEvents 渲染空态占位。"""
         html = self._load_track_html()
-        assert "本次活动未检测到异常事件" in html, "缺少 events 空态文案"
-        assert 'collapse_events = []' in html, "缺少 events 空态 tag"
+        assert "暂无关键事件" in html, "缺少 events 空态文案"
+        assert '暂无事件' in html, "缺少 events 空态 tag"
 
     def test_context_tags_empty_triggers_empty_state(self):
         """A4 / 动作 2 #4:context_tags={} 时,_renderFatigueReviewContextTags 渲染空态占位。"""
         html = self._load_track_html()
         assert "本次活动未携带上下文标签" in html, "缺少 context_tags 空态文案"
-        assert 'context_tags = {}' in html, "缺少 context_tags 空态 tag"
+        assert '暂无上下文' in html, "缺少 context_tags 空态 tag"
 
     def test_curves_all_empty_skips_echarts(self):
         """A2 / 动作 3:5 条 curve 全空时,复盘覆盖层不渲染 ECharts,展示占位卡。"""
         html = self._load_track_html()
         assert "allCurvesEmpty" in html, "缺少 allCurvesEmpty 判定变量"
         assert "本次活动未记录曲线数据" in html, "缺少 curves 空态文案"
-        assert 'curves.{gap|hr|efficiency|speed} = []' in html, "缺少 curves 空态 tag"
+        assert '暂无可用曲线' in html, "缺少 curves 空态 tag"
 
     def test_advice_fallback_triggers_empty_state(self):
         """A4 / 动作 2 #6:advice 为空或 "--" 时,显示空态卡。"""
         html = self._load_track_html()
-        assert "本次复盘无运动建议" in html, "缺少 advice 空态文案"
+        assert "建议待接入" in html, "缺少 advice 空态文案"
         assert "adviceEl.innerHTML" in html, "advice 必须用 innerHTML 渲染占位卡(非 textContent)"
 
     def test_disclaimer_always_present(self):
         """A6 / 动作 2 #6:disclaimer 永远非空(后端兜底 + 前端兜底)。"""
         html = self._load_track_html()
         # 后端兜底:"AI 生成仅供参考 · 数据来源:..."
-        # 前端兜底:disEl.textContent = data.disclaimer || 'AI 生成仅供参考...'
+        # 前端兜底:discEl.textContent = disclaimer || 'AI 生成仅供参考...'
         assert "AI 生成仅供参考" in html, "disclaimer 兜底文案缺失"
         # 前端兜底字符串必须出现
-        assert "data.disclaimer || 'AI 生成仅供参考" in html, "disclaimer 前端兜底缺失"
+        assert "disclaimer || 'AI 生成仅供参考" in html, "disclaimer 前端兜底缺失"
 
     def test_shadow_diff_isolated_in_empty_state(self):
         """A5:即便所有数据为空,shadow_diff 仍不出现。"""
@@ -632,7 +645,7 @@ class TestFatigueReviewEmptyStates:
         snapshot = api._build_fatigue_review_snapshot(mock_row)
         whitelist = [
             "sport_type", "metrics", "collapse_events", "curves",
-            "context_tags", "ai_insight", "advice", "disclaimer",
+            "display_curves", "display_meta", "context_tags", "ai_insight", "advice", "disclaimer",
         ]
         for k in whitelist:
             assert k in snapshot, f"V7.7 违规:7 段白名单缺 {k}"
@@ -641,7 +654,6 @@ class TestFatigueReviewEmptyStates:
         """A3:指标卡空态必须用 .fr-metric-empty CSS 类(非纯文本)。"""
         html = self._load_track_html()
         assert ".fr-metric-empty" in html, "缺少 .fr-metric-empty CSS 类"
-        assert 'class="fr-metric-empty"' in html, "未使用 .fr-metric-empty 类"
-        # 严禁显示 "0%"
-        # (生产代码在 decoupling.level=unknown 时,render 为 metricEmptySuffix)
-        assert "该活动未提供 efficiency_curve" in html, "缺少 decoupling 空态文案"
+        assert "fr-metric-empty" in html, "未使用 .fr-metric-empty 类"
+        # 严禁退化成只有 CSS、没有任何 metrics 空态渲染分支。
+        assert "本次复盘无 metrics 字段" in html, "缺少 metric 空态渲染分支"

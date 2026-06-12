@@ -446,6 +446,160 @@ def _risk_snapshot_payload(snapshot: dict[str, Any] | None, weather_context: dic
     )
 
 
+ACTIVITY_ADVICE_OUTPUT_SCHEMA = """{
+  "supply_advice": {"status": "提示|注意|重点关注", "basis": "依据哪些路线事实或用户输入", "advice": "补给建议"},
+  "weather_check": {"status": "信息不足|提示|注意|重点关注", "basis": "是否有计划活动时间；没有则明确说明信息不足", "advice": "天气检查建议"},
+  "equipment_advice": {"status": "提示|注意|重点关注", "basis": "依据海拔、爬升、坡度、路线环境等", "advice": "装备建议"},
+  "physical_plan": {"status": "提示|注意|重点关注", "basis": "依据距离、爬升、坡度、预计耗时等", "advice": "体力安排建议"},
+  "disclaimer": "以上建议由 AI 基于当前轨迹和用户填写的计划信息生成，仅供出行准备参考。"
+}"""
+
+
+def _activity_advice_planning_context(planning_context: dict[str, Any] | None = None) -> dict[str, str]:
+    ctx = planning_context if isinstance(planning_context, dict) else {}
+    user_activity_type = str(ctx.get("user_activity_type") or "").strip()
+    planned_start_time = str(ctx.get("planned_start_time") or "").strip()
+    return {
+        "user_activity_type": user_activity_type,
+        "planned_start_time": planned_start_time,
+        "activity_type_source": "user_input" if user_activity_type else "missing",
+        "planned_time_source": "user_input" if planned_start_time else "missing",
+    }
+
+
+def _activity_advice_payload(snapshot: dict[str, Any] | None, planning_context: dict[str, Any] | None = None) -> str:
+    allowed_keys = (
+        "activity_id", "distance_km", "distance_display", "duration_sec",
+        "elevation_gain_m", "total_descent_m", "max_alt_m", "min_alt_m",
+        "avg_grade_pct", "max_slope_pct", "min_slope_pct", "uphill_pct",
+        "downhill_pct", "up_count", "down_count", "max_single_climb_m",
+        "difficulty_score", "region", "start_lat", "start_lon", "source",
+    )
+    route_facts: dict[str, Any] = {}
+    if isinstance(snapshot, dict):
+        route_facts = {key: snapshot.get(key) for key in allowed_keys if key in snapshot}
+    return json.dumps(
+        {
+            "route_facts": route_facts,
+            "planning_context": _activity_advice_planning_context(planning_context),
+        },
+        ensure_ascii=False,
+        indent=2,
+        default=str,
+    )
+
+
+def build_activity_advice_system_prompt(
+    snapshot: dict[str, Any] | None,
+    planning_context: dict[str, Any] | None = None,
+) -> str:
+    payload = _activity_advice_payload(snapshot, planning_context)
+    return f"""你是一位专业户外活动准备顾问，只负责基于系统提供的路线事实和用户显式填写的计划信息生成活动建议。
+
+【数据边界 — DATA BOUNDARY（不可逾越）】
+以下 JSON 是本功能唯一可用输入。route_facts 来自后端路线事实白名单；planning_context 只来自用户显式填写。你只允许解释和建议，禁止生成或修改事实字段。
+
+【当前活动建议输入】
+{payload}
+
+【建议维度】
+你必须从以下四个维度生成活动建议：
+1. 补给建议：水、能量、电解质、补给节奏
+2. 天气检查：出发前需要核对的温度、降雨、风、雷暴、昼夜温差等事项
+3. 装备建议：防晒、防雨、保暖、照明、急救、防滑、路线装备
+4. 体力安排：爬升压力、距离压力、节奏控制、休息安排
+
+【强制禁止行为】
+你 MUST NOT：
+- 使用历史 start_time 或 start_time_utc 推断计划天气
+- 使用历史天气、weather_json、weather_context 或 _track_weather
+- 使用前端 points[]、placemarks[]、DOM 文本或 UI fallback
+- 使用 shadow_diff、shadow_diff_json、diff
+- 重新计算距离、爬升、坡度或重建 per-point 数据
+- 给出医学诊断、安全保证或确定性天气预报
+- 生成任何 canonical 指标或写回字段建议
+- 输出 markdown 代码块
+
+【天气检查规则】
+如果 planning_context.planned_start_time 为空或 planned_time_source 为 "missing"，weather_check 必须说明缺少计划活动时间，只能给出出发前天气检查清单，不得判断具体天气。
+
+【输出格式 — 严格 JSON】
+只输出一个合法 JSON 对象，格式必须为：
+{ACTIVITY_ADVICE_OUTPUT_SCHEMA}
+
+【状态约束】
+status 只能使用 "信息不足"、"提示"、"注意"、"重点关注" 四个值；"信息不足" 优先用于天气时间缺失或整体数据不足场景。
+"""
+
+
+def build_activity_advice_user_prompt() -> str:
+    return "请基于系统指令中的路线事实和用户计划上下文生成活动建议 JSON。只输出纯 JSON，不要输出 markdown 标记，不要补充额外解释。"
+
+
+def empty_activity_advice(error: str = "") -> dict[str, Any]:
+    default_basis = "当前路线事实或用户计划信息不足。"
+    default_advice = "建议结合实际路线、个人状态和出发前最新信息谨慎准备。"
+    return {
+        "supply_advice": {"status": "提示", "basis": default_basis, "advice": default_advice},
+        "weather_check": {
+            "status": "信息不足",
+            "basis": "缺少用户显式填写的计划活动时间，无法判断具体天气。",
+            "advice": "请在出发前检查温度、降雨、风速、雷暴预警和昼夜温差。",
+        },
+        "equipment_advice": {"status": "提示", "basis": default_basis, "advice": default_advice},
+        "physical_plan": {"status": "提示", "basis": default_basis, "advice": default_advice},
+        "disclaimer": "以上建议由 AI 基于当前轨迹和用户填写的计划信息生成，仅供出行准备参考。",
+        "error": str(error or ""),
+    }
+
+
+def _normalize_activity_advice_status(status: Any, default: str = "提示") -> str:
+    text = str(status or "").strip()
+    return text if text in {"信息不足", "提示", "注意", "重点关注"} else default
+
+
+def _normalize_activity_advice_item(value: Any, default_status: str = "提示") -> dict[str, str]:
+    default = "当前数据不足，建议结合实际路线和个人状态谨慎准备。"
+    if not isinstance(value, dict):
+        value = {}
+    return {
+        "status": _normalize_activity_advice_status(value.get("status"), default_status),
+        "basis": str(value.get("basis") or "当前路线事实或用户计划信息不足。")[:500],
+        "advice": str(value.get("advice") or default)[:500],
+    }
+
+
+def normalize_activity_advice_json(raw_text: str) -> dict[str, Any]:
+    if not raw_text:
+        return empty_activity_advice("LLM 未返回内容")
+
+    text = str(raw_text).strip()
+    m = re.search(r"```(?:json)?\s*\n?(.*?)\n?\s*```", text, re.DOTALL)
+    if m:
+        text = m.group(1).strip()
+
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        text = text[start:end + 1]
+
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        return empty_activity_advice(f"JSON 解析失败: {text[:120]}")
+
+    if not isinstance(data, dict):
+        return empty_activity_advice("活动建议结果格式错误")
+
+    schema = empty_activity_advice(str(data.get("error") or ""))
+    schema["supply_advice"] = _normalize_activity_advice_item(data.get("supply_advice"))
+    schema["weather_check"] = _normalize_activity_advice_item(data.get("weather_check"), "信息不足")
+    schema["equipment_advice"] = _normalize_activity_advice_item(data.get("equipment_advice"))
+    schema["physical_plan"] = _normalize_activity_advice_item(data.get("physical_plan"))
+    schema["disclaimer"] = str(data.get("disclaimer") or schema["disclaimer"])[:500]
+    return schema
+
+
 def build_risk_assessment_system_prompt(snapshot: dict[str, Any] | None, weather_context: dict[str, Any] | None = None) -> str:
     payload = _risk_snapshot_payload(snapshot, weather_context)
     return f"""你是一位专业户外运动风险分析师，只负责对系统提供的运动数据进行风险解读。

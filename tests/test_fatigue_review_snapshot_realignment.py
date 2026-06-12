@@ -89,11 +89,42 @@ class TestFatigueReviewP2SnapshotRealignment(unittest.TestCase):
 
         self.assertGreater(axis_len, 0)
         self.assertEqual(curves["total_distance_m"], 7500.0)
-        for key in ("time", "hr", "speed", "altitude", "grade", "gap", "efficiency"):
+        for key in ("time", "hr", "speed", "altitude", "grade", "gap", "efficiency", "terrain_load"):
             if curves[key]:
                 self.assertEqual(len(curves[key]), axis_len, key)
         self.assertGreater(curves["distance"][-1], 0)
         self.assertLessEqual(curves["distance"][-1], curves["total_distance_m"] / 1000.0)
+
+    def test_snapshot_builds_backend_terrain_load_from_grade_speed_time(self):
+        from main import _build_fatigue_review_terrain_load_curve
+
+        terrain_load = _build_fatigue_review_terrain_load_curve(
+            grade_curve=[0.0, 5.0, -4.0, 2.0],
+            speed_curve=[3.0, 3.0, 2.5, 2.0],
+            time_curve=[0.0, 10.0, 20.0, 35.0],
+            axis_len=4,
+        )
+
+        self.assertEqual(terrain_load, [0.0, 1.5, 1.0, 0.6])
+
+    def test_review_fatigue_zones_merge_adjacent_same_level_only(self):
+        from main import _merge_fatigue_zones_for_review
+
+        zones = _merge_fatigue_zones_for_review([
+            {"start_km": 0.0, "end_km": 0.4, "level": "high"},
+            {"start_km": 0.4, "end_km": 0.9, "level": "high"},
+            {"start_km": 1.2, "end_km": 1.5, "level": "high"},
+            {"start_km": 1.5, "end_km": 2.0, "level": "medium"},
+            {"start_km": 2.02, "end_km": 2.4, "level": "medium"},
+            {"start_km": 2.5, "end_km": 2.4, "level": "medium"},
+            {"start_km": "bad", "end_km": 3.0, "level": "high"},
+        ])
+
+        self.assertEqual(zones, [
+            {"start_km": 0.0, "end_km": 0.9, "level": "high"},
+            {"start_km": 1.2, "end_km": 1.5, "level": "high"},
+            {"start_km": 1.5, "end_km": 2.4, "level": "medium"},
+        ])
 
     def test_snapshot_missing_calories_keeps_curves_and_disables_bonk_risk(self):
         snapshot = self._api()._build_fatigue_review_snapshot(self._row(calories=None))
