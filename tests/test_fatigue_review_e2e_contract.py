@@ -449,8 +449,12 @@ class TestDegradedScenarios(unittest.TestCase):
         valid = '{"summary": "测试", "key_dimensions": [{"key": "endurance", "level": "good", "comment": "良好"}]}'
         r4 = llm_backend.normalize_fatigue_review_json(valid)
         self.assertEqual(r4["summary"], "测试")
-        self.assertEqual(len(r4["key_dimensions"]), 1)
-        self.assertEqual(r4["key_dimensions"][0]["level"], "good")
+        self.assertEqual(len(r4["key_dimensions"]), 4)
+        self.assertEqual(
+            [d["key"] for d in r4["key_dimensions"]],
+            ["overall_stability", "fatigue_progression", "risk_triggers", "context_impact"],
+        )
+        self.assertEqual(r4["key_dimensions"][1]["level"], "good")
 
     # ----- 边界场景:distance=0 -----
     def test_zero_distance_curves(self):

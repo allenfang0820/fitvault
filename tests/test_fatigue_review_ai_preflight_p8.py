@@ -33,22 +33,23 @@ def _extract_function(source: str, signature: str) -> str:
     return source[idx:end]
 
 
-class TestP80FrontendPreflight(unittest.TestCase):
+class TestP81FrontendOpenGate(unittest.TestCase):
     def setUp(self) -> None:
         self.html = _read(TRACK_HTML)
 
-    def test_p80_keeps_ai_button_frozen(self):
+    def test_p81_opens_ai_button_with_minimal_click_handler(self):
         idx = self.html.find('id="fr-ai-generate-btn"')
         self.assertGreater(idx, 0)
         start = self.html.rfind("<button", 0, idx)
         end = self.html.find("</button>", idx)
         button = self.html[start:end]
-        self.assertIn("disabled", button)
-        self.assertIn('aria-disabled="true"', button)
-        self.assertIn("AI 洞察待开放", button)
-        self.assertNotIn("onclick=", button)
+        self.assertNotIn("disabled", button)
+        self.assertNotIn('aria-disabled="true"', button)
+        self.assertIn("生成 AI 洞察", button)
+        self.assertIn('onclick="onFatigueReviewAiInsight()"', button)
+        self.assertNotIn("call_llm", button)
 
-    def test_p80_frontend_future_call_only_passes_sentinel_and_sport_type(self):
+    def test_p81_frontend_call_only_passes_sentinel_and_sport_type(self):
         body = _extract_function(self.html, "async function onFatigueReviewAiInsight()")
         self.assertIn("call_llm('__FATIGUE_REVIEW_INSIGHT__', sportType)", body)
         self.assertNotIn("JSON.stringify", body)
@@ -160,12 +161,10 @@ class TestP80BackendPreflight(unittest.TestCase):
 
 
 class TestP80DocsPreflight(unittest.TestCase):
-    def test_p80_prompt_records_no_open_boundary(self):
+    def test_p80_prompt_records_open_handoff_boundary(self):
         prompt = _read(P80_PROMPT)
         for required in (
             "P8.0 只做开放前审查，不打开 AI 按钮",
-            "`fr-ai-generate-btn` 必须继续 `disabled`",
-            "不解除 `fr-ai-generate-btn` 的 `disabled`",
             "不写 `localStorage` / `sessionStorage` 持久化 AI 事实",
             "P8.0 复盘 AI 洞察开放前契约复核通过，允许进入 P8.1 最小闭环打开按钮。",
         ):

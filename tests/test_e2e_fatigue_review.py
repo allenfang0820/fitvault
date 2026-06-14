@@ -92,16 +92,16 @@ def mock_pywebview_api():
                 "summary": "本次跑步在高温+高海拔环境压力下,后半程出现明显效率下降。",
                 "sport_type": "running",
                 "key_dimensions": [
-                    {"key": "endurance", "label": "耐力", "level": "good",
-                     "comment": "前 10 km 配速稳定,基础有氧能力扎实"},
-                    {"key": "stability", "label": "心肺稳定", "level": "warn",
+                    {"key": "overall_stability", "label": "全程稳定性", "level": "warn",
                      "comment": "后半程 HR 漂移 7%,需关注恢复"},
-                    {"key": "bonk_risk", "label": "撞墙风险", "level": "bad",
-                     "comment": "12.5 km 处检测到效率断崖,糖原储备不足"},
-                    {"key": "environment", "label": "环境压力", "level": "bad",
+                    {"key": "fatigue_progression", "label": "疲劳阶段", "level": "good",
+                     "comment": "前 10 km 配速稳定,基础有氧能力扎实"},
+                    {"key": "risk_triggers", "label": "风险触发", "level": "bad",
+                     "comment": "12.5 km 附近出现能量断档风险线索,建议结合补给和配速复盘"},
+                    {"key": "context_impact", "label": "外部影响", "level": "bad",
                      "comment": "高温+高海拔叠加,心率代偿显著,宽容看待"},
                 ],
-                "event_interpretation": "12.5 km 处是真实撞墙信号,非环境干扰。",
+                "event_interpretation": "12.5 km 处是能量断档风险窗口线索,不代表精确撞墙坐标。",
                 "training_advice": "下次同路线建议赛前 2 小时补碳 80-100g,前 10 km 控制心率 ≤ 155。",
                 "disclaimer": "AI 生成仅供参考,数据基于单次训练快照",
             },
@@ -195,7 +195,7 @@ class TestAiFourStates:
         insight = res["data"]["fatigue_review_insight"]
         assert insight.get("summary"), "success 态必须有 summary"
         assert len(insight.get("key_dimensions", [])) >= 4, \
-            "§5.4 强约束:必须 4 维度 (endurance/stability/bonk_risk/environment)"
+            "§5.4 强约束:必须 4 维度 (overall_stability/fatigue_progression/risk_triggers/context_impact)"
         assert insight.get("training_advice"), "必须有改进建议"
         assert insight.get("disclaimer"), "必须有免责声明"
 
@@ -234,8 +234,11 @@ class TestAiFourStates:
         }"""
         result = normalize_fatigue_review_json(raw)
         assert result["summary"] == "测试总结"
-        assert len(result["key_dimensions"]) == 1
-        assert result["key_dimensions"][0]["level"] == "good"
+        assert len(result["key_dimensions"]) == 4
+        assert [d["key"] for d in result["key_dimensions"]] == [
+            "overall_stability", "fatigue_progression", "risk_triggers", "context_impact"
+        ]
+        assert result["key_dimensions"][1]["level"] == "good"
 
     def test_normalize_fatigue_review_json_invalid(self):
         """非标准 JSON 输入 → 返回 empty_fatigue_review_insight。"""

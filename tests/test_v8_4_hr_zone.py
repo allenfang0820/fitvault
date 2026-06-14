@@ -5,7 +5,7 @@ V8.4 契约测试:_compute_hr_zone_distribution + 持久化路径
       修复 D3-2:V7.13 训练负荷算法终于能产出真实 load。
 
 契约依据:
-- §2.1 全链路可追溯:hr_zone 来源 = hr_curve + max_hr(FIT 解析 → fit_sdk)
+- §2.1 全链路可追溯:hr_zone 来源 = hr_curve + 个人最大心率(profile)
 - §2.2 数据可信分层:max_hr 缺失时拒写(None),不写入假数据
 - §6 shadow_diff 隔离:hr_zone_distribution 不属于 shadow_diff
 - §8 canonical 写入:V8.4 是 INSERT 路径的新增列写入
@@ -140,6 +140,16 @@ class TestV8_4MainPyChanges(unittest.TestCase):
         self.assertGreater(idx_cadence, 0)
         self.assertGreater(idx_hr_zone, 0)
         self.assertGreater(idx_hr_zone, idx_cadence, "V8.4 FAIL: hr_zone 段必须晚于 cadence 段")
+
+    def test_v8_4_sync_uses_profile_max_hr_before_activity_max_hr(self):
+        """低心率活动不得用单次活动 max_hr 作为区间分母。"""
+        block_idx = self.main.find("profile_max_hr_for_zones")
+        self.assertGreater(block_idx, 0)
+        block = self.main[block_idx:self.main.find("hr_zone_json = _compute_hr_zone_distribution", block_idx)]
+        self.assertIn("profile_backend.get_profile()", block)
+        self.assertIn("prof_for_zones.max_hr", block)
+        self.assertIn('result.get("max_hr")', block)
+        self.assertIn("profile_max_hr_for_zones or", self.main)
 
     def test_v8_4_sql_column_added(self):
         sql_start = self.main.find('INSERT INTO activities\n')

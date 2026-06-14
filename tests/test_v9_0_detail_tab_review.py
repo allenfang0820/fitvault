@@ -169,26 +169,31 @@ class TestV9AiInsightModalHtml(unittest.TestCase):
             "fr-review-layout", "fr-status-strip",
             "fr-core-metrics-section", "fr-capacity-metrics-section",
             "fr-stage-overview-section", "fr-stage-track",
-            "fr-side-summary-panel", "fr-events-panel", "fr-advice-panel",
-            "fr-side-summary-list", "fr-event-list", "fr-advice", "fr-disclaimer",
+            "fr-side-summary-panel", "fr-events-panel",
+            "fr-side-summary-list", "fr-event-list",
         ]:
             self.assertIn('id="' + el_id + '"', self.html,
                           f"P4 FAIL: 复盘主页面缺 #{el_id}")
-        for text in ["核心状态", "能力与负荷", "多维时间轴分析", "本次复盘概览"]:
+        for text in ["关键证据", "补充证据", "多维时间轴分析", "本次复盘概览", "读图解释"]:
             self.assertIn(text, self.html)
 
-    def test_p6_1_ai_entry_is_frozen(self):
-        """P6.1:UI 定稿前 AI 洞察入口必须冻结。"""
+    def test_p8_1_ai_entry_is_opened_minimally(self):
+        """P8.1:UI 定稿后 AI 洞察入口最小闭环打开。"""
         idx = self.html.find('id="fr-ai-generate-btn"')
         self.assertGreater(idx, 0, "P6.1 FAIL: 缺少 AI 按钮")
         start = self.html.rfind("<button", 0, idx)
         end = self.html.find("</button>", idx)
         button = self.html[start:end]
-        self.assertIn("disabled", button)
-        self.assertIn('aria-disabled="true"', button)
-        self.assertIn("AI 洞察待开放", button)
-        self.assertIn("AI 洞察功能即将开放", button)
-        self.assertNotIn("onclick=", button)
+        self.assertNotIn("disabled", button)
+        self.assertNotIn('aria-disabled="true"', button)
+        self.assertIn("AI 洞察", button)
+        self.assertIn("✨", button)
+        self.assertIn('onclick="onFatigueReviewAiInsight()"', button)
+        self.assertNotIn("call_llm", button)
+        title_idx = self.html.find("本次复盘概览")
+        overview_idx = self.html.find('id="fr-overview-dimensions"')
+        self.assertGreater(idx, title_idx)
+        self.assertLess(idx, overview_idx)
 
     def test_p7_2_summary_band_exists(self):
         """P7.2:复盘 Tab 内部顶部分析摘要带必须存在。"""
@@ -196,11 +201,23 @@ class TestV9AiInsightModalHtml(unittest.TestCase):
             "fr-status-strip", "fr-summary", "fr-summary-desc",
             "fr-data-source-pill", "fr-distance-axis-pill",
             "fr-curve-status-pill", "fr-risk-pill",
-            "fr-event-pill", "fr-ai-status-pill",
+            "fr-event-pill", "fr-ai-status-pill", "fr-overview-dimensions",
         ]:
             self.assertIn('id="' + el_id + '"', self.html,
                           f"P7.2 FAIL: 摘要带缺 #{el_id}")
-        for text in ["本次复盘概览", "汇总本次活动的疲劳、风险和建议状态。", "AI 待开放"]:
+        for text in ["本次复盘概览", "汇总本次活动的疲劳、风险和建议状态。", "AI 可用"]:
+            self.assertIn(text, self.html)
+
+    def test_p8_4_overview_dimension_cards_exist(self):
+        """P8.4:本次复盘概览承载四维总览卡。"""
+        for key in (
+            "overall_stability",
+            "fatigue_progression",
+            "risk_triggers",
+            "context_impact",
+        ):
+            self.assertIn('data-fr-ai-dim="' + key + '"', self.html)
+        for text in ("全程稳定性", "疲劳阶段", "风险触发", "外部影响"):
             self.assertIn(text, self.html)
 
     def test_review_placeholder_header_is_removed(self):
@@ -494,8 +511,8 @@ class TestV9AiInsightModalHtml(unittest.TestCase):
             self.assertIn('id="' + el_id + '"', self.html,
                           f"P7.5 FAIL: 缺少 #{el_id}")
         for text in [
-            "事件是系统识别到的参考点，用来定位值得回看的位置；不代表身体状态在该公里点突然变化。",
-            "区间表示状态压力持续出现的路段；右侧摘要用于理解分布，不是精确结论。",
+            "对应主图上的关键图钉，用来定位值得回看的位置；不是单点结论。",
+            "对应主图上方的状态阶段带，帮助理解压力持续出现的路段。",
         ]:
             self.assertIn(text, self.html)
 
@@ -609,9 +626,16 @@ class TestV9AiInsightModalHtml(unittest.TestCase):
             "function _fatigueReviewHasRiskSignals(metrics, events)",
             "本次未识别到持续压力路段，但右侧存在风险线索；请结合能量、效率和负荷卡片复盘。",
             "本次状态整体平稳，未识别到明显压力转折点或持续压力路段。",
-            "快速查看风险状态、事件点和状态路段。",
+            "var trainingLoadRisk = function(metric)",
+            "metric.ratio_7d_42d",
+            "先看主图：这里汇总当前最值得回看的风险、图钉和状态区间。",
         ]:
             self.assertIn(text, self.html)
+        risk_fn_idx = self.html.find("function _fatigueReviewHasRiskSignals(metrics, events)")
+        self.assertGreater(risk_fn_idx, 0)
+        risk_fn = self.html[risk_fn_idx:self.html.find("\n    function _fatigueReviewSignalRelationCopy", risk_fn_idx)]
+        self.assertIn("trainingLoadRisk(metrics.training_load)", risk_fn)
+        self.assertNotIn("riskLevel(metrics.training_load)", risk_fn)
         self.assertNotIn("崩溃触发因素", self.html)
         self.assertNotIn("突然崩", self.html)
         self.assertNotIn("精确诊断", self.html)
@@ -695,9 +719,9 @@ class TestV9AiInsightModalHtml(unittest.TestCase):
             "配速、心率和恢复段",
             "爬升、补给和停歇",
             "心率、坡度和功率",
-            "这个参考点附近出现能量断档风险",
-            "这个参考点附近出现乏力风险",
-            "这个参考点附近出现掉功率风险",
+            "这个图钉表示能量断档风险窗口起点",
+            "这个图钉表示乏力风险窗口起点",
+            "这个图钉表示掉功率风险窗口起点",
         ]:
             self.assertIn(text, self.html)
         forbidden_visible_copy = [
@@ -718,21 +742,21 @@ class TestV9AiInsightModalHtml(unittest.TestCase):
         for text in forbidden_visible_copy:
             self.assertNotIn(text, self.html)
 
-    def test_p8_1_context_factors_and_advice_sidebar_exists(self):
-        """P8.1:上下文标签降噪为关键摘要影响因素,建议侧栏保留。"""
+    def test_p8_1_context_factors_sidebar_exists_and_advice_moves_to_ai_modal(self):
+        """P8.1:上下文标签保留在读图解释,建议只留在 AI 洞察 Modal。"""
         for el_id in [
             "fr-side-summary-panel", "fr-side-summary-list",
-            "fr-advice-panel", "fr-advice-boundary", "fr-advice-status",
-            "fr-advice", "fr-disclaimer",
+            "fr-ai-advice", "fr-ai-disclaimer",
         ]:
             self.assertIn('id="' + el_id + '"', self.html,
                           f"P8.1 FAIL: 缺少 #{el_id}")
         for text in [
             "影响因素",
             "温度偏高，心率更容易上浮",
-            "结合本次复盘给出下一步训练建议。",
         ]:
             self.assertIn(text, self.html)
+        for removed in ("fr-advice-panel", "fr-advice-boundary", "fr-advice-status", 'id="fr-advice"'):
+            self.assertNotIn(removed, self.html)
         for text in [
             'id="fr-context-panel"',
             'id="fr-context-tags"',
@@ -754,7 +778,7 @@ class TestV9AiInsightModalHtml(unittest.TestCase):
         adv_body = self.html[adv_idx:self.html.find("\n    // === V6.3 AI", adv_idx)]
         for required in ["Object.keys(tags)", "fr-context-factor", "影响因素"]:
             self.assertIn(required, ctx_body)
-        for required in ["暂无建议", "fr-advice-status", "fr-disclaimer", "disclaimer"]:
+        for required in ["主页面不再重复展示建议", "AI 洞察弹窗", "return;"]:
             self.assertIn(required, adv_body)
         for body in (ctx_body, adv_body):
             for forbidden in [
@@ -790,16 +814,15 @@ class TestV9AiInsightModalHtml(unittest.TestCase):
         """P7.8:复盘 Tab 视觉回归必须锁定 P7 信息架构顺序。"""
         ordered_ids = [
             "detail-tab-review",
-            "fr-ai-generate-btn",
             "fr-review-layout",
             "fr-status-strip",
+            "fr-ai-generate-btn",
             "fr-core-metrics-section",
             "fr-capacity-metrics-section",
             "fr-chart-section",
             "fr-side-summary-panel",
             "fr-events-panel",
             "fr-fatigue-zones-panel",
-            "fr-advice-panel",
         ]
         positions = []
         for element_id in ordered_ids:
@@ -884,18 +907,98 @@ class TestV9AiInsightModalHtml(unittest.TestCase):
         self.assertIn('data-detail-tab="overview"', self.html)
         self.assertIn('data-detail-tab="review"', self.html)
 
-    def test_p7_8_visual_regression_ai_freeze_and_no_inline_call(self):
-        """P7.8:视觉回归期间 AI 入口继续冻结且按钮不绑定调用链。"""
+    def test_p8_1_visual_regression_ai_entry_has_no_inline_llm_payload(self):
+        """P8.1:AI 入口可点击,但按钮不内联 call_llm 或事实 payload。"""
         idx = self.html.find('id="fr-ai-generate-btn"')
-        self.assertGreater(idx, 0, "P7.8 FAIL: 缺少 AI 冻结按钮")
+        self.assertGreater(idx, 0, "P8.1 FAIL: 缺少 AI 按钮")
         start = self.html.rfind("<button", 0, idx)
         end = self.html.find("</button>", idx)
         button = self.html[start:end]
-        self.assertIn("disabled", button)
-        self.assertIn('aria-disabled="true"', button)
-        self.assertIn("AI 洞察待开放", button)
-        self.assertNotIn("onclick=", button)
+        self.assertNotIn("disabled", button)
+        self.assertNotIn('aria-disabled="true"', button)
+        self.assertIn('onclick="onFatigueReviewAiInsight()"', button)
         self.assertNotIn("call_llm", button)
+
+    def test_p8_3_ai_dimension_label_fallback_uses_new_semantics(self):
+        """P8.3:AI 维度展示兜底必须使用新四维中文语义。"""
+        self.assertIn("function _fatigueReviewAiDimensionLabel(key, fallback)", self.html)
+        for text in (
+            "overall_stability: '全程稳定性'",
+            "fatigue_progression: '疲劳阶段'",
+            "risk_triggers: '风险触发'",
+            "context_impact: '外部影响'",
+            "_fatigueReviewAiDimensionLabel(d.key, d.label)",
+        ):
+            self.assertIn(text, self.html)
+
+    def test_p8_4_ai_success_updates_overview_dimensions(self):
+        """P8.4:AI 成功后只用 insight.key_dimensions 增强四维总览。"""
+        idx = self.html.find("function _renderFatigueReviewAiSuccess(insight)")
+        self.assertGreater(idx, 0)
+        end = self.html.find("\n    function _renderFatigueReviewAiError", idx)
+        body = self.html[idx:end]
+        self.assertIn("_buildFatigueReviewOverviewDimensionsFromAi(insight.key_dimensions)", body)
+        self.assertIn("_renderFatigueReviewOverviewDimensions", body)
+        for forbidden in ("metrics", "curves", "fatigue_zones", "collapse_events", "localStorage.", "sessionStorage."):
+            self.assertNotIn(forbidden, body)
+
+    def test_p8_5_ai_loading_transition_animation_exists(self):
+        """P8.5:AI 等待过程需要有过渡动画和骨架态。"""
+        for text in (
+            "fr-ai-loading-flow",
+            "fr-ai-loading-track",
+            "fr-ai-loading-steps",
+            "fr-ai-skeleton-line",
+            "@keyframes frAiScan",
+            "@keyframes frAiPulse",
+            "@keyframes frAiSkeleton",
+        ):
+            self.assertIn(text, self.html)
+        idx = self.html.find("function _renderFatigueReviewAiLoading()")
+        self.assertGreater(idx, 0)
+        end = self.html.find("\n    function _fatigueReviewAiDimensionLabel", idx)
+        body = self.html[idx:end]
+        for text in ("读取快照", "组织四维", "生成建议", "fatigue-ai-modal-spinner"):
+            self.assertIn(text, body)
+        self.assertNotIn("call_llm", body)
+
+    def test_p8_6_ai_user_visible_text_is_localized(self):
+        """P8.6:AI 用户可见文本不得直接暴露英文枚举和代码词。"""
+        for text in (
+            "function _fatigueReviewAiLevelLabel(level)",
+            "function _fatigueReviewLocalizeAiText(text)",
+            "BONK_WARNING",
+            "效率指标",
+            "心率储备占用",
+            "_fatigueReviewAiLevelLabel(d.level)",
+            "_fatigueReviewLocalizeAiText(d.comment || '')",
+            "_fatigueReviewLocalizeAiText(insight.summary || '--')",
+            "_fatigueReviewLocalizeAiText(insight.training_advice || '--')",
+            "_fatigueReviewLocalizeAiText(item.comment || '暂无足够数据')",
+            "level: _fatigueReviewAiLevelLabel(item.level || 'unknown')",
+        ):
+            self.assertIn(text, self.html)
+        idx = self.html.find("function _renderFatigueReviewAiSuccess(insight)")
+        self.assertGreater(idx, 0)
+        end = self.html.find("\n    function _renderFatigueReviewAiError", idx)
+        body = self.html[idx:end]
+        self.assertNotIn("safeHtml(d.level || '--')", body)
+
+    def test_p8_7_ai_event_section_replaces_loading_and_syncs_count(self):
+        """P8.7:AI 成功态必须替换关键事件骨架,且标题数量跟事件解释一致。"""
+        idx = self.html.find("function _renderFatigueReviewAiSuccess(insight)")
+        self.assertGreater(idx, 0)
+        end = self.html.find("\n    function _renderFatigueReviewAiError", idx)
+        body = self.html[idx:end]
+        for text in (
+            "var eventList = document.getElementById('fr-ai-event-list')",
+            "var eventCount = document.getElementById('fr-ai-event-count')",
+            "eventCount.textContent = eventText ? '1' : '0'",
+            "eventList.innerHTML = '<div class=\"event-card active\"",
+            "暂无关键事件",
+        ):
+            self.assertIn(text, body)
+        self.assertNotIn("evSection.querySelector('.event-list').after(exist)", body)
 
 
 class TestV9JsFunctions(unittest.TestCase):

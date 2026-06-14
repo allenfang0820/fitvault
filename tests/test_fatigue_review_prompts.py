@@ -10,6 +10,7 @@ V7.3 LLM 提示词契约测试
 """
 from __future__ import annotations
 
+import json
 import os
 import sys
 import pytest
@@ -93,21 +94,31 @@ class TestDataBoundaryConstraint:
 
 # === 测试 2: 4 维度强制(§5.4)===
 class TestFourDimensionsMandatory:
-    """LLM 必须输出 endurance / stability / bonk_risk / environment 4 维度。"""
+    """LLM 必须输出 P8.3 新四维。"""
+
+    NEW_DIMS = ["overall_stability", "fatigue_progression", "risk_triggers", "context_impact"]
+    OLD_DIMS = ["endurance", "stability", "bonk_risk", "environment"]
 
     def test_four_dimensions_in_output_schema(self):
         from llm_backend import FATIGUE_REVIEW_OUTPUT_SCHEMA
-        for dim in ["endurance", "stability", "bonk_risk", "environment"]:
+        for dim in self.NEW_DIMS:
             assert dim in FATIGUE_REVIEW_OUTPUT_SCHEMA, \
                 f"FATIGUE_REVIEW_OUTPUT_SCHEMA 缺维度:{dim}"
+        assert "endurance|stability|bonk_risk|environment" not in FATIGUE_REVIEW_OUTPUT_SCHEMA
+        for old_label in ("耐力|心肺稳定|撞墙风险|环境压力",):
+            assert old_label not in FATIGUE_REVIEW_OUTPUT_SCHEMA, \
+                f"FATIGUE_REVIEW_OUTPUT_SCHEMA 不应继续要求旧维度:{old_label}"
 
     def test_four_dimensions_in_prompt(self, mock_snapshot):
         """系统 prompt 必须显式声明必须输出 4 维度。"""
         from llm_backend import build_fatigue_review_messages
         messages = build_fatigue_review_messages(mock_snapshot, "running", "跑步")
         system = messages[0]["content"]
-        for dim in ["endurance", "stability", "bonk_risk", "environment"]:
+        for dim in self.NEW_DIMS:
             assert dim in system, f"system prompt 缺维度声明:{dim}"
+        assert "endurance / stability / bonk_risk / environment" not in system
+        for label in ["全程稳定性", "疲劳阶段", "风险触发", "外部影响"]:
+            assert label in system, f"system prompt 缺中文维度:{label}"
 
 
 # === 测试 3: sport 专项约束(§五)===
@@ -216,8 +227,142 @@ class TestOutputSchemaContract:
 
     def test_schema_key_dimensions_has_four_keys(self):
         from llm_backend import FATIGUE_REVIEW_OUTPUT_SCHEMA
-        for dim in ["endurance", "stability", "bonk_risk", "environment"]:
+        for dim in ["overall_stability", "fatigue_progression", "risk_triggers", "context_impact"]:
             assert dim in FATIGUE_REVIEW_OUTPUT_SCHEMA, f"key_dimensions 缺:{dim}"
+
+
+class TestFatigueReviewDimensionNormalizer:
+    """P8.3:normalizer 必须把 AI 维度统一为新四维固定顺序。"""
+
+    ORDER = ["overall_stability", "fatigue_progression", "risk_triggers", "context_impact"]
+
+    def test_normalizer_keeps_new_dimensions_in_order(self):
+        from llm_backend import normalize_fatigue_review_json
+        raw = {
+            "summary": "测试",
+            "key_dimensions": [
+                {"key": "risk_triggers", "label": "风险触发", "level": "warn", "comment": "风险线索"},
+                {"key": "overall_stability", "label": "全程稳定性", "level": "good", "comment": "整体稳定"},
+                {"key": "context_impact", "label": "外部影响", "level": "unknown", "comment": "环境有限"},
+                {"key": "fatigue_progression", "label": "疲劳阶段", "level": "bad", "comment": "后段疲劳"},
+            ],
+        }
+        result = normalize_fatigue_review_json(json.dumps(raw, ensure_ascii=False))
+        assert [d["key"] for d in result["key_dimensions"]] == self.ORDER
+        assert [d["label"] for d in result["key_dimensions"]] == ["全程稳定性", "疲劳阶段", "风险触发", "外部影响"]
+
+    def test_normalizer_maps_legacy_keys_to_new_dimensions(self):
+        from llm_backend import normalize_fatigue_review_json
+        raw = {
+            "summary": "测试",
+            "key_dimensions": [
+                {"key": "endurance", "label": "耐力", "level": "good", "comment": "旧耐力"},
+                {"key": "stability", "label": "心肺稳定", "level": "warn", "comment": "旧稳定"},
+                {"key": "bonk_risk", "label": "撞墙风险", "level": "bad", "comment": "旧风险"},
+                {"key": "environment", "label": "环境压力", "level": "excellent", "comment": "旧环境"},
+            ],
+        }
+        result = normalize_fatigue_review_json(json.dumps(raw, ensure_ascii=False))
+        dims = result["key_dimensions"]
+        assert [d["key"] for d in dims] == self.ORDER
+        assert [d["label"] for d in dims] == ["全程稳定性", "疲劳阶段", "风险触发", "外部影响"]
+        assert dims[0]["comment"] == "旧稳定"
+        assert dims[1]["comment"] == "旧耐力"
+        assert dims[2]["comment"] == "旧风险"
+        assert dims[3]["comment"] == "旧环境"
+
+    def test_normalizer_fills_missing_dimensions_and_dedupes(self):
+        from llm_backend import normalize_fatigue_review_json
+        raw = {
+            "summary": "测试",
+            "key_dimensions": [
+                {"key": "overall_stability", "level": "good", "comment": "保留第一条"},
+                {"key": "overall_stability", "level": "bad", "comment": "重复忽略"},
+            ],
+        }
+        result = normalize_fatigue_review_json(json.dumps(raw, ensure_ascii=False))
+        dims = result["key_dimensions"]
+        assert len(dims) == 4
+        assert dims[0]["comment"] == "保留第一条"
+        assert dims[1]["level"] == "unknown"
+        assert dims[1]["comment"] == "暂无足够数据"
+
+    def test_normalizer_invalid_level_downgrades_to_unknown(self):
+        from llm_backend import normalize_fatigue_review_json
+        raw = {
+            "summary": "测试",
+            "key_dimensions": [
+                {"key": "risk_triggers", "level": "great", "comment": "非法 level"},
+            ],
+        }
+        result = normalize_fatigue_review_json(json.dumps(raw, ensure_ascii=False))
+        assert result["key_dimensions"][2]["level"] == "unknown"
+
+    def test_normalizer_localizes_user_visible_ai_text(self):
+        from llm_backend import normalize_fatigue_review_json
+        raw = {
+            "summary": "Bonk risk is good but load ratio is caution",
+            "key_dimensions": [
+                {
+                    "key": "risk_triggers",
+                    "level": "warn",
+                    "comment": "Bonk风险 low, collapse_events 0, 7/42 is caution",
+                },
+                {
+                    "key": "overall_stability",
+                    "level": "good",
+                    "comment": "efficiency declining, CV high",
+                },
+            ],
+            "event_interpretation": "collapse event not found",
+            "training_advice": "Keep Z3 short and avoid high HR",
+            "disclaimer": "AI generated from snapshot",
+        }
+        result = normalize_fatigue_review_json(json.dumps(raw, ensure_ascii=False))
+        visible = " ".join([
+            result["summary"],
+            result["event_interpretation"],
+            result["training_advice"],
+            result["disclaimer"],
+            *[d["comment"] for d in result["key_dimensions"]],
+        ])
+        for forbidden in ("Bonk", "good", "warn", "declining", "caution", "collapse_events"):
+            assert forbidden not in visible
+        for expected in ("能量断档", "良好", "需谨慎", "下降", "状态下滑事件"):
+            assert expected in visible
+
+    def test_normalizer_localizes_event_codes_and_metric_abbreviations(self):
+        from llm_backend import normalize_fatigue_review_json
+        raw = {
+            "summary": "BONK_WARNING risk window",
+            "key_dimensions": [
+                {
+                    "key": "risk_triggers",
+                    "level": "warn",
+                    "comment": "EI dropped, HRR high, warning",
+                },
+            ],
+            "event_interpretation": "唯一事件为 BONK_WARNING, EI 下降且 HRR 偏高",
+            "training_advice": "Reduce risk window",
+            "disclaimer": "snapshot",
+        }
+        result = normalize_fatigue_review_json(json.dumps(raw, ensure_ascii=False))
+        visible = " ".join([
+            result["summary"],
+            result["event_interpretation"],
+            result["training_advice"],
+            *[d["comment"] for d in result["key_dimensions"]],
+        ])
+        for text in ("能量断档风险线索", "效率指标", "心率储备占用", "风险区间"):
+            assert text in visible
+        for forbidden in ("BONK_WARNING", "EI", "HRR", "risk window"):
+            assert forbidden not in visible
+
+    def test_prompt_requires_localized_user_visible_text(self, mock_snapshot):
+        from llm_backend import build_fatigue_review_messages
+        prompt = "\n".join(m["content"] for m in build_fatigue_review_messages(mock_snapshot, "running", "跑步"))
+        assert "用户可见文本不得直接输出 good / warn / bad / unknown / declining / caution / Bonk / collapse" in prompt
+        assert "良好 / 需关注 / 风险较高 / 数据不足 / 下降 / 需谨慎 / 能量断档 / 状态下滑" in prompt
 
 
 # === 测试 7: message 数量 + role ===

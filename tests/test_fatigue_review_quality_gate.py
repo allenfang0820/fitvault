@@ -68,6 +68,39 @@ class TestP5FrontendZeroInferenceGate(unittest.TestCase):
         self.assertIn("distanceCurve.length < 2", body)
         self.assertIn("距离轴暂不可用", body)
 
+    def test_p8_4_overview_dimensions_do_not_infer_from_dom_or_charts(self):
+        body = _extract_js_function(self.html, "_buildFatigueReviewOverviewDimensions")
+        self.assertIn("data.metrics", body)
+        self.assertIn("data.fatigue_zones", body)
+        self.assertIn("data.collapse_events", body)
+        self.assertIn("data.context_tags", body)
+        for forbidden in (
+            "querySelector",
+            "getOption",
+            "chartPayload",
+            "points",
+            "call_llm",
+            "_distanceFromSpeedTime",
+            "hr_drift_pct",
+            "decoupling_pct",
+        ):
+            self.assertNotIn(forbidden, body)
+
+    def test_p8_4_ai_overview_dimensions_only_use_key_dimensions(self):
+        body = _extract_js_function(self.html, "_buildFatigueReviewOverviewDimensionsFromAi")
+        self.assertIn("dimensions", body)
+        for forbidden in (
+            "data.metrics",
+            "data.curves",
+            "fatigue_zones",
+            "collapse_events",
+            "context_tags",
+            "call_llm",
+            "localStorage",
+            "sessionStorage",
+        ):
+            self.assertNotIn(forbidden, body)
+
 
 class TestP5SnapshotWhitelistGate(unittest.TestCase):
     TOP_LEVEL_KEYS = {
@@ -231,6 +264,36 @@ class TestP5SnapshotWhitelistGate(unittest.TestCase):
         self.assertIn("description", events[1])
         self.assertTrue(all(ev["event_id"].startswith("ce_") for ev in events))
 
+    def test_energy_gap_event_keeps_legacy_fields_and_window_metadata(self):
+        from main import _build_fatigue_review_collapse_events
+
+        events = _build_fatigue_review_collapse_events(
+            bonk_events=[{
+                "type": "BONK_WARNING",
+                "title": "能量断档风险线索",
+                "label": "能量断档线索",
+                "trigger_km": 28.4,
+                "risk_start_km": 28.4,
+                "risk_end_km": 31.2,
+                "value_y": 0.8123,
+                "confidence": "high",
+                "evidence": ["EI持续下降约18%", "速度/配速同步变差"],
+                "description": "风险窗口起点，不代表精确撞墙坐标。",
+            }],
+            fatigue_zones=[],
+            sport_type="running",
+            total_distance_m=42195,
+        )
+
+        self.assertEqual(len(events), 1)
+        event = events[0]
+        for key in ("event_id", "type", "title", "label", "trigger_km", "value_y", "description"):
+            self.assertIn(key, event)
+        self.assertEqual(event["risk_start_km"], 28.4)
+        self.assertEqual(event["risk_end_km"], 31.2)
+        self.assertEqual(event["confidence"], "high")
+        self.assertIn("evidence", event)
+
 
 class TestP5P4UiStructureGate(unittest.TestCase):
     def setUp(self) -> None:
@@ -263,9 +326,6 @@ class TestP5P4UiStructureGate(unittest.TestCase):
             "fr-fatigue-zones-panel",
             "fr-fatigue-zones-boundary",
             "fr-fatigue-zone-list",
-            "fr-advice-panel",
-            "fr-advice-boundary",
-            "fr-advice-status",
             "fatigue-review-chart",
         ):
             self.assertIn('id="' + element_id + '"', self.html)
@@ -332,8 +392,8 @@ class TestP5P4UiStructureGate(unittest.TestCase):
 
     def test_p7_5_event_and_zone_boundaries_are_preserved(self):
         for text in (
-            "事件是系统识别到的参考点，用来定位值得回看的位置；不代表身体状态在该公里点突然变化。",
-            "区间表示状态压力持续出现的路段；右侧摘要用于理解分布，不是精确结论。",
+            "对应主图上的关键图钉，用来定位值得回看的位置；不是单点结论。",
+            "对应主图上方的状态阶段带，帮助理解压力持续出现的路段。",
             "_renderFatigueReviewEvents(data.collapse_events || [], data.sport_type, hasSustainedZone)",
             "_renderFatigueReviewZones(data.fatigue_zones || [], data.sport_type, reviewTotalDistanceKm, data.metrics || {}, data.collapse_events || [])",
             "_fatigueReviewEventDisplayCopy(ev, sportGroup, hasSustainedZone)",
@@ -351,9 +411,9 @@ class TestP5P4UiStructureGate(unittest.TestCase):
             "心率储备占用约",
             "海拔压力会抬高心率",
             "输出压力偏高，需要结合恢复观察",
-            "结合本次复盘给出下一步训练建议。",
             "_renderFatigueReviewAdvice(data.advice, data.disclaimer)",
-            "暂时没有可展示的训练建议。",
+            "主页面不再重复展示建议",
+            "AI 洞察弹窗",
         ):
             self.assertIn(text, self.html)
         for removed in (
@@ -393,7 +453,6 @@ class TestP5P4UiStructureGate(unittest.TestCase):
             "fr-side-summary-panel",
             "fr-events-panel",
             "fr-fatigue-zones-panel",
-            "fr-advice-panel",
         )
         positions = []
         for element_id in ordered_ids:
@@ -402,7 +461,7 @@ class TestP5P4UiStructureGate(unittest.TestCase):
             positions.append(pos)
         self.assertEqual(positions, sorted(positions))
 
-    def test_p7_8_visual_regression_freezes_sketch_scope_and_ai_entry(self):
+    def test_p8_1_visual_regression_keeps_sketch_scope_and_opens_ai_entry(self):
         review_idx = self.html.find('id="detail-tab-review"')
         upload_idx = self.html.find('id="file-upload"', review_idx)
         review_body = self.html[review_idx:upload_idx if upload_idx > review_idx else review_idx + 16000]
@@ -414,9 +473,16 @@ class TestP5P4UiStructureGate(unittest.TestCase):
         start = self.html.rfind("<button", 0, button_idx)
         end = self.html.find("</button>", button_idx)
         button = self.html[start:end]
-        self.assertIn("disabled", button)
-        self.assertIn('aria-disabled="true"', button)
-        self.assertNotIn("onclick=", button)
+        self.assertNotIn("disabled", button)
+        self.assertNotIn('aria-disabled="true"', button)
+        self.assertIn('onclick="onFatigueReviewAiInsight()"', button)
+        self.assertIn("AI 洞察", button)
+        self.assertIn("✨", button)
+        title_idx = self.html.find("本次复盘概览")
+        overview_idx = self.html.find('id="fr-overview-dimensions"')
+        self.assertGreater(button_idx, title_idx)
+        self.assertLess(button_idx, overview_idx)
+        self.assertNotIn("call_llm", button)
 
     def test_p7_9_design_correction_plan_is_preserved(self):
         plan = _read(PLAN_MD)
@@ -511,8 +577,8 @@ class TestP5P4UiStructureGate(unittest.TestCase):
 
     def test_p7_12_chart_architecture_correction_is_preserved(self):
         for text in (
-            "grid-template-columns: minmax(0, 1fr) 260px",
-            "min-height: 640px",
+            "grid-template-columns: minmax(0, 1fr) 248px",
+            "min-height: 560px",
             "#fatigue-review-chart.fr-chart-canvas",
             "min-height: 360px",
             "var computedHeight = Math.max(432, Math.min(772, lanes.length * lanePx + 84))",
@@ -548,7 +614,7 @@ class TestP5P4UiStructureGate(unittest.TestCase):
             "grid-template-columns: 132px minmax(0, 1fr)",
             "#fr-chart-section.chart-container",
             "flex: 0 0 auto",
-            "min-height: auto",
+            "min-height: 560px",
             "position: relative",
             "position: absolute",
             "flex: 0 0 var(--fr-chart-height)",
@@ -725,11 +791,11 @@ class TestP5P4UiStructureGate(unittest.TestCase):
             'id="fr-phys-impact-panel"',
             'id="fr-phys-impact-boundary"',
             'id="fr-phys-impact-list"',
-            "关键摘要",
-            "状态下滑线索",
-            "生理冲击点",
-            "快速查看风险状态、事件点和状态路段。",
-            "用几个核心指标概括本次训练对身体的影响。",
+            "读图解释",
+            "图钉线索",
+            "解释原因",
+            "先看主图：这里汇总当前最值得回看的风险、图钉和状态区间。",
+            "用少量证据解释主图里的波动，避免重复顶部四维总览。",
             "function _renderFatigueReviewSideSummary(data)",
             "_renderFatigueReviewSideSummary(data)",
             "_renderFatigueReviewSideSummary({})",
@@ -1090,7 +1156,7 @@ class TestP5P4UiStructureGate(unittest.TestCase):
             "负荷很高",
             "fr-metric-info",
             "看后半程是否需要更高的心肺负担",
-            "看后半程是否出现明显能量不足迹象",
+            "结合能量储备和持续表现变化判断风险线索",
             "getFatigueReviewSportCopyGroup",
             "sport === 'mountaineering'",
             "_fatigueReviewMetricCopy",
@@ -1214,8 +1280,15 @@ class TestP5P4UiStructureGate(unittest.TestCase):
             "function _fatigueReviewHasRiskSignals(metrics, events)",
             "本次未识别到持续压力路段，但右侧存在风险线索；请结合能量、效率和负荷卡片复盘。",
             "本次状态整体平稳，未识别到明显压力转折点或持续压力路段。",
+            "var trainingLoadRisk = function(metric)",
+            "metric.ratio_7d_42d",
         ):
             self.assertIn(text, self.html)
+        risk_fn_idx = self.html.find("function _fatigueReviewHasRiskSignals(metrics, events)")
+        self.assertGreater(risk_fn_idx, 0)
+        risk_fn = self.html[risk_fn_idx:self.html.find("\n    function _fatigueReviewSignalRelationCopy", risk_fn_idx)]
+        self.assertIn("trainingLoadRisk(metrics.training_load)", risk_fn)
+        self.assertNotIn("riskLevel(metrics.training_load)", risk_fn)
         self.assertNotIn("崩溃触发因素", self.html)
         self.assertNotIn("突然崩", self.html)
         self.assertNotIn("精确诊断", self.html)
@@ -1296,9 +1369,9 @@ class TestP5P4UiStructureGate(unittest.TestCase):
             "配速、心率和恢复段",
             "爬升、补给和停歇",
             "心率、坡度和功率",
-            "这个参考点附近出现能量断档风险",
-            "这个参考点附近出现乏力风险",
-            "这个参考点附近出现掉功率风险",
+            "这个图钉表示能量断档风险窗口起点",
+            "这个图钉表示乏力风险窗口起点",
+            "这个图钉表示掉功率风险窗口起点",
         ):
             self.assertIn(text, self.html)
         for text in (
@@ -1360,15 +1433,16 @@ class TestP5AiBoundaryGate(unittest.TestCase):
         for forbidden in ("metrics", "curves", "points", "chartPayload", "fatigue_zones"):
             self.assertNotIn("call_llm('__FATIGUE_REVIEW_INSIGHT__', " + forbidden, body)
 
-    def test_p6_1_ai_button_is_frozen_but_capability_remains(self):
+    def test_p8_1_ai_button_is_open_and_capability_remains(self):
         button_idx = self.html.find('id="fr-ai-generate-btn"')
         self.assertGreater(button_idx, 0)
         start = self.html.rfind("<button", 0, button_idx)
         end = self.html.find("</button>", button_idx)
         button = self.html[start:end]
-        self.assertIn("disabled", button)
-        self.assertIn('aria-disabled="true"', button)
-        self.assertNotIn("onclick=", button)
+        self.assertNotIn("disabled", button)
+        self.assertNotIn('aria-disabled="true"', button)
+        self.assertIn('onclick="onFatigueReviewAiInsight()"', button)
+        self.assertNotIn("call_llm", button)
         self.assertIn("function onFatigueReviewAiInsight(", self.html)
         self.assertIn("function _freezeFatigueReviewAiEntry(", self.html)
 

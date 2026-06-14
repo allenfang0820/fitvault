@@ -110,6 +110,54 @@ class TestFatigueReviewP6AiInsight(unittest.TestCase):
         self.assertEqual(res["code"], 0)
         self.assertEqual(res["data"]["fatigue_review_insight"]["error"], "未找到该活动记录")
 
+    def test_get_fatigue_review_records_current_activity_context(self):
+        api = self._api()
+        api._build_fatigue_review_snapshot = MagicMock(return_value={
+            "sport_type": "running",
+            "metrics": {},
+            "collapse_events": [],
+            "fatigue_zones": [],
+            "curves": {},
+            "context_tags": {},
+            "ai_insight": None,
+            "advice": "",
+            "disclaimer": "",
+        })
+
+        res = api.get_fatigue_review(9)
+
+        self.assertEqual(res["code"], 0)
+        self.assertEqual(api._fatigue_review_activity_id, 9)
+
+    def test_call_llm_uses_review_activity_context_without_ai_snapshot(self):
+        api = self._api()
+        api._ai_snapshot = None
+        api._fatigue_review_activity_id = 9
+        api._build_fatigue_review_insight_snapshot = MagicMock(return_value={
+            "activity_id": 9,
+            "sport_type": "running",
+            "metrics": {"hr_drift": {"level": "unknown"}},
+            "fatigue_zones": [],
+            "collapse_events": [],
+            "curves_summary": {"distance_points_count": 10},
+            "context_tags": {},
+            "advice": "",
+            "disclaimer": "",
+        })
+
+        with patch("llm_backend.load_llm_config", return_value={
+            "url": "",
+            "model": "test",
+            "api_key": "",
+            "agent_id": "",
+        }):
+            res = api.call_llm("__FATIGUE_REVIEW_INSIGHT__", "running")
+
+        self.assertEqual(res["code"], 0)
+        api._build_fatigue_review_insight_snapshot.assert_called_once_with(9, "running")
+        self.assertNotEqual(res["data"]["fatigue_review_insight"]["error"], "请先加载活动轨迹")
+        self.assertIn("API 接口地址未配置", res["data"]["fatigue_review_insight"]["error"])
+
     def test_call_llm_happy_path_uses_compact_snapshot(self):
         api = self._api()
         api._ai_snapshot = {"activity_id": 9}

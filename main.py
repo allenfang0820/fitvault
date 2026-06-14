@@ -726,6 +726,50 @@ def _sanitize_distance_curve_m(values: list) -> list[float]:
     return clean
 
 
+def _resample_curve_to_distance_axis(
+    source_distance_m: Any,
+    source_curve: Any,
+    target_distance_m: Any,
+) -> list:
+    """Map a record-level curve onto the authoritative review distance axis."""
+    if not (
+        isinstance(source_distance_m, list)
+        and isinstance(source_curve, list)
+        and isinstance(target_distance_m, list)
+    ):
+        return []
+    if not source_distance_m or len(source_distance_m) != len(source_curve) or not target_distance_m:
+        return []
+
+    source_pairs: list[tuple[float, Any]] = []
+    for distance, value in zip(source_distance_m, source_curve):
+        dist = _safe_float(distance)
+        if dist is None:
+            continue
+        source_pairs.append((float(dist), value))
+    if not source_pairs:
+        return []
+
+    sampled: list[Any] = []
+    idx = 0
+    last_idx = len(source_pairs) - 1
+    for target in target_distance_m:
+        target_dist = _safe_float(target)
+        if target_dist is None:
+            sampled.append(None)
+            continue
+        while idx < last_idx and source_pairs[idx + 1][0] <= float(target_dist):
+            idx += 1
+        nearest_idx = idx
+        if idx < last_idx:
+            left_gap = abs(float(target_dist) - source_pairs[idx][0])
+            right_gap = abs(source_pairs[idx + 1][0] - float(target_dist))
+            if right_gap < left_gap:
+                nearest_idx = idx + 1
+        sampled.append(source_pairs[nearest_idx][1])
+    return sampled
+
+
 def _build_fatigue_review_curve_bundle(row: dict[str, Any]) -> dict[str, Any]:
     track_points = _safe_json_list(
         row.get("track_json") or row.get("points_json") or row.get("merged_track_json")
@@ -754,6 +798,7 @@ def _build_fatigue_review_curve_bundle(row: dict[str, Any]) -> dict[str, Any]:
         "speed_curve_mps": [float(r.get("speed") or 0.0) for r in records],
         "altitude_curve_m": [r.get("altitude") for r in records],
         "cadence_curve": _safe_json_list(row.get("cadence_curve")) or [],
+        "power_curve": [r.get("power") for r in records],
         "calories": _safe_float(row.get("calories")) or 0.0,
         "duration_sec": _safe_int(row.get("duration_sec") or row.get("duration")) or 0,
         "total_distance_m": total_distance_m,
@@ -772,10 +817,14 @@ def _build_fatigue_review_curve_bundle(row: dict[str, Any]) -> dict[str, Any]:
         prof = profile_backend.get_profile()
         bundle["profile_max_hr"] = _safe_float(prof.max_hr) if prof and prof.max_hr else None
         bundle["profile_resting_hr"] = _safe_float(prof.resting_hr) if prof and prof.resting_hr else None
+        bundle["profile_weight_kg"] = _safe_float(prof.weight) if prof and prof.weight else None
+        bundle["profile_vo2max"] = _safe_float(prof.vo2max) if prof and prof.vo2max else None
         bundle["lactate_threshold_hr"] = _safe_float(prof.lactate_threshold_hr) if prof and prof.lactate_threshold_hr else None
     except Exception:
         bundle["profile_max_hr"] = None
         bundle["profile_resting_hr"] = None
+        bundle["profile_weight_kg"] = None
+        bundle["profile_vo2max"] = None
         bundle["lactate_threshold_hr"] = None
     return bundle
 
@@ -788,6 +837,9 @@ def _build_resolved_payload_v81(
         "distance_curve": [],
         "time_curve": [],
         "altitude_curve": [],
+        "hr_curve": [],
+        "speed_curve": [],
+        "cadence_curve": [],
         "gap_curve": [],
         "grade_curve": [],
         "efficiency_curve": [],
@@ -840,6 +892,8 @@ def _build_resolved_payload_v81(
             "weather": weather,
             "profile_max_hr": bundle.get("profile_max_hr"),
             "profile_resting_hr": bundle.get("profile_resting_hr"),
+            "profile_weight_kg": bundle.get("profile_weight_kg"),
+            "profile_vo2max": bundle.get("profile_vo2max"),
             "lactate_threshold_hr": bundle.get("lactate_threshold_hr"),
         }
 
@@ -851,9 +905,61 @@ def _build_resolved_payload_v81(
         for forbidden in ("shadow_diff", "shadow_diff_json", "diff"):
             resolved.pop(forbidden, None)
 
+        resolver_distance_curve = resolved.get("distance_curve") or distance_curve
         efficiency_curve = resolved.get("efficiency_curve") or []
+        resolver_time_curve = resolved.get("time_curve") or bundle.get("time_curve_sec") or []
+        resolver_hr_curve = resolved.get("hr_curve") or bundle.get("hr_curve") or []
+        resolver_speed_curve = resolved.get("speed_curve") or bundle.get("speed_curve_mps") or []
+        resolver_cadence_curve = resolved.get("cadence_curve") or bundle.get("cadence_curve") or []
+        if efficiency_curve and len(resolver_distance_curve) != len(efficiency_curve):
+            resolver_distance_curve = distance_curve[:len(efficiency_curve)]
+        resolver_altitude_curve = resolved.get("altitude_curve") or bundle.get("altitude_curve_m") or []
+        resolver_power_curve = bundle.get("power_curve") or []
+        if len(resolver_distance_curve) != len(distance_curve):
+            if len(resolver_altitude_curve) != len(resolver_distance_curve):
+                resolver_altitude_curve = _resample_curve_to_distance_axis(
+                    source_distance_m=distance_curve,
+                    source_curve=bundle.get("altitude_curve_m") or [],
+                    target_distance_m=resolver_distance_curve,
+                ) or resolver_altitude_curve
+            if len(resolver_power_curve) != len(resolver_distance_curve):
+                resolver_power_curve = _resample_curve_to_distance_axis(
+                    source_distance_m=distance_curve,
+                    source_curve=bundle.get("power_curve") or [],
+                    target_distance_m=resolver_distance_curve,
+                ) or resolver_power_curve
+            if len(resolver_hr_curve) != len(resolver_distance_curve):
+                resolver_hr_curve = _resample_curve_to_distance_axis(
+                    source_distance_m=distance_curve,
+                    source_curve=bundle.get("hr_curve") or [],
+                    target_distance_m=resolver_distance_curve,
+                ) or resolver_hr_curve
+            if len(resolver_speed_curve) != len(resolver_distance_curve):
+                resolver_speed_curve = _resample_curve_to_distance_axis(
+                    source_distance_m=distance_curve,
+                    source_curve=bundle.get("speed_curve_mps") or [],
+                    target_distance_m=resolver_distance_curve,
+                ) or resolver_speed_curve
+            if len(resolver_cadence_curve) != len(resolver_distance_curve):
+                resolver_cadence_curve = _resample_curve_to_distance_axis(
+                    source_distance_m=distance_curve,
+                    source_curve=bundle.get("cadence_curve") or [],
+                    target_distance_m=resolver_distance_curve,
+                ) or resolver_cadence_curve
+        if len(resolver_time_curve) != len(resolver_distance_curve):
+            resolver_time_curve = []
+        if len(resolver_hr_curve) != len(resolver_distance_curve):
+            resolver_hr_curve = []
+        if len(resolver_speed_curve) != len(resolver_distance_curve):
+            resolver_speed_curve = []
+        if len(resolver_cadence_curve) != len(resolver_distance_curve):
+            resolver_cadence_curve = []
+        if len(resolver_altitude_curve) != len(resolver_distance_curve):
+            resolver_altitude_curve = []
+        if len(resolver_power_curve) != len(resolver_distance_curve):
+            resolver_power_curve = []
         fatigue_zones = MetricsResolver._calculate_fatigue_zones(
-            distance_curve=distance_curve,
+            distance_curve=resolver_distance_curve,
             ei_curve=efficiency_curve,
             sport_type=sport_type,
             avg_hr=bundle.get("avg_heart_rate"),
@@ -861,16 +967,30 @@ def _build_resolved_payload_v81(
             profile_resting_hr=bundle.get("profile_resting_hr"),
         )
         insight_events = MetricsResolver._detect_bonk_event(
-            distance_curve=distance_curve,
+            distance_curve=resolver_distance_curve,
             ei_curve=efficiency_curve,
             total_calories=bundle.get("calories") or 0.0,
             sport_type=sport_type,
+            time_curve=resolver_time_curve,
+            hr_curve=resolver_hr_curve,
+            speed_curve=resolver_speed_curve,
+            cadence_curve=resolver_cadence_curve,
+            power_curve=resolver_power_curve,
+            weight_kg=bundle.get("profile_weight_kg"),
+            avg_hr=bundle.get("avg_heart_rate"),
+            profile_max_hr=bundle.get("profile_max_hr"),
+            profile_resting_hr=bundle.get("profile_resting_hr"),
+            lactate_threshold_hr=bundle.get("lactate_threshold_hr"),
+            vo2max=bundle.get("profile_vo2max"),
         )
 
         return {
-            "distance_curve": distance_curve,
-            "time_curve": bundle.get("time_curve_sec") or [],
-            "altitude_curve": bundle.get("altitude_curve_m") or [],
+            "distance_curve": resolver_distance_curve,
+            "time_curve": resolver_time_curve,
+            "altitude_curve": resolver_altitude_curve,
+            "hr_curve": resolver_hr_curve,
+            "speed_curve": resolver_speed_curve,
+            "cadence_curve": resolver_cadence_curve,
             "gap_curve": resolved.get("gap_curve") or [],
             "grade_curve": resolved.get("grade_curve") or [],
             "efficiency_curve": efficiency_curve,
@@ -1034,6 +1154,7 @@ def _build_fatigue_review_collapse_events(
         title: str,
         description: str,
         value_y: Any = None,
+        extra: Optional[dict[str, Any]] = None,
     ) -> None:
         trigger = _safe_float(trigger_km)
         if trigger is None or trigger < 0:
@@ -1042,7 +1163,7 @@ def _build_fatigue_review_collapse_events(
             existing_km = _safe_float(existing.get("trigger_km"))
             if existing_km is not None and abs(existing_km - trigger) < 0.05:
                 return
-        raw_events.append({
+        event = {
             "type": event_type,
             "title": title,
             "label": title,
@@ -1050,7 +1171,12 @@ def _build_fatigue_review_collapse_events(
             "trigger_time_sec": None,
             "value_y": value_y,
             "description": description,
-        })
+        }
+        if isinstance(extra, dict):
+            for key in ("risk_start_km", "risk_end_km", "confidence", "evidence", "risk_level"):
+                if key in extra:
+                    event[key] = extra.get(key)
+        raw_events.append(event)
 
     for ev in bonk_events or []:
         if not isinstance(ev, dict):
@@ -1058,9 +1184,10 @@ def _build_fatigue_review_collapse_events(
         add_event(
             event_type=str(ev.get("type") or "BONK_WARNING"),
             trigger_km=ev.get("trigger_km"),
-            title=str(ev.get("title") or ev.get("label") or "撞墙风险"),
-            description=str(ev.get("description") or "后端 Bonk 检测触发关键事件"),
+            title=str(ev.get("title") or ev.get("label") or "能量断档风险线索"),
+            description=str(ev.get("description") or "后端识别到能量断档风险窗口线索"),
             value_y=ev.get("value_y"),
+            extra=ev,
         )
 
     zones: list[dict[str, Any]] = []
@@ -1129,7 +1256,7 @@ def _build_fatigue_review_collapse_events(
     collapse_events: list[dict[str, Any]] = []
     for idx, ev in enumerate(raw_events[:4]):
         title = str(ev.get("title") or ev.get("label") or ev.get("type") or "关键事件")
-        collapse_events.append({
+        item = {
             "event_id": f"ce_{idx:02d}",
             "type": str(ev.get("type") or "FATIGUE_EVENT"),
             "title": title,
@@ -1138,7 +1265,11 @@ def _build_fatigue_review_collapse_events(
             "trigger_time_sec": ev.get("trigger_time_sec"),
             "value_y": ev.get("value_y"),
             "description": str(ev.get("description") or ""),
-        })
+        }
+        for key in ("risk_start_km", "risk_end_km", "confidence", "evidence", "risk_level"):
+            if key in ev:
+                item[key] = ev.get(key)
+        collapse_events.append(item)
     return collapse_events
 
 
@@ -1575,7 +1706,7 @@ def _build_fatigue_review_curves_snapshot(
         axis_len,
     )
     speed_curve = _fatigue_review_numeric_curve(
-        bundle.get("speed_curve_mps") or [],
+        resolved.get("speed_curve") or bundle.get("speed_curve_mps") or [],
         axis_len,
     )
     return {
@@ -1597,7 +1728,7 @@ def _build_fatigue_review_curves_snapshot(
             axis_len=axis_len,
         ),
         "hr": _fatigue_review_numeric_curve(
-            bundle.get("hr_curve") or [],
+            resolved.get("hr_curve") or bundle.get("hr_curve") or [],
             axis_len,
         ),
         "altitude": _fatigue_review_numeric_curve(
@@ -1688,13 +1819,13 @@ def _compute_hr_zone_distribution(
     假设 hr_curve 采样间隔 1s(V8.4 简化;V8.x 可加 sample_interval_sec 参数)。
 
     契约:
-    - §2.1 全链路可追溯:hr_zone 来源 = hr_curve + max_hr(FIT 解析 → fit_sdk)
-    - §8 canonical 写入:此函数输出仅供 INSERT 流程
+    - §2.1 全链路可追溯:hr_zone 来源 = hr_curve + 个人最大心率
+    - §8 canonical 写入:此函数输出仅供 INSERT/UPDATE 流程
     - §2.2 数据可信分层:max_hr 缺失时拒写(None),不写入假数据
 
     Args:
         hr_curve: 心率逐点序列
-        max_hr: 最高心率(bpm),无则返回 None
+        max_hr: 个人最大心率(bpm),无则返回 None
 
     Returns:
         str: JSON 字典 '{"Z1": sec, "Z2": sec, ...}' (单位:秒)
@@ -3083,7 +3214,13 @@ def _parse_fit_activity_for_sync(file_path: Path) -> dict[str, Any]:
         # V8.4: hr_zone_distribution 持久化(V7.13 训练负荷依赖)
         # result["hr_curve"] 已是 JSON 字符串,需反解
         hr_curve_for_zones = _safe_json_list(result.get("hr_curve")) or []
-        max_hr_for_zones = _safe_int(result.get("max_hr")) or 0
+        profile_max_hr_for_zones = 0
+        try:
+            prof_for_zones = profile_backend.get_profile()
+            profile_max_hr_for_zones = _safe_int(prof_for_zones.max_hr) if prof_for_zones and prof_for_zones.max_hr else 0
+        except Exception:
+            profile_max_hr_for_zones = 0
+        max_hr_for_zones = profile_max_hr_for_zones or (_safe_int(result.get("max_hr")) or 0)
         hr_zone_json = _compute_hr_zone_distribution(hr_curve_for_zones, max_hr_for_zones)
         if hr_zone_json:
             result["hr_zone_distribution"] = hr_zone_json
@@ -4471,6 +4608,7 @@ class Api:
         self._watch_service: FITFolderWatchService | None = None
         self._ai_snapshot: dict[str, Any] | None = None
         self._activity_advice_snapshot: dict[str, Any] | None = None
+        self._fatigue_review_activity_id: int = 0
         self._profile_startup_sync_scheduled = False
         self._profile_sync_timer: threading.Timer | None = None
         self._region_enrichment_timer: threading.Timer | None = None
@@ -4891,7 +5029,10 @@ class Api:
                     "sport_type": sport_type,
                 })
 
-            activity_id = self._extract_fatigue_review_activity_id(self._ai_snapshot)
+            activity_id = (
+                _safe_int(getattr(self, "_fatigue_review_activity_id", 0))
+                or self._extract_fatigue_review_activity_id(self._ai_snapshot)
+            )
             if not activity_id:
                 return _fr_empty("请先加载活动轨迹")
 
@@ -6522,6 +6663,7 @@ class Api:
 
             # §六 shadow_diff 隔离:严禁从 _build_standard_diff 路径拉取 shadow_diff
             fr_snapshot = self._build_fatigue_review_snapshot(row)
+            self._fatigue_review_activity_id = aid
             return _api_success(fr_snapshot)
         except Exception:
             logger.exception("get_fatigue_review failed activity_id=%s", activity_id)

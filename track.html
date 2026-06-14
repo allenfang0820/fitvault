@@ -1511,6 +1511,17 @@
         .fr-derived-metrics-strip .metric-card {
             background: linear-gradient(180deg, rgba(30, 41, 59, 0.78), rgba(15, 23, 42, 0.54));
         }
+        .fr-capacity-metrics-strip {
+            background: rgba(15, 23, 42, 0.28);
+        }
+        .fr-capacity-metrics-strip .metric-card {
+            min-height: 76px;
+            background: rgba(15, 23, 42, 0.36);
+            opacity: 0.9;
+        }
+        .fr-capacity-metrics-strip .metric-card[data-fr-metric="durability"] {
+            opacity: 0.76;
+        }
         .fr-stage-overview {
             background: linear-gradient(180deg, rgba(15, 23, 42, 0.34), rgba(15, 23, 42, 0.18));
             border: 1px solid rgba(148, 163, 184, 0.1);
@@ -1707,7 +1718,7 @@
         }
         #fr-chart-section.chart-container {
             flex: 0 0 auto;
-            min-height: auto;
+            min-height: 560px;
         }
         .chart-title {
             color: #cbd5e1;
@@ -3158,11 +3169,13 @@
 
         /* === V9.0 复盘 Tab 内布局(原 V6.2 fatigue-review-body 的两栏改造为上下两段) === */
         .fr-ai-entry-compat {
-            display: none;
+            display: flex;
+            justify-content: flex-end;
+            margin-bottom: 10px;
         }
         .fr-layout {
             display: grid;
-            grid-template-columns: minmax(0, 1fr) 260px;
+            grid-template-columns: minmax(0, 1fr) 248px;
             gap: 12px;
             min-height: 0;
         }
@@ -3178,28 +3191,55 @@
             overflow-y: auto;
         }
         .fr-status-strip {
+            order: 0;
+        }
+        .chart-container {
+            order: 1;
+        }
+        .fr-derived-metrics-strip {
+            order: 2;
+        }
+        .fr-capacity-metrics-strip {
+            order: 3;
+        }
+        .fr-status-strip {
             display: grid;
-            grid-template-columns: minmax(220px, 1fr) minmax(260px, auto);
-            gap: 12px;
-            align-items: center;
+            grid-template-columns: 1fr;
+            gap: 10px;
+            align-items: start;
             background: rgba(15, 23, 42, 0.72);
             border: 1px solid rgba(148, 163, 184, 0.16);
             border-radius: 8px;
-            padding: 12px 14px;
+            padding: 10px 14px 12px;
             min-width: 0;
         }
         .fr-status-kicker {
-            color: #94a3b8;
-            font-size: 0.72rem;
-            margin-bottom: 4px;
+            color: #e2e8f0;
+            font-size: 0.88rem;
+            font-weight: 800;
+            line-height: 1.25;
+            margin: 0;
+        }
+        .fr-status-heading-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            min-width: 0;
+        }
+        .fr-status-heading-row .ai-insight-btn {
+            float: none;
+            flex: 0 0 auto;
         }
         .fr-status-title {
+            display: none;
             color: #f8fafc;
             font-size: 1rem;
             font-weight: 800;
             line-height: 1.25;
         }
         .fr-status-desc {
+            display: none;
             color: #94a3b8;
             font-size: 0.72rem;
             line-height: 1.45;
@@ -3208,7 +3248,7 @@
             overflow-wrap: anywhere;
         }
         .fr-status-meta {
-            display: flex;
+            display: none;
             gap: 6px;
             flex-wrap: wrap;
             justify-content: flex-end;
@@ -3225,6 +3265,78 @@
             max-width: 100%;
             overflow: hidden;
             text-overflow: ellipsis;
+        }
+        .fr-overview-dimensions {
+            grid-column: 1 / -1;
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 8px;
+            min-width: 0;
+        }
+        .fr-overview-dimension {
+            min-width: 0;
+            border: 1px solid rgba(148, 163, 184, 0.14);
+            background: rgba(15, 23, 42, 0.62);
+            border-radius: 8px;
+            padding: 9px 10px;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
+        }
+        .fr-overview-dimension.ai {
+            border-color: rgba(129, 140, 248, 0.34);
+            background: rgba(49, 46, 129, 0.18);
+        }
+        .fr-overview-dim-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            min-width: 0;
+            margin-bottom: 6px;
+        }
+        .fr-overview-dim-label {
+            color: #c4b5fd;
+            font-size: 0.72rem;
+            font-weight: 800;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .fr-overview-dim-level {
+            flex: 0 0 auto;
+            border-radius: 999px;
+            padding: 2px 6px;
+            font-size: 0.66rem;
+            font-weight: 800;
+            color: #cbd5e1;
+            background: rgba(100, 116, 139, 0.18);
+        }
+        .fr-overview-dim-level.ok {
+            color: #bbf7d0;
+            background: rgba(22, 101, 52, 0.22);
+        }
+        .fr-overview-dim-level.warn {
+            color: #fde68a;
+            background: rgba(146, 64, 14, 0.24);
+        }
+        .fr-overview-dim-level.bad {
+            color: #fecaca;
+            background: rgba(127, 29, 29, 0.24);
+        }
+        .fr-overview-dim-comment {
+            min-height: 34px;
+            color: #e2e8f0;
+            font-size: 0.76rem;
+            line-height: 1.45;
+            overflow-wrap: anywhere;
+        }
+        .fr-overview-dim-tags {
+            margin-top: 7px;
+            color: #94a3b8;
+            font-size: 0.66rem;
+            line-height: 1.35;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
         .fr-pill.ok {
             color: #bbf7d0;
@@ -3282,6 +3394,11 @@
             color: #e2e8f0;
             font-size: 0.82rem;
             font-weight: 700;
+        }
+        .fr-side-panel.focus {
+            background: linear-gradient(180deg, rgba(15, 23, 42, 0.78), rgba(15, 23, 42, 0.48));
+            border-color: rgba(96, 165, 250, 0.22);
+            box-shadow: inset 2px 0 0 rgba(96, 165, 250, 0.42);
         }
         .fr-side-panel.emphasis {
             background: linear-gradient(180deg, rgba(15, 23, 42, 0.72), rgba(15, 23, 42, 0.48));
@@ -3388,26 +3505,6 @@
             line-height: 1.55;
             overflow-wrap: anywhere;
         }
-        .fr-advice-status {
-            display: inline-flex;
-            border-radius: 999px;
-            border: 1px solid rgba(34, 197, 94, 0.24);
-            background: rgba(22, 101, 52, 0.16);
-            color: #bbf7d0;
-            padding: 2px 8px;
-            font-size: 0.66rem;
-            line-height: 1.3;
-            margin-bottom: 8px;
-            max-width: 100%;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-        .fr-advice-status.empty {
-            color: #94a3b8;
-            border-color: rgba(100, 116, 139, 0.2);
-            background: rgba(30, 41, 59, 0.36);
-        }
         .fr-disclaimer {
             color: #64748b;
             font-size: 0.68rem;
@@ -3509,6 +3606,9 @@
             .fr-status-meta {
                 justify-content: flex-start;
             }
+            .fr-overview-dimensions {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
             .metric-bar {
                 grid-template-columns: repeat(2, minmax(0, 1fr));
             }
@@ -3549,11 +3649,11 @@
             }
         }
         @media (max-width: 480px) {
+            .fr-overview-dimensions,
             .metric-bar {
                 grid-template-columns: 1fr;
             }
-            .fr-pill,
-            .fr-advice-status {
+            .fr-pill {
                 white-space: normal;
             }
         }
@@ -3750,6 +3850,92 @@
             border-radius: 50%;
             animation: spin 0.8s linear infinite;
             margin-bottom: 16px;
+        }
+        .fr-ai-loading-flow {
+            display: grid;
+            grid-template-columns: auto minmax(0, 1fr);
+            gap: 12px;
+            align-items: center;
+        }
+        .fr-ai-loading-flow .fatigue-ai-modal-spinner {
+            width: 28px;
+            height: 28px;
+            margin: 0;
+        }
+        .fr-ai-loading-copy {
+            min-width: 0;
+        }
+        .fr-ai-loading-title {
+            color: #f8fafc;
+            font-weight: 800;
+            font-size: 0.82rem;
+            margin-bottom: 4px;
+        }
+        .fr-ai-loading-sub {
+            color: #94a3b8;
+            font-size: 0.72rem;
+            line-height: 1.45;
+        }
+        .fr-ai-loading-track {
+            position: relative;
+            grid-column: 1 / -1;
+            height: 4px;
+            overflow: hidden;
+            border-radius: 999px;
+            background: rgba(99, 102, 241, 0.14);
+        }
+        .fr-ai-loading-track::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            width: 42%;
+            border-radius: inherit;
+            background: linear-gradient(90deg, rgba(129, 140, 248, 0), rgba(129, 140, 248, 0.95), rgba(45, 212, 191, 0.72));
+            animation: frAiScan 1.35s ease-in-out infinite;
+        }
+        .fr-ai-loading-steps {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 6px;
+            margin-top: 8px;
+            grid-column: 1 / -1;
+        }
+        .fr-ai-loading-step {
+            min-width: 0;
+            border: 1px solid rgba(129, 140, 248, 0.18);
+            background: rgba(30, 41, 59, 0.52);
+            color: #cbd5e1;
+            border-radius: 7px;
+            padding: 6px 7px;
+            font-size: 0.68rem;
+            text-align: center;
+            animation: frAiPulse 1.6s ease-in-out infinite;
+        }
+        .fr-ai-loading-step:nth-child(2) { animation-delay: 0.18s; }
+        .fr-ai-loading-step:nth-child(3) { animation-delay: 0.36s; }
+        .fr-ai-skeleton-line {
+            display: block;
+            height: 10px;
+            border-radius: 999px;
+            background: linear-gradient(90deg, rgba(71,85,105,0.36), rgba(129,140,248,0.24), rgba(71,85,105,0.36));
+            background-size: 220% 100%;
+            animation: frAiSkeleton 1.25s ease-in-out infinite;
+        }
+        .fr-ai-skeleton-line.short {
+            width: 58%;
+            margin-top: 8px;
+        }
+        @keyframes frAiScan {
+            0% { transform: translateX(-120%); }
+            100% { transform: translateX(240%); }
+        }
+        @keyframes frAiPulse {
+            0%, 100% { opacity: 0.55; transform: translateY(0); }
+            50% { opacity: 1; transform: translateY(-1px); }
+        }
+        @keyframes frAiSkeleton {
+            0% { background-position: 0% 50%; }
+            100% { background-position: 220% 50%; }
         }
         .fatigue-ai-modal.error {
             background: rgba(231, 76, 60, 0.08);
@@ -5199,14 +5385,14 @@
             </div>
             <!-- Tab 2: 复盘(lazy load,首次激活时拉 get_fatigue_review) -->
             <div class="detail-tab-panel" id="detail-tab-review">
-                <div class="fr-ai-entry-compat" hidden>
-                    <button class="btn-primary" id="fr-ai-generate-btn" disabled aria-disabled="true" title="AI 洞察功能即将开放">🤖 AI 洞察待开放</button>
-                </div>
                 <div class="fr-layout" id="fr-review-layout">
                     <div class="fr-main-column">
                         <div class="fr-status-strip" id="fr-status-strip">
                             <div>
-                                <div class="fr-status-kicker">本次复盘概览</div>
+                                <div class="fr-status-heading-row">
+                                    <div class="fr-status-kicker">本次复盘概览</div>
+                                    <button class="ai-insight-btn" id="fr-ai-generate-btn" onclick="onFatigueReviewAiInsight()" title="生成本次复盘 AI 洞察">✨ AI 洞察</button>
+                                </div>
                                 <div class="fr-status-title" id="fr-summary">等待复盘数据</div>
                                 <div class="fr-status-desc" id="fr-summary-desc">汇总本次活动的疲劳、风险和建议状态。</div>
                             </div>
@@ -5216,14 +5402,48 @@
                                 <span class="fr-pill" id="fr-curve-status-pill">曲线 --</span>
                                 <span class="fr-pill" id="fr-risk-pill">风险 --</span>
                                 <span class="fr-pill" id="fr-event-pill">事件 0 · 疲劳带 0</span>
-                                <span class="fr-pill ai-frozen" id="fr-ai-status-pill">AI 待开放</span>
+                                <span class="fr-pill ok" id="fr-ai-status-pill">AI 可用</span>
+                            </div>
+                            <div class="fr-overview-dimensions" id="fr-overview-dimensions">
+                                <div class="fr-overview-dimension" data-fr-ai-dim="overall_stability">
+                                    <div class="fr-overview-dim-head">
+                                        <span class="fr-overview-dim-label">全程稳定性</span>
+                                        <span class="fr-overview-dim-level">--</span>
+                                    </div>
+                                    <div class="fr-overview-dim-comment">等待复盘数据。</div>
+                                    <div class="fr-overview-dim-tags">心率 · 效率 · 步频</div>
+                                </div>
+                                <div class="fr-overview-dimension" data-fr-ai-dim="fatigue_progression">
+                                    <div class="fr-overview-dim-head">
+                                        <span class="fr-overview-dim-label">疲劳阶段</span>
+                                        <span class="fr-overview-dim-level">--</span>
+                                    </div>
+                                    <div class="fr-overview-dim-comment">等待状态阶段。</div>
+                                    <div class="fr-overview-dim-tags">疲劳区间 · 状态阶段</div>
+                                </div>
+                                <div class="fr-overview-dimension" data-fr-ai-dim="risk_triggers">
+                                    <div class="fr-overview-dim-head">
+                                        <span class="fr-overview-dim-label">风险触发</span>
+                                        <span class="fr-overview-dim-level">--</span>
+                                    </div>
+                                    <div class="fr-overview-dim-comment">等待风险线索。</div>
+                                    <div class="fr-overview-dim-tags">能量 · 事件 · 负荷</div>
+                                </div>
+                                <div class="fr-overview-dimension" data-fr-ai-dim="context_impact">
+                                    <div class="fr-overview-dim-head">
+                                        <span class="fr-overview-dim-label">外部影响</span>
+                                        <span class="fr-overview-dim-level">--</span>
+                                    </div>
+                                    <div class="fr-overview-dim-comment">等待外部上下文。</div>
+                                    <div class="fr-overview-dim-tags">天气 · 地形 · 设备</div>
+                                </div>
                             </div>
                         </div>
 
                         <div class="fr-section-band fr-derived-metrics-strip" id="fr-core-metrics-section">
                             <div class="fr-section-head">
-                                <h4>核心状态</h4>
-                                <span>漂移 · 效率变化 · 风险 · 事件</span>
+                                <h4>关键证据</h4>
+                                <span>支撑主图区判断的核心指标</span>
                             </div>
                             <div class="metric-bar">
                                 <div class="metric-card fr-metric-card" data-fr-metric="hr_drift">
@@ -5239,13 +5459,13 @@
                                     <div class="sub" id="fr-decoupling-sub">等待本次后程效率数据。</div>
                                 </div>
                                 <div class="metric-card fr-metric-card" data-fr-metric="bonk_risk">
-                                    <div class="lbl fr-metric-label">能量断档风险 <span class="fr-metric-info" tabindex="0" aria-label="能量断档风险说明" data-tooltip="看后半程是否出现明显能量不足迹象，例如乏力、掉速或掉输出。它是风险提示，不等于已经发生危险。">i</span></div>
+                                    <div class="lbl fr-metric-label">能量断档风险 <span class="fr-metric-info" tabindex="0" aria-label="能量断档风险说明" data-tooltip="结合能量储备和持续表现变化判断风险线索。图钉表示风险窗口起点，不是精确撞墙坐标。">i</span></div>
                                     <div class="val" id="fr-bonk">--</div>
                                     <div class="fr-metric-status empty" id="fr-bonk-status">待接入</div>
                                     <div class="sub" id="fr-bonk-sub">等待本次能量风险判断。</div>
                                 </div>
                                 <div class="metric-card fr-metric-card" data-fr-metric="events">
-                                    <div class="lbl fr-metric-label">崩溃事件 <span class="fr-metric-info" tabindex="0" aria-label="崩溃事件说明" data-tooltip="系统识别出的明显状态下滑点，通常对应掉速、掉输出或疲劳突增。">i</span></div>
+                                    <div class="lbl fr-metric-label">状态下滑点 <span class="fr-metric-info" tabindex="0" aria-label="状态下滑点说明" data-tooltip="系统识别出的明显状态下滑参考点，通常对应掉速、掉输出或疲劳突增。">i</span></div>
                                     <div class="val" id="fr-events-count">0</div>
                                     <div class="fr-metric-status empty" id="fr-events-status">待接入</div>
                                     <div class="sub" id="fr-events-sub">等待本次状态下滑识别。</div>
@@ -5253,10 +5473,10 @@
                             </div>
                         </div>
 
-                        <div class="fr-section-band fr-derived-metrics-strip" id="fr-capacity-metrics-section">
+                        <div class="fr-section-band fr-capacity-metrics-strip" id="fr-capacity-metrics-section">
                             <div class="fr-section-head">
-                                <h4>能力与负荷</h4>
-                                <span>效率 · 耐久 · 步频 · 训练负荷</span>
+                                <h4>补充证据</h4>
+                                <span>按需展开的辅助指标</span>
                             </div>
                             <div class="metric-bar">
                                 <div class="metric-card fr-metric-card" data-fr-metric="efficiency">
@@ -5332,33 +5552,26 @@
                     </div>
 
                     <div class="fr-side-column">
-                        <div class="fr-side-panel emphasis" id="fr-side-summary-panel">
-                            <h4>关键摘要</h4>
-                            <div class="fr-panel-boundary" id="fr-side-summary-boundary">快速查看风险状态、事件点和状态路段。</div>
+                        <div class="fr-side-panel focus" id="fr-side-summary-panel">
+                            <h4>读图解释</h4>
+                            <div class="fr-panel-boundary" id="fr-side-summary-boundary">先看主图：这里汇总当前最值得回看的风险、图钉和状态区间。</div>
                             <div class="fr-side-summary-list" id="fr-side-summary-list"></div>
                         </div>
                         <div class="fr-side-panel warning" id="fr-events-panel">
-                            <h4>状态下滑线索</h4>
-                            <div class="fr-panel-boundary" id="fr-events-boundary">事件是系统识别到的参考点，用来定位值得回看的位置；不代表身体状态在该公里点突然变化。</div>
+                            <h4>图钉线索</h4>
+                            <div class="fr-panel-boundary" id="fr-events-boundary">对应主图上的关键图钉，用来定位值得回看的位置；不是单点结论。</div>
                             <div class="event-list" id="fr-event-list"></div>
                         </div>
                         <div class="fr-side-panel emphasis" id="fr-phys-impact-panel">
-                            <h4>生理冲击点</h4>
-                            <div class="fr-panel-boundary" id="fr-phys-impact-boundary">用几个核心指标概括本次训练对身体的影响。</div>
+                            <h4>解释原因</h4>
+                            <div class="fr-panel-boundary" id="fr-phys-impact-boundary">用少量证据解释主图里的波动，避免重复顶部四维总览。</div>
                             <div class="fr-phys-impact-list" id="fr-phys-impact-list"></div>
                         </div>
                         <div class="fr-side-panel" id="fr-fatigue-zones-panel">
-                            <h4>状态区间</h4>
-                            <div class="fr-panel-boundary" id="fr-fatigue-zones-boundary">区间表示状态压力持续出现的路段；右侧摘要用于理解分布，不是精确结论。</div>
-                            <div class="fr-panel-boundary" id="fr-signal-relation-note">复盘里，事件是点，区间是段；点帮助定位，段帮助理解持续压力。两者都是回看线索，不是精确结论。</div>
+                            <h4>区间详情</h4>
+                            <div class="fr-panel-boundary" id="fr-fatigue-zones-boundary">对应主图上方的状态阶段带，帮助理解压力持续出现的路段。</div>
+                            <div class="fr-panel-boundary" id="fr-signal-relation-note">图钉是点，区间是段；点帮助定位，段帮助理解持续压力。</div>
                             <div class="fr-zone-list" id="fr-fatigue-zone-list"></div>
-                        </div>
-                        <div class="fr-side-panel" id="fr-advice-panel">
-                            <h4>建议</h4>
-                            <div class="fr-panel-boundary" id="fr-advice-boundary">结合本次复盘给出下一步训练建议。</div>
-                            <div class="fr-advice-status empty" id="fr-advice-status">建议待接入</div>
-                            <div class="fr-advice-block" id="fr-advice">--</div>
-                            <div class="fr-disclaimer" id="fr-disclaimer">AI 生成仅供参考 · 数据来源：FIT 解析 + 后端算法</div>
                         </div>
                     </div>
                 </div>
@@ -5697,11 +5910,26 @@
     function _freezeFatigueReviewAiEntry() {
         var aiBtn = document.getElementById('fr-ai-generate-btn');
         if (!aiBtn) return;
-        aiBtn.disabled = true;
-        aiBtn.setAttribute('aria-disabled', 'true');
-        aiBtn.title = 'AI 洞察将在 UI 定稿后开放';
-        aiBtn.textContent = '🤖 AI 洞察待开放';
+        aiBtn.disabled = false;
+        aiBtn.removeAttribute('aria-disabled');
+        aiBtn.title = '生成本次复盘 AI 洞察';
+        aiBtn.textContent = '✨ AI 洞察';
         delete aiBtn.dataset.fromCache;
+    }
+
+    function _setFatigueReviewAiEntryBusy(isBusy) {
+        var aiBtn = document.getElementById('fr-ai-generate-btn');
+        if (!aiBtn) return;
+        aiBtn.disabled = !!isBusy;
+        if (isBusy) {
+            aiBtn.setAttribute('aria-disabled', 'true');
+            aiBtn.title = 'AI 正在分析本次复盘';
+            aiBtn.textContent = '⏳ AI 分析中';
+        } else {
+            aiBtn.removeAttribute('aria-disabled');
+            aiBtn.title = '生成本次复盘 AI 洞察';
+            aiBtn.textContent = '✨ AI 洞察';
+        }
     }
 
     function _clearFatigueAiInsight() {
@@ -5717,7 +5945,6 @@
             document.removeEventListener('keydown', _fatigueAiEscHandler);
             _fatigueAiInsightEscBound = false;
         }
-        // P6.1:后端能力保留,UI 定稿前冻结入口
         _freezeFatigueReviewAiEntry();
     }
 
@@ -5948,6 +6175,7 @@
     let _fatigueAiInsightData = null;
     let _fatigueAiInsightModalOpen = false;
     let _fatigueAiInsightEscBound = false;
+    let _lastFatigueReviewData = null;
 
     function renderRadarChart(activityType, metricsData) {
         var radarContainer = document.getElementById('performanceRadar');
@@ -12609,6 +12837,7 @@ function openConfigModalFromWarning() {
             clearProfileAnalysisChart('fatigue-review-chart');
         }
         _fatigueReviewActivityId = null;
+        _lastFatigueReviewData = null;
         // 关闭详情时一并重置 lazy load 标志(下次开详情时重新拉 get_fatigue_review)
         _fatigueReviewTabLoaded = false;
     }
@@ -12668,6 +12897,163 @@ function openConfigModalFromWarning() {
         ].join('');
     }
 
+    function _fatigueReviewOverviewDimensionLabels() {
+        return {
+            overall_stability: '全程稳定性',
+            fatigue_progression: '疲劳阶段',
+            risk_triggers: '风险触发',
+            context_impact: '外部影响'
+        };
+    }
+
+    function _fatigueReviewOverviewDimensionOrder() {
+        return ['overall_stability', 'fatigue_progression', 'risk_triggers', 'context_impact'];
+    }
+
+    function _fatigueReviewOverviewTone(level) {
+        var normalized = String(level || '').toLowerCase();
+        if (/^(excellent|good|stable|low|very_low|ok)$/.test(normalized)) return 'ok';
+        if (/^(warn|moderate|medium|high|drift)$/.test(normalized)) return 'warn';
+        if (/^(bad|very_high|collapse|critical|severe)$/.test(normalized)) return 'bad';
+        return 'muted';
+    }
+
+    function _fatigueReviewOverviewLevelText(tone, labels) {
+        labels = labels || {};
+        if (tone === 'ok') return labels.ok || '状态稳定';
+        if (tone === 'warn') return labels.warn || '需要关注';
+        if (tone === 'bad') return labels.bad || '风险较高';
+        return labels.muted || '数据不足';
+    }
+
+    function _buildFatigueReviewOverviewDimensions(data) {
+        data = data || {};
+        var metrics = data.metrics || {};
+        var zones = Array.isArray(data.fatigue_zones) ? data.fatigue_zones : [];
+        var events = Array.isArray(data.collapse_events) ? data.collapse_events : [];
+        var contextTags = data.context_tags || {};
+        var labels = _fatigueReviewOverviewDimensionLabels();
+        var hr = metrics.hr_drift || {};
+        var decoupling = metrics.decoupling || {};
+        var efficiency = metrics.efficiency || {};
+        var cadence = metrics.cadence_stability || {};
+        var trainingLoad = metrics.training_load || {};
+        var bonk = metrics.bonk_risk || {};
+
+        var stabilityTone = 'muted';
+        [hr.level, decoupling.level, efficiency.level, cadence.level].forEach(function(level) {
+            var tone = _fatigueReviewOverviewTone(level);
+            if (tone === 'bad') stabilityTone = 'bad';
+            else if (tone === 'warn' && stabilityTone !== 'bad') stabilityTone = 'warn';
+            else if (tone === 'ok' && stabilityTone === 'muted') stabilityTone = 'ok';
+        });
+
+        var firstZone = zones[0] || {};
+        var fatigueTone = zones.length ? _fatigueReviewOverviewTone(firstZone.level || 'warn') : 'ok';
+        var riskTone = bonk.is_at_risk || events.length ? 'warn' : 'ok';
+        if (_fatigueReviewOverviewTone(trainingLoad.level) === 'bad') riskTone = 'bad';
+        var contextKeys = Object.keys(contextTags || {});
+        var contextTone = contextKeys.length ? 'warn' : 'muted';
+        var contextBrief = contextKeys.slice(0, 2).map(function(key) {
+            return key + ': ' + String(contextTags[key]).slice(0, 24);
+        }).join('；');
+
+        return [
+            {
+                key: 'overall_stability',
+                label: labels.overall_stability,
+                level: _fatigueReviewOverviewLevelText(stabilityTone, {
+                    ok: '整体稳定',
+                    warn: '轻微波动',
+                    bad: '明显波动',
+                    muted: '数据不足'
+                }),
+                tone: stabilityTone,
+                comment: stabilityTone === 'muted'
+                    ? '心率、效率或步频记录不足，暂时无法判断全程稳定性。'
+                    : '结合心率漂移、后程效率和步频稳定性，本次整体状态' + _fatigueReviewOverviewLevelText(stabilityTone, { ok: '较稳', warn: '有波动', bad: '波动明显' }) + '。',
+                tags: '心率 · 效率 · 步频'
+            },
+            {
+                key: 'fatigue_progression',
+                label: labels.fatigue_progression,
+                level: zones.length ? (zones.length + ' 段') : '未识别',
+                tone: fatigueTone,
+                comment: zones.length
+                    ? '识别到疲劳或压力区间，首段约 ' + (firstZone.start_km == null ? '--' : firstZone.start_km) + ' - ' + (firstZone.end_km == null ? '--' : firstZone.end_km) + ' km。'
+                    : '本次未识别到持续压力区间，状态阶段暂无明显疲劳递进。',
+                tags: '疲劳区间 · 状态阶段'
+            },
+            {
+                key: 'risk_triggers',
+                label: labels.risk_triggers,
+                level: _fatigueReviewOverviewLevelText(riskTone, {
+                    ok: '未触发',
+                    warn: '有线索',
+                    bad: '需关注',
+                    muted: '数据不足'
+                }),
+                tone: riskTone,
+                comment: events.length
+                    ? '识别到 ' + events.length + ' 个风险参考点，需结合能量、事件和负荷一起判断。'
+                    : (bonk.is_at_risk ? '能量断档风险存在后端线索，建议结合补给与节奏复盘。' : '当前未见明显能量断档或崩溃事件线索。'),
+                tags: '能量 · 事件 · 负荷'
+            },
+            {
+                key: 'context_impact',
+                label: labels.context_impact,
+                level: contextKeys.length ? '有线索' : '数据不足',
+                tone: contextTone,
+                comment: contextKeys.length
+                    ? '外部因素包括 ' + contextBrief + '，可作为解释本次波动的背景。'
+                    : '本次外部影响线索不足，不额外推断天气、地形或设备影响。',
+                tags: '天气 · 地形 · 设备'
+            }
+        ];
+    }
+
+    function _buildFatigueReviewOverviewDimensionsFromAi(dimensions) {
+        var labels = _fatigueReviewOverviewDimensionLabels();
+        var byKey = {};
+        if (Array.isArray(dimensions)) {
+            dimensions.forEach(function(item) {
+                if (!item || !item.key || byKey[item.key]) return;
+                byKey[item.key] = item;
+            });
+        }
+        return _fatigueReviewOverviewDimensionOrder().map(function(key) {
+            var item = byKey[key] || {};
+            var tone = _fatigueReviewOverviewTone(item.level);
+            return {
+                key: key,
+                label: labels[key],
+                level: _fatigueReviewAiLevelLabel(item.level || 'unknown'),
+                tone: tone,
+                comment: _fatigueReviewLocalizeAiText(item.comment || '暂无足够数据'),
+                tags: 'AI 解读',
+                source: 'ai'
+            };
+        });
+    }
+
+    function _renderFatigueReviewOverviewDimensions(items, source) {
+        var wrap = document.getElementById('fr-overview-dimensions');
+        if (!wrap) return;
+        items = Array.isArray(items) && items.length ? items : _buildFatigueReviewOverviewDimensions({});
+        wrap.innerHTML = items.map(function(item) {
+            item = item || {};
+            var tone = item.tone || _fatigueReviewOverviewTone(item.level);
+            return '<div class="fr-overview-dimension ' + (source === 'ai' ? 'ai' : '') + '" data-fr-ai-dim="' + safeHtml(item.key || '') + '">'
+                + '<div class="fr-overview-dim-head">'
+                + '<span class="fr-overview-dim-label">' + safeHtml(item.label || item.key || '--') + '</span>'
+                + '<span class="fr-overview-dim-level ' + safeHtml(tone) + '">' + safeHtml(item.level || '--') + '</span>'
+                + '</div>'
+                + '<div class="fr-overview-dim-comment">' + safeHtml(item.comment || '等待复盘数据。') + '</div>'
+                + '<div class="fr-overview-dim-tags">' + safeHtml(item.tags || (source === 'ai' ? 'AI 解读' : '后端复盘')) + '</div>'
+                + '</div>';
+        }).join('');
+    }
+
     function _renderFatigueReviewLoading() {
         var title = document.getElementById('fr-title');
         if (title) title.textContent = '🔍 运动复盘';
@@ -12684,13 +13070,15 @@ function openConfigModalFromWarning() {
         _renderFatigueReviewSideSummary({});
         _renderFatigueReviewChartFooter({});
         _lastFatigueReviewChartPayload = null;
+        _lastFatigueReviewData = null;
+        _renderFatigueReviewOverviewDimensions(_buildFatigueReviewOverviewDimensions({}), 'backend');
         [
             ['fr-data-source-pill', '数据源 --', 'fr-pill muted'],
             ['fr-distance-axis-pill', '距离轴 --', 'fr-pill muted'],
             ['fr-curve-status-pill', '曲线 --', 'fr-pill muted'],
             ['fr-risk-pill', '风险 --', 'fr-pill muted'],
             ['fr-event-pill', '事件 0 · 疲劳带 0', 'fr-pill muted'],
-            ['fr-ai-status-pill', 'AI 待开放', 'fr-pill ai-frozen']
+            ['fr-ai-status-pill', 'AI 可用', 'fr-pill ok']
         ].forEach(function(item) {
             var el = document.getElementById(item[0]);
             if (el) {
@@ -12716,13 +13104,15 @@ function openConfigModalFromWarning() {
         _renderFatigueReviewSideSummary({});
         _renderFatigueReviewChartFooter({});
         _lastFatigueReviewChartPayload = null;
+        _lastFatigueReviewData = null;
+        _renderFatigueReviewOverviewDimensions(_buildFatigueReviewOverviewDimensions({}), 'backend');
         [
             ['fr-data-source-pill', '数据源不可用', 'fr-pill warn'],
             ['fr-distance-axis-pill', '距离轴缺失', 'fr-pill warn'],
             ['fr-curve-status-pill', '曲线不足', 'fr-pill warn'],
             ['fr-risk-pill', '风险待接入', 'fr-pill muted'],
             ['fr-event-pill', '事件 0 · 疲劳带 0', 'fr-pill muted'],
-            ['fr-ai-status-pill', 'AI 待开放', 'fr-pill ai-frozen']
+            ['fr-ai-status-pill', 'AI 可用', 'fr-pill ok']
         ].forEach(function(item) {
             var el = document.getElementById(item[0]);
             if (el) {
@@ -12733,6 +13123,7 @@ function openConfigModalFromWarning() {
     }
     function _renderFatigueReviewSummary(data) {
         data = data || {};
+        _lastFatigueReviewData = data;
         var curves = data.curves || {};
         var metrics = data.metrics || {};
         var events = data.collapse_events || [];
@@ -12760,7 +13151,7 @@ function openConfigModalFromWarning() {
         };
 
         if (summary) {
-            var riskText = bonk.is_at_risk ? '存在能量断档风险' : '未触发能量断档风险';
+            var riskText = bonk.is_at_risk ? '存在能量断档风险线索' : '未触发能量断档风险线索';
             var driftText = drift.level && drift.level !== 'unknown'
                 ? '心率漂移 ' + drift.level
                 : '心率漂移数据不足';
@@ -12790,14 +13181,15 @@ function openConfigModalFromWarning() {
         );
         setPill(
             riskPill,
-            bonk.is_at_risk ? '风险：能量断档' : '风险：未触发',
+            bonk.is_at_risk ? '风险：能量线索' : '风险：未触发',
             bonk.is_at_risk ? 'warn' : 'ok'
         );
         if (eventPill) {
             var eventTone = (events.length || zones.length) ? 'ok' : 'muted';
             setPill(eventPill, '事件 ' + events.length + ' · 疲劳带 ' + zones.length, eventTone);
         }
-        setPill(aiPill, 'AI 待开放', 'ai-frozen');
+        setPill(aiPill, 'AI 可用', 'ok');
+        _renderFatigueReviewOverviewDimensions(_buildFatigueReviewOverviewDimensions(data), 'backend');
     }
     function getFatigueReviewSportCopyGroup(sportType) {
         var sport = String(sportType || '').toLowerCase();
@@ -13275,11 +13667,11 @@ function openConfigModalFromWarning() {
             cycling: '这个参考点后的一段输出压力更集中，建议回看坡度、心率和功率变化。'
         },
         energy_gap: {
-            title: '能量断档风险出现',
-            running: '这个参考点附近出现能量断档风险，建议复盘补给、配速和前半程消耗。',
-            trail_running: '这个参考点附近出现体力断档风险，建议复盘补给、爬升和前半程消耗。',
-            hiking: '这个参考点附近出现乏力风险，建议复盘补给、节奏和停歇安排。',
-            cycling: '这个参考点附近出现掉功率风险，建议复盘补给、输出节奏和前半程消耗。'
+            title: '能量断档风险线索',
+            running: '这个图钉表示能量断档风险窗口起点，建议复盘补给、配速和前段消耗。',
+            trail_running: '这个图钉表示体力断档风险窗口起点，建议复盘补给、爬升和前段消耗。',
+            hiking: '这个图钉表示乏力风险窗口起点，建议复盘补给、节奏和停歇安排。',
+            cycling: '这个图钉表示掉功率风险窗口起点，建议复盘补给、输出节奏和前段消耗。'
         },
         generic: {
             title: '状态变化点',
@@ -13564,7 +13956,12 @@ function openConfigModalFromWarning() {
                 String((metric || {}).level || '').toLowerCase()
             );
         };
-        if (riskLevel(metrics.hr_drift) || riskLevel(metrics.decoupling) || riskLevel(metrics.training_load)
+        var trainingLoadRisk = function(metric) {
+            metric = metric || {};
+            return /^(caution|danger)$/.test(String(metric.ratio_7d_42d || '').toLowerCase());
+        };
+        if (riskLevel(metrics.hr_drift) || riskLevel(metrics.decoupling)
+            || trainingLoadRisk(metrics.training_load)
             || riskLevel(metrics.efficiency) || riskLevel(metrics.durability) || riskLevel(metrics.cadence_stability)) {
             return true;
         }
@@ -13820,74 +14217,155 @@ function openConfigModalFromWarning() {
             + '</div>';
     }
     function _renderFatigueReviewAdvice(advice, disclaimer) {
-        var adviceEl = document.getElementById('fr-advice');
-        var statusEl = document.getElementById('fr-advice-status');
-        var discEl = document.getElementById('fr-disclaimer');
-        var adviceVal = advice == null ? '' : String(advice).trim();
-        if (statusEl) {
-            statusEl.textContent = adviceVal && adviceVal !== '--' ? '建议已接入' : '建议待接入';
-            statusEl.className = 'fr-advice-status' + (adviceVal && adviceVal !== '--' ? '' : ' empty');
-        }
-        if (adviceEl) {
-            if (!adviceVal || adviceVal === '--') {
-                adviceEl.innerHTML = _frEmptyStateHtml({
-                    icon: '💡',
-                    title: '建议待接入',
-                    desc: '暂时没有可展示的训练建议。',
-                    tag: '暂无建议'
-                });
-            } else {
-                adviceEl.textContent = adviceVal;
-            }
-        }
-        if (discEl) {
-            discEl.textContent = disclaimer || 'AI 生成仅供参考 · 数据来源：FIT 解析 + 后端算法';
-        }
+        // 主页面不再重复展示建议；建议统一由 AI 洞察弹窗承载。
+        return;
     }
     // === V6.3 AI 4 态(V9.0:所有 4 态均打开 Modal,modal 内展示 AI 内容)===
     function _renderFatigueReviewAiLoading() {
         var sum = document.getElementById('fr-ai-summary');
-        if (sum) { sum.style.color = ''; sum.textContent = '⏳ AI 正在分析...'; }
-        _freezeFatigueReviewAiEntry();
+        if (sum) {
+            sum.style.color = '';
+            sum.innerHTML = '<div class="fr-ai-loading-flow" role="status" aria-live="polite">'
+                + '<div class="fatigue-ai-modal-spinner" aria-hidden="true"></div>'
+                + '<div class="fr-ai-loading-copy">'
+                + '<div class="fr-ai-loading-title">AI 正在分析本次复盘</div>'
+                + '<div class="fr-ai-loading-sub">正在读取后端复盘快照，整理稳定性、疲劳阶段、风险触发和外部影响。</div>'
+                + '</div>'
+                + '<div class="fr-ai-loading-track" aria-hidden="true"></div>'
+                + '<div class="fr-ai-loading-steps" aria-hidden="true">'
+                + '<span class="fr-ai-loading-step">读取快照</span>'
+                + '<span class="fr-ai-loading-step">组织四维</span>'
+                + '<span class="fr-ai-loading-step">生成建议</span>'
+                + '</div>'
+                + '</div>';
+        }
+        var dimsEl = document.getElementById('fr-ai-dimensions');
+        if (dimsEl) {
+            dimsEl.innerHTML = '<span class="fr-ai-skeleton-line"></span><span class="fr-ai-skeleton-line short"></span>';
+        }
+        var eventList = document.getElementById('fr-ai-event-list');
+        if (eventList) {
+            eventList.innerHTML = '<span class="fr-ai-skeleton-line"></span><span class="fr-ai-skeleton-line short"></span>';
+        }
+        var adviceEl = document.getElementById('fr-ai-advice');
+        if (adviceEl) {
+            adviceEl.innerHTML = '<span class="fr-ai-skeleton-line"></span><span class="fr-ai-skeleton-line short"></span>';
+        }
+        var discEl = document.getElementById('fr-ai-disclaimer');
+        if (discEl) discEl.textContent = 'AI 正在生成，仅基于本次后端复盘快照。';
+        _setFatigueReviewAiEntryBusy(true);
         // V9.0 §5.6 Modal 化:打开毛玻璃 Modal,展示 loading 态
         openFatigueAiInsightModal();
     }
+    function _fatigueReviewAiDimensionLabel(key, fallback) {
+        var labels = {
+            overall_stability: '全程稳定性',
+            fatigue_progression: '疲劳阶段',
+            risk_triggers: '风险触发',
+            context_impact: '外部影响'
+        };
+        return labels[key] || fallback || key || '--';
+    }
+    function _fatigueReviewAiLevelLabel(level) {
+        var normalized = String(level || '').toLowerCase();
+        return ({
+            excellent: '极佳',
+            good: '良好',
+            warn: '需关注',
+            bad: '风险较高',
+            unknown: '数据不足',
+            stable: '稳定',
+            moderate: '中等',
+            medium: '中等',
+            declining: '下降',
+            caution: '需谨慎',
+            low: '低',
+            high: '高',
+            very_high: '很高'
+        })[normalized] || level || '--';
+    }
+    function _fatigueReviewLocalizeAiText(text) {
+        text = String(text || '');
+        if (!text) return '';
+        return text
+            .replace(/\bBONK_WARNING\b/gi, '能量断档风险线索')
+            .replace(/\bBonk\b/gi, '能量断档')
+            .replace(/bonk_risk/gi, '能量断档风险')
+            .replace(/\brisk window\b/gi, '风险区间')
+            .replace(/\bwarning\b/gi, '预警')
+            .replace(/\bcollapse_events\b/gi, '状态下滑事件')
+            .replace(/\bcollapse event(s)?\b/gi, '状态下滑事件')
+            .replace(/\bcollapse\b/gi, '状态下滑')
+            .replace(/\bdeclining\b/gi, '下降')
+            .replace(/\bcaution\b/gi, '需谨慎')
+            .replace(/\bexcellent\b/gi, '极佳')
+            .replace(/\bgood\b/gi, '良好')
+            .replace(/\bwarn\b/gi, '需关注')
+            .replace(/\bbad\b/gi, '风险较高')
+            .replace(/\bunknown\b/gi, '数据不足')
+            .replace(/\bstable\b/gi, '稳定')
+            .replace(/\bmoderate\b/gi, '中等')
+            .replace(/\bmedium\b/gi, '中等')
+            .replace(/\blow\b/gi, '低')
+            .replace(/\bhigh\b/gi, '高')
+            .replace(/\bvery_high\b/gi, '很高')
+            .replace(/\bHRR\b/g, '心率储备占用')
+            .replace(/\bHR\b/g, '心率')
+            .replace(/\bCV\b/g, '变异系数')
+            .replace(/\bEI\b/g, '效率指标')
+            .replace(/\bkcal\b/gi, '千卡')
+            .replace(/\bZ([1-5])\b/g, '第 $1 心率区间');
+    }
     function _renderFatigueReviewAiSuccess(insight) {
         var sum = document.getElementById('fr-ai-summary');
-        if (sum) { sum.style.color = ''; sum.textContent = insight.summary || '--'; }
+        if (sum) { sum.style.color = ''; sum.textContent = _fatigueReviewLocalizeAiText(insight.summary || '--'); }
         // 把 key_dimensions 渲染到 dimensions 区
         var dimsEl = document.getElementById('fr-ai-dimensions');
         if (dimsEl && Array.isArray(insight.key_dimensions)) {
             dimsEl.innerHTML = insight.key_dimensions.map(function(d) {
                 var lvlClass = ({excellent:'score-good', good:'score-good', warn:'score-warn', bad:'score-bad'})[d.level] || 'score-warn';
                 return '<div class="dimension-item">'
-                    + '<span class="dim-label">' + safeHtml(d.label || d.key) + '</span>'
-                    + '<span><span class="dim-score ' + lvlClass + '">' + safeHtml(d.level || '--') + '</span></span>'
+                    + '<span class="dim-label">' + safeHtml(_fatigueReviewAiDimensionLabel(d.key, d.label)) + '</span>'
+                    + '<span><span class="dim-score ' + lvlClass + '">' + safeHtml(_fatigueReviewAiLevelLabel(d.level)) + '</span></span>'
                     + '</div>'
-                    + '<div style="font-size:0.72rem;color:#94a3b8;line-height:1.4;padding:2px 0 6px;">' + safeHtml(d.comment || '') + '</div>';
+                    + '<div style="font-size:0.72rem;color:#94a3b8;line-height:1.4;padding:2px 0 6px;">' + safeHtml(_fatigueReviewLocalizeAiText(d.comment || '')) + '</div>';
             }).join('');
         }
         // 事件整体解读
         var evSection = document.getElementById('fr-ai-section-events');
-        if (evSection && insight.event_interpretation) {
-            var exist = evSection.querySelector('.ev-interpretation');
-            if (!exist) {
-                exist = document.createElement('div');
-                exist.className = 'ev-interpretation advice-block';
-                exist.style.marginTop = '8px';
-                evSection.querySelector('.event-list').after(exist);
+        var eventList = document.getElementById('fr-ai-event-list');
+        var eventCount = document.getElementById('fr-ai-event-count');
+        var eventText = _fatigueReviewLocalizeAiText(insight.event_interpretation || '').trim();
+        if (evSection) {
+            var oldInterpretation = evSection.querySelector('.ev-interpretation');
+            if (oldInterpretation) oldInterpretation.remove();
+        }
+        if (eventCount) eventCount.textContent = eventText ? '1' : '0';
+        if (eventList) {
+            if (eventText) {
+                eventList.innerHTML = '<div class="event-card active" role="listitem">'
+                    + safeHtml(eventText)
+                    + '</div>';
+            } else {
+                eventList.innerHTML = '<div class="fr-empty-state" role="status">'
+                    + '<div class="fr-empty-title">暂无关键事件</div>'
+                    + '<div class="fr-empty-desc">本次 AI 洞察未识别到需要单独关注的事件。</div>'
+                    + '</div>';
             }
-            exist.textContent = insight.event_interpretation;
         }
         // advice
         var adviceEl = document.getElementById('fr-ai-advice');
-        if (adviceEl) adviceEl.textContent = insight.training_advice || '--';
+        if (adviceEl) adviceEl.textContent = _fatigueReviewLocalizeAiText(insight.training_advice || '--');
         // disclaimer
         var discEl = document.getElementById('fr-ai-disclaimer');
-        if (discEl) discEl.textContent = insight.disclaimer || '--';
+        if (discEl) discEl.textContent = _fatigueReviewLocalizeAiText(insight.disclaimer || '--');
 
         _fatigueReviewInsightData = insight;
-        _freezeFatigueReviewAiEntry();
+        _renderFatigueReviewOverviewDimensions(
+            _buildFatigueReviewOverviewDimensionsFromAi(insight.key_dimensions),
+            'ai'
+        );
+        _setFatigueReviewAiEntryBusy(false);
 
         // P8.0:AI 洞察只保留在前端内存,不写 sessionStorage / localStorage。
         var oldBanner = document.getElementById('fr-cache-banner');
@@ -13901,7 +14379,7 @@ function openConfigModalFromWarning() {
         if (sum) { sum.style.color = '#f87171'; sum.textContent = '❌ AI 洞察暂不可用:' + msg; }
         var discEl = document.getElementById('fr-ai-disclaimer');
         if (discEl) discEl.textContent = 'AI 洞察暂不可用 · 数据来源：FIT 解析 + 后端算法';
-        _freezeFatigueReviewAiEntry();
+        _setFatigueReviewAiEntryBusy(false);
         // V9.0 §5.6 Modal 化:打开毛玻璃 Modal,展示错误态
         openFatigueAiInsightModal();
     }
@@ -13910,17 +14388,29 @@ function openConfigModalFromWarning() {
         if (sum) { sum.style.color = ''; sum.textContent = '📭 ' + (insight.training_advice || '数据不足,无法生成洞察'); }
         var discEl = document.getElementById('fr-ai-disclaimer');
         if (discEl) discEl.textContent = insight.disclaimer || '--';
-        _freezeFatigueReviewAiEntry();
+        _setFatigueReviewAiEntryBusy(false);
         // V9.0 §5.6 Modal 化:打开毛玻璃 Modal,展示空态
         openFatigueAiInsightModal();
     }
     function _clearFatigueReviewInsight() {
         _fatigueReviewInsightData = null;
         var sum = document.getElementById('fr-ai-summary');
-        if (sum) { sum.style.color = ''; sum.textContent = '点击「生成 AI 洞察」开始分析'; }
+        if (sum) { sum.style.color = ''; sum.textContent = '点击「AI 洞察」开始分析'; }
         var dimsEl = document.getElementById('fr-ai-dimensions');
         if (dimsEl) dimsEl.innerHTML = '--';
+        var eventCount = document.getElementById('fr-ai-event-count');
+        if (eventCount) eventCount.textContent = '0';
+        var eventList = document.getElementById('fr-ai-event-list');
+        if (eventList) eventList.innerHTML = '';
         _freezeFatigueReviewAiEntry();
+        if (_lastFatigueReviewData) {
+            _renderFatigueReviewOverviewDimensions(
+                _buildFatigueReviewOverviewDimensions(_lastFatigueReviewData),
+                'backend'
+            );
+        } else {
+            _renderFatigueReviewOverviewDimensions(_buildFatigueReviewOverviewDimensions({}), 'backend');
+        }
         var evSection = document.getElementById('fr-ai-section-events');
         if (evSection) {
             var evI = evSection.querySelector('.ev-interpretation');
@@ -14049,7 +14539,7 @@ function openConfigModalFromWarning() {
                 summaryEl.innerHTML = [
                     factHtml(
                         '风险状态',
-                        bonk.confidence === 'unavailable' ? '--' : (bonk.is_at_risk ? '能量断档风险' : '未触发'),
+                        bonk.confidence === 'unavailable' ? '--' : (bonk.is_at_risk ? '能量断档线索' : '未触发'),
                         confidenceSummary(bonk.confidence),
                         bonk.is_at_risk ? 'bad' : toneFromLevel(bonk.confidence, 'ok')
                     ),
@@ -14371,7 +14861,7 @@ function openConfigModalFromWarning() {
             ]);
         }
 
-        // Layer 3: 精准事件图钉 markPoint (绝对坐标定位)
+        // Layer 3: 事件图钉 markPoint。能量类图钉表示风险窗口起点。
         var markPointData = [];
         for (var e = 0; e < insightEvents.length; e++) {
             var event = insightEvents[e];
@@ -15124,7 +15614,7 @@ function openConfigModalFromWarning() {
         <div id="fatigue-ai-insight-modal-body" class="fatigue-ai-modal-body">
             <div class="insight-section" id="fr-section-summary">
                 <h4>📋 总评</h4>
-                <div class="insight-summary" id="fr-ai-summary">点击「生成 AI 洞察」开始分析</div>
+                <div class="insight-summary" id="fr-ai-summary">点击「AI 洞察」开始分析</div>
             </div>
             <div class="insight-section" id="fr-section-dimensions">
                 <h4>📊 维度评分</h4>

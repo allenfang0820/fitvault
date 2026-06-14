@@ -318,13 +318,9 @@ class TestLegacyCompatibility:
     """A4:旧 _detect_bonk_event 接口加 sport_type 参数后仍向后兼容。"""
 
     def test_detect_bonk_event_no_sport_kwarg(self):
-        """旧调用方式(无 sport_type)仍能工作,使用 default 阈值(1400)。"""
+        """旧调用方式(无 sport_type)仍能工作,但短距离不再触发强图钉。"""
         from metrics_resolver import MetricsResolver
-        # 不传 sport_type → 走 default 阈值 1400
-        # 提供足够长 distance_curve + ei_curve 来触发 bonk
-        # distance_curve 长度 30, ei_curve 长度 30
         distance_curve = [i * 100.0 for i in range(31)]
-        # 前半程 ei 0.1, 后半程 ei 0.05 → drop_rate 50% > 15%
         ei_curve = [0.1] * 15 + [0.05] * 16
         events = MetricsResolver._detect_bonk_event(
             distance_curve=distance_curve,
@@ -332,39 +328,31 @@ class TestLegacyCompatibility:
             total_calories=2000.0,
             # sport_type 默认 "running"
         )
-        # running 阈值 1400,2000 > 1400 + drop_rate 50% > 15% → 触发 bonk
-        assert len(events) >= 1, "旧调用应仍能触发 bonk(走 default 阈值)"
-        assert events[0]["type"] == "BONK_WARNING"
+        assert events == []
 
-    def test_detect_bonk_event_running_uses_1400_threshold(self):
+    def test_energy_reserve_layer_running_uses_1400_zone(self):
         from metrics_resolver import MetricsResolver
         distance_curve = [i * 100.0 for i in range(31)]
-        ei_curve = [0.1] * 15 + [0.05] * 16
-        # 1500 kcal,running 阈值 1400 → 触发
-        events = MetricsResolver._detect_bonk_event(
+        risk = MetricsResolver._energy_reserve_risk_layer(
             distance_curve=distance_curve,
-            ei_curve=ei_curve,
             total_calories=1500.0,
             sport_type="running",
+            time_curve=[i * 60 for i in range(31)],
         )
-        assert len(events) >= 1
-        assert events[0]["trigger_km"] <= 3.0, "trigger_km 必须输出公里,不能把米轴直接透传"
-        assert events[0]["trigger_km"] == 1.6
+        assert risk["zone"] == [1400.0, 1800.0]
+        assert risk["risk_level"] == "low"
 
-    def test_detect_bonk_event_swimming_higher_threshold(self):
+    def test_energy_reserve_layer_swimming_uses_swimming_threshold(self):
         from metrics_resolver import MetricsResolver
         distance_curve = [i * 100.0 for i in range(31)]
-        ei_curve = [0.1] * 15 + [0.05] * 16
-        # 1500 kcal,swimming 阈值 1200 → 触发
-        # 但 1500 < 1500(running 阈值) → 对比验证 sport 路由生效
-        events_swim = MetricsResolver._detect_bonk_event(
+        risk = MetricsResolver._energy_reserve_risk_layer(
             distance_curve=distance_curve,
-            ei_curve=ei_curve,
             total_calories=1500.0,
             sport_type="swimming",
+            time_curve=[i * 60 for i in range(31)],
         )
-        # swimming 区间 1200-1600,1500 在区间内 → 触发
-        assert len(events_swim) >= 1, "swimming 1500 应触发(阈值 1200)"
+        assert risk["zone"] == [1200.0, 1600.0]
+        assert risk["risk_level"] == "low"
 
 
 class TestShadowDiffIsolation:
@@ -581,12 +569,31 @@ class TestHrDrift:
         assert result["drift_pct"] is None
 
     def test_intermittent_training_unavailable(self):
-        """配速 CV > 8% → UNAVAILABLE(reference §6 已知误用)。"""
+        """极端配速 CV → UNAVAILABLE(reference §6 已知误用)。"""
         from metrics_resolver import MetricsResolver
         records = _build_intermittent_records(base_hr=150, n=60)
         result = MetricsResolver._compute_hr_drift(records=records, duration_sec=60 * 60)
         assert result["confidence"] == "unavailable"
         assert "pace_cv" in result["reasons"][0] if result["reasons"] else True
+
+    def test_long_run_natural_pace_variation_still_computes_low_confidence(self):
+        """马拉松/徒步这类自然变速活动仍应计算漂移,但降低置信度。"""
+        from metrics_resolver import MetricsResolver
+        records = []
+        for i in range(80):
+            speed = 2.0 if i % 4 == 0 else 3.0
+            hr = 145 if i < 40 else 153
+            records.append({
+                "raw": {
+                    "heart_rate": hr,
+                    "timestamp": i,
+                    "speed": speed,
+                }
+            })
+        result = MetricsResolver._compute_hr_drift(records=records, duration_sec=90 * 60)
+        assert result["drift_pct"] is not None
+        assert result["confidence"] in {"medium", "low"}
+        assert any("pace_cv" in reason for reason in result["reasons"])
 
     def test_high_pause_pct_unavailable(self):
         """停顿 > 10% → UNAVAILABLE。
@@ -865,6 +872,37 @@ class TestTrainingLoad:
         assert "Z2" in result["zone_used"]
         assert "Z3" in result["zone_used"]
         assert "Z4" in result["zone_used"]
+
+    def test_zone_distribution_counts_are_normalized_before_load(self):
+        """hr_zone_distribution 持久化为秒数/采样点时,训练负荷必须先转百分比。"""
+        from metrics_resolver import MetricsResolver
+        dist = {"Z2": 3600, "Z3": 1800, "Z4": 600}
+        result = MetricsResolver._compute_training_load(
+            hr_zone_distribution=dist,
+            avg_hr=145,
+            profile_max_hr=186,
+            profile_resting_hr=52,
+            duration_sec=60 * 60,
+        )
+        assert result["load"] == 156.0
+        assert result["level"] == "moderate"
+        assert "zone_distribution_counts_normalized" in result["reasons"]
+
+    def test_legacy_activity_max_hr_zone_distribution_falls_back_to_profile_hrr(self):
+        """低 HRR 却被旧 max_hr 分母塞进高区间时,回退到个人 HRR。"""
+        from metrics_resolver import MetricsResolver
+        result = MetricsResolver._compute_training_load(
+            hr_zone_distribution={"Z1": 0, "Z2": 2, "Z3": 2, "Z4": 68, "Z5": 142},
+            avg_hr=128,
+            profile_max_hr=186,
+            profile_resting_hr=52,
+            duration_sec=2350,
+        )
+        assert result["load"] == 78.3
+        assert result["level"] == "low"
+        assert result["zone_used"] == "Z2"
+        assert result["confidence"] == "medium"
+        assert "zone_distribution_incompatible_with_profile_hrr" in result["reasons"]
 
     def test_avg_hr_fallback_uses_profile_hrr_zone_estimation(self):
         """无 zone_dist 时用 profile HRR 推算 zone,不用活动 max_hr。"""

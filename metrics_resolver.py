@@ -175,6 +175,9 @@ class MetricsResolver:
         profile_resting_hr = self._num(meta.get("profile_resting_hr")) if isinstance(meta, dict) else 0.0
         if profile_resting_hr > 0:
             sm["profile_resting_hr"] = profile_resting_hr
+        profile_weight_kg = self._num(meta.get("profile_weight_kg")) if isinstance(meta, dict) else 0.0
+        profile_vo2max = self._num(meta.get("profile_vo2max")) if isinstance(meta, dict) else 0.0
+        lactate_threshold_hr = self._num(meta.get("lactate_threshold_hr")) if isinstance(meta, dict) else 0.0
         total_distance = float(sm.get("distance_m", 0))
         total_calories = float(sm.get("calories", 0))
         decoupling_rate = 0.0  # 待后续引擎计算(GapCalculator 串联后)
@@ -196,6 +199,16 @@ class MetricsResolver:
             ei_curve=efficiency_curve,
             total_calories=total_calories,
             sport_type=sport_type,
+            time_curve=ap.get("time_curve", []),
+            hr_curve=hr_curve,
+            speed_curve=speed_curve,
+            cadence_curve=ap.get("cadence_curve", []) or [],
+            weight_kg=profile_weight_kg or None,
+            avg_hr=sm.get("avg_hr"),
+            profile_max_hr=sm.get("profile_max_hr"),
+            profile_resting_hr=sm.get("profile_resting_hr"),
+            lactate_threshold_hr=lactate_threshold_hr or None,
+            vo2max=profile_vo2max or None,
         )
 
         # 触发 Layer 2 疲劳预警带计算(V4.0 从 main.py 下沉)
@@ -503,14 +516,17 @@ class MetricsResolver:
             "lat_curve": [],
             "lon_curve": [],
             "cadence_curve": [],  # V8.3: 步频时序,供 V7.12 Cadence Stability 算法
+            "time_curve": [],
         }
         if not records:
             return pack
 
         step = max(1, len(records) // MAX_CURVE_POINTS)
         sampled = records[::step] if step > 1 else records
+        start_ts = self._record_value(sampled[0], "timestamp") if sampled else None
 
         for rec in sampled:
+            ts = self._record_value(rec, "timestamp")
             hr = self._num(self._record_value(rec, "heart_rate", "hr"))
             speed = self._num(self._record_value(rec, "speed", "enhanced_speed"))  # V8.11: FIT 多数设备用 enhanced_speed
             alt = self._num(self._record_value(rec, "altitude", "alt", "enhanced_altitude"))
@@ -526,6 +542,13 @@ class MetricsResolver:
             pack["lat_curve"].append(round(lat, 6) if lat else None)
             pack["lon_curve"].append(round(lon, 6) if lon else None)
             pack["cadence_curve"].append(int(cad) if cad and cad > 0 else None)  # V8.3
+            if start_ts is not None and ts is not None and hasattr(ts, "__sub__"):
+                try:
+                    pack["time_curve"].append(round((ts - start_ts).total_seconds(), 3))
+                except Exception:
+                    pack["time_curve"].append(None)
+            else:
+                pack["time_curve"].append(None)
 
             if speed and speed > 0.1:
                 pace_min_per_km = 16.6667 / speed
@@ -1540,18 +1563,32 @@ class MetricsResolver:
         risk_level = str(risk.get("risk_level") or "unknown")
         has_event = bool(bonk_events)
         is_at_risk = has_event and risk_level in {"moderate", "high"}
+        event_confidences = {
+            str(ev.get("confidence") or "").lower()
+            for ev in bonk_events or []
+            if isinstance(ev, dict)
+        }
         if risk.get("confidence") == "unavailable":
             confidence = "unavailable"
+        elif "high" in event_confidences:
+            confidence = "high"
         else:
             confidence = "medium" if is_at_risk else "low"
 
-        return {
+        result = {
             "is_at_risk": bool(is_at_risk),
             "confidence": confidence,
             "risk_level": risk_level,
             "kcal": risk.get("kcal"),
             "zone": risk.get("zone"),
         }
+        if bonk_events:
+            first = next((ev for ev in bonk_events if isinstance(ev, dict)), None)
+            if first:
+                for key in ("risk_start_km", "risk_end_km", "evidence"):
+                    if key in first:
+                        result[key] = first.get(key)
+        return result
 
     @staticmethod
     def _build_review_decoupling(efficiency_curve: list) -> dict[str, Any]:
@@ -1782,56 +1819,338 @@ class MetricsResolver:
         return fatigue_zones
 
     @staticmethod
-    def _detect_bonk_event(distance_curve: list[float], ei_curve: list[float], total_calories: float, sport_type: str = "running") -> list[dict]:
-        """
-        糖原耗尽 (Bonk/撞墙) 状态机
-        触发条件: 累计消耗 > sport 区间下界(V7.8),且后半程效率指数 (EI) 较前半程基线断崖下跌 > 15%
-        V7.8:见 docs/physiology_reference.md §指标 1
-        """
-        # V7.8:用 sport 路由的 kcal 阈值(替代硬编码 1600)
-        zone = MetricsResolver._GLYCOGEN_RISK_ZONES.get(
-            str(sport_type or "").strip().lower(),
-            MetricsResolver._GLYCOGEN_RISK_ZONES["default"],
+    def _energy_reserve_risk_layer(
+        distance_curve: list[float],
+        time_curve: list[float] | None,
+        total_calories: float,
+        sport_type: str = "running",
+        weight_kg: Any = None,
+        avg_hr: Any = None,
+        profile_max_hr: Any = None,
+        profile_resting_hr: Any = None,
+        lactate_threshold_hr: Any = None,
+        vo2max: Any = None,
+    ) -> dict[str, Any]:
+        """Estimate energy-reserve risk without producing a point event."""
+        base = MetricsResolver._assess_glycogen_depletion_risk(
+            total_calories=total_calories,
+            sport_type=sport_type,
         )
-        kcal_threshold = zone[0]  # 用区间下界作为 bonk 触发阈值
-        if total_calories is None or total_calories < kcal_threshold:
+        level = str(base.get("risk_level") or "unknown")
+        kcal = MetricsResolver._safe_float_zero(total_calories)
+        if not distance_curve or len(distance_curve) < 2:
+            base.update({
+                "risk_level": "unknown",
+                "confidence": "unavailable",
+                "factors": ["distance_curve_missing"],
+            })
+            return base
+
+        distances = [MetricsResolver._safe_float(d) for d in distance_curve]
+        distances = [d for d in distances if d is not None]
+        if len(distances) < 2:
+            base.update({
+                "risk_level": "unknown",
+                "confidence": "unavailable",
+                "factors": ["distance_curve_missing"],
+            })
+            return base
+
+        total_dist_m = max(distances) - min(distances)
+        total_km = total_dist_m / 1000.0
+        duration_sec = 0.0
+        if time_curve and len(time_curve) >= 2:
+            time_vals = [MetricsResolver._safe_float(v) for v in time_curve]
+            time_vals = [v for v in time_vals if v is not None]
+            if len(time_vals) >= 2:
+                duration_sec = max(time_vals) - min(time_vals)
+        duration_min = duration_sec / 60.0 if duration_sec > 0 else 0.0
+
+        weight = MetricsResolver._safe_float(weight_kg)
+        kcal_per_kg = kcal / weight if weight and weight > 25 else None
+        kcal_per_hour = kcal / (duration_sec / 3600.0) if duration_sec > 0 else None
+        hrr_ratio = None
+        threshold_ratio = None
+        try:
+            avg_hr_f = float(avg_hr)
+            max_hr_f = float(profile_max_hr)
+            resting_hr_f = float(profile_resting_hr)
+            if avg_hr_f > 0 and max_hr_f > resting_hr_f:
+                hrr_ratio = (avg_hr_f - resting_hr_f) / (max_hr_f - resting_hr_f)
+        except (TypeError, ValueError):
+            hrr_ratio = None
+        try:
+            avg_hr_f = float(avg_hr)
+            lthr_f = float(lactate_threshold_hr)
+            if avg_hr_f > 0 and lthr_f > 0:
+                threshold_ratio = avg_hr_f / lthr_f
+        except (TypeError, ValueError):
+            threshold_ratio = None
+
+        score = {"unknown": 0, "low": 0, "moderate": 2, "high": 4}.get(level, 0)
+        factors: list[str] = [f"kcal={round(kcal, 1)}"]
+        if total_km > 0:
+            factors.append(f"distance_km={round(total_km, 2)}")
+        if duration_min > 0:
+            factors.append(f"duration_min={round(duration_min, 1)}")
+        if kcal_per_kg is not None:
+            factors.append(f"kcal_per_kg={round(kcal_per_kg, 1)}")
+            if kcal_per_kg >= 22:
+                score += 2
+            elif kcal_per_kg >= 16:
+                score += 1
+        if kcal_per_hour is not None:
+            factors.append(f"kcal_per_hour={round(kcal_per_hour, 0)}")
+            if kcal_per_hour >= 800:
+                score += 1
+        if hrr_ratio is not None:
+            factors.append(f"hrr_ratio={round(hrr_ratio, 2)}")
+            if hrr_ratio >= 0.78:
+                score += 2
+            elif hrr_ratio >= 0.68:
+                score += 1
+        if threshold_ratio is not None:
+            factors.append(f"threshold_ratio={round(threshold_ratio, 2)}")
+            if threshold_ratio >= 0.96:
+                score += 2
+            elif threshold_ratio >= 0.90:
+                score += 1
+        vo2 = MetricsResolver._safe_float(vo2max)
+        if vo2 and vo2 > 0:
+            factors.append(f"vo2max={round(vo2, 1)}")
+
+        sport = str(sport_type or "").lower()
+        if sport in {"running", "trail_running", "treadmill_running"}:
+            short_distance_km = 12.0
+        elif sport in {"cycling", "road_cycling", "mountain_biking"}:
+            short_distance_km = 35.0
+        else:
+            short_distance_km = 8.0
+        if (
+            kcal < float(base.get("zone", [1400.0])[0])
+            or (total_km and total_km < short_distance_km and duration_min and duration_min < 75)
+        ):
+            score = min(score, 1)
+            factors.append("short_or_low_energy_activity")
+
+        if base.get("confidence") == "unavailable":
+            final_level, confidence = "unknown", "unavailable"
+        elif score >= 5:
+            final_level, confidence = "high", "high"
+        elif score >= 3:
+            final_level, confidence = "moderate", "medium"
+        else:
+            final_level, confidence = "low", "medium"
+
+        base.update({
+            "risk_level": final_level,
+            "confidence": confidence,
+            "score": int(score),
+            "distance_km": round(total_km, 2),
+            "duration_min": round(duration_min, 1) if duration_min else None,
+            "kcal_per_kg": round(kcal_per_kg, 1) if kcal_per_kg is not None else None,
+            "hrr_ratio": round(hrr_ratio, 3) if hrr_ratio is not None else None,
+            "threshold_ratio": round(threshold_ratio, 3) if threshold_ratio is not None else None,
+            "factors": factors,
+        })
+        return base
+
+    @staticmethod
+    def _detect_energy_gap_performance_window(
+        distance_curve: list[float],
+        ei_curve: list[float],
+        speed_curve: list[float] | None = None,
+        hr_curve: list[float] | None = None,
+        cadence_curve: list[float] | None = None,
+        power_curve: list[float] | None = None,
+    ) -> dict[str, Any] | None:
+        """Find a sustained performance-evidence window without a half-distance anchor."""
+        if not distance_curve or not ei_curve or len(distance_curve) != len(ei_curve) or len(ei_curve) < 20:
+            return None
+        n = len(ei_curve)
+        d0 = MetricsResolver._safe_float(distance_curve[0])
+        d1 = MetricsResolver._safe_float(distance_curve[-1])
+        if d0 is None or d1 is None or d1 <= d0:
+            return None
+        total_km = (d1 - d0) / 1000.0
+        if total_km <= 0:
+            return None
+
+        def valid_values(series: list[Any], start: int, end: int) -> list[float]:
+            return [
+                float(v)
+                for v in series[max(0, start):min(n, end)]
+                if MetricsResolver._safe_float(v) is not None and float(v) > 0
+            ]
+
+        def avg(series: list[Any], start: int, end: int) -> float | None:
+            vals = valid_values(series, start, end)
+            if len(vals) < max(3, (end - start) // 3):
+                return None
+            return sum(vals) / len(vals)
+
+        window = max(5, min(24, n // 8))
+        confirm = max(3, window // 2)
+        min_start_idx = max(window, int(n * 0.18))
+        best: dict[str, Any] | None = None
+
+        for i in range(min_start_idx, n - window + 1):
+            pre_start = max(0, i - window)
+            pre_ei = avg(ei_curve, pre_start, i)
+            cur_ei = avg(ei_curve, i, i + window)
+            if pre_ei is None or cur_ei is None or pre_ei <= 0:
+                continue
+            drop = (pre_ei - cur_ei) / pre_ei
+            if drop < 0.12:
+                continue
+
+            confirm_end = min(n, i + window + confirm)
+            follow_ei = avg(ei_curve, i + confirm, confirm_end) or cur_ei
+            if follow_ei > pre_ei * 0.90:
+                continue
+
+            evidence: list[str] = [f"EI持续下降约{round(drop * 100)}%"]
+            score = 2
+            speed_drop = None
+            if speed_curve and len(speed_curve) == n:
+                pre_speed = avg(speed_curve, pre_start, i)
+                cur_speed = avg(speed_curve, i, i + window)
+                if pre_speed and cur_speed and pre_speed > 0:
+                    speed_drop = (pre_speed - cur_speed) / pre_speed
+                    if speed_drop >= 0.06:
+                        score += 1
+                        evidence.append("速度/配速同步变差")
+            if hr_curve and len(hr_curve) == n:
+                pre_hr = avg(hr_curve, pre_start, i)
+                cur_hr = avg(hr_curve, i, i + window)
+                if pre_hr and cur_hr:
+                    if cur_hr >= pre_hr + 3 and speed_drop is not None and speed_drop >= 0.03:
+                        score += 1
+                        evidence.append("心率压力没有随掉速同步缓解")
+                    elif cur_hr <= pre_hr - 4 and speed_drop is not None and speed_drop >= 0.08:
+                        score += 1
+                        evidence.append("心率和速度同时回落，可能出现明显乏力")
+            if cadence_curve and len(cadence_curve) == n:
+                pre_cad = avg(cadence_curve, pre_start, i)
+                cur_cad = avg(cadence_curve, i, i + window)
+                if pre_cad and cur_cad and pre_cad > 0 and (pre_cad - cur_cad) / pre_cad >= 0.04:
+                    score += 1
+                    evidence.append("步频同步下降")
+            if power_curve and len(power_curve) == n:
+                pre_power = avg(power_curve, pre_start, i)
+                cur_power = avg(power_curve, i, i + window)
+                if pre_power and cur_power and pre_power > 0 and (pre_power - cur_power) / pre_power >= 0.06:
+                    score += 1
+                    evidence.append("功率输出同步下降")
+
+            if score < 3:
+                continue
+
+            start_km = round((float(distance_curve[i]) - d0) / 1000.0, 2)
+            end_idx = min(n - 1, i + window + confirm - 1)
+            end_km = round((float(distance_curve[end_idx]) - d0) / 1000.0, 2)
+            if end_km <= start_km:
+                continue
+
+            candidate = {
+                "start_idx": i,
+                "end_idx": end_idx,
+                "risk_start_km": start_km,
+                "risk_end_km": end_km,
+                "value_y": round(cur_ei, 4),
+                "drop_pct": round(drop * 100.0, 1),
+                "confidence": "high" if score >= 5 else "medium",
+                "score": score,
+                "evidence": evidence,
+            }
+            if best is None or candidate["score"] > best["score"] or (
+                candidate["score"] == best["score"] and candidate["start_idx"] < best["start_idx"]
+            ):
+                best = candidate
+
+        return best
+
+    @staticmethod
+    def _detect_bonk_event(
+        distance_curve: list[float],
+        ei_curve: list[float],
+        total_calories: float,
+        sport_type: str = "running",
+        time_curve: list[float] | None = None,
+        hr_curve: list[float] | None = None,
+        speed_curve: list[float] | None = None,
+        cadence_curve: list[float] | None = None,
+        power_curve: list[float] | None = None,
+        weight_kg: Any = None,
+        avg_hr: Any = None,
+        profile_max_hr: Any = None,
+        profile_resting_hr: Any = None,
+        lactate_threshold_hr: Any = None,
+        vo2max: Any = None,
+    ) -> list[dict]:
+        """Detect energy-gap risk clues from reserve risk and sustained evidence.
+
+        The event location is a risk-window start, not an exact bonk point.
+        """
+        reserve = MetricsResolver._energy_reserve_risk_layer(
+            distance_curve=distance_curve,
+            time_curve=time_curve,
+            total_calories=total_calories,
+            sport_type=sport_type,
+            weight_kg=weight_kg,
+            avg_hr=avg_hr,
+            profile_max_hr=profile_max_hr,
+            profile_resting_hr=profile_resting_hr,
+            lactate_threshold_hr=lactate_threshold_hr,
+            vo2max=vo2max,
+        )
+        reserve_level = str(reserve.get("risk_level") or "unknown")
+        if reserve_level not in {"moderate", "high"}:
             return []
 
-        if not distance_curve or not ei_curve or len(distance_curve) != len(ei_curve) or len(distance_curve) < 20:
+        performance = MetricsResolver._detect_energy_gap_performance_window(
+            distance_curve=distance_curve,
+            ei_curve=ei_curve,
+            speed_curve=speed_curve,
+            hr_curve=hr_curve,
+            cadence_curve=cadence_curve,
+            power_curve=power_curve,
+        )
+        if not performance:
             return []
 
-        total_dist = distance_curve[-1] - distance_curve[0]
-        if total_dist <= 0:
-            return []
+        confidence = "high" if (
+            reserve.get("confidence") == "high" and performance.get("confidence") == "high"
+        ) else "medium"
+        evidence = list(performance.get("evidence") or [])
+        if reserve_level == "high":
+            evidence.insert(0, "能量储备压力偏高")
+        else:
+            evidence.insert(0, "能量储备进入需留意区间")
 
-        half_dist = total_dist / 2.0
+        risk_start_km = performance.get("risk_start_km")
+        risk_end_km = performance.get("risk_end_km")
+        kcal = int(MetricsResolver._safe_float_zero(total_calories))
+        description = (
+            f"能量消耗约 {kcal} kcal，系统在 {risk_start_km:.1f}-{risk_end_km:.1f} km "
+            f"识别到能量断档风险线索；这是风险窗口起点，不代表精确撞墙坐标。"
+        )
+        if evidence:
+            description += " 主要依据：" + "、".join(evidence[:3]) + "。"
 
-        # 1. 计算前半程基线 EI
-        first_half_ei = [
-            ei for d, ei in zip(distance_curve, ei_curve)
-            if (d - distance_curve[0]) <= half_dist and ei > 0
-        ]
-
-        if not first_half_ei:
-            return []
-
-        baseline_ei = sum(first_half_ei) / len(first_half_ei)
-        if baseline_ei <= 0:
-            return []
-
-        # 2. 扫描后半程寻找崩溃断崖点
-        for d, ei in zip(distance_curve, ei_curve):
-            if (d - distance_curve[0]) > half_dist and ei > 0:
-                drop_rate = (baseline_ei - ei) / baseline_ei
-                if drop_rate >= 0.15:
-                    return [{
-                        "type": "BONK_WARNING",
-                        "trigger_km": round(d / 1000.0, 2),
-                        "value_y": round(ei, 4), # 严格遵循契约：绑定精确的 Y 轴绝对坐标
-                        "description": f"累积能耗达 {int(total_calories)} kcal，等效效率跌破基线 {int(drop_rate*100)}%，处于糖原枯竭区。"
-                    }]
-
-        return []
+        return [{
+            "type": "BONK_WARNING",
+            "title": "能量断档风险线索",
+            "label": "能量断档线索",
+            "trigger_km": risk_start_km,
+            "risk_start_km": risk_start_km,
+            "risk_end_km": risk_end_km,
+            "value_y": performance.get("value_y"),
+            "confidence": confidence,
+            "risk_level": reserve_level,
+            "description": description,
+            "evidence": evidence,
+        }]
 
     # ── LTTB downsampling ─────────────────────────────────────
 
@@ -2060,7 +2379,7 @@ class MetricsResolver:
         返回:{"is_steady_aerobic": bool, "pace_cv": float|None,
               "pause_pct": float|None, "reasons": list[str]}
 
-        全部满足才返回 True(reference §5 全部满足才计算 hr_drift)。
+        True 表示输入质量足以计算；自然变速会降置信度但不再直接屏蔽。
         """
         reasons: list[str] = []
 
@@ -2070,7 +2389,19 @@ class MetricsResolver:
                 f"duration<{MetricsResolver._HR_DRIFT_MIN_DURATION_MIN}min"
             )
 
-        # 2. 配速变异度 < threshold(过滤间歇/变速)
+        valid_hr_count = 0
+        for rec in records or []:
+            if not isinstance(rec, dict):
+                continue
+            hr = MetricsResolver._num(
+                MetricsResolver._record_value(rec, "heart_rate", "hr")
+            )
+            if hr > 30:
+                valid_hr_count += 1
+        if valid_hr_count < MetricsResolver._HR_DRIFT_MIN_RECORDS:
+            reasons.append(f"records<{MetricsResolver._HR_DRIFT_MIN_RECORDS}")
+
+        # 2. 配速变异度：普通长距离自然变速只降低置信度，极端变速才排除。
         pace_values: list[float] = []
         for rec in records or []:
             if not isinstance(rec, dict):
@@ -2085,10 +2416,12 @@ class MetricsResolver:
             stddev = MetricsResolver._stddev(pace_values)
             avg = sum(pace_values) / len(pace_values)
             pace_cv = (stddev / avg * 100) if avg > 0 else 0
-            if pace_cv >= MetricsResolver._HR_DRIFT_MAX_PACE_CV:
+            if pace_cv >= MetricsResolver._HR_DRIFT_EXCLUDE_PACE_CV:
                 reasons.append(
-                    f"pace_cv={pace_cv:.1f}% >= {MetricsResolver._HR_DRIFT_MAX_PACE_CV}%"
+                    f"pace_cv={pace_cv:.1f}% >= {MetricsResolver._HR_DRIFT_EXCLUDE_PACE_CV}%"
                 )
+        elif records:
+            reasons.append("missing_pace")
 
         # 3. 停顿占比 < 10%(过滤长时间休息)
         pause_pct: float | None = None
@@ -2098,9 +2431,9 @@ class MetricsResolver:
                 if not isinstance(rec, dict):
                     continue
                 spd = MetricsResolver._num(
-                MetricsResolver._record_value(rec, "speed", "enhanced_speed")  # V8.11
-            )
-            if spd is not None and spd < 0.5:
+                    MetricsResolver._record_value(rec, "speed", "enhanced_speed")  # V8.11
+                )
+                if spd is not None and spd < 0.5:
                     pause_sec += 1.0  # 简化为每条 record 1 秒
             pause_pct = (pause_sec / duration_sec) * 100
             if pause_pct >= MetricsResolver._HR_DRIFT_MAX_PAUSE_PCT:
@@ -2182,7 +2515,8 @@ class MetricsResolver:
     # 见 docs/physiology_reference.md §指标 6
     # 替换 V7.6 decoupling_pct 临时代理(main.py 注释 "V7.6 临时代理" 同步更新)
     _HR_DRIFT_MIN_DURATION_MIN: int = 45   # reference §5 前置:duration > 45min
-    _HR_DRIFT_MAX_PACE_CV: float = 8.0     # 配速变异度上限(>8% 视为间歇)
+    _HR_DRIFT_MAX_PACE_CV: float = 8.0     # 配速自然波动阈值(>8% 降低置信度)
+    _HR_DRIFT_EXCLUDE_PACE_CV: float = 60.0 # 极端变速/间歇才排除漂移计算
     _HR_DRIFT_MAX_PAUSE_PCT: float = 10.0  # 停顿时长占活动总时长上限(>10% 排除)
     _HR_DRIFT_SPLIT_RATIO: float = 0.5     # 前后半程分界(50%)
     _HR_DRIFT_MIN_RECORDS: int = 20        # 至少 20 条数据点
@@ -2221,6 +2555,95 @@ class MetricsResolver:
     _TRAINING_LOAD_HIGH_DURATION_MIN: int = 30 # HIGH confidence 阈值
 
     @staticmethod
+    def _normalize_training_load_zone_distribution(hr_zone_distribution) -> tuple[dict[str, float], list[str]]:
+        """Normalize HR zone input to percentages.
+
+        Historical rows store zone values as seconds/sample counts, while some
+        tests and callers use percentages. Training load needs percentages.
+        """
+        if not isinstance(hr_zone_distribution, dict):
+            return {}, ["invalid_zone_distribution"]
+
+        raw: dict[str, float] = {}
+        for zone_key in MetricsResolver._TRAINING_LOAD_ZONE_WEIGHTS.keys():
+            try:
+                value = float(hr_zone_distribution.get(zone_key) or 0.0)
+            except (TypeError, ValueError):
+                value = 0.0
+            if value > 0:
+                raw[zone_key] = value
+
+        total = sum(raw.values())
+        if total <= 0:
+            return {}, ["empty_zone_distribution"]
+
+        if total <= 1.2:
+            return {k: v * 100.0 for k, v in raw.items()}, ["zone_distribution_ratios_normalized"]
+        if 98.0 <= total <= 102.0:
+            return raw, []
+        return {k: v / total * 100.0 for k, v in raw.items()}, ["zone_distribution_counts_normalized"]
+
+    @staticmethod
+    def _training_load_hrr_zone(
+        avg_hr=None,
+        profile_max_hr=None,
+        profile_resting_hr=None,
+        resting_hr=None,
+    ) -> tuple[dict | None, str | None]:
+        max_hr_for_hrr = profile_max_hr
+        resting_hr_for_hrr = (
+            profile_resting_hr
+            if profile_resting_hr is not None
+            else resting_hr
+        )
+        try:
+            avg_hr_f = float(avg_hr)
+            max_hr_f = float(max_hr_for_hrr)
+            resting_hr_f = float(resting_hr_for_hrr)
+        except (TypeError, ValueError):
+            return None, "missing_profile_max_hr_or_resting_hr"
+        denominator = max_hr_f - resting_hr_f
+        if avg_hr_f <= 0 or denominator <= 0:
+            return None, "invalid_hrr_denominator"
+
+        ratio = (avg_hr_f - resting_hr_f) / denominator
+        if ratio < 0.55:
+            zone_key, weight = "Z1", 1.0
+        elif ratio < 0.70:
+            zone_key, weight = "Z2", 2.0
+        elif ratio < 0.80:
+            zone_key, weight = "Z3", 3.0
+        elif ratio < 0.90:
+            zone_key, weight = "Z4", 5.0
+        else:
+            zone_key, weight = "Z5", 8.0
+        return {"ratio": ratio, "zone_key": zone_key, "weight": weight}, None
+
+    @staticmethod
+    def _training_load_zone_distribution_conflicts_with_hrr(
+        zone_pct: dict[str, float],
+        hrr_zone: dict | None,
+    ) -> bool:
+        """Detect legacy distributions computed from activity max HR."""
+        if not hrr_zone:
+            return False
+        hrr_ratio = hrr_zone.get("ratio")
+        hrr_weight = hrr_zone.get("weight")
+        if hrr_ratio is None or hrr_weight is None:
+            return False
+        high_pct = float(zone_pct.get("Z4", 0.0)) + float(zone_pct.get("Z5", 0.0))
+        z5_pct = float(zone_pct.get("Z5", 0.0))
+        zone_weighted = sum(
+            MetricsResolver._TRAINING_LOAD_ZONE_WEIGHTS.get(k, 0.0) * float(v) / 100.0
+            for k, v in zone_pct.items()
+        )
+        if hrr_ratio < 0.70 and high_pct >= 35.0 and zone_weighted >= float(hrr_weight) + 2.0:
+            return True
+        if hrr_ratio < 0.80 and z5_pct >= 35.0 and zone_weighted >= float(hrr_weight) + 2.5:
+            return True
+        return False
+
+    @staticmethod
     def _compute_training_load(
         hr_zone_distribution=None,
         avg_hr=None,
@@ -2256,64 +2679,55 @@ class MetricsResolver:
             }
 
         duration_min = duration_sec / 60.0
+        reasons: list[str] = []
+        hrr_zone, hrr_error = MetricsResolver._training_load_hrr_zone(
+            avg_hr=avg_hr,
+            profile_max_hr=profile_max_hr,
+            profile_resting_hr=profile_resting_hr,
+            resting_hr=resting_hr,
+        )
 
         if hr_zone_distribution:
             # 完整算法:有 HR zone 分布
-            total_weighted = 0.0
-            zone_used_list = []
-            for zone_key, time_pct in hr_zone_distribution.items():
-                weight = MetricsResolver._TRAINING_LOAD_ZONE_WEIGHTS.get(zone_key, 0.0)
-                if weight > 0 and time_pct and float(time_pct) > 0:
-                    total_weighted += weight * float(time_pct) / 100.0
-                    zone_used_list.append(zone_key)
-            if not zone_used_list:
-                return {
-                    "load": None, "level": "unknown", "zone_used": None,
-                    "confidence": "unavailable",
-                    "reasons": ["empty_zone_distribution"],
-                }
-            load = duration_min * total_weighted
-            load = min(load, MetricsResolver._TRAINING_LOAD_MAX_SCORE)
-            zone_used = zone_used_list
-        elif avg_hr:
-            max_hr_for_hrr = profile_max_hr
-            resting_hr_for_hrr = (
-                profile_resting_hr
-                if profile_resting_hr is not None
-                else resting_hr
+            zone_pct, zone_reasons = MetricsResolver._normalize_training_load_zone_distribution(
+                hr_zone_distribution
             )
-            try:
-                avg_hr_f = float(avg_hr)
-                max_hr_f = float(max_hr_for_hrr)
-                resting_hr_f = float(resting_hr_for_hrr)
-            except (TypeError, ValueError):
+            reasons.extend(zone_reasons)
+            if not zone_pct:
                 return {
                     "load": None, "level": "unknown", "zone_used": None,
                     "confidence": "unavailable",
-                    "reasons": ["missing_profile_max_hr_or_resting_hr"],
+                    "reasons": reasons or ["empty_zone_distribution"],
                 }
-            denominator = max_hr_f - resting_hr_f
-            if avg_hr_f <= 0 or denominator <= 0:
+            if MetricsResolver._training_load_zone_distribution_conflicts_with_hrr(zone_pct, hrr_zone):
+                load = duration_min * float(hrr_zone["weight"])
+                zone_used = hrr_zone["zone_key"]
+                reasons.append("zone_distribution_incompatible_with_profile_hrr")
+                used_hrr_fallback = True
+            else:
+                total_weighted = 0.0
+                zone_used_list = []
+                for zone_key, time_pct in zone_pct.items():
+                    weight = MetricsResolver._TRAINING_LOAD_ZONE_WEIGHTS.get(zone_key, 0.0)
+                    if weight > 0 and time_pct and float(time_pct) > 0:
+                        total_weighted += weight * float(time_pct) / 100.0
+                        zone_used_list.append(zone_key)
+                load = duration_min * total_weighted
+                zone_used = zone_used_list
+                used_hrr_fallback = False
+            load = min(load, MetricsResolver._TRAINING_LOAD_MAX_SCORE)
+        elif avg_hr:
+            if not hrr_zone:
                 return {
                     "load": None, "level": "unknown", "zone_used": None,
                     "confidence": "unavailable",
-                    "reasons": ["invalid_hrr_denominator"],
+                    "reasons": [hrr_error or "missing_profile_max_hr_or_resting_hr"],
                 }
             # 降级算法:用个人 HRR 推算主要 zone,不得用单次活动 max_hr 冒充最大心率。
-            ratio = (avg_hr_f - resting_hr_f) / denominator
-            if ratio < 0.55:
-                zone_key, weight = "Z1", 1.0
-            elif ratio < 0.70:
-                zone_key, weight = "Z2", 2.0
-            elif ratio < 0.80:
-                zone_key, weight = "Z3", 3.0
-            elif ratio < 0.90:
-                zone_key, weight = "Z4", 5.0
-            else:
-                zone_key, weight = "Z5", 8.0
-            load = duration_min * weight
+            load = duration_min * float(hrr_zone["weight"])
             load = min(load, MetricsResolver._TRAINING_LOAD_MAX_SCORE)
-            zone_used = zone_key
+            zone_used = hrr_zone["zone_key"]
+            used_hrr_fallback = True
         else:
             return {
                 "load": None, "level": "unknown", "zone_used": None,
@@ -2337,7 +2751,7 @@ class MetricsResolver:
         confidence = "high"
         if hr_source == "optical":
             confidence = "medium"
-        if not hr_zone_distribution:
+        if not hr_zone_distribution or used_hrr_fallback:
             confidence = "medium"  # MEDIUM:无 zone distribution(基于 avg_hr 推算)
         if sport_type == "swimming":
             confidence = "medium"  # MEDIUM:游泳 HR 可靠性标 MEDIUM
@@ -2349,7 +2763,7 @@ class MetricsResolver:
             "level": level,
             "zone_used": zone_used,
             "confidence": confidence,
-            "reasons": [],
+            "reasons": reasons,
         }
 
     @staticmethod
@@ -2591,7 +3005,7 @@ class MetricsResolver:
         """V7.10 指标 6:HR Drift 真实算法。
 
         算法:drift_pct = (avg_hr_late - avg_hr_early) / avg_hr_early × 100
-        前置:duration > 45min + 配速 CV < 8% + 停顿 < 10%
+        前置:duration > 45min + 足够心率样本 + 无极端变速/长停顿。
 
         返回:{"drift_pct": float|None, "level": str, "early_hr": float|None,
               "late_hr": float|None, "is_steady_aerobic": bool,
@@ -2690,15 +3104,22 @@ class MetricsResolver:
         confidence = "high"
         if duration_sec < 60 * 60:  # < 60min → MEDIUM
             confidence = "medium"
+        confidence_reasons: list[str] = []
+        pace_cv = steady.get("pace_cv")
+        if pace_cv is not None and pace_cv >= MetricsResolver._HR_DRIFT_MAX_PACE_CV:
+            confidence = "low" if pace_cv >= MetricsResolver._HR_DRIFT_MAX_PACE_CV * 2 else "medium"
+            confidence_reasons.append(
+                f"pace_cv={pace_cv:.1f}% >= {MetricsResolver._HR_DRIFT_MAX_PACE_CV}%"
+            )
 
         return {
             "drift_pct": drift_pct,
             "level": level,
             "early_hr": round(early_hr, 1),
             "late_hr": round(late_hr, 1),
-            "is_steady_aerobic": True,
+            "is_steady_aerobic": not confidence_reasons,
             "confidence": confidence,
-            "reasons": [],
+            "reasons": confidence_reasons,
         }
 def evaluate_efficiency(
     avg_hr: float | None,

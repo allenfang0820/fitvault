@@ -821,18 +821,102 @@ def normalize_radar_insight_json(raw_text: str) -> dict[str, Any]:
 # 契约:fit-arch-contrac §5.4 规则 1(独立 sentinel)/ §5.6.2 规则 7(empty_xxx)
 # =============================================================================
 
+FATIGUE_REVIEW_DIMENSION_ORDER = [
+    "overall_stability",
+    "fatigue_progression",
+    "risk_triggers",
+    "context_impact",
+]
+
+FATIGUE_REVIEW_DIMENSION_LABELS = {
+    "overall_stability": "全程稳定性",
+    "fatigue_progression": "疲劳阶段",
+    "risk_triggers": "风险触发",
+    "context_impact": "外部影响",
+}
+
+FATIGUE_REVIEW_DIMENSION_LEGACY_KEY_MAP = {
+    "stability": "overall_stability",
+    "endurance": "fatigue_progression",
+    "bonk_risk": "risk_triggers",
+    "environment": "context_impact",
+}
+
+FATIGUE_REVIEW_DIMENSION_LEVELS = {"excellent", "good", "warn", "bad", "unknown"}
+FATIGUE_REVIEW_LEVEL_LABELS = {
+    "excellent": "极佳",
+    "good": "良好",
+    "warn": "需关注",
+    "bad": "风险较高",
+    "unknown": "数据不足",
+}
+
+
+def _localize_fatigue_review_ai_text(value: Any) -> str:
+    """把用户可见的复盘 AI 文案收敛为中文产品语言。"""
+    text = str(value or "")
+    if not text:
+        return ""
+    replacements = [
+        (r"\bBONK_WARNING\b", "能量断档风险线索"),
+        (r"\bBonk\b", "能量断档"),
+        (r"\bbonk\b", "能量断档"),
+        (r"Bonk风险", "能量断档风险"),
+        (r"bonk_risk", "能量断档风险"),
+        (r"\brisk window\b", "风险区间"),
+        (r"\bwarning\b", "预警"),
+        (r"\bcollapse_events\b", "状态下滑事件"),
+        (r"\bcollapse event(s)?\b", "状态下滑事件"),
+        (r"\bcollapse\b", "状态下滑"),
+        (r"\bdeclining\b", "下降"),
+        (r"\bcaution\b", "需谨慎"),
+        (r"\bexcellent\b", "极佳"),
+        (r"\bgood\b", "良好"),
+        (r"\bwarn\b", "需关注"),
+        (r"\bbad\b", "风险较高"),
+        (r"\bunknown\b", "数据不足"),
+        (r"\bstable\b", "稳定"),
+        (r"\bmoderate\b", "中等"),
+        (r"\bmedium\b", "中等"),
+        (r"\blow\b", "低"),
+        (r"\bhigh\b", "高"),
+        (r"\bvery_high\b", "很高"),
+        (r"\bHRR\b", "心率储备占用"),
+        (r"\bHR\b", "心率"),
+        (r"\bCV\b", "变异系数"),
+        (r"\bEI\b", "效率指标"),
+        (r"\bkcal\b", "千卡"),
+        (r"\bZ([1-5])\b", r"第 \1 心率区间"),
+    ]
+    for pattern, replacement in replacements:
+        text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
+    return text
+
+
+def _empty_fatigue_review_dimensions() -> list[dict[str, str]]:
+    return [
+        {
+            "key": key,
+            "label": FATIGUE_REVIEW_DIMENSION_LABELS[key],
+            "level": "unknown",
+            "comment": "暂无足够数据",
+        }
+        for key in FATIGUE_REVIEW_DIMENSION_ORDER
+    ]
+
+
 FATIGUE_REVIEW_OUTPUT_SCHEMA = """{
-  "summary": "120 字以内的中文总评,聚焦本次训练的核心结论(耐力水平 / 环境压力 / 撞墙风险)",
+  "summary": "120 字以内的中文总评,聚焦本次训练的核心结论(全程稳定性 / 疲劳阶段 / 风险触发 / 外部影响)",
   "sport_type": "running|trail_running|hiking|cycling|swimming",
   "key_dimensions": [
     {
-      "key": "endurance|stability|bonk_risk|environment",
-      "label": "中文维度名(耐力|心肺稳定|撞墙风险|环境压力)",
-      "level": "excellent|good|warn|bad",
-      "comment": "30-60 字解读"
+      "key": "overall_stability|fatigue_progression|risk_triggers|context_impact",
+      "label": "中文维度名(全程稳定性|疲劳阶段|风险触发|外部影响)",
+      "level": "excellent|good|warn|bad|unknown",
+      "comment": "30-80 字自然中文解释,不得直接输出英文枚举或原始字段名"
     }
   ],
-  "event_interpretation": "针对 collapse_events 的整体解读(哪些是真正的风险点,哪些是环境干扰)",
+  "event_interpretation": "针对状态下滑事件的整体中文解读(哪些是真正的风险点,哪些是环境干扰)",
   "training_advice": "针对本场训练的具体改进建议,120 字以内,避免空话",
   "disclaimer": "AI 生成仅供参考,数据基于单次训练快照,需结合长期趋势"
 }"""
@@ -843,7 +927,7 @@ def empty_fatigue_review_insight(error: str = "") -> dict[str, Any]:
     return {
         "summary": error or "暂无可解读的复盘数据",
         "sport_type": "",
-        "key_dimensions": [],
+        "key_dimensions": _empty_fatigue_review_dimensions(),
         "event_interpretation": "",
         "training_advice": "请先完成数据加载后再生成 AI 洞察",
         "disclaimer": "AI 生成仅供参考 · 数据来源：FIT 解析 + 后端算法",
@@ -870,25 +954,40 @@ def normalize_fatigue_review_json(raw_text: str) -> dict[str, Any]:
         return empty_fatigue_review_insight("洞察结果格式错误")
 
     schema = empty_fatigue_review_insight()
-    schema["summary"] = str(data.get("summary") or schema["summary"])[:300]
+    schema["summary"] = _localize_fatigue_review_ai_text(data.get("summary") or schema["summary"])[:300]
     schema["sport_type"] = str(data.get("sport_type") or schema["sport_type"])
-    schema["event_interpretation"] = str(data.get("event_interpretation") or "")[:500]
-    schema["training_advice"] = str(data.get("training_advice") or schema["training_advice"])[:500]
-    schema["disclaimer"] = str(data.get("disclaimer") or schema["disclaimer"])[:300]
+    schema["event_interpretation"] = _localize_fatigue_review_ai_text(data.get("event_interpretation") or "")[:500]
+    schema["training_advice"] = _localize_fatigue_review_ai_text(data.get("training_advice") or schema["training_advice"])[:500]
+    schema["disclaimer"] = _localize_fatigue_review_ai_text(data.get("disclaimer") or schema["disclaimer"])[:300]
 
     raw_dims = data.get("key_dimensions") or []
+    by_key: dict[str, dict[str, str]] = {}
     if isinstance(raw_dims, list):
-        clean = []
-        for d in raw_dims[:6]:
+        for d in raw_dims:
             if not isinstance(d, dict):
                 continue
-            clean.append({
-                "key": str(d.get("key") or ""),
-                "label": str(d.get("label") or d.get("key") or ""),
-                "level": str(d.get("level") or "unknown"),
-                "comment": str(d.get("comment") or "")[:200],
-            })
-        schema["key_dimensions"] = clean
+            raw_key = str(d.get("key") or "").strip()
+            normalized_key = FATIGUE_REVIEW_DIMENSION_LEGACY_KEY_MAP.get(raw_key, raw_key)
+            if normalized_key not in FATIGUE_REVIEW_DIMENSION_LABELS or normalized_key in by_key:
+                continue
+            level = str(d.get("level") or "unknown").strip().lower()
+            if level not in FATIGUE_REVIEW_DIMENSION_LEVELS:
+                level = "unknown"
+            by_key[normalized_key] = {
+                "key": normalized_key,
+                "label": FATIGUE_REVIEW_DIMENSION_LABELS[normalized_key],
+                "level": level,
+                "comment": _localize_fatigue_review_ai_text(d.get("comment") or "")[:200],
+            }
+    schema["key_dimensions"] = [
+        by_key.get(key, {
+            "key": key,
+            "label": FATIGUE_REVIEW_DIMENSION_LABELS[key],
+            "level": "unknown",
+            "comment": "暂无足够数据",
+        })
+        for key in FATIGUE_REVIEW_DIMENSION_ORDER
+    ]
 
     return schema
 
@@ -928,7 +1027,11 @@ def build_fatigue_review_messages(
 - general:均衡解读 4 维度
 
 【必须输出维度】
-key_dimensions 数组必须严格包含 endurance / stability / bonk_risk / environment 四个维度(无数据时 comment 写"暂无足够数据"而非略过)。
+key_dimensions 数组必须严格包含 overall_stability / fatigue_progression / risk_triggers / context_impact 四个维度(无数据时 comment 写"暂无足够数据"而非略过)。
+- overall_stability / 全程稳定性:解释整场心率、配速、效率、步频和节奏是否稳定,可指出波动发生在前段/中段/后段,但禁止重新计算。
+- fatigue_progression / 疲劳阶段:解释 fatigue_zones 中疲劳是否出现、从哪里出现、是否持续或加重。
+- risk_triggers / 风险触发:解释 bonk_risk、collapse_events、训练负荷或后端已识别事件中真正值得注意的风险线索。
+- context_impact / 外部影响:解释 context_tags 中天气、温度、湿度、地形、路线、设备或数据质量对本次表现的影响。
 
 【强行约束 — 绝对禁止行为】
 你 MUST NOT:
@@ -950,9 +1053,10 @@ key_dimensions 数组必须严格包含 endurance / stability / bonk_risk / envi
 1. 只使用上方【权威快照】中的数值,禁止重新计算
 2. key_dimensions 数组必须覆盖 4 维度
 3. 输出必须是纯 JSON,不要包含 markdown 代码块标记
-4. 所有数值字段必须填数字,文本字段填中文
+4. 所有数值字段必须填数字,文本字段必须是自然中文
 5. event_interpretation 必须结合 context_tags 中环境标签,体现宽容度
 6. training_advice 必须针对本场数据,避免泛泛而谈
+7. 用户可见文本不得直接输出 good / warn / bad / unknown / declining / caution / Bonk / collapse 等英文枚举、原始字段名或代码词；如需表达,请写成 良好 / 需关注 / 风险较高 / 数据不足 / 下降 / 需谨慎 / 能量断档 / 状态下滑
 """
     user = (
         f"请基于系统指令中提供的本次{sport_cn}单次训练复盘快照,"
