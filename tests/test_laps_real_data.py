@@ -75,10 +75,8 @@ class TestFitEngineLapData(unittest.TestCase):
     """步骤 1.1: _read_lap_data 提取验证"""
 
     def test_read_lap_data_extracts_all_fields(self):
-        with mock.patch.object(fit_engine.FitFile, "__init__", lambda self, *a, **kw: None), \
-             mock.patch.object(fit_engine.FitFile, "get_messages", lambda self, k: FakeFitFile("").get_messages(k)):
-            fake = FakeFitFile("")
-            laps = fit_engine.FITCoreEngine._read_lap_data(fake)
+        fake = FakeFitFile("")
+        laps = fit_engine.FITCoreEngine._read_lap_data(fake)
         self.assertEqual(len(laps), 2)
         first = laps[0]
         self.assertEqual(first["total_distance"], 1000.0)

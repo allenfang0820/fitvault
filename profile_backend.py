@@ -57,6 +57,107 @@ _REGION_ENRICH_LOCK = threading.Lock()
 _DB_CONN_SEMAPHORE = threading.BoundedSemaphore(SQLITE_POOL_SIZE)
 _PROFILE_SYNC_LOCK = threading.Lock()
 
+PROFILE_CANONICAL_FIELDS: tuple[str, ...] = (
+    "name", "gender", "age", "weight", "resting_hr", "max_hr",
+    "hrv_baseline", "vo2max", "avg_bedtime", "avg_sleep_hours", "bmi",
+    "body_fat_pct", "body_water_pct", "bone_mass", "muscle_mass",
+    "longest_hike_km", "height_cm", "pb_5km", "pb_10km",
+    "pb_half_marathon", "pb_full_marathon", "lactate_threshold_hr",
+    "ftp", "ftp_watts", "lactate_threshold_pace", "pb_1km",
+    "longest_run_km", "longest_ride_time", "cycling_40km_time",
+    "cycling_80km_time", "longest_cycle_km", "longest_swim_distance_m",
+    "swimming_100m_pb", "total_run_km", "total_hike_km",
+    "total_cycle_km", "total_swim_km",
+)
+
+PROFILE_ANALYSIS_REQUIRED_FIELDS: tuple[str, ...] = (
+    "resting_hr", "max_hr", "weight", "vo2max", "lactate_threshold_hr",
+)
+PROFILE_ANALYSIS_OPTIONAL_FIELDS: tuple[str, ...] = (
+    "hrv_baseline", "avg_sleep_hours", "avg_bedtime", "body_fat_pct",
+    "body_water_pct", "bone_mass", "muscle_mass", "ftp", "ftp_watts",
+)
+PROFILE_DISPLAY_ONLY_FIELDS: tuple[str, ...] = (
+    "bmi", "pb_1km", "pb_5km", "pb_10km", "pb_half_marathon",
+    "pb_full_marathon", "longest_hike_km", "total_hike_km",
+    "longest_run_km", "total_run_km", "longest_ride_time",
+    "cycling_40km_time", "cycling_80km_time", "longest_cycle_km",
+    "total_cycle_km", "longest_swim_distance_m", "total_swim_km",
+    "swimming_100m_pb",
+)
+
+PROFILE_FIELD_LABELS: dict[str, str] = {
+    "name": "姓名", "gender": "性别", "age": "年龄", "height_cm": "身高",
+    "weight": "体重", "resting_hr": "静息心率", "max_hr": "最大心率",
+    "hrv_baseline": "HRV 基准", "vo2max": "最大摄氧量",
+    "avg_bedtime": "平均入睡时间", "avg_sleep_hours": "平均睡眠",
+    "bmi": "BMI", "body_fat_pct": "体脂率", "body_water_pct": "体水分",
+    "bone_mass": "骨量", "muscle_mass": "肌肉量",
+    "lactate_threshold_hr": "乳酸阈值心率",
+    "lactate_threshold_pace": "乳酸阈值配速",
+    "ftp": "FTP", "ftp_watts": "FTP",
+    "pb_1km": "1km PB", "pb_5km": "5km PB", "pb_10km": "10km PB",
+    "pb_half_marathon": "半马 PB", "pb_full_marathon": "全马 PB",
+    "longest_hike_km": "最长徒步", "total_hike_km": "徒步累计",
+    "longest_run_km": "最长跑步", "total_run_km": "跑步累计",
+    "longest_ride_time": "最长骑行时长", "cycling_40km_time": "40km 骑行",
+    "cycling_80km_time": "80km 骑行", "longest_cycle_km": "最长骑行",
+    "total_cycle_km": "骑行累计", "longest_swim_distance_m": "最长游泳",
+    "total_swim_km": "游泳累计", "swimming_100m_pb": "100m 游泳",
+}
+
+ACTIVITY_LIST_INDEX_SQL: tuple[tuple[str, str], ...] = (
+    (
+        "idx_activities_list_sort_expr",
+        """
+        CREATE INDEX IF NOT EXISTS idx_activities_list_sort_expr
+        ON activities(
+            COALESCE(source_type, 'fit_sdk'),
+            COALESCE(is_mock, 0),
+            deleted_at,
+            COALESCE(start_time, updated_at) DESC,
+            id DESC
+        )
+        """,
+    ),
+    (
+        "idx_activities_list_type",
+        """
+        CREATE INDEX IF NOT EXISTS idx_activities_list_type
+        ON activities(
+            COALESCE(source_type, 'fit_sdk'),
+            COALESCE(is_mock, 0),
+            deleted_at,
+            sport_type,
+            sub_sport_type
+        )
+        """,
+    ),
+    (
+        "idx_activities_location_display",
+        """
+        CREATE INDEX IF NOT EXISTS idx_activities_location_display
+        ON activities(
+            COALESCE(source_type, 'fit_sdk'),
+            COALESCE(is_mock, 0),
+            deleted_at,
+            region_display,
+            region,
+            region_city
+        )
+        """,
+    ),
+    (
+        "idx_activities_file_path",
+        "CREATE INDEX IF NOT EXISTS idx_activities_file_path ON activities(file_path)",
+    ),
+)
+
+
+def _ensure_activity_list_indexes(conn: sqlite3.Connection) -> None:
+    for _name, sql in ACTIVITY_LIST_INDEX_SQL:
+        conn.execute(sql)
+
 SYNC_STATE_DIR = os.path.expanduser("~/.trackapp")
 SYNC_STATE_PATH = os.path.join(SYNC_STATE_DIR, "sync_state.json")
 PROFILE_CACHE_PATH = os.path.join(SYNC_STATE_DIR, "user_profile_cache.json")
@@ -218,6 +319,14 @@ def get_profile_sync_metadata() -> dict[str, Any]:
         "connection_status": state.get("connection_status") or "unknown",
         "sync_status": sync_status,
         "last_error": state.get("last_error"),
+        "current_profile_source_platform": state.get("last_profile_source_platform"),
+        "data_quality": state.get("last_profile_data_quality"),
+        "missing_fields": state.get("last_profile_missing_fields") or [],
+        "updated_fields": state.get("last_profile_updated_fields") or [],
+        "preserved_fields": state.get("last_profile_preserved_fields") or [],
+        "display_only_missing_fields": state.get("last_profile_display_only_missing_fields") or [],
+        "analysis_required_fields": list(PROFILE_ANALYSIS_REQUIRED_FIELDS),
+        "analysis_optional_fields": list(PROFILE_ANALYSIS_OPTIONAL_FIELDS),
     }
 
 
@@ -347,7 +456,7 @@ def read_latest_profile_snapshot() -> dict | None:
             """
             SELECT normalized_json, synced_at
             FROM user_profile_snapshots
-            WHERE source_platform = 'garmin' AND status = 'success'
+            WHERE status = 'success'
             ORDER BY synced_at DESC, id DESC
             LIMIT 1
             """
@@ -727,6 +836,7 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             conn.execute(f"ALTER TABLE user_profile ADD COLUMN {col} {dtype}")
         except Exception:
             pass
+    _ensure_activity_list_indexes(conn)
     conn.commit()
 
 
@@ -1288,7 +1398,6 @@ def get_activity_list_filtered(
         )
         where_parts.append("start_lat IS NOT NULL")
         where_parts.append("start_lon IS NOT NULL")
-        where_parts.append("COALESCE(track_json, points_json, '') != ''")
 
     where_sql = "WHERE " + " AND ".join(where_parts)
 
@@ -1329,10 +1438,7 @@ def get_activity_list_filtered(
         "source_type, "
         "is_mock, "
         "updated_at, "
-        "hr_curve, "
-        "speed_curve, "
-        "shadow_diff_json, "
-        "CASE WHEN COALESCE(track_json, points_json, '') != '' THEN 1 ELSE 0 END AS has_track"
+        "1 AS has_track"
     )
 
     conn = _conn()
@@ -1419,7 +1525,6 @@ def get_activity_location_options(
         )
         where_parts.append("start_lat IS NOT NULL")
         where_parts.append("start_lon IS NOT NULL")
-        where_parts.append("COALESCE(track_json, points_json, '') != ''")
 
     where_sql = "WHERE " + " AND ".join(where_parts)
 
@@ -2779,6 +2884,8 @@ def _validate_time_format(val: Any) -> str | None:
         return None
     if re.match(r"^(\d{1,2}:)?\d{1,2}:\d{2}$", s):
         return s
+    if re.match(r"^\d{1,2}'\d{2}\"?$", s):
+        return s
     return None
 
 
@@ -2793,16 +2900,155 @@ def _merge_pb_predict(pb_value: Any, predict_value: Any) -> str | None:
     return "｜".join(parts) if parts else None
 
 
+def _first_present(data: dict[str, Any], *keys: str) -> Any:
+    for key in keys:
+        value = data.get(key)
+        if value is None:
+            continue
+        if isinstance(value, str) and value.strip().lower() in {"", "null", "none"}:
+            continue
+        return value
+    return None
+
+
+def _is_meaningful_profile_value(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str) and value.strip().lower() in {"", "null", "none"}:
+        return False
+    return True
+
+
+def _profile_field_labels(fields: list[str] | tuple[str, ...]) -> list[dict[str, str]]:
+    return [{"field": field, "label": PROFILE_FIELD_LABELS.get(field, field)} for field in fields]
+
+
+def build_profile_sync_field_summary(
+    platform: str,
+    incoming: dict[str, Any],
+    merged: dict[str, Any],
+    existing: dict[str, Any] | None,
+) -> dict[str, Any]:
+    existing = existing or {}
+    updated_fields: list[str] = []
+    preserved_fields: list[str] = []
+    for key in PROFILE_CANONICAL_FIELDS:
+        new_value = (incoming or {}).get(key)
+        old_value = existing.get(key)
+        if _is_meaningful_profile_value(new_value):
+            if not _is_meaningful_profile_value(old_value) or old_value != new_value:
+                updated_fields.append(key)
+            continue
+        if _is_meaningful_profile_value(old_value) and merged.get(key) == old_value:
+            preserved_fields.append(key)
+
+    quality, analysis_missing = _profile_data_quality(merged)
+    display_only_missing = [
+        field for field in PROFILE_DISPLAY_ONLY_FIELDS
+        if not _is_meaningful_profile_value(merged.get(field))
+    ]
+    supports_remote = str(platform or "").strip().lower() == "garmin"
+    return {
+        "source_platform": str(platform or "").strip().lower(),
+        "data_quality": quality,
+        "missing_fields": analysis_missing,
+        "updated_fields": updated_fields,
+        "preserved_fields": preserved_fields,
+        "display_only_missing_fields": display_only_missing,
+        "analysis_required_fields": list(PROFILE_ANALYSIS_REQUIRED_FIELDS),
+        "analysis_optional_fields": list(PROFILE_ANALYSIS_OPTIONAL_FIELDS),
+        "updated_field_labels": _profile_field_labels(updated_fields),
+        "preserved_field_labels": _profile_field_labels(preserved_fields),
+        "missing_field_labels": _profile_field_labels(analysis_missing),
+        "display_only_missing_field_labels": _profile_field_labels(display_only_missing),
+        "analysis_required_field_labels": _profile_field_labels(PROFILE_ANALYSIS_REQUIRED_FIELDS),
+        "analysis_optional_field_labels": _profile_field_labels(PROFILE_ANALYSIS_OPTIONAL_FIELDS),
+        "supports_remote_activity_sync": supports_remote,
+        "activity_sync_hint": (
+            "可按日期范围通过 OpenClaw 同步 Garmin 活动 FIT 文件。"
+            if supports_remote else
+            "COROS 暂不支持远程活动同步；请使用本地 FIT、ZIP 或目录监听导入活动。"
+        ),
+    }
+
+
+def write_profile_sync_field_summary(summary: dict[str, Any]) -> None:
+    state = read_sync_state()
+    source_platform = summary.get("source_platform")
+    if source_platform:
+        state["last_profile_source_platform"] = source_platform
+    state["last_profile_data_quality"] = summary.get("data_quality")
+    state["last_profile_missing_fields"] = summary.get("missing_fields") or []
+    state["last_profile_updated_fields"] = summary.get("updated_fields") or []
+    state["last_profile_preserved_fields"] = summary.get("preserved_fields") or []
+    state["last_profile_display_only_missing_fields"] = summary.get("display_only_missing_fields") or []
+    write_sync_state(state)
+
+
+def build_profile_status_summary(current_watch_brand: str = "") -> dict[str, Any]:
+    metadata = get_profile_sync_metadata()
+    brand = str(current_watch_brand or "").strip().lower()
+    source_platform = str(metadata.get("current_profile_source_platform") or "").strip().lower() or None
+    if not source_platform and brand in {"garmin", "coros"}:
+        source_platform = brand
+    supports_remote = brand == "garmin"
+    data_quality = metadata.get("data_quality")
+    missing_fields = list(metadata.get("missing_fields") or [])
+    updated_fields = list(metadata.get("updated_fields") or [])
+    preserved_fields = list(metadata.get("preserved_fields") or [])
+    display_only_missing = list(metadata.get("display_only_missing_fields") or [])
+    return {
+        "current_watch_brand": brand,
+        "current_profile_source_platform": source_platform,
+        "last_profile_sync_at": metadata.get("last_sync_time"),
+        "last_profile_sync_status": metadata.get("sync_status"),
+        "data_quality": data_quality,
+        "missing_fields": missing_fields,
+        "updated_fields": updated_fields,
+        "preserved_fields": preserved_fields,
+        "display_only_missing_fields": display_only_missing,
+        "analysis_required_fields": list(PROFILE_ANALYSIS_REQUIRED_FIELDS),
+        "analysis_optional_fields": list(PROFILE_ANALYSIS_OPTIONAL_FIELDS),
+        "missing_field_labels": _profile_field_labels(missing_fields),
+        "updated_field_labels": _profile_field_labels(updated_fields),
+        "preserved_field_labels": _profile_field_labels(preserved_fields),
+        "display_only_missing_field_labels": _profile_field_labels(display_only_missing),
+        "analysis_required_field_labels": _profile_field_labels(PROFILE_ANALYSIS_REQUIRED_FIELDS),
+        "analysis_optional_field_labels": _profile_field_labels(PROFILE_ANALYSIS_OPTIONAL_FIELDS),
+        "supports_remote_activity_sync": supports_remote,
+        "activity_sync_hint": (
+            "可按日期范围通过 OpenClaw 同步 Garmin 活动 FIT 文件。"
+            if supports_remote else
+            "COROS 暂不支持远程活动同步；请使用本地 FIT、ZIP 或目录监听导入活动。"
+        ),
+    }
+
+
+def merge_profile_with_existing(incoming: dict[str, Any], existing: dict[str, Any] | None) -> dict[str, Any]:
+    """Merge sync payload into the single runtime profile without brand namespaces."""
+    merged = dict(incoming or {})
+    existing = existing or {}
+    for key in PROFILE_CANONICAL_FIELDS:
+        if _is_meaningful_profile_value(merged.get(key)):
+            continue
+        old_value = existing.get(key)
+        if _is_meaningful_profile_value(old_value):
+            merged[key] = old_value
+    return merged
+
+
 def _profile_data_quality(profile_data: dict[str, Any]) -> tuple[str, list[str]]:
-    required_fields = ["name", "gender", "age", "weight", "resting_hr", "vo2max"]
-    missing = [field for field in required_fields if profile_data.get(field) is None]
-    present_count = len(required_fields) - len(missing)
-    if present_count == len(required_fields):
-        return "complete", missing
-    if present_count >= 4:
-        return "partial", missing
-    if present_count > 0:
-        return "minimal", missing
+    analysis_fields = ["resting_hr", "max_hr", "weight", "vo2max", "lactate_threshold_hr"]
+    missing = [field for field in analysis_fields if profile_data.get(field) is None]
+    has_rest_and_max = profile_data.get("resting_hr") is not None and profile_data.get("max_hr") is not None
+    optional_present = sum(1 for field in ("weight", "vo2max", "lactate_threshold_hr") if profile_data.get(field) is not None)
+    if has_rest_and_max and optional_present >= 2:
+        return "complete_for_analysis", missing
+    if any(profile_data.get(field) is not None for field in analysis_fields):
+        return "partial_for_analysis", missing
+    display_fields = ("name", "gender", "age", "height_cm")
+    if any(profile_data.get(field) is not None for field in display_fields):
+        return "display_only", missing
     return "invalid", missing
 
 
@@ -2913,7 +3159,7 @@ def fetch_mcp_persona(platform: str, trigger_type: str = "manual") -> dict[str, 
         return {"ok": False, "error": "模型名未配置，请在设置页填写"}
     api_key = str(cfg.get("api_key") or "")
     existing_profile = get_profile()
-    preserved_max_hr = existing_profile.max_hr if existing_profile else None
+    existing_profile_data = existing_profile.to_dict() if existing_profile else {}
 
     if platform == "coros":
         step1_prompt = (
@@ -2948,19 +3194,40 @@ def fetch_mcp_persona(platform: str, trigger_type: str = "manual") -> dict[str, 
             "若存在 100m 游泳记录，取其用时（格式 mm:ss）作为 swimming_100m_pb。若无则设为 null。\n\n"
             "【输出格式】输出一个完整 JSON，绝对不输出任何其他文字：\n"
             "{\n"
-            '  "longest_hike_km": 浮点数或null,\n'
-            '  "name": "字符串或null",\n'
+            '  "username": "字符串或null",\n'
             '  "age": 整数或null,\n'
             '  "gender": "字符串或null",\n'
-            '  "weight": 浮点数或null,\n'
-            '  "vo2max": 浮点数或null,\n'
+            '  "height_cm": 浮点数或null,\n'
+            '  "weight_kg": 浮点数或null,\n'
+            '  "body_fat_percent": 浮点数或null,\n'
+            '  "body_water_percent": 浮点数或null,\n'
+            '  "bone_mass_kg": 浮点数或null,\n'
+            '  "muscle_mass_kg": 浮点数或null,\n'
+            '  "resting_heart_rate": 整数或null,\n'
+            '  "max_heart_rate": 整数或null,\n'
+            '  "hrv": 浮点数或null,\n'
+            '  "vo2_max": 浮点数或null,\n'
+            '  "avg_bedtime": "字符串或null",\n'
             '  "avg_sleep_hours": 浮点数或null,\n'
+            '  "lactate_threshold_hr": 整数或null,\n'
             '  "lactate_threshold_pace": "字符串或null",\n'
+            '  "ftp_watts": 整数或null,\n'
+            '  "1km_pb": "字符串或null",\n'
+            '  "5km_pb": "字符串或null",\n'
+            '  "10km_pb": "字符串或null",\n'
+            '  "half_marathon_pb": "字符串或null",\n'
+            '  "full_marathon_pb": "字符串或null",\n'
+            '  "race_predict_5k": "字符串或null",\n'
+            '  "race_predict_10k": "字符串或null",\n'
+            '  "race_predict_half": "字符串或null",\n'
+            '  "race_predict_full": "字符串或null",\n'
             '  "longest_run_km": 浮点数或null,\n'
             '  "total_run_km": 浮点数或null,\n'
+            '  "longest_hike_km": 浮点数或null,\n'
             '  "total_hike_km": 浮点数或null,\n'
-            '  "pb_1km": "字符串或null",\n'
             '  "longest_ride_time": "字符串或null",\n'
+            '  "cycling_40km_time": "字符串或null",\n'
+            '  "cycling_80km_time": "字符串或null",\n'
             '  "longest_cycle_km": 浮点数或null,\n'
             '  "total_cycle_km": 浮点数或null,\n'
             '  "swimming_100m_pb": "字符串或null",\n'
@@ -2970,7 +3237,7 @@ def fetch_mcp_persona(platform: str, trigger_type: str = "manual") -> dict[str, 
         )
         messages = [
             {"role": "system", "content": step1_prompt},
-            {"role": "user", "content": "请立即执行上述两步数据提取和计算任务。"},
+            {"role": "user", "content": "请立即执行上述 COROS 画像数据提取和计算任务。"},
         ]
     else:
         messages = [
@@ -3023,7 +3290,7 @@ def fetch_mcp_persona(platform: str, trigger_type: str = "manual") -> dict[str, 
                 "age": _validate_int(data_map.get("age")),
                 "weight": _validate_number(data_map.get("weight_kg")),
                 "resting_hr": _validate_int(data_map.get("resting_heart_rate")),
-                "max_hr": synced_max_hr or preserved_max_hr,
+                "max_hr": synced_max_hr,
                 "hrv_baseline": _validate_number(data_map.get("hrv")),
                 "vo2max": _validate_number(data_map.get("vo2_max")),
                 "avg_bedtime": str(data_map.get("avg_bedtime")).strip() if data_map.get("avg_bedtime") is not None else None,
@@ -3058,41 +3325,64 @@ def fetch_mcp_persona(platform: str, trigger_type: str = "manual") -> dict[str, 
             }
         else:
             persona = parsed_json
+            ftp = _validate_int(_first_present(persona, "ftp_watts", "ftp"))
+            synced_max_hr = (
+                _validate_int(_first_present(persona, "max_heart_rate", "max_hr", "maximum_heart_rate"))
+            )
             profile_data = {
-                "name": persona.get("name"),
-                "gender": persona.get("gender"),
-                "age": _validate_int(persona.get("age")),
-                "weight": _validate_number(persona.get("weight")),
-                "resting_hr": _validate_int(persona.get("resting_hr")),
-                "max_hr": _validate_int(persona.get("max_hr")) or preserved_max_hr,
-                "hrv_baseline": _validate_number(persona.get("hrv_baseline")),
-                "vo2max": _validate_number(persona.get("vo2max")),
-                "avg_sleep_hours": _validate_number(persona.get("avg_sleep_hours")),
-                "longest_hike_km": _validate_number(persona.get("longest_hike_km")),
-                "height_cm": None,
-                "pb_5km": None,
-                "pb_10km": None,
-                "pb_half_marathon": None,
-                "pb_full_marathon": None,
-                "lactate_threshold_hr": None,
-                "ftp_watts": None,
-                "lactate_threshold_pace": _validate_time_format(persona.get("lactate_threshold_pace")),
-                "longest_run_km": _validate_number(persona.get("longest_run_km")),
-                "pb_1km": _validate_time_format(persona.get("pb_1km")),
-                "longest_ride_time": _validate_time_format(persona.get("longest_ride_time")),
-                "longest_cycle_km": _validate_number(persona.get("longest_cycle_km")),
-                "swimming_100m_pb": _validate_time_format(persona.get("swimming_100m_pb")),
-                "longest_swim_distance_m": _validate_number(persona.get("longest_swim_distance_m")),
-                "total_run_km": _validate_number(persona.get("total_run_km")),
-                "total_hike_km": _validate_number(persona.get("total_hike_km")),
-                "total_cycle_km": _validate_number(persona.get("total_cycle_km")),
-                "total_swim_km": _validate_number(persona.get("total_swim_km")),
+                "name": str(_first_present(persona, "username", "name", "nickname")) if _first_present(persona, "username", "name", "nickname") is not None else None,
+                "gender": str(_first_present(persona, "gender")) if _first_present(persona, "gender") is not None else None,
+                "age": _validate_int(_first_present(persona, "age")),
+                "weight": _validate_number(_first_present(persona, "weight_kg", "weight")),
+                "resting_hr": _validate_int(_first_present(persona, "resting_heart_rate", "resting_hr")),
+                "max_hr": synced_max_hr,
+                "hrv_baseline": _validate_number(_first_present(persona, "hrv", "hrv_baseline")),
+                "vo2max": _validate_number(_first_present(persona, "vo2_max", "vo2max")),
+                "avg_bedtime": str(_first_present(persona, "avg_bedtime")).strip() if _first_present(persona, "avg_bedtime") is not None else None,
+                "avg_sleep_hours": _validate_number(_first_present(persona, "avg_sleep_hours")),
+                "bmi": _validate_number(_first_present(persona, "bmi")),
+                "body_fat_pct": _validate_number(_first_present(persona, "body_fat_percent", "body_fat_pct")),
+                "body_water_pct": _validate_number(_first_present(persona, "body_water_percent", "body_water_pct")),
+                "bone_mass": _validate_number(_first_present(persona, "bone_mass_kg", "bone_mass")),
+                "muscle_mass": _validate_number(_first_present(persona, "muscle_mass_kg", "muscle_mass")),
+                "longest_hike_km": _validate_number(_first_present(persona, "longest_hike_km")),
+                "height_cm": _validate_number(_first_present(persona, "height_cm")),
+                "pb_5km": _merge_pb_predict(_first_present(persona, "5km_pb", "pb_5km"), _first_present(persona, "race_predict_5k")),
+                "pb_10km": _merge_pb_predict(_first_present(persona, "10km_pb", "pb_10km"), _first_present(persona, "race_predict_10k")),
+                "pb_half_marathon": _merge_pb_predict(_first_present(persona, "half_marathon_pb", "pb_half_marathon"), _first_present(persona, "race_predict_half")),
+                "pb_full_marathon": _merge_pb_predict(_first_present(persona, "full_marathon_pb", "pb_full_marathon"), _first_present(persona, "race_predict_full")),
+                "lactate_threshold_hr": _validate_int(_first_present(persona, "lactate_threshold_hr")),
+                "ftp": ftp,
+                "ftp_watts": ftp,
+                "lactate_threshold_pace": _validate_time_format(_first_present(persona, "lactate_threshold_pace")),
+                "longest_run_km": _validate_number(_first_present(persona, "longest_run_km")),
+                "pb_1km": _validate_time_format(_first_present(persona, "1km_pb", "pb_1km")),
+                "longest_ride_time": _validate_time_format(_first_present(persona, "longest_ride_time")),
+                "cycling_40km_time": _validate_time_format(_first_present(persona, "cycling_40km_time")),
+                "cycling_80km_time": _validate_time_format(_first_present(persona, "cycling_80km_time")),
+                "longest_cycle_km": _validate_number(_first_present(persona, "longest_cycle_km")),
+                "swimming_100m_pb": _validate_time_format(_first_present(persona, "swimming_100m_pb")),
+                "longest_swim_distance_m": _validate_number(_first_present(persona, "longest_swim_distance_m")),
+                # COROS MCP 的 total_run_km 可能是近 7 天合计；raw snapshot 保留原始来源语义。
+                "total_run_km": _validate_number(_first_present(persona, "total_run_km")),
+                "total_hike_km": _validate_number(_first_present(persona, "total_hike_km")),
+                "total_cycle_km": _validate_number(_first_present(persona, "total_cycle_km")),
+                "total_swim_km": _validate_number(_first_present(persona, "total_swim_km")),
             }
 
+        incoming_profile_data = dict(profile_data)
+        profile_data = merge_profile_with_existing(incoming_profile_data, existing_profile_data)
+        field_summary = build_profile_sync_field_summary(
+            platform,
+            incoming_profile_data,
+            profile_data,
+            existing_profile_data,
+        )
+        write_profile_sync_field_summary(field_summary)
         upsert_profile(profile_data)
         _insert_profile_snapshot(platform, trigger_type, parsed_json, profile_data)
         mark_sync_done()
-        return {"ok": True, "persona": profile_data}
+        return {"ok": True, "persona": profile_data, "profile_sync_summary": field_summary}
 
     except json.JSONDecodeError as e:
         error = f"JSON 解析失败: {e}\n原始返回: {text[:500] if 'text' in dir() else 'N/A'}"

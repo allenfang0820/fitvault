@@ -52,6 +52,10 @@ class TestFitSync(unittest.TestCase):
         if thread and thread.is_alive():
             thread.join(timeout=2.0)
         main._NP_BACKFILL_THREAD = None
+        timer = getattr(main, "_NP_BACKFILL_TIMER", None)
+        if timer and timer.is_alive():
+            timer.cancel()
+        main._NP_BACKFILL_TIMER = None
         profile_backend.DB_PATH = self.original_db_path
         profile_backend._SCHEMA_READY_FOR = self.original_profile_schema
         main._ACTIVITY_SYNC_SCHEMA_READY_FOR = self.original_main_schema
@@ -284,6 +288,380 @@ class TestFitSync(unittest.TestCase):
         self.assertFalse(result["ok"], result)
         self.assertIn("暂不支持按时间同步活动", result["error"])
         chat_mock.assert_not_called()
+
+    def _fetch_coros_persona_with_payload(self, payload):
+        return self._fetch_persona_with_payload("coros", payload)
+
+    def _fetch_persona_with_payload(self, platform, payload):
+        profile_backend.write_sync_state({})
+        with mock.patch.object(llm_backend, "load_llm_config", return_value={
+            "provider": "local_mcp",
+            "url": "http://localhost:3000/v1/chat/completions",
+            "model": "openclaw",
+            "api_key": "",
+            "agent_id": "",
+            "watch_brand": platform,
+        }), mock.patch.object(llm_backend, "chat_completions", return_value=json.dumps(payload, ensure_ascii=False)), \
+             mock.patch.object(llm_backend, "test_llm_connection", return_value={"ok": True}):
+            return profile_backend.fetch_mcp_persona(platform)
+
+    def test_coros_persona_maps_full_training_hub_payload(self):
+        payload = {
+            "username": "户外大叔MrFang",
+            "age": 46,
+            "gender": "男",
+            "height_cm": 170.0,
+            "weight_kg": 73.8,
+            "body_fat_percent": None,
+            "body_water_percent": None,
+            "bone_mass_kg": None,
+            "muscle_mass_kg": None,
+            "resting_heart_rate": 52,
+            "max_heart_rate": 187,
+            "hrv": None,
+            "avg_sleep_hours": None,
+            "avg_bedtime": None,
+            "vo2_max": 45,
+            "lactate_threshold_hr": 166,
+            "lactate_threshold_pace": "05'12\"",
+            "ftp_watts": None,
+            "1km_pb": "00:04:18",
+            "5km_pb": "00:27:18",
+            "10km_pb": "01:04:00",
+            "half_marathon_pb": None,
+            "full_marathon_pb": None,
+            "longest_run_km": 21.46,
+            "total_run_km": 33.92,
+            "race_predict_5k": "00:24:59",
+            "race_predict_10k": "00:52:17",
+            "race_predict_half": "01:57:51",
+            "race_predict_full": "04:10:05",
+            "longest_hike_km": None,
+            "total_hike_km": None,
+            "longest_ride_time": None,
+            "cycling_40km_time": None,
+            "cycling_80km_time": None,
+            "longest_cycle_km": 29.98,
+            "total_cycle_km": None,
+            "longest_swim_distance_m": None,
+            "total_swim_km": None,
+            "swimming_100m_pb": None,
+        }
+
+        result = self._fetch_coros_persona_with_payload(payload)
+
+        self.assertTrue(result["ok"], result)
+        persona = result["persona"]
+        self.assertEqual(persona["name"], "户外大叔MrFang")
+        self.assertEqual(persona["age"], 46)
+        self.assertEqual(persona["gender"], "男")
+        self.assertEqual(persona["height_cm"], 170.0)
+        self.assertEqual(persona["weight"], 73.8)
+        self.assertEqual(persona["resting_hr"], 52)
+        self.assertEqual(persona["max_hr"], 187)
+        self.assertEqual(persona["vo2max"], 45)
+        self.assertEqual(persona["lactate_threshold_hr"], 166)
+        self.assertEqual(persona["lactate_threshold_pace"], "05'12\"")
+        self.assertEqual(persona["pb_1km"], "00:04:18")
+        self.assertEqual(persona["pb_5km"], "🏆 00:27:18｜📈 00:24:59")
+        self.assertEqual(persona["pb_10km"], "🏆 01:04:00｜📈 00:52:17")
+        self.assertEqual(persona["pb_half_marathon"], "📈 01:57:51")
+        self.assertEqual(persona["pb_full_marathon"], "📈 04:10:05")
+        self.assertEqual(persona["longest_run_km"], 21.46)
+        self.assertEqual(persona["total_run_km"], 33.92)
+        self.assertEqual(persona["longest_cycle_km"], 29.98)
+
+    def test_coros_persona_preserves_existing_max_hr_when_missing(self):
+        profile_backend.upsert_profile({
+            "name": "old",
+            "gender": "男",
+            "age": 45,
+            "weight": 72.0,
+            "resting_hr": 55,
+            "max_hr": 191,
+            "vo2max": 44,
+        })
+        payload = {
+            "username": "new",
+            "age": 46,
+            "gender": "男",
+            "weight_kg": 73.8,
+            "resting_heart_rate": 52,
+            "vo2_max": 45,
+        }
+
+        result = self._fetch_coros_persona_with_payload(payload)
+
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["persona"]["max_hr"], 191)
+
+    def test_coros_persona_does_not_null_supported_fields(self):
+        payload = {
+            "username": "coros",
+            "height_cm": 170,
+            "5km_pb": "00:27:18",
+            "10km_pb": "01:04:00",
+            "lactate_threshold_hr": 166,
+            "ftp_watts": 230,
+            "cycling_40km_time": "01:20:00",
+            "cycling_80km_time": "02:50:00",
+            "body_fat_percent": 18.5,
+            "body_water_percent": 55.0,
+            "bone_mass_kg": 3.1,
+            "muscle_mass_kg": 54.2,
+        }
+
+        result = self._fetch_coros_persona_with_payload(payload)
+
+        self.assertTrue(result["ok"], result)
+        persona = result["persona"]
+        self.assertEqual(persona["height_cm"], 170)
+        self.assertEqual(persona["pb_5km"], "🏆 00:27:18")
+        self.assertEqual(persona["pb_10km"], "🏆 01:04:00")
+        self.assertEqual(persona["lactate_threshold_hr"], 166)
+        self.assertEqual(persona["ftp"], 230)
+        self.assertEqual(persona["ftp_watts"], 230)
+        self.assertEqual(persona["cycling_40km_time"], "01:20:00")
+        self.assertEqual(persona["cycling_80km_time"], "02:50:00")
+        self.assertEqual(persona["body_fat_pct"], 18.5)
+        self.assertEqual(persona["body_water_pct"], 55.0)
+        self.assertEqual(persona["bone_mass"], 3.1)
+        self.assertEqual(persona["muscle_mass"], 54.2)
+
+    def test_coros_persona_tolerates_partial_payload(self):
+        result = self._fetch_coros_persona_with_payload({"username": "partial"})
+
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["persona"]["name"], "partial")
+        self.assertIsNone(result["persona"]["resting_hr"])
+        self.assertIsNone(result["persona"]["max_hr"])
+
+    def test_profile_sync_uses_single_profile_and_preserves_missing_fields_across_brand_switch(self):
+        profile_backend.upsert_profile({
+            "name": "garmin-user",
+            "gender": "男",
+            "age": 45,
+            "height_cm": 169,
+            "weight": 72.0,
+            "resting_hr": 55,
+            "max_hr": 186,
+            "vo2max": 44,
+            "lactate_threshold_hr": 165,
+            "pb_5km": "🏆 00:28:00",
+            "hrv_baseline": 62,
+        })
+        payload = {
+            "username": "coros-user",
+            "age": 46,
+            "weight_kg": 73.8,
+            "max_heart_rate": None,
+            "resting_heart_rate": None,
+            "vo2_max": 45,
+        }
+
+        result = self._fetch_coros_persona_with_payload(payload)
+
+        self.assertTrue(result["ok"], result)
+        profile = profile_backend.get_profile().to_dict()
+        self.assertEqual(profile["name"], "coros-user")
+        self.assertEqual(profile["age"], 46)
+        self.assertEqual(profile["weight"], 73.8)
+        self.assertEqual(profile["vo2max"], 45)
+        self.assertEqual(profile["max_hr"], 186)
+        self.assertEqual(profile["resting_hr"], 55)
+        self.assertEqual(profile["height_cm"], 169)
+        self.assertEqual(profile["lactate_threshold_hr"], 165)
+        self.assertEqual(profile["pb_5km"], "🏆 00:28:00")
+        self.assertEqual(profile["hrv_baseline"], 62)
+        conn = profile_backend._conn()
+        try:
+            count = conn.execute("SELECT COUNT(*) AS c FROM user_profile").fetchone()["c"]
+        finally:
+            conn.close()
+        self.assertEqual(count, 1)
+
+    def test_profile_snapshot_history_is_field_continuous_across_platforms(self):
+        garmin_payload = [
+            {"metric": "username", "value": "garmin-user"},
+            {"metric": "age", "value": 45},
+            {"metric": "gender", "value": "男"},
+            {"metric": "weight_kg", "value": 72.0},
+            {"metric": "resting_heart_rate", "value": 55},
+            {"metric": "max_hr", "value": 186},
+            {"metric": "vo2_max", "value": 44},
+        ]
+        coros_payload = {
+            "username": "coros-user",
+            "weight_kg": 73.8,
+            "resting_heart_rate": 52,
+            "max_heart_rate": 187,
+            "vo2_max": 45,
+        }
+
+        first = self._fetch_persona_with_payload("garmin", garmin_payload)
+        second = self._fetch_persona_with_payload("coros", coros_payload)
+
+        self.assertTrue(first["ok"], first)
+        self.assertTrue(second["ok"], second)
+        conn = profile_backend._conn()
+        try:
+            rows = conn.execute(
+                """
+                SELECT source_platform, normalized_json
+                FROM user_profile_snapshots
+                ORDER BY id ASC
+                """
+            ).fetchall()
+        finally:
+            conn.close()
+        self.assertEqual([row["source_platform"] for row in rows], ["garmin", "coros"])
+        max_hr_history = [json.loads(row["normalized_json"])["max_hr"] for row in rows]
+        self.assertEqual(max_hr_history, [186, 187])
+
+    def test_profile_data_quality_complete_for_analysis_without_hrv_sleep_or_body_composition(self):
+        quality, missing = profile_backend._profile_data_quality({
+            "name": "coros",
+            "resting_hr": 52,
+            "max_hr": 187,
+            "weight": 73.8,
+            "vo2max": 45,
+            "lactate_threshold_hr": 166,
+            "hrv_baseline": None,
+            "avg_sleep_hours": None,
+            "body_fat_pct": None,
+            "ftp_watts": None,
+        })
+
+        self.assertEqual(quality, "complete_for_analysis")
+        self.assertEqual(missing, [])
+
+    def test_profile_sync_summary_reports_updated_and_preserved_fields(self):
+        profile_backend.upsert_profile({
+            "name": "garmin-user",
+            "gender": "男",
+            "age": 45,
+            "height_cm": 169,
+            "weight": 72.0,
+            "resting_hr": 55,
+            "max_hr": 186,
+            "vo2max": 44,
+            "lactate_threshold_hr": 165,
+            "hrv_baseline": 62,
+        })
+        payload = {
+            "username": "coros-user",
+            "weight_kg": 73.8,
+            "vo2_max": 45,
+            "max_heart_rate": None,
+            "resting_heart_rate": None,
+            "lactate_threshold_hr": None,
+        }
+
+        result = self._fetch_coros_persona_with_payload(payload)
+
+        self.assertTrue(result["ok"], result)
+        summary = result["profile_sync_summary"]
+        self.assertIn("weight", summary["updated_fields"])
+        self.assertIn("vo2max", summary["updated_fields"])
+        self.assertIn("max_hr", summary["preserved_fields"])
+        self.assertIn("resting_hr", summary["preserved_fields"])
+        self.assertIn("lactate_threshold_hr", summary["preserved_fields"])
+        self.assertEqual(summary["data_quality"], "complete_for_analysis")
+        self.assertFalse(summary["supports_remote_activity_sync"])
+
+    def test_user_profile_api_returns_coros_sync_summary_without_dual_profile(self):
+        profile_backend.upsert_profile({
+            "name": "garmin-user",
+            "gender": "男",
+            "age": 45,
+            "weight": 72.0,
+            "resting_hr": 55,
+            "max_hr": 186,
+            "vo2max": 44,
+            "lactate_threshold_hr": 165,
+        })
+        payload = {
+            "username": "coros-user",
+            "weight_kg": 73.8,
+            "vo2_max": 45,
+            "resting_heart_rate": None,
+            "max_heart_rate": None,
+        }
+        self._fetch_coros_persona_with_payload(payload)
+
+        with mock.patch.object(llm_backend, "load_llm_config", return_value={
+            "watch_brand": "coros",
+        }):
+            response = self.api.get_user_profile()
+
+        self.assertTrue(response["ok"], response)
+        self.assertEqual(response["current_watch_brand"], "coros")
+        self.assertEqual(response["current_profile_source_platform"], "coros")
+        self.assertFalse(response["supports_remote_activity_sync"])
+        self.assertIn("本地 FIT", response["activity_sync_hint"])
+        self.assertIn("max_hr", response["preserved_fields"])
+        self.assertIn("resting_hr", response["preserved_fields"])
+        self.assertIn("weight", response["updated_fields"])
+        self.assertEqual(response["data_quality"], "complete_for_analysis")
+        self.assertNotIn("hrv_baseline", response["missing_fields"])
+        conn = profile_backend._conn()
+        try:
+            count = conn.execute("SELECT COUNT(*) AS c FROM user_profile").fetchone()["c"]
+        finally:
+            conn.close()
+        self.assertEqual(count, 1)
+
+    def test_energy_risk_consumes_unified_profile_fields(self):
+        from metrics_resolver import MetricsResolver
+        distance_curve = [i * 350.0 for i in range(121)]
+        result = MetricsResolver._energy_reserve_risk_layer(
+            distance_curve=distance_curve,
+            time_curve=[i * 180.0 for i in range(121)],
+            total_calories=2600.0,
+            sport_type="running",
+            weight_kg=73.8,
+            avg_hr=158,
+            profile_max_hr=187,
+            profile_resting_hr=52,
+            lactate_threshold_hr=166,
+            vo2max=45,
+        )
+
+        self.assertNotEqual(result["confidence"], "unavailable")
+        factors = result["factors"]
+        self.assertTrue(any(str(f).startswith("kcal_per_kg=") for f in factors))
+        self.assertTrue(any(str(f).startswith("hrr_ratio=") for f in factors))
+        self.assertTrue(any(str(f).startswith("threshold_ratio=") for f in factors))
+        self.assertTrue(any(str(f).startswith("vo2max=") for f in factors))
+
+    def test_training_load_uses_unified_profile_hrr(self):
+        from metrics_resolver import MetricsResolver
+        result = MetricsResolver._compute_training_load(
+            avg_hr=158,
+            duration_sec=3600,
+            profile_max_hr=187,
+            profile_resting_hr=52,
+        )
+
+        self.assertIsNotNone(result["load"])
+        self.assertIsNotNone(result["zone_used"])
+        self.assertNotEqual(result["confidence"], "unavailable")
+
+    def test_trimp_uses_unified_user_profile_not_default_path(self):
+        from datetime import datetime, timedelta
+        from utils.metrics_calc import AdvancedMetricsCalc
+        start = datetime(2026, 5, 19, 8, 0, 0)
+        records = [
+            {"timestamp": start + timedelta(minutes=i), "heart_rate": 150 + (i % 4)}
+            for i in range(60)
+        ]
+
+        coros_profile = {"gender": "男", "age": 46, "resting_hr": 52, "max_hr": 187}
+        trimp = AdvancedMetricsCalc.calculate_trimp(records, coros_profile)
+        default_trimp = AdvancedMetricsCalc.calculate_trimp(records, {})
+
+        self.assertGreater(trimp, 0)
+        self.assertNotEqual(trimp, default_trimp)
 
     def test_pick_and_import_fit_files_uses_batch_import_tracks(self):
         selected = [str(self.temp_dir / "manual.fit")]
@@ -710,6 +1088,44 @@ class TestFitSync(unittest.TestCase):
         self.assertFalse(status["running"])
         self.assertEqual(status["total"], 0)
 
+    def test_activity_list_schedules_metric_backfill_without_immediate_worker(self):
+        main.ensure_activity_sync_schema()
+        fit_path = self.temp_dir / "deferred_np.fit"
+        fit_path.write_bytes(b"fit")
+        conn = sqlite3.connect(str(profile_backend.DB_PATH))
+        try:
+            conn.execute(
+                """
+                INSERT INTO activities (
+                    filename, file_name, file_path, sport_type, sub_sport_type,
+                    dist_km, distance, duration_sec, duration, start_time,
+                    avg_power, max_power, normalized_power
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "deferred_np.fit", "deferred_np.fit", str(fit_path),
+                    "running", "generic", 7.0, 7000.0, 2946, 2946,
+                    "2026-05-19T08:00:00+08:00", None, None, None,
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        with mock.patch.object(main, "_run_normalized_power_backfill_worker") as worker:
+            res1 = self.api.get_activity_list(page=1, page_size=10, sport_filter="all")
+            res2 = self.api.get_activity_list(page=1, page_size=10, sport_filter="all")
+
+        self.assertTrue(res1["ok"], res1)
+        self.assertTrue(res2["ok"], res2)
+        status = res1["data"]["list_metric_backfill"]
+        self.assertTrue(status.get("scheduled"))
+        self.assertFalse(status.get("running"))
+        worker.assert_not_called()
+        timer = getattr(main, "_NP_BACKFILL_TIMER", None)
+        self.assertIsNotNone(timer)
+        self.assertTrue(timer.is_alive())
+
     def test_water_metric_backfill_worker_updates_existing_db_rows(self):
         main.ensure_activity_sync_schema()
         fit_path = self.temp_dir / "legacy_water.fit"
@@ -981,7 +1397,94 @@ class TestFitSync(unittest.TestCase):
         self.assertEqual(page2["data"]["records"][0]["sub_sport_type"], "lap_swimming")
         self.assertEqual(page2["data"]["dynamic_columns"], ["swolf"])
 
-    def test_shadow_diff_json_persists_updates_and_returns(self):
+    def test_activity_list_indexes_exist_after_schema_init(self):
+        main.ensure_activity_sync_schema()
+        conn = profile_backend._conn()
+        try:
+            indexes = {
+                str(row["name"])
+                for row in conn.execute("PRAGMA index_list(activities)").fetchall()
+            }
+        finally:
+            conn.close()
+
+        expected = {
+            "idx_activities_list_sort_expr",
+            "idx_activities_list_type",
+            "idx_activities_location_display",
+            "idx_activities_file_path",
+        }
+        self.assertTrue(expected.issubset(indexes), f"缺少索引: {sorted(expected - indexes)}")
+
+    def test_activity_list_source_and_mock_filter_semantics(self):
+        main.ensure_activity_sync_schema()
+        conn = profile_backend._conn()
+        try:
+            rows = [
+                ("null_defaults.fit", None, None),
+                ("fit_sdk.fit", "fit_sdk", 0),
+                ("manual.fit", "manual", 0),
+                ("mock.fit", "fit_sdk", 1),
+            ]
+            for idx, (filename, source_type, is_mock) in enumerate(rows):
+                conn.execute(
+                    """
+                    INSERT INTO activities (
+                        filename, file_name, title, sport_type, sub_sport_type,
+                        start_time, updated_at, source_type, is_mock, deleted_at
+                    ) VALUES (?, ?, ?, 'running', 'unknown', ?, ?, ?, ?, NULL)
+                    """,
+                    (
+                        filename,
+                        filename,
+                        filename,
+                        f"2026-05-19T08:0{idx}:00Z",
+                        f"2026-05-19 08:0{idx}:00",
+                        source_type,
+                        is_mock,
+                    ),
+                )
+            conn.commit()
+        finally:
+            conn.close()
+
+        records, total = profile_backend.get_activity_list_filtered(0, 20, "all")
+        filenames = {row["filename"] for row in records}
+
+        self.assertEqual(total, 2)
+        self.assertEqual(filenames, {"null_defaults.fit", "fit_sdk.fit"})
+
+    def test_activity_list_sort_order_matches_coalesced_time_then_id(self):
+        main.ensure_activity_sync_schema()
+        conn = profile_backend._conn()
+        try:
+            seed = [
+                ("older.fit", "2026-05-18T08:00:00Z", "2026-05-20 09:00:00"),
+                ("fallback_newer.fit", None, "2026-05-21 09:00:00"),
+                ("same_a.fit", "2026-05-22T08:00:00Z", "2026-05-22 07:00:00"),
+                ("same_b.fit", "2026-05-22T08:00:00Z", "2026-05-22 07:00:00"),
+            ]
+            for filename, start_time, updated_at in seed:
+                conn.execute(
+                    """
+                    INSERT INTO activities (
+                        filename, file_name, title, sport_type, sub_sport_type,
+                        start_time, updated_at, source_type, is_mock, deleted_at
+                    ) VALUES (?, ?, ?, 'running', 'unknown', ?, ?, 'fit_sdk', 0, NULL)
+                    """,
+                    (filename, filename, filename, start_time, updated_at),
+                )
+            conn.commit()
+        finally:
+            conn.close()
+
+        records, total = profile_backend.get_activity_list_filtered(0, 20, "all")
+        filenames = [row["filename"] for row in records]
+
+        self.assertEqual(total, 4)
+        self.assertEqual(filenames[:4], ["same_b.fit", "same_a.fit", "fallback_newer.fit", "older.fit"])
+
+    def test_shadow_diff_json_persists_updates_and_detail_returns(self):
         main.ensure_activity_sync_schema()
         shadow_diff = {
             "pace": {"legacy": 360, "resolved": 358, "match": False},
@@ -1016,7 +1519,27 @@ class TestFitSync(unittest.TestCase):
         detail = self.api.get_activity_detail(activity_res["id"])
 
         self.assertTrue(list_res["ok"], list_res)
-        self.assertEqual(list_res["data"]["records"][0]["shadow_diff"], updated_diff)
+        record = list_res["data"]["records"][0]
+        for forbidden in (
+            "hr_curve",
+            "speed_curve",
+            "shadow_diff",
+            "shadow_diff_json",
+            "track_json",
+            "points_json",
+        ):
+            self.assertNotIn(forbidden, record)
+        for required in (
+            "id",
+            "title",
+            "filename",
+            "sport_type",
+            "distance_km",
+            "duration_sec",
+            "start_time",
+            "has_track",
+        ):
+            self.assertIn(required, record)
         self.assertTrue(detail["ok"], detail)
         self.assertEqual(detail["data"]["record"]["shadow_diff"], updated_diff)
 

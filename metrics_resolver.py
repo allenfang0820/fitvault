@@ -5,7 +5,6 @@ import json
 import math
 from typing import Any
 
-from garmin_fit_sdk import profile as garmin_fit_profile
 from metrics_registry import METRICS_REGISTRY, SPORT_ALIASES, SPORT_DISPLAY_NAMES
 # V7.1 Resolver 接入 GapCalculator 引擎(任务 1.1-1.3 已定型,API 稳定)
 from gap_calculator import GapCalculator
@@ -127,11 +126,20 @@ ACTIVITY_SCHEMA = {
 SEMICIRCLE_SCALE = 180.0 / (1 << 31)
 MAX_CURVE_POINTS = 200
 
-try:
-    _RAW_GARMIN_PRODUCT = garmin_fit_profile.Profile['types']['garmin_product']
-except (KeyError, TypeError):
-    _RAW_GARMIN_PRODUCT = {}
-GARMIN_DEVICE_NAME_DICT: dict[int, str] = {int(k): str(v) for k, v in _RAW_GARMIN_PRODUCT.items()}
+_GARMIN_DEVICE_NAME_DICT: dict[int, str] | None = None
+
+
+def _garmin_device_name_dict() -> dict[int, str]:
+    global _GARMIN_DEVICE_NAME_DICT
+    if _GARMIN_DEVICE_NAME_DICT is None:
+        try:
+            from garmin_fit_sdk import profile as garmin_fit_profile
+
+            raw_garmin_product = garmin_fit_profile.Profile["types"]["garmin_product"]
+        except (ImportError, KeyError, TypeError):
+            raw_garmin_product = {}
+        _GARMIN_DEVICE_NAME_DICT = {int(k): str(v) for k, v in raw_garmin_product.items()}
+    return _GARMIN_DEVICE_NAME_DICT
 
 _DEVICE_DISPLAY_OVERLAY: dict[int, str] = {
     3910: "Fenix 7X (APAC)",
@@ -1283,7 +1291,7 @@ class MetricsResolver:
             if display:
                 product_code = display
             else:
-                product_code = GARMIN_DEVICE_NAME_DICT.get(pid_int, f"Garmin Product {pid_int}")
+                product_code = _garmin_device_name_dict().get(pid_int, f"Garmin Product {pid_int}")
         else:
             product_code = (meta.get("device") or {}).get("name") or ""
 

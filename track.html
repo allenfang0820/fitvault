@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>脉图 - fit vault</title>
+    <title>脉图 - fit vault V1.0</title>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
     <!-- 本地优先，减少首屏等待；若本地资源缺失再回退到 CDN -->
     <script>
@@ -175,6 +175,50 @@
         .sync-btn.garmin:hover { background: rgba(0,140,200,0.15); border-color: rgba(0,140,200,0.6); }
         .sync-btn.coros { border-color: rgba(46,204,113,0.4); }
         .sync-btn.coros:hover { background: rgba(46,204,113,0.1); border-color: rgba(46,204,113,0.6); }
+        .profile-sync-summary {
+            margin: 5px 0 7px;
+            padding: 5px 8px;
+            border: 1px solid rgba(148,163,184,0.12);
+            border-radius: 8px;
+            background: rgba(15,23,42,0.28);
+            display: grid;
+            gap: 3px;
+        }
+        .profile-sync-line {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 6px;
+            color: #cbd5e1;
+            font-size: 0.63rem;
+            line-height: 1.45;
+        }
+        .profile-sync-label {
+            color: #94a3b8;
+            font-weight: 700;
+        }
+        .profile-sync-pill {
+            display: inline-flex;
+            align-items: center;
+            max-width: 100%;
+            padding: 1px 5px;
+            border-radius: 5px;
+            border: 1px solid rgba(148,163,184,0.22);
+            background: rgba(30,41,59,0.62);
+            color: #e2e8f0;
+            font-size: 0.62rem;
+            line-height: 1.35;
+        }
+        .profile-sync-pill.ok {
+            border-color: rgba(34,197,94,0.32);
+            color: #bbf7d0;
+            background: rgba(22,101,52,0.16);
+        }
+        .profile-sync-pill.warn {
+            border-color: rgba(245,158,11,0.34);
+            color: #fde68a;
+            background: rgba(146,64,14,0.16);
+        }
 
         .section-card {
             background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
@@ -289,7 +333,7 @@
         .profile-shell {
             display: flex;
             flex-direction: column;
-            gap: 8px;
+            gap: 6px;
             min-height: 100%;
         }
         .profile-top-fixed {
@@ -300,26 +344,27 @@
         }
         .profile-summary-card,
         .profile-radar-card {
-            min-height: 220px;
+            min-height: 188px;
             margin-bottom: 0;
             display: flex;
             flex-direction: column;
             overflow: visible;  /* V_3.0.1 修复:防外层裁剪分页器 */
+            padding: 9px 11px;
         }
         .profile-summary-card {
             position: relative;
         }
         .profile-summary-head {
             display: flex;
-            gap: 10px;
+            gap: 8px;
             align-items: stretch;
-            margin-bottom: 6px;
+            margin-bottom: 4px;
         }
         .profile-avatar {
-            width: 52px;
-            min-width: 52px;
-            height: 52px;
-            border-radius: 14px;
+            width: 44px;
+            min-width: 44px;
+            height: 44px;
+            border-radius: 12px;
             border: 1px solid rgba(255,255,255,0.12);
             background:
                 radial-gradient(circle at 30% 30%, rgba(46,204,113,0.35), transparent 45%),
@@ -328,15 +373,15 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 1.6rem;
+            font-size: 1.35rem;
             color: #f8fafc;
             position: relative;
         }
         .profile-avatar::after {
             content: '';
             position: absolute;
-            inset: 5px;
-            border-radius: 10px;
+            inset: 4px;
+            border-radius: 9px;
             border: 1px solid rgba(255,255,255,0.08);
         }
         .profile-summary-main {
@@ -354,13 +399,13 @@
             gap: 6px;
         }
         .profile-hero-name {
-            font-size: 0.88rem;
+            font-size: 0.82rem;
             font-weight: 800;
             color: #f8fafc;
             letter-spacing: 0.02em;
         }
         .profile-status-chip {
-            padding: 3px 7px;
+            padding: 2px 7px;
             border-radius: 999px;
             background: linear-gradient(135deg, rgba(46,204,113,0.22), rgba(22,163,74,0.12));
             border: 1px solid rgba(46,204,113,0.28);
@@ -413,7 +458,7 @@
         }
         .profile-metric-tabs {
             display: flex; gap: 4px; flex-wrap: wrap;
-            margin: 6px 0 4px;
+            margin: 4px 0 3px;
         }
         .pf-metric-tab {
             flex: 1; min-width: 0;
@@ -421,8 +466,8 @@
             background: rgba(255,255,255,0.04);
             color: #94a3b8;
             border-radius: 6px;
-            padding: 4px 2px;
-            font-size: 0.72rem;
+            padding: 3px 2px;
+            font-size: 0.68rem;
             font-weight: 700;
             cursor: pointer;
             transition: all 0.18s ease;
@@ -441,7 +486,7 @@
             position: relative;
             flex: 1;
             min-height: 0;
-            padding-bottom: 18px;
+            padding-bottom: 10px;
         }
         .pf-metric-panel {
             display: none;
@@ -469,8 +514,8 @@
         .pf-metric-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 2px 0;
-            padding-top: 4px;
+            gap: 1px 0;
+            padding-top: 2px;
             position: relative;
         }
         .pf-metric-grid::before {
@@ -2108,6 +2153,119 @@
         #panel-help .panel-body {
             /* body 加一个略浅的二级底色,与卡片形成层次 */
             background: rgba(15, 23, 42, 0.55);
+        }
+        #panel-help .help-tab-radio {
+            position: absolute;
+            opacity: 0;
+            pointer-events: none;
+        }
+        #panel-help .help-tab-controls {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px;
+            margin-bottom: 14px;
+            border: 1px solid rgba(212, 175, 55, 0.18);
+            border-radius: 8px;
+            background: rgba(15, 23, 42, 0.7);
+        }
+        #panel-help .help-tab-controls label {
+            min-width: 88px;
+            padding: 6px 14px;
+            border-radius: 6px;
+            color: #cbd5e1;
+            font-size: 0.78rem;
+            font-weight: 700;
+            text-align: center;
+            cursor: pointer;
+            transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease;
+        }
+        #panel-help .help-tab-controls label:hover {
+            background: rgba(255, 255, 255, 0.06);
+            color: #f8fafc;
+        }
+        #panel-help .help-tab-panel {
+            display: none;
+        }
+        #panel-help .help-preface-layout {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 220px;
+            gap: 18px;
+            align-items: start;
+        }
+        #panel-help .help-preface-profile {
+            position: sticky;
+            top: 0;
+        }
+        #panel-help .help-preface-profile-img {
+            display: block;
+            width: 100%;
+            max-height: 300px;
+            object-fit: contain;
+            background: #fff;
+            cursor: zoom-in;
+        }
+        #panel-help .help-photo-toggle {
+            position: absolute;
+            opacity: 0;
+            pointer-events: none;
+        }
+        #panel-help .help-photo-modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 16000;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            background: rgba(2, 6, 23, 0.82);
+            backdrop-filter: blur(8px);
+        }
+        #help-xhs-photo-toggle:checked ~ .help-xhs-modal,
+        #help-donate-toggle:checked ~ .help-donate-modal {
+            display: flex;
+        }
+        #panel-help .help-photo-backdrop {
+            position: absolute;
+            inset: 0;
+            cursor: zoom-out;
+        }
+        #panel-help .help-photo-modal-card {
+            position: relative;
+            z-index: 1;
+            max-width: min(987px, 92vw);
+            max-height: 92vh;
+            border-radius: 16px;
+            overflow: hidden;
+            border: 1px solid rgba(212, 175, 55, 0.28);
+            background: #fff;
+            box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6);
+        }
+        #panel-help .help-photo-modal-card img {
+            display: block;
+            width: auto;
+            max-width: 92vw;
+            max-height: 92vh;
+            object-fit: contain;
+        }
+        @media (max-width: 820px) {
+            #panel-help .help-preface-layout {
+                grid-template-columns: 1fr;
+            }
+            #panel-help .help-preface-profile {
+                position: static;
+                max-width: 260px;
+            }
+        }
+        #help-tab-preface:checked ~ .help-tab-controls label[for="help-tab-preface"],
+        #help-tab-usage:checked ~ .help-tab-controls label[for="help-tab-usage"] {
+            background: rgba(212, 175, 55, 0.16);
+            border: 1px solid rgba(212, 175, 55, 0.38);
+            color: #fde68a;
+        }
+        #help-tab-preface:checked ~ .help-preface-panel,
+        #help-tab-usage:checked ~ .help-usage-panel {
+            display: block;
         }
 
         /* §2 WCAG 可访问性 — 文字对比度/行高/字间距 */
@@ -4207,9 +4365,14 @@
             padding: 15px;
             border: 1px solid rgba(255,255,255,0.1);
             border-radius: 8px;
-            text-align: center;
+            text-align: left;
             cursor: pointer;
             transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            min-height: 58px;
+            background: rgba(15,23,42,0.28);
         }
         .user-type-option:hover {
             background: rgba(255,255,255,0.05);
@@ -4217,6 +4380,53 @@
         .user-type-option.active {
             border-color: var(--primary);
             background: rgba(0,255,127,0.1);
+            color: var(--primary);
+        }
+        .watch-brand-radio {
+            accent-color: var(--primary);
+            width: 16px;
+            height: 16px;
+            margin: 0;
+            flex: 0 0 auto;
+        }
+        .watch-brand-logo {
+            width: 88px;
+            min-width: 88px;
+            height: 34px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 6px;
+            border: 1px solid rgba(148,163,184,0.22);
+            background: #fff;
+            overflow: hidden;
+            padding: 3px 6px;
+        }
+        .watch-brand-logo img {
+            display: block;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+        .watch-brand-text {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            min-width: 0;
+        }
+        .watch-brand-title {
+            color: #f8fafc;
+            font-size: 0.82rem;
+            font-weight: 700;
+            line-height: 1.2;
+        }
+        .watch-brand-subtitle {
+            color: #94a3b8;
+            font-size: 0.66rem;
+            line-height: 1.25;
+        }
+        .user-type-option.active .watch-brand-title,
+        .user-type-option.active .watch-brand-subtitle {
             color: var(--primary);
         }
         
@@ -4588,6 +4798,16 @@
             font-size: 0.85rem;
             cursor: pointer;
         }
+        .settings-watch-brand-row .user-type-option {
+            display: flex !important;
+            gap: 10px;
+            margin-bottom: 0 !important;
+        }
+        @media (max-width: 720px) {
+            .settings-watch-brand-row .user-type-option {
+                flex-basis: 100%;
+            }
+        }
 
         /* ===== Gateway Token 安全提示 — ::after 伪元素 ===== */
         .settings-form-row:has(> .modal-input[type="password"]) {
@@ -4685,6 +4905,14 @@
                                     </div>
                                 </div>
                             </div>
+                            <div class="profile-sync-summary" id="pf-sync-summary" style="display:none;">
+                                <div class="profile-sync-line" id="pf-sync-source-line"></div>
+                                <div class="profile-sync-line" id="pf-sync-quality-line"></div>
+                                <div class="profile-sync-line" id="pf-sync-updated-line"></div>
+                                <div class="profile-sync-line" id="pf-sync-preserved-line"></div>
+                                <div class="profile-sync-line" id="pf-sync-missing-line"></div>
+                                <div class="profile-sync-line" id="pf-sync-activity-line"></div>
+                            </div>
                             <div class="profile-metric-tabs">
                                 <button class="pf-metric-tab active" data-group="physiological" onclick="switchMetricGroup('physiological', this)">生理数据</button>
                                 <button class="pf-metric-tab" data-group="body-composition" onclick="switchMetricGroup('body-composition', this)">身体成分</button>
@@ -4777,7 +5005,7 @@
                                     ✨ AI 洞察
                                 </button>
                             </div>
-                            <div id="performanceRadar" style="width: 100%; flex: 1; min-height: 180px;"></div>
+                            <div id="performanceRadar" style="width: 100%; flex: 1; min-height: 150px;"></div>
                         </div>
                     </div>
 
@@ -5052,14 +5280,26 @@
                         <span style="color:#ef4444; font-size:0.75rem; margin-left:6px; font-weight:500;">* 必选</span>
                     </div>
                     <div class="settings-watch-brand-row" id="watch-brand-row">
-                                <label style="display:flex; align-items:center; gap:6px; font-size:0.85rem; color:#f8fafc; cursor:pointer;">
-                                    <input type="radio" name="watch_brand" value="garmin" required style="accent-color:var(--primary); width:16px; height:16px; margin:0;" onchange="selectUserType('garmin'); syncLLMConfigFromFields()">
-                                    我是佳明用户
-                                </label>
-                                <label style="display:flex; align-items:center; gap:6px; font-size:0.85rem; color:#f8fafc; cursor:pointer;">
-                                    <input type="radio" name="watch_brand" value="coros" required style="accent-color:var(--primary); width:16px; height:16px; margin:0;" onchange="selectUserType('coros'); syncLLMConfigFromFields()">
-                                    我是高驰用户
-                                </label>
+                        <label class="user-type-option" id="type-garmin">
+                            <input class="watch-brand-radio" type="radio" name="watch_brand" value="garmin" required onchange="selectUserType('garmin'); syncLLMConfigFromFields()">
+                            <span class="watch-brand-logo garmin">
+                                <img src="assets/brands/garmin-logo.png" alt="Garmin">
+                            </span>
+                            <span class="watch-brand-text">
+                                <span class="watch-brand-title">我是佳明用户</span>
+                                <span class="watch-brand-subtitle">支持画像同步与按日期同步活动</span>
+                            </span>
+                        </label>
+                        <label class="user-type-option" id="type-coros">
+                            <input class="watch-brand-radio" type="radio" name="watch_brand" value="coros" required onchange="selectUserType('coros'); syncLLMConfigFromFields()">
+                            <span class="watch-brand-logo coros">
+                                <img src="assets/brands/coros-logo.png" alt="COROS">
+                            </span>
+                            <span class="watch-brand-text">
+                                <span class="watch-brand-title">我是高驰用户</span>
+                                <span class="watch-brand-subtitle">支持画像同步，活动通过本地 FIT 导入</span>
+                            </span>
+                        </label>
                     </div>
                     <div id="watch-brand-error" style="display:none; color:#f87171; font-size:0.75rem; margin-top:6px;">⚠️ 请选择您的设备类型</div>
                 </div>
@@ -5120,180 +5360,238 @@
         <!-- ========== 【帮助说明】面板 ========== -->
         <div id="panel-help" class="tab-panel">
             <div class="panel-header">
-                <h2>📖 脉图 — 简要使用说明</h2>
-                <p>你的本地 AI 运动数据分析师。支持导入 FIT/GPX 轨迹文件，自动解析运动数据并生成可视化报告与 AI 洞察。</p>
+                <h2>脉图帮助说明 <span style="font-size:0.82rem; color:#93c5fd; margin-left:8px;">V1.0</span></h2>
+                <p>本地优先的 AI 运动数据分析工具，用 FIT 可信数据、轨迹可视化和 AI 解读帮助你整理、查看和复盘训练。</p>
             </div>
             <div class="panel-body" style="padding:18px 22px; overflow-y:auto;">
+                <input class="help-tab-radio" type="radio" name="help-tab" id="help-tab-preface" checked>
+                <input class="help-tab-radio" type="radio" name="help-tab" id="help-tab-usage">
+                <div class="help-tab-controls" role="tablist" aria-label="帮助说明内容切换">
+                    <label for="help-tab-preface" role="tab">前言</label>
+                    <label for="help-tab-usage" role="tab">使用说明</label>
+                </div>
+
+                <div class="help-tab-panel help-preface-panel">
+                    <div class="section-card">
+                        <div class="section-title">前言</div>
+                        <div class="help-preface-layout">
+                            <div>
+                                <p style="margin:0 0 10px 0; color:#cbd5e1; font-size:0.82rem; line-height:1.8;">脉图（MaiTu）诞生于一个再普通不过的念头：能不能让运动数据变得更有价值？</p>
+                                <p style="margin:0 0 10px 0; color:#cbd5e1; font-size:0.82rem; line-height:1.8;">过去一个月里，大叔利用业余时间和各种碎片时间，消耗了大量 AI Token，从零开始独立完成了这个项目。作为一名运动手表爱好者，我一直在使用 Garmin、COROS 等设备记录跑步、徒步、骑行等户外活动，但越来越觉得，传统运动平台展示的数据虽然丰富，却很难真正帮助普通用户理解自己每一次运动背后的意义。</p>
+                                <p style="margin:0 0 10px 0; color:#cbd5e1; font-size:0.82rem; line-height:1.8;">恰逢 AI 技术高速发展，从大模型到智能体应用不断涌现，一个想法逐渐成形：如果能够将运动数据与 AI 结合，让 AI 不只是展示数据，而是真正理解数据、分析数据、解读数据，会不会带来一种全新的运动体验？</p>
+                                <p style="margin:0 0 10px 0; color:#f8fafc; font-size:0.86rem; line-height:1.8; font-weight:700;">于是，脉图诞生了。</p>
+                                <p style="margin:0 0 10px 0; color:#cbd5e1; font-size:0.82rem; line-height:1.8;">脉图是一款轻量级、本地优先的运动数据分析平台。它能够解析运动手表产生的 FIT 文件，深入挖掘个人运动数据和户外轨迹信息，并通过接入 AI 智能体，对训练表现、身体状态、运动趋势以及轨迹故事进行多维度洞察。</p>
+                                <p style="margin:0 0 8px 0; color:#cbd5e1; font-size:0.82rem; line-height:1.8;">与传统运动平台不同，脉图更关注“数据背后的故事”。它不仅告诉你跑了多远、爬升了多少，更希望帮助你理解：</p>
+                                <ul style="margin:0 0 10px 0; padding-left:20px; color:#cbd5e1; font-size:0.82rem; line-height:1.8;">
+                                    <li>为什么这次状态特别好？</li>
+                                    <li>哪个阶段出现了明显疲劳？</li>
+                                    <li>这条轨迹经历了怎样的环境变化？</li>
+                                    <li>长期训练趋势正在发生什么变化？</li>
+                                    <li>AI 能从这些数据中发现哪些你自己没有注意到的细节？</li>
+                                </ul>
+                                <p style="margin:0 0 10px 0; color:#cbd5e1; font-size:0.82rem; line-height:1.8;">这是一个由兴趣驱动的独立项目，也是一次关于运动数据与 AI 融合的探索实验。</p>
+                                <p style="margin:0 0 10px 0; color:#cbd5e1; font-size:0.82rem; line-height:1.8;">希望脉图能够让每一次运动记录，都不仅仅是一串数字，而成为值得回味和思考的个人故事。</p>
+                                <p style="margin:0; color:#cbd5e1; font-size:0.82rem; line-height:1.8;">如果你也喜欢运动科技、户外探索、智能穿戴设备，或者关注 AI 在个人场景中的创新应用，欢迎关注大叔的小红书，一起交流运动、装备、数据和 AI 的无限可能。</p>
+                            </div>
+                            <div class="help-preface-profile">
+                                <input class="help-photo-toggle" type="checkbox" id="help-xhs-photo-toggle">
+                                <div style="border-radius:12px; overflow:hidden; border:1px solid rgba(212,175,55,0.18); background:rgba(15,23,42,0.5); box-shadow:0 8px 18px rgba(0,0,0,0.28);">
+                                    <label for="help-xhs-photo-toggle" title="点击查看大图" style="display:block; cursor:zoom-in;">
+                                        <img class="help-preface-profile-img" src="assets/social/xiaohongshu-mrfang.jpg" alt="户外大叔 MrFang 小红书主页二维码">
+                                    </label>
+                                </div>
+                                <div style="color:#94a3b8; font-size:0.72rem; line-height:1.6; margin-top:6px;">点击图片查看大图扫码</div>
+                                <div style="color:#f8fafc; font-size:1rem; font-weight:800; line-height:1.5;">户外大叔 MrFang</div>
+                                <div style="color:#cbd5e1; font-size:0.82rem; line-height:1.75; margin-top:4px;">小红书号：106905165</div>
+                                <div style="color:#94a3b8; font-size:0.78rem; line-height:1.75; margin-top:8px;">欢迎扫码关注，一起交流运动、装备、户外轨迹、智能穿戴设备和 AI 在个人运动场景里的应用。</div>
+                                <input class="help-photo-toggle" type="checkbox" id="help-donate-toggle">
+                                <label for="help-donate-toggle" style="display:inline-block; margin-top:10px; color:#fde68a; font-size:0.76rem; line-height:1.7; cursor:pointer; text-decoration:underline; text-decoration-color:rgba(253,230,138,0.38); text-underline-offset:3px;">如果脉图对你有帮助，也可以随缘支持一下</label>
+                                <div class="help-photo-modal help-xhs-modal" role="dialog" aria-label="小红书主页二维码大图">
+                                    <label class="help-photo-backdrop" for="help-xhs-photo-toggle" title="关闭"></label>
+                                    <div class="help-photo-modal-card">
+                                        <img src="assets/social/xiaohongshu-mrfang.jpg" alt="户外大叔 MrFang 小红书主页二维码大图">
+                                    </div>
+                                </div>
+                                <div class="help-photo-modal help-donate-modal" role="dialog" aria-label="支付宝赞助二维码">
+                                    <label class="help-photo-backdrop" for="help-donate-toggle" title="关闭"></label>
+                                    <div class="help-photo-modal-card">
+                                        <img src="assets/social/alipay-donate.jpg" alt="支付宝赞助二维码">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="help-tab-panel help-usage-panel">
 
                 <div class="section-card">
-                    <div class="section-title">① 首次启动</div>
-                    <ol style="margin:0; padding-left:18px; line-height:1.9; color:#cbd5e1; font-size:0.82rem;">
-                        <li>打开脉图后，进入「<b style="color:#f8fafc;">配置</b>」页</li>
-                        <li>填写大模型网关信息（供应商 / API 地址 / 模型 / Token）</li>
-                        <li>点击「<b style="color:#f8fafc;">测试连接</b>」，绿灯亮起表示配置有效</li>
-                        <li>选择手表品牌（佳明 / 高驰）</li>
-                        <li>点击「<b style="color:#f8fafc;">告诉 AI 助手存储规范</b>」，完成初始化</li>
-                    </ol>
-                    <p style="margin:8px 0 0 0; padding:8px 10px; border-radius:8px; background:rgba(212,175,55,0.06); border-left:2px solid var(--primary, #d4af37); color:#fde68a; font-size:0.75rem; line-height:1.6;">
-                        💡 配置只需一次，后续启动自动静默验证，无需重复操作。
-                    </p>
+                    <div class="section-title">一、软件简介</div>
+                    <p style="margin:0 0 8px 0; color:#cbd5e1; font-size:0.82rem; line-height:1.7;">脉图是一款运行在本地的 AI 运动数据助手。它以 FIT 文件为核心事实源，帮助你导入、整理和复盘跑步、骑行、徒步、越野等运动记录，并通过图表和 AI 解读把原始数据转化为可理解的训练反馈。</p>
+                    <p style="margin:0; color:#94a3b8; font-size:0.78rem; line-height:1.7;">脉图不是社交运动平台，也不是云端数据中台。它更适合用来保存可信运动档案、查看轨迹和指标、生成复盘洞察，并为 AI 助手提供稳定、可解释的运动上下文。</p>
                 </div>
 
                 <div class="section-card">
-                    <div class="section-title">② 导入运动数据</div>
-                    <div style="margin:6px 0; color:#cbd5e1; font-size:0.82rem; line-height:1.7;">
-                        <b style="color:#f8fafc;">方式 A：自动同步（推荐）</b>
-                        <ul style="margin:4px 0 0 0; padding-left:22px;">
-                            <li>将 FIT 文件放入系统指定的本地存储目录</li>
-                            <li>脉图启动时自动扫描并入库</li>
-                        </ul>
-                    </div>
-                    <div style="margin:14px 0 0 0; color:#cbd5e1; font-size:0.82rem; line-height:1.7;">
-                        <b style="color:#f8fafc;">方式 B：手动导入</b>
-                        <ul style="margin:4px 0 0 0; padding-left:22px;">
-                            <li>点击「<b>导入轨迹</b>」按钮</li>
-                            <li>选择 FIT 或 GPX 文件</li>
-                            <li>系统自动解析并生成运动记录</li>
-                        </ul>
-                    </div>
-                </div>
-
-                <div class="section-card">
-                    <div class="section-title">③ 查看运动报告</div>
-                    <p style="margin:0 0 8px 0; color:#cbd5e1; font-size:0.82rem; line-height:1.6;">导入成功后，在「<b style="color:#f8fafc;">活动列表</b>」中选择任意记录：</p>
+                    <div class="section-title">二、主要功能</div>
                     <table style="width:100%; border-collapse:collapse; font-size:0.78rem;">
                         <thead>
                             <tr style="background:rgba(212,175,55,0.08);">
-                                <th style="text-align:left; padding:8px 10px; border-bottom:1px solid rgba(212,175,55,0.25); color:#f8fafc;">面板</th>
+                                <th style="text-align:left; padding:8px 10px; border-bottom:1px solid rgba(212,175,55,0.25); color:#f8fafc;">功能</th>
                                 <th style="text-align:left; padding:8px 10px; border-bottom:1px solid rgba(212,175,55,0.25); color:#f8fafc;">内容</th>
                             </tr>
                         </thead>
                         <tbody style="color:#cbd5e1;">
-                            <tr><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);"><b>3D 轨迹</b></td><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);">Cesium 地球视图，支持缩放、旋转、视角切换</td></tr>
-                            <tr><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);"><b>海拔剖面</b></td><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);">多维数据叠加（海拔 / 心率 / 配速 / 功率）</td></tr>
-                            <tr><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);"><b>数据卡片</b></td><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);">距离、时间、爬升、消耗、平均配速等核心指标</td></tr>
-                            <tr><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);"><b>AI 洞察</b></td><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);">一键生成运动表现分析与训练建议</td></tr>
-                            <tr><td style="padding:6px 10px;"><b>AI 私教</b></td><td style="padding:6px 10px;">与 AI 对话，深入分析运动数据、制定训练计划</td></tr>
+                            <tr><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);"><b>个人运动数据</b></td><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);">查看运动画像、同步状态和历史活动；按运动类型或标题筛选；打开活动详情和复盘。</td></tr>
+                            <tr><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);"><b>FIT 导入与同步</b></td><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);">导入本地 FIT 文件或 ZIP；佳明用户可通过 OpenClaw 按日期同步活动 FIT 文件。</td></tr>
+                            <tr><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);"><b>活动详情</b></td><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);">查看单次运动的距离、时长、爬升、心率、圈数据、训练效果、轨迹缩略图等。</td></tr>
+                            <tr><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);"><b>运动复盘</b></td><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);">分析疲劳区段、效率下降、心率漂移、能量断档线索和外部影响因素。</td></tr>
+                            <tr><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);"><b>轨迹分析工具</b></td><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);">导入 GPX，查看 3D 轨迹、海拔剖面、路线统计，生成路线报告和活动建议。</td></tr>
+                            <tr><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);"><b>雷达图与滚动指标</b></td><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);">观察训练负荷、恢复、心率漂移、爬升能力、阈值心率和强度表现。</td></tr>
+                            <tr><td style="padding:6px 10px;"><b>AI 功能</b></td><td style="padding:6px 10px;">提供活动 AI 洞察、复盘 AI 解读、活动建议和全局 AI 助手。</td></tr>
                         </tbody>
                     </table>
-                    <div style="margin-top:10px; padding:8px 10px; border-radius:8px; background:rgba(15,23,42,0.5); color:#cbd5e1; font-size:0.78rem; line-height:1.7;">
-                        <b style="color:#fde68a;">🖱️ 交互操作</b><br>
-                        • 点击剖面图任意位置 → 3D 地球视角自动飞抵对应坐标<br>
-                        • 拖拽地球视角 → 剖面图游标实时同步
+                </div>
+
+                <div class="section-card">
+                    <div class="section-title">三、快速上手</div>
+                    <div style="margin:6px 0 12px 0; padding:10px 12px; border-radius:8px; background:rgba(212,175,55,0.06); border-left:2px solid rgba(212,175,55,0.6);">
+                        <div style="color:#fde68a; font-weight:600; font-size:0.82rem; margin-bottom:4px;">第一步：完成基础配置</div>
+                        <ol style="margin:4px 0 0 0; padding-left:18px; color:#cbd5e1; font-size:0.78rem; line-height:1.8;">
+                            <li>打开脉图，进入「配置」页。</li>
+                            <li>填写大模型 API 地址、模型和 Token。</li>
+                            <li>点击「测试连接」。测试成功后，脉图会保存网关配置。</li>
+                            <li>选择手表品牌。</li>
+                            <li>点击「告诉 AI 助手存储规范」完成初始化。</li>
+                        </ol>
+                    </div>
+
+                    <div style="margin:10px 0 12px 0; padding:10px 12px; border-radius:8px; background:rgba(96,165,250,0.06); border-left:2px solid rgba(96,165,250,0.6);">
+                        <div style="color:#93c5fd; font-weight:600; font-size:0.82rem; margin-bottom:4px;">OpenClaw 配置说明</div>
+                        <p style="margin:0 0 8px 0; color:#cbd5e1; font-size:0.78rem; line-height:1.7;">OpenClaw 是脉图连接本地 AI 助手、MCP 技能和 Garmin 活动下载能力的本地网关。配置好 OpenClaw 后，脉图才能稳定使用 AI 洞察、活动建议、复盘解读，以及按日期同步佳明活动 FIT 文件。</p>
+                        <div style="margin:8px 0; padding:9px 10px; border-radius:8px; background:rgba(15,23,42,0.45); border:1px solid rgba(147,197,253,0.18); color:#cbd5e1; font-size:0.76rem; line-height:1.7;">
+                            <b style="color:#bfdbfe;">设备 Skill 要求</b><br>
+                            佳明用户需要在本地 OpenClaw 中安装 <b>garmin-stats</b> skill；高驰用户需要安装 <b>coros-stats</b> skill。这两个 skill 用于从佳明/高驰账户获取用户画像数据；其中 <b>garmin-stats</b> 还支持佳明活动 FIT 文件同步。下载 zip 后，在 OpenClaw 或其他兼容工具中使用 Skill 安装/导入功能选择该 zip，再按安装界面中的说明完成依赖安装和账号授权。
+                            <div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:8px;">
+                                <button type="button" onclick="saveSkillZip('garmin-stats')" style="display:inline-flex; align-items:center; gap:6px; padding:5px 9px; border-radius:6px; background:rgba(59,130,246,0.16); border:1px solid rgba(147,197,253,0.28); color:#bfdbfe; text-decoration:none; font-size:0.74rem; cursor:pointer;"><span style="display:inline-flex; align-items:center; gap:3px; padding:1px 5px; border-radius:4px; background:rgba(15,23,42,0.9); border:1px solid rgba(125,211,252,0.38); color:#e0f2fe; font-size:0.62rem; font-weight:800; letter-spacing:0.08em; line-height:1.2;"><span>GARMIN</span><span style="width:0; height:0; border-left:4px solid transparent; border-right:4px solid transparent; border-bottom:7px solid #38bdf8; transform:translateY(-1px);"></span></span>下载 garmin-stats.zip</button>
+                                <button type="button" onclick="saveSkillZip('coros-stats')" style="display:inline-flex; align-items:center; gap:6px; padding:5px 9px; border-radius:6px; background:rgba(59,130,246,0.16); border:1px solid rgba(147,197,253,0.28); color:#bfdbfe; text-decoration:none; font-size:0.74rem; cursor:pointer;"><span style="display:inline-flex; align-items:center; gap:3px; padding:1px 5px; border-radius:4px; background:rgba(15,23,42,0.9); border:1px solid rgba(74,222,128,0.38); color:#dcfce7; font-size:0.62rem; font-weight:800; letter-spacing:0.08em; line-height:1.2;"><span style="width:7px; height:7px; border-radius:50%; border:2px solid #4ade80; box-sizing:border-box;"></span><span>COROS</span></span>下载 coros-stats.zip</button>
+                            </div>
+                            <ul style="margin:8px 0 0 0; padding-left:18px; color:#cbd5e1; font-size:0.74rem; line-height:1.65;">
+                                <li>两个 skill 都需要在本机完成账号授权；脉图不会询问或保存佳明/高驰密码。</li>
+                                <li>Garmin 首次使用需要登录并保存 OAuth 授权；授权失效时需要重新登录。活动历史缓存超过 7 天会自动刷新。</li>
+                                <li>COROS 需要完成 MCP 授权；Training Hub 字段还需要在本机 Chrome 中登录高驰网页。</li>
+                                <li>COROS 可能会唤起或连接带 DevTools 端口的 Chrome；如果 Chrome 关闭或登录态过期，部分 Training Hub 字段可能暂时为空。</li>
+                                <li>安装或更新 skill 后，建议重启 OpenClaw 或兼容工具，让新 skill 重新加载。</li>
+                            </ul>
+                        </div>
+                        <ul style="margin:4px 0 0 0; padding-left:18px; color:#cbd5e1; font-size:0.78rem; line-height:1.7;">
+                            <li><b>服务商</b>：选择「本地 + MCP（如 OpenClaw / WorkBuddy）」。</li>
+                            <li><b>自定义 API 地址</b>：填写 OpenClaw 提供的网关地址。</li>
+                            <li><b>模型</b>：选择或填写 OpenClaw 网关可调用的模型名称。</li>
+                            <li><b>Agent ID</b>：如果 OpenClaw 分配了专用 Agent ID，就填入这里；没有则可留空。</li>
+                            <li><b>Gateway Token</b>：如果网关开启鉴权，就填写 Token；本地网关没有鉴权时可留空。</li>
+                        </ul>
+                        <p style="margin:8px 0 0 0; color:#bfdbfe; font-size:0.74rem; line-height:1.7;">「测试连接」只确认网关可用；「告诉 AI 助手存储规范」会告诉 OpenClaw FIT 文件应该下载、解压并保存到哪里。Garmin 同步依赖这两步都完成。</p>
+                    </div>
+
+                    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:10px;">
+                        <div style="padding:10px 12px; border-radius:8px; background:rgba(15,23,42,0.45); border:1px solid rgba(255,255,255,0.06);">
+                            <div style="color:#f8fafc; font-weight:600; font-size:0.8rem; margin-bottom:4px;">第二步：导入运动数据</div>
+                            <ul style="margin:0; padding-left:18px; color:#cbd5e1; font-size:0.76rem; line-height:1.7;">
+                                <li>本地 FIT：个人运动数据页 → 导入本地 FIT 文件。</li>
+                                <li>Garmin 同步：选择日期范围 → 同步活动。</li>
+                                <li>GPX 路线：轨迹分析工具 → 导入 GPX。</li>
+                            </ul>
+                        </div>
+                        <div style="padding:10px 12px; border-radius:8px; background:rgba(15,23,42,0.45); border:1px solid rgba(255,255,255,0.06);">
+                            <div style="color:#f8fafc; font-weight:600; font-size:0.8rem; margin-bottom:4px;">第三步：查看活动详情</div>
+                            <ul style="margin:0; padding-left:18px; color:#cbd5e1; font-size:0.76rem; line-height:1.7;">
+                                <li>在个人运动数据页点击活动记录。</li>
+                                <li>概览中查看核心指标和轨迹缩略图。</li>
+                                <li>点击缩略图可进入 3D 轨迹分析。</li>
+                            </ul>
+                        </div>
+                        <div style="padding:10px 12px; border-radius:8px; background:rgba(15,23,42,0.45); border:1px solid rgba(255,255,255,0.06);">
+                            <div style="color:#f8fafc; font-weight:600; font-size:0.8rem; margin-bottom:4px;">第四步：生成 AI 解读</div>
+                            <ul style="margin:0; padding-left:18px; color:#cbd5e1; font-size:0.76rem; line-height:1.7;">
+                                <li>确认配置页网关连接正常。</li>
+                                <li>打开活动详情、复盘页或轨迹报告。</li>
+                                <li>点击 AI 洞察、复盘 AI 解读或 AI 生成建议。</li>
+                            </ul>
+                        </div>
                     </div>
                 </div>
 
                 <div class="section-card">
-                    <div class="section-title">④ AI 互动功能</div>
-                    <p style="margin:0 0 8px 0; color:#94a3b8; font-size:0.75rem; line-height:1.6;">脉图提供三种 AI 互动方式，满足不同深度的分析需求：</p>
-
-                    <div style="margin:10px 0; padding:10px 12px; border-radius:8px; background:rgba(46,204,113,0.06); border-left:2px solid rgba(46,204,113,0.6);">
-                        <div style="color:#86efac; font-weight:600; font-size:0.82rem; margin-bottom:4px;">4.1 AI 洞察（一键生成）</div>
-                        <ul style="margin:4px 0 0 0; padding-left:18px; color:#cbd5e1; font-size:0.78rem; line-height:1.7;">
-                            <li><b>入口</b>：活动详情页 → 点击「<b>AI 洞察</b>」按钮</li>
-                            <li><b>功能</b>：基于单条运动记录，自动生成结构化分析报告</li>
-                            <li><b>内容包含</b>：运动表现总评、关键数据亮点、训练建议、难度等级评定（LV 1-8 趣味文案）</li>
-                            <li><b>特点</b>：无需输入，秒级生成，适合快速了解单次运动表现</li>
-                        </ul>
-                    </div>
-
-                    <div style="margin:10px 0; padding:10px 12px; border-radius:8px; background:rgba(212,175,55,0.06); border-left:2px solid rgba(212,175,55,0.6);">
-                        <div style="color:#fde68a; font-weight:600; font-size:0.82rem; margin-bottom:4px;">4.2 AI 私教（对话式深度分析）</div>
-                        <ul style="margin:4px 0 0 0; padding-left:18px; color:#cbd5e1; font-size:0.78rem; line-height:1.7;">
-                            <li><b>入口</b>：活动详情页 → 点击「<b>AI 私教</b>」按钮</li>
-                            <li><b>功能</b>：与 AI 进行多轮对话，深入探讨运动数据</li>
-                            <li><b>支持提问示例</b>：
-                                <ul style="margin:2px 0 0 18px; padding-left:6px; list-style:'› ';">
-                                    <li>这次训练的心率区间分布合理吗？</li>
-                                    <li>帮我分析一下最后 5 公里的掉速原因</li>
-                                    <li>根据我的 VO₂max，制定一个 8 周半马备赛计划</li>
-                                    <li>对比我上周的同路线数据，进步在哪里？</li>
-                                </ul>
-                            </li>
-                            <li><b>特点</b>：支持上下文记忆，可追问细节，适合深度训练规划</li>
-                        </ul>
-                    </div>
-
-                    <div style="margin:10px 0; padding:10px 12px; border-radius:8px; background:rgba(96,165,250,0.06); border-left:2px solid rgba(96,165,250,0.6);">
-                        <div style="color:#93c5fd; font-weight:600; font-size:0.82rem; margin-bottom:4px;">4.3 全局 AI 助手（侧边栏常驻）</div>
-                        <ul style="margin:4px 0 0 0; padding-left:18px; color:#cbd5e1; font-size:0.78rem; line-height:1.7;">
-                            <li><b>入口</b>：主界面右侧「<b>💬 AI 助手</b>」悬浮按钮</li>
-                            <li><b>功能</b>：不依赖单条记录，基于全局运动数据回答</li>
-                            <li><b>支持提问示例</b>：
-                                <ul style="margin:2px 0 0 18px; padding-left:6px; list-style:'› ';">
-                                    <li>我最近一个月的跑量趋势如何？</li>
-                                    <li>我的静息心率有变化吗？</li>
-                                    <li>推荐一条适合我当前水平的路线</li>
-                                </ul>
-                            </li>
-                            <li><b>特点</b>：随时可用，跨记录查询，适合日常训练监控</li>
-                        </ul>
-                    </div>
-
-                    <p style="margin:10px 0 0 0; padding:8px 10px; border-radius:8px; background:rgba(248,113,113,0.06); border-left:2px solid rgba(248,113,113,0.5); color:#fecaca; font-size:0.72rem; line-height:1.7;">
-                        ⚠️ <b>AI 互动注意事项</b><br>
-                        • AI 分析基于本地 FIT 文件数据，不涉及云端上传<br>
-                        • 首次使用 AI 功能前，请确保「配置」页网关连接正常（绿灯状态）<br>
-                        • 复杂分析可能需要 10-30 秒，请耐心等待
-                    </p>
-                </div>
-
-                <div class="section-card">
-                    <div class="section-title">⑤ 个人数据页</div>
-                    <p style="margin:0 0 6px 0; color:#cbd5e1; font-size:0.82rem;">「<b style="color:#f8fafc;">我的</b>」页展示：</p>
-                    <ul style="margin:0; padding-left:18px; line-height:1.9; color:#cbd5e1; font-size:0.82rem;">
-                        <li>用户画像（生理指标、VO₂max、HRV 等）</li>
-                        <li>历史 PB 与预测成绩</li>
-                        <li>运动荣誉墙</li>
-                        <li>数据同步状态</li>
-                    </ul>
-                    <p style="margin:8px 0 0 0; padding:8px 10px; border-radius:8px; background:rgba(15,23,42,0.5); color:#94a3b8; font-size:0.72rem; line-height:1.6;">
-                        用户画像数据来自 Garmin Connect API，活动数据以本地 FIT 文件为唯一事实源。
-                    </p>
-                </div>
-
-                <div class="section-card">
-                    <div class="section-title">⑥ 快捷键</div>
+                    <div class="section-title">四、AI 功能</div>
                     <table style="width:100%; border-collapse:collapse; font-size:0.78rem;">
                         <thead>
                             <tr style="background:rgba(212,175,55,0.08);">
-                                <th style="text-align:left; padding:8px 10px; border-bottom:1px solid rgba(212,175,55,0.25); color:#f8fafc; width:35%;">按键</th>
+                                <th style="text-align:left; padding:8px 10px; border-bottom:1px solid rgba(212,175,55,0.25); color:#f8fafc; width:35%;">入口</th>
                                 <th style="text-align:left; padding:8px 10px; border-bottom:1px solid rgba(212,175,55,0.25); color:#f8fafc;">功能</th>
                             </tr>
                         </thead>
                         <tbody style="color:#cbd5e1;">
-                            <tr><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);"><kbd style="background:rgba(15,23,42,0.6); padding:2px 8px; border-radius:4px; border:1px solid rgba(212,175,55,0.3); color:#fde68a;">I</kbd></td><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);">导入轨迹</td></tr>
-                            <tr><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);"><kbd style="background:rgba(15,23,42,0.6); padding:2px 8px; border-radius:4px; border:1px solid rgba(212,175,55,0.3); color:#fde68a;">R</kbd></td><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);">刷新活动列表</td></tr>
-                            <tr><td style="padding:6px 10px;"><kbd style="background:rgba(15,23,42,0.6); padding:2px 8px; border-radius:4px; border:1px solid rgba(212,175,55,0.3); color:#fde68a;">1~5</kbd></td><td style="padding:6px 10px;">快速切换底部面板</td></tr>
+                            <tr><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);"><b>活动 AI 洞察</b></td><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);">针对单次活动生成结构化解读。</td></tr>
+                            <tr><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);"><b>复盘 AI 解读</b></td><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);">基于本次复盘快照总结疲劳、效率、事件和建议。</td></tr>
+                            <tr><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);"><b>活动建议</b></td><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);">基于路线事实和用户填写的计划信息，生成补给、天气检查、装备和体力安排建议。</td></tr>
+                            <tr><td style="padding:6px 10px;"><b>全局 AI 助手</b></td><td style="padding:6px 10px;">根据当前运动画像和已导入数据回答训练相关问题。</td></tr>
                         </tbody>
                     </table>
+                    <p style="margin:10px 0 0 0; padding:8px 10px; border-radius:8px; background:rgba(248,113,113,0.06); border-left:2px solid rgba(248,113,113,0.5); color:#fecaca; font-size:0.72rem; line-height:1.7;">AI 生成内容仅供训练参考。AI 不会改写 FIT 文件、不会写入原始指标，也不会把 AI 判断当作数据库事实。</p>
                 </div>
 
                 <div class="section-card">
-                    <div class="section-title">⑦ 常见问题</div>
+                    <div class="section-title">五、数据与隐私</div>
+                    <ul style="margin:0; padding-left:18px; line-height:1.8; color:#cbd5e1; font-size:0.82rem;">
+                        <li>原始运动文件保存在本地。</li>
+                        <li>核心数据库使用本地 SQLite。</li>
+                        <li>FIT 文件是活动事实源。</li>
+                        <li>AI 只消费经过后端整理的快照，不直接修改数据库事实。</li>
+                        <li>使用外部大模型网关时，AI 请求会发送必要摘要信息到你配置的接口。</li>
+                    </ul>
+                </div>
+
+                <div class="section-card">
+                    <div class="section-title">六、常见问题</div>
 
                     <div style="margin:10px 0; padding:10px 12px; border-radius:8px; background:rgba(15,23,42,0.4); border:1px solid rgba(255,255,255,0.06);">
-                        <div style="color:#fde68a; font-weight:600; font-size:0.8rem; margin-bottom:4px;">❓ AI 洞察一直加载中？</div>
-                        <p style="margin:0; color:#cbd5e1; font-size:0.76rem; line-height:1.6;">检查「配置」页网关连接状态，红灯表示连接失败，请重新测试。</p>
+                        <div style="color:#fde68a; font-weight:600; font-size:0.8rem; margin-bottom:4px;">AI 洞察一直加载或失败怎么办？</div>
+                        <p style="margin:0; color:#cbd5e1; font-size:0.76rem; line-height:1.6;">进入「配置」页，检查大模型网关是否为绿色连接状态。若连接失败，请重新填写 API 地址、模型和 Token 后点击「测试连接」。</p>
                     </div>
 
                     <div style="margin:10px 0; padding:10px 12px; border-radius:8px; background:rgba(15,23,42,0.4); border:1px solid rgba(255,255,255,0.06);">
-                        <div style="color:#fde68a; font-weight:600; font-size:0.8rem; margin-bottom:4px;">❓ 导入 GPX 后没有心率数据？</div>
-                        <p style="margin:0; color:#cbd5e1; font-size:0.76rem; line-height:1.6;">GPX 为标准 XML 格式，不原生支持心率/功率。如需完整数据，建议使用设备导出的 FIT 文件。</p>
+                        <div style="color:#fde68a; font-weight:600; font-size:0.8rem; margin-bottom:4px;">导入 GPX 后没有心率或功率？</div>
+                        <p style="margin:0; color:#cbd5e1; font-size:0.76rem; line-height:1.6;">GPX 主要保存路线点和轨迹信息，通常不包含完整的心率、功率、训练效果和跑步动态字段。需要完整运动数据时，请导入设备导出的 FIT 文件。</p>
                     </div>
 
                     <div style="margin:10px 0; padding:10px 12px; border-radius:8px; background:rgba(15,23,42,0.4); border:1px solid rgba(255,255,255,0.06);">
-                        <div style="color:#fde68a; font-weight:600; font-size:0.8rem; margin-bottom:4px;">❓ 3D 轨迹加载慢？</div>
-                        <p style="margin:0; color:#cbd5e1; font-size:0.76rem; line-height:1.6;">首次加载需下载地形切片，请保持网络畅通。后续同一区域会缓存加速。</p>
+                        <div style="color:#fde68a; font-weight:600; font-size:0.8rem; margin-bottom:4px;">如何批量下载 FIT 文件？</div>
+                        <p style="margin:0; color:#cbd5e1; font-size:0.76rem; line-height:1.7;">佳明大陆地区账户可进入 <a href="https://www.garmin.cn/zh-CN/account/datamanagement/" target="_blank" style="color:#93c5fd;">Garmin 中国数据管理</a>；佳明国际账户可进入 <a href="https://www.garmin.com/en-US/account/datamanagement/" target="_blank" style="color:#93c5fd;">Garmin 国际数据管理</a>；高驰用户可进入 <a href="https://t.coros.com/admin/views/activities" target="_blank" style="color:#93c5fd;">COROS 活动管理</a>。下载后将 FIT 文件或压缩包通过「导入本地 FIT 文件」导入脉图。</p>
+                    </div>
+
+                    <div style="margin:10px 0; padding:10px 12px; border-radius:8px; background:rgba(15,23,42,0.4); border:1px solid rgba(255,255,255,0.06);">
+                        <div style="color:#fde68a; font-weight:600; font-size:0.8rem; margin-bottom:4px;">Garmin 同步按钮不可用怎么办？</div>
+                        <p style="margin:0; color:#cbd5e1; font-size:0.76rem; line-height:1.6;">确认手表品牌已选择佳明、OpenClaw 网关连接正常、已完成「告诉 AI 助手存储规范」，并且已经选择有效的开始日期和结束日期。</p>
+                    </div>
+
+                    <div style="margin:10px 0; padding:10px 12px; border-radius:8px; background:rgba(15,23,42,0.4); border:1px solid rgba(255,255,255,0.06);">
+                        <div style="color:#fde68a; font-weight:600; font-size:0.8rem; margin-bottom:4px;">复盘页显示数据不足是什么意思？</div>
+                        <p style="margin:0; color:#cbd5e1; font-size:0.76rem; line-height:1.6;">部分复盘指标需要轨迹点、心率、距离、海拔、配速或功率等字段。如果活动缺少相关设备数据，复盘页会显示数据不足，而不是用前端或 AI 编造结果。</p>
                     </div>
                 </div>
 
-                <div class="section-card" style="border-style:dashed; opacity:0.85;">
-                    <div class="section-title">ℹ️ 版本</div>
-                    <p style="margin:0; color:#94a3b8; font-size:0.72rem; line-height:1.7;">
-                        版本：v1.0 | 更新日期：2026-06-03<br>
-                        本帮助说明为前端纯静态内容，不依赖后端、不参与 AI 链路、不写入 canonical 数据库。
-                    </p>
+                <div class="section-card">
+                    <div class="section-title">七、使用建议</div>
+                    <ul style="margin:0; padding-left:18px; line-height:1.8; color:#cbd5e1; font-size:0.82rem;">
+                        <li>想看完整运动指标，优先导入 FIT。</li>
+                        <li>想看路线和爬升，可以导入 GPX。</li>
+                        <li>每次同步或导入后，先在活动列表确认记录是否正确。</li>
+                        <li>做训练复盘时，优先查看后端指标和曲线，再阅读 AI 总结。</li>
+                        <li>使用活动建议前，最好手动填写活动类型和计划活动时间。</li>
+                        <li>若 AI 输出与页面事实不一致，以页面后端指标和原始 FIT 数据为准。</li>
+                    </ul>
+                </div>
+
                 </div>
 
             </div>
@@ -5719,9 +6017,13 @@
         selectedIds: new Set(),
         syncPromise: null,
         dynamicColumns: [],
-	        listMetricBackfillTimer: null,
+        listMetricBackfillTimer: null,
         needsRefresh: false
     };
+    const ACTIVITY_INTEGRITY_INITIAL_DELAY_MS = 45000;
+    const SILENT_GATEWAY_VALIDATION_DELAY_MS = 8000;
+    let activityIntegrityInitialTimer = null;
+    let silentGatewayValidationTimer = null;
     let isMovementRecordsInitialized = false;
     let isMovementRecordsInitializing = false;
     let isMovementRecordsRefreshing = false;
@@ -6288,11 +6590,13 @@
         var summaryHead = document.querySelector('.profile-summary-card .profile-summary-head');
         var metricTabs = document.querySelector('.profile-summary-card .profile-metric-tabs');
         var metricPanels = document.querySelector('.profile-summary-card .pf-metric-panels');
+        var syncSummary = document.getElementById('pf-sync-summary');
         if (loadingEl) loadingEl.style.display = '';
         if (emptyEl) emptyEl.style.display = 'none';
         if (summaryHead) summaryHead.style.display = 'none';
         if (metricTabs) metricTabs.style.display = 'none';
         if (metricPanels) metricPanels.style.display = 'none';
+        if (syncSummary) syncSummary.style.display = 'none';
         try {
             if (window.pywebview && window.pywebview.api) {
                 const res = await window.pywebview.api.get_user_profile();
@@ -6300,6 +6604,7 @@
                     currentUserProfile = res.profile;
                     updateProfilePanel(res.profile);
                     updateProfileSyncMeta(res);
+                    renderProfileSyncSummary(res);
                     const p = res.profile;
                     if (document.getElementById('vp-name')) document.getElementById('vp-name').innerText = p.name || '--';
                     if (document.getElementById('vp-age')) document.getElementById('vp-age').innerText = p.age ? p.age + '岁' : '--';
@@ -6334,20 +6639,25 @@
                     }
                     if (loadingEl) loadingEl.style.display = 'none';
                     if (summaryHead) summaryHead.style.display = '';
+                    if (syncSummary) syncSummary.style.display = '';
                     if (metricTabs) metricTabs.style.display = '';
                     if (metricPanels) metricPanels.style.display = '';
                 } else {
                     updateProfileSyncMeta(res || {});
+                    renderProfileSyncSummary(res || {});
                     if (loadingEl) loadingEl.style.display = 'none';
                     if (emptyEl) emptyEl.style.display = '';
+                    if (syncSummary) syncSummary.style.display = 'none';
                 }
             } else {
                 if (loadingEl) loadingEl.style.display = 'none';
                 if (emptyEl) emptyEl.style.display = '';
+                if (syncSummary) syncSummary.style.display = 'none';
             }
         } catch(e) {
             if (loadingEl) loadingEl.style.display = 'none';
             if (emptyEl) emptyEl.style.display = '';
+            if (syncSummary) syncSummary.style.display = 'none';
         }
 
         await renderPerformanceRadar();
@@ -6382,8 +6692,75 @@
         }
     }
 
+    function profileBrandLabel(value) {
+        const brand = String(value || '').trim().toLowerCase();
+        if (brand === 'garmin') return 'Garmin';
+        if (brand === 'coros') return 'COROS';
+        return '未配置';
+    }
+
+    function profileQualityLabel(value) {
+        if (value === 'complete_for_analysis') return '分析字段已满足';
+        if (value === 'partial_for_analysis') return '分析字段部分可用';
+        if (value === 'display_only') return '仅展示字段可用';
+        if (value === 'invalid') return '画像待同步';
+        return '等待同步评估';
+    }
+
+    function fieldLabelList(items, limit) {
+        const rows = Array.isArray(items) ? items : [];
+        const names = rows.map(function(item) {
+            if (item && typeof item === 'object') return item.label || item.field || '';
+            return String(item || '');
+        }).filter(Boolean);
+        const max = limit || 8;
+        if (!names.length) return '无';
+        const head = names.slice(0, max).join('、');
+        return names.length > max ? head + ' 等 ' + names.length + ' 项' : head;
+    }
+
+    function setProfileSyncLine(id, label, content, pillClass) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.innerHTML = '';
+        const labelEl = document.createElement('span');
+        labelEl.className = 'profile-sync-label';
+        labelEl.innerText = label;
+        const valueEl = document.createElement('span');
+        valueEl.className = 'profile-sync-pill' + (pillClass ? ' ' + pillClass : '');
+        valueEl.innerText = content || '无';
+        el.appendChild(labelEl);
+        el.appendChild(valueEl);
+    }
+
+    function renderProfileSyncSummary(meta) {
+        const box = document.getElementById('pf-sync-summary');
+        if (!box) return;
+        meta = meta || {};
+        box.style.display = '';
+        const brand = profileBrandLabel(meta.current_watch_brand);
+        const source = profileBrandLabel(meta.current_profile_source_platform);
+        const quality = profileQualityLabel(meta.data_quality);
+        setProfileSyncLine('pf-sync-source-line', '画像状态', brand + ' 设备 · ' + source + ' 画像 · ' + quality, meta.data_quality === 'complete_for_analysis' ? 'ok' : 'warn');
+        ['pf-sync-quality-line', 'pf-sync-updated-line', 'pf-sync-preserved-line', 'pf-sync-missing-line'].forEach(function(id) {
+            const el = document.getElementById(id);
+            if (el) el.style.display = 'none';
+        });
+        const activityLine = document.getElementById('pf-sync-activity-line');
+        if (activityLine) activityLine.style.display = meta.supports_remote_activity_sync ? 'none' : '';
+        if (!meta.supports_remote_activity_sync) {
+            setProfileSyncLine(
+                'pf-sync-activity-line',
+                '活动导入',
+                meta.activity_sync_hint || '请使用本地 FIT、ZIP 或目录监听导入活动。',
+                'warn'
+            );
+        }
+    }
+
     window.onProfileSyncEvent = async function(eventName, payload) {
         updateProfileSyncMeta(payload || {});
+        renderProfileSyncSummary(payload || {});
         if (eventName === 'profile_sync_complete' && payload && payload.ok && payload.profile) {
             await loadProfileCard();
             showToast('✅ 用户画像已后台自动更新');
@@ -6876,10 +7253,6 @@
         if (profile.body_water_pct) document.getElementById('pf-body-water').innerText = profile.body_water_pct + '%';
         if (profile.bone_mass) document.getElementById('pf-bone-mass').innerText = profile.bone_mass + ' kg';
         if (profile.muscle_mass) document.getElementById('pf-muscle-mass').innerText = profile.muscle_mass + ' kg';
-        const statusChip = document.getElementById('pf-status-chip');
-        if (statusChip) {
-            statusChip.innerText = vo2Max ? '画像已同步' : '待同步设备数据';
-        }
     }
 
     async function saveManualMaxHeartRate() {
@@ -7085,6 +7458,7 @@
     }
 
 	    async function loadSportHubActivityList(options = {}) {
+	        markStartupPhase('activity_list_load_start', { refreshSnapshot: options.refreshSnapshot !== false });
 	        const resetPage = !!options.resetPage;
 	        const forceRefresh = options.refreshSnapshot !== false && (!!options.refreshSnapshot || !sportHubState.recordsReady);
 	        const page = resetPage ? 1 : Math.max(1, Number(sportHubState.filters.page) || 1);
@@ -7107,6 +7481,7 @@
 	        renderSportHubRecords();
 	        try {
 	            let res = null;
+	            const listRequestStart = (window.performance && performance.now) ? performance.now() : Date.now();
 	            if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.get_activity_list === 'function') {
 	                res = await window.pywebview.api.get_activity_list(page, pageSize, filterType, titleKeyword);
 	            } else if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.get_activity_list_snapshot === 'function') {
@@ -7116,9 +7491,16 @@
 	                sportHubState.recordsReady = true;
 	                return;
 	            }
+	            const listRequestEnd = (window.performance && performance.now) ? performance.now() : Date.now();
 	            if (requestId !== sportHubState.requestSeq) return;
 	            if (!res || res.code !== 0) throw new Error((res && res.msg) || '运动记录加载失败');
 	            var data = res.data || {};
+	            markStartupPhase('activity_list_api_done', {
+	                roundtrip_ms: Math.round((listRequestEnd - listRequestStart) * 100) / 100,
+	                backend_ms: data.startup_trace && data.startup_trace.api_elapsed_ms,
+	                total: data.total,
+	                records: Array.isArray(data.records) ? data.records.length : 0
+	            });
 
 	            sportHubState.activityTypes = Array.isArray(data.activity_types) ? data.activity_types : [];
 	            sportHubState.activityTypeLabels = (data && data.activity_type_labels && typeof data.activity_type_labels === 'object') ? data.activity_type_labels : {};
@@ -7135,6 +7517,7 @@
 	            sportHubState.recordsReady = true;
 	        } catch (e) {
 	            console.error('loadSportHubActivityList error:', e);
+	            markStartupPhase('activity_list_load_error', { message: String((e && e.message) || e || '') });
 	            sportHubState.recordsError = String((e && e.message) || e || '运动记录加载失败');
 	            if (!sportHubState.recordsReady) {
 	                sportHubState.records = [];
@@ -7146,6 +7529,10 @@
 	                renderSportHubFilterOptions();
 	                renderSportHubRecords();
 	                renderCurrentSportHubTab();
+	                markStartupPhase('activity_list_render_done', {
+	                    records: Array.isArray(sportHubState.records) ? sportHubState.records.length : 0,
+	                    total: sportHubState.total
+	                });
 	            }
 	        }
 	    }
@@ -9320,6 +9707,14 @@
         }, 5 * 60 * 1000);
     }
 
+    function scheduleInitialActivityIntegrityCheck() {
+        if (activityIntegrityInitialTimer) return;
+        activityIntegrityInitialTimer = setTimeout(function() {
+            activityIntegrityInitialTimer = null;
+            runActivityIntegrityCheck({ silent: true });
+        }, ACTIVITY_INTEGRITY_INITIAL_DELAY_MS);
+    }
+
     async function initApp() {
         try {
             await initLLMConfig();
@@ -9350,7 +9745,7 @@
                 }
             }
             ensureActivityIntegrityWatch();
-            runActivityIntegrityCheck({ silent: true });
+            scheduleInitialActivityIntegrityCheck();
         } catch(e) { console.error('initApp error:', e); }
     }
 
@@ -11869,8 +12264,48 @@
 /* ===== FIT Vault 启动生命周期（超时熔断 + 非阻塞健康检查） ===== */
 
 function hideBootLoading() {
+    markStartupPhase('boot_loading_hide');
     var el = document.getElementById('loading');
     if (el) { el.style.display = 'none'; }
+}
+
+window.__STARTUP_TRACE__ = window.__STARTUP_TRACE__ || {
+    start: (window.performance && performance.now) ? performance.now() : Date.now(),
+    events: []
+};
+
+function startupNowMs() {
+    var now = (window.performance && performance.now) ? performance.now() : Date.now();
+    return Math.round((now - window.__STARTUP_TRACE__.start) * 100) / 100;
+}
+
+function markStartupPhase(name, extra) {
+    if (!window.__STARTUP_TRACE__) return;
+    var event = Object.assign({ name: String(name), elapsed_ms: startupNowMs() }, extra || {});
+    window.__STARTUP_TRACE__.events.push(event);
+    if (window.__STARTUP_TRACE__.events.length > 120) {
+        window.__STARTUP_TRACE__.events.shift();
+    }
+    if (window.console && console.debug) {
+        console.debug('[STARTUP]', event);
+    }
+}
+
+async function reportStartupTimeline(reason) {
+    markStartupPhase('startup_timeline_report', { reason: reason || 'manual' });
+    try {
+        var backend = null;
+        if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.get_startup_timeline === 'function') {
+            backend = await window.pywebview.api.get_startup_timeline();
+        }
+        console.info('[STARTUP_TIMELINE]', {
+            reason: reason || 'manual',
+            frontend: window.__STARTUP_TRACE__.events.slice(),
+            backend: backend && backend.data ? backend.data : null
+        });
+    } catch (e) {
+        console.warn('[STARTUP_TIMELINE] report failed:', e);
+    }
 }
 
 /* 启动超时熔断看门狗：8 秒后无论是否就绪强制隐藏 loading 屏 */
@@ -12073,6 +12508,7 @@ function getFitTracksDir() {
 }
 
 document.addEventListener('DOMContentLoaded', function () {
+    markStartupPhase('dom_content_loaded');
     if (window.pywebview && window.pywebview.api) {
         bootstrapApplication();
     } else {
@@ -12081,11 +12517,14 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 
 async function bootstrapApplication() {
+    markStartupPhase('bootstrap_start');
     console.log('[ARCHITECTURE] 方案 B 已启用：前端计算严格隔离');
     initCpTypeGrid();
     initCesiumViewer();
     try {
+        markStartupPhase('check_first_run_start');
         var res = await pywebview.api.check_first_run_status();
+        markStartupPhase('check_first_run_done');
         // §三 响应结构契约:res.data.*(任务 3 改造后)
         var firstRunData = (res && res.data) || {};
         // 从后端获取跨平台动态路径，不再硬编码
@@ -12103,7 +12542,9 @@ async function bootstrapApplication() {
         }
         // 恢复 ai_notified 状态（任务 3：跨刷新持久化 + 路径未变自动确认）
         try {
+            markStartupPhase('llm_config_start');
             const llmCfg = await window.pywebview.api.get_llm_config();
+            markStartupPhase('llm_config_done');
             // §三 响应结构契约:res.data.ai_notified(任务 3 改造后)
             var llmCfgData = (llmCfg && llmCfg.data) || {};
             if (llmCfg && llmCfg.code === 0) {
@@ -12151,6 +12592,7 @@ async function bootstrapApplication() {
         }
         if (res && res.code === 0 && firstRunData.is_first_run) {
             hideBootLoading();
+            reportStartupTimeline('first_run_settings');
             switchTab(document.querySelector('[data-panel="settings"]'));
             if (typeof refreshSettingsPanel === 'function') {
                 refreshSettingsPanel().catch(function(e) { console.warn('refreshSettingsPanel', e); });
@@ -12158,18 +12600,20 @@ async function bootstrapApplication() {
             if (!firstRunData.last_gateway_ok) {
                 document.getElementById('gateway-warning-bar').classList.remove('hidden');
             }
-            runSilentGatewayValidation();
+            scheduleSilentGatewayValidation();
             return;
         }
         hideBootLoading();
+        markStartupPhase('restore_route_start');
         restoreStartupRoute();
+        markStartupPhase('restore_route_done');
         if (getCurrentActivePanel && getCurrentActivePanel() === 'profile' && typeof loadProfileCard === 'function') {
             loadProfileCard().catch(function(e) { console.error('bootstrap loadProfileCard', e); });
         }
         if (!firstRunData.last_gateway_ok) {
             document.getElementById('gateway-warning-bar').classList.remove('hidden');
         }
-        runSilentGatewayValidation();
+        scheduleSilentGatewayValidation();
 
         var sportJump = document.getElementById('sport-records-page-jump');
         if (sportJump) {
@@ -12186,15 +12630,19 @@ async function bootstrapApplication() {
 
         if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.notify_frontend_ready === 'function') {
             try {
+                markStartupPhase('notify_frontend_ready_start');
                 await window.pywebview.api.notify_frontend_ready();
+                markStartupPhase('notify_frontend_ready_done');
                 console.log('[BOOT] notify_frontend_ready OK — 通知通道已打开');
             } catch (e) {
                 console.warn('[BOOT] notify_frontend_ready failed:', e);
             }
         }
+        reportStartupTimeline('bootstrap_complete');
     } catch (err) {
         console.error('[FIT Vault] 初始化异常，降级显示主界面', err);
         hideBootLoading();
+        reportStartupTimeline('bootstrap_error');
     }
 }
 
@@ -12270,6 +12718,14 @@ function runSilentGatewayValidation() {
     tryOnce();
 }
 
+function scheduleSilentGatewayValidation(delayMs) {
+    if (silentGatewayValidationTimer) return;
+    silentGatewayValidationTimer = setTimeout(function () {
+        silentGatewayValidationTimer = null;
+        runSilentGatewayValidation();
+    }, typeof delayMs === 'number' ? delayMs : SILENT_GATEWAY_VALIDATION_DELAY_MS);
+}
+
 // ===== TCP 心跳：60s 周期探测网关端口可达性，不发送 LLM 消息，零垃圾会话 =====
 var _heartbeatTimer = null;
 var _heartbeatLastOk = null;
@@ -12292,8 +12748,8 @@ function startLLMHeartbeat() {
             } else if (!_heartbeatLastOk && ok) {
                 console.log('[Heartbeat] LLM 网关端口恢复，重新启动静默全链路验证');
                 // 网关从离线变为在线，触发全链路 LLM 连通性验证
-                if (typeof runSilentGatewayValidation === 'function') {
-                    runSilentGatewayValidation();
+                if (typeof scheduleSilentGatewayValidation === 'function') {
+                    scheduleSilentGatewayValidation();
                 }
             }
             _heartbeatLastOk = ok;
@@ -12485,6 +12941,24 @@ function openConfigModalFromWarning() {
         }
         const blob = new Blob([content], { type: mimeType }), url = URL.createObjectURL(blob), a = document.createElement('a');
         a.href = url; a.download = safeName; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+    }
+
+    function saveSkillZip(skillName) {
+        const fileName = skillName + '.zip';
+        if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.save_skill_zip === 'function') {
+            window.pywebview.api.save_skill_zip(skillName).then(function (res) {
+                if (res && res.ok) showToast('已保存：' + (res.path || fileName));
+                else if (res && res.cancelled) { /* 用户取消 */ }
+                else if (res && res.error) showToast('下载失败：' + res.error);
+            }).catch(function () { showToast('下载失败'); });
+            return;
+        }
+        const a = document.createElement('a');
+        a.href = 'skills/' + fileName;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
     }
 
     /**

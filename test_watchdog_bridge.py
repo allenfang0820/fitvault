@@ -33,6 +33,10 @@ class TestWatchdogBridge(unittest.TestCase):
         self.api = main.Api()
 
     def tearDown(self):
+        if self.api._profile_sync_timer is not None:
+            self.api._profile_sync_timer.cancel()
+        if self.api._region_enrichment_timer is not None:
+            self.api._region_enrichment_timer.cancel()
         profile_backend.DB_PATH = self.original_db_path
         profile_backend._SCHEMA_READY_FOR = self.original_profile_schema
         main._ACTIVITY_SYNC_SCHEMA_READY_FOR = self.original_main_schema
@@ -51,6 +55,37 @@ class TestWatchdogBridge(unittest.TestCase):
         self.assertIn("window.onNewTrackDetected", window.calls[0])
         self.assertIn(json.dumps(str(target_path.resolve())), window.calls[0])
         self.assertIn("42", window.calls[0])
+
+    def test_notify_frontend_ready_only_schedules_background_tasks(self):
+        created_timers = []
+
+        class FakeTimer:
+            def __init__(self, delay, callback):
+                self.delay = delay
+                self.callback = callback
+                self.daemon = False
+                self.started = False
+                created_timers.append(self)
+
+            def start(self):
+                self.started = True
+
+            def cancel(self):
+                self.started = False
+
+        with mock.patch.object(self.api, "startup_sync_check") as startup_check, \
+             mock.patch.object(profile_backend, "start_region_enrichment_background") as region_start, \
+             mock.patch.object(main.threading, "Timer", FakeTimer):
+            res = self.api.notify_frontend_ready()
+            self.api.notify_frontend_ready()
+
+        self.assertEqual(res, {"ok": True})
+        startup_check.assert_not_called()
+        region_start.assert_not_called()
+        self.assertEqual(len(created_timers), 2)
+        self.assertEqual(created_timers[0].delay, main.PROFILE_STARTUP_SYNC_DELAY_SEC)
+        self.assertEqual(created_timers[1].delay, main.REGION_ENRICH_STARTUP_DELAY_SEC)
+        self.assertTrue(all(timer.started for timer in created_timers))
 
     def test_load_activity_track_by_file_path_prefers_sqlite_record(self):
         file_path = self.temp_dir / "replay.fit"

@@ -13,12 +13,20 @@ GAP (Grade Adjusted Pace) — 等效坡度配速计算模块
 
 import logging
 import math
-from typing import Any
-
-import numpy as np
-from scipy.signal import butter, filtfilt
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
+_NUMERIC_DEPS: Optional[tuple[Any, Any, Any]] = None
+
+
+def _numeric_deps() -> tuple[Any, Any, Any]:
+    global _NUMERIC_DEPS
+    if _NUMERIC_DEPS is None:
+        import numpy as np
+        from scipy.signal import butter, filtfilt
+
+        _NUMERIC_DEPS = (np, butter, filtfilt)
+    return _NUMERIC_DEPS
 
 # ── 非线性 GAP 模型:Minnetti 能量消耗多项式拟合 ──────────────
 # 已废弃阶梯式 _GAP_COEFFICIENTS,改用 _calculate_gap_speed_non_linear
@@ -193,6 +201,7 @@ class GapCalculator:
         if not data or len(data) < 10:
             return data
 
+        np, butter, filtfilt = _numeric_deps()
         arr = np.asarray(data, dtype=float)
         nyq = 0.5 * fs
         normal_cutoff = cutoff / nyq
@@ -224,6 +233,7 @@ class GapCalculator:
         ):
             return []
 
+        np, _, _ = _numeric_deps()
         dist_arr = np.asarray(distance_series, dtype=float)
         alt_arr = np.asarray(smoothed_alt_series, dtype=float)
 

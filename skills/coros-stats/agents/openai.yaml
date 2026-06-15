@@ -1,0 +1,13 @@
+interface:
+  display_name: "COROS Stats"
+  short_description: "同步高驰用户画像到脉图"
+  default_prompt: "使用 $coros-stats 同步用户画像，并返回可供脉图使用的原始 JSON 数组。"
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "coros"
+      description: "用于获取已授权高驰账号数据的 COROS MCP 服务。"
+      transport: "streamable_http"
+      url: "https://mcpcn.coros.com/mcp"
+policy:
+  allow_implicit_invocation: true

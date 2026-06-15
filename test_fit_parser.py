@@ -19,6 +19,10 @@ def _first_existing(paths: list[str]) -> Optional[Path]:
     return None
 
 
+def _write_minimal_fit_header(path: str) -> None:
+    Path(path).write_bytes(bytes([14]) + b"\x00" * 7 + b".FIT" + b"\x00" * 2)
+
+
 class FakeField:
     def __init__(self, name, value):
         self.name = name
@@ -201,10 +205,16 @@ class TestFitParser(unittest.TestCase):
         self.assertEqual(data.get("avg_hr"), 114)
         self.assertEqual(data.get("start_time"), "2026-04-11T09:11:19+08:00")
 
-    @mock.patch("fit_engine.FitFile", FakeFitFile)
     def test_swimming_fit_metadata_with_mock(self):
-        with tempfile.NamedTemporaryFile(suffix=".fit") as temp_fit:
-            data = track_backend.parse_track_file(temp_fit.name)
+        old_deps = fit_engine._FITPARSE_DEPS
+        fit_engine._FITPARSE_DEPS = (FakeFitFile, Exception)
+        try:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                temp_fit = Path(temp_dir) / "泳.fit"
+                _write_minimal_fit_header(str(temp_fit))
+                data = track_backend.parse_track_file(temp_fit)
+        finally:
+            fit_engine._FITPARSE_DEPS = old_deps
         self.assertEqual(data.get("sport_type"), "swimming")
         self.assertEqual(data.get("title"), "游泳")
         self.assertEqual(data.get("title_source"), "sport_name")
@@ -214,10 +224,22 @@ class TestFitParser(unittest.TestCase):
         self.assertEqual(data.get("start_time"), "2026-05-20T19:30:00+08:00")
 
     def test_malformed_fit_raises_clear_error(self):
+        class FakeFitParseError(Exception):
+            pass
+
         with tempfile.NamedTemporaryFile(suffix=".fit") as temp_fit:
-            with mock.patch("fit_engine.FitFile", side_effect=fit_engine.FitParseError("header corrupt")):
+            _write_minimal_fit_header(temp_fit.name)
+
+            def _raise_fit_error(*_args, **_kwargs):
+                raise FakeFitParseError("header corrupt")
+
+            old_deps = fit_engine._FITPARSE_DEPS
+            fit_engine._FITPARSE_DEPS = (_raise_fit_error, FakeFitParseError)
+            try:
                 with self.assertRaisesRegex(ValueError, "FIT 文件损坏或已截断"):
                     track_backend.parse_track_file(temp_fit.name)
+            finally:
+                fit_engine._FITPARSE_DEPS = old_deps
 
         self.assertTrue(fit_engine.FIT_PARSE_LOG_PATH.exists())
         log_text = fit_engine.FIT_PARSE_LOG_PATH.read_text(encoding="utf-8")

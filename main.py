@@ -24,11 +24,10 @@ import llm_backend  # noqa: F401 -- PyInstaller bundles LLM 模块
 import track_backend  # noqa: F401 -- PyInstaller bundles track_backend
 import profile_backend  # noqa: F401 -- PyInstaller bundles profile 模块
 from fit_engine import FITCoreEngine
-from garmin_fit_sdk import Decoder, Stream
 from metrics_resolver import MetricsResolver, SemanticSportsEngine, build_training_effect, _build_environment_challenge_block  # V9.4.0 修复 NameError:build_training_effect 已在 metrics_resolver.py:2760 定义, 此处补 import;V_ENV.1.16:补 _build_environment_challenge_block
 
 DEBUG_MODE = False
-APP_VERSION = "v0.6.0"
+APP_VERSION = "V1.0"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -40,7 +39,6 @@ if DEBUG_MODE:
     logger.setLevel(logging.DEBUG)
 from utils.weather_api import fetch_historical_weather
 from watchdog.events import FileSystemEventHandler
-from watchdog.observers import Observer
 
 HTML_FILENAME = "track.html"
 
@@ -67,6 +65,9 @@ DEFAULT_APP_CONFIG = {
 SPORT_HUB_PAGE_SIZES = [10, 20, 50]
 APP_CONFIG_BACKUP_DIR = os.path.expanduser("~/.trackapp_config.backups")
 APP_CONFIG_AUDIT_LOG = os.path.expanduser("~/.trackapp_config.audit.log")
+_PROCESS_START_PERF = time.perf_counter()
+_STARTUP_TIMELINE_LOCK = threading.Lock()
+_STARTUP_TIMELINE: list[dict[str, Any]] = []
 SPORT_HUB_TYPE_ORDER = {
     "running": 1,
     "trail_running": 2,
@@ -216,6 +217,9 @@ _ACTIVITY_SYNC_SCHEMA_LOCK = threading.Lock()
 _ACTIVITY_SYNC_SCHEMA_READY_FOR: str | None = None
 _APP_SHUTTING_DOWN = threading.Event()
 PROFILE_SYNC_INTERVAL_SEC = 5 * 60
+PROFILE_STARTUP_SYNC_DELAY_SEC = PROFILE_SYNC_INTERVAL_SEC
+REGION_ENRICH_STARTUP_DELAY_SEC = 20.0
+LIST_METRIC_BACKFILL_DELAY_SEC = 15.0
 FIT_WATCH_STABLE_SEC = 2.0
 FIT_WATCH_POLL_INTERVAL_SEC = 1.5
 ZIP_MAX_MEMBERS = 500
@@ -643,6 +647,29 @@ API_CODE_INTERNAL = 9001
 
 def _new_trace_id() -> str:
     return uuid.uuid4().hex[:12]
+
+
+def _startup_elapsed_ms() -> float:
+    return round((time.perf_counter() - _PROCESS_START_PERF) * 1000.0, 2)
+
+
+def _record_startup_event(name: str, **fields: Any) -> None:
+    event = {
+        "name": str(name),
+        "elapsed_ms": _startup_elapsed_ms(),
+        "ts": datetime.now(timezone.utc).isoformat(),
+    }
+    if fields:
+        event.update(fields)
+    with _STARTUP_TIMELINE_LOCK:
+        _STARTUP_TIMELINE.append(event)
+        if len(_STARTUP_TIMELINE) > 200:
+            del _STARTUP_TIMELINE[:-200]
+
+
+def _startup_timeline_snapshot() -> list[dict[str, Any]]:
+    with _STARTUP_TIMELINE_LOCK:
+        return [dict(item) for item in _STARTUP_TIMELINE]
 
 
 def _api_success(data: dict[str, Any] | None = None, msg: str = "ok", **legacy_fields: Any) -> dict[str, Any]:
@@ -2019,6 +2046,7 @@ def ensure_activity_sync_schema() -> None:
             conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_activities_file_name_unique ON activities(file_name)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_activities_start_time_desc ON activities(start_time DESC)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_activities_sport_type ON activities(sport_type)")
+            profile_backend._ensure_activity_list_indexes(conn)
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS activity_placemarks (
@@ -2140,6 +2168,7 @@ _NP_BACKFILL_STATUS: dict[str, Any] = {
     "error": "",
 }
 _NP_BACKFILL_THREAD: threading.Thread | None = None
+_NP_BACKFILL_TIMER: threading.Timer | None = None
 LIST_METRIC_BACKFILL_BATCH_LIMIT = 200
 LIST_METRIC_BACKFILL_VERSION = 1
 
@@ -2600,6 +2629,7 @@ def _start_normalized_power_backfill_if_needed() -> dict[str, Any]:
                 "power_updated": 0,
                 "water_total": 0,
                 "water_updated": 0,
+                "scheduled": False,
                 "error": "",
             })
             return dict(_NP_BACKFILL_STATUS)
@@ -2619,6 +2649,7 @@ def _start_normalized_power_backfill_if_needed() -> dict[str, Any]:
             "power_updated": 0,
             "water_total": max(0, scheduled - min(int(missing_power or 0), scheduled)),
             "water_updated": 0,
+            "scheduled": False,
             "started_at": time.time(),
             "finished_at": 0.0,
             "error": "",
@@ -2631,6 +2662,49 @@ def _start_normalized_power_backfill_if_needed() -> dict[str, Any]:
     )
     _NP_BACKFILL_THREAD.start()
     return _normalized_power_backfill_status()
+
+
+def _schedule_normalized_power_backfill_if_needed(delay_sec: float = LIST_METRIC_BACKFILL_DELAY_SEC) -> dict[str, Any]:
+    global _NP_BACKFILL_TIMER
+    with _NP_BACKFILL_LOCK:
+        if _NP_BACKFILL_STATUS.get("running"):
+            return dict(_NP_BACKFILL_STATUS)
+        if _NP_BACKFILL_TIMER is not None and _NP_BACKFILL_TIMER.is_alive():
+            status = dict(_NP_BACKFILL_STATUS)
+            status["scheduled"] = True
+            return status
+        finished_at = float(_NP_BACKFILL_STATUS.get("finished_at") or 0)
+        if finished_at and time.time() - finished_at < 60:
+            return dict(_NP_BACKFILL_STATUS)
+
+        _NP_BACKFILL_STATUS.update({
+            "scheduled": True,
+            "scheduled_at": time.time(),
+            "scheduled_delay_sec": float(delay_sec),
+            "error": "",
+        })
+
+    def _start_scheduled() -> None:
+        global _NP_BACKFILL_TIMER
+        try:
+            _start_normalized_power_backfill_if_needed()
+        finally:
+            with _NP_BACKFILL_LOCK:
+                _NP_BACKFILL_TIMER = None
+                if not _NP_BACKFILL_STATUS.get("running"):
+                    _NP_BACKFILL_STATUS["scheduled"] = False
+
+    timer = threading.Timer(max(0.0, float(delay_sec)), _start_scheduled)
+    timer.daemon = True
+    with _NP_BACKFILL_LOCK:
+        if _NP_BACKFILL_TIMER is not None and _NP_BACKFILL_TIMER.is_alive():
+            status = dict(_NP_BACKFILL_STATUS)
+            status["scheduled"] = True
+            return status
+        _NP_BACKFILL_TIMER = timer
+        status = dict(_NP_BACKFILL_STATUS)
+    timer.start()
+    return status
 
 
 def _p90(values: list[float]) -> float:
@@ -3101,6 +3175,8 @@ def _parse_fit_activity_for_sync(file_path: Path) -> dict[str, Any]:
 
     # 从 FIT 文件解析设备型号
     try:
+        from garmin_fit_sdk import Decoder, Stream
+
         fit_stream = Stream.from_file(resolved_path)
         fit_msgs, _ = Decoder(fit_stream).read()
         raw_for_device = {"file_id_mesgs": list(fit_msgs.get("file_id_mesgs", []))}
@@ -4030,6 +4106,8 @@ class FITFolderWatchService:
             if not base.is_dir():
                 logger.error("FIT 监听目录无效: %s", base)
                 return {"ok": False, "error": f"监听目录无效: {base}"}
+            from watchdog.observers import Observer
+
             observer = Observer()
             handler = FITFolderHandler(self._enqueue_created_file)
             observer.schedule(handler, str(base), recursive=True)
@@ -4632,11 +4710,18 @@ class Api:
         self._watch_service.restart()
 
     def notify_frontend_ready(self) -> dict:
+        _record_startup_event("frontend_ready", pending_notifications=len(self._pending_track_notifications))
         self._frontend_ready = True
         self._flush_pending_track_notifications()
         self._schedule_profile_startup_sync()
         self._schedule_region_enrichment()
         return {"ok": True}
+
+    def get_startup_timeline(self) -> dict:
+        return _api_success({
+            "process_elapsed_ms": _startup_elapsed_ms(),
+            "events": _startup_timeline_snapshot(),
+        })
 
     def _schedule_region_enrichment(self) -> None:
         if self._region_enrichment_active:
@@ -4654,7 +4739,7 @@ class Api:
         def _start():
             profile_backend.start_region_enrichment_background(on_complete=_on_complete)
 
-        timer = threading.Timer(3, _start)
+        timer = threading.Timer(REGION_ENRICH_STARTUP_DELAY_SEC, _start)
         timer.daemon = True
         self._region_enrichment_timer = timer
         timer.start()
@@ -4678,7 +4763,7 @@ class Api:
         if self._profile_startup_sync_scheduled:
             return
         self._profile_startup_sync_scheduled = True
-        self._schedule_next_profile_sync(PROFILE_SYNC_INTERVAL_SEC)
+        self._schedule_next_profile_sync(PROFILE_STARTUP_SYNC_DELAY_SEC)
 
     def _schedule_next_profile_sync(self, delay_sec: float) -> None:
         if _APP_SHUTTING_DOWN.is_set():
@@ -4723,7 +4808,9 @@ class Api:
                 "sync_status": "syncing",
                 "last_sync_ago": "正在同步",
             })
-            result = profile_backend.fetch_mcp_persona("garmin", trigger_type="startup")
+            cfg = llm_backend.load_llm_config()
+            watch_brand = str(cfg.get("watch_brand") or "garmin").strip().lower() or "garmin"
+            result = profile_backend.fetch_mcp_persona(watch_brand, trigger_type="startup")
             if result.get("ok"):
                 prof = profile_backend.get_profile()
                 result.update({"profile": prof.to_dict(), **profile_backend.get_profile_sync_metadata()})
@@ -5423,6 +5510,45 @@ class Api:
             return {"ok": False, "error": str(e)}
         return {"ok": True, "path": str(dest)}
 
+    def save_skill_zip(self, skill_name: str) -> dict:
+        import webview
+        from webview import FileDialog
+
+        allowed = {
+            "garmin-stats": "garmin-stats.zip",
+            "coros-stats": "coros-stats.zip",
+        }
+        filename = allowed.get(str(skill_name or "").strip())
+        if not filename:
+            return {"ok": False, "error": "未知的 skill 下载项"}
+        src = app_base_dir() / "skills" / filename
+        if not src.is_file():
+            return {"ok": False, "error": f"未找到安装包：{filename}"}
+        if not webview.windows:
+            return {"ok": False, "error": "窗口未就绪"}
+
+        win = webview.windows[0]
+        try:
+            paths = win.create_file_dialog(
+                FileDialog.SAVE,
+                save_filename=filename,
+                file_types=("ZIP (*.zip)",),
+            )
+        except OSError as e:
+            return {"ok": False, "error": str(e)}
+
+        if not paths:
+            return {"ok": False, "cancelled": True}
+
+        dest = Path(paths[0] if isinstance(paths, (list, tuple)) else paths)
+        if dest.suffix.lower() != ".zip":
+            dest = dest.with_suffix(".zip")
+        try:
+            shutil.copyfile(src, dest)
+        except OSError as e:
+            return {"ok": False, "error": str(e)}
+        return {"ok": True, "path": str(dest)}
+
     def get_user_profile(self) -> dict:
         prof = profile_backend.get_profile()
         zones = profile_backend.compute_hrr_zones(
@@ -5430,11 +5556,16 @@ class Api:
         )
         cached = profile_backend.read_local_profile()
         metadata = profile_backend.get_profile_sync_metadata()
+        cfg = llm_backend.load_llm_config()
+        watch_brand = str(cfg.get("watch_brand") or "").strip().lower()
+        profile_summary = profile_backend.build_profile_status_summary(watch_brand)
         return {
             "ok": True,
             "profile": prof.to_dict(),
             "hrr_zones": zones,
             **metadata,
+            **profile_summary,
+            "profile_sync_summary": profile_summary,
             "cache_info": {
                 "has_cached": cached is not None,
             },
@@ -5477,7 +5608,15 @@ class Api:
             zones = profile_backend.compute_hrr_zones(
                 prof.resting_hr or 60, prof.max_hr or 190
             )
-            return {"ok": True, "profile": prof.to_dict(), "hrr_zones": zones, **profile_backend.get_profile_sync_metadata()}
+            profile_summary = profile_backend.build_profile_status_summary(platform)
+            return {
+                "ok": True,
+                "profile": prof.to_dict(),
+                "hrr_zones": zones,
+                **profile_backend.get_profile_sync_metadata(),
+                **profile_summary,
+                "profile_sync_summary": result.get("profile_sync_summary") or profile_summary,
+            }
         return result
 
     def get_activity_history(self) -> dict:
@@ -5637,9 +5776,6 @@ class Api:
             "start_lat": _safe_float(row.get("start_lat")) or None,
             "start_lon": _safe_float(row.get("start_lon")) or None,
             "weather": _decode_weather_json(row.get("weather_json")),
-            "hr_curve": _safe_json_list(row.get("hr_curve")),
-            "speed_curve": _safe_json_list(row.get("speed_curve")),
-            "shadow_diff": _decode_weather_json(row.get("shadow_diff_json")) if row.get("shadow_diff_json") else {},
             "has_track": bool(row.get("has_track")),
             "has_local_file": bool(str(row.get("file_path") or "").strip() and os.path.exists(str(row.get("file_path") or "").strip())),
         }
@@ -6473,10 +6609,7 @@ class Api:
                            region_attempt_count,
                            weather_json,
                            updated_at,
-                           hr_curve,
-                           speed_curve,
-                           shadow_diff_json,
-                           CASE WHEN COALESCE(track_json, points_json, '') != '' THEN 1 ELSE 0 END AS has_track
+                           1 AS has_track
                     FROM activities
                     {where_sql}
                     ORDER BY COALESCE(start_time, updated_at) DESC, id DESC
@@ -6510,10 +6643,18 @@ class Api:
 
     def get_activity_list_snapshot(self, sport_filter: str = "all", title_keyword: str = "") -> dict:
         """返回完整活动记录快照，供前端本地分页与筛选使用。"""
+        started = time.perf_counter()
         try:
             source_dir, records, activity_types = self._query_activity_list_records(sport_filter, title_keyword)
-            np_backfill = _start_normalized_power_backfill_if_needed()
+            np_backfill = _schedule_normalized_power_backfill_if_needed()
             dynamic_columns = _resolve_activity_list_dynamic_columns_for_rows(records)
+            elapsed_ms = round((time.perf_counter() - started) * 1000.0, 2)
+            _record_startup_event(
+                "activity_list_snapshot_api",
+                elapsed_ms_api=elapsed_ms,
+                total=len(records),
+                sport_filter=str(sport_filter or "all"),
+            )
             return _api_success({
                 "source_dir": source_dir,
                 "total": len(records),
@@ -6524,6 +6665,10 @@ class Api:
                 "dynamic_columns": dynamic_columns,
                 "normalized_power_backfill": np_backfill,
                 "list_metric_backfill": np_backfill,
+                "startup_trace": {
+                    "api_elapsed_ms": elapsed_ms,
+                    "process_elapsed_ms": _startup_elapsed_ms(),
+                },
             })
         except Exception:
             logger.exception("get_activity_list_snapshot failed")
@@ -6531,6 +6676,7 @@ class Api:
 
     def get_activity_list(self, page: int = 1, page_size: int = 20, sport_filter: str = "all", title_keyword: str = "") -> dict:
         """后端分页返回活动记录基础字段。"""
+        started = time.perf_counter()
         try:
             page = max(1, _safe_int(page, 1))
             requested_page_size = _safe_int(page_size, 20)
@@ -6565,7 +6711,16 @@ class Api:
                 key=lambda item: (SPORT_HUB_TYPE_ORDER.get(item, 99), item),
             )
 
-            metric_backfill = _start_normalized_power_backfill_if_needed()
+            metric_backfill = _schedule_normalized_power_backfill_if_needed()
+            elapsed_ms = round((time.perf_counter() - started) * 1000.0, 2)
+            _record_startup_event(
+                "activity_list_api",
+                elapsed_ms_api=elapsed_ms,
+                page=page,
+                page_size=page_size,
+                total=total_count,
+                sport_filter=str(sport_filter or "all"),
+            )
             return _api_success({
                 "page": page,
                 "page_size": page_size,
@@ -6578,6 +6733,10 @@ class Api:
                 "dynamic_columns": _resolve_activity_list_dynamic_columns_for_rows(records),
                 "normalized_power_backfill": metric_backfill,
                 "list_metric_backfill": metric_backfill,
+                "startup_trace": {
+                    "api_elapsed_ms": elapsed_ms,
+                    "process_elapsed_ms": _startup_elapsed_ms(),
+                },
             })
         except Exception:
             logger.exception("get_activity_list failed")
@@ -6961,12 +7120,15 @@ class Api:
             import json as _json_v85
             from datetime import datetime, timedelta, timezone
             from metrics_resolver import MetricsResolver as _MR_v85
-            profile = profile_backend.get_profile()
-            profile_max_hr = _safe_float(profile.max_hr) if profile and profile.max_hr else None
-            profile_resting_hr = _safe_float(profile.resting_hr) if profile and profile.resting_hr else None
-
             sport_type = str(row.get("sport_type") or "running")
             current_id = _safe_int(row.get("id")) or 0
+            try:
+                profile = profile_backend.get_profile()
+                profile_max_hr = _safe_float(profile.max_hr) if profile and profile.max_hr else None
+                profile_resting_hr = _safe_float(profile.resting_hr) if profile and profile.resting_hr else None
+            except Exception:
+                profile_max_hr = _safe_float(row.get("max_hr") or row.get("max_heart_rate"))
+                profile_resting_hr = 60.0 if profile_max_hr else None
 
             conn = sqlite3.connect(str(DB_PATH))
             cursor = conn.cursor()
@@ -7040,12 +7202,15 @@ class Api:
             import sqlite3
             from datetime import datetime, timedelta, timezone
             from metrics_resolver import MetricsResolver as _MR_v714
-            profile = profile_backend.get_profile()
-            profile_max_hr = _safe_float(profile.max_hr) if profile and profile.max_hr else None
-            profile_resting_hr = _safe_float(profile.resting_hr) if profile and profile.resting_hr else None
-
             sport_type = str(row.get("sport_type") or "running")
             current_id = _safe_int(row.get("id")) or 0
+            try:
+                profile = profile_backend.get_profile()
+                profile_max_hr = _safe_float(profile.max_hr) if profile and profile.max_hr else None
+                profile_resting_hr = _safe_float(profile.resting_hr) if profile and profile.resting_hr else None
+            except Exception:
+                profile_max_hr = _safe_float(row.get("max_hr") or row.get("max_heart_rate"))
+                profile_resting_hr = 60.0 if profile_max_hr else None
 
             # 当前活动的 load(已在 V7.13 算过,直接用;失败时 fallback 重算)
             hr_zone_dist = None
@@ -8586,6 +8751,7 @@ def force_rebuild_all_records() -> dict[str, Any]:
 def main() -> None:
     import webview
 
+    _record_startup_event("main_enter")
     local_version = _get_schema_version()
     if local_version < CURRENT_SCHEMA_VERSION:
         logger.info("Schema 版本升级: %s -> %s，触发增量数据清洗", local_version, CURRENT_SCHEMA_VERSION)
@@ -8594,8 +8760,9 @@ def main() -> None:
         logger.info("Schema 版本一致 (v=%s)，跳过数据清洗", local_version)
     url = str(html_file().resolve())
     api = Api()
+    _record_startup_event("api_created")
     window = webview.create_window(
-        "脉图 - fit vault",
+        f"脉图 - fit vault {APP_VERSION}",
         url=url,
         js_api=api,
         width=1280,
@@ -8603,11 +8770,14 @@ def main() -> None:
         min_size=(800, 600),
         background_color='#0f172a',  # 匹配 HTML 背景色，消除白色闪烁
     )
+    _record_startup_event("window_created")
     api.bind_window(window)
     watch_service = FITFolderWatchService(api)
     api.set_watch_service(watch_service)
     watch_service.start()
+    _record_startup_event("watch_service_started")
     try:
+        _record_startup_event("webview_start_enter")
         webview.start(debug=False)
     finally:
         _APP_SHUTTING_DOWN.set()

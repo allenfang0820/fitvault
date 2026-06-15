@@ -164,5 +164,45 @@ class TestPaginationDomStructure(unittest.TestCase):
             "V_3.0 FAIL: 分页器在表格容器内,会被滚动条裁剪")
 
 
+class TestStartupBackgroundDeferral(unittest.TestCase):
+    """首屏后后台任务延迟调度契约。"""
+
+    def setUp(self):
+        self.html = _read_track_html()
+
+    def test_activity_integrity_initial_check_is_scheduled(self):
+        self.assertIn("ACTIVITY_INTEGRITY_INITIAL_DELAY_MS", self.html)
+        self.assertIn("function scheduleInitialActivityIntegrityCheck()", self.html)
+        self.assertIn("scheduleInitialActivityIntegrityCheck();", self.html)
+        self.assertNotIn("ensureActivityIntegrityWatch();\n            runActivityIntegrityCheck({ silent: true });", self.html)
+
+    def test_silent_gateway_validation_is_scheduled_from_bootstrap(self):
+        self.assertIn("SILENT_GATEWAY_VALIDATION_DELAY_MS", self.html)
+        self.assertIn("function scheduleSilentGatewayValidation", self.html)
+        self.assertIn("scheduleSilentGatewayValidation();", self.html)
+        self.assertNotIn("        runSilentGatewayValidation();\n\n        var sportJump", self.html)
+
+
+class TestStartupTimelineInstrumentation(unittest.TestCase):
+    """首屏启动时间线埋点契约。"""
+
+    def setUp(self):
+        self.html = _read_track_html()
+
+    def test_bootstrap_timeline_marks_key_phases(self):
+        self.assertIn("window.__STARTUP_TRACE__", self.html)
+        self.assertIn("function markStartupPhase(name, extra)", self.html)
+        self.assertIn("async function reportStartupTimeline(reason)", self.html)
+        self.assertIn("markStartupPhase('bootstrap_start')", self.html)
+        self.assertIn("markStartupPhase('boot_loading_hide')", self.html)
+        self.assertIn("reportStartupTimeline('bootstrap_complete')", self.html)
+
+    def test_activity_list_timeline_marks_api_and_render(self):
+        self.assertIn("markStartupPhase('activity_list_load_start'", self.html)
+        self.assertIn("markStartupPhase('activity_list_api_done'", self.html)
+        self.assertIn("backend_ms: data.startup_trace && data.startup_trace.api_elapsed_ms", self.html)
+        self.assertIn("markStartupPhase('activity_list_render_done'", self.html)
+
+
 if __name__ == "__main__":
     unittest.main()

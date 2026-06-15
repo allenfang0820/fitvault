@@ -6,10 +6,9 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from fitparse import FitFile, FitParseError
-
 FIT_PARSE_LOG_PATH = Path(__file__).resolve().with_name("fit_parse.log")
 SEMICIRCLE_SCALE = 180.0 / (1 << 31)
+_FITPARSE_DEPS: tuple[Any, type[Exception]] | None = None
 
 SPORT_TYPE_ALIASES = {
     "run": "running",
@@ -77,6 +76,15 @@ SPORT_TYPE_ALIASES = {
     "flexibility_training": "flexibility_training",
     "training": "training",
 }
+
+
+def _fitparse_deps() -> tuple[Any, type[Exception]]:
+    global _FITPARSE_DEPS
+    if _FITPARSE_DEPS is None:
+        from fitparse import FitFile, FitParseError
+
+        _FITPARSE_DEPS = (FitFile, FitParseError)
+    return _FITPARSE_DEPS
 
 
 def _assert_valid_fit_file(path: Path) -> None:
@@ -151,6 +159,7 @@ class FITCoreEngine:
         _assert_valid_fit_file(path)  # 契约兜底:与 parse_fit_file_raw 共用
 
         logger = FITCoreEngine._logger()
+        FitFile, FitParseError = _fitparse_deps()
         try:
             fit = FitFile(str(path), check_crc=True)
         except FitParseError as exc:
@@ -325,7 +334,7 @@ class FITCoreEngine:
         return sport or "unknown"
 
     @staticmethod
-    def _read_session_info(fit: FitFile) -> dict[str, Any]:
+    def _read_session_info(fit: Any) -> dict[str, Any]:
         info: dict[str, Any] = {}
         for msg in fit.get_messages("session"):
             fields = FITCoreEngine._message_fields_dict(msg)
@@ -358,7 +367,7 @@ class FITCoreEngine:
         return info
 
     @staticmethod
-    def _read_sport_info(fit: FitFile) -> dict[str, Any]:
+    def _read_sport_info(fit: Any) -> dict[str, Any]:
         info: dict[str, Any] = {}
         for msg in fit.get_messages("sport"):
             info = {
@@ -370,7 +379,7 @@ class FITCoreEngine:
         return info
 
     @staticmethod
-    def _read_activity_info(fit: FitFile) -> dict[str, Any]:
+    def _read_activity_info(fit: Any) -> dict[str, Any]:
         info: dict[str, Any] = {}
         for msg in fit.get_messages("activity"):
             info = {
@@ -380,7 +389,7 @@ class FITCoreEngine:
         return info
 
     @staticmethod
-    def _read_lap_data(fit: FitFile) -> list[dict[str, Any]]:
+    def _read_lap_data(fit: Any) -> list[dict[str, Any]]:
         """提取 FIT lap_mesgs,字段命名与 MetricsResolver._normalize_laps 入参保持一致。
 
         返回结构:list[{total_distance, total_timer_time, avg_heart_rate,
@@ -429,7 +438,7 @@ class FITCoreEngine:
         return laps
 
     @staticmethod
-    def _read_track_data(fit: FitFile) -> list[dict[str, Any]]:
+    def _read_track_data(fit: Any) -> list[dict[str, Any]]:
         """提取 FIT record_mesgs 为逐秒轨迹点。
 
         字段契约(§2.1 全链路可追溯):
