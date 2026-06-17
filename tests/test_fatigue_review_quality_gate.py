@@ -630,6 +630,9 @@ class TestP5P4UiStructureGate(unittest.TestCase):
             "lane.color",
             "lane.name",
             "lane.unit",
+            "lane.tooltip",
+            "fr-lane-rail-label",
+            "fr-lane-rail-info",
         ):
             self.assertIn(text, rail_fn)
         for forbidden in (
@@ -643,6 +646,48 @@ class TestP5P4UiStructureGate(unittest.TestCase):
             "call_llm",
         ):
             self.assertNotIn(forbidden, rail_fn)
+
+    def test_lane_rail_metric_tooltips_are_preserved(self):
+        for text in (
+            ".fr-lane-rail-label",
+            ".fr-lane-rail-info",
+            ".fr-lane-rail-info::after",
+            ".fr-derived-metrics-strip .metric-card:first-child .fr-metric-info::after",
+            ".fr-capacity-metrics-strip .metric-card:first-child .fr-metric-info::after",
+            "transform: translateX(0) translateY(0)",
+            "把上坡和下坡影响折算进去后的配速",
+            "用速度和心率的关系观察推进效率",
+            "显示路线所处高度变化",
+            "显示当前路段的上坡或下坡程度",
+            "把坡度、速度和持续时间合成的地形压力参考",
+            "tooltip: def.tooltip || ''",
+            "aria-label=\"' + safeHtml((lane.name || '曲线') + '说明')",
+            "data-tooltip=\"' + safeHtml(tooltip) + '\"",
+        ):
+            self.assertIn(text, self.html)
+
+    def test_layer_toggle_titles_do_not_render_metric_tooltips(self):
+        for text in (
+            "fr-layer-toggle-title",
+            "fr-layer-toggle-info",
+            'aria-label="坡度修正配速说明"',
+            'aria-label="效率说明"',
+            'aria-label="海拔说明"',
+            'aria-label="坡度说明"',
+            'aria-label="地形负荷说明"',
+        ):
+            self.assertNotIn(text, self.html)
+
+    def test_chart_footer_debug_chips_are_hidden(self):
+        self.assertIn("chipsEl.innerHTML = ''", self.html)
+        self.assertIn("chipsEl.hidden = true", self.html)
+        for text in (
+            "availableCurves",
+            "curvePointMax",
+            "距离轴 ' + (axisN",
+            "疲劳带 ' + fatigueZones.length",
+        ):
+            self.assertNotIn(text, self.html)
 
     def test_p7_15_stage_bar_visual_realignment_is_preserved(self):
         for text in (
@@ -890,17 +935,22 @@ class TestP5P4UiStructureGate(unittest.TestCase):
         ):
             self.assertNotIn(removed, footer_html)
 
-    def test_p7_17_chart_footer_uses_allowed_sources_only(self):
+    def test_p7_17_chart_footer_does_not_render_debug_curve_chips(self):
         helper = _extract_js_function(self.html, "_renderFatigueReviewChartFooter")
         for text in (
+            "chipsEl.innerHTML = ''",
+            "chipsEl.hidden = true",
+        ):
+            self.assertIn(text, helper)
+        for forbidden in (
             "var curves = data.curves || {}",
             "var fatigueZones = Array.isArray(data.fatigue_zones) ? data.fatigue_zones : []",
             "Array.isArray(curves[key]) ? curves[key].length : 0",
             "availableCurves",
             "curvePointMax",
-        ):
-            self.assertIn(text, helper)
-        for forbidden in (
+            "曲线 ' +",
+            "距离轴 ' +",
+            "疲劳带 ' +",
             "data.collapse_events",
             "data.metrics",
             "data.advice",

@@ -21,19 +21,44 @@ DEFAULT_URL = "http://localhost:3000/v1/chat/completions"
 DEFAULT_MODEL = "openclaw"
 DEFAULT_PROVIDER = "local_mcp"
 DEFAULT_AGENT_ID = ""
+CONFIG_DIR_NAME = ".fitvault"
+CONFIG_FILE_NAME = "llm_config.json"
+
+
+def _legacy_project_config_file() -> Path:
+    return Path(__file__).resolve().parent / CONFIG_FILE_NAME
+
+
+def _user_config_dir() -> Path:
+    d = Path.home() / CONFIG_DIR_NAME
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _migrate_legacy_project_config(target: Path) -> None:
+    """Copy the development-era project config once, without overwriting user config."""
+    if getattr(sys, "frozen", False) or target.exists():
+        return
+    legacy = _legacy_project_config_file()
+    try:
+        if legacy.resolve() == target.resolve() or not legacy.is_file():
+            return
+        payload = legacy.read_text(encoding="utf-8")
+        json.loads(payload)
+        target.write_text(payload, encoding="utf-8")
+    except Exception:
+        # Migration is best-effort; failure must degrade to an unconfigured state.
+        return
 
 
 def _config_file() -> Path:
     """配置文件路径。
-    打包后（sys.frozen）始终存放在用户主目录的隐藏文件夹中，
-    确保分享 .app 程序时不会携带开发者的 API Key。
+    开发态与打包态都始终存放在用户主目录的隐藏文件夹中，确保 DMG
+    覆盖升级不会丢配置，也避免分享 .app 时携带开发者的 API Key。
     """
-    if getattr(sys, "frozen", False):
-        d = Path.home() / ".fitvault"
-    else:
-        d = Path(__file__).resolve().parent
-    d.mkdir(parents=True, exist_ok=True)
-    return d / "llm_config.json"
+    target = _user_config_dir() / CONFIG_FILE_NAME
+    _migrate_legacy_project_config(target)
+    return target
 
 
 def load_llm_config() -> dict[str, Any]:

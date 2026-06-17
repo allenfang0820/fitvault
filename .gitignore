@@ -2,7 +2,7 @@
 __pycache__/
 *.pyc
 *.pyo
-*.db
+
 .DS_Store
 *.log
 
@@ -10,14 +10,25 @@ __pycache__/
 llm_config.json
 .hiking_track_ai/
 user_profile.db
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite-*
 
 # Build artifacts
 build/
 dist/
+.pyinstaller_cache/
 *.spec
+!HikingTrackAnalyzer.spec
 
 # Local tracks (user data)
 local_tracks/
 
-# Test artifacts
+# Test/debug artifacts
+.pytest_cache/
+.pycache_check/
+.dbg/
+track/.dbg/
 temp_*.sqlite

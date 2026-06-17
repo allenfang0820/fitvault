@@ -12,15 +12,26 @@ _hidden = (
     collect_submodules("gpxpy")
     + collect_submodules("fitparse")
     + collect_submodules("pandas")
+    + collect_submodules("garmin_fit_sdk")
+    + collect_submodules("watchdog")
+    + collect_submodules("webview")
     + ["llm_backend", "track_backend", "profile_backend",
        "requests", "urllib3", "certifi", "charset_normalizer", "idna"]
 )
+
+_datas = [
+    ("track.html", "."),
+    ("lib", "lib"),
+    ("assets", "assets"),
+    ("skills/garmin-stats.zip", "skills"),
+    ("skills/coros-stats.zip", "skills"),
+]
 
 a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
-    datas=[('徒步轨迹AI分析仪-0514.html', '.'), ('lib', 'lib')],
+    datas=_datas,
     hiddenimports=_hidden,
     hookspath=[],
     hooksconfig={},
@@ -36,7 +47,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='HikingTrackAnalyzer',
+    name='MaiTu',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -55,11 +66,11 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name='HikingTrackAnalyzer',
+    name='MaiTu',
 )
 app = BUNDLE(
     coll,
-    name='HikingTrackAnalyzer.app',
-    icon=None,
-    bundle_identifier=None,
+    name='脉图.app',
+    icon='assets/app_icon.icns',
+    bundle_identifier='com.mrfang.maitu',
 )

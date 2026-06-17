@@ -175,51 +175,6 @@
         .sync-btn.garmin:hover { background: rgba(0,140,200,0.15); border-color: rgba(0,140,200,0.6); }
         .sync-btn.coros { border-color: rgba(46,204,113,0.4); }
         .sync-btn.coros:hover { background: rgba(46,204,113,0.1); border-color: rgba(46,204,113,0.6); }
-        .profile-sync-summary {
-            margin: 5px 0 7px;
-            padding: 5px 8px;
-            border: 1px solid rgba(148,163,184,0.12);
-            border-radius: 8px;
-            background: rgba(15,23,42,0.28);
-            display: grid;
-            gap: 3px;
-        }
-        .profile-sync-line {
-            display: flex;
-            flex-wrap: wrap;
-            align-items: center;
-            gap: 6px;
-            color: #cbd5e1;
-            font-size: 0.63rem;
-            line-height: 1.45;
-        }
-        .profile-sync-label {
-            color: #94a3b8;
-            font-weight: 700;
-        }
-        .profile-sync-pill {
-            display: inline-flex;
-            align-items: center;
-            max-width: 100%;
-            padding: 1px 5px;
-            border-radius: 5px;
-            border: 1px solid rgba(148,163,184,0.22);
-            background: rgba(30,41,59,0.62);
-            color: #e2e8f0;
-            font-size: 0.62rem;
-            line-height: 1.35;
-        }
-        .profile-sync-pill.ok {
-            border-color: rgba(34,197,94,0.32);
-            color: #bbf7d0;
-            background: rgba(22,101,52,0.16);
-        }
-        .profile-sync-pill.warn {
-            border-color: rgba(245,158,11,0.34);
-            color: #fde68a;
-            background: rgba(146,64,14,0.16);
-        }
-
         .section-card {
             background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
             border-radius: 8px; padding: 12px 14px; margin-bottom: 14px;
@@ -280,13 +235,22 @@
         .stat-row b.hrv-low { color: #2ecc71; }
         .profile-manual-field {
             grid-column: 1 / -1;
-            display: grid;
-            grid-template-columns: minmax(90px, 1fr) 96px 52px;
-            gap: 8px;
+            display: flex;
+            gap: 10px;
             align-items: center;
+            justify-content: start;
+        }
+        .profile-manual-control {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            width: 122px;
+            flex: 0 0 122px;
         }
         .profile-manual-field input {
-            width: 100%;
+            box-sizing: border-box;
+            width: 64px;
+            flex: 0 0 64px;
             min-width: 0;
             background: rgba(15,23,42,0.62);
             border: 1px solid rgba(148,163,184,0.22);
@@ -295,18 +259,32 @@
             padding: 5px 7px;
             font-size: 0.72rem;
             outline: none;
+            text-align: center;
+            appearance: textfield;
+        }
+        .profile-manual-field input::-webkit-outer-spin-button,
+        .profile-manual-field input::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
         }
         .profile-manual-field input:focus {
             border-color: rgba(45,212,191,0.55);
+        }
+        .profile-manual-field input:disabled {
+            opacity: 0.62;
+            cursor: not-allowed;
         }
         .profile-manual-field button {
             border: 1px solid rgba(45,212,191,0.34);
             background: rgba(20,184,166,0.12);
             color: #99f6e4;
             border-radius: 6px;
-            padding: 5px 7px;
+            padding: 5px 0;
             font-size: 0.68rem;
             cursor: pointer;
+            box-sizing: border-box;
+            flex: 0 0 46px;
+            width: 46px;
         }
         .profile-manual-field button:disabled {
             cursor: not-allowed;
@@ -344,12 +322,12 @@
         }
         .profile-summary-card,
         .profile-radar-card {
-            min-height: 188px;
+            min-height: 164px;
             margin-bottom: 0;
             display: flex;
             flex-direction: column;
             overflow: visible;  /* V_3.0.1 修复:防外层裁剪分页器 */
-            padding: 9px 11px;
+            padding: 8px 10px;
         }
         .profile-summary-card {
             position: relative;
@@ -1542,6 +1520,34 @@
         .fr-metric-info:focus-visible::before {
             transform: translateX(-50%) translateY(0) rotate(45deg);
         }
+        .fr-lane-rail-info::after,
+        .fr-derived-metrics-strip .metric-card:first-child .fr-metric-info::after,
+        .fr-capacity-metrics-strip .metric-card:first-child .fr-metric-info::after {
+            left: 0;
+            transform: translateX(0) translateY(4px);
+        }
+        .fr-lane-rail-info::before,
+        .fr-derived-metrics-strip .metric-card:first-child .fr-metric-info::before,
+        .fr-capacity-metrics-strip .metric-card:first-child .fr-metric-info::before {
+            left: 8px;
+            transform: translateX(0) translateY(4px) rotate(45deg);
+        }
+        .fr-lane-rail-info:hover::after,
+        .fr-lane-rail-info:focus-visible::after,
+        .fr-derived-metrics-strip .metric-card:first-child .fr-metric-info:hover::after,
+        .fr-derived-metrics-strip .metric-card:first-child .fr-metric-info:focus-visible::after,
+        .fr-capacity-metrics-strip .metric-card:first-child .fr-metric-info:hover::after,
+        .fr-capacity-metrics-strip .metric-card:first-child .fr-metric-info:focus-visible::after {
+            transform: translateX(0) translateY(0);
+        }
+        .fr-lane-rail-info:hover::before,
+        .fr-lane-rail-info:focus-visible::before,
+        .fr-derived-metrics-strip .metric-card:first-child .fr-metric-info:hover::before,
+        .fr-derived-metrics-strip .metric-card:first-child .fr-metric-info:focus-visible::before,
+        .fr-capacity-metrics-strip .metric-card:first-child .fr-metric-info:hover::before,
+        .fr-capacity-metrics-strip .metric-card:first-child .fr-metric-info:focus-visible::before {
+            transform: translateX(0) translateY(0) rotate(45deg);
+        }
         .metric-card .val {
             color: #f8fafc;
             font-size: 1.06rem;
@@ -1856,8 +1862,19 @@
             min-width: 0;
             text-align: center;
         }
+        .fr-lane-rail-label {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            min-width: 0;
+            width: 100%;
+            max-width: 100%;
+        }
         .fr-lane-rail-name {
-            display: block;
+            display: inline-block;
+            flex: 1 1 auto;
+            min-width: 0;
             color: #e2e8f0;
             font-size: 0.74rem;
             font-weight: 800;
@@ -1865,6 +1882,11 @@
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
+        }
+        .fr-lane-rail-info {
+            width: 14px;
+            height: 14px;
+            font-size: 0.58rem;
         }
         .fr-lane-rail-unit {
             display: block;
@@ -2590,14 +2612,152 @@
         }
 
         #loading {
-            position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
-            background: var(--bg); z-index: 100; transition: opacity 0.8s;
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-end;
+            overflow: hidden;
+            background: #061626;
+            z-index: 100;
+            transition: opacity 0.8s ease;
+        }
+        #loading.is-hiding {
+            opacity: 0;
+            pointer-events: none;
+        }
+        #loading[data-mode="task"] {
+            justify-content: center;
+            background: rgba(2, 6, 23, 0.72);
+            backdrop-filter: blur(4px);
+        }
+        #loading::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background:
+                linear-gradient(90deg, rgba(2, 6, 23, 0.42), rgba(2, 6, 23, 0.1) 42%, rgba(2, 6, 23, 0.62)),
+                linear-gradient(0deg, rgba(2, 6, 23, 0.78), rgba(2, 6, 23, 0.05) 48%, rgba(2, 6, 23, 0.28)),
+                url("assets/boot-splash.jpg") center center / cover no-repeat;
+            transform: scale(1.035);
+            animation: boot-splash-drift 8s ease-in-out infinite alternate;
+        }
+        #loading::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background:
+                radial-gradient(circle at 45% 38%, rgba(250, 204, 21, 0.18), transparent 24%),
+                linear-gradient(115deg, transparent 0%, rgba(255, 255, 255, 0.08) 42%, transparent 54%);
+            mix-blend-mode: screen;
+            opacity: 0.55;
+            animation: boot-sheen 3.6s ease-in-out infinite;
+            pointer-events: none;
+        }
+        #loading[data-mode="task"]::before,
+        #loading[data-mode="task"]::after {
+            display: none;
+        }
+        .boot-splash-panel {
+            position: relative;
+            z-index: 1;
+            width: min(520px, calc(100vw - 36px));
+            margin: 0 0 clamp(28px, 7vh, 72px);
+            padding: 18px 20px 16px;
+            border: 1px solid rgba(212, 175, 55, 0.28);
+            border-radius: 14px;
+            background: linear-gradient(180deg, rgba(8, 20, 34, 0.72), rgba(8, 20, 34, 0.46));
+            box-shadow: 0 18px 48px rgba(0, 0, 0, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+            backdrop-filter: blur(12px);
+            animation: boot-panel-in 0.7s ease-out both;
+        }
+        #loading[data-mode="task"] .boot-splash-panel {
+            width: min(420px, calc(100vw - 40px));
+            margin: 0;
+            padding: 18px 20px;
+            text-align: center;
+            background: rgba(8, 20, 34, 0.88);
+        }
+        #loading[data-mode="task"] .boot-splash-brand,
+        #loading[data-mode="task"] .boot-splash-subtitle {
+            display: none;
+        }
+        #loading[data-mode="task"] .boot-splash-progress {
+            margin: 4px 0 14px;
+        }
+        .boot-splash-brand {
+            display: flex;
+            justify-content: space-between;
+            gap: 16px;
+            align-items: baseline;
+            margin-bottom: 10px;
+        }
+        .boot-splash-title {
+            color: #f8fafc;
+            font-size: 1.12rem;
+            font-weight: 900;
+            letter-spacing: 0.08em;
+        }
+        .boot-splash-version {
+            color: #fde68a;
+            font-size: 0.72rem;
+            font-weight: 800;
+            white-space: nowrap;
+        }
+        .boot-splash-subtitle {
+            color: #cbd5e1;
+            font-size: 0.78rem;
+            line-height: 1.6;
+            margin-bottom: 14px;
+        }
+        .boot-splash-progress {
+            position: relative;
+            height: 3px;
+            overflow: hidden;
+            border-radius: 999px;
+            background: rgba(148, 163, 184, 0.2);
+            margin-bottom: 10px;
+        }
+        .boot-splash-progress::before {
+            content: "";
+            position: absolute;
+            inset: 0 auto 0 0;
+            width: 42%;
+            border-radius: inherit;
+            background: linear-gradient(90deg, rgba(56, 189, 248, 0.2), #fde68a, rgba(56, 189, 248, 0.35));
+            box-shadow: 0 0 18px rgba(253, 230, 138, 0.62);
+            animation: boot-progress 1.55s ease-in-out infinite;
         }
         .spinner {
             width: 40px; height: 40px; border: 4px solid rgba(255,255,255,0.1); border-left-color: var(--primary);
             border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 15px;
         }
         @keyframes spin { 100% { transform: rotate(360deg); } }
+        @keyframes boot-splash-drift {
+            0% { transform: scale(1.035) translate3d(-0.6%, -0.4%, 0); filter: saturate(1.02) brightness(0.96); }
+            100% { transform: scale(1.07) translate3d(0.6%, 0.4%, 0); filter: saturate(1.1) brightness(1.03); }
+        }
+        @keyframes boot-sheen {
+            0%, 100% { opacity: 0.26; transform: translateX(-8%); }
+            50% { opacity: 0.72; transform: translateX(8%); }
+        }
+        @keyframes boot-panel-in {
+            from { opacity: 0; transform: translateY(12px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes boot-progress {
+            0% { transform: translateX(-120%); }
+            55%, 100% { transform: translateX(245%); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            #loading::before,
+            #loading::after,
+            .boot-splash-panel,
+            .boot-splash-progress::before {
+                animation: none;
+            }
+        }
 
         .cesium-viewer-bottom { display: none !important; }
 
@@ -3110,9 +3270,54 @@
         .radar-sport-tab.active {
             background: rgba(0,255,127,0.15); border-color: rgba(0,255,127,0.3); color: #00FF7F;
         }
+        .profile-radar-card {
+            position: relative;
+            padding-bottom: 34px;
+        }
+        .radar-title-main {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            vertical-align: middle;
+        }
+        .radar-capability-info::after {
+            width: 330px;
+            max-width: min(330px, 72vw);
+            left: 0;
+            top: calc(100% + 8px);
+            bottom: auto;
+            transform: translateX(0) translateY(-4px);
+            text-transform: none;
+        }
+        .radar-capability-info::before {
+            left: 8px;
+            top: calc(100% + 3px);
+            bottom: auto;
+            transform: translateX(0) translateY(-4px) rotate(45deg);
+            border-right: none;
+            border-bottom: none;
+            border-left: 1px solid rgba(125, 211, 252, 0.26);
+            border-top: 1px solid rgba(125, 211, 252, 0.26);
+        }
+        .radar-capability-info:hover::after,
+        .radar-capability-info:focus-visible::after {
+            transform: translateX(0) translateY(0);
+        }
+        .radar-capability-info:hover::before,
+        .radar-capability-info:focus-visible::before {
+            transform: translateX(0) translateY(0) rotate(45deg);
+        }
+        .radar-capability-info {
+            text-transform: none;
+        }
+        .radar-capability-info .radar-info-letter {
+            text-transform: none;
+            font-family: monospace, "PingFang SC", "Microsoft YaHei";
+            font-size: 0.62rem;
+            line-height: 1;
+        }
         .radar-ai-btn {
-            float: right;
-            margin-left: 8px;
+            margin-left: 0;
             padding: 4px 12px;
             background: linear-gradient(135deg, #6c5ce7 0%, #a29bfe 100%);
             color: #fff;
@@ -3121,6 +3326,16 @@
             font-size: 12px;
             cursor: pointer;
             transition: opacity 0.2s;
+        }
+        .profile-radar-card .radar-ai-btn {
+            position: absolute;
+            right: 12px;
+            bottom: 10px;
+            z-index: 3;
+        }
+        .tab-panel:not(.active) #radar-ai-insight-btn,
+        #panel-profile:not(.active) #radar-ai-insight-btn {
+            display: none !important;
         }
         .radar-ai-btn:hover {
             opacity: 0.85;
@@ -3708,6 +3923,9 @@
             height: 12px;
             margin: 0;
             accent-color: var(--fr-layer-color, #14b8a6);
+        }
+        .fr-layer-chip-row {
+            display: none !important;
         }
         .fr-layer-chip {
             display: inline-flex;
@@ -4834,9 +5052,16 @@
 </head>
 <body>
 
-<div id="loading">
-    <div class="spinner"></div>
-    <div id="loading-text" style="color: #94a3b8; font-size: 0.9rem;">正在启动脉图...</div>
+<div id="loading" data-mode="boot">
+    <div class="boot-splash-panel" aria-live="polite">
+        <div class="boot-splash-brand">
+            <div class="boot-splash-title">脉图</div>
+            <div class="boot-splash-version">V1.0</div>
+        </div>
+        <div class="boot-splash-subtitle">正在唤醒本地运动数据、轨迹引擎与 AI 分析能力</div>
+        <div class="boot-splash-progress" aria-hidden="true"></div>
+        <div id="loading-text" style="color:#e2e8f0; font-size:0.78rem; font-weight:700;">正在启动脉图...</div>
+    </div>
 </div>
 
 <div id="sync-loading" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); backdrop-filter:blur(3px); z-index:9999; flex-direction:column; align-items:center; justify-content:center;">
@@ -4905,14 +5130,6 @@
                                     </div>
                                 </div>
                             </div>
-                            <div class="profile-sync-summary" id="pf-sync-summary" style="display:none;">
-                                <div class="profile-sync-line" id="pf-sync-source-line"></div>
-                                <div class="profile-sync-line" id="pf-sync-quality-line"></div>
-                                <div class="profile-sync-line" id="pf-sync-updated-line"></div>
-                                <div class="profile-sync-line" id="pf-sync-preserved-line"></div>
-                                <div class="profile-sync-line" id="pf-sync-missing-line"></div>
-                                <div class="profile-sync-line" id="pf-sync-activity-line"></div>
-                            </div>
                             <div class="profile-metric-tabs">
                                 <button class="pf-metric-tab active" data-group="physiological" onclick="switchMetricGroup('physiological', this)">生理数据</button>
                                 <button class="pf-metric-tab" data-group="body-composition" onclick="switchMetricGroup('body-composition', this)">身体成分</button>
@@ -4937,8 +5154,10 @@
                                         <div class="stat-row"><span>平均入睡时间</span><b id="pf-avg-bedtime">--</b></div>
                                         <div class="stat-row profile-manual-field">
                                             <span>手动最大心率</span>
-                                            <input id="pf-max-hr-input" type="number" min="120" max="230" step="1" placeholder="bpm" aria-label="手动最大心率">
-                                            <button id="pf-save-max-hr-btn" onclick="saveManualMaxHeartRate()">保存</button>
+                                            <div class="profile-manual-control">
+                                                <input id="pf-max-hr-input" type="number" min="120" max="230" step="1" placeholder="bpm" aria-label="手动最大心率">
+                                                <button id="pf-save-max-hr-btn" onclick="saveManualMaxHeartRate()">保存</button>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -4989,7 +5208,7 @@
                             </div>
                         </div>
                         <div class="section-card profile-radar-card">
-                            <div class="section-title">🕸️ 运动能力
+                            <div class="section-title"><span class="radar-title-main">🕸️ 运动能力 <span class="fr-metric-info radar-capability-info" tabindex="0" aria-label="运动能力维度说明" data-tooltip="耐力：近期训练负荷与持续运动能力。恢复：HRV、休息和身体恢复线索。心肺稳定：心率与速度或输出关系是否稳定。阈值：可持续高强度能力。爬升：上坡或爬升场景承受力。无氧爆发：短时间高速度或高输出能力。"><span class="radar-info-letter">i</span></span></span>
                                 <span class="radar-sport-tabs">
                                     <button class="radar-sport-tab active" data-radar-sport="running" onclick="switchRadarSportType('running', this)">🏃 跑步</button>
                                     <button class="radar-sport-tab" data-radar-sport="trail_running" onclick="switchRadarSportType('trail_running', this)">⛰️ 越野跑</button>
@@ -4997,15 +5216,15 @@
                                     <button class="radar-sport-tab" data-radar-sport="cycling" onclick="switchRadarSportType('cycling', this)">🚴 骑行</button>
                                     <button class="radar-sport-tab" data-radar-sport="swimming" onclick="switchRadarSportType('swimming', this)">🏊 游泳</button>
                                 </span>
-                                <button
-                                    id="radar-ai-insight-btn"
-                                    class="radar-ai-btn"
-                                    onclick="onRadarAiInsight(_currentRadarSportType, this)"
-                                    title="AI 解读当前运动类型 90 天能力画像(阅后即焚)">
-                                    ✨ AI 洞察
-                                </button>
                             </div>
-                            <div id="performanceRadar" style="width: 100%; flex: 1; min-height: 150px;"></div>
+                            <div id="performanceRadar" style="width: 100%; flex: 1; min-height: 128px;"></div>
+                            <button
+                                id="radar-ai-insight-btn"
+                                class="radar-ai-btn"
+                                onclick="onRadarAiInsight(_currentRadarSportType, this)"
+                                title="AI 解读当前运动类型 90 天能力画像(阅后即焚)">
+                                ✨ AI 洞察
+                            </button>
                         </div>
                     </div>
 
@@ -5428,6 +5647,7 @@
                 <div class="section-card">
                     <div class="section-title">一、软件简介</div>
                     <p style="margin:0 0 8px 0; color:#cbd5e1; font-size:0.82rem; line-height:1.7;">脉图是一款运行在本地的 AI 运动数据助手。它以 FIT 文件为核心事实源，帮助你导入、整理和复盘跑步、骑行、徒步、越野等运动记录，并通过图表和 AI 解读把原始数据转化为可理解的训练反馈。</p>
+                    <p style="margin:0 0 8px 0; padding:8px 10px; border-radius:8px; background:rgba(34,197,94,0.07); border-left:2px solid rgba(34,197,94,0.55); color:#bbf7d0; font-size:0.78rem; line-height:1.7;">脉图是一款免费、本地运行的运动数据分析工具，不会上传任何运动数据到云端。</p>
                     <p style="margin:0; color:#94a3b8; font-size:0.78rem; line-height:1.7;">脉图不是社交运动平台，也不是云端数据中台。它更适合用来保存可信运动档案、查看轨迹和指标、生成复盘洞察，并为 AI 助手提供稳定、可解释的运动上下文。</p>
                 </div>
 
@@ -5543,11 +5763,15 @@
                 <div class="section-card">
                     <div class="section-title">五、数据与隐私</div>
                     <ul style="margin:0; padding-left:18px; line-height:1.8; color:#cbd5e1; font-size:0.82rem;">
+                        <li>脉图免费使用，本体在本地运行，不内置云端运动数据上传服务。</li>
                         <li>原始运动文件保存在本地。</li>
                         <li>核心数据库使用本地 SQLite。</li>
                         <li>FIT 文件是活动事实源。</li>
                         <li>AI 只消费经过后端整理的快照，不直接修改数据库事实。</li>
-                        <li>使用外部大模型网关时，AI 请求会发送必要摘要信息到你配置的接口。</li>
+                        <li>AI 输出用于解释和参考，不等同于医疗建议、诊断结论或专业教练处方。</li>
+                        <li>训练负荷、疲劳、恢复、补给和装备建议需要结合个人身体感受、环境风险和专业意见判断。</li>
+                        <li>使用外部大模型网关时，AI 请求会发送必要摘要信息到你配置的接口；请根据自己的隐私要求选择可信的模型服务和网关。</li>
+                        <li>第三方平台账号授权由对应 skill 和平台处理；脉图不会要求你在应用内填写佳明或高驰账号密码。</li>
                     </ul>
                 </div>
 
@@ -5923,7 +6147,7 @@
     </div>
     <div id="ai-coach-messages"></div>
     <div id="ai-coach-input-row">
-        <input id="ai-coach-input" type="text" placeholder="向 AI私教提问，例如：这条路线怎么分配体力？" onkeydown="if(event.key==='Enter')sendAICoachMessage()">
+        <input id="ai-coach-input" type="text" placeholder="向 AI私教提问，例如：下载今天的跑步数据" onkeydown="if(event.key==='Enter')sendAICoachMessage()">
         <button onclick="sendAICoachMessage()" class="primary-btn" style="width:auto;padding:8px 12px;font-size:0.78rem;">发送</button>
     </div>
 </div>
@@ -6590,21 +6814,18 @@
         var summaryHead = document.querySelector('.profile-summary-card .profile-summary-head');
         var metricTabs = document.querySelector('.profile-summary-card .profile-metric-tabs');
         var metricPanels = document.querySelector('.profile-summary-card .pf-metric-panels');
-        var syncSummary = document.getElementById('pf-sync-summary');
         if (loadingEl) loadingEl.style.display = '';
         if (emptyEl) emptyEl.style.display = 'none';
         if (summaryHead) summaryHead.style.display = 'none';
         if (metricTabs) metricTabs.style.display = 'none';
         if (metricPanels) metricPanels.style.display = 'none';
-        if (syncSummary) syncSummary.style.display = 'none';
         try {
             if (window.pywebview && window.pywebview.api) {
                 const res = await window.pywebview.api.get_user_profile();
                 if (res && res.ok && res.profile) {
                     currentUserProfile = res.profile;
-                    updateProfilePanel(res.profile);
+                    updateProfilePanel(res.profile, res);
                     updateProfileSyncMeta(res);
-                    renderProfileSyncSummary(res);
                     const p = res.profile;
                     if (document.getElementById('vp-name')) document.getElementById('vp-name').innerText = p.name || '--';
                     if (document.getElementById('vp-age')) document.getElementById('vp-age').innerText = p.age ? p.age + '岁' : '--';
@@ -6639,25 +6860,20 @@
                     }
                     if (loadingEl) loadingEl.style.display = 'none';
                     if (summaryHead) summaryHead.style.display = '';
-                    if (syncSummary) syncSummary.style.display = '';
                     if (metricTabs) metricTabs.style.display = '';
                     if (metricPanels) metricPanels.style.display = '';
                 } else {
                     updateProfileSyncMeta(res || {});
-                    renderProfileSyncSummary(res || {});
                     if (loadingEl) loadingEl.style.display = 'none';
                     if (emptyEl) emptyEl.style.display = '';
-                    if (syncSummary) syncSummary.style.display = 'none';
                 }
             } else {
                 if (loadingEl) loadingEl.style.display = 'none';
                 if (emptyEl) emptyEl.style.display = '';
-                if (syncSummary) syncSummary.style.display = 'none';
             }
         } catch(e) {
             if (loadingEl) loadingEl.style.display = 'none';
             if (emptyEl) emptyEl.style.display = '';
-            if (syncSummary) syncSummary.style.display = 'none';
         }
 
         await renderPerformanceRadar();
@@ -6692,75 +6908,8 @@
         }
     }
 
-    function profileBrandLabel(value) {
-        const brand = String(value || '').trim().toLowerCase();
-        if (brand === 'garmin') return 'Garmin';
-        if (brand === 'coros') return 'COROS';
-        return '未配置';
-    }
-
-    function profileQualityLabel(value) {
-        if (value === 'complete_for_analysis') return '分析字段已满足';
-        if (value === 'partial_for_analysis') return '分析字段部分可用';
-        if (value === 'display_only') return '仅展示字段可用';
-        if (value === 'invalid') return '画像待同步';
-        return '等待同步评估';
-    }
-
-    function fieldLabelList(items, limit) {
-        const rows = Array.isArray(items) ? items : [];
-        const names = rows.map(function(item) {
-            if (item && typeof item === 'object') return item.label || item.field || '';
-            return String(item || '');
-        }).filter(Boolean);
-        const max = limit || 8;
-        if (!names.length) return '无';
-        const head = names.slice(0, max).join('、');
-        return names.length > max ? head + ' 等 ' + names.length + ' 项' : head;
-    }
-
-    function setProfileSyncLine(id, label, content, pillClass) {
-        const el = document.getElementById(id);
-        if (!el) return;
-        el.innerHTML = '';
-        const labelEl = document.createElement('span');
-        labelEl.className = 'profile-sync-label';
-        labelEl.innerText = label;
-        const valueEl = document.createElement('span');
-        valueEl.className = 'profile-sync-pill' + (pillClass ? ' ' + pillClass : '');
-        valueEl.innerText = content || '无';
-        el.appendChild(labelEl);
-        el.appendChild(valueEl);
-    }
-
-    function renderProfileSyncSummary(meta) {
-        const box = document.getElementById('pf-sync-summary');
-        if (!box) return;
-        meta = meta || {};
-        box.style.display = '';
-        const brand = profileBrandLabel(meta.current_watch_brand);
-        const source = profileBrandLabel(meta.current_profile_source_platform);
-        const quality = profileQualityLabel(meta.data_quality);
-        setProfileSyncLine('pf-sync-source-line', '画像状态', brand + ' 设备 · ' + source + ' 画像 · ' + quality, meta.data_quality === 'complete_for_analysis' ? 'ok' : 'warn');
-        ['pf-sync-quality-line', 'pf-sync-updated-line', 'pf-sync-preserved-line', 'pf-sync-missing-line'].forEach(function(id) {
-            const el = document.getElementById(id);
-            if (el) el.style.display = 'none';
-        });
-        const activityLine = document.getElementById('pf-sync-activity-line');
-        if (activityLine) activityLine.style.display = meta.supports_remote_activity_sync ? 'none' : '';
-        if (!meta.supports_remote_activity_sync) {
-            setProfileSyncLine(
-                'pf-sync-activity-line',
-                '活动导入',
-                meta.activity_sync_hint || '请使用本地 FIT、ZIP 或目录监听导入活动。',
-                'warn'
-            );
-        }
-    }
-
     window.onProfileSyncEvent = async function(eventName, payload) {
         updateProfileSyncMeta(payload || {});
-        renderProfileSyncSummary(payload || {});
         if (eventName === 'profile_sync_complete' && payload && payload.ok && payload.profile) {
             await loadProfileCard();
             showToast('✅ 用户画像已后台自动更新');
@@ -7044,6 +7193,8 @@
         if (targetTab) targetTab.classList.add('active');
         const targetPanel = document.getElementById('panel-' + activePanel);
         if (targetPanel) targetPanel.classList.add('active');
+        const radarAiBtn = document.getElementById('radar-ai-insight-btn');
+        if (radarAiBtn) radarAiBtn.style.display = activePanel === 'profile' ? '' : 'none';
         localStorage.setItem('last_active_panel', activePanel);
         if (activePanel === 'profile') hideCompassBadge();
         if (activePanel === 'trace' && typeof renderHistoryList === 'function') {
@@ -7100,11 +7251,26 @@
         localStorage.setItem('last_active_panel', panel);
     }
 
-    function restoreStartupRoute() {
-        const lastPanel = localStorage.getItem('last_active_panel');
-        const targetPanel = ['profile', 'trace', 'settings', 'help'].includes(lastPanel) ? lastPanel : 'profile';
+    const MAITU_PREFACE_SEEN_KEY = 'maitu_preface_seen_v1';
+
+    function selectHelpPrefaceTab() {
+        const prefaceTab = document.getElementById('help-tab-preface');
+        if (prefaceTab) prefaceTab.checked = true;
+    }
+
+    function openStartupDefaultRoute(firstRunData) {
+        const shouldShowPreface = !!(firstRunData && firstRunData.is_first_run) && localStorage.getItem(MAITU_PREFACE_SEEN_KEY) !== '1';
+        const targetPanel = shouldShowPreface ? 'help' : 'profile';
         const btn = document.querySelector('.bookmark-tab[data-panel="' + targetPanel + '"]');
         if (btn) switchTab(btn);
+        if (shouldShowPreface) {
+            selectHelpPrefaceTab();
+            localStorage.setItem(MAITU_PREFACE_SEEN_KEY, '1');
+        }
+    }
+
+    function restoreStartupRoute() {
+        openStartupDefaultRoute(null);
     }
 
     function clearLLMTestTransitionTimer() {
@@ -7204,8 +7370,9 @@
         return true;
     }
 
-    function updateProfilePanel(profile) {
+    function updateProfilePanel(profile, syncMeta) {
         if (!profile) return;
+        syncMeta = syncMeta || {};
         currentUserProfile = profile;
         const username = profile.username || profile.name;
         const weightKg = profile.weight_kg || profile.weight;
@@ -7213,6 +7380,10 @@
         const maxHr = profile.max_hr;
         const hrv = profile.hrv || profile.hrv_baseline;
         const vo2Max = profile.vo2_max || profile.vo2max;
+        const hasProfileMaxHr = Number.isFinite(Number(maxHr)) && Number(maxHr) >= 120 && Number(maxHr) <= 230;
+        const profileSourcePlatform = String(syncMeta.current_profile_source_platform || syncMeta.source_platform || '').toLowerCase();
+        const preservedFields = Array.isArray(syncMeta.preserved_fields) ? syncMeta.preserved_fields : [];
+        const isCorosSyncedMaxHr = profileSourcePlatform === 'coros' && hasProfileMaxHr && preservedFields.indexOf('max_hr') < 0;
         if (username) document.getElementById('pf-name').innerText = username;
         if (profile.age) document.getElementById('pf-age').innerText = profile.age + '岁';
         if (profile.gender) document.getElementById('pf-gender').innerText = profile.gender;
@@ -7221,9 +7392,18 @@
         if (weightKg) document.getElementById('pf-weight-bc').innerText = weightKg + ' kg';
         if (restingHr) document.getElementById('pf-resting-hr').innerText = restingHr + ' bpm';
         const maxHrDisplay = document.getElementById('pf-max-hr');
-        if (maxHrDisplay) maxHrDisplay.innerText = maxHr ? maxHr + ' bpm' : '-- bpm';
+        if (maxHrDisplay) maxHrDisplay.innerText = hasProfileMaxHr ? maxHr + ' bpm' : '-- bpm';
         const maxHrInput = document.getElementById('pf-max-hr-input');
-        if (maxHrInput) maxHrInput.value = maxHr || '';
+        const maxHrSaveBtn = document.getElementById('pf-save-max-hr-btn');
+        if (maxHrInput) {
+            maxHrInput.value = hasProfileMaxHr ? maxHr : '';
+            maxHrInput.disabled = isCorosSyncedMaxHr;
+            maxHrInput.placeholder = 'bpm';
+        }
+        if (maxHrSaveBtn) {
+            maxHrSaveBtn.disabled = isCorosSyncedMaxHr;
+            maxHrSaveBtn.textContent = '保存';
+        }
         if (hrv) { var el = document.getElementById('pf-hrv'); el.innerText = hrv + ' ms'; el.className = hrv > 65 ? 'hrv-high' : hrv < 40 ? 'hrv-low' : ''; }
         if (vo2Max) document.getElementById('pf-vo2max').innerText = vo2Max;
         if (profile.avg_bedtime) document.getElementById('pf-avg-bedtime').innerText = profile.avg_bedtime;
@@ -7259,6 +7439,10 @@
         const input = document.getElementById('pf-max-hr-input');
         const btn = document.getElementById('pf-save-max-hr-btn');
         if (!input) return;
+        if (input.disabled) {
+            showToast('已从画像同步获取最大心率，无需手动填写');
+            return;
+        }
         const value = parseInt(String(input.value || '').trim(), 10);
         if (!Number.isFinite(value) || value < 120 || value > 230) {
             showToast('请输入 120-230 bpm 的最大心率');
@@ -9612,8 +9796,7 @@
     async function loadAndRenderLocalFile(filePath, isBackground = false) {
         if (!filePath) { if(!isBackground) showToast('⚠️ 该记录无本地文件'); return false; }
         
-        const loader = document.getElementById('loading');
-        if (!isBackground && loader) { loader.style.display = 'flex'; setTimeout(() => loader.style.opacity = '1', 10); document.getElementById('loading-text').innerText = `正在解析本地轨迹...`; }
+        if (!isBackground) showTaskLoading('正在解析本地轨迹...');
         
         try {
             if (!(window.pywebview && window.pywebview.api && window.pywebview.api.load_local_track)) {
@@ -9635,7 +9818,7 @@
             if (!isBackground) showToast('⚠️ 解析失败: ' + String(e.message || e)); 
             return false;
         } finally {
-            if (!isBackground && loader) { loader.style.opacity = '0'; setTimeout(() => loader.style.display = 'none', 800); }
+            if (!isBackground) hideTaskLoading();
         }
     }
 
@@ -12266,13 +12449,60 @@
 function hideBootLoading() {
     markStartupPhase('boot_loading_hide');
     var el = document.getElementById('loading');
-    if (el) { el.style.display = 'none'; }
+    if (el) {
+        var minMs = Number(window.__BOOT_SPLASH_MIN_MS__ || 0);
+        var elapsed = typeof startupNowMs === 'function' ? startupNowMs() : minMs;
+        if (el.dataset.mode === 'boot' && elapsed < minMs) {
+            if (el.dataset.hideScheduled !== '1') {
+                el.dataset.hideScheduled = '1';
+                setTimeout(function () {
+                    delete el.dataset.hideScheduled;
+                    hideBootLoading();
+                }, Math.max(0, minMs - elapsed));
+            }
+            return;
+        }
+        if (el.dataset.hidden === '1') return;
+        el.dataset.hidden = '1';
+        el.classList.add('is-hiding');
+        setTimeout(function () {
+            el.style.display = 'none';
+            el.classList.remove('is-hiding');
+            delete el.dataset.hidden;
+            delete el.dataset.mode;
+        }, 760);
+    }
+}
+
+function showTaskLoading(text) {
+    var el = document.getElementById('loading');
+    var textEl = document.getElementById('loading-text');
+    if (!el) return;
+    el.dataset.mode = 'task';
+    el.classList.remove('is-hiding');
+    delete el.dataset.hidden;
+    delete el.dataset.hideScheduled;
+    el.style.display = 'flex';
+    el.style.opacity = '0';
+    if (textEl) textEl.innerText = text || '正在处理...';
+    setTimeout(function () { el.style.opacity = '1'; }, 10);
+}
+
+function hideTaskLoading(delayMs) {
+    var el = document.getElementById('loading');
+    if (!el) return;
+    el.style.opacity = '0';
+    setTimeout(function () {
+        el.style.display = 'none';
+        if (el.dataset.mode === 'task') delete el.dataset.mode;
+    }, typeof delayMs === 'number' ? delayMs : 800);
 }
 
 window.__STARTUP_TRACE__ = window.__STARTUP_TRACE__ || {
     start: (window.performance && performance.now) ? performance.now() : Date.now(),
     events: []
 };
+window.__BOOT_SPLASH_MIN_MS__ = 2200;
 
 function startupNowMs() {
     var now = (window.performance && performance.now) ? performance.now() : Date.now();
@@ -12510,9 +12740,17 @@ function getFitTracksDir() {
 document.addEventListener('DOMContentLoaded', function () {
     markStartupPhase('dom_content_loaded');
     if (window.pywebview && window.pywebview.api) {
+        if (typeof window.pywebview.api.on_loaded === 'function') {
+            window.pywebview.api.on_loaded().catch(function(e) { console.warn('show app window failed', e); });
+        }
         bootstrapApplication();
     } else {
-        window.addEventListener('pywebviewready', bootstrapApplication);
+        window.addEventListener('pywebviewready', function () {
+            if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.on_loaded === 'function') {
+                window.pywebview.api.on_loaded().catch(function(e) { console.warn('show app window failed', e); });
+            }
+            bootstrapApplication();
+        });
     }
 });
 
@@ -12592,11 +12830,8 @@ async function bootstrapApplication() {
         }
         if (res && res.code === 0 && firstRunData.is_first_run) {
             hideBootLoading();
-            reportStartupTimeline('first_run_settings');
-            switchTab(document.querySelector('[data-panel="settings"]'));
-            if (typeof refreshSettingsPanel === 'function') {
-                refreshSettingsPanel().catch(function(e) { console.warn('refreshSettingsPanel', e); });
-            }
+            reportStartupTimeline('first_run_preface');
+            openStartupDefaultRoute(firstRunData);
             if (!firstRunData.last_gateway_ok) {
                 document.getElementById('gateway-warning-bar').classList.remove('hidden');
             }
@@ -12605,7 +12840,7 @@ async function bootstrapApplication() {
         }
         hideBootLoading();
         markStartupPhase('restore_route_start');
-        restoreStartupRoute();
+        openStartupDefaultRoute(firstRunData);
         markStartupPhase('restore_route_done');
         if (getCurrentActivePanel && getCurrentActivePanel() === 'profile' && typeof loadProfileCard === 'function') {
             loadProfileCard().catch(function(e) { console.error('bootstrap loadProfileCard', e); });
@@ -12785,14 +13020,19 @@ function openConfigModalFromWarning() {
     // ========================================
     async function triggerTrackImport() {
         if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.import_track === 'function') {
-            const loader = document.getElementById('loading');
-            if (loader) {
-                loader.style.display = 'flex';
-                setTimeout(function () { loader.style.opacity = '1'; }, 10);
-                document.getElementById('loading-text').innerText = '正在导入并解析 GPX 轨迹…';
-            }
+            let selectedPath = '';
             try {
-                let res = await window.pywebview.api.import_track();
+                if (typeof window.pywebview.api.choose_gpx_track_file === 'function') {
+                    const selected = await window.pywebview.api.choose_gpx_track_file();
+                    if (!selected || !selected.ok) {
+                        if (selected && selected.cancelled) return;
+                        showToast('⚠️ 选择文件失败: ' + (selected && selected.error ? selected.error : '未知错误'));
+                        return;
+                    }
+                    selectedPath = selected.file_path || '';
+                }
+                showTaskLoading('正在导入并解析 GPX 轨迹…');
+                let res = await window.pywebview.api.import_track(selectedPath);
                 if (!res || !res.ok) {
                     if (res && res.cancelled) return;
                     showToast('⚠️ 导入失败: ' + (res && res.error ? res.error : '未知错误'));
@@ -12804,7 +13044,7 @@ function openConfigModalFromWarning() {
                         showToast('已跳过导入');
                         return;
                     }
-                    document.getElementById('loading-text').innerText = '正在按新策略导入 GPX 轨迹…';
+                    showTaskLoading('正在按新策略导入 GPX 轨迹…');
                     res = await window.pywebview.api.import_track(res.file_path, decision.action, decision.newFilename || '');
                     if (!res || !res.ok) {
                         showToast('⚠️ 导入失败: ' + (res && res.error ? res.error : '未知错误'));
@@ -12829,10 +13069,7 @@ function openConfigModalFromWarning() {
             } catch (err) {
                 showToast('⚠️ 导入失败: ' + (err && err.message ? err.message : String(err)));
             } finally {
-                if (loader) {
-                    loader.style.opacity = '0';
-                    setTimeout(function () { loader.style.display = 'none'; }, 800);
-                }
+                hideTaskLoading();
             }
             return;
         }
@@ -13075,8 +13312,7 @@ function openConfigModalFromWarning() {
     document.getElementById('file-upload').addEventListener('change', async (e) => {
         const file = e.target.files?.[0];
         if (!file) return;
-        const loader = document.getElementById('loading');
-        if (loader) { loader.style.display = 'flex'; setTimeout(() => loader.style.opacity = '1', 10); document.getElementById('loading-text').innerText = `正在解析 ${file.name}...`; }
+        showTaskLoading(`正在解析 ${file.name}...`);
         try {
             let result = null; const ext = file.name.split('.').pop().toLowerCase();
             if (ext === 'gpx') result = parseGPX(await file.text());
@@ -13092,7 +13328,7 @@ function openConfigModalFromWarning() {
             }
             else throw new Error("未提取到有效经纬度信息。");
         } catch (err) { showToast("⚠️ 解析失败: " + err.message); } 
-        finally { if (loader) { loader.style.opacity = '0'; setTimeout(() => loader.style.display = 'none', 800); } e.target.value = ''; }
+        finally { hideTaskLoading(); e.target.value = ''; }
     });
 
     document.getElementById('profile-canvas').addEventListener('click', function(e) {
@@ -13115,7 +13351,7 @@ function openConfigModalFromWarning() {
         const loader = document.getElementById('loading');
         const loadingTextEl = document.getElementById('loading-text');
         if (loadingTextEl) loadingTextEl.innerText = '3D 分析仪已进入降级模式，请继续使用或重试进入该页面。';
-        if (loader) { loader.style.opacity = '0'; setTimeout(() => loader.style.display = 'none', 300); }
+        hideTaskLoading(300);
     }, 5000);
 
     setTimeout(() => {
@@ -13125,9 +13361,7 @@ function openConfigModalFromWarning() {
             console.warn('flyTo during startup', e);
         }
         clearTimeout(startupLoaderWatchdog);
-        const loader = document.getElementById('loading');
-        if (loader) { loader.style.opacity = '0'; setTimeout(() => loader.style.display = 'none', 800); }
-        showToast("💡 随时点击轨迹新增CP点，点击已有CP点修改或删除！");
+        hideTaskLoading();
     }, 1000); 
 
     function bindTopBarToggles() {
@@ -13428,9 +13662,7 @@ function openConfigModalFromWarning() {
         if (_fatigueReviewOverviewTone(trainingLoad.level) === 'bad') riskTone = 'bad';
         var contextKeys = Object.keys(contextTags || {});
         var contextTone = contextKeys.length ? 'warn' : 'muted';
-        var contextBrief = contextKeys.slice(0, 2).map(function(key) {
-            return key + ': ' + String(contextTags[key]).slice(0, 24);
-        }).join('；');
+        var contextComment = _fatigueReviewContextOverviewComment(contextTags);
 
         return [
             {
@@ -13479,11 +13711,27 @@ function openConfigModalFromWarning() {
                 level: contextKeys.length ? '有线索' : '数据不足',
                 tone: contextTone,
                 comment: contextKeys.length
-                    ? '外部因素包括 ' + contextBrief + '，可作为解释本次波动的背景。'
+                    ? contextComment
                     : '本次外部影响线索不足，不额外推断天气、地形或设备影响。',
                 tags: '天气 · 地形 · 设备'
             }
         ];
+    }
+
+    function _fatigueReviewContextOverviewComment(tags) {
+        tags = tags && typeof tags === 'object' ? tags : {};
+        var keys = Object.keys(tags).filter(function(key) {
+            return tags[key] != null && String(tags[key]).trim() !== '';
+        });
+        var copies = [];
+        keys.forEach(function(key) {
+            var copy = _fatigueReviewContextFactorCopy(key, tags[key]);
+            if (copy && copies.indexOf(copy) < 0) copies.push(copy);
+        });
+        if (!copies.length) {
+            return '本次外部影响线索不足，不额外推断天气、地形或设备影响。';
+        }
+        return copies.slice(0, 2).join('；') + '，可作为解释本次波动的背景。';
     }
 
     function _buildFatigueReviewOverviewDimensionsFromAi(dimensions) {
@@ -15246,38 +15494,10 @@ function openConfigModalFromWarning() {
     }
 
     function _renderFatigueReviewChartFooter(data) {
-        data = data || {};
-        var curves = data.curves || {};
-        var fatigueZones = Array.isArray(data.fatigue_zones) ? data.fatigue_zones : [];
         var chipsEl = document.getElementById('fr-layer-chip-row');
-        var curveFields = [
-            ['hr', '心率'],
-            ['speed', '配速'],
-            ['gap', 'GAP'],
-            ['efficiency', '效率'],
-            ['altitude', '海拔'],
-            ['grade', '坡度'],
-            ['terrain_load', '地形负荷']
-        ];
         if (chipsEl) {
-            var availableCurves = 0;
-            var curvePointMax = 0;
-            curveFields.forEach(function(item) {
-                var key = item[0];
-                var n = Array.isArray(curves[key]) ? curves[key].length : 0;
-                if (n) availableCurves += 1;
-                if (n > curvePointMax) curvePointMax = n;
-            });
-            var axisN = Array.isArray(curves.distance) ? curves.distance.length : 0;
-            var chips = [
-                '<span class="fr-layer-chip ' + (availableCurves ? 'available' : 'missing') + '">'
-                    + safeHtml('曲线 ' + availableCurves + '/' + curveFields.length + (curvePointMax ? (' · ' + curvePointMax + ' 点') : '')) + '</span>',
-                '<span class="fr-layer-chip ' + (axisN ? 'available' : 'missing') + '">'
-                    + safeHtml('距离轴 ' + (axisN ? (axisN + ' 点') : '缺失')) + '</span>',
-                '<span class="fr-layer-chip ' + (fatigueZones.length ? 'available' : 'missing') + '">'
-                    + safeHtml('疲劳带 ' + fatigueZones.length) + '</span>',
-            ];
-            chipsEl.innerHTML = chips.join('');
+            chipsEl.innerHTML = '';
+            chipsEl.hidden = true;
         }
     }
 
@@ -15751,9 +15971,16 @@ function openConfigModalFromWarning() {
             if (lane.layout && lane.layout.top != null && lane.layout.height != null) {
                 style = ' style="top:' + safeHtml(String(lane.layout.top)) + '%;height:' + safeHtml(String(lane.layout.height)) + '%"';
             }
+            var tooltip = lane.tooltip ? String(lane.tooltip) : '';
+            var infoHtml = tooltip
+                ? ' <span class="fr-metric-info fr-lane-rail-info" tabindex="0" aria-label="' + safeHtml((lane.name || '曲线') + '说明') + '" data-tooltip="' + safeHtml(tooltip) + '">i</span>'
+                : '';
             return '<div class="fr-lane-rail-item" data-fr-lane-key="' + safeHtml(lane.key || '') + '"' + style + '>'
                 + '<span class="fr-lane-rail-main">'
+                + '<span class="fr-lane-rail-label">'
                 + '<span class="fr-lane-rail-name" style="color:' + safeHtml(color) + '">' + safeHtml(lane.name || '曲线') + '</span>'
+                + infoHtml
+                + '</span>'
                 + '<span class="fr-lane-rail-unit">' + safeHtml(unit) + '</span>'
                 + '</span>'
                 + '</div>';
@@ -15771,11 +15998,11 @@ function openConfigModalFromWarning() {
         var laneDefs = [
             { key: 'hr_curve', name: '心率', unit: 'bpm', color: '#ef4444', area: 'rgba(239, 68, 68, 0.08)' },
             { key: 'pace_curve', name: '配速', unit: '/km', color: '#3b82f6', area: 'rgba(59, 130, 246, 0.08)', displayAsPace: true, rawKey: 'pace_raw_curve', cappedKey: 'pace_capped_curve' },
-            { key: 'gap_pace_curve', name: '坡度修正配速（GAP）', unit: '/km', color: '#eab308', area: 'rgba(234, 179, 8, 0.08)', displayAsPace: true, rawKey: 'gap_pace_raw_curve', cappedKey: 'gap_pace_capped_curve' },
-            { key: 'efficiency_curve', name: '效率', unit: 'Speed/HR', color: '#22c55e', area: 'rgba(34, 197, 94, 0.08)' },
-            { key: 'altitude_curve', name: '海拔', unit: 'm', color: '#94a3b8', area: 'rgba(148, 163, 184, 0.08)' },
-            { key: 'grade_curve', name: '坡度', unit: '%', color: '#f97316', area: 'rgba(249, 115, 22, 0.08)', robustAxis: { hardMin: -35, hardMax: 35, minSpan: 4 } },
-            { key: 'terrain_load_curve', name: '地形负荷', unit: 'grade×speed×s', color: '#14b8a6', area: 'rgba(20, 184, 166, 0.12)', seriesType: 'bar' }
+            { key: 'gap_pace_curve', name: '坡度修正配速（GAP）', unit: '/km', color: '#eab308', area: 'rgba(234, 179, 8, 0.08)', displayAsPace: true, rawKey: 'gap_pace_raw_curve', cappedKey: 'gap_pace_capped_curve', tooltip: '把上坡和下坡影响折算进去后的配速。用于判断体力输出是否真的变慢，而不只看原始配速。' },
+            { key: 'efficiency_curve', name: '效率', unit: 'Speed/HR', color: '#22c55e', area: 'rgba(34, 197, 94, 0.08)', tooltip: '用速度和心率的关系观察推进效率。数值下降通常表示同样心肺负担下，速度或推进表现变弱。' },
+            { key: 'altitude_curve', name: '海拔', unit: 'm', color: '#94a3b8', area: 'rgba(148, 163, 184, 0.08)', tooltip: '显示路线所处高度变化。海拔起伏会影响心率、配速和体感，适合和坡度、GAP一起看。' },
+            { key: 'grade_curve', name: '坡度', unit: '%', color: '#f97316', area: 'rgba(249, 115, 22, 0.08)', robustAxis: { hardMin: -35, hardMax: 35, minSpan: 4 }, tooltip: '显示当前路段的上坡或下坡程度。正值多为上坡，负值多为下坡，短时尖峰更适合作为地形参考。' },
+            { key: 'terrain_load_curve', name: '地形负荷', unit: 'grade×speed×s', color: '#14b8a6', area: 'rgba(20, 184, 166, 0.12)', seriesType: 'bar', tooltip: '把坡度、速度和持续时间合成的地形压力参考。柱子越高，说明这一小段地形对体能消耗越集中。' }
         ];
 
         var lanes = [];
@@ -15794,6 +16021,7 @@ function openConfigModalFromWarning() {
                 key: def.key,
                 name: def.name,
                 unit: def.unit,
+                tooltip: def.tooltip || '',
                 color: def.color,
                 area: def.area,
                 valueFormatter: def.displayAsPace ? _frFormatPaceSecPerKm : _frFormatTooltipNumber,
@@ -15862,7 +16090,7 @@ function openConfigModalFromWarning() {
             var lane = lanes[laneIndex];
             grid.push({
                 left: 46,
-                right: 56,
+                right: 92,
                 top: lane.layout.top + '%',
                 height: lane.layout.height + '%',
                 containLabel: false
@@ -15881,6 +16109,7 @@ function openConfigModalFromWarning() {
                 axisTick: { show: laneIndex === lanes.length - 1 },
                 splitLine: { lineStyle: { color: 'rgba(148,163,184,0.08)' } },
                 name: laneIndex === lanes.length - 1 ? '距离 (km)' : '',
+                nameGap: 14,
                 nameTextStyle: { color: '#94a3b8' }
             });
             yAxis.push({

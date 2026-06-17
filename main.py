@@ -41,6 +41,7 @@ from utils.weather_api import fetch_historical_weather
 from watchdog.events import FileSystemEventHandler
 
 HTML_FILENAME = "track.html"
+APP_ICON_FILENAME = "assets/app_icon.icns"
 
 # ─── Managed Workspace ───────────────────────────────────────────
 CURRENT_SCHEMA_VERSION = 2
@@ -241,6 +242,25 @@ def html_file() -> Path:
     if not path.is_file():
         raise FileNotFoundError(f"未找到页面文件: {path}")
     return path
+
+
+def app_icon_file() -> Path:
+    return app_base_dir() / APP_ICON_FILENAME
+
+
+def set_runtime_app_icon() -> None:
+    """Best-effort Dock icon setup for direct Python runs on macOS."""
+    try:
+        icon_path = app_icon_file()
+        if not icon_path.is_file():
+            return
+        from AppKit import NSApplication, NSImage
+
+        image = NSImage.alloc().initWithContentsOfFile_(str(icon_path))
+        if image:
+            NSApplication.sharedApplication().setApplicationIconImage_(image)
+    except Exception as exc:
+        logger.debug("设置运行时图标失败: %s", exc)
 
 
 def _default_application_config() -> dict:
@@ -4691,12 +4711,22 @@ class Api:
         self._profile_sync_timer: threading.Timer | None = None
         self._region_enrichment_timer: threading.Timer | None = None
         self._region_enrichment_active = False
+        self._window_shown = False
 
-    def on_loaded(self) -> None:
-        """页面加载完成后显示窗口，解决白屏感。"""
-        import webview
-        if webview.windows:
-            webview.windows[0].show()
+    def on_loaded(self, *args) -> dict:
+        """页面加载完成后显示窗口，解决原生窗口先白屏的问题。"""
+        try:
+            if self._window_shown:
+                return {"ok": True, "already_shown": True}
+            target = self._window
+            if target is not None:
+                target.show()
+                self._window_shown = True
+                _record_startup_event("window_show")
+                return {"ok": True}
+        except Exception as exc:
+            logger.debug("显示主窗口失败: %s", exc)
+        return {"ok": False}
 
     def bind_window(self, window) -> None:
         self._window = window
@@ -4934,6 +4964,7 @@ class Api:
                 watch_brand=current.get("watch_brand", ""),
                 local_dir=current.get("local_dir", ""),
                 ai_notified=bool(value),
+                ai_notified_hash=str(current.get("ai_notified_hash", "")),
             )
             return _api_success({"ai_notified": bool(value)})
         except Exception:
@@ -5064,6 +5095,7 @@ class Api:
             )
 
             # 2. 只有网络探测 100% 成功通车，才执行无感持久化落盘，硬锁隐藏轨迹工作区
+            current = llm_backend.load_llm_config()
             llm_backend.save_llm_config(
                 provider=provider,
                 url=url,
@@ -5071,7 +5103,9 @@ class Api:
                 api_key=effective_key,
                 agent_id=agent_id,
                 watch_brand=watch_brand,
-                local_dir=TRACKS_DIR
+                local_dir=TRACKS_DIR,
+                ai_notified=bool(current.get("ai_notified", False)),
+                ai_notified_hash=str(current.get("ai_notified_hash", "")),
             )
             print(f"[Config 治理] 验证成功，大模型存储规范已安全固化对齐: {TRACKS_DIR}")
 
@@ -8569,6 +8603,28 @@ def _api_import_track(self, file_path: str = "", duplicate_action: str = "", new
         return {"ok": False, "error": str(e)}
 
 
+def _api_choose_gpx_track_file(self) -> dict:
+    """仅打开 GPX 文件选择器，不做解析，避免文件选择阶段显示任务加载层。"""
+    import webview
+    from webview import FileDialog
+
+    try:
+        if not webview.windows:
+            return {"ok": False, "error": "窗口未就绪"}
+        paths = webview.windows[0].create_file_dialog(
+            FileDialog.OPEN,
+            file_types=("GPX files (*.gpx)",),
+        )
+        if not paths:
+            return {"ok": False, "cancelled": True}
+        target_path = paths[0] if isinstance(paths, (list, tuple)) else paths
+        if Path(target_path).suffix.lower() != ".gpx":
+            return {"ok": False, "error": "仅支持导入 GPX 文件，请选择 .gpx 格式的轨迹文件"}
+        return {"ok": True, "file_path": str(target_path)}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 def _api_update_activity_sport_type(self, activity_id: int, sport_type: str) -> dict:
     try:
         profile_backend.update_activity_sport_type(activity_id, sport_type)
@@ -8652,6 +8708,7 @@ Api.get_person_sport_hub_data = _api_get_person_sport_hub_data
 Api.load_local_track = _api_load_local_track
 Api.get_activity_by_file_path = _api_get_activity_by_file_path
 Api.load_activity_track_by_file_path = _api_load_activity_track_by_file_path
+Api.choose_gpx_track_file = _api_choose_gpx_track_file
 Api.import_track = _api_import_track
 Api.find_gpx_pollution = _api_find_gpx_pollution
 Api.update_activity_sport_type = _api_update_activity_sport_type
@@ -8752,6 +8809,7 @@ def main() -> None:
     import webview
 
     _record_startup_event("main_enter")
+    set_runtime_app_icon()
     local_version = _get_schema_version()
     if local_version < CURRENT_SCHEMA_VERSION:
         logger.info("Schema 版本升级: %s -> %s，触发增量数据清洗", local_version, CURRENT_SCHEMA_VERSION)
@@ -8768,10 +8826,15 @@ def main() -> None:
         width=1280,
         height=800,
         min_size=(800, 600),
-        background_color='#0f172a',  # 匹配 HTML 背景色，消除白色闪烁
+        hidden=True,
+        background_color='#061626',  # 匹配启动图主背景色，降低原生窗口预绘制闪烁
     )
     _record_startup_event("window_created")
     api.bind_window(window)
+    try:
+        window.events.loaded += api.on_loaded
+    except Exception as exc:
+        logger.debug("绑定窗口 loaded 事件失败: %s", exc)
     watch_service = FITFolderWatchService(api)
     api.set_watch_service(watch_service)
     watch_service.start()

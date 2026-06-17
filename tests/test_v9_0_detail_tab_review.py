@@ -54,8 +54,26 @@ class TestV9DetailTabHtml(unittest.TestCase):
         self.assertIn('id="pf-max-hr"', self.html)
         self.assertIn('id="pf-max-hr-input"', self.html)
         self.assertIn('id="pf-save-max-hr-btn"', self.html)
+        self.assertIn('class="profile-manual-control"', self.html)
+        self.assertIn("width: 122px", self.html)
+        self.assertIn("flex: 0 0 122px", self.html)
+        self.assertIn("width: 64px", self.html)
+        self.assertIn("flex: 0 0 64px", self.html)
+        self.assertIn("flex: 0 0 46px", self.html)
+        self.assertIn("appearance: textfield", self.html)
+        self.assertIn("input::-webkit-inner-spin-button", self.html)
+        self.assertIn("width: 46px", self.html)
         self.assertIn('function saveManualMaxHeartRate()', self.html)
         self.assertIn('save_user_profile(nextProfile)', self.html)
+        self.assertIn("hasProfileMaxHr", self.html)
+        self.assertIn("profileSourcePlatform === 'coros'", self.html)
+        self.assertIn("preservedFields.indexOf('max_hr') < 0", self.html)
+        self.assertIn("maxHrInput.disabled = isCorosSyncedMaxHr", self.html)
+        self.assertIn("maxHrSaveBtn.disabled = isCorosSyncedMaxHr", self.html)
+        self.assertIn("maxHrSaveBtn.textContent = '保存'", self.html)
+        self.assertNotIn('id="pf-max-hr-source"', self.html)
+        self.assertNotIn("来自画像同步", self.html)
+        self.assertNotIn("已同步' : '保存'", self.html)
 
     def test_detail_tab_overview_panel_exists(self):
         """#detail-tab-overview 节点必须存在。"""
@@ -112,6 +130,46 @@ class TestV9DetailTabHtml(unittest.TestCase):
             self.assertIn(text, self.html)
         self.assertNotIn("<div class=\"lbl\">解耦率</div>", self.html)
         self.assertNotIn("<div class=\"lbl\">Bonk 风险</div>", self.html)
+
+    def test_radar_card_uses_single_dimension_info_and_bottom_ai_button(self):
+        """雷达图只在卡片标题提供维度说明,AI 洞察按钮固定在右下角。"""
+        for text in [
+            "radar-title-main",
+            "radar-capability-info",
+            "radar-info-letter",
+            '<span class="radar-info-letter">i</span>',
+            'aria-label="运动能力维度说明"',
+            "耐力：近期训练负荷与持续运动能力",
+            "恢复：HRV、休息和身体恢复线索",
+            "心肺稳定：心率与速度或输出关系是否稳定",
+            "阈值：可持续高强度能力",
+            "爬升：上坡或爬升场景承受力",
+            "无氧爆发：短时间高速度或高输出能力",
+            ".profile-radar-card",
+            "position: relative",
+            ".radar-ai-btn",
+            ".profile-radar-card .radar-ai-btn",
+            ".tab-panel:not(.active) #radar-ai-insight-btn",
+            "#panel-profile:not(.active) #radar-ai-insight-btn",
+            "radarAiBtn.style.display = activePanel === 'profile' ? '' : 'none'",
+            "bottom: 10px",
+            "right: 12px",
+            ".radar-capability-info::after",
+            "top: calc(100% + 8px)",
+            "bottom: auto",
+            "text-transform: none",
+        ]:
+            self.assertIn(text, self.html)
+        self.assertNotIn("radar-dim-label-layer", self.html)
+        self.assertNotIn("RADAR_DIMENSION_TOOLTIPS", self.html)
+        self.assertNotIn("function _renderRadarDimensionLabels(dimensions)", self.html)
+        global_btn_idx = self.html.find(".radar-ai-btn {")
+        scoped_btn_idx = self.html.find(".profile-radar-card .radar-ai-btn {")
+        self.assertGreater(global_btn_idx, 0)
+        self.assertGreater(scoped_btn_idx, global_btn_idx)
+        global_btn_body = self.html[global_btn_idx:scoped_btn_idx]
+        self.assertNotIn("position: absolute", global_btn_body)
+        self.assertIn("position: absolute", self.html[scoped_btn_idx:self.html.find("}", scoped_btn_idx)])
 
     def test_fatigue_review_overlay_removed(self):
         """#fatigue-review-overlay 必须已被删除(合并入 detail Modal)。"""
@@ -788,6 +846,25 @@ class TestV9AiInsightModalHtml(unittest.TestCase):
             ]:
                 self.assertNotIn(forbidden, body)
 
+    def test_p8_1_context_overview_uses_product_copy_not_raw_tags(self):
+        """P8.1:外部影响概览卡片不得裸露 context_tags 的英文标签和原始字段。"""
+        self.assertIn("function _fatigueReviewContextOverviewComment(tags)", self.html)
+        idx = self.html.find("function _buildFatigueReviewOverviewDimensions(data)")
+        self.assertGreater(idx, 0)
+        end = self.html.find("\n    function _fatigueReviewContextOverviewComment", idx)
+        body = self.html[idx:end]
+        self.assertIn("var contextComment = _fatigueReviewContextOverviewComment(contextTags)", body)
+        self.assertIn("? contextComment", body)
+        self.assertNotIn("key + ': ' + String(contextTags[key])", body)
+        self.assertNotIn(".slice(0, 24)", body)
+        helper = self.html[end:self.html.find("\n    function _buildFatigueReviewOverviewDimensionsFromAi", end)]
+        for text in (
+            "_fatigueReviewContextFactorCopy(key, tags[key])",
+            "copies.slice(0, 2).join('；')",
+            "可作为解释本次波动的背景",
+        ):
+            self.assertIn(text, helper)
+
     def test_p7_7_responsive_css_guards_exist(self):
         """P7.7:复盘驾驶舱需要响应式和长文本可读性守卫。"""
         for text in [
@@ -856,6 +933,33 @@ class TestV9AiInsightModalHtml(unittest.TestCase):
         self.assertIn("function _renderFatigueReviewLaneRail(lanes)", self.html)
         self.assertIn("_renderFatigueReviewLaneRail(lanes)", self.html)
         self.assertIn("_renderFatigueReviewLaneRail([])", self.html)
+
+    def test_lane_rail_titles_have_tooltips(self):
+        """折线图泳道标题应复用圆圈 i tooltip 解释复杂指标。"""
+        for text in [
+            "fr-lane-rail-label",
+            "fr-lane-rail-info",
+            ".fr-lane-rail-info::after",
+            ".fr-derived-metrics-strip .metric-card:first-child .fr-metric-info::after",
+            ".fr-capacity-metrics-strip .metric-card:first-child .fr-metric-info::after",
+            "lane.tooltip",
+            "tooltip: def.tooltip || ''",
+            "把上坡和下坡影响折算进去后的配速",
+            "用速度和心率的关系观察推进效率",
+            "显示路线所处高度变化",
+            "显示当前路段的上坡或下坡程度",
+            "把坡度、速度和持续时间合成的地形压力参考",
+        ]:
+            self.assertIn(text, self.html)
+        for text in [
+            "fr-layer-toggle-info",
+            'aria-label="坡度修正配速说明"',
+            'aria-label="效率说明"',
+            'aria-label="海拔说明"',
+            'aria-label="坡度说明"',
+            'aria-label="地形负荷说明"',
+        ]:
+            self.assertNotIn(text, self.html)
 
     def test_p7_14_event_pins_bind_to_collapse_events(self):
         """P7.14:关键事件必须以 trigger_km 生成图钉气泡和跨泳道参考线。"""
