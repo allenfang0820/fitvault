@@ -45,6 +45,15 @@ def mock_snapshot():
         "context_tags": {
             "热应激 (Heat Stress)": "High (28.5°C) - 会导致散热受阻...",
         },
+        "environment_context": {
+            "has_weather": True,
+            "weather_label": "阴",
+            "temperature_c": 17.1,
+            "humidity": 77,
+            "wind_speed_kmh": 0.8,
+            "pressure_level": "none",
+            "summary": "天气阴，17.1°C，湿度77%，风速0.8km/h；未识别到明显外部环境压力。",
+        },
         "ai_insight": None,
         "advice": "下次类似路线...",
         "disclaimer": "AI 生成仅供参考...",
@@ -207,6 +216,15 @@ class TestSnapshotDataPassthrough:
         system = messages[0]["content"]
         assert "热应激" in system
         assert "28.5" in system
+
+    def test_environment_context_prevents_false_missing_environment_claim(self, mock_snapshot):
+        from llm_backend import build_fatigue_review_messages
+        messages = build_fatigue_review_messages(mock_snapshot, "running", "跑步")
+        system = messages[0]["content"]
+        assert "environment_context" in system
+        assert "已有天气快照" in system
+        assert "未识别到明显外部环境压力" in system
+        assert "不得写\"未提供环境标签数据\"" in system
 
     def test_collapse_event_descriptions_in_prompt(self, mock_snapshot):
         from llm_backend import build_fatigue_review_messages

@@ -1056,7 +1056,7 @@ key_dimensions 数组必须严格包含 overall_stability / fatigue_progression 
 - overall_stability / 全程稳定性:解释整场心率、配速、效率、步频和节奏是否稳定,可指出波动发生在前段/中段/后段,但禁止重新计算。
 - fatigue_progression / 疲劳阶段:解释 fatigue_zones 中疲劳是否出现、从哪里出现、是否持续或加重。
 - risk_triggers / 风险触发:解释 bonk_risk、collapse_events、训练负荷或后端已识别事件中真正值得注意的风险线索。
-- context_impact / 外部影响:解释 context_tags 中天气、温度、湿度、地形、路线、设备或数据质量对本次表现的影响。
+- context_impact / 外部影响:同时参考 environment_context 的环境事实摘要与 context_tags 的压力标签。context_tags 表示已识别的影响因素/压力标签,environment_context 表示天气、温度、湿度、风速等事实。若 environment_context.has_weather=true 且 context_tags 为空,不得写"未提供环境标签数据"、"无法评估天气温度湿度"或同义表达,应说明"已有天气快照,但未识别到明显外部环境压力"。只有 environment_context.has_weather=false 且 context_tags 为空时,才允许表达环境数据不足。
 
 【强行约束 — 绝对禁止行为】
 你 MUST NOT:
@@ -1079,7 +1079,7 @@ key_dimensions 数组必须严格包含 overall_stability / fatigue_progression 
 2. key_dimensions 数组必须覆盖 4 维度
 3. 输出必须是纯 JSON,不要包含 markdown 代码块标记
 4. 所有数值字段必须填数字,文本字段必须是自然中文
-5. event_interpretation 必须结合 context_tags 中环境标签,体现宽容度
+5. event_interpretation 必须结合 context_tags 与 environment_context 中环境背景,体现宽容度
 6. training_advice 必须针对本场数据,避免泛泛而谈
 7. 用户可见文本不得直接输出 good / warn / bad / unknown / declining / caution / Bonk / collapse 等英文枚举、原始字段名或代码词；如需表达,请写成 良好 / 需关注 / 风险较高 / 数据不足 / 下降 / 需谨慎 / 能量断档 / 状态下滑
 """

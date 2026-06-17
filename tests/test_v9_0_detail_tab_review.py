@@ -171,6 +171,34 @@ class TestV9DetailTabHtml(unittest.TestCase):
         self.assertNotIn("position: absolute", global_btn_body)
         self.assertIn("position: absolute", self.html[scoped_btn_idx:self.html.find("}", scoped_btn_idx)])
 
+    def test_radar_sport_switch_preserves_update_animation(self):
+        """切换运动类型时雷达图应显式插值,让点和线产生可见过渡动画。"""
+        fn_idx = self.html.find("function renderRadarChart(activityType, metricsData)")
+        self.assertGreater(fn_idx, 0)
+        body = self.html[fn_idx:self.html.find("async function renderPerformanceRadar()", fn_idx)]
+        for text in [
+            "var previousDimensions = _lastRadarDimensions",
+            "var shouldAnimateRadar",
+            "_animateRadarScores(",
+            "_radarStartScores(previousDimensions, dimensions)",
+            "_lastRadarDimensions = dimensions.map",
+        ]:
+            self.assertIn(text, body)
+        for text in [
+            "let _lastRadarDimensions = null",
+            "let _radarAnimationFrame = null",
+            "function _radarStartScores(previousDimensions, nextDimensions)",
+            "function _animateRadarScores(chart, indicators, fromScores, toScores, done)",
+            "var duration = 650",
+            "window.requestAnimationFrame(step)",
+            "_setRadarChartOption(chart, indicators, frameScores, false)",
+            "id: 'performance-radar-series'",
+            "id: 'performance-radar-profile'",
+            "{ notMerge: false, lazyUpdate: false }",
+        ]:
+            self.assertIn(text, self.html)
+        self.assertNotIn("radarChartInstance.setOption(option, true)", body)
+
     def test_fatigue_review_overlay_removed(self):
         """#fatigue-review-overlay 必须已被删除(合并入 detail Modal)。"""
         self.assertNotIn('id="fatigue-review-overlay"', self.html,
@@ -426,8 +454,8 @@ class TestV9AiInsightModalHtml(unittest.TestCase):
             "axisPointer: { link: [{ xAxisIndex: 'all' }] }",
             "_frRobustAxisRange(pairedData",
             "robustAxis: { hardMin: -35, hardMax: 35, minSpan: 4 }",
-            "min: lane.axisMin != null ? lane.axisMin : 'dataMin'",
-            "max: lane.axisMax != null ? lane.axisMax : 'dataMax'",
+            "min: lane.axisMin != null ? lane.axisMin : (shouldPlayIntroAnimation",
+            "max: lane.axisMax != null ? lane.axisMax : (shouldPlayIntroAnimation",
             "grid: grid",
             "xAxis: xAxis",
             "yAxis: yAxis",
@@ -454,6 +482,26 @@ class TestV9AiInsightModalHtml(unittest.TestCase):
             "call_llm",
         ]:
             self.assertNotIn(forbidden, fn_body)
+
+    def test_fatigue_review_main_chart_intro_animates_line_y_once(self):
+        """复盘主图区加载后只播一次 Y 轴方向折线过渡,resize/图层开关不重播。"""
+        self.assertIn("renderProfileAnalysisChart(chartPayload, 'fatigue-review-chart', { introAnimation: true })", self.html)
+        self.assertIn("function _frPlayFatigueReviewChartIntro(chart, option, lineSeriesMap, done)", self.html)
+        self.assertIn("function _frInterpolateLineData(fromData, toData, progress)", self.html)
+        self.assertIn("return [targetPoint[0], fromY + (targetY - fromY) * progress]", self.html)
+        self.assertIn("var shouldPlayIntroAnimation = targetId === 'fatigue-review-chart' && renderOptions.introAnimation === true", self.html)
+        self.assertIn("introLineSeriesMap[lineSeriesIndex]", self.html)
+        self.assertIn("seriesType: def.seriesType || 'line'", self.html)
+        self.assertIn("if (lane.seriesType === 'bar')", self.html)
+        self.assertIn("_frCancelFatigueReviewChartIntro()", self.html)
+        toggle_idx = self.html.find("function onFatigueReviewLayerToggle")
+        resize_idx = self.html.find("function refreshFatigueReviewChartWhenVisible")
+        self.assertGreater(toggle_idx, 0)
+        self.assertGreater(resize_idx, 0)
+        toggle_body = self.html[toggle_idx:self.html.find("\n    function refreshFatigueReviewChartWhenVisible", toggle_idx)]
+        resize_body = self.html[resize_idx:self.html.find("\n    function _resizeFatigueReviewChartWhenStable", resize_idx)]
+        self.assertNotIn("introAnimation", toggle_body)
+        self.assertNotIn("introAnimation", resize_body)
 
     def test_p7_11_stage_overview_exists_and_uses_fatigue_zones_only(self):
         """P7.11:状态阶段概览只能消费 data.fatigue_zones。"""

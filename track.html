@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>脉图 - fit vault V1.0</title>
-    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
     <!-- 本地优先，减少首屏等待；若本地资源缺失再回退到 CDN -->
+    <script src="lib/echarts/echarts.min.js" onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js';"></script>
     <script>
         window.CESIUM_BASE_URL = 'lib/Cesium/';
     </script>
@@ -30,6 +30,11 @@
         #app-wrapper {
             display: flex; width: 100vw; height: 100vh; overflow: hidden;
             position: relative;
+        }
+        body.native-macos-chrome #app-wrapper {
+            height: calc(100vh - 28px);
+            padding-top: 28px;
+            box-sizing: border-box;
         }
 
         /* === 左侧立体书签标签栏 === */
@@ -2269,6 +2274,18 @@
             max-width: 92vw;
             max-height: 92vh;
             object-fit: contain;
+        }
+        #panel-help .help-donate-modal {
+            padding: 18px;
+        }
+        #panel-help .help-donate-modal .help-photo-modal-card {
+            max-width: min(380px, 82vw);
+            max-height: 82vh;
+            border-radius: 12px;
+        }
+        #panel-help .help-donate-modal .help-photo-modal-card img {
+            max-width: min(380px, 82vw);
+            max-height: 82vh;
         }
         @media (max-width: 820px) {
             #panel-help .help-preface-layout {
@@ -6567,6 +6584,9 @@
     }
 
     let radarChartInstance = null;
+    let _lastRadarDimensions = null;
+    let _radarAnimationFrame = null;
+    let _radarRenderSeq = 0;
     let profileAnalysisChartInstance = null; // 兼容旧引用
     let profileAnalysisChartInstances = {}; // V4.0: 按 containerId 管理多实例
     let currentUserProfile = null;
@@ -6580,6 +6600,8 @@
     let _lastFatigueReviewChartPayload = null;
     let _fatigueReviewChartResizeObserver = null;
     let _fatigueReviewChartResizeBound = false;
+    let _fatigueReviewChartIntroFrame = null;
+    let _fatigueReviewChartIntroSeq = 0;
     let _fatigueReviewLayerVisibility = {
         hr: true,
         speed: true,
@@ -6592,60 +6614,118 @@
         terrainLoad: true
     };
 
-    // === V9.0 Tab 化 + AI 洞察 Modal 化 — fit-arch-contrac §5.4 AI 边界 / §5.6.2 阅后即焚 ===
-    // 当前激活的详情 Tab('overview' | 'review'),打开详情时强制重置为 'overview'
-    let _activeDetailTab = 'overview';
-    // 复盘 Tab 是否已 lazy load 过(同一活动复用)
-    let _fatigueReviewTabLoaded = false;
-    // 复盘 AI 洞察 Modal 状态(独立 z-index,毛玻璃,物理拦截 Tab 切换)
-    let _fatigueAiInsightData = null;
-    let _fatigueAiInsightModalOpen = false;
-    let _fatigueAiInsightEscBound = false;
-    let _lastFatigueReviewData = null;
+    function isEchartsAvailable() {
+        return typeof window !== 'undefined' && !!window.echarts;
+    }
 
-    function renderRadarChart(activityType, metricsData) {
-        var radarContainer = document.getElementById('performanceRadar');
-        if (!radarContainer) return;
+    function isElementRenderable(el) {
+        if (!el) return false;
+        if (!el.isConnected) return false;
+        if (!el.getClientRects || el.getClientRects().length === 0) return false;
+        return el.clientWidth > 0 && el.clientHeight > 0;
+    }
 
-        var radarData = (metricsData && metricsData.radar) || null;
-        var dimensions = (radarData && radarData.dimensions) || [];
+    function showChartUnavailableState(container, message) {
+        if (!container) return;
+        container.style.display = 'flex';
+        container.style.alignItems = 'center';
+        container.style.justifyContent = 'center';
+        container.style.color = '#64748b';
+        container.style.fontSize = '0.78rem';
+        container.style.fontWeight = '700';
+        container.innerHTML = '<div>' + safeHtml(message || '图表组件加载失败') + '</div>';
+    }
 
-        if (!dimensions.length) {
-            if (radarChartInstance) {
-                radarChartInstance.dispose();
-                radarChartInstance = null;
+    function runWhenRenderable(el, callback, options) {
+        options = options || {};
+        var attempts = options.attempts == null ? 10 : options.attempts;
+        var delay = options.delay == null ? 60 : options.delay;
+        var onFail = typeof options.onFail === 'function' ? options.onFail : null;
+        var tryRun = function(left) {
+            if (!el || !el.isConnected) {
+                if (onFail) onFail();
+                return;
             }
-            radarContainer.style.display = 'flex';
-            radarContainer.style.alignItems = 'center';
-            radarContainer.style.justifyContent = 'center';
-            radarContainer.style.color = '#64748b';
-            radarContainer.style.fontSize = '0.78rem';
-            radarContainer.style.fontWeight = '700';
-            radarContainer.innerHTML = '<div>暂无该运动类型近 90 天雷达数据</div>';
-            return;
+            if (isElementRenderable(el)) {
+                callback();
+                return;
+            }
+            if (left <= 0) {
+                if (onFail) onFail();
+                return;
+            }
+            var schedule = function() {
+                setTimeout(function() { tryRun(left - 1); }, delay);
+            };
+            if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+                window.requestAnimationFrame(schedule);
+            } else {
+                schedule();
+            }
+        };
+        tryRun(attempts);
+    }
+
+    function stableResizeChart(chart, el, options) {
+        if (!chart || typeof chart.resize !== 'function' || !el) return;
+        options = options || {};
+        var resizeOnce = function() {
+            if (!isElementRenderable(el)) return;
+            try {
+                chart.resize(options.resizeOptions || undefined);
+            } catch (e) {
+                console.warn('chart resize failed', e);
+            }
+        };
+        resizeOnce();
+        if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+            window.requestAnimationFrame(resizeOnce);
         }
-        radarContainer.style.display = '';
-        radarContainer.style.alignItems = '';
-        radarContainer.style.justifyContent = '';
-        radarContainer.style.color = '';
-        radarContainer.style.fontSize = '';
-        radarContainer.style.fontWeight = '';
-        radarContainer.innerHTML = '';
+        setTimeout(resizeOnce, 80);
+        setTimeout(resizeOnce, 220);
+    }
 
-        if (!radarChartInstance) {
-            radarChartInstance = echarts.init(radarContainer);
-        }
+    function _radarDimensionKey(dim) {
+        if (!dim) return '';
+        return String(dim.key || dim.label || '').trim();
+    }
 
-        var dynamicIndicators = dimensions.map(function(dim) {
-            return { name: dim.label, max: 100 };
+    function _radarScoreValue(value) {
+        var n = Number(value);
+        if (!Number.isFinite(n)) return 0;
+        return Math.max(0, Math.min(100, n));
+    }
+
+    function _radarScoreMap(dimensions) {
+        var map = {};
+        (dimensions || []).forEach(function(dim) {
+            var key = _radarDimensionKey(dim);
+            if (key) map[key] = _radarScoreValue(dim.score);
         });
-        var dynamicScores = dimensions.map(function(dim) {
-            return dim.score;
-        });
+        return map;
+    }
 
-        var option = {
+    function _radarStartScores(previousDimensions, nextDimensions) {
+        var previous = _radarScoreMap(previousDimensions);
+        return (nextDimensions || []).map(function(dim) {
+            var key = _radarDimensionKey(dim);
+            return key && Object.prototype.hasOwnProperty.call(previous, key) ? previous[key] : 0;
+        });
+    }
+
+    function _radarEaseOutCubic(t) {
+        return 1 - Math.pow(1 - t, 3);
+    }
+
+    function _buildRadarChartOption(dynamicIndicators, scores, animationEnabled) {
+        return {
             backgroundColor: 'transparent',
+            animation: animationEnabled !== false,
+            animationDuration: 450,
+            animationDurationUpdate: 650,
+            animationEasingUpdate: 'cubicOut',
             radar: {
+                id: 'performance-radar-axis',
                 indicator: dynamicIndicators,
                 shape: 'polygon',
                 splitNumber: 5,
@@ -6666,11 +6746,13 @@
             },
             series: [
                 {
+                    id: 'performance-radar-series',
                     name: '运动能力',
                     type: 'radar',
                     data: [
                         {
-                            value: dynamicScores,
+                            id: 'performance-radar-profile',
+                            value: scores,
                             name: '能力画像',
                             itemStyle: { color: '#00FF7F' },
                             lineStyle: { color: '#00FF7F', width: 2 },
@@ -6680,11 +6762,156 @@
                 }
             ]
         };
-        radarChartInstance.setOption(option, true);
+    }
+
+    function _setRadarChartOption(chart, indicators, scores, animationEnabled) {
+        chart.setOption(
+            _buildRadarChartOption(indicators, scores, animationEnabled),
+            { notMerge: false, lazyUpdate: false }
+        );
+    }
+
+    function _animateRadarScores(chart, indicators, fromScores, toScores, done) {
+        var duration = 650;
+        var renderSeq = ++_radarRenderSeq;
+        var startedAt = (window.performance && performance.now) ? performance.now() : Date.now();
+
+        if (_radarAnimationFrame && typeof window.cancelAnimationFrame === 'function') {
+            window.cancelAnimationFrame(_radarAnimationFrame);
+        }
+
+        _setRadarChartOption(chart, indicators, fromScores, false);
+
+        var step = function(now) {
+            if (renderSeq !== _radarRenderSeq) return;
+            var current = typeof now === 'number' ? now : Date.now();
+            var progress = Math.min(1, Math.max(0, (current - startedAt) / duration));
+            var eased = _radarEaseOutCubic(progress);
+            var frameScores = toScores.map(function(target, idx) {
+                var start = fromScores[idx] == null ? 0 : fromScores[idx];
+                return start + (target - start) * eased;
+            });
+            _setRadarChartOption(chart, indicators, frameScores, false);
+            if (progress < 1 && typeof window.requestAnimationFrame === 'function') {
+                _radarAnimationFrame = window.requestAnimationFrame(step);
+            } else {
+                _radarAnimationFrame = null;
+                _setRadarChartOption(chart, indicators, toScores, false);
+                if (typeof done === 'function') done();
+            }
+        };
+
+        if (typeof window.requestAnimationFrame === 'function') {
+            _radarAnimationFrame = window.requestAnimationFrame(step);
+        } else {
+            _setRadarChartOption(chart, indicators, toScores, false);
+            if (typeof done === 'function') done();
+        }
+    }
+
+    // === V9.0 Tab 化 + AI 洞察 Modal 化 — fit-arch-contrac §5.4 AI 边界 / §5.6.2 阅后即焚 ===
+    // 当前激活的详情 Tab('overview' | 'review'),打开详情时强制重置为 'overview'
+    let _activeDetailTab = 'overview';
+    // 复盘 Tab 是否已 lazy load 过(同一活动复用)
+    let _fatigueReviewTabLoaded = false;
+    // 复盘 AI 洞察 Modal 状态(独立 z-index,毛玻璃,物理拦截 Tab 切换)
+    let _fatigueAiInsightData = null;
+    let _fatigueAiInsightModalOpen = false;
+    let _fatigueAiInsightEscBound = false;
+    let _lastFatigueReviewData = null;
+
+    function renderRadarChart(activityType, metricsData) {
+        var radarContainer = document.getElementById('performanceRadar');
+        if (!radarContainer) return;
+
+        var radarData = (metricsData && metricsData.radar) || null;
+        var dimensions = (radarData && radarData.dimensions) || [];
+
+        if (!dimensions.length) {
+            if (_radarAnimationFrame && typeof window.cancelAnimationFrame === 'function') {
+                window.cancelAnimationFrame(_radarAnimationFrame);
+                _radarAnimationFrame = null;
+            }
+            _lastRadarDimensions = null;
+            if (radarChartInstance) {
+                radarChartInstance.dispose();
+                radarChartInstance = null;
+            }
+            showChartUnavailableState(radarContainer, '暂无该运动类型近 90 天雷达数据');
+            return;
+        }
+
+        var dynamicIndicators = dimensions.map(function(dim) {
+            return { name: dim.label, max: 100 };
+        });
+        var dynamicScores = dimensions.map(function(dim) {
+            return _radarScoreValue(dim.score);
+        });
+        var previousDimensions = _lastRadarDimensions;
+        var shouldAnimateRadar = !!(
+            previousDimensions &&
+            previousDimensions.length &&
+            radarChartInstance &&
+            typeof window !== 'undefined'
+        );
+
+        if (!isEchartsAvailable()) {
+            showChartUnavailableState(radarContainer, '图表组件加载失败');
+            return;
+        }
+
+        runWhenRenderable(radarContainer, function() {
+            radarContainer.style.display = '';
+            radarContainer.style.alignItems = '';
+            radarContainer.style.justifyContent = '';
+            radarContainer.style.color = '';
+            radarContainer.style.fontSize = '';
+            radarContainer.style.fontWeight = '';
+
+            try {
+                if (!radarChartInstance) {
+                    radarContainer.innerHTML = '';
+                    radarChartInstance = echarts.init(radarContainer);
+                }
+                if (shouldAnimateRadar) {
+                    _animateRadarScores(
+                        radarChartInstance,
+                        dynamicIndicators,
+                        _radarStartScores(previousDimensions, dimensions),
+                        dynamicScores,
+                        function() {
+                            stableResizeChart(radarChartInstance, radarContainer);
+                        }
+                    );
+                } else {
+                    _setRadarChartOption(radarChartInstance, dynamicIndicators, dynamicScores, true);
+                    stableResizeChart(radarChartInstance, radarContainer);
+                }
+                _lastRadarDimensions = dimensions.map(function(dim) {
+                    return {
+                        key: _radarDimensionKey(dim),
+                        label: dim.label,
+                        score: _radarScoreValue(dim.score)
+                    };
+                });
+            } catch (e) {
+                console.warn('renderRadarChart failed', e);
+                if (radarChartInstance) {
+                    try { radarChartInstance.dispose(); } catch (disposeError) {}
+                    radarChartInstance = null;
+                }
+                showChartUnavailableState(radarContainer, '雷达图渲染失败');
+            }
+        }, {
+            attempts: 12,
+            onFail: function() {
+                console.warn('renderRadarChart skipped: container is not renderable');
+            }
+        });
 
         if (!window._radarResizeBound) {
             window.addEventListener('resize', function() {
-                if (radarChartInstance) radarChartInstance.resize();
+                if (radarChartInstance) stableResizeChart(radarChartInstance, radarContainer);
             });
             window._radarResizeBound = true;
         }
@@ -6709,6 +6936,19 @@
         renderRadarChart(_currentRadarSportType, metrics);
     }
 
+    function refreshRadarChartWhenVisible() {
+        var radarContainer = document.getElementById('performanceRadar');
+        if (!radarContainer) return;
+        runWhenRenderable(radarContainer, function() {
+            renderPerformanceRadar();
+        }, {
+            attempts: 12,
+            onFail: function() {
+                console.warn('refreshRadarChartWhenVisible skipped: container is not renderable');
+            }
+        });
+    }
+
     function switchRadarSportType(type, btn) {
         _currentRadarSportType = type;
         var parent = btn.closest('.radar-sport-tabs');
@@ -6718,7 +6958,7 @@
             });
         }
         btn.classList.add('active');
-        renderPerformanceRadar();
+        refreshRadarChartWhenVisible();
 
         // §5.4 规则 6:切换运动类型时清空 AI 洞察(防止跨 sport 残留)
         _clearRadarInsight();
@@ -7051,8 +7291,8 @@
         if (activePanel === 'settings' && typeof refreshSettingsPanel === 'function') {
             refreshSettingsPanel().catch(function(e) { console.warn('refreshSettingsPanel', e); });
         }
-        if (activePanel === 'profile' && radarChartInstance) {
-            setTimeout(() => radarChartInstance.resize(), 50);
+        if (activePanel === 'profile') {
+            refreshRadarChartWhenVisible();
             if (sportHubState.resultsChart) setTimeout(() => sportHubState.resultsChart.resize(), 60);
             if (profileAnalysisChartInstance) setTimeout(() => profileAnalysisChartInstance.resize(), 70);
         }
@@ -8883,7 +9123,7 @@
         }
         // 4. 切到复盘时 ECharts 容器 resize(从 display:none 切出时需要校正宽度)
         if (tab === 'review') {
-            _resizeFatigueReviewChartWhenStable();
+            refreshFatigueReviewChartWhenVisible();
         }
     }
 
@@ -12638,6 +12878,9 @@ function getFitTracksDir() {
 
 document.addEventListener('DOMContentLoaded', function () {
     markStartupPhase('dom_content_loaded');
+    if (/Mac/i.test(navigator.platform || navigator.userAgent || '')) {
+        document.body.classList.add('native-macos-chrome');
+    }
     if (window.pywebview && window.pywebview.api) {
         if (typeof window.pywebview.api.on_loaded === 'function') {
             window.pywebview.api.on_loaded().catch(function(e) { console.warn('show app window failed', e); });
@@ -13399,7 +13642,7 @@ function openConfigModalFromWarning() {
                 };
                 _lastFatigueReviewChartPayload = chartPayload;
                 chartPayload = _applyFatigueReviewLayerVisibility(chartPayload);
-                renderProfileAnalysisChart(chartPayload, 'fatigue-review-chart');
+                renderProfileAnalysisChart(chartPayload, 'fatigue-review-chart', { introAnimation: true });
                 // 解决从 display:none 或布局变更切出来的 ECharts 宽度塌陷
                 _bindFatigueReviewChartAutoResize();
                 _resizeFatigueReviewChartWhenStable();
@@ -15348,21 +15591,31 @@ function openConfigModalFromWarning() {
         }
     }
 
+    function refreshFatigueReviewChartWhenVisible() {
+        var container = document.getElementById('fatigue-review-chart');
+        if (!container) return;
+        runWhenRenderable(container, function() {
+            if (_lastFatigueReviewChartPayload) {
+                renderProfileAnalysisChart(
+                    _applyFatigueReviewLayerVisibility(_lastFatigueReviewChartPayload),
+                    'fatigue-review-chart'
+                );
+            } else {
+                _resizeFatigueReviewChartWhenStable();
+            }
+        }, {
+            attempts: 12,
+            onFail: function() {
+                console.warn('refreshFatigueReviewChartWhenVisible skipped: container is not renderable');
+            }
+        });
+    }
+
     function _resizeFatigueReviewChartWhenStable() {
         var chart = profileAnalysisChartInstances && profileAnalysisChartInstances['fatigue-review-chart'];
         var container = document.getElementById('fatigue-review-chart');
         if (!chart || !container) return;
-        var resizeOnce = function() {
-            if (!profileAnalysisChartInstances || profileAnalysisChartInstances['fatigue-review-chart'] !== chart) return;
-            if (!container.clientWidth || !container.clientHeight) return;
-            chart.resize();
-        };
-        resizeOnce();
-        if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
-            window.requestAnimationFrame(resizeOnce);
-        }
-        setTimeout(resizeOnce, 80);
-        setTimeout(resizeOnce, 220);
+        stableResizeChart(chart, container);
     }
 
     function _bindFatigueReviewChartAutoResize() {
@@ -15404,6 +15657,7 @@ function openConfigModalFromWarning() {
     function renderProfileAnalysisChart(activityData, containerId) {
         // 容器 ID：默认在 "预留分析" tab；详情舱复用同函数时传入 #activity-detail-profile-chart
         var targetId = containerId || 'profile-analysis-chart';
+        var renderOptions = arguments[2] || {};
         var container = document.getElementById(targetId);
         if (!container) return;
 
@@ -15416,6 +15670,7 @@ function openConfigModalFromWarning() {
         var insightEvents = (activityData && activityData.insight_events) || [];
 
         if (!Array.isArray(distanceCurve) || distanceCurve.length < 2) {
+            if (targetId === 'fatigue-review-chart') _frCancelFatigueReviewChartIntro();
             clearProfileAnalysisChart(targetId);
             if (targetId === 'fatigue-review-chart') {
                 _renderFatigueReviewLaneRail([]);
@@ -15429,13 +15684,38 @@ function openConfigModalFromWarning() {
             return;
         }
 
+        if (targetId === 'fatigue-review-chart' && !isElementRenderable(container)) {
+            runWhenRenderable(container, function() {
+                renderProfileAnalysisChart(activityData, targetId);
+            }, {
+                attempts: 12,
+                onFail: function() {
+                    console.warn('renderProfileAnalysisChart skipped: fatigue review container is not renderable');
+                }
+            });
+            return;
+        }
+
+        if (!isEchartsAvailable()) {
+            clearProfileAnalysisChart(targetId);
+            showChartUnavailableState(container, '图表组件加载失败');
+            return;
+        }
+
         if (!profileAnalysisChartInstances[targetId]) {
-            profileAnalysisChartInstances[targetId] = echarts.init(container);
+            try {
+                container.innerHTML = '';
+                profileAnalysisChartInstances[targetId] = echarts.init(container);
+            } catch (e) {
+                console.warn('echarts init failed', e);
+                showChartUnavailableState(container, '图表初始化失败');
+                return;
+            }
         }
         profileAnalysisChartInstance = profileAnalysisChartInstances[targetId]; // 兼容旧引用
 
         if (targetId === 'fatigue-review-chart') {
-            _renderFatigueReviewLayeredEcharts(activityData, targetId, distanceCurve);
+            _renderFatigueReviewLayeredEcharts(activityData, targetId, distanceCurve, renderOptions);
             return;
         }
 
@@ -15588,7 +15868,14 @@ function openConfigModalFromWarning() {
             ]
         };
 
-        profileAnalysisChartInstance.setOption(option, true);
+        try {
+            profileAnalysisChartInstance.setOption(option, true);
+            stableResizeChart(profileAnalysisChartInstance, container);
+        } catch (e) {
+            console.warn('renderProfileAnalysisChart failed', e);
+            clearProfileAnalysisChart(targetId);
+            showChartUnavailableState(container, '图表渲染失败');
+        }
     }
 
     function _frNumberOrNull(value) {
@@ -15748,6 +16035,121 @@ function openConfigModalFromWarning() {
         };
     }
 
+    function _frNumericRangeFromPoints(points, minSpan) {
+        var values = [];
+        points = Array.isArray(points) ? points : [];
+        for (var i = 0; i < points.length; i++) {
+            var point = points[i];
+            var value = Array.isArray(point) ? point[1] : point;
+            var num = _frNumberOrNull(value);
+            if (num != null) values.push(num);
+        }
+        if (!values.length) return {};
+        var low = Math.min.apply(null, values);
+        var high = Math.max.apply(null, values);
+        var span = Math.max(high - low, minSpan || 1);
+        var pad = Math.max(span * 0.12, (minSpan || 1) * 0.2);
+        if (high - low < (minSpan || 1)) {
+            var center = (high + low) / 2;
+            low = center - (minSpan || 1) / 2;
+            high = center + (minSpan || 1) / 2;
+        }
+        return {
+            min: Number((low - pad).toFixed(2)),
+            max: Number((high + pad).toFixed(2))
+        };
+    }
+
+    function _frClonePointWithY(point, yValue) {
+        if (!Array.isArray(point)) return point;
+        return [point[0], _frNumberOrNull(point[1]) == null ? null : yValue];
+    }
+
+    function _frInterpolateLineData(fromData, toData, progress) {
+        return (toData || []).map(function(targetPoint, idx) {
+            if (!Array.isArray(targetPoint)) return targetPoint;
+            var targetY = _frNumberOrNull(targetPoint[1]);
+            if (targetY == null) return [targetPoint[0], null];
+            var fromPoint = fromData && fromData[idx];
+            var fromY = Array.isArray(fromPoint) ? _frNumberOrNull(fromPoint[1]) : null;
+            if (fromY == null) fromY = targetY;
+            return [targetPoint[0], fromY + (targetY - fromY) * progress];
+        });
+    }
+
+    function _frIntroStartDataForLane(lane) {
+        var range = lane && lane.animationAxisRange ? lane.animationAxisRange : {};
+        var baseline = lane && lane.inverseAxis ? range.max : range.min;
+        if (_frNumberOrNull(baseline) == null) baseline = 0;
+        return (lane.data || []).map(function(point) {
+            return _frClonePointWithY(point, baseline);
+        });
+    }
+
+    function _frEaseOutCubic(t) {
+        return 1 - Math.pow(1 - t, 3);
+    }
+
+    function _frCancelFatigueReviewChartIntro() {
+        _fatigueReviewChartIntroSeq += 1;
+        if (_fatigueReviewChartIntroFrame && typeof window.cancelAnimationFrame === 'function') {
+            window.cancelAnimationFrame(_fatigueReviewChartIntroFrame);
+        }
+        _fatigueReviewChartIntroFrame = null;
+    }
+
+    function _frPlayFatigueReviewChartIntro(chart, option, lineSeriesMap, done) {
+        if (!chart) return;
+        if (!lineSeriesMap || !Object.keys(lineSeriesMap).length || typeof window === 'undefined') {
+            chart.setOption(option, true);
+            if (typeof done === 'function') done();
+            return;
+        }
+        _frCancelFatigueReviewChartIntro();
+        var seq = _fatigueReviewChartIntroSeq;
+        var duration = 620;
+        var startedAt = (window.performance && performance.now) ? performance.now() : Date.now();
+        var introOption = Object.assign({}, option, {
+            animation: false,
+            series: option.series.map(function(seriesItem, idx) {
+                if (!lineSeriesMap[idx]) return seriesItem;
+                return Object.assign({}, seriesItem, { data: lineSeriesMap[idx].from });
+            })
+        });
+        chart.setOption(introOption, true);
+
+        var step = function(now) {
+            if (seq !== _fatigueReviewChartIntroSeq) return;
+            var current = typeof now === 'number' ? now : Date.now();
+            var progress = Math.min(1, Math.max(0, (current - startedAt) / duration));
+            var eased = _frEaseOutCubic(progress);
+            var frameOption = Object.assign({}, option, {
+                animation: false,
+                series: option.series.map(function(seriesItem, idx) {
+                    if (!lineSeriesMap[idx]) return seriesItem;
+                    return Object.assign({}, seriesItem, {
+                        data: _frInterpolateLineData(lineSeriesMap[idx].from, lineSeriesMap[idx].to, eased)
+                    });
+                })
+            });
+            chart.setOption(frameOption, false);
+            if (progress < 1 && typeof window.requestAnimationFrame === 'function') {
+                _fatigueReviewChartIntroFrame = window.requestAnimationFrame(step);
+            } else {
+                _fatigueReviewChartIntroFrame = null;
+                chart.setOption(option, true);
+                if (typeof done === 'function') done();
+            }
+        };
+
+        if (typeof window.requestAnimationFrame === 'function') {
+            _fatigueReviewChartIntroFrame = window.requestAnimationFrame(step);
+        } else {
+            chart.setOption(option, true);
+            if (typeof done === 'function') done();
+        }
+    }
+
     function _frZoneColor(level) {
         var normalized = String(level || '').toLowerCase();
         if (normalized === 'low' || normalized === 'stable' || normalized === 'ok') return 'rgba(34, 197, 94, 0.12)';
@@ -15889,6 +16291,8 @@ function openConfigModalFromWarning() {
     function _renderFatigueReviewLayeredEcharts(activityData, targetId, distanceCurve) {
         var chart = profileAnalysisChartInstances[targetId];
         if (!chart) return;
+        var renderOptions = arguments[3] || {};
+        var shouldPlayIntroAnimation = targetId === 'fatigue-review-chart' && renderOptions.introAnimation === true;
 
         var fatigueZones = (activityData && activityData.fatigue_zones) || [];
         var insightEvents = (activityData && activityData.insight_events) || [];
@@ -15932,12 +16336,14 @@ function openConfigModalFromWarning() {
                 seriesType: def.seriesType || 'line',
                 axisMin: robustAxis && robustAxis.min != null ? robustAxis.min : null,
                 axisMax: robustAxis && robustAxis.max != null ? robustAxis.max : null,
+                animationAxisRange: robustAxis || _frNumericRangeFromPoints(pairedData, def.robustAxis && def.robustAxis.minSpan),
                 data: pairedData
             });
         }
 
         if (!lanes.length) {
             _renderFatigueReviewLaneRail(lanes);
+            _frCancelFatigueReviewChartIntro();
             clearProfileAnalysisChart(targetId);
             var container = document.getElementById(targetId);
             if (container) {
@@ -15970,6 +16376,7 @@ function openConfigModalFromWarning() {
         var xAxis = [];
         var yAxis = [];
         var series = [];
+        var introLineSeriesMap = {};
         var laneGap = 2.0;
         var topStart = 9;
         var bottomPad = 7;
@@ -16017,8 +16424,8 @@ function openConfigModalFromWarning() {
                 name: '',
                 nameLocation: 'middle',
                 nameGap: 0,
-                min: lane.axisMin != null ? lane.axisMin : 'dataMin',
-                max: lane.axisMax != null ? lane.axisMax : 'dataMax',
+                min: lane.axisMin != null ? lane.axisMin : (shouldPlayIntroAnimation && lane.animationAxisRange && lane.animationAxisRange.min != null ? lane.animationAxisRange.min : 'dataMin'),
+                max: lane.axisMax != null ? lane.axisMax : (shouldPlayIntroAnimation && lane.animationAxisRange && lane.animationAxisRange.max != null ? lane.animationAxisRange.max : 'dataMax'),
                 inverse: !!lane.inverseAxis,
                 axisLabel: {
                     color: lane.color,
@@ -16066,6 +16473,7 @@ function openConfigModalFromWarning() {
                 });
                 continue;
             }
+            var lineSeriesIndex = series.length;
             series.push({
                 name: lane.name,
                 type: 'line',
@@ -16085,6 +16493,12 @@ function openConfigModalFromWarning() {
                     emphasis: { disabled: true }
                 }
             });
+            if (shouldPlayIntroAnimation) {
+                introLineSeriesMap[lineSeriesIndex] = {
+                    from: _frIntroStartDataForLane(lane),
+                    to: lane.data
+                };
+            }
         }
 
         if (eventPinLineData.length) {
@@ -16159,17 +16573,34 @@ function openConfigModalFromWarning() {
             series: series
         };
 
-        chart.setOption(option, true);
-        if (containerEl && chart && typeof chart.resize === 'function') {
-            chart.resize({ height: containerEl.clientHeight || computedHeight });
+        try {
+            var finishRender = function() {
+                if (containerEl && chart && typeof chart.resize === 'function') {
+                    chart.resize({ height: containerEl.clientHeight || computedHeight });
+                }
+                _resizeFatigueReviewChartWhenStable();
+            };
+            if (shouldPlayIntroAnimation) {
+                _frPlayFatigueReviewChartIntro(chart, option, introLineSeriesMap, finishRender);
+            } else {
+                _frCancelFatigueReviewChartIntro();
+                chart.setOption(option, true);
+                finishRender();
+            }
+        } catch (e) {
+            console.warn('render fatigue review chart failed', e);
+            clearProfileAnalysisChart(targetId);
+            if (containerEl) showChartUnavailableState(containerEl, '复盘图渲染失败');
         }
-        _resizeFatigueReviewChartWhenStable();
     }
 
     function clearProfileAnalysisChart(containerId) {
         if (containerId) {
             // 清理指定实例
             if (containerId === 'fatigue-review-chart' && typeof _unbindFatigueReviewChartAutoResize === 'function') {
+                if (typeof _frCancelFatigueReviewChartIntro === 'function') {
+                    _frCancelFatigueReviewChartIntro();
+                }
                 _unbindFatigueReviewChartAutoResize();
             }
             if (profileAnalysisChartInstances[containerId]) {

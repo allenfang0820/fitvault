@@ -112,6 +112,7 @@ class TestP5SnapshotWhitelistGate(unittest.TestCase):
         "display_curves",
         "display_meta",
         "context_tags",
+        "environment_context",
         "ai_insight",
         "advice",
         "disclaimer",
@@ -375,8 +376,8 @@ class TestP5P4UiStructureGate(unittest.TestCase):
             "yAxis: yAxis",
             "_frRobustAxisRange(pairedData",
             "robustAxis: { hardMin: -35, hardMax: 35, minSpan: 4 }",
-            "min: lane.axisMin != null ? lane.axisMin : 'dataMin'",
-            "max: lane.axisMax != null ? lane.axisMax : 'dataMax'",
+            "min: lane.axisMin != null ? lane.axisMin : (shouldPlayIntroAnimation",
+            "max: lane.axisMax != null ? lane.axisMax : (shouldPlayIntroAnimation",
         ):
             self.assertIn(text, fn_body)
         for token in (
@@ -918,7 +919,7 @@ class TestP5P4UiStructureGate(unittest.TestCase):
             "_renderFatigueReviewChartFooter({})",
             "_lastFatigueReviewChartPayload = chartPayload",
             "chartPayload = _applyFatigueReviewLayerVisibility(chartPayload)",
-            "renderProfileAnalysisChart(chartPayload, 'fatigue-review-chart')",
+            "renderProfileAnalysisChart(chartPayload, 'fatigue-review-chart', { introAnimation: true })",
             "_bindFatigueReviewChartAutoResize()",
             "_resizeFatigueReviewChartWhenStable()",
         ):

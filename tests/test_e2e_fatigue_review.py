@@ -166,6 +166,7 @@ class TestSevenSegmentWhitelist:
         data = res["data"]
         whitelist = [
             "metrics", "collapse_events", "curves", "display_curves", "display_meta", "context_tags",
+            "environment_context",
             "ai_insight", "advice", "disclaimer",
         ]
         for seg in whitelist:
@@ -486,7 +487,7 @@ class TestBuildFatigueReviewSnapshot:
         snapshot = api._build_fatigue_review_snapshot(mock_row)
         whitelist = [
             "sport_type", "metrics", "collapse_events", "curves",
-            "display_curves", "display_meta", "context_tags", "ai_insight", "advice", "disclaimer",
+            "display_curves", "display_meta", "context_tags", "environment_context", "ai_insight", "advice", "disclaimer",
         ]
         for seg in whitelist:
             assert seg in snapshot, f"7 段白名单缺:{seg}"
@@ -650,7 +651,7 @@ class TestFatigueReviewEmptyStates:
         snapshot = api._build_fatigue_review_snapshot(mock_row)
         whitelist = [
             "sport_type", "metrics", "collapse_events", "curves",
-            "display_curves", "display_meta", "context_tags", "ai_insight", "advice", "disclaimer",
+            "display_curves", "display_meta", "context_tags", "environment_context", "ai_insight", "advice", "disclaimer",
         ]
         for k in whitelist:
             assert k in snapshot, f"V7.7 违规:7 段白名单缺 {k}"

@@ -56,7 +56,7 @@ class TestTrendStructure:
         snapshot = api._build_fatigue_review_snapshot(mock_row)
         whitelist = [
             "sport_type", "metrics", "collapse_events", "curves",
-            "context_tags", "ai_insight", "advice", "disclaimer",
+            "context_tags", "environment_context", "ai_insight", "advice", "disclaimer",
         ]
         for seg in whitelist:
             assert seg in snapshot

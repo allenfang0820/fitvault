@@ -263,6 +263,41 @@ def set_runtime_app_icon() -> None:
         logger.debug("设置运行时图标失败: %s", exc)
 
 
+def apply_macos_native_window_chrome(window: Any) -> bool:
+    """Use a transparent macOS titlebar while keeping native traffic-light buttons."""
+    if sys.platform != "darwin":
+        return False
+    try:
+        native_window = getattr(window, "native", None)
+        if native_window is None:
+            return False
+
+        def _apply() -> None:
+            import AppKit
+
+            full_size_mask = getattr(
+                AppKit,
+                "NSWindowStyleMaskFullSizeContentView",
+                getattr(AppKit, "NSFullSizeContentViewWindowMask", 1 << 15),
+            )
+            title_hidden = getattr(AppKit, "NSWindowTitleHidden", 1)
+            native_window.setStyleMask_(native_window.styleMask() | full_size_mask)
+            native_window.setTitlebarAppearsTransparent_(True)
+            native_window.setTitleVisibility_(title_hidden)
+            native_window.setMovableByWindowBackground_(False)
+            native_window.standardWindowButton_(AppKit.NSWindowCloseButton).setHidden_(False)
+            native_window.standardWindowButton_(AppKit.NSWindowMiniaturizeButton).setHidden_(False)
+            native_window.standardWindowButton_(AppKit.NSWindowZoomButton).setHidden_(False)
+
+        from PyObjCTools import AppHelper
+
+        AppHelper.callAfter(_apply)
+        return True
+    except Exception as exc:
+        logger.debug("应用 macOS 原生窗口样式失败: %s", exc)
+        return False
+
+
 def _default_application_config() -> dict:
     return dict(DEFAULT_APP_CONFIG)
 
@@ -3702,6 +3737,27 @@ def _mark_activity_processing_failed(file_path: str | Path, error: str) -> None:
         conn.close()
 
 
+def _delete_processing_activity_placeholder(conn: sqlite3.Connection, file_path: str, keep_id: int = 0) -> int:
+    if not file_path:
+        return 0
+    path_values = {str(file_path)}
+    try:
+        path_values.add(str(Path(file_path).expanduser().resolve()))
+    except Exception:
+        pass
+    placeholders = ",".join("?" * len(path_values))
+    cur = conn.execute(
+        f"""
+        DELETE FROM activities
+        WHERE file_path IN ({placeholders})
+          AND id != ?
+          AND COALESCE(NULLIF(processing_status, ''), 'ready') IN ('processing', 'pending')
+        """,
+        tuple(path_values) + (int(keep_id or 0),),
+    )
+    return int(cur.rowcount or 0)
+
+
 def _activity_display_sql() -> str:
     return (
         "CASE "
@@ -3817,12 +3873,29 @@ def _source_scope_filter_clause(source_dir: str) -> tuple[str, list[Any]]:
 
 
 def _activity_row_identity(row: dict[str, Any]) -> str:
+    start_time = str(row.get("start_time_utc") or row.get("start_time") or "").strip()
+    dist_km = _safe_float(
+        row.get("dist_km")
+        if row.get("dist_km") is not None
+        else row.get("distance_km_clean"),
+        0.0,
+    )
+    duration_sec = _safe_int(
+        row.get("duration_sec")
+        if row.get("duration_sec") is not None
+        else row.get("duration"),
+        0,
+    )
+    if start_time and dist_km > 0 and duration_sec > 0:
+        sport_type = str(row.get("sub_sport_type") or row.get("sport_type") or "unknown").strip() or "unknown"
+        return f"semantic:{sport_type}:{start_time}:{round(dist_km, 3):.3f}:{duration_sec}"
+
     filename = str(row.get("filename") or row.get("file_name") or "").strip()
     if filename:
-        return filename
+        return f"file:{filename}"
     file_path = str(row.get("file_path") or "").strip()
     if file_path:
-        return os.path.basename(file_path)
+        return f"file:{os.path.basename(file_path)}"
     return f"id:{row.get('id')}"
 
 
@@ -3836,6 +3909,58 @@ def _dedupe_activity_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         seen.add(identity)
         deduped.append(row)
     return deduped
+
+
+def _expand_activity_ids_to_duplicate_groups(conn: sqlite3.Connection, ids: list[int]) -> tuple[list[dict[str, Any]], list[int]]:
+    """Expand visible activity ids to hidden semantic duplicates for hard delete."""
+    if not ids:
+        return [], []
+    select_fields = """
+        id,
+        COALESCE(file_name, filename) AS file_name,
+        filename,
+        file_path,
+        start_time,
+        start_time_utc,
+        sport_type,
+        sub_sport_type,
+        dist_km,
+        COALESCE(duration, duration_sec) AS duration,
+        duration_sec
+    """
+    selected_rows = conn.execute(
+        f"SELECT {select_fields} FROM activities WHERE id IN ({','.join('?' * len(ids))})",
+        ids,
+    ).fetchall()
+    selected_dicts = [dict(row) for row in selected_rows]
+    existing_ids = {int(row["id"]) for row in selected_dicts}
+    missing_ids = sorted(set(ids) - existing_ids)
+    semantic_identities = {
+        _activity_row_identity(row)
+        for row in selected_dicts
+        if _activity_row_identity(row).startswith("semantic:")
+    }
+    if not semantic_identities:
+        return selected_dicts, missing_ids
+
+    candidate_rows = conn.execute(
+        f"""
+        SELECT {select_fields}
+        FROM activities
+        WHERE deleted_at IS NULL
+        ORDER BY id ASC
+        """
+    ).fetchall()
+    expanded: list[dict[str, Any]] = []
+    seen_ids: set[int] = set()
+    for row in [dict(item) for item in candidate_rows]:
+        row_id = int(row["id"])
+        if row_id in existing_ids or _activity_row_identity(row) in semantic_identities:
+            if row_id in seen_ids:
+                continue
+            seen_ids.add(row_id)
+            expanded.append(row)
+    return expanded, missing_ids
 
 
 def _activity_points_for_duplicate_check(activity: dict[str, Any]) -> list[dict[str, Any]]:
@@ -3943,7 +4068,7 @@ def _find_activity_by_file_name(conn: sqlite3.Connection, file_name: str, includ
     deleted_clause = "" if include_deleted else "AND deleted_at IS NULL"
     row = conn.execute(
         f"""
-        SELECT id, file_name, filename, file_path, deleted_at
+        SELECT id, file_name, filename, file_path, deleted_at, processing_status
         FROM activities
         WHERE COALESCE(file_name, filename) = ? {deleted_clause}
         ORDER BY id DESC
@@ -3958,7 +4083,8 @@ def _find_activity_by_file_path(conn: sqlite3.Connection, file_path: str, includ
     deleted_clause = "" if include_deleted else "AND deleted_at IS NULL"
     row = conn.execute(
         f"""
-        SELECT id, file_name, filename, file_path, title, sport_type, sub_sport_type, start_time, updated_at, file_mtime, file_size, deleted_at
+        SELECT id, file_name, filename, file_path, title, sport_type, sub_sport_type, start_time, updated_at,
+               file_mtime, file_size, deleted_at, processing_status
         FROM activities
         WHERE file_path = ? {deleted_clause}
         ORDER BY id DESC
@@ -4016,7 +4142,10 @@ def _is_file_unchanged(disk_path: Path, existing: dict[str, Any]) -> bool:
     )
 
 
-def _persist_sync_activity(activity: dict[str, Any]) -> dict[str, Any]:
+def _persist_sync_activity(
+    activity: dict[str, Any],
+    dedupe_index: dict[str, dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     profile_backend._assert_gpx_not_persisted(activity)  # §二 §八: GPX/KML 用后即抛
     file_name = str(activity.get("file_name") or activity.get("filename") or "").strip()
     file_path = str(activity.get("file_path") or "").strip()
@@ -4046,6 +4175,8 @@ def _persist_sync_activity(activity: dict[str, Any]) -> dict[str, Any]:
         conn = profile_backend._conn()
         try:
             existing = _find_activity_by_file_path(conn, file_path, include_deleted=True) if file_path else None
+            if existing and str(existing.get("processing_status") or "").strip().lower() in {"processing", "pending"}:
+                existing = None
             if existing and not existing.get("deleted_at"):
                 file_mtime = activity.get("file_mtime")
                 file_size = activity.get("file_size")
@@ -4068,6 +4199,38 @@ def _persist_sync_activity(activity: dict[str, Any]) -> dict[str, Any]:
                     return {"op": "skipped", "id": int(existing["id"])}
             if not existing and file_name:
                 existing = _find_activity_by_file_name(conn, file_name, include_deleted=True)
+                if existing and str(existing.get("processing_status") or "").strip().lower() in {"processing", "pending"}:
+                    existing = None
+            strict_dedupe_key = profile_backend.build_activity_dedupe_key(activity)
+            if not existing and strict_dedupe_key:
+                if dedupe_index is not None:
+                    indexed = dedupe_index.get(strict_dedupe_key)
+                    if indexed:
+                        row = conn.execute(
+                            """
+                            SELECT id, file_name, filename, file_path, deleted_at
+                            FROM activities
+                            WHERE id = ? AND deleted_at IS NULL
+                            """,
+                            (int(indexed.get("id") or 0),),
+                        ).fetchone()
+                        existing = dict(row) if row else None
+                else:
+                    existing = profile_backend.find_activity_by_dedupe_key(conn, activity)
+                if existing:
+                    existing_path = str(existing.get("file_path") or "").strip()
+                    current_path = str(activity.get("file_path") or "").strip()
+                    if current_path and existing_path != current_path:
+                        _delete_processing_activity_placeholder(conn, current_path, keep_id=int(existing["id"]))
+                        conn.commit()
+                        if dedupe_index is not None:
+                            dedupe_index[strict_dedupe_key] = {"id": int(existing["id"])}
+                        return {
+                            "op": "skipped",
+                            "id": int(existing["id"]),
+                            "dedupe": "strict_key",
+                            "duplicate": True,
+                        }
             semantic_duplicate = None
             if not existing:
                 semantic_duplicate = _find_semantic_duplicate_activity(activity)
@@ -4089,12 +4252,14 @@ def _persist_sync_activity(activity: dict[str, Any]) -> dict[str, Any]:
                 _update_activity_sync_row(conn, int(existing["id"]), activity)
                 op = "updated"
                 activity_id = int(existing["id"])
-                dedupe = "semantic" if semantic_duplicate else None
+                dedupe = "strict_key" if strict_dedupe_key else ("semantic" if semantic_duplicate else None)
             else:
                 activity_id = _insert_activity_sync_row(conn, activity)
                 op = "inserted"
                 dedupe = None
             conn.commit()
+            if dedupe_index is not None and strict_dedupe_key:
+                dedupe_index[strict_dedupe_key] = {"id": activity_id}
             res = {"op": op, "id": activity_id}
             if dedupe:
                 res["dedupe"] = dedupe
@@ -4120,9 +4285,23 @@ def _sync_single_fit_file(file_path: str | Path) -> dict[str, Any]:
     write_res = _persist_sync_activity(activity)
     activity_id = int(write_res.get("id") or 0)
 
+    if write_res.get("op") == "skipped" and write_res.get("dedupe") == "strict_key":
+        try:
+            if target.exists() and target.is_file() and _is_path_under_dir(target, Path(TRACKS_DIR).expanduser().resolve()):
+                target.unlink()
+        except OSError:
+            logger.warning("[dedup] duplicate FIT file cleanup failed: %s", target)
+
     conn = profile_backend._conn()
     try:
-        row = _find_activity_by_file_path(conn, str(target))
+        if activity_id:
+            fetched = conn.execute(
+                "SELECT * FROM activities WHERE id = ? AND deleted_at IS NULL",
+                (activity_id,),
+            ).fetchone()
+            row = dict(fetched) if fetched else None
+        else:
+            row = _find_activity_by_file_path(conn, str(target))
     finally:
         conn.close()
 
@@ -4132,6 +4311,8 @@ def _sync_single_fit_file(file_path: str | Path) -> dict[str, Any]:
         "file_path": str(target),
         "filename": target.name,
         "op": write_res.get("op"),
+        "dedupe": write_res.get("dedupe"),
+        "duplicate": bool(write_res.get("duplicate")),
         "activity": row or {},
         "resolved": activity.get("resolved"),
         "diff": activity.get("diff"),
@@ -4919,6 +5100,7 @@ class Api:
                 return {"ok": True, "already_shown": True}
             target = self._window
             if target is not None:
+                apply_macos_native_window_chrome(target)
                 target.show()
                 self._window_shown = True
                 _record_startup_event("window_show")
@@ -6191,6 +6373,7 @@ class Api:
             conn = profile_backend._conn()
             try:
                 existing_index = _load_existing_file_index(conn)
+                dedupe_index = profile_backend.load_activity_dedupe_index(conn)
             finally:
                 conn.close()
 
@@ -6251,10 +6434,17 @@ class Api:
                         message=f"正在写入数据库 {index}/{len(pending_files)}: {file_name}",
                         errors=errors[-5:],
                     )
-                    write_res = _persist_sync_activity(activity)
+                    write_res = _persist_sync_activity(activity, dedupe_index=dedupe_index)
                     if write_res.get("op") == "updated":
                         updated += 1
                     elif write_res.get("op") == "skipped":
+                        if write_res.get("dedupe") == "strict_key":
+                            try:
+                                resolved_fit = fit_path.expanduser().resolve()
+                                if resolved_fit.exists() and resolved_fit.is_file() and _is_path_under_dir(resolved_fit, Path(TRACKS_DIR).expanduser().resolve()):
+                                    resolved_fit.unlink()
+                            except OSError:
+                                logger.warning("[dedup] duplicate FIT file cleanup failed: %s", fit_path)
                         skipped += 1
                     else:
                         inserted += 1
@@ -6395,10 +6585,8 @@ class Api:
         skipped_unsafe_paths: list[dict[str, str]] = []
         missing_file_paths: list[dict[str, str]] = []
         try:
-            rows = conn.execute(
-                "SELECT id, file_path FROM activities WHERE id IN ({})".format(",".join("?" * len(ids))),
-                ids,
-            ).fetchall()
+            expanded_rows, missing_ids = _expand_activity_ids_to_duplicate_groups(conn, ids)
+            rows = expanded_rows
             if not rows:
                 return _api_error(
                     API_CODE_NOT_FOUND,
@@ -6406,8 +6594,8 @@ class Api:
                     {"audit_id": audit_id, "missing_ids": ids, "file_errors": [], "skipped_unsafe_paths": []},
                 )
 
-            existing_ids = [int(row["id"]) for row in rows]
-            missing_ids = sorted(set(ids) - set(existing_ids))
+            expanded_ids = sorted({int(row["id"]) for row in rows})
+            duplicate_expanded_ids = sorted(set(expanded_ids) - set(ids))
             controlled_dir = Path(TRACKS_DIR).expanduser().resolve()
             deletable_ids: list[int] = []
             for row in rows:
@@ -6462,6 +6650,7 @@ class Api:
                 "missing_file_paths": missing_file_paths,
                 "file_errors": file_errors,
                 "skipped_unsafe_paths": skipped_unsafe_paths,
+                "expanded_duplicate_ids": duplicate_expanded_ids,
             }
             if missing_ids:
                 result["missing_ids"] = missing_ids
@@ -6614,11 +6803,19 @@ class Api:
                         dst = Path(self.unique_fit_path(TRACKS_DIR, src.name))
                         current_dst = dst
                         shutil.copy2(str(src), str(dst))
-                        _upsert_processing_activity_placeholder(dst, src.name)
-                        emit_progress(f"已加入列表，后台解析 {min(current + 1, total)}/{total}：{src.name}", src.name)
+                        emit_progress(f"正在解析 {min(current + 1, total)}/{total}：{src.name}", src.name)
                         # 手动调用单入口同步解析
                         res = _sync_single_fit_file(dst)
                         if res.get("ok"):
+                            if res.get("op") == "skipped" and res.get("dedupe") == "strict_key":
+                                skipped.append({
+                                    "file": str(fp),
+                                    "duplicate_of": res.get("activity_id"),
+                                    "dedupe": "strict_key",
+                                })
+                                current += 1
+                                emit_progress(f"已跳过重复活动 {current}/{total}：{src.name}", src.name)
+                                continue
                             # T-IMPORT-FIT-DEDUP (二次扩展): FIT 分支同样用文件名 stem 覆盖 title
                             # 防止 FIT 内部 title 字段(如 GBK 误读)导致活动列表显示乱码
                             self._apply_title_override(res.get("activity_id"), dst)
@@ -6659,10 +6856,18 @@ class Api:
                             dst = Path(self.unique_fit_path(TRACKS_DIR, fit.name))
                             current_dst = dst
                             shutil.move(str(fit), str(dst))
-                            _upsert_processing_activity_placeholder(dst, fit.name)
-                            emit_progress(f"已加入列表，后台解析 {min(current + 1, total)}/{total}：{fit.name}", fit.name)
+                            emit_progress(f"正在解析 {min(current + 1, total)}/{total}：{fit.name}", fit.name)
                             res = _sync_single_fit_file(dst)
                             if res.get("ok"):
+                                if res.get("op") == "skipped" and res.get("dedupe") == "strict_key":
+                                    skipped.append({
+                                        "file": str(fit),
+                                        "duplicate_of": res.get("activity_id"),
+                                        "dedupe": "strict_key",
+                                    })
+                                    current += 1
+                                    emit_progress(f"已跳过重复活动 {current}/{total}：{fit.name}", fit.name)
+                                    continue
                                 # T-IMPORT-FIT-DEDUP (二次): ZIP 分支同样覆盖 title
                                 self._apply_title_override(res.get("activity_id"), dst)
                                 skip_entry = self._rollback_if_semantic_duplicate(res, dst, fp)
@@ -6876,6 +7081,7 @@ class Api:
             if source_where:
                 where_parts.append(source_where.replace("WHERE ", "", 1))
                 params.extend(source_params)
+            where_parts.append("COALESCE(NULLIF(processing_status, ''), 'ready') NOT IN ('processing', 'pending')")
             if sport_filter != "all":
                 where_parts.append(f"{display_sql} = ?")
                 params.append(sport_filter)
@@ -9010,6 +9216,14 @@ def _api_save_activity(self, data: dict) -> dict:
         return {"ok": False, "error": str(e)}
 
 
+def _api_cleanup_duplicate_activities(self, dry_run: bool = True) -> dict:
+    try:
+        return _api_success(profile_backend.cleanup_duplicate_activities(dry_run=bool(dry_run)))
+    except Exception as e:
+        logger.exception("cleanup_duplicate_activities failed")
+        return _api_error(API_CODE_DB, "清理重复活动失败", {"error": str(e)})
+
+
 Api._build_results_payload = _api_build_results_payload
 Api._build_honors_payload = _api_build_honors_payload
 Api.get_person_sport_hub_data = _api_get_person_sport_hub_data
@@ -9024,6 +9238,7 @@ Api.validate_fit_directory = _api_validate_fit_directory
 Api.scan_fit_directory = _api_scan_fit_directory
 Api.check_duplicate_track = _api_check_duplicate_track
 Api.save_activity = _api_save_activity
+Api.cleanup_duplicate_activities = _api_cleanup_duplicate_activities
 
 
 def _get_schema_version() -> int:
@@ -9135,6 +9350,8 @@ def main() -> None:
         height=800,
         min_size=(800, 600),
         hidden=True,
+        frameless=True,
+        easy_drag=True,
         background_color='#061626',  # 匹配启动图主背景色，降低原生窗口预绘制闪烁
     )
     _record_startup_event("window_created")

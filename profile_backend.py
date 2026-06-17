@@ -151,12 +151,311 @@ ACTIVITY_LIST_INDEX_SQL: tuple[tuple[str, str], ...] = (
         "idx_activities_file_path",
         "CREATE INDEX IF NOT EXISTS idx_activities_file_path ON activities(file_path)",
     ),
+    (
+        "idx_activities_dedupe_lookup",
+        """
+        CREATE INDEX IF NOT EXISTS idx_activities_dedupe_lookup
+        ON activities(
+            deleted_at,
+            start_time_utc,
+            start_time,
+            sport_type,
+            sub_sport_type,
+            dist_km,
+            duration_sec
+        )
+        """,
+    ),
 )
 
 
 def _ensure_activity_list_indexes(conn: sqlite3.Connection) -> None:
     for _name, sql in ACTIVITY_LIST_INDEX_SQL:
         conn.execute(sql)
+
+
+def _dedupe_float(value: Any) -> float | None:
+    try:
+        if value is None or value == "":
+            return None
+        num = float(value)
+        if not math.isfinite(num):
+            return None
+        return num
+    except (TypeError, ValueError):
+        return None
+
+
+def _dedupe_int(value: Any) -> int | None:
+    try:
+        if value is None or value == "":
+            return None
+        return int(round(float(value)))
+    except (TypeError, ValueError):
+        return None
+
+
+def _activity_list_semantic_identity(row: dict[str, Any]) -> str:
+    """Return a stable UI-list identity for the same imported activity.
+
+    The database may contain duplicate rows from earlier imports.  We only use
+    the semantic key when start time, distance, and duration are present enough
+    to be meaningful; otherwise we fall back to file identity.
+    """
+    start_time = str(row.get("start_time_utc") or row.get("start_time") or "").strip()
+    dist_km = _dedupe_float(
+        row.get("dist_km")
+        if row.get("dist_km") is not None
+        else row.get("distance_km_clean")
+    )
+    duration_sec = _dedupe_int(
+        row.get("duration_sec")
+        if row.get("duration_sec") is not None
+        else row.get("duration")
+    )
+    if start_time and dist_km is not None and dist_km > 0 and duration_sec and duration_sec > 0:
+        sport_type = str(row.get("sub_sport_type") or row.get("sport_type") or "unknown").strip() or "unknown"
+        return f"semantic:{sport_type}:{start_time}:{round(dist_km, 3):.3f}:{duration_sec}"
+
+    filename = str(row.get("filename") or row.get("file_name") or "").strip()
+    if filename:
+        return f"file:{filename}"
+    file_path = str(row.get("file_path") or "").strip()
+    if file_path:
+        return f"file:{os.path.basename(file_path)}"
+    return f"id:{row.get('id')}"
+
+
+def _dedupe_activity_list_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    deduped: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for row in rows:
+        identity = _activity_list_semantic_identity(row)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        deduped.append(row)
+    return deduped
+
+
+def _canonical_dedupe_sport(data: dict[str, Any]) -> str:
+    sub_sport = str(data.get("sub_sport_type") or "").strip()
+    if sub_sport and sub_sport.lower() != "unknown":
+        return sub_sport
+    sport = str(data.get("sport_type") or "").strip()
+    return sport or "unknown"
+
+
+def build_activity_dedupe_key(data: dict[str, Any]) -> str:
+    """Build a strict duplicate key for identical FIT activities.
+
+    Empty means required fields are missing and the caller must not use strict
+    key dedupe for this row.
+    """
+    start_time = str(data.get("start_time_utc") or data.get("start_time") or "").strip()
+    dist_km = _dedupe_float(
+        data.get("dist_km")
+        if data.get("dist_km") is not None
+        else data.get("distance_km_clean")
+    )
+    duration_sec = _dedupe_int(
+        data.get("duration_sec")
+        if data.get("duration_sec") is not None
+        else data.get("duration")
+    )
+    if not start_time or dist_km is None or dist_km <= 0 or not duration_sec or duration_sec <= 0:
+        return ""
+    return f"{_canonical_dedupe_sport(data)}|{start_time}|{round(dist_km, 3):.3f}|{duration_sec}"
+
+
+def find_activity_by_dedupe_key(conn: sqlite3.Connection, data: dict[str, Any]) -> dict[str, Any] | None:
+    key = build_activity_dedupe_key(data)
+    if not key:
+        return None
+    start_time = str(data.get("start_time_utc") or data.get("start_time") or "").strip()
+    rows = conn.execute(
+        """
+        SELECT id, file_name, filename, file_path, start_time, start_time_utc,
+               sport_type, sub_sport_type, dist_km, duration_sec, updated_at, deleted_at
+        FROM activities
+        WHERE deleted_at IS NULL
+          AND (start_time_utc = ? OR start_time = ?)
+        ORDER BY id ASC
+        """,
+        (start_time, start_time),
+    ).fetchall()
+    for row in rows:
+        row_dict = dict(row)
+        if build_activity_dedupe_key(row_dict) == key:
+            return row_dict
+    return None
+
+
+def load_activity_dedupe_index(conn: sqlite3.Connection) -> dict[str, dict[str, Any]]:
+    rows = conn.execute(
+        """
+        SELECT id, file_name, filename, file_path, start_time, start_time_utc,
+               sport_type, sub_sport_type, dist_km, duration_sec, updated_at, deleted_at
+        FROM activities
+        WHERE deleted_at IS NULL
+        ORDER BY id ASC
+        """
+    ).fetchall()
+    index: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        row_dict = dict(row)
+        key = build_activity_dedupe_key(row_dict)
+        if key and key not in index:
+            index[key] = row_dict
+    return index
+
+
+def _activity_track_payload_size(row: dict[str, Any]) -> int:
+    total = 0
+    for key in ("track_json", "points_json"):
+        raw = row.get(key)
+        if not raw:
+            continue
+        try:
+            obj = json.loads(raw) if isinstance(raw, str) else raw
+        except Exception:
+            continue
+        if isinstance(obj, dict):
+            obj = obj.get("points") or obj.get("track_data") or []
+        if isinstance(obj, list):
+            total += len(obj)
+    return total
+
+
+def _cleanup_keep_rank(row: dict[str, Any]) -> tuple[int, int, float, int]:
+    file_path = str(row.get("file_path") or "").strip()
+    file_exists = 1 if file_path and Path(file_path).expanduser().exists() else 0
+    track_size = _activity_track_payload_size(row)
+    updated_raw = str(row.get("updated_at") or "").strip()
+    try:
+        updated_ts = datetime.fromisoformat(updated_raw.replace("Z", "+00:00")).timestamp() if updated_raw else 0.0
+    except Exception:
+        updated_ts = 0.0
+    # Higher is better except id, where lower is better.
+    return (file_exists, track_size, updated_ts, -int(row.get("id") or 0))
+
+
+def _path_under_dir(path: Path, base_dir: Path) -> bool:
+    try:
+        path.relative_to(base_dir)
+        return True
+    except ValueError:
+        return False
+
+
+def cleanup_duplicate_activities(dry_run: bool = True) -> dict[str, Any]:
+    """Clean strict duplicate activities.
+
+    Default dry-run mode reports duplicate groups without mutating DB or files.
+    """
+    def _run() -> dict[str, Any]:
+        conn = _conn()
+        groups: dict[str, list[dict[str, Any]]] = {}
+        try:
+            _init_schema(conn)
+            rows = conn.execute(
+                """
+                SELECT id, file_name, filename, file_path, start_time, start_time_utc,
+                       sport_type, sub_sport_type, dist_km, duration_sec,
+                       points_json, track_json, updated_at, deleted_at
+                FROM activities
+                WHERE deleted_at IS NULL
+                ORDER BY id ASC
+                """
+            ).fetchall()
+            for row in rows:
+                row_dict = dict(row)
+                key = build_activity_dedupe_key(row_dict)
+                if not key:
+                    continue
+                groups.setdefault(key, []).append(row_dict)
+
+            duplicate_groups = {key: items for key, items in groups.items() if len(items) > 1}
+            kept_ids: list[int] = []
+            deleted_ids: list[int] = []
+            files_deleted = 0
+            skipped_unsafe_paths: list[dict[str, str]] = []
+            file_errors: list[dict[str, str]] = []
+            report_groups: list[dict[str, Any]] = []
+            controlled_dir = Path(TRACKS_DIR).expanduser().resolve()
+
+            for key, items in duplicate_groups.items():
+                ordered = sorted(items, key=_cleanup_keep_rank, reverse=True)
+                keep = ordered[0]
+                delete_items = ordered[1:]
+                keep_id = int(keep["id"])
+                group_deleted_ids = [int(item["id"]) for item in delete_items]
+                kept_ids.append(keep_id)
+                deleted_ids.extend(group_deleted_ids)
+                report_groups.append({
+                    "dedupe_key": key,
+                    "kept_id": keep_id,
+                    "deleted_ids": group_deleted_ids,
+                })
+
+                if dry_run:
+                    continue
+
+                for item in delete_items:
+                    item_id = int(item["id"])
+                    fp = str(item.get("file_path") or "").strip()
+                    if not fp:
+                        continue
+                    try:
+                        path = Path(fp).expanduser().resolve()
+                        if not _path_under_dir(path, controlled_dir):
+                            skipped_unsafe_paths.append({"id": str(item_id), "file_path": fp, "reason": "outside_tracks_dir"})
+                            continue
+                        if path.exists() and path.is_file():
+                            path.unlink()
+                            files_deleted += 1
+                    except Exception as exc:
+                        file_errors.append({"id": str(item_id), "file_path": fp, "error": str(exc)})
+
+            rows_deleted = 0
+            if not dry_run and deleted_ids:
+                placeholders = ",".join("?" * len(deleted_ids))
+                placemark_table = conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='activity_placemarks'"
+                ).fetchone()
+                if placemark_table:
+                    conn.execute(
+                        f"DELETE FROM activity_placemarks WHERE activity_id IN ({placeholders})",
+                        deleted_ids,
+                    )
+                cur = conn.execute(
+                    f"DELETE FROM activities WHERE id IN ({placeholders})",
+                    deleted_ids,
+                )
+                rows_deleted = int(cur.rowcount or 0)
+                conn.commit()
+            else:
+                conn.rollback()
+
+            return {
+                "ok": True,
+                "dry_run": bool(dry_run),
+                "groups_found": len(duplicate_groups),
+                "rows_deleted": 0 if dry_run else rows_deleted,
+                "files_deleted": 0 if dry_run else files_deleted,
+                "kept_ids": kept_ids,
+                "deleted_ids": deleted_ids,
+                "groups": report_groups,
+                "skipped_unsafe_paths": skipped_unsafe_paths,
+                "file_errors": file_errors,
+            }
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+    return run_with_db_retry(_run)
 
 SYNC_STATE_DIR = str(_BASE / "sync_state")
 SYNC_STATE_PATH = os.path.join(SYNC_STATE_DIR, "sync_state.json")
@@ -1130,6 +1429,9 @@ def save_activity(data: dict[str, Any]) -> int:
         conn = _conn()
         try:
             _init_schema(conn)
+            existing = find_activity_by_dedupe_key(conn, data)
+            if existing:
+                return int(existing["id"])
             cur = conn.execute(
                 """
                 INSERT INTO activities
@@ -1361,6 +1663,7 @@ def get_activity_list_filtered(
         "COALESCE(source_type, 'fit_sdk') = 'fit_sdk'",
         "COALESCE(is_mock, 0) = 0",
         "deleted_at IS NULL",
+        "COALESCE(NULLIF(processing_status, ''), 'ready') NOT IN ('processing', 'pending')",
     ]
     params: list[Any] = []
 
@@ -1454,26 +1757,24 @@ def get_activity_list_filtered(
 
     conn = _conn()
     try:
-        count_row = conn.execute(
-            f"SELECT COUNT(*) FROM activities {where_sql}",
-            tuple(params),
-        ).fetchone()
-        total_count = int(count_row[0]) if count_row else 0
-
         rows = conn.execute(
             f"""
             SELECT {select_fields}
             FROM activities
             {where_sql}
             ORDER BY COALESCE(start_time, updated_at) DESC, id DESC
-            LIMIT ? OFFSET ?
             """,
-            tuple(params + [limit, offset]),
+            tuple(params),
         ).fetchall()
     finally:
         conn.close()
 
-    rows_dicts = [dict(r) for r in rows]
+    all_rows_dicts = [dict(r) for r in rows]
+    deduped_all_rows = _dedupe_activity_list_rows(all_rows_dicts)
+    total_count = len(deduped_all_rows)
+    safe_offset = max(0, int(offset or 0))
+    safe_limit = max(0, int(limit or 0))
+    rows_dicts = deduped_all_rows[safe_offset:safe_offset + safe_limit] if safe_limit else []
     # §契约 §二/§五:Resolver 层在响应中注入 sport_type_cn,前端不再做翻译
     for _row in rows_dicts:
         _resolved = (str(_row.get("sub_sport_type") or "").strip() or _row.get("sport_type"))
@@ -2669,6 +2970,19 @@ def check_duplicate_activity(
             score += 30.0
         elif overlap_ratio >= 0.7:
             score += 15.0
+
+        # 没有可比对轨迹点时,同一开始时间 + 几乎相同距离/时长本身就是强重复信号。
+        # 旧评分在这种场景最高只有 70 分,会漏掉 Garmin/FIT 重复导入的同一活动。
+        if (
+            time_diff_sec is not None
+            and time_diff_sec <= 60
+            and dist_km > 0
+            and duration_sec > 0
+            and db_dur > 0
+            and dist_diff_ratio <= 0.01
+            and abs(db_dur - duration_sec) / max(duration_sec, 1) <= 0.01
+        ):
+            score = max(score, 85.0)
 
         logger.info(f"[{r_dict['filename']}] 查重得分: {score} (时间差: {time_diff_sec if time_diff_sec is not None else 'N/A'}s, 里程差: {dist_diff_ratio*100:.1f}%, 时长差: {dur_diff_ratio*100 if duration_sec>0 and db_dur>0 else 'N/A'}%, 重合度: {overlap_ratio*100:.1f}%)")
 

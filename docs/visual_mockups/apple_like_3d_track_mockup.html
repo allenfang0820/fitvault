@@ -1,0 +1,438 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Apple-like 3D Track Visual Mockup</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b1118;
+      --glass: rgba(18, 24, 31, 0.58);
+      --glass-strong: rgba(16, 22, 29, 0.72);
+      --line: #32d4a4;
+      --line-hot: #f5c84c;
+      --muted: rgba(235, 244, 255, 0.64);
+      --text: rgba(246, 250, 255, 0.94);
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; width: 100%; height: 100%; background: #111827; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Arial, sans-serif; }
+
+    .frame {
+      width: 1440px;
+      height: 900px;
+      position: relative;
+      overflow: hidden;
+      background:
+        radial-gradient(circle at 50% 33%, rgba(255,255,255,0.25), transparent 36%),
+        linear-gradient(180deg, #b8c9c1 0%, #dbe1d7 42%, #eef0e7 100%);
+    }
+
+    .map {
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(120deg, rgba(231,239,229,0.88), rgba(246,244,235,0.92)),
+        repeating-linear-gradient(13deg, transparent 0 38px, rgba(255,255,255,0.25) 39px 40px);
+      filter: saturate(0.72) brightness(1.05);
+    }
+
+    .terrain {
+      position: absolute;
+      inset: -40px;
+      opacity: 0.72;
+      background:
+        radial-gradient(ellipse at 28% 24%, rgba(102,142,108,0.24), transparent 25%),
+        radial-gradient(ellipse at 72% 20%, rgba(128,156,118,0.17), transparent 30%),
+        radial-gradient(ellipse at 44% 68%, rgba(112,148,112,0.22), transparent 30%),
+        radial-gradient(ellipse at 80% 76%, rgba(154,151,128,0.16), transparent 24%);
+      transform: skewY(-7deg) scale(1.08);
+    }
+
+    svg.map-lines {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    .sidebar {
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 54px;
+      background: linear-gradient(180deg, rgba(9,17,27,0.92), rgba(9,17,27,0.74));
+      box-shadow: 1px 0 22px rgba(0,0,0,0.26);
+      backdrop-filter: blur(22px);
+      border-right: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .rail-item {
+      width: 36px;
+      height: 36px;
+      margin: 16px auto;
+      border-radius: 12px;
+      display: grid;
+      place-items: center;
+      color: rgba(255,255,255,0.72);
+      background: rgba(255,255,255,0.06);
+      font-size: 16px;
+    }
+
+    .rail-item.active {
+      color: #ffffff;
+      background: linear-gradient(180deg, rgba(50,212,164,0.28), rgba(50,212,164,0.08));
+      box-shadow: inset 0 0 0 1px rgba(50,212,164,0.32), 0 8px 24px rgba(50,212,164,0.15);
+    }
+
+    .topbar {
+      position: absolute;
+      left: 72px;
+      right: 24px;
+      top: 18px;
+      height: 54px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 14px 0 20px;
+      color: var(--text);
+      background: var(--glass);
+      border: 1px solid rgba(255,255,255,0.13);
+      border-radius: 18px;
+      backdrop-filter: blur(24px) saturate(1.25);
+      box-shadow: 0 18px 44px rgba(8,16,26,0.28);
+    }
+
+    .stats {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .stat {
+      height: 32px;
+      padding: 0 12px;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(255,255,255,0.08);
+      color: rgba(255,255,255,0.74);
+      font-size: 12px;
+      letter-spacing: 0;
+      white-space: nowrap;
+    }
+
+    .stat b {
+      color: #fff;
+      font-size: 13px;
+      font-weight: 680;
+    }
+
+    .toolbar {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .tool {
+      height: 34px;
+      min-width: 34px;
+      padding: 0 12px;
+      border: 0;
+      border-radius: 999px;
+      color: rgba(255,255,255,0.88);
+      background: rgba(255,255,255,0.09);
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08);
+      font-size: 13px;
+      font-weight: 590;
+    }
+
+    .tool.primary {
+      background: linear-gradient(180deg, rgba(50,212,164,0.92), rgba(32,185,130,0.88));
+      color: #07130f;
+      box-shadow: 0 8px 26px rgba(50,212,164,0.28);
+    }
+
+    .switch {
+      width: 86px;
+      height: 34px;
+      padding: 3px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.12);
+      position: relative;
+    }
+
+    .knob {
+      width: 40px;
+      height: 28px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.92);
+      box-shadow: 0 6px 16px rgba(0,0,0,0.25);
+    }
+
+    .route-wrap {
+      position: absolute;
+      left: 155px;
+      top: 130px;
+      width: 1060px;
+      height: 510px;
+      filter: drop-shadow(0 26px 28px rgba(7,24,18,0.22));
+    }
+
+    .route-line-base {
+      fill: none;
+      stroke: rgba(7, 28, 22, 0.44);
+      stroke-width: 13;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      opacity: 0.45;
+      transform: translate(0, 18px);
+    }
+
+    .route-line-glow {
+      fill: none;
+      stroke: rgba(50,212,164,0.28);
+      stroke-width: 22;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      filter: blur(5px);
+    }
+
+    .route-line {
+      fill: none;
+      stroke: url(#routeGradient);
+      stroke-width: 8;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .route-highlight {
+      fill: none;
+      stroke: rgba(255,255,255,0.82);
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      opacity: 0.82;
+      transform: translate(0, -3px);
+    }
+
+    .wall {
+      fill: url(#wallGradient);
+      stroke: rgba(255,255,255,0.12);
+      stroke-width: 1;
+      opacity: 0.84;
+    }
+
+    .wall-line {
+      stroke: rgba(255,255,255,0.12);
+      stroke-width: 1;
+      opacity: 0.45;
+    }
+
+    .marker {
+      fill: rgba(255,255,255,0.96);
+      stroke: #32d4a4;
+      stroke-width: 4;
+      filter: drop-shadow(0 5px 10px rgba(0,0,0,0.25));
+    }
+
+    .peak-marker {
+      fill: #ffd75a;
+      stroke: rgba(255,255,255,0.9);
+      stroke-width: 3;
+      filter: drop-shadow(0 6px 14px rgba(83,63,10,0.35));
+    }
+
+    .label {
+      position: absolute;
+      min-width: 58px;
+      height: 26px;
+      padding: 0 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px;
+      color: rgba(255,255,255,0.92);
+      background: rgba(15,23,32,0.58);
+      border: 1px solid rgba(255,255,255,0.16);
+      backdrop-filter: blur(18px) saturate(1.2);
+      font-size: 12px;
+      font-weight: 650;
+      box-shadow: 0 10px 24px rgba(0,0,0,0.22);
+    }
+
+    .label.peak {
+      color: #251c03;
+      background: rgba(255,215,90,0.88);
+      border-color: rgba(255,255,255,0.38);
+    }
+
+    .profile {
+      position: absolute;
+      left: 74px;
+      right: 24px;
+      bottom: 28px;
+      height: 150px;
+      border-radius: 24px;
+      overflow: hidden;
+      background: linear-gradient(180deg, rgba(18,25,33,0.16), rgba(12,18,25,0.58));
+      border: 1px solid rgba(255,255,255,0.16);
+      backdrop-filter: blur(22px) saturate(1.18);
+      box-shadow: 0 -12px 44px rgba(7,16,24,0.18);
+    }
+
+    .profile svg {
+      width: 100%;
+      height: 100%;
+    }
+
+    .report-tab {
+      position: absolute;
+      right: 0;
+      top: 365px;
+      width: 42px;
+      height: 116px;
+      border-radius: 18px 0 0 18px;
+      display: grid;
+      place-items: center;
+      background: rgba(97, 91, 255, 0.82);
+      color: white;
+      font-size: 13px;
+      font-weight: 650;
+      writing-mode: vertical-rl;
+      letter-spacing: 0;
+      box-shadow: 0 14px 32px rgba(72,64,210,0.36);
+    }
+
+    .privacy {
+      position: absolute;
+      right: 24px;
+      bottom: 198px;
+      width: 58px;
+      height: 58px;
+      border-radius: 22px;
+      display: grid;
+      place-items: center;
+      color: #fff;
+      font-size: 18px;
+      font-weight: 800;
+      background: linear-gradient(180deg, #8d5cff, #6b45e8);
+      box-shadow: 0 16px 34px rgba(80,62,200,0.35);
+    }
+
+    .vignette {
+      pointer-events: none;
+      position: absolute;
+      inset: 0;
+      box-shadow: inset 0 0 90px rgba(8,15,22,0.22);
+    }
+  </style>
+</head>
+<body>
+  <main class="frame">
+    <div class="map"></div>
+    <div class="terrain"></div>
+    <svg class="map-lines" viewBox="0 0 1440 900" preserveAspectRatio="none">
+      <defs>
+        <filter id="softBlur"><feGaussianBlur stdDeviation="1.4"/></filter>
+      </defs>
+      <g opacity="0.42" fill="none" stroke-linecap="round">
+        <path d="M80 560 C260 520, 330 590, 490 540 S750 420, 910 490 S1180 450, 1370 390" stroke="rgba(255,255,255,0.75)" stroke-width="6"/>
+        <path d="M130 298 C310 220, 490 230, 620 260 S880 230, 1070 180 S1280 230, 1420 150" stroke="rgba(255,255,255,0.56)" stroke-width="5"/>
+        <path d="M180 750 C330 690, 450 720, 620 660 S850 620, 1020 680 S1240 610, 1430 640" stroke="rgba(255,255,255,0.5)" stroke-width="4"/>
+      </g>
+      <g opacity="0.32" fill="none" stroke="#c9a84b" stroke-width="4" stroke-linecap="round">
+        <path d="M720 126 C775 192, 870 180, 930 240 C1015 323, 1105 275, 1225 336"/>
+        <path d="M76 402 C190 360, 342 402, 458 344 C512 318, 553 315, 602 336"/>
+        <path d="M945 545 C1038 505, 1140 530, 1242 488"/>
+      </g>
+      <g opacity="0.25" fill="none" stroke="#4c7894" stroke-width="3" stroke-linecap="round">
+        <path d="M290 386 C390 390, 442 460, 540 446 S685 382, 792 425"/>
+        <path d="M1005 210 C1042 280, 1115 280, 1165 340"/>
+      </g>
+    </svg>
+
+    <aside class="sidebar">
+      <div class="rail-item">⌂</div>
+      <div class="rail-item active">⌁</div>
+      <div class="rail-item">▵</div>
+      <div class="rail-item">☰</div>
+    </aside>
+
+    <section class="topbar">
+      <div class="stats">
+        <span class="stat">里程 <b>11.45km</b></span>
+        <span class="stat">耗时 <b>3h 01m</b></span>
+        <span class="stat">爬升 <b>396m</b></span>
+        <span class="stat">最高 <b>362m</b></span>
+      </div>
+      <div class="toolbar">
+        <button class="tool primary">导入 GPX</button>
+        <button class="tool">剖面</button>
+        <button class="tool">旋转</button>
+        <button class="tool">导出</button>
+        <div class="switch"><div class="knob"></div></div>
+      </div>
+    </section>
+
+    <section class="route-wrap">
+      <svg viewBox="0 0 1060 510">
+        <defs>
+          <linearGradient id="routeGradient" x1="0" x2="1" y1="0" y2="0">
+            <stop offset="0" stop-color="#20c879"/>
+            <stop offset="0.58" stop-color="#32d4a4"/>
+            <stop offset="1" stop-color="#4ce3bf"/>
+          </linearGradient>
+          <linearGradient id="wallGradient" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0" stop-color="rgba(50,212,164,0.42)"/>
+            <stop offset="0.72" stop-color="rgba(50,212,164,0.13)"/>
+            <stop offset="1" stop-color="rgba(50,212,164,0)"/>
+          </linearGradient>
+        </defs>
+        <path class="wall" d="M90 270 C160 235, 242 252, 320 230 S480 150, 570 172 S745 285, 834 210 S955 240, 1000 190 L1000 380 C940 426, 842 390, 740 426 S560 408, 450 385 S260 405, 90 420 Z"/>
+        <path class="wall-line" d="M160 244 L160 406 M230 247 L230 405 M318 230 L318 390 M410 182 L410 374 M510 158 L510 365 M612 190 L612 388 M712 266 L712 418 M820 218 L820 397 M920 222 L920 385"/>
+        <path class="route-line-base" d="M90 270 C160 235, 242 252, 320 230 S480 150, 570 172 S745 285, 834 210 S955 240, 1000 190"/>
+        <path class="route-line-glow" d="M90 270 C160 235, 242 252, 320 230 S480 150, 570 172 S745 285, 834 210 S955 240, 1000 190"/>
+        <path class="route-line" d="M90 270 C160 235, 242 252, 320 230 S480 150, 570 172 S745 285, 834 210 S955 240, 1000 190"/>
+        <path class="route-highlight" d="M90 270 C160 235, 242 252, 320 230 S480 150, 570 172 S745 285, 834 210 S955 240, 1000 190"/>
+        <circle class="marker" cx="90" cy="270" r="10"/>
+        <circle class="marker" cx="1000" cy="190" r="10"/>
+        <circle class="peak-marker" cx="505" cy="158" r="12"/>
+      </svg>
+      <div class="label" style="left:65px;top:236px;">起点</div>
+      <div class="label peak" style="left:468px;top:118px;">最高 362m</div>
+      <div class="label" style="left:955px;top:153px;">终点</div>
+      <div class="label" style="left:305px;top:197px;opacity:.72;">5km</div>
+      <div class="label" style="left:735px;top:250px;opacity:.72;">9km</div>
+    </section>
+
+    <section class="profile">
+      <svg viewBox="0 0 1342 150" preserveAspectRatio="none">
+        <defs>
+          <linearGradient id="profileFill" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0" stop-color="rgba(255,255,255,0.34)"/>
+            <stop offset="1" stop-color="rgba(255,255,255,0.04)"/>
+          </linearGradient>
+          <linearGradient id="progressLine" x1="0" x2="1" y1="0" y2="0">
+            <stop offset="0" stop-color="#32d4a4"/>
+            <stop offset="1" stop-color="#ffffff"/>
+          </linearGradient>
+        </defs>
+        <g opacity=".18" stroke="white" stroke-width="1">
+          <path d="M0 45 H1342 M0 90 H1342 M220 0 V150 M440 0 V150 M660 0 V150 M880 0 V150 M1100 0 V150"/>
+        </g>
+        <path d="M0 130 C70 120, 110 78, 160 60 C220 38, 270 115, 330 118 S450 90, 540 86 S710 128, 800 128 S930 135, 1010 95 S1100 124, 1180 129 S1280 132, 1342 126 L1342 150 L0 150 Z" fill="url(#profileFill)"/>
+        <path d="M0 130 C70 120, 110 78, 160 60 C220 38, 270 115, 330 118 S450 90, 540 86 S710 128, 800 128 S930 135, 1010 95 S1100 124, 1180 129 S1280 132, 1342 126" fill="none" stroke="url(#progressLine)" stroke-width="2.5"/>
+        <circle cx="1328" cy="127" r="7" fill="#ff453a" stroke="white" stroke-width="2"/>
+      </svg>
+    </section>
+
+    <div class="privacy">私</div>
+    <div class="report-tab">报告</div>
+    <div class="vignette"></div>
+  </main>
+</body>
+</html>

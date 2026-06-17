@@ -38,7 +38,7 @@ class TestFatigueReviewBackendOutputContract(unittest.TestCase):
 
     EXPECTED_TOP_KEYS = {
         "sport_type", "metrics", "collapse_events", "fatigue_zones",
-        "curves", "context_tags", "ai_insight", "advice", "disclaimer",
+        "curves", "context_tags", "environment_context", "ai_insight", "advice", "disclaimer",
     }
     EXPECTED_METRICS_KEYS = {
         "hr_drift", "decoupling", "bonk_risk", "events",
@@ -154,6 +154,17 @@ class TestFatigueReviewBackendOutputContract(unittest.TestCase):
                 "total_distance_m": 10000.0,
             },
             "context_tags": {},
+            "environment_context": {
+                "has_weather": True,
+                "weather_label": "阴",
+                "temperature_c": 17.1,
+                "humidity": 77.0,
+                "wind_speed_kmh": 0.8,
+                "observed_date": "2025-09-19",
+                "observed_hour": 6,
+                "pressure_level": "none",
+                "summary": "天气阴，17.1°C，湿度77%，风速0.8km/h；未识别到明显外部环境压力。",
+            },
             "ai_insight": None,
             "advice": "暂未生成",
             "disclaimer": "AI 生成仅供参考 · 数据来源：FIT 解析 + 后端算法",
@@ -595,7 +606,7 @@ class TestRealBackendSnapshotBuilder(unittest.TestCase):
 
         # 7 段白名单
         for key in ("sport_type", "metrics", "collapse_events", "fatigue_zones",
-                    "curves", "context_tags", "ai_insight", "advice", "disclaimer"):
+                    "curves", "context_tags", "environment_context", "ai_insight", "advice", "disclaimer"):
             self.assertIn(key, snap, f"顶级字段 '{key}' 缺失")
 
         # metrics 8 项
@@ -621,7 +632,7 @@ class TestRealBackendSnapshotBuilder(unittest.TestCase):
 
         # 7 段白名单仍存在
         for key in ("sport_type", "metrics", "collapse_events",
-                    "curves", "context_tags", "ai_insight", "advice", "disclaimer"):
+                    "curves", "context_tags", "environment_context", "ai_insight", "advice", "disclaimer"):
             self.assertIn(key, snap, f"顶级字段 '{key}' 缺失(降级分支)")
 
         # 【已确认 BUG】降级分支目前未返回 fatigue_zones → 前端 ECharts 报错

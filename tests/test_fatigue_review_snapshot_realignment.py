@@ -446,6 +446,34 @@ class TestFatigueReviewP2SnapshotRealignment(unittest.TestCase):
         for key in ("metrics", "collapse_events", "fatigue_zones", "context_tags", "advice"):
             self.assertIn(key, snapshot)
 
+    def test_snapshot_environment_context_keeps_neutral_weather_facts(self):
+        row = self._row(calories=393, include_altitude=False)
+        row["avg_hr"] = 151
+        row["max_hr"] = 180
+        row["gain_m"] = 6
+        row["max_alt_m"] = 51.6
+        row["weather_json"] = json.dumps({
+            "temperature_c": 17.1,
+            "humidity": 77,
+            "wind_speed_kmh": 0.8,
+            "weather_label": "阴",
+            "observed_date": "2025-09-19",
+            "observed_hour": 6,
+        })
+
+        profile = MagicMock(max_hr=186, resting_hr=51, lactate_threshold_hr=166)
+        with patch("profile_backend.get_profile", return_value=profile):
+            snapshot = self._api()._build_fatigue_review_snapshot(row)
+
+        env = snapshot["environment_context"]
+        self.assertTrue(env["has_weather"])
+        self.assertEqual(env["temperature_c"], 17.1)
+        self.assertEqual(env["humidity"], 77.0)
+        self.assertEqual(env["weather_label"], "阴")
+        self.assertEqual(env["pressure_level"], "none")
+        self.assertIn("未识别到明显外部环境压力", env["summary"])
+        self.assertNotIn("热应激", json.dumps(snapshot["context_tags"], ensure_ascii=False))
+
     def test_snapshot_context_tags_use_backend_session_and_weather_fields(self):
         profile = MagicMock(max_hr=184, resting_hr=52, lactate_threshold_hr=166)
         row = self._row()
@@ -460,6 +488,8 @@ class TestFatigueReviewP2SnapshotRealignment(unittest.TestCase):
         self.assertIn("心肺负荷", encoded)
         self.assertIn("HRR=91%", encoded)
         self.assertIn("海拔缺氧", encoded)
+        self.assertTrue(snapshot["environment_context"]["has_weather"])
+        self.assertEqual(snapshot["environment_context"]["temperature_c"], 27.5)
 
     def test_snapshot_context_tags_skip_moderate_cardio_load(self):
         row = self._row(calories=600, include_altitude=False)

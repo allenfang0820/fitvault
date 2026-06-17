@@ -260,14 +260,13 @@ class MetricsResolver:
         meta_weather = meta.get("weather") if isinstance(meta, dict) else {}
         if isinstance(meta_weather, dict):
             weather = {**weather, **meta_weather}
-        avg_temp_raw = (
-            self._extract(session, "avg_temperature")
-            or self._extract(session, "temperature")
-            or weather.get("temperature_c")
-            or weather.get("temperature")
-            or weather.get("avg_temperature")
+        avg_temp = (
+            self._temperature_num(self._extract(session, "avg_temperature"))
+            or self._temperature_num(self._extract(session, "temperature"))
+            or self._temperature_num(weather.get("temperature_c"))
+            or self._temperature_num(weather.get("temperature"))
+            or self._temperature_num(weather.get("avg_temperature"))
         )
-        avg_temp = self._num(avg_temp_raw) if avg_temp_raw is not None else None
 
         max_alt = max((a for a in altitude_curve if a is not None), default=0.0) if altitude_curve else 0.0
 
@@ -628,6 +627,22 @@ class MetricsResolver:
             return float(value)
         except (TypeError, ValueError):
             return 0.0
+
+    @staticmethod
+    def _optional_num(value: Any) -> float | None:
+        if value is None or value == "":
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _temperature_num(value: Any) -> float | None:
+        num = MetricsResolver._optional_num(value)
+        if num is None:
+            return None
+        return num if -60.0 <= num <= 70.0 else None
 
     @staticmethod
     def _record_value(record: Any, *keys: str) -> Any:
