@@ -653,6 +653,8 @@ DETAIL_API_REQUIRED_COLUMNS: tuple[str, ...] = (
     "is_race",
     "is_event",
     "is_intermittent",
+    "processing_status",
+    "processing_error",
     # 轨迹(仅用于缩略图采样 + 轨迹加载)
     "track_json",
     "points_json",
@@ -745,6 +747,87 @@ def _decode_weather_json(value: Any) -> dict[str, Any] | None:
     except (TypeError, ValueError, json.JSONDecodeError):
         return None
     return obj if isinstance(obj, dict) else None
+
+
+def _fatigue_review_weather_float(value: Any) -> float | None:
+    num = _safe_optional_float(value)
+    return num if num is not None else None
+
+
+def _fatigue_review_temperature(value: Any) -> float | None:
+    temp = _fatigue_review_weather_float(value)
+    if temp is None:
+        return None
+    return temp if -60.0 <= temp <= 70.0 else None
+
+
+def _build_fatigue_review_environment_context(
+    weather: dict[str, Any] | None = None,
+    avg_temperature: Any = None,
+    context_tags: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build review AI environmental facts without turning neutral weather into risk tags."""
+    weather = weather if isinstance(weather, dict) else {}
+    context_tags = context_tags if isinstance(context_tags, dict) else {}
+    temp = _fatigue_review_temperature(avg_temperature)
+    if temp is None:
+        temp = _fatigue_review_temperature(
+            weather.get("temperature_c")
+            if weather.get("temperature_c") is not None
+            else weather.get("temperature")
+            if weather.get("temperature") is not None
+            else weather.get("avg_temperature")
+        )
+    humidity = _fatigue_review_weather_float(weather.get("humidity"))
+    if humidity is not None and not (0.0 <= humidity <= 100.0):
+        humidity = None
+    wind = _fatigue_review_weather_float(weather.get("wind_speed_kmh"))
+    if wind is not None and wind < 0:
+        wind = None
+    label = str(weather.get("weather_label") or "").strip()
+    observed_date = str(weather.get("observed_date") or "").strip()
+    observed_hour = _safe_int(weather.get("observed_hour"), -1)
+    has_weather = any(value is not None and value != "" for value in (temp, humidity, wind, label, observed_date))
+
+    encoded_tags = json.dumps(context_tags, ensure_ascii=False)
+    if "Extreme" in encoded_tags or "极端" in encoded_tags or "High (高" in encoded_tags or "高海拔" in encoded_tags:
+        pressure_level = "high"
+    elif context_tags:
+        pressure_level = "moderate"
+    elif temp is not None and temp >= 25.0:
+        pressure_level = "moderate"
+    elif temp is not None and temp >= 20.0:
+        pressure_level = "mild"
+    else:
+        pressure_level = "none"
+
+    parts: list[str] = []
+    if label:
+        parts.append(f"天气{label}")
+    if temp is not None:
+        parts.append(f"{temp:.1f}°C")
+    if humidity is not None:
+        parts.append(f"湿度{humidity:.0f}%")
+    if wind is not None:
+        parts.append(f"风速{wind:.1f}km/h")
+    if not parts:
+        summary = "本次未携带可用天气快照，外部环境只能按压力标签和轨迹背景解释。"
+    elif context_tags:
+        summary = "，".join(parts) + "；同时识别到外部影响标签，需结合压力标签解释本次表现。"
+    else:
+        summary = "，".join(parts) + "；未识别到明显外部环境压力。"
+
+    return {
+        "has_weather": bool(has_weather),
+        "weather_label": label,
+        "temperature_c": round(temp, 1) if temp is not None else None,
+        "humidity": round(humidity, 1) if humidity is not None else None,
+        "wind_speed_kmh": round(wind, 1) if wind is not None else None,
+        "observed_date": observed_date,
+        "observed_hour": observed_hour if observed_hour >= 0 else None,
+        "pressure_level": pressure_level,
+        "summary": summary,
+    }
 
 
 def _safe_json_list(value: Any) -> list | None:
@@ -857,7 +940,7 @@ def _build_fatigue_review_curve_bundle(row: dict[str, Any]) -> dict[str, Any]:
         "max_altitude": _safe_float(row.get("max_alt_m") or row.get("max_altitude")),
         "avg_power": _safe_float(row.get("avg_power")),
         "normalized_power": _safe_float(row.get("normalized_power")),
-        "avg_temperature": _safe_float(row.get("avg_temperature")),
+        "avg_temperature": _fatigue_review_temperature(row.get("avg_temperature")),
         "weather_json": row.get("weather_json"),
     }
     try:
@@ -914,7 +997,7 @@ def _build_resolved_payload_v81(
         avg_temperature = (
             bundle.get("avg_temperature")
             if bundle.get("avg_temperature") is not None
-            else weather_temp
+            else _fatigue_review_temperature(weather_temp)
         )
         raw = {
             "record_mesgs": records,
@@ -2066,6 +2149,26 @@ def ensure_activity_sync_schema() -> None:
             conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_activities_file_name_unique ON activities(file_name)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_activities_start_time_desc ON activities(start_time DESC)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_activities_sport_type ON activities(sport_type)")
+            for col, dtype in [
+                ("processing_status", "TEXT DEFAULT 'ready'"),
+                ("processing_error", "TEXT"),
+            ]:
+                try:
+                    conn.execute(f"ALTER TABLE activities ADD COLUMN {col} {dtype}")
+                except Exception:
+                    pass
+            _safe_data_migrate(
+                conn,
+                """
+                UPDATE activities
+                SET processing_status = CASE
+                        WHEN COALESCE(NULLIF(track_json, ''), NULLIF(points_json, '')) IS NOT NULL THEN 'ready'
+                        ELSE COALESCE(NULLIF(processing_status, ''), 'ready')
+                    END
+                WHERE processing_status IS NULL OR processing_status = ''
+                """
+            )
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_activities_processing_status ON activities(processing_status)")
             profile_backend._ensure_activity_list_indexes(conn)
             conn.execute(
                 """
@@ -2819,6 +2922,7 @@ def _rolling_aggregate_radar_metrics(sport_type: str | None = None) -> dict:
                     FROM activities
                     WHERE deleted_at IS NULL
                       AND sport_type IN ({placeholders})
+                      AND COALESCE(NULLIF(processing_status, ''), 'ready') = 'ready'
                       AND advanced_metrics IS NOT NULL
                       AND advanced_metrics != ''
                     ORDER BY COALESCE(start_time_utc, start_time) ASC
@@ -2833,6 +2937,7 @@ def _rolling_aggregate_radar_metrics(sport_type: str | None = None) -> dict:
                     FROM activities
                     WHERE deleted_at IS NULL
                       AND sport_type = ?
+                      AND COALESCE(NULLIF(processing_status, ''), 'ready') = 'ready'
                       AND advanced_metrics IS NOT NULL
                       AND advanced_metrics != ''
                     ORDER BY COALESCE(start_time_utc, start_time) ASC
@@ -2847,6 +2952,7 @@ def _rolling_aggregate_radar_metrics(sport_type: str | None = None) -> dict:
                 FROM activities
                 WHERE deleted_at IS NULL
                   AND advanced_metrics IS NOT NULL
+                  AND COALESCE(NULLIF(processing_status, ''), 'ready') = 'ready'
                   AND advanced_metrics != ''
                 ORDER BY COALESCE(start_time_utc, start_time) ASC
                 """
@@ -2862,6 +2968,7 @@ def _rolling_aggregate_radar_metrics(sport_type: str | None = None) -> dict:
     ctl = 0.0
     atl = 0.0
     last_date: datetime | None = None
+    valid_sample_count = 0
 
     for row in rows:
         row = dict(row)
@@ -2884,6 +2991,7 @@ def _rolling_aggregate_radar_metrics(sport_type: str | None = None) -> dict:
             metrics = json.loads(metrics_str)
             if not isinstance(metrics, dict):
                 continue
+            valid_sample_count += 1
 
             # §任务 2 VAM 可信度过滤:仅真实爬升/距离达标的活动允许 VAM 入聚合
             if "vam" in metrics and metrics["vam"] is not None:
@@ -2911,6 +3019,19 @@ def _rolling_aggregate_radar_metrics(sport_type: str | None = None) -> dict:
 
         except (ValueError, TypeError, json.JSONDecodeError):
             continue
+
+    if valid_sample_count == 0:
+        return {
+            "ctl": 0.0,
+            "atl": 0.0,
+            "tsb": 0.0,
+            "hrv": round(float(hrv_from_profile), 1) if hrv_from_profile is not None else None,
+            "decoupling": 0.0,
+            "vam": 0.0,
+            "threshold_hr": 0.0,
+            "anaerobic_peak": 0.0,
+            "radar": {"type": sport_type or "running", "dimensions": []},
+        }
 
     if last_date:
         delta_days_to_now = max((now - last_date).total_seconds() / 86400.0, 0)
@@ -3191,6 +3312,8 @@ def _parse_fit_activity_for_sync(file_path: Path) -> dict[str, Any]:
         # V9.4.4:Training Effect(Firstbeat 私有字段,从 fit_engine 透传)
         "aerobic_training_effect": _safe_float(basic.get("aerobic_training_effect")),
         "anaerobic_training_effect": _safe_float(basic.get("anaerobic_training_effect")),
+        "processing_status": "ready",
+        "processing_error": None,
     }
 
     # 从 FIT 文件解析设备型号
@@ -3339,11 +3462,11 @@ def _insert_activity_sync_row(conn: sqlite3.Connection, activity: dict[str, Any]
                  shadow_diff_json, source_type, is_mock, deleted_at, updated_at, hr_curve, speed_curve, cadence_curve, hr_zone_distribution, laps_json,
                  min_alt_m, total_descent_m, up_count, down_count, max_single_climb_m, difficulty_score, report_metrics_version,
                  avg_grade_pct, max_slope_pct, min_slope_pct, uphill_pct, downhill_pct,
-                 aerobic_training_effect, anaerobic_training_effect)
+                 aerobic_training_effect, anaerobic_training_effect, processing_status, processing_error)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                     ?, ?, 'fit_sdk', 0, NULL, datetime('now'), ?, ?, ?, ?, ?,
                     ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?)
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 activity.get("file_name"),
@@ -3408,6 +3531,8 @@ def _insert_activity_sync_row(conn: sqlite3.Connection, activity: dict[str, Any]
                 # V9.4.0:Training Effect(FIT 219/218 直读)
                 activity.get("aerobic_training_effect"),
                 activity.get("anaerobic_training_effect"),
+                activity.get("processing_status") or "ready",
+                activity.get("processing_error"),
             ),
         )
         return int(cur.lastrowid)
@@ -3439,6 +3564,7 @@ def _update_activity_sync_row(conn: sqlite3.Connection, activity_id: int, activi
             laps_json = ?,
             min_alt_m = ?, total_descent_m = ?, up_count = ?, down_count = ?, max_single_climb_m = ?, difficulty_score = ?, report_metrics_version = ?,
             avg_grade_pct = ?, max_slope_pct = ?, min_slope_pct = ?, uphill_pct = ?, downhill_pct = ?,
+            processing_status = ?, processing_error = ?,
             source_type = 'fit_sdk', is_mock = 0, deleted_at = NULL, updated_at = datetime('now')
         WHERE id = ?
         """,
@@ -3500,9 +3626,80 @@ def _update_activity_sync_row(conn: sqlite3.Connection, activity_id: int, activi
             activity.get("min_slope_pct"),
             activity.get("uphill_pct"),
             activity.get("downhill_pct"),
+            activity.get("processing_status") or "ready",
+            activity.get("processing_error"),
             activity_id,
         ),
     )
+
+
+def _upsert_processing_activity_placeholder(dst: Path, source_name: str | None = None) -> int:
+    ensure_activity_sync_schema()
+    resolved_path = str(dst.expanduser().resolve())
+    stat = dst.stat()
+    title = Path(source_name or dst.name).stem or dst.stem
+
+    def _write() -> int:
+        conn = profile_backend._conn()
+        try:
+            existing = _find_activity_by_file_path(conn, resolved_path, include_deleted=True)
+            if existing:
+                activity_id = int(existing["id"])
+                conn.execute(
+                    """
+                    UPDATE activities
+                    SET file_name = ?, filename = ?, title = COALESCE(NULLIF(title, ''), ?),
+                        title_source = COALESCE(NULLIF(title_source, ''), 'filename'),
+                        file_path = ?, file_mtime = ?, file_size = ?,
+                        source_type = 'fit_sdk', is_mock = 0, deleted_at = NULL,
+                        processing_status = 'processing', processing_error = NULL,
+                        updated_at = datetime('now')
+                    WHERE id = ?
+                    """,
+                    (dst.name, dst.name, title, resolved_path, float(stat.st_mtime), int(stat.st_size), activity_id),
+                )
+            else:
+                cur = conn.execute(
+                    """
+                    INSERT INTO activities
+                        (file_name, filename, title, title_source, file_path, file_mtime, file_size,
+                         source_type, is_mock, deleted_at, updated_at, processing_status, processing_error)
+                    VALUES (?, ?, ?, 'filename', ?, ?, ?, 'fit_sdk', 0, NULL, datetime('now'), 'processing', NULL)
+                    """,
+                    (dst.name, dst.name, title, resolved_path, float(stat.st_mtime), int(stat.st_size)),
+                )
+                activity_id = int(cur.lastrowid)
+            conn.commit()
+            return activity_id
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+    return profile_backend.run_with_db_retry(_write)
+
+
+def _mark_activity_processing_failed(file_path: str | Path, error: str) -> None:
+    try:
+        resolved_path = str(Path(file_path).expanduser().resolve())
+    except Exception:
+        resolved_path = str(file_path)
+    conn = profile_backend._conn()
+    try:
+        conn.execute(
+            """
+            UPDATE activities
+            SET processing_status = 'failed',
+                processing_error = ?,
+                updated_at = datetime('now')
+            WHERE file_path = ?
+            """,
+            (str(error)[:500], resolved_path),
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def _activity_display_sql() -> str:
@@ -4201,6 +4398,7 @@ class FitSyncJobManager:
             status["error"] = str(result.get("error") or "")
             status["message"] = str(
                 result.get("message")
+                or result.get("msg")
                 or status.get("message")
                 or ("同步完成" if ok else status["error"] or "同步失败")
             )
@@ -4293,6 +4491,7 @@ class FitSyncJobManager:
 
 
 FIT_SYNC_JOB_MANAGER = FitSyncJobManager()
+FIT_IMPORT_JOB_MANAGER = FitSyncJobManager()
 
 
 # ── Per-Point Distance Attachment (UI Marker Rendering) ──
@@ -5434,7 +5633,7 @@ class Api:
             return _api_error(API_CODE_EXTERNAL_SERVICE, str(e))
 
     def pick_and_import_fit_files(self) -> dict:
-        """Open a local file picker and import FIT / ZIP files through batch_import_tracks."""
+        """Open a local file picker and start a background FIT / ZIP import job."""
         import webview
         from webview import FileDialog
 
@@ -5454,7 +5653,14 @@ class Api:
         if not paths:
             return _api_success({"cancelled": True, "imported": [], "errors": []})
         file_paths = list(paths) if isinstance(paths, (list, tuple)) else [paths]
-        return self.batch_import_tracks(file_paths)
+        start_res = self.start_import_fit_files(file_paths)
+        if not start_res.get("ok"):
+            return start_res
+        return _api_success({
+            "job_id": start_res.get("job_id"),
+            "already_running": bool(start_res.get("already_running")),
+            "status": start_res.get("status") or {},
+        })
 
     def pick_and_parse_track(self) -> dict:
         import webview
@@ -5585,8 +5791,10 @@ class Api:
 
     def get_user_profile(self) -> dict:
         prof = profile_backend.get_profile()
-        zones = profile_backend.compute_hrr_zones(
-            prof.resting_hr or 60, prof.max_hr or 190
+        zones = (
+            profile_backend.compute_hrr_zones(prof.resting_hr, prof.max_hr)
+            if prof.resting_hr and prof.max_hr
+            else []
         )
         cached = profile_backend.read_local_profile()
         metadata = profile_backend.get_profile_sync_metadata()
@@ -5812,6 +6020,8 @@ class Api:
             "weather": _decode_weather_json(row.get("weather_json")),
             "has_track": bool(row.get("has_track")),
             "has_local_file": bool(str(row.get("file_path") or "").strip() and os.path.exists(str(row.get("file_path") or "").strip())),
+            "processing_status": str(row.get("processing_status") or "ready"),
+            "processing_error": str(row.get("processing_error") or ""),
         }
 
     def _fetch_activity_row(self, activity_id: int) -> dict | None:
@@ -6357,7 +6567,7 @@ class Api:
             counter += 1
 
 
-    def batch_import_tracks(self, file_paths: list[str]) -> dict:
+    def batch_import_tracks(self, file_paths: list[str], progress_callback=None) -> dict:
         """多模态批量导入：FIT 直接复制，ZIP 解压到 IMPORTS_DIR 后归集到 TRACKS_DIR。"""
         if not file_paths:
             return _api_error(API_CODE_VALIDATION, "未提供文件路径", {"imported": [], "errors": []})
@@ -6369,18 +6579,43 @@ class Api:
         imported: list[str] = []
         skipped: list[dict] = []
         errors: list[dict] = []
+        total = len(file_paths)
+        current = 0
+
+        def emit_progress(message: str, current_file: str = "", stage: str = "running") -> None:
+            _emit_sync_progress(
+                progress_callback,
+                state="running",
+                stage=stage,
+                message=message,
+                current=current,
+                total=total,
+                current_file=current_file,
+                inserted=len(imported),
+                updated=0,
+                skipped=len(skipped),
+                errors=errors,
+            )
 
         try:
+            emit_progress("导入任务已启动，正在准备文件...", stage="preparing")
             for fp in file_paths:
+                current_dst: Path | None = None
                 try:
                     src = Path(fp).expanduser().resolve()
                     if not src.is_file():
                         errors.append({"file": fp, "error": "文件不存在"})
+                        current += 1
+                        emit_progress(f"已跳过不存在的文件：{Path(fp).name}", Path(fp).name)
                         continue
 
                     if src.suffix.lower() == ".fit":
+                        emit_progress(f"正在导入 {min(current + 1, total)}/{total}：{src.name}", src.name)
                         dst = Path(self.unique_fit_path(TRACKS_DIR, src.name))
+                        current_dst = dst
                         shutil.copy2(str(src), str(dst))
+                        _upsert_processing_activity_placeholder(dst, src.name)
+                        emit_progress(f"已加入列表，后台解析 {min(current + 1, total)}/{total}：{src.name}", src.name)
                         # 手动调用单入口同步解析
                         res = _sync_single_fit_file(dst)
                         if res.get("ok"):
@@ -6392,21 +6627,40 @@ class Api:
                                 skipped.append(skip_entry)
                             else:
                                 imported.append(str(dst))
+                        else:
+                            err_msg = str(res.get("error") or "FIT 解析失败")
+                            _mark_activity_processing_failed(dst, err_msg)
+                            errors.append({"file": fp, "error": err_msg})
+                        current += 1
+                        emit_progress(f"已处理 {current}/{total}：{src.name}", src.name)
 
                     elif src.suffix.lower() == ".zip":
+                        emit_progress(f"正在解压 {src.name}", src.name)
                         with zipfile.ZipFile(str(src), "r") as zf:
                             extract_report = self.safe_extract_zip(zf, IMPORTS_DIR)
                         for err in extract_report.get("errors") or []:
                             errors.append({"file": fp, **err})
                         for skipped_item in extract_report.get("skipped") or []:
                             errors.append({"file": fp, **skipped_item})
-                        for fit_path in extract_report.get("extracted") or []:
+                        extracted_fits = extract_report.get("extracted") or []
+                        total += max(len(extracted_fits) - 1, 0)
+                        emit_progress(f"已解压 {src.name}，发现 {len(extracted_fits)} 个 FIT 文件", src.name)
+                        if not extracted_fits:
+                            current += 1
+                            emit_progress(f"已处理 {current}/{total}：{src.name}", src.name)
+                        for fit_path in extracted_fits:
                             fit = Path(fit_path).expanduser().resolve()
                             if fit.suffix.lower() not in ZIP_ALLOWED_SUFFIXES or not _is_path_under_dir(fit, Path(IMPORTS_DIR).expanduser().resolve()):
                                 errors.append({"file": str(fit), "error": "ZIP 解压结果不在受控导入目录或不是 FIT 文件", "code": API_CODE_VALIDATION})
+                                current += 1
+                                emit_progress(f"已跳过 {current}/{total}：{fit.name}", fit.name)
                                 continue
+                            emit_progress(f"正在导入 {min(current + 1, total)}/{total}：{fit.name}", fit.name)
                             dst = Path(self.unique_fit_path(TRACKS_DIR, fit.name))
+                            current_dst = dst
                             shutil.move(str(fit), str(dst))
+                            _upsert_processing_activity_placeholder(dst, fit.name)
+                            emit_progress(f"已加入列表，后台解析 {min(current + 1, total)}/{total}：{fit.name}", fit.name)
                             res = _sync_single_fit_file(dst)
                             if res.get("ok"):
                                 # T-IMPORT-FIT-DEDUP (二次): ZIP 分支同样覆盖 title
@@ -6416,16 +6670,31 @@ class Api:
                                     skipped.append(skip_entry)
                                 else:
                                     imported.append(str(dst))
+                            else:
+                                err_msg = str(res.get("error") or "FIT 解析失败")
+                                _mark_activity_processing_failed(dst, err_msg)
+                                errors.append({"file": str(fit), "error": err_msg})
+                            current += 1
+                            emit_progress(f"已处理 {current}/{total}：{fit.name}", fit.name)
                     else:
                         errors.append({"file": fp, "error": "不支持的文件格式，仅支持 .fit 和 .zip", "code": API_CODE_UNSUPPORTED_FILE})
+                        current += 1
+                        emit_progress(f"已跳过不支持的文件：{src.name}", src.name)
                 except Exception as exc:
+                    try:
+                        if current_dst is not None:
+                            _mark_activity_processing_failed(current_dst, str(exc))
+                    except Exception:
+                        pass
                     errors.append({"file": fp, "error": str(exc)})
+                    current += 1
+                    emit_progress(f"导入异常：{Path(fp).name}", Path(fp).name)
 
             return _api_success({
                 "imported": imported,
                 "skipped": skipped,
                 "errors": errors if errors else None,
-            })
+            }, msg=f"导入完成：新增 {len(imported)} 条，跳过 {len(skipped)} 条，异常 {len(errors)} 条")
 
         finally:
             # 无论批量导入成功与否，无条件解除挂起锁，恢复 Watchdog 的日常静默监听
@@ -6581,6 +6850,17 @@ class Api:
     def get_sync_local_fit_files_status(self, job_id: str = "") -> dict:
         return FIT_SYNC_JOB_MANAGER.get_status(job_id)
 
+    def start_import_fit_files(self, file_paths: list[str]) -> dict:
+        paths = [str(p) for p in (file_paths or []) if str(p or "").strip()]
+        if not paths:
+            return _api_error(API_CODE_VALIDATION, "未提供文件路径", {"imported": [], "errors": []})
+        return FIT_IMPORT_JOB_MANAGER.start(
+            lambda progress_callback: self.batch_import_tracks(paths, progress_callback=progress_callback)
+        )
+
+    def get_import_fit_files_status(self, job_id: str = "") -> dict:
+        return FIT_IMPORT_JOB_MANAGER.get_status(job_id)
+
     def _query_activity_list_records(self, sport_filter: str = "all", title_keyword: str = "") -> tuple[str, list[dict[str, Any]], list[str]]:
         try:
             ensure_activity_sync_schema()
@@ -6643,7 +6923,12 @@ class Api:
                            region_attempt_count,
                            weather_json,
                            updated_at,
-                           1 AS has_track
+                           COALESCE(NULLIF(processing_status, ''), 'ready') AS processing_status,
+                           processing_error,
+                           CASE
+                               WHEN COALESCE(NULLIF(track_json, ''), NULLIF(points_json, '')) IS NOT NULL THEN 1
+                               ELSE 0
+                           END AS has_track
                     FROM activities
                     {where_sql}
                     ORDER BY COALESCE(start_time, updated_at) DESC, id DESC
@@ -6853,6 +7138,18 @@ class Api:
             row = self._fetch_activity_row(aid)
             if not row:
                 return _api_error(API_CODE_NOT_FOUND, "未找到该活动记录")
+            processing_status = str(row.get("processing_status") or "ready").strip().lower()
+            if processing_status in {"pending", "processing"}:
+                return _api_error(API_CODE_VALIDATION, "复盘数据正在后台准备中，请稍后再试", {
+                    "processing_status": processing_status,
+                    "activity_id": aid,
+                })
+            if processing_status == "failed":
+                return _api_error(API_CODE_VALIDATION, "该活动详细数据处理失败，暂不可复盘", {
+                    "processing_status": processing_status,
+                    "activity_id": aid,
+                    "processing_error": str(row.get("processing_error") or ""),
+                })
 
             # §六 shadow_diff 隔离:严禁从 _build_standard_diff 路径拉取 shadow_diff
             fr_snapshot = self._build_fatigue_review_snapshot(row)
@@ -7420,6 +7717,7 @@ class Api:
             },
             "display_meta": _build_fatigue_review_display_meta(),
             "context_tags": {},
+            "environment_context": _build_fatigue_review_environment_context(),
             "ai_insight": None,
             "advice": advice_text,
             "disclaimer": "AI 生成仅供参考 · 数据来源：FIT 解析 + 后端算法",
@@ -7481,6 +7779,7 @@ class Api:
                 review_snapshot.get("curves") or {}
             ),
             "context_tags": review_snapshot.get("context_tags") or {},
+            "environment_context": review_snapshot.get("environment_context") or {},
             "advice": review_snapshot.get("advice") or "",
             "disclaimer": review_snapshot.get("disclaimer") or "",
         }
@@ -8006,6 +8305,12 @@ class Api:
             # 周边 metrics 白名单(decoupling / bonk_risk / events / historical_avg)完全保留
 
             # 6. 7 段白名单
+            weather = _decode_weather_json(row.get("weather_json"))
+            environment_context = _build_fatigue_review_environment_context(
+                weather=weather,
+                avg_temperature=bundle.get("avg_temperature"),
+                context_tags=context_tags,
+            )
             snapshot = {
                 "sport_type": sport_type,
                 "metrics": metrics,
@@ -8015,6 +8320,7 @@ class Api:
                 "display_curves": display_curves,
                 "display_meta": display_meta,
                 "context_tags": context_tags,
+                "environment_context": environment_context,
                 "ai_insight": None,
                 "advice": "暂未生成",
                 "disclaimer": "AI 生成仅供参考 · 数据来源：FIT 解析 + 后端算法",
@@ -8422,6 +8728,8 @@ def _build_record_from_row(api_self, row: dict, idx: int) -> dict:
         "file_path": row.get("file_path") or "",
         "has_track": bool(points),
         "has_local_file": bool(str(row.get("file_path") or "").strip() and os.path.isfile(str(row.get("file_path") or "").strip())),
+        "processing_status": str(row.get("processing_status") or "ready"),
+        "processing_error": str(row.get("processing_error") or ""),
         "shadow_diff": _decode_weather_json(row.get("shadow_diff_json")) if row.get("shadow_diff_json") else {},
         "thumbnail_points": detail["thumbnail_points"],
         "detail": detail,

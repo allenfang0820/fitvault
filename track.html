@@ -3154,91 +3154,6 @@
         .blocker-modal-btn:active {
             transform: scale(0.98);
         }
-        #track-detected-toast {
-            position: fixed;
-            right: 24px;
-            bottom: 28px;
-            width: min(360px, calc(100vw - 32px));
-            padding: 14px 16px;
-            border-radius: 16px;
-            background: linear-gradient(180deg, rgba(8, 15, 30, 0.96) 0%, rgba(15, 23, 42, 0.98) 100%);
-            border: 1px solid rgba(56, 189, 248, 0.28);
-            box-shadow: 0 18px 40px rgba(2, 6, 23, 0.52), 0 0 0 1px rgba(56, 189, 248, 0.08) inset;
-            color: #e2e8f0;
-            z-index: 520;
-            opacity: 0;
-            transform: translateY(18px) scale(0.98);
-            pointer-events: none;
-            transition: opacity 0.22s ease, transform 0.22s ease;
-            backdrop-filter: blur(14px);
-        }
-        #track-detected-toast.show {
-            opacity: 1;
-            transform: translateY(0) scale(1);
-            pointer-events: auto;
-        }
-        .track-toast-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 12px;
-            margin-bottom: 8px;
-        }
-        .track-toast-title {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-size: 0.95rem;
-            font-weight: 700;
-            color: #7dd3fc;
-            letter-spacing: 0.2px;
-        }
-        .track-toast-close {
-            border: none;
-            background: transparent;
-            color: #64748b;
-            font-size: 1rem;
-            cursor: pointer;
-            padding: 0;
-        }
-        .track-toast-close:hover { color: #e2e8f0; }
-        .track-toast-body {
-            font-size: 0.8rem;
-            line-height: 1.55;
-            color: #cbd5e1;
-        }
-        .track-toast-path {
-            margin-top: 8px;
-            padding: 8px 10px;
-            border-radius: 10px;
-            background: rgba(15, 23, 42, 0.78);
-            border: 1px solid rgba(148, 163, 184, 0.12);
-            color: #94a3b8;
-            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-            font-size: 0.72rem;
-            word-break: break-all;
-        }
-        .track-toast-actions {
-            display: flex;
-            justify-content: flex-end;
-            margin-top: 12px;
-        }
-        .track-toast-btn {
-            border: 1px solid rgba(46, 204, 113, 0.28);
-            background: linear-gradient(180deg, rgba(22, 101, 52, 0.95) 0%, rgba(21, 128, 61, 0.92) 100%);
-            color: #ecfdf5;
-            border-radius: 10px;
-            padding: 8px 14px;
-            font-size: 0.78rem;
-            font-weight: 700;
-            cursor: pointer;
-            box-shadow: 0 0 18px rgba(34, 197, 94, 0.2);
-        }
-        .track-toast-btn:hover {
-            filter: brightness(1.06);
-            transform: translateY(-1px);
-        }
-
         #profile-container {
             position: fixed; bottom: 0; left: 0; width: 100vw; height: 160px;
             background: linear-gradient(to top, rgba(15, 23, 42, 0.7), rgba(15, 23, 42, 0));
@@ -6119,19 +6034,6 @@
      AI 洞察面板已抽取至独立的 #fatigue-ai-insight-modal(本文件末尾)。
      fit-arch-contrac §5.4 AI 边界 / §5.6.2 规则 5 阅后即焚 3 触发点。 -->
 
-<div id="track-detected-toast">
-    <div class="track-toast-header">
-        <div class="track-toast-title">📡 雷达检测到新轨迹落盘！</div>
-        <button class="track-toast-close" onclick="hideTrackDetectedToast()" title="关闭">×</button>
-    </div>
-    <div class="track-toast-body">
-        后端已捕获新的 FIT 文件并完成入库，可立即切换到轨迹分析工具开始复盘。
-        <div class="track-toast-path" id="track-detected-toast-path">--</div>
-    </div>
-    <div class="track-toast-actions">
-        <button class="track-toast-btn" onclick="replayDetectedTrack()">立即复盘</button>
-    </div>
-</div>
 <button id="ai-coach-global-btn" onclick="openAICoach()" title="全局呼出 AI私教，也可按 Ctrl/⌘ + Shift + A">AI私教</button>
 <div id="ai-coach-bubble" title="AI私教，拖拽调整位置，点击打开">私教</div>
 <div id="ai-coach-window">
@@ -6257,10 +6159,8 @@
 
     let currentRange = 4500; 
     let toastTimeout = null;
-    let detectedTrackToastTimer = null;
     let activityIntegrityTimer = null;
     let lastActivityIntegritySignature = '';
-    let latestDetectedTrack = { filePath: '', activityId: 0 };
 
     const LLM_DEFAULT_URL = 'http://localhost:3000/v1/chat/completions';
     const PY_REPORT_ACTIVITY_ADVICE = '__REPORT_ACTIVITY_ADVICE__';
@@ -6711,10 +6611,26 @@
         var dimensions = (radarData && radarData.dimensions) || [];
 
         if (!dimensions.length) {
-            radarContainer.style.display = 'none';
+            if (radarChartInstance) {
+                radarChartInstance.dispose();
+                radarChartInstance = null;
+            }
+            radarContainer.style.display = 'flex';
+            radarContainer.style.alignItems = 'center';
+            radarContainer.style.justifyContent = 'center';
+            radarContainer.style.color = '#64748b';
+            radarContainer.style.fontSize = '0.78rem';
+            radarContainer.style.fontWeight = '700';
+            radarContainer.innerHTML = '<div>暂无该运动类型近 90 天雷达数据</div>';
             return;
         }
         radarContainer.style.display = '';
+        radarContainer.style.alignItems = '';
+        radarContainer.style.justifyContent = '';
+        radarContainer.style.color = '';
+        radarContainer.style.fontSize = '';
+        radarContainer.style.fontWeight = '';
+        radarContainer.innerHTML = '';
 
         if (!radarChartInstance) {
             radarChartInstance = echarts.init(radarContainer);
@@ -6938,16 +6854,6 @@
         toastTimeout = setTimeout(() => { toast.style.opacity = '0'; }, 3500);
     }
 
-    function hideTrackDetectedToast() {
-        const toast = document.getElementById('track-detected-toast');
-        if (!toast) return;
-        toast.classList.remove('show');
-        if (detectedTrackToastTimer) {
-            clearTimeout(detectedTrackToastTimer);
-            detectedTrackToastTimer = null;
-        }
-    }
-
     function showCompassBadge() {
         const badge = document.getElementById('compass-badge');
         if (badge) badge.style.display = 'inline-block';
@@ -6956,58 +6862,6 @@
     function hideCompassBadge() {
         const badge = document.getElementById('compass-badge');
         if (badge) badge.style.display = 'none';
-    }
-
-    function showTrackDetectedToast(filePath) {
-        const toast = document.getElementById('track-detected-toast');
-        const pathEl = document.getElementById('track-detected-toast-path');
-        if (!toast || !pathEl) return;
-        pathEl.textContent = filePath || '--';
-        toast.classList.add('show');
-        if (detectedTrackToastTimer) clearTimeout(detectedTrackToastTimer);
-        detectedTrackToastTimer = setTimeout(() => {
-            hideTrackDetectedToast();
-        }, 10000);
-    }
-
-    async function loadTrackFromDetection(filePath, activityId = 0) {
-        if (!filePath) throw new Error('未提供轨迹文件路径');
-        const tabBtn = document.querySelector('.bookmark-tab[data-panel="trace"]');
-        if (tabBtn) switchTab(tabBtn);
-        if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.load_activity_track_by_file_path === 'function') {
-            const res = await window.pywebview.api.load_activity_track_by_file_path(filePath);
-            if (res && res.ok && res.data && Array.isArray(res.data.points) && res.data.points.length) {
-                appState.currentActivityId = (res.activity && res.activity.id) || activityId || null;
-                appState.currentFileType = String((res.filename || filePath || '').split('.').pop() || '').toLowerCase() || null;
-                appState.persistenceMode = appState.currentActivityId ? 'canonical_activity' : 'temporary_session';
-                setCurrentWeather((res.data && res.data.weather) || (res.activity && res.activity.weather) || null);
-                if (res.activity && res.activity.sport_type) {
-                    const sel = document.getElementById('sport-type-selector');
-                    if (sel) { sel.value = res.activity.sport_type; sel.style.color = '#f8fafc'; }
-                    appState.sportType = res.activity.sport_type;
-                }
-                applyDataAndRender(res.data, res.filename || '新轨迹', res.activity || null);
-                return true;
-            }
-        }
-        return await loadAndRenderLocalFile(filePath, false);
-    }
-
-    async function replayDetectedTrack(filePath = '', activityId = 0) {
-        const targetPath = filePath || latestDetectedTrack.filePath;
-        const targetId = Number(activityId) || Number(latestDetectedTrack.activityId) || 0;
-        hideTrackDetectedToast();
-        try {
-            const ok = await loadTrackFromDetection(targetPath, targetId);
-            if (ok) {
-                showToast('✅ 已切换到轨迹分析工具并加载新轨迹');
-                return;
-            }
-            showToast('⚠️ 新轨迹复盘失败，请稍后重试');
-        } catch (e) {
-            console.error('replayDetectedTrack error:', e);
-            showToast('⚠️ 新轨迹复盘失败: ' + String((e && e.message) || e));
-        }
     }
 
     async function refreshRecordsAfterDetection() {
@@ -7026,13 +6880,7 @@
 
     window.onNewTrackDetected = async function(filePath, activityId = 0) {
         try {
-            latestDetectedTrack = {
-                filePath: String(filePath || ''),
-                activityId: Number(activityId) || 0
-            };
             showCompassBadge();
-            showTrackDetectedToast(latestDetectedTrack.filePath);
-            showToast('📡 雷达检测到新轨迹落盘！');
             await refreshRecordsAfterDetection();
         } catch (e) {
             console.error('[onNewTrackDetected] error:', e);
@@ -7748,6 +7596,7 @@
             inserted: Number(status.inserted) || 0,
             updated: Number(status.updated) || 0,
             skipped: Number(status.skipped) || 0,
+            errors: Array.isArray(status.errors) ? status.errors.length : (Number(status.errors) || 0),
             removed: Number(status.removed) || 0,
             total: Number(status.total) || 0,
             current: Number(status.current) || 0
@@ -7828,6 +7677,38 @@
             }
             if (Date.now() - startedAt > timeoutMs) {
                 throw new Error('同步任务超时，请稍后重试');
+            }
+            await new Promise((resolve) => setTimeout(resolve, 500));
+        }
+    }
+
+    async function pollSportHubImportJob(jobId) {
+        if (!(window.pywebview && window.pywebview.api && typeof window.pywebview.api.get_import_fit_files_status === 'function')) {
+            throw new Error('当前版本不支持导入进度查询');
+        }
+        const startedAt = Date.now();
+        const timeoutMs = 600000;
+        let lastListRefreshAt = 0;
+        while (true) {
+            const status = await window.pywebview.api.get_import_fit_files_status(jobId);
+            if (!status || status.ok === false && !status.job_id) {
+                throw new Error((status && status.error) || '导入状态获取失败');
+            }
+            updateSportHubSyncState(status);
+            const now = Date.now();
+            if (now - lastListRefreshAt > 1000 || status.state === 'done') {
+                lastListRefreshAt = now;
+                await loadSportHubActivityList({ resetPage: false, refreshSnapshot: true });
+            }
+            renderSportHubRecords();
+            if (status.state === 'done') {
+                return status;
+            }
+            if (['failed', 'error', 'cancelled', 'timeout'].includes(String(status.state || '').toLowerCase())) {
+                throw new Error(status.error || status.message || '导入任务异常结束');
+            }
+            if (Date.now() - startedAt > timeoutMs) {
+                throw new Error('导入任务超时，请稍后重试');
             }
             await new Promise((resolve) => setTimeout(resolve, 500));
         }
@@ -8034,6 +7915,7 @@
                     `新增 ${stats.inserted || 0}`,
                     `更新 ${stats.updated || 0}`,
                     `跳过 ${stats.skipped || 0}`,
+                    `异常 ${stats.errors || 0}`,
                     `删除 ${stats.removed || 0}`
                 ];
                 if (sportHubState.syncCurrentFile) {
@@ -8165,21 +8047,22 @@
                 try {
                     const confirmToken = `DELETE:${ids.length}`;
                     const res = await window.pywebview.api.delete_activities(ids, confirmToken);
-                    if (!res || !res.ok) throw new Error((res && res.error) || '删除失败');
+                    if (!res || res.code !== 0) throw new Error((res && (res.msg || res.error)) || '删除失败');
+                    const deleteData = res.data || {};
                     sportHubState.selectedIds.clear();
                     closeBlockerModal();
                     await loadSportHubActivityList({ resetPage: true, refreshSnapshot: true });
-                    let msg = `已删除 ${res.deleted} 条运动记录`;
-                    if (typeof res.files_deleted === 'number') {
-                        msg += `，已移除 ${res.files_deleted} 个本地文件`;
+                    let msg = `已删除 ${deleteData.deleted || 0} 条运动记录`;
+                    if (typeof deleteData.files_deleted === 'number') {
+                        msg += `，已移除 ${deleteData.files_deleted} 个本地文件`;
                     }
-                    if (res.file_errors && res.file_errors.length) {
-                        msg += `，${res.file_errors.length} 个文件删除异常（已跳过）`;
-                        console.warn('文件删除异常:', res.file_errors);
+                    if (deleteData.file_errors && deleteData.file_errors.length) {
+                        msg += `，${deleteData.file_errors.length} 个文件删除异常（已跳过）`;
+                        console.warn('文件删除异常:', deleteData.file_errors);
                     }
-                    if (res.skipped_unsafe_paths && res.skipped_unsafe_paths.length) {
-                        msg += `，${res.skipped_unsafe_paths.length} 个受控目录外路径已拒绝`;
-                        console.warn('受控目录外路径已拒绝:', res.skipped_unsafe_paths);
+                    if (deleteData.skipped_unsafe_paths && deleteData.skipped_unsafe_paths.length) {
+                        msg += `，${deleteData.skipped_unsafe_paths.length} 个受控目录外路径已拒绝`;
+                        console.warn('受控目录外路径已拒绝:', deleteData.skipped_unsafe_paths);
                     }
                     showToast(msg);
                 } catch (e) {
@@ -8934,6 +8817,12 @@
             const record = await fetchSportHubActivityDetail(activityId);
             if (!record) throw new Error('未找到该活动记录');
             renderActivityDetail(record);
+            const processingStatus = String(record.processing_status || 'ready').toLowerCase();
+            if (processingStatus === 'processing' || processingStatus === 'pending') {
+                showToast('该活动已加入列表，详细复盘数据正在后台准备');
+            } else if (processingStatus === 'failed') {
+                showToast('该活动详细数据处理失败，暂不可复盘');
+            }
         } catch (e) {
             console.error('openActivityDetailModal error:', e);
             if (metrics) metrics.innerHTML = '<div class="detail-track-tip" style="margin-top:0;color:#fca5a5;">活动详情加载失败</div>';
@@ -9402,17 +9291,27 @@
                 showToast('已取消导入');
                 return;
             }
+            const jobId = importData.job_id || '';
+            if (!jobId) throw new Error('导入任务启动失败：缺少任务 ID');
+            updateSportHubSyncState(importData.status || { job_id: jobId, message: '导入任务已启动' });
+            const finalStatus = await pollSportHubImportJob(jobId);
+            const result = finalStatus.result || {};
+            if (!finalStatus.ok || !result.ok) {
+                throw new Error(finalStatus.error || result.error || result.msg || finalStatus.message || '本地 FIT 文件导入失败');
+            }
+            importData = result.data || {};
             sportHubState.lastSyncSummary = {
                 ok: true,
                 inserted: Array.isArray(importData.imported) ? importData.imported.length : 0,
                 updated: 0,
-                skipped: 0,
+                skipped: Array.isArray(importData.skipped) ? importData.skipped.length : 0,
                 errors: importData.errors || []
             };
             await loadSportHubActivityList({ resetPage: true, refreshSnapshot: true });
             const importedCount = Array.isArray(importData.imported) ? importData.imported.length : 0;
+            const skippedCount = Array.isArray(importData.skipped) ? importData.skipped.length : 0;
             const errorCount = Array.isArray(importData.errors) ? importData.errors.length : 0;
-            showToast(`已导入 ${importedCount} 个本地文件${errorCount ? `，${errorCount} 个文件异常` : ''}`);
+            showToast(`已导入 ${importedCount} 个本地文件${skippedCount ? `，跳过 ${skippedCount} 个` : ''}${errorCount ? `，${errorCount} 个文件异常` : ''}`);
         } catch (e) {
             console.error('importLocalFitFiles error:', e);
             sportHubState.recordsError = String((e && e.message) || e || '本地 FIT 文件导入失败');

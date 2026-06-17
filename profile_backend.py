@@ -158,7 +158,7 @@ def _ensure_activity_list_indexes(conn: sqlite3.Connection) -> None:
     for _name, sql in ACTIVITY_LIST_INDEX_SQL:
         conn.execute(sql)
 
-SYNC_STATE_DIR = os.path.expanduser("~/.trackapp")
+SYNC_STATE_DIR = str(_BASE / "sync_state")
 SYNC_STATE_PATH = os.path.join(SYNC_STATE_DIR, "sync_state.json")
 PROFILE_CACHE_PATH = os.path.join(SYNC_STATE_DIR, "user_profile_cache.json")
 
@@ -674,6 +674,7 @@ def _init_schema(conn: sqlite3.Connection) -> None:
         "gain_m",       "max_alt_m",   "max_hr",      "avg_cadence",
         "hr_decoupling","tss",         "points_json", "updated_at",
         "sport_type",   "sub_sport_type",
+        "processing_status", "processing_error",
     )
     activity_dtypes = (
         "TEXT",   "REAL", "INTEGER","TEXT",
@@ -690,9 +691,19 @@ def _init_schema(conn: sqlite3.Connection) -> None:
         "REAL",   "REAL",  "INTEGER","REAL",
         "REAL",   "REAL",  "TEXT",   "TEXT DEFAULT (datetime('now'))",
         "TEXT",   "TEXT DEFAULT 'unknown'",
+        "TEXT DEFAULT 'ready'", "TEXT",
     )
     assert len(activity_columns) == len(activity_dtypes), "activity_columns/dtypes mismatch"
     for col, dtype in zip(activity_columns, activity_dtypes):
+        try:
+            conn.execute(f"ALTER TABLE activities ADD COLUMN {col} {dtype}")
+        except Exception:
+            pass
+
+    for col, dtype in [
+        ("processing_status", "TEXT DEFAULT 'ready'"),
+        ("processing_error", "TEXT"),
+    ]:
         try:
             conn.execute(f"ALTER TABLE activities ADD COLUMN {col} {dtype}")
         except Exception:
