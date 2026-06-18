@@ -191,6 +191,48 @@ class TestFatigueReviewP6AiInsight(unittest.TestCase):
         self.assertNotIn("curves", captured["snapshot"])
         self.assertEqual(captured["sport_cn"], "跑步")
 
+    def test_call_llm_prefers_authoritative_snapshot_sport_type(self):
+        api = self._api()
+        api._ai_snapshot = {"activity_id": 9}
+        api._build_fatigue_review_insight_snapshot = MagicMock(return_value={
+            "activity_id": 9,
+            "sport_type": "running",
+            "metrics": {"hr_drift": {"level": "good"}},
+            "fatigue_zones": [],
+            "collapse_events": [],
+            "curves_summary": {"distance_points_count": 10},
+            "context_tags": {},
+            "advice": "",
+            "disclaimer": "",
+        })
+        captured = {}
+
+        def fake_messages(snapshot, sport_type, sport_cn):
+            captured["sport_type"] = sport_type
+            captured["sport_cn"] = sport_cn
+            return [{"role": "system", "content": "{}"}, {"role": "user", "content": "go"}]
+
+        with patch("llm_backend.load_llm_config", return_value={
+            "url": "http://localhost:1",
+            "model": "test",
+            "api_key": "",
+            "agent_id": "",
+        }), patch("llm_backend.build_fatigue_review_messages", side_effect=fake_messages), \
+             patch("llm_backend.chat_completions", return_value=json.dumps({
+                 "summary": "本次状态稳定",
+                 "sport_type": "running",
+                 "key_dimensions": [],
+                 "event_interpretation": "无明显事件",
+                 "training_advice": "保持节奏",
+                 "disclaimer": "AI 生成仅供参考",
+             })):
+            res = api.call_llm("__FATIGUE_REVIEW_INSIGHT__", "hiking")
+
+        self.assertEqual(res["code"], 0)
+        self.assertEqual(captured["sport_type"], "running")
+        self.assertEqual(captured["sport_cn"], "跑步")
+        self.assertEqual(res["data"]["sport_type"], "running")
+
     def test_call_llm_llm_exception_returns_empty_insight(self):
         api = self._api()
         api._ai_snapshot = {"activity_id": 9}

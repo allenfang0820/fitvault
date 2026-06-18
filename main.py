@@ -5525,10 +5525,10 @@ class Api:
             self._chat_messages = []
             self._new_session_id()
 
-            def _fr_empty(message: str) -> dict:
+            def _fr_empty(message: str, resolved_sport_type: str | None = None) -> dict:
                 return _api_success({
                     "fatigue_review_insight": llm_backend.empty_fatigue_review_insight(message),
-                    "sport_type": sport_type,
+                    "sport_type": resolved_sport_type or sport_type,
                 })
 
             activity_id = (
@@ -5543,7 +5543,7 @@ class Api:
                 if not fr_snapshot:
                     return _fr_empty("未找到该活动记录")
                 if not fr_snapshot.get("metrics"):
-                    return _fr_empty("当前活动数据不足,无法生成洞察")
+                    return _fr_empty("当前活动数据不足,无法生成洞察", fr_snapshot.get("sport_type"))
 
                 cfg = llm_backend.load_llm_config()
                 url = (cfg.get("url") or "").strip()
@@ -5556,13 +5556,14 @@ class Api:
                 api_key = str(cfg.get("api_key") or "")
                 agent_id = str(cfg.get("agent_id") or "")
                 sid = self._session_id
+                authoritative_sport_type = str(fr_snapshot.get("sport_type") or sport_type or "running")
                 sport_cn = {
                     "running": "跑步", "trail_running": "越野跑", "treadmill_running": "跑步机",
                     "hiking": "徒步", "mountaineering": "登山",
                     "cycling": "骑行", "road_cycling": "公路骑行", "mountain_biking": "山地车",
                     "swimming": "游泳", "lap_swimming": "泳池游泳", "open_water": "公开水域游泳",
-                }.get(sport_type, sport_type or "该运动")
-                messages = llm_backend.build_fatigue_review_messages(fr_snapshot, sport_type, sport_cn)
+                }.get(authoritative_sport_type, authoritative_sport_type or "该运动")
+                messages = llm_backend.build_fatigue_review_messages(fr_snapshot, authoritative_sport_type, sport_cn)
                 text = llm_backend.chat_completions(
                     url=url,
                     api_key=api_key,
@@ -5573,7 +5574,7 @@ class Api:
                 )
                 return _api_success({
                     "fatigue_review_insight": llm_backend.normalize_fatigue_review_json(text),
-                    "sport_type": sport_type,
+                    "sport_type": authoritative_sport_type,
                 })
             except Exception as e:
                 logger.warning("fatigue_review_insight failed: %s", e)
@@ -7977,7 +7978,7 @@ class Api:
         review_snapshot = self._build_fatigue_review_snapshot(row)
         compact = {
             "activity_id": aid,
-            "sport_type": sport_type or review_snapshot.get("sport_type") or row.get("sport_type") or "running",
+            "sport_type": review_snapshot.get("sport_type") or row.get("sport_type") or sport_type or "running",
             "metrics": review_snapshot.get("metrics") or {},
             "fatigue_zones": review_snapshot.get("fatigue_zones") or [],
             "collapse_events": review_snapshot.get("collapse_events") or [],
@@ -9088,9 +9089,9 @@ def _api_find_gpx_pollution(self) -> dict:
 
 
 def _api_import_track(self, file_path: str = "", duplicate_action: str = "", new_filename: str = "") -> dict:
-    """GPX 导入入口。
+    """GPX/KML 临时轨迹导入入口。
 
-    契约 §二 §八：GPX 是用后即抛型文件，不进 canonical DB。
+    契约 §二 §八：GPX/KML 是用后即抛型文件，不进 canonical DB。
     本接口仅解析并返回内存数据，不写 activities 表，不拷贝文件到 TRACKS_DIR。
     duplicate_action / new_filename 保留参数签名兼容，实际不持久化无意义。
     """
@@ -9103,22 +9104,31 @@ def _api_import_track(self, file_path: str = "", duplicate_action: str = "", new
             return {"ok": False, "error": "窗口未就绪"}
         paths = webview.windows[0].create_file_dialog(
             FileDialog.OPEN,
-            file_types=("GPX files (*.gpx)",),
+            file_types=("Track files (*.gpx;*.kml)",),
         )
         if not paths:
             return {"ok": False, "cancelled": True}
         target_path = paths[0] if isinstance(paths, (list, tuple)) else paths
-    if Path(target_path).suffix.lower() != ".gpx":
-        return {"ok": False, "error": "仅支持导入 GPX 文件，请选择 .gpx 格式的轨迹文件"}
+    if Path(target_path).suffix.lower() not in (".gpx", ".kml"):
+        return {"ok": False, "error": "仅支持导入 GPX/KML 轨迹文件，请选择 .gpx 或 .kml 格式的轨迹文件"}
     try:
-        # §二 §八：GPX 只解析不持久化 — 不写 activities 表，不拷贝文件
-        return profile_backend.parse_gpx_for_preview(target_path)
+        # §二 §八：GPX/KML 只解析不持久化 — 不写 activities 表，不拷贝文件
+        return profile_backend.parse_route_for_preview(target_path, resolve_region=False)
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def _api_resolve_preview_region(self, lat, lon) -> dict:
+    """临时轨迹地区查询入口：只读写 geocode_cache，不写 activities。"""
+    try:
+        fields = profile_backend.resolve_preview_region(lat, lon)
+        return {"ok": True, "region": fields}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
 
 def _api_choose_gpx_track_file(self) -> dict:
-    """仅打开 GPX 文件选择器，不做解析，避免文件选择阶段显示任务加载层。"""
+    """仅打开 GPX/KML 文件选择器，不做解析，避免文件选择阶段显示任务加载层。"""
     import webview
     from webview import FileDialog
 
@@ -9127,13 +9137,13 @@ def _api_choose_gpx_track_file(self) -> dict:
             return {"ok": False, "error": "窗口未就绪"}
         paths = webview.windows[0].create_file_dialog(
             FileDialog.OPEN,
-            file_types=("GPX files (*.gpx)",),
+            file_types=("Track files (*.gpx;*.kml)",),
         )
         if not paths:
             return {"ok": False, "cancelled": True}
         target_path = paths[0] if isinstance(paths, (list, tuple)) else paths
-        if Path(target_path).suffix.lower() != ".gpx":
-            return {"ok": False, "error": "仅支持导入 GPX 文件，请选择 .gpx 格式的轨迹文件"}
+        if Path(target_path).suffix.lower() not in (".gpx", ".kml"):
+            return {"ok": False, "error": "仅支持导入 GPX/KML 轨迹文件，请选择 .gpx 或 .kml 格式的轨迹文件"}
         return {"ok": True, "file_path": str(target_path)}
     except Exception as e:
         return {"ok": False, "error": str(e)}
@@ -9232,6 +9242,7 @@ Api.get_activity_by_file_path = _api_get_activity_by_file_path
 Api.load_activity_track_by_file_path = _api_load_activity_track_by_file_path
 Api.choose_gpx_track_file = _api_choose_gpx_track_file
 Api.import_track = _api_import_track
+Api.resolve_preview_region = _api_resolve_preview_region
 Api.find_gpx_pollution = _api_find_gpx_pollution
 Api.update_activity_sport_type = _api_update_activity_sport_type
 Api.validate_fit_directory = _api_validate_fit_directory
@@ -9351,7 +9362,8 @@ def main() -> None:
         min_size=(800, 600),
         hidden=True,
         frameless=True,
-        easy_drag=True,
+        easy_drag=False,
+        draggable=True,
         background_color='#061626',  # 匹配启动图主背景色，降低原生窗口预绘制闪烁
     )
     _record_startup_event("window_created")

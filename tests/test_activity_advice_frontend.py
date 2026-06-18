@@ -114,13 +114,56 @@ class TestActivityAdviceFrontendContract(unittest.TestCase):
 
     def test_overview_route_facts_only_sync_through_track_context(self):
         apply_body = _slice_function_body(self.html, "applyDataAndRender", max_len=14000)
-        self.assertIn("buildActivityAdviceRouteFactsFromOverview(stats, appState.activityMetrics, appState.points)", apply_body)
-        self.assertIn("activityAdviceRouteFacts: activityAdviceRouteFacts", apply_body)
-        self.assertIn("sync_track_context(JSON.stringify({", apply_body)
+        self.assertIn("appState.currentOverviewStats = stats", apply_body)
+        self.assertIn("syncCurrentTrackContextForActivityAdvice('track_loaded')", apply_body)
 
         builder_body = _slice_function_body(self.html, "buildActivityAdviceRouteFactsFromOverview")
         for token in ("distance_km", "elevation_gain_m", "max_alt_m", "source"):
             self.assertIn(token, builder_body)
+        self.assertIn("appState.previewRegionMetrics", builder_body)
+        self.assertIn("normalizeActivityAdviceRegion(regionMetrics)", builder_body)
+
+        sync_body = _slice_function_body(self.html, "syncCurrentTrackContextForActivityAdvice")
+        self.assertIn("buildActivityAdviceRouteFactsFromOverview(", sync_body)
+        self.assertIn("activityAdviceRouteFacts: activityAdviceRouteFacts", sync_body)
+        self.assertIn("sync_track_context(JSON.stringify({", sync_body)
+
+    def test_activity_advice_region_uses_overview_fact_source(self):
+        body = _slice_function_body(self.html, "normalizeActivityAdviceRegion")
+        self.assertIn("m.region", body)
+        self.assertIn("m.region_display", body)
+        self.assertLess(body.find("m.region"), body.find("m.region_display"))
+        for forbidden_ui_text in (
+            "正在查询地区",
+            "地区查询失败",
+            "未知地点",
+            "查询中……",
+            "待补全",
+        ):
+            self.assertIn(forbidden_ui_text, body)
+        self.assertIn("status === 'pending'", body)
+        self.assertIn("status === 'failed'", body)
+
+    def test_preview_region_resync_only_for_temporary_gpx_kml(self):
+        guard_body = _slice_function_body(self.html, "isTemporaryRouteImportForRegionResync")
+        self.assertIn("appState.persistenceMode === 'temporary_session'", guard_body)
+        self.assertIn("ext === 'gpx' || ext === 'kml'", guard_body)
+        self.assertNotIn("fit", guard_body)
+
+        preview_body = _slice_function_body(self.html, "buildPreviewRegionMetrics")
+        self.assertIn("start_lat", preview_body)
+        self.assertIn("start_lon", preview_body)
+        self.assertIn("region_status: 'pending'", preview_body)
+
+        apply_body = _slice_function_body(self.html, "applyDataAndRender", max_len=14000)
+        self.assertIn("appState.previewRegionMetrics = (!activity && isTemporaryRouteImportForRegionResync())", apply_body)
+        self.assertIn("resolvePreviewRegionInBackground(appState.activityMetrics || appState.previewRegionMetrics)", apply_body)
+
+        apply_region_body = _slice_function_body(self.html, "applyPreviewRegionFields")
+        self.assertIn("appState.activityMetrics || appState.previewRegionMetrics", apply_region_body)
+        self.assertIn("renderTrackReport({ silent: true })", apply_region_body)
+        self.assertIn("isTemporaryRouteImportForRegionResync()", apply_region_body)
+        self.assertIn("syncCurrentTrackContextForActivityAdvice('preview_region_resolved')", apply_region_body)
 
     def test_activity_advice_dimensions_rendered(self):
         body = _slice_function_body(self.html, "buildActivityAdviceHTML")

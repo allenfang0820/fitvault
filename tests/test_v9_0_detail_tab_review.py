@@ -235,6 +235,22 @@ class TestV9AiInsightModalHtml(unittest.TestCase):
         self.assertIn('onclick="closeFatigueAiInsightModal()"', self.html,
                       "V9.0 FAIL: backdrop 缺少关闭 handler")
 
+    def test_radar_ai_error_modal_close_is_not_blocked_by_nested_modal(self):
+        """雷达 AI 错误态不能在 body 内嵌套 .radar-ai-modal,否则会遮住关闭按钮。"""
+        close_idx = self.html.find("function closeRadarAiInsightModal()")
+        self.assertGreater(close_idx, 0)
+        close_body = self.html[close_idx:self.html.find("\n    // §5.6 Modal 化:打开弹窗", close_idx)]
+        self.assertIn("_clearRadarInsight();", close_body)
+        self.assertNotIn("if (_radarInsightModalOpen)", close_body)
+
+        render_idx = self.html.find("function _renderRadarInsightModal(data)")
+        self.assertGreater(render_idx, 0)
+        render_body = self.html[render_idx:self.html.find("\n    // === V9.0 §5.6 Modal 化:复盘 AI 洞察 Modal", render_idx)]
+        self.assertIn('class="radar-ai-modal-error"', render_body)
+        self.assertIn('role="alert"', render_body)
+        self.assertNotIn('class="radar-ai-modal error"', render_body)
+        self.assertIn(".radar-ai-modal-error", self.html)
+
     def test_fatigue_ai_modal_sections(self):
         """AI Modal 4 sections(总评/维度/事件/建议)必须就位。"""
         for section_id in [

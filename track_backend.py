@@ -523,15 +523,14 @@ def _parse_kml_coord_tokens(tag_local: str, text: str) -> list[dict[str, float]]
 
     if tag_local == "coord":
         for line in text.splitlines():
-            for chunk in line.split():
-                parts = chunk.replace(",", " ").split()
-                if len(parts) >= 2:
-                    try:
-                        lon, lat = float(parts[0]), float(parts[1])
-                        alt = float(parts[2]) if len(parts) > 2 else 0.0
-                        pts.append({"lon": lon, "lat": lat, "alt": alt})
-                    except (ValueError, IndexError):
-                        continue
+            parts = line.replace(",", " ").split()
+            if len(parts) >= 2:
+                try:
+                    lon, lat = float(parts[0]), float(parts[1])
+                    alt = float(parts[2]) if len(parts) > 2 else 0.0
+                    pts.append({"lon": lon, "lat": lat, "alt": alt})
+                except (ValueError, IndexError):
+                    continue
         return pts
 
     for triple in re.split(r"\s+", text.replace("\n", " ").replace("\r", " ").strip()):
@@ -548,27 +547,88 @@ def _parse_kml_coord_tokens(tag_local: str, text: str) -> list[dict[str, float]]
     return pts
 
 
+def _kml_local_name(el: ET.Element) -> str:
+    return el.tag.split("}")[-1]
+
+
+def _kml_child_text(el: ET.Element, child_name: str) -> str:
+    for child in list(el):
+        if _kml_local_name(child) == child_name:
+            return (child.text or "").strip()
+    return ""
+
+
+def _extract_kml_placemarks(root: ET.Element) -> list[dict[str, Any]]:
+    placemarks: list[dict[str, Any]] = []
+    for placemark in root.iter():
+        if _kml_local_name(placemark) != "Placemark":
+            continue
+        point_el = next((el for el in placemark.iter() if _kml_local_name(el) == "Point"), None)
+        if point_el is None:
+            continue
+        coord_el = next((el for el in point_el.iter() if _kml_local_name(el) == "coordinates"), None)
+        if coord_el is None:
+            continue
+        coords = _parse_kml_coord_tokens("coordinates", coord_el.text or "")
+        if not coords:
+            continue
+        point = coords[0]
+        name = _kml_child_text(placemark, "name") or f"打卡点 {len(placemarks) + 1}"
+        placemarks.append(
+            {
+                "id": f"cp_kml_{len(placemarks)}",
+                "name": name,
+                "lat": point["lat"],
+                "lon": point["lon"],
+                "alt": point["alt"],
+            }
+        )
+    return placemarks
+
+
 def parse_kml_file(path: Path) -> dict[str, Any]:
     tree = ET.parse(path)
     root = tree.getroot()
-    best: tuple[int, str, str] = (0, "", "")
+    parent_map = {child: parent for parent in root.iter() for child in list(parent)}
+    placemarks = _extract_kml_placemarks(root)
+
+    def has_ancestor(el: ET.Element, name: str) -> bool:
+        current = parent_map.get(el)
+        while current is not None:
+            if _kml_local_name(current) == name:
+                return True
+            current = parent_map.get(current)
+        return False
+
+    best_points: list[dict[str, float]] = []
+
+    for track in root.iter():
+        if _kml_local_name(track) != "Track":
+            continue
+        coord_text = "\n".join(
+            (el.text or "").strip()
+            for el in track.iter()
+            if _kml_local_name(el) == "coord" and (el.text or "").strip()
+        )
+        raw_pts = _parse_kml_coord_tokens("coord", coord_text)
+        if len(raw_pts) > len(best_points):
+            best_points = raw_pts
+
     for el in root.iter():
-        tag = el.tag.split("}")[-1]
-        if tag not in ("coordinates", "coord"):
+        tag = _kml_local_name(el)
+        if tag != "coordinates":
+            continue
+        if has_ancestor(el, "Point") or has_ancestor(el, "Track"):
             continue
         txt = (el.text or "").strip()
-        if len(txt) > best[0]:
-            best = (len(txt), tag, txt)
+        raw_pts = _parse_kml_coord_tokens("coordinates", txt)
+        if len(raw_pts) > len(best_points):
+            best_points = raw_pts
 
-    if best[0] == 0:
-        return {"points": [], "placemarks": []}
-
-    _, tag_local, text = best
-    raw_pts = _parse_kml_coord_tokens(tag_local, text)
     points = [
-        {"lat": p["lat"], "lon": p["lon"], "alt": p["alt"], "time": None, "hr": None} for p in raw_pts
+        {"lat": p["lat"], "lon": p["lon"], "alt": p["alt"], "time": None, "hr": None} for p in best_points
     ]
-    return enrich_sport_metadata({"points": points, "placemarks": []})
+    return enrich_sport_metadata({"points": points, "placemarks": placemarks})
 
 
 def parse_track_file(path: str | Path) -> dict[str, Any]:

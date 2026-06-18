@@ -51,6 +51,7 @@ class TestP81FrontendOpenGate(unittest.TestCase):
 
     def test_p81_frontend_call_only_passes_sentinel_and_sport_type(self):
         body = _extract_function(self.html, "async function onFatigueReviewAiInsight()")
+        self.assertIn("_lastFatigueReviewData && _lastFatigueReviewData.sport_type", body)
         self.assertIn("call_llm('__FATIGUE_REVIEW_INSIGHT__', sportType)", body)
         self.assertNotIn("JSON.stringify", body)
         self.assertNotIn("prompt", body.lower())

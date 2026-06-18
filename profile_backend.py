@@ -2042,11 +2042,59 @@ def _format_city_country(city: str | None, country: str | None) -> str:
     return city_text or country_text
 
 
+def _first_geo_text(geo: dict[str, Any], keys: tuple[str, ...]) -> str | None:
+    for key in keys:
+        value = str(geo.get(key) or "").strip()
+        if value:
+            return value
+    return None
+
+
+def _display_name_fallback(display_name: str, country: str | None) -> str | None:
+    parts = [part.strip() for part in str(display_name or "").split(",") if part.strip()]
+    if not parts:
+        return None
+    country_text = str(country or "").strip()
+    for part in parts:
+        if country_text and part == country_text:
+            continue
+        if any(ch.isdigit() for ch in part) and len(part) <= 8:
+            continue
+        return part
+    return parts[0]
+
+
 def _extract_city_country(geo: dict[str, Any] | None) -> tuple[str | None, str | None, str]:
     if not geo:
         return None, None, ""
-    city = str(geo.get("city") or geo.get("county") or geo.get("town") or geo.get("municipality") or "").strip() or None
+    city = _first_geo_text(
+        geo,
+        (
+            "city",
+            "county",
+            "town",
+            "municipality",
+            "village",
+            "hamlet",
+            "district",
+            "state",
+            "province",
+            "region",
+            "suburb",
+            "neighbourhood",
+            "locality",
+            "protected_area",
+            "nature_reserve",
+            "park",
+            "mountain",
+            "peak",
+            "tourism",
+            "name",
+        ),
+    )
     country = str(geo.get("country") or "").strip() or None
+    if not city:
+        city = _display_name_fallback(str(geo.get("display_name") or ""), country)
     return city, country, _format_city_country(city, country)
 
 
@@ -2075,6 +2123,111 @@ def resolve_activity_region(lat: Any, lon: Any) -> str:
     finally:
         conn.close()
     return ""
+
+
+def resolve_preview_region(lat: Any, lon: Any) -> dict[str, Any]:
+    """Resolve region for temporary GPX previews.
+
+    This path may read/write geocode_cache, but must never touch activities.
+    """
+    base = build_initial_region_fields(lat, lon)
+    cache_info = _region_cache_key(lat, lon)
+    if cache_info is None:
+        return base
+
+    cache_key, lat_round, lon_round = cache_info
+    now = datetime.now().isoformat()
+
+    with _REGION_CACHE_LOCK:
+        memory_display = _REGION_CACHE.get((lat_round, lon_round))
+    if memory_display:
+        return {
+            **base,
+            "region": memory_display,
+            "region_display": memory_display,
+            "region_status": "success",
+            "region_error": None,
+            "region_updated_at": now,
+        }
+
+    try:
+        conn = _conn()
+        try:
+            row = conn.execute(
+                "SELECT city, country, display FROM geocode_cache WHERE cache_key = ? AND status = 'success' LIMIT 1",
+                (cache_key,),
+            ).fetchone()
+            if row:
+                display = str(row["display"] or "").strip()
+                if display:
+                    conn.execute("UPDATE geocode_cache SET last_used_at = ? WHERE cache_key = ?", (now, cache_key))
+                    conn.commit()
+                    with _REGION_CACHE_LOCK:
+                        _REGION_CACHE[(lat_round, lon_round)] = display
+                    return {
+                        **base,
+                        "region": display,
+                        "region_city": row["city"],
+                        "region_country": row["country"],
+                        "region_display": display,
+                        "region_status": "success",
+                        "region_error": None,
+                        "region_updated_at": now,
+                    }
+        finally:
+            conn.close()
+    except Exception as cache_exc:
+        logger.warning("GPX preview geocode cache read failed: %s", cache_exc)
+
+    try:
+        geo = reverse_geocode(lat_round, lon_round)
+        city, country, display = _extract_city_country(geo)
+        if not display:
+            raise RuntimeError("未返回城市/国家")
+
+        try:
+            conn = _conn()
+            try:
+                _write_geocode_cache(conn, cache_key, lat_round, lon_round, city, country, display, "success", None)
+                conn.commit()
+            finally:
+                conn.close()
+        except Exception as cache_exc:
+            logger.warning("GPX preview geocode cache write failed: %s", cache_exc)
+        with _REGION_CACHE_LOCK:
+            _REGION_CACHE[(lat_round, lon_round)] = display
+        return {
+            **base,
+            "region": display,
+            "region_city": city,
+            "region_country": country,
+            "region_display": display,
+            "region_status": "success",
+            "region_error": None,
+            "region_updated_at": datetime.now().isoformat(),
+        }
+    except Exception as exc:
+        message = str(exc)
+        try:
+            conn = _conn()
+            try:
+                _write_geocode_cache(conn, cache_key, lat_round, lon_round, None, None, "", "failed", message)
+                conn.commit()
+            finally:
+                conn.close()
+        except Exception as cache_exc:
+            logger.warning("GPX preview geocode cache write failed: %s", cache_exc)
+        return {
+            **base,
+            "region": "",
+            "region_city": None,
+            "region_country": None,
+            "region_display": "",
+            "region_status": "failed",
+            "region_error": message,
+            "region_updated_at": datetime.now().isoformat(),
+            "region_attempt_count": 1,
+        }
 
 
 def _write_geocode_cache(conn: sqlite3.Connection, cache_key: str, lat_round: float, lon_round: float, city: str | None, country: str | None, display: str, status: str, error: str | None) -> None:
@@ -2322,19 +2475,21 @@ def ingest_activity_file(
     }
 
 
-def parse_gpx_for_preview(src_path: str) -> dict[str, Any]:
-    """解析 GPX 文件，仅返回内存数据（不持久化，不写 DB，不拷贝文件）。
+def parse_route_for_preview(src_path: str, resolve_region: bool = True) -> dict[str, Any]:
+    """解析 GPX/KML 临时轨迹，仅返回内存数据（不持久化，不写 DB，不拷贝文件）。
     
     契约依据：
-    - §二 FIT 文件为唯一可信运动数据源，GPX 是用后即抛型文件
-    - §八 canonical DB 只存 fit_sdk 数据，不含 GPX
-    - Region 从 geocode_cache 只读解析（不触发写入）
+    - §二 FIT 文件为唯一可信运动数据源，GPX/KML 是用后即抛型文件
+    - §八 canonical DB 只存 fit_sdk 数据，不含 GPX/KML
+    - Region 仅允许读写 geocode_cache，不触发 activities 写入
     """
     import track_backend
 
     p = Path(src_path).expanduser().resolve()
     if not p.is_file():
         return {"ok": False, "error": f"文件不存在: {src_path}"}
+    if p.suffix.lower() not in (".gpx", ".kml"):
+        return {"ok": False, "error": "仅支持导入 GPX/KML 轨迹文件"}
 
     data = track_backend.parse_track_file(str(p))
     points = data.get("points") or []
@@ -2343,19 +2498,12 @@ def parse_gpx_for_preview(src_path: str) -> dict[str, Any]:
     activity = build_activity_payload(p.name, data, str(p))
     activity["gain_m"] = float(_compute_gpx_fallback_gain_m(points))
 
-    # ====== Region 解析（geocode_cache 只读，不写 DB，不触发 enrichment 线程）====== 
+    # ====== Region 解析（仅 geocode_cache；不写 activities，不触发 enrichment 线程）======
     start_lat = activity.get("start_lat")
     start_lon = activity.get("start_lon")
-    region_display = ""
-    region_status = "none"
-    if start_lat is not None and start_lon is not None:
-        region_display = resolve_activity_region(start_lat, start_lon)
-        if region_display and region_display != "室内运动（无GPS）":
-            region_status = "success"
-        else:
-            region_status = "pending"
+    region_fields = resolve_preview_region(start_lat, start_lon) if resolve_region else build_initial_region_fields(start_lat, start_lon)
 
-    # 前端轨迹报告需要的衍生指标 — 统一算法：FIT 和 GPX 共用 compute_report_metrics
+    # 前端轨迹报告需要的衍生指标 — 统一算法：FIT 和临时轨迹共用 compute_report_metrics
     dist_km_val = float(activity.get("dist_km") or 0.0)
     gain_m_val = float(activity.get("gain_m") or 0.0)
     report = compute_report_metrics(points, dist_km_val, gain_m_val)
@@ -2397,12 +2545,22 @@ def parse_gpx_for_preview(src_path: str) -> dict[str, Any]:
             "calories": activity["calories"],
             "avg_pace": activity["avg_pace"],
             "start_time": activity["start_time"],
-            "region": region_display,
-            "region_status": region_status,
-            "region_display": region_display,
+            "start_lat": start_lat,
+            "start_lon": start_lon,
+            "region": region_fields.get("region") or "",
+            "region_city": region_fields.get("region_city"),
+            "region_country": region_fields.get("region_country"),
+            "region_status": region_fields.get("region_status"),
+            "region_error": region_fields.get("region_error"),
+            "region_display": region_fields.get("region_display") or region_fields.get("region") or "",
             "weather": data.get("weather") or {},
         },
     }
+
+
+def parse_gpx_for_preview(src_path: str) -> dict[str, Any]:
+    """兼容旧 API：解析 GPX/KML 临时轨迹，不持久化。"""
+    return parse_route_for_preview(src_path)
 
 
 def compute_report_metrics(

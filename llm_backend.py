@@ -1,11 +1,12 @@
 """
 大模型调用：读取本地配置，使用 requests 访问 OpenAI 兼容接口；
-将轨迹 DataFrame（高密度点表）拼入 System Prompt。
+将轨迹点表（高密度点表）拼入 System Prompt。
 """
 
 from __future__ import annotations
 
 import io
+import csv
 import json
 import math
 import re
@@ -169,31 +170,46 @@ def test_llm_connection(
 
 
 def points_to_dataframe_csv(points: list[dict[str, Any]], max_chars: int = 50_000) -> str:
-    """将轨迹点转为 pandas DataFrame 再输出 CSV，便于模型按表阅读。
+    """将轨迹点转为 CSV，便于模型按表阅读。
     CONTRACT §4.5: snapshot 必须 token 可控。max_chars=50_000 约合 ~12.5K tokens。
     此函数仅作为历史兼容防御层，不应成为主要 AI 数据源。"""
-    import pandas as pd
-
     if not points:
         return "(无轨迹点数据)"
-    df = pd.DataFrame(points)
+
     preferred = ["lat", "lon", "alt", "time", "hr", "cadence"]
-    cols = [c for c in preferred if c in df.columns]
-    rest = [c for c in df.columns if c not in cols]
-    df = df[cols + rest]
-    buf = io.StringIO()
-    df.to_csv(buf, index=True)
-    text = buf.getvalue()
+
+    columns: list[str] = []
+    seen: set[str] = set()
+    for row in points:
+        if not isinstance(row, dict):
+            continue
+        for key in row.keys():
+            key_text = str(key)
+            if key_text not in seen:
+                seen.add(key_text)
+                columns.append(key_text)
+
+    ordered_columns = [c for c in preferred if c in seen] + [c for c in columns if c not in preferred]
+
+    def _csv_for_rows(rows: list[dict[str, Any]]) -> str:
+        buf = io.StringIO()
+        writer = csv.DictWriter(buf, fieldnames=[""] + ordered_columns, extrasaction="ignore")
+        writer.writeheader()
+        for idx, row in enumerate(rows):
+            payload = {c: row.get(c, "") if isinstance(row, dict) else "" for c in ordered_columns}
+            payload[""] = idx
+            writer.writerow(payload)
+        return buf.getvalue()
+
+    text = _csv_for_rows(points)
     if len(text) <= max_chars:
         return text
-    n = len(df)
+    n = len(points)
     step = max(2, int(math.ceil(len(text) / float(max_chars) * 1.15)))
-    df2 = df.iloc[::step].copy()
-    buf2 = io.StringIO()
-    df2.to_csv(buf2, index=True)
+    sampled = points[::step]
     return (
         f"【说明】原始轨迹共 {n} 行，为控制上下文长度已按步长 {step} 下采样后附表。\n\n"
-        + buf2.getvalue()
+        + _csv_for_rows(sampled)
     )
 
 
@@ -291,7 +307,7 @@ def build_base_system_block(
 {mcp_note}
 {snapshot}
 【高密度轨迹明细表】
-以下为 pandas 导出 CSV（含 lat、lon、alt、time、hr、cadence 等列，索引为点序号）：
+以下为 CSV（含 lat、lon、alt、time、hr、cadence 等列，索引为点序号）：
 ```
 {table}
 ```
@@ -1046,10 +1062,12 @@ def build_fatigue_review_messages(
 ```
 
 【运动专项约束(基于 {mode} 模式)】
+本次活动唯一运动类型为: {sport_cn}({sport_type})。所有解释、措辞和场景判断必须服务于这个运动类型,不得因为地形、配速或历史上下文切换成其他运动。
 - running:重点解读有氧解耦(decoupling)、心率漂移(PA:Hr)、Bonk 撞墙(累计 kcal > 1600 + 后半程效率骤降)
 - cycling:必须依赖功率(NP)评估;若缺功率,声明数据质量不足
 - swimming:重点解读耐力持续性;Bonk 阈值与陆上有差异
 - general:均衡解读 4 维度
+若运动类型为 running / trail_running / treadmill_running,禁止出现"徒步"、"骑行"、"游泳"等跨运动称呼;地形导致的波动应写作跑步赛道、路况或路线变化。
 
 【必须输出维度】
 key_dimensions 数组必须严格包含 overall_stability / fatigue_progression / risk_triggers / context_impact 四个维度(无数据时 comment 写"暂无足够数据"而非略过)。
@@ -1066,7 +1084,7 @@ key_dimensions 数组必须严格包含 overall_stability / fatigue_progression 
 - 使用前端 DOM 推导值或 UI fallback 值
 - 使用 shadow_diff / shadow_diff_json / diff / 任何 debug-only 字段
 - 生成任何 canonical 指标或写回字段建议
-- 跨运动类比(把跑步洞察写成骑行)
+- 跨运动类比或跨运动误称(例如把跑步写成徒步/骑行,把骑行写成跑步)
 - 输出 markdown 代码块标记
 - 凭空捏造事件或数值
 

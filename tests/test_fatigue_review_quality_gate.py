@@ -1480,6 +1480,7 @@ class TestP5AiBoundaryGate(unittest.TestCase):
         self.assertGreater(idx, 0)
         end = self.html.find("\n    // === V6.3 渲染辅助", idx)
         body = self.html[idx:end]
+        self.assertIn("_lastFatigueReviewData && _lastFatigueReviewData.sport_type", body)
         self.assertIn("call_llm('__FATIGUE_REVIEW_INSIGHT__', sportType)", body)
         for forbidden in ("metrics", "curves", "points", "chartPayload", "fatigue_zones"):
             self.assertNotIn("call_llm('__FATIGUE_REVIEW_INSIGHT__', " + forbidden, body)

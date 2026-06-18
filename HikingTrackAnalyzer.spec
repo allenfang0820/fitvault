@@ -11,7 +11,6 @@ from PyInstaller.utils.hooks import collect_submodules
 _hidden = (
     collect_submodules("gpxpy")
     + collect_submodules("fitparse")
-    + collect_submodules("pandas")
     + collect_submodules("garmin_fit_sdk")
     + collect_submodules("watchdog")
     + collect_submodules("webview")
@@ -36,7 +35,14 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=[
+        "matplotlib",
+        "pandas",
+        "pandas.tests",
+        "pytest",
+        "torch",
+        "torchvision",
+    ],
     noarchive=False,
     optimize=0,
 )
