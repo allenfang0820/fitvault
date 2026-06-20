@@ -7,6 +7,7 @@ import types
 import unittest
 import json
 import zipfile
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest import mock
 
@@ -32,6 +33,7 @@ class TestFitSync(unittest.TestCase):
         self.original_sync_state_path = profile_backend.SYNC_STATE_PATH
         self.original_profile_cache_path = profile_backend.PROFILE_CACHE_PATH
         self.original_np_backfill_status = dict(main._NP_BACKFILL_STATUS)
+        self.original_weather_backfill_status = dict(main._WEATHER_BACKFILL_STATUS)
 
         profile_backend.DB_PATH = self.temp_dir / "user_profile.db"
         profile_backend.DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -56,6 +58,14 @@ class TestFitSync(unittest.TestCase):
         if timer and timer.is_alive():
             timer.cancel()
         main._NP_BACKFILL_TIMER = None
+        weather_thread = getattr(main, "_WEATHER_BACKFILL_THREAD", None)
+        if weather_thread and weather_thread.is_alive():
+            weather_thread.join(timeout=2.0)
+        main._WEATHER_BACKFILL_THREAD = None
+        weather_timer = getattr(main, "_WEATHER_BACKFILL_TIMER", None)
+        if weather_timer and weather_timer.is_alive():
+            weather_timer.cancel()
+        main._WEATHER_BACKFILL_TIMER = None
         profile_backend.DB_PATH = self.original_db_path
         profile_backend._SCHEMA_READY_FOR = self.original_profile_schema
         main._ACTIVITY_SYNC_SCHEMA_READY_FOR = self.original_main_schema
@@ -69,6 +79,9 @@ class TestFitSync(unittest.TestCase):
         with main._NP_BACKFILL_LOCK:
             main._NP_BACKFILL_STATUS.clear()
             main._NP_BACKFILL_STATUS.update(self.original_np_backfill_status)
+        with main._WEATHER_BACKFILL_LOCK:
+            main._WEATHER_BACKFILL_STATUS.clear()
+            main._WEATHER_BACKFILL_STATUS.update(self.original_weather_backfill_status)
         self.temp_dir_obj.cleanup()
 
     def _workspace_config(self) -> dict:
@@ -1565,8 +1578,69 @@ class TestFitSync(unittest.TestCase):
         _, kwargs = mocked_get.call_args
         self.assertEqual(kwargs["timeout"], 5)
         self.assertEqual(kwargs["params"]["start_date"], "2024-03-01")
-        self.assertEqual(kwargs["params"]["end_date"], "2024-03-01")
+        self.assertEqual(kwargs["params"]["end_date"], "2024-03-02")
         self.assertEqual(kwargs["params"]["timezone"], "auto")
+
+    def test_fetch_historical_weather_uses_forecast_api_for_recent_activity(self):
+        fake_response = mock.Mock()
+        fake_response.json.return_value = {
+            "hourly": {
+                "time": [f"2026-06-20T{str(h).zfill(2)}:00" for h in range(24)],
+                "temperature_2m": list(range(24)),
+                "relative_humidity_2m": [50 + h for h in range(24)],
+                "wind_speed_10m": [3 + h for h in range(24)],
+                "weather_code": [3] * 24,
+            }
+        }
+        with mock.patch("utils.weather_api._now_utc", return_value=datetime(2026, 6, 20, 5, 0, tzinfo=timezone.utc)), \
+             mock.patch("utils.weather_api.requests.get", return_value=fake_response) as mocked_get:
+            weather = fetch_historical_weather(39.95, 116.38, "2026-06-20T09:17:58+08:00")
+
+        self.assertIsNotNone(weather)
+        self.assertEqual(weather["temperature_c"], 9)
+        self.assertEqual(weather["humidity"], 59)
+        self.assertEqual(weather["wind_speed_kmh"], 12)
+        self.assertEqual(weather["weather_label"], "阴")
+        self.assertEqual(weather["source"], "forecast")
+        _, kwargs = mocked_get.call_args
+        self.assertEqual(kwargs["params"]["past_days"], 3)
+        self.assertEqual(kwargs["params"]["forecast_days"], 1)
+        self.assertIn("weather_code", kwargs["params"]["hourly"])
+
+    def test_fetch_historical_weather_matches_utc_start_to_local_api_hour(self):
+        fake_response = mock.Mock()
+        fake_response.json.return_value = {
+            "utc_offset_seconds": 8 * 3600,
+            "hourly": {
+                "time": [f"2026-06-20T{str(h).zfill(2)}:00" for h in range(24)],
+                "temperature_2m": list(range(24)),
+                "relative_humidity_2m": [40 + h for h in range(24)],
+                "wind_speed_10m": [2 + h for h in range(24)],
+                "weather_code": [1] * 24,
+            }
+        }
+        with mock.patch("utils.weather_api._now_utc", return_value=datetime(2026, 6, 20, 5, 0, tzinfo=timezone.utc)), \
+             mock.patch("utils.weather_api.requests.get", return_value=fake_response):
+            weather = fetch_historical_weather(39.95, 116.38, "2026-06-20T01:17:58Z")
+
+        self.assertIsNotNone(weather)
+        self.assertEqual(weather["temperature_c"], 9)
+        self.assertEqual(weather["observed_hour"], 9)
+        self.assertEqual(weather["observed_date"], "2026-06-20")
+
+    def test_build_activity_payload_persists_weather_dict_from_track_backend(self):
+        data = {
+            "points": [{"lat": 39.95, "lon": 116.38, "time": "2026-06-20T01:17:58Z"}],
+            "distance_km": 5.0,
+            "duration_sec": 1800,
+            "weather": {"temperature_c": 29, "weather_label": "晴"},
+        }
+        activity = profile_backend.build_activity_payload("legacy_weather.fit", data, str(self.temp_dir / "legacy_weather.fit"))
+
+        self.assertIn('"temperature_c": 29', activity["weather_json"])
+        self.assertEqual(activity["weather_status"], "success")
+        self.assertEqual(activity["weather_attempt_count"], 1)
+        self.assertIsNone(activity["weather_error"])
 
     def test_parse_fit_activity_for_sync_persists_weather_json(self):
         fit_path = self.temp_dir / "weather.fit"
@@ -1607,6 +1681,9 @@ class TestFitSync(unittest.TestCase):
 
         self.assertIn('"temperature_c": 28', activity["weather_json"])
         self.assertIn('"weather_label": "阴"', activity["weather_json"])
+        self.assertEqual(activity["weather_status"], "success")
+        self.assertEqual(activity["weather_attempt_count"], 1)
+        self.assertIsNone(activity["weather_error"])
 
     def test_parse_fit_activity_for_sync_prefers_local_start_time_for_weather(self):
         fit_path = self.temp_dir / "weather_local.fit"
@@ -1635,6 +1712,256 @@ class TestFitSync(unittest.TestCase):
             main._parse_fit_activity_for_sync(fit_path)
 
         self.assertEqual(mocked_weather.call_args.args[2], "2024-03-01T23:30:00+08:00")
+
+    def test_weather_backfill_worker_updates_missing_weather_rows(self):
+        main.ensure_activity_sync_schema()
+        conn = profile_backend._conn()
+        try:
+            cur = conn.execute(
+                """
+                INSERT INTO activities
+                    (filename, sport_type, start_time, start_lat, start_lon, weather_status, weather_attempt_count)
+                VALUES (?, 'running', ?, ?, ?, 'pending', 0)
+                """,
+                ("missing_weather.fit", "2026-06-20T09:17:58+08:00", 39.95, 116.38),
+            )
+            activity_id = int(cur.lastrowid)
+            conn.commit()
+        finally:
+            conn.close()
+
+        with mock.patch("main.fetch_historical_weather", return_value={
+            "temperature_c": 29,
+            "humidity": 68,
+            "wind_speed_kmh": 9,
+            "weather_code": 1,
+            "weather_label": "少云",
+            "observed_hour": 9,
+            "observed_date": "2026-06-20",
+            "source": "forecast",
+        }) as mocked_weather:
+            main._run_weather_backfill_worker(str(profile_backend.DB_PATH), limit=10)
+
+        mocked_weather.assert_called_once_with(39.95, 116.38, "2026-06-20T09:17:58+08:00")
+        conn = profile_backend._conn()
+        try:
+            row = conn.execute(
+                "SELECT weather_json, weather_status, weather_attempt_count, weather_error FROM activities WHERE id = ?",
+                (activity_id,),
+            ).fetchone()
+        finally:
+            conn.close()
+        self.assertIn('"temperature_c": 29', row["weather_json"])
+        self.assertEqual(row["weather_status"], "success")
+        self.assertEqual(row["weather_attempt_count"], 1)
+        self.assertIsNone(row["weather_error"])
+
+    def test_activity_weather_backfill_updates_only_current_row(self):
+        main.ensure_activity_sync_schema()
+        conn = profile_backend._conn()
+        try:
+            cur = conn.execute(
+                """
+                INSERT INTO activities
+                    (filename, sport_type, start_time, start_lat, start_lon, weather_status, weather_attempt_count)
+                VALUES (?, 'running', ?, ?, ?, 'pending', 0)
+                """,
+                ("single_weather.fit", "2026-06-20T09:17:58+08:00", 39.95, 116.38),
+            )
+            activity_id = int(cur.lastrowid)
+            other_cur = conn.execute(
+                """
+                INSERT INTO activities
+                    (filename, sport_type, start_time, start_lat, start_lon, weather_status, weather_attempt_count)
+                VALUES (?, 'running', ?, ?, ?, 'pending', 0)
+                """,
+                ("other_missing_weather.fit", "2026-06-20T10:17:58+08:00", 39.95, 116.38),
+            )
+            other_id = int(other_cur.lastrowid)
+            conn.commit()
+        finally:
+            conn.close()
+
+        weather = {
+            "temperature_c": 29,
+            "humidity": 68,
+            "wind_speed_kmh": 9,
+            "weather_code": 1,
+            "weather_label": "少云",
+            "observed_hour": 9,
+            "observed_date": "2026-06-20",
+            "source": "forecast",
+        }
+        with mock.patch("main.fetch_historical_weather", return_value=weather) as mocked_weather:
+            res = self.api.backfill_activity_weather(activity_id)
+
+        self.assertTrue(res["ok"], res)
+        self.assertEqual(res["data"]["weather"], weather)
+        mocked_weather.assert_called_once_with(39.95, 116.38, "2026-06-20T09:17:58+08:00")
+
+        conn = profile_backend._conn()
+        try:
+            row = conn.execute(
+                "SELECT weather_json, weather_status, weather_attempt_count FROM activities WHERE id = ?",
+                (activity_id,),
+            ).fetchone()
+            other = conn.execute(
+                "SELECT weather_json, weather_status, weather_attempt_count FROM activities WHERE id = ?",
+                (other_id,),
+            ).fetchone()
+        finally:
+            conn.close()
+        self.assertIn('"temperature_c": 29', row["weather_json"])
+        self.assertEqual(row["weather_status"], "success")
+        self.assertEqual(row["weather_attempt_count"], 1)
+        self.assertIsNone(other["weather_json"])
+        self.assertEqual(other["weather_status"], "pending")
+        self.assertEqual(other["weather_attempt_count"], 0)
+
+    def test_weather_backfill_worker_records_failed_attempt(self):
+        main.ensure_activity_sync_schema()
+        conn = profile_backend._conn()
+        try:
+            cur = conn.execute(
+                """
+                INSERT INTO activities
+                    (filename, sport_type, start_time, start_lat, start_lon, weather_status, weather_attempt_count)
+                VALUES (?, 'running', ?, ?, ?, 'pending', 2)
+                """,
+                ("failed_weather.fit", "2026-06-20T09:17:58+08:00", 39.95, 116.38),
+            )
+            activity_id = int(cur.lastrowid)
+            conn.commit()
+        finally:
+            conn.close()
+
+        with mock.patch("main.fetch_historical_weather", return_value=None):
+            main._run_weather_backfill_worker(str(profile_backend.DB_PATH), limit=10)
+
+        conn = profile_backend._conn()
+        try:
+            row = conn.execute(
+                "SELECT weather_json, weather_status, weather_attempt_count, weather_error FROM activities WHERE id = ?",
+                (activity_id,),
+            ).fetchone()
+        finally:
+            conn.close()
+        self.assertIsNone(row["weather_json"])
+        self.assertEqual(row["weather_status"], "failed")
+        self.assertEqual(row["weather_attempt_count"], 3)
+        self.assertEqual(row["weather_error"], "weather unavailable")
+
+    def test_weather_backfill_marks_unavailable_after_max_attempts(self):
+        main.ensure_activity_sync_schema()
+        conn = profile_backend._conn()
+        try:
+            cur = conn.execute(
+                """
+                INSERT INTO activities
+                    (filename, sport_type, start_time, start_lat, start_lon, weather_status, weather_attempt_count)
+                VALUES (?, 'running', ?, ?, ?, 'failed', ?)
+                """,
+                ("unavailable_weather.fit", "2026-06-20T09:17:58+08:00", 39.95, 116.38, main.WEATHER_BACKFILL_MAX_ATTEMPTS - 1),
+            )
+            activity_id = int(cur.lastrowid)
+            conn.commit()
+        finally:
+            conn.close()
+
+        with mock.patch("main.fetch_historical_weather", return_value=None):
+            main._run_weather_backfill_worker(str(profile_backend.DB_PATH), limit=10)
+
+        conn = profile_backend._conn()
+        try:
+            row = conn.execute(
+                "SELECT weather_status, weather_attempt_count FROM activities WHERE id = ?",
+                (activity_id,),
+            ).fetchone()
+        finally:
+            conn.close()
+        self.assertEqual(row["weather_status"], "unavailable")
+        self.assertEqual(row["weather_attempt_count"], main.WEATHER_BACKFILL_MAX_ATTEMPTS)
+
+    def test_weather_backfill_force_retries_unavailable_and_ignores_cooldown(self):
+        main.ensure_activity_sync_schema()
+        conn = profile_backend._conn()
+        try:
+            cur = conn.execute(
+                """
+                INSERT INTO activities
+                    (filename, sport_type, start_time, start_lat, start_lon, weather_status, weather_attempt_count, weather_updated_at)
+                VALUES (?, 'running', ?, ?, ?, 'unavailable', ?, ?)
+                """,
+                (
+                    "force_weather.fit",
+                    "2026-06-20T09:17:58+08:00",
+                    39.95,
+                    116.38,
+                    main.WEATHER_BACKFILL_MAX_ATTEMPTS,
+                    datetime.now().isoformat(),
+                ),
+            )
+            activity_id = int(cur.lastrowid)
+            conn.commit()
+        finally:
+            conn.close()
+
+        with mock.patch("main.fetch_historical_weather", return_value={"temperature_c": 30, "weather_label": "晴"}):
+            main._run_weather_backfill_worker(str(profile_backend.DB_PATH), limit=10, force=True)
+
+        conn = profile_backend._conn()
+        try:
+            row = conn.execute(
+                "SELECT weather_json, weather_status, weather_attempt_count FROM activities WHERE id = ?",
+                (activity_id,),
+            ).fetchone()
+        finally:
+            conn.close()
+        self.assertIn('"temperature_c": 30', row["weather_json"])
+        self.assertEqual(row["weather_status"], "success")
+        self.assertEqual(row["weather_attempt_count"], main.WEATHER_BACKFILL_MAX_ATTEMPTS + 1)
+
+    def test_manual_weather_backfill_start_uses_force(self):
+        main.ensure_activity_sync_schema()
+        conn = profile_backend._conn()
+        try:
+            conn.execute(
+                """
+                INSERT INTO activities
+                    (filename, sport_type, start_time, start_lat, start_lon, weather_status, weather_attempt_count, weather_updated_at)
+                VALUES (?, 'running', ?, ?, ?, 'unavailable', ?, ?)
+                """,
+                (
+                    "manual_force_weather.fit",
+                    "2026-06-20T09:17:58+08:00",
+                    39.95,
+                    116.38,
+                    main.WEATHER_BACKFILL_MAX_ATTEMPTS,
+                    datetime.now().isoformat(),
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        with main._WEATHER_BACKFILL_LOCK:
+            main._WEATHER_BACKFILL_STATUS["finished_at"] = time.time()
+            main._WEATHER_BACKFILL_STATUS["running"] = False
+        with mock.patch.object(main, "_run_weather_backfill_worker") as worker:
+            status = main._start_weather_backfill_if_needed(limit=10, force=True)
+            thread = getattr(main, "_WEATHER_BACKFILL_THREAD", None)
+            if thread and thread.is_alive():
+                thread.join(timeout=2.0)
+
+        self.assertTrue(status["running"])
+        worker.assert_called_once()
+
+    def test_track_html_exposes_detail_weather_backfill_button_only(self):
+        html = Path("track.html").read_text(encoding="utf-8")
+        self.assertNotIn("backfillSportHubWeather()", html)
+        self.assertNotIn("sport-records-weather-btn", html)
+        self.assertIn("backfillActivityWeather", html)
+        self.assertIn("backfill_activity_weather", html)
+        self.assertIn("activity-weather-backfill-btn", html)
 
     def test_batch_import_tracks_imports_normal_zip_fit_only(self):
         zip_path = self.temp_dir / "normal.zip"
@@ -1982,7 +2309,9 @@ class TestFitSync(unittest.TestCase):
                 "start_time_utc", "start_lat", "start_lon",
                 "region", "region_city", "region_country", "region_display",
                 "region_status", "region_error", "region_updated_at", "region_attempt_count",
-                "weather_json", "file_mtime", "file_size", "deleted_at",
+                "weather_json", "weather_status", "weather_updated_at",
+                "weather_attempt_count", "weather_error",
+                "file_mtime", "file_size", "deleted_at",
                 "avg_pace", "calories", "avg_power", "max_power", "normalized_power",
                 "avg_stroke_distance", "swolf", "list_metric_backfill_version",
                 "device_name", "source_type", "is_mock", "shadow_diff_json",

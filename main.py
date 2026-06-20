@@ -27,7 +27,7 @@ from fit_engine import FITCoreEngine
 from metrics_resolver import MetricsResolver, SemanticSportsEngine, build_training_effect, _build_environment_challenge_block  # V9.4.0 修复 NameError:build_training_effect 已在 metrics_resolver.py:2760 定义, 此处补 import;V_ENV.1.16:补 _build_environment_challenge_block
 
 DEBUG_MODE = False
-APP_VERSION = "V1.0"
+APP_VERSION = "V1.0.1"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -221,6 +221,7 @@ PROFILE_SYNC_INTERVAL_SEC = 5 * 60
 PROFILE_STARTUP_SYNC_DELAY_SEC = PROFILE_SYNC_INTERVAL_SEC
 REGION_ENRICH_STARTUP_DELAY_SEC = 20.0
 LIST_METRIC_BACKFILL_DELAY_SEC = 15.0
+WEATHER_BACKFILL_STARTUP_DELAY_SEC = 18.0
 FIT_WATCH_STABLE_SEC = 2.0
 FIT_WATCH_POLL_INTERVAL_SEC = 1.5
 ZIP_MAX_MEMBERS = 500
@@ -228,6 +229,9 @@ ZIP_MAX_MEMBER_UNCOMPRESSED_BYTES = 100 * 1024 * 1024
 ZIP_MAX_TOTAL_UNCOMPRESSED_BYTES = 1024 * 1024 * 1024
 ZIP_COPY_CHUNK_BYTES = 1024 * 1024
 ZIP_ALLOWED_SUFFIXES = frozenset({".fit"})
+WEATHER_BACKFILL_BATCH_LIMIT = 30
+WEATHER_BACKFILL_RETRY_COOLDOWN_SEC = 6 * 60 * 60
+WEATHER_BACKFILL_MAX_ATTEMPTS = 5
 
 
 def app_base_dir() -> Path:
@@ -670,6 +674,10 @@ DETAIL_API_REQUIRED_COLUMNS: tuple[str, ...] = (
     "region_status",
     "region_display",
     "weather_json",
+    "weather_status",
+    "weather_updated_at",
+    "weather_attempt_count",
+    "weather_error",
     # 文件/设备
     "file_path",
     "device_name",
@@ -2187,6 +2195,10 @@ def ensure_activity_sync_schema() -> None:
             for col, dtype in [
                 ("processing_status", "TEXT DEFAULT 'ready'"),
                 ("processing_error", "TEXT"),
+                ("weather_status", "TEXT DEFAULT 'pending'"),
+                ("weather_updated_at", "TEXT"),
+                ("weather_attempt_count", "INTEGER DEFAULT 0"),
+                ("weather_error", "TEXT"),
             ]:
                 try:
                     conn.execute(f"ALTER TABLE activities ADD COLUMN {col} {dtype}")
@@ -2203,7 +2215,22 @@ def ensure_activity_sync_schema() -> None:
                 WHERE processing_status IS NULL OR processing_status = ''
                 """
             )
+            _safe_data_migrate(
+                conn,
+                """
+                UPDATE activities
+                SET weather_status = CASE
+                        WHEN weather_json IS NOT NULL AND weather_json != '' THEN 'success'
+                        WHEN start_lat IS NULL OR start_lon IS NULL THEN 'none'
+                        ELSE COALESCE(NULLIF(weather_status, ''), 'pending')
+                    END,
+                    weather_attempt_count = COALESCE(weather_attempt_count, 0)
+                WHERE weather_status IS NULL OR weather_status = ''
+                   OR weather_attempt_count IS NULL
+                """
+            )
             conn.execute("CREATE INDEX IF NOT EXISTS idx_activities_processing_status ON activities(processing_status)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_activities_weather_status ON activities(weather_status)")
             profile_backend._ensure_activity_list_indexes(conn)
             conn.execute(
                 """
@@ -2329,11 +2356,31 @@ _NP_BACKFILL_THREAD: threading.Thread | None = None
 _NP_BACKFILL_TIMER: threading.Timer | None = None
 LIST_METRIC_BACKFILL_BATCH_LIMIT = 200
 LIST_METRIC_BACKFILL_VERSION = 1
+_WEATHER_BACKFILL_LOCK = threading.Lock()
+_WEATHER_BACKFILL_STATUS: dict[str, Any] = {
+    "running": False,
+    "scheduled": False,
+    "total": 0,
+    "processed": 0,
+    "updated": 0,
+    "failed": 0,
+    "limited": False,
+    "started_at": 0.0,
+    "finished_at": 0.0,
+    "error": "",
+}
+_WEATHER_BACKFILL_THREAD: threading.Thread | None = None
+_WEATHER_BACKFILL_TIMER: threading.Timer | None = None
 
 
 def _normalized_power_backfill_status() -> dict[str, Any]:
     with _NP_BACKFILL_LOCK:
         return dict(_NP_BACKFILL_STATUS)
+
+
+def _weather_backfill_status() -> dict[str, Any]:
+    with _WEATHER_BACKFILL_LOCK:
+        return dict(_WEATHER_BACKFILL_STATUS)
 
 
 def _read_normalized_power_fast_from_fit(file_path: Any) -> int | None:
@@ -2865,6 +2912,378 @@ def _schedule_normalized_power_backfill_if_needed(delay_sec: float = LIST_METRIC
     return status
 
 
+def _weather_backfill_candidate_where(force: bool = False, include_cooldown: bool = True) -> tuple[str, list[Any]]:
+    where = """
+              deleted_at IS NULL
+              AND (weather_json IS NULL OR weather_json = '')
+              AND start_lat IS NOT NULL
+              AND start_lon IS NOT NULL
+              AND COALESCE(NULLIF(start_time, ''), NULLIF(start_time_utc, '')) IS NOT NULL
+              AND COALESCE(weather_status, 'pending') != 'none'
+    """
+    params: list[Any] = []
+    if not force:
+        where += """
+              AND COALESCE(weather_status, 'pending') != 'unavailable'
+              AND COALESCE(weather_attempt_count, 0) < ?
+        """
+        params.append(WEATHER_BACKFILL_MAX_ATTEMPTS)
+    if include_cooldown and not force:
+        cutoff = datetime.fromtimestamp(time.time() - WEATHER_BACKFILL_RETRY_COOLDOWN_SEC).isoformat()
+        where += """
+              AND (
+                    weather_updated_at IS NULL
+                    OR weather_updated_at = ''
+                    OR weather_updated_at <= ?
+                  )
+        """
+        params.append(cutoff)
+    return where, params
+
+
+def _run_weather_backfill_worker(db_path: str, limit: int = WEATHER_BACKFILL_BATCH_LIMIT, force: bool = False) -> None:
+    started = time.time()
+    processed = 0
+    updated = 0
+    failed = 0
+    total = 0
+    limited = False
+    error = ""
+    conn: sqlite3.Connection | None = None
+    try:
+        conn = sqlite3.connect(db_path, timeout=profile_backend.SQLITE_CONNECT_TIMEOUT_SEC)
+        conn.row_factory = sqlite3.Row
+        conn.execute(f"PRAGMA busy_timeout = {profile_backend.SQLITE_BUSY_TIMEOUT_MS}")
+        candidate_where, candidate_params = _weather_backfill_candidate_where(force=force, include_cooldown=True)
+        rows = conn.execute(
+            f"""
+            SELECT id, start_lat, start_lon, start_time, start_time_utc, weather_attempt_count
+            FROM activities
+            WHERE {candidate_where}
+            ORDER BY COALESCE(start_time, start_time_utc) DESC, id DESC
+            LIMIT ?
+            """,
+            (*candidate_params, max(1, int(limit))),
+        ).fetchall()
+        remaining_where, remaining_params = _weather_backfill_candidate_where(force=force, include_cooldown=False)
+        remaining = conn.execute(
+            f"""
+            SELECT COUNT(*)
+            FROM activities
+            WHERE {remaining_where}
+            """,
+            tuple(remaining_params),
+        ).fetchone()[0]
+        total = len(rows)
+        limited = int(remaining or 0) > total
+        with _WEATHER_BACKFILL_LOCK:
+            _WEATHER_BACKFILL_STATUS.update({
+                "running": True,
+                "scheduled": False,
+                "total": total,
+                "processed": 0,
+                "updated": 0,
+                "failed": 0,
+                "limited": limited,
+                "started_at": started,
+                "finished_at": 0.0,
+                "error": "",
+            })
+
+        for row in rows:
+            processed += 1
+            start_time = row["start_time"] or row["start_time_utc"]
+            weather = fetch_historical_weather(row["start_lat"], row["start_lon"], start_time)
+            now_text = datetime.now().isoformat()
+            attempt_count = int(row["weather_attempt_count"] or 0) + 1
+            if weather:
+                conn.execute(
+                    """
+                    UPDATE activities
+                    SET weather_json = ?,
+                        weather_status = 'success',
+                        weather_updated_at = ?,
+                        weather_attempt_count = ?,
+                        weather_error = NULL,
+                        updated_at = COALESCE(updated_at, datetime('now'))
+                    WHERE id = ?
+                    """,
+                    (json.dumps(weather, ensure_ascii=False), now_text, attempt_count, int(row["id"])),
+                )
+                updated += 1
+            else:
+                failed_status = "unavailable" if attempt_count >= WEATHER_BACKFILL_MAX_ATTEMPTS and not force else "failed"
+                conn.execute(
+                    """
+                    UPDATE activities
+                    SET weather_status = ?,
+                        weather_updated_at = ?,
+                        weather_attempt_count = ?,
+                        weather_error = ?,
+                        updated_at = COALESCE(updated_at, datetime('now'))
+                    WHERE id = ?
+                    """,
+                    (failed_status, now_text, attempt_count, "weather unavailable", int(row["id"])),
+                )
+                failed += 1
+            if processed % 10 == 0:
+                conn.commit()
+                with _WEATHER_BACKFILL_LOCK:
+                    _WEATHER_BACKFILL_STATUS.update({
+                        "processed": processed,
+                        "updated": updated,
+                        "failed": failed,
+                    })
+        conn.commit()
+    except Exception as exc:
+        error = str(exc)
+        logger.exception("weather backfill failed")
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+    finally:
+        if conn:
+            conn.close()
+        with _WEATHER_BACKFILL_LOCK:
+            _WEATHER_BACKFILL_STATUS.update({
+                "running": False,
+                "scheduled": False,
+                "total": total,
+                "processed": processed,
+                "updated": updated,
+                "failed": failed,
+                "limited": limited,
+                "started_at": started,
+                "finished_at": time.time(),
+                "error": error,
+            })
+
+
+def _backfill_activity_weather_once(activity_id: int, force: bool = False) -> dict[str, Any]:
+    ensure_activity_sync_schema()
+    aid = _safe_int(activity_id)
+    if not aid or aid <= 0:
+        return {"ok": False, "code": API_CODE_VALIDATION, "msg": "activity_id 必须为正整数"}
+    conn = sqlite3.connect(_activity_schema_cache_key(), timeout=profile_backend.SQLITE_CONNECT_TIMEOUT_SEC)
+    conn.row_factory = sqlite3.Row
+    conn.execute(f"PRAGMA busy_timeout = {profile_backend.SQLITE_BUSY_TIMEOUT_MS}")
+    try:
+        row = conn.execute(
+            """
+            SELECT id, start_lat, start_lon, start_time, start_time_utc, weather_json,
+                   weather_status, weather_attempt_count
+            FROM activities
+            WHERE id = ? AND deleted_at IS NULL
+            """,
+            (aid,),
+        ).fetchone()
+        if not row:
+            return {"ok": False, "code": API_CODE_NOT_FOUND, "msg": "未找到该活动记录"}
+        if row["weather_json"] and not force:
+            return {
+                "ok": True,
+                "status": "success",
+                "weather": _decode_weather_json(row["weather_json"]),
+                "updated": False,
+            }
+        if row["start_lat"] is None or row["start_lon"] is None:
+            conn.execute(
+                """
+                UPDATE activities
+                SET weather_status = 'none',
+                    weather_error = NULL,
+                    weather_attempt_count = COALESCE(weather_attempt_count, 0),
+                    weather_updated_at = ?
+                WHERE id = ?
+                """,
+                (datetime.now().isoformat(), aid),
+            )
+            conn.commit()
+            return {"ok": False, "code": API_CODE_VALIDATION, "msg": "当前活动没有 GPS 坐标，无法补全天气"}
+        start_time = row["start_time"] or row["start_time_utc"]
+        if not start_time:
+            return {"ok": False, "code": API_CODE_VALIDATION, "msg": "当前活动缺少开始时间，无法补全天气"}
+        attempt_count = int(row["weather_attempt_count"] or 0) + 1
+        weather = fetch_historical_weather(row["start_lat"], row["start_lon"], start_time)
+        now_text = datetime.now().isoformat()
+        if weather:
+            conn.execute(
+                """
+                UPDATE activities
+                SET weather_json = ?,
+                    weather_status = 'success',
+                    weather_updated_at = ?,
+                    weather_attempt_count = ?,
+                    weather_error = NULL,
+                    updated_at = COALESCE(updated_at, datetime('now'))
+                WHERE id = ?
+                """,
+                (json.dumps(weather, ensure_ascii=False), now_text, attempt_count, aid),
+            )
+            conn.commit()
+            return {"ok": True, "status": "success", "weather": weather, "updated": True}
+        failed_status = "unavailable" if attempt_count >= WEATHER_BACKFILL_MAX_ATTEMPTS and not force else "failed"
+        conn.execute(
+            """
+            UPDATE activities
+            SET weather_status = ?,
+                weather_updated_at = ?,
+                weather_attempt_count = ?,
+                weather_error = ?,
+                updated_at = COALESCE(updated_at, datetime('now'))
+            WHERE id = ?
+            """,
+            (failed_status, now_text, attempt_count, "weather unavailable", aid),
+        )
+        conn.commit()
+        return {
+            "ok": False,
+            "code": API_CODE_EXTERNAL_SERVICE,
+            "msg": "暂未获取到当前活动天气",
+            "status": failed_status,
+            "updated": False,
+        }
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def _start_weather_backfill_if_needed(limit: int = WEATHER_BACKFILL_BATCH_LIMIT, force: bool = False) -> dict[str, Any]:
+    global _WEATHER_BACKFILL_THREAD
+    ensure_activity_sync_schema()
+    with _WEATHER_BACKFILL_LOCK:
+        if _WEATHER_BACKFILL_STATUS.get("running"):
+            return dict(_WEATHER_BACKFILL_STATUS)
+        finished_at = float(_WEATHER_BACKFILL_STATUS.get("finished_at") or 0)
+        if not force and finished_at and time.time() - finished_at < 60:
+            return dict(_WEATHER_BACKFILL_STATUS)
+
+    db_path = _activity_schema_cache_key()
+    try:
+        conn = sqlite3.connect(db_path, timeout=profile_backend.SQLITE_CONNECT_TIMEOUT_SEC)
+        try:
+            candidate_where, candidate_params = _weather_backfill_candidate_where(force=force, include_cooldown=False)
+            missing = int(conn.execute(
+                f"""
+                SELECT COUNT(*)
+                FROM activities
+                WHERE {candidate_where}
+                """,
+                tuple(candidate_params),
+            ).fetchone()[0] or 0)
+        finally:
+            conn.close()
+    except Exception as exc:
+        with _WEATHER_BACKFILL_LOCK:
+            _WEATHER_BACKFILL_STATUS.update({"error": str(exc), "running": False, "scheduled": False})
+            return dict(_WEATHER_BACKFILL_STATUS)
+
+    scheduled = min(missing, max(1, int(limit)))
+    if not missing:
+        with _WEATHER_BACKFILL_LOCK:
+            _WEATHER_BACKFILL_STATUS.update({
+                "running": False,
+                "scheduled": False,
+                "total": 0,
+                "processed": 0,
+                "updated": 0,
+                "failed": 0,
+                "limited": False,
+                "error": "",
+            })
+            return dict(_WEATHER_BACKFILL_STATUS)
+
+    with _WEATHER_BACKFILL_LOCK:
+        if _WEATHER_BACKFILL_STATUS.get("running"):
+            return dict(_WEATHER_BACKFILL_STATUS)
+        _WEATHER_BACKFILL_STATUS.update({
+            "running": True,
+            "scheduled": False,
+            "total": scheduled,
+            "processed": 0,
+            "updated": 0,
+            "failed": 0,
+            "limited": missing > scheduled,
+            "started_at": time.time(),
+            "finished_at": 0.0,
+            "error": "",
+        })
+    _WEATHER_BACKFILL_THREAD = threading.Thread(
+        target=_run_weather_backfill_worker,
+        args=(db_path, scheduled, force),
+        daemon=True,
+        name="weather-backfill",
+    )
+    _WEATHER_BACKFILL_THREAD.start()
+    return _weather_backfill_status()
+
+
+def _schedule_weather_backfill_if_needed(delay_sec: float = WEATHER_BACKFILL_STARTUP_DELAY_SEC) -> dict[str, Any]:
+    global _WEATHER_BACKFILL_TIMER
+    try:
+        db_path = _activity_schema_cache_key()
+        conn = sqlite3.connect(db_path, timeout=profile_backend.SQLITE_CONNECT_TIMEOUT_SEC)
+        try:
+            candidate_where, candidate_params = _weather_backfill_candidate_where(force=False, include_cooldown=True)
+            missing = int(conn.execute(
+                f"SELECT COUNT(*) FROM activities WHERE {candidate_where}",
+                tuple(candidate_params),
+            ).fetchone()[0] or 0)
+        finally:
+            conn.close()
+        if not missing:
+            with _WEATHER_BACKFILL_LOCK:
+                _WEATHER_BACKFILL_STATUS.update({"scheduled": False, "total": 0, "error": ""})
+                return dict(_WEATHER_BACKFILL_STATUS)
+    except Exception as exc:
+        with _WEATHER_BACKFILL_LOCK:
+            _WEATHER_BACKFILL_STATUS.update({"scheduled": False, "error": str(exc)})
+            return dict(_WEATHER_BACKFILL_STATUS)
+
+    with _WEATHER_BACKFILL_LOCK:
+        if _WEATHER_BACKFILL_STATUS.get("running"):
+            return dict(_WEATHER_BACKFILL_STATUS)
+        if _WEATHER_BACKFILL_TIMER is not None and _WEATHER_BACKFILL_TIMER.is_alive():
+            status = dict(_WEATHER_BACKFILL_STATUS)
+            status["scheduled"] = True
+            return status
+        finished_at = float(_WEATHER_BACKFILL_STATUS.get("finished_at") or 0)
+        if finished_at and time.time() - finished_at < 60:
+            return dict(_WEATHER_BACKFILL_STATUS)
+        _WEATHER_BACKFILL_STATUS.update({
+            "scheduled": True,
+            "scheduled_at": time.time(),
+            "scheduled_delay_sec": float(delay_sec),
+            "error": "",
+        })
+
+    def _start_scheduled() -> None:
+        global _WEATHER_BACKFILL_TIMER
+        try:
+            _start_weather_backfill_if_needed(force=False)
+        finally:
+            with _WEATHER_BACKFILL_LOCK:
+                _WEATHER_BACKFILL_TIMER = None
+                if not _WEATHER_BACKFILL_STATUS.get("running"):
+                    _WEATHER_BACKFILL_STATUS["scheduled"] = False
+
+    timer = threading.Timer(max(0.0, float(delay_sec)), _start_scheduled)
+    timer.daemon = True
+    with _WEATHER_BACKFILL_LOCK:
+        if _WEATHER_BACKFILL_TIMER is not None and _WEATHER_BACKFILL_TIMER.is_alive():
+            status = dict(_WEATHER_BACKFILL_STATUS)
+            status["scheduled"] = True
+            return status
+        _WEATHER_BACKFILL_TIMER = timer
+        status = dict(_WEATHER_BACKFILL_STATUS)
+    timer.start()
+    return status
+
+
 def _p90(values: list[float]) -> float:
     """90 分位数聚合策略,用于雷达 3 个维度(VAM/Threshold HR/Anaerobic Peak)的滚动聚合。
 
@@ -3278,12 +3697,16 @@ def _parse_fit_activity_for_sync(file_path: Path) -> dict[str, Any]:
         distance_display = f"{round(distance_km, 2):.2f}km" if distance_km else "-- km"
     track_json = json.dumps(payload.get("points_json") or [], ensure_ascii=False)
     weather = None
+    weather_status = "none" if not has_gps else "pending"
+    weather_error = None
     if has_gps:
         weather = fetch_historical_weather(
             payload.get("start_lat"),
             payload.get("start_lon"),
             payload.get("start_time") or payload.get("start_time_utc"),
         )
+        weather_status = "success" if weather else "pending"
+        weather_error = None if weather else "weather unavailable"
 
     stat = file_path.stat()
     advanced_metrics = _compute_advanced_metrics(track_data)
@@ -3335,6 +3758,10 @@ def _parse_fit_activity_for_sync(file_path: Path) -> dict[str, Any]:
         "region_updated_at": payload.get("region_updated_at"),
         "region_attempt_count": payload.get("region_attempt_count", 0),
         "weather_json": json.dumps(weather, ensure_ascii=False) if weather else None,
+        "weather_status": weather_status,
+        "weather_updated_at": datetime.now().isoformat() if weather else None,
+        "weather_attempt_count": 1 if has_gps else 0,
+        "weather_error": weather_error,
         "file_mtime": float(stat.st_mtime),
         "file_size": int(stat.st_size),
         "advanced_metrics": json.dumps(advanced_metrics, ensure_ascii=False) if advanced_metrics else None,
@@ -3493,13 +3920,14 @@ def _insert_activity_sync_row(conn: sqlite3.Connection, activity: dict[str, Any]
                  distance, dist_km, duration, duration_sec, avg_pace, avg_hr, max_hr,
                  calories, track_json, points_json, file_path, gain_m, max_alt_m, start_lat, start_lon, region,
                  region_city, region_country, region_display, region_status, region_error, region_updated_at, region_attempt_count,
-                 weather_json, file_mtime, file_size, advanced_metrics, avg_power, max_power, normalized_power, avg_stroke_distance, swolf, device_name,
+                 weather_json, weather_status, weather_updated_at, weather_attempt_count, weather_error,
+                 file_mtime, file_size, advanced_metrics, avg_power, max_power, normalized_power, avg_stroke_distance, swolf, device_name,
                  shadow_diff_json, source_type, is_mock, deleted_at, updated_at, hr_curve, speed_curve, cadence_curve, hr_zone_distribution, laps_json,
                  min_alt_m, total_descent_m, up_count, down_count, max_single_climb_m, difficulty_score, report_metrics_version,
                  avg_grade_pct, max_slope_pct, min_slope_pct, uphill_pct, downhill_pct,
                  aerobic_training_effect, anaerobic_training_effect, processing_status, processing_error)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, 'fit_sdk', 0, NULL, datetime('now'), ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?, 'fit_sdk', 0, NULL, datetime('now'), ?, ?, ?, ?, ?,
                     ?, ?, ?, ?, ?, ?, ?,
                     ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
@@ -3536,6 +3964,10 @@ def _insert_activity_sync_row(conn: sqlite3.Connection, activity: dict[str, Any]
                 activity.get("region_updated_at"),
                 activity.get("region_attempt_count", 0),
                 activity.get("weather_json"),
+                activity.get("weather_status"),
+                activity.get("weather_updated_at"),
+                activity.get("weather_attempt_count", 0),
+                activity.get("weather_error"),
                 activity.get("file_mtime"),
                 activity.get("file_size"),
                 activity.get("advanced_metrics"),
@@ -3593,7 +4025,8 @@ def _update_activity_sync_row(conn: sqlite3.Connection, activity_id: int, activi
             file_path = ?, gain_m = ?, max_alt_m = ?, start_lat = ?, start_lon = ?, region = ?,
             region_city = ?, region_country = ?, region_display = ?, region_status = ?, region_error = ?,
             region_updated_at = ?, region_attempt_count = ?,
-            weather_json = ?, file_mtime = ?, file_size = ?, advanced_metrics = ?,
+            weather_json = ?, weather_status = ?, weather_updated_at = ?, weather_attempt_count = ?, weather_error = ?,
+            file_mtime = ?, file_size = ?, advanced_metrics = ?,
             avg_power = ?, max_power = ?, normalized_power = ?, avg_stroke_distance = ?, swolf = ?,
             device_name = ?, shadow_diff_json = ?, hr_curve = ?, speed_curve = ?,
             laps_json = ?,
@@ -3636,6 +4069,10 @@ def _update_activity_sync_row(conn: sqlite3.Connection, activity_id: int, activi
             activity.get("region_updated_at"),
             activity.get("region_attempt_count", 0),
             activity.get("weather_json"),
+            activity.get("weather_status"),
+            activity.get("weather_updated_at"),
+            activity.get("weather_attempt_count", 0),
+            activity.get("weather_error"),
             activity.get("file_mtime"),
             activity.get("file_size"),
             activity.get("advanced_metrics"),
@@ -3986,12 +4423,15 @@ def _find_semantic_duplicate_activity(activity: dict[str, Any]) -> dict[str, Any
     start_time_utc = activity.get("start_time_utc")
     if not (dist_km and dist_km > 0 and duration_sec and duration_sec > 0 and (start_time or start_time_utc)):
         return None
+    points = _activity_points_for_duplicate_check(activity)
+    if not points:
+        return None
     try:
         dup_res = profile_backend.check_duplicate_activity(
             start_time=start_time,
             dist_km=float(dist_km),
             duration_sec=int(duration_sec),
-            points_json=_activity_points_for_duplicate_check(activity),
+            points_json=points,
             start_time_utc=start_time_utc,
         )
     except Exception as exc:
@@ -4252,7 +4692,7 @@ def _persist_sync_activity(
                 _update_activity_sync_row(conn, int(existing["id"]), activity)
                 op = "updated"
                 activity_id = int(existing["id"])
-                dedupe = "strict_key" if strict_dedupe_key else ("semantic" if semantic_duplicate else None)
+                dedupe = "semantic" if semantic_duplicate else ("strict_key" if strict_dedupe_key else None)
             else:
                 activity_id = _insert_activity_sync_row(conn, activity)
                 op = "inserted"
@@ -6201,6 +6641,10 @@ class Api:
             "start_lat": _safe_float(row.get("start_lat")) or None,
             "start_lon": _safe_float(row.get("start_lon")) or None,
             "weather": _decode_weather_json(row.get("weather_json")),
+            "weather_status": str(row.get("weather_status") or ""),
+            "weather_updated_at": str(row.get("weather_updated_at") or ""),
+            "weather_attempt_count": _safe_int(row.get("weather_attempt_count")),
+            "weather_error": str(row.get("weather_error") or ""),
             "has_track": bool(row.get("has_track")),
             "has_local_file": bool(str(row.get("file_path") or "").strip() and os.path.exists(str(row.get("file_path") or "").strip())),
             "processing_status": str(row.get("processing_status") or "ready"),
@@ -7133,7 +7577,7 @@ class Api:
                            COALESCE(NULLIF(processing_status, ''), 'ready') AS processing_status,
                            processing_error,
                            CASE
-                               WHEN COALESCE(NULLIF(track_json, ''), NULLIF(points_json, '')) IS NOT NULL THEN 1
+                               WHEN TRIM(COALESCE(NULLIF(track_json, ''), NULLIF(points_json, ''), '')) NOT IN ('', '[]', '{{}}') THEN 1
                                ELSE 0
                            END AS has_track
                     FROM activities
@@ -7268,6 +7712,21 @@ class Api:
             logger.exception("get_activity_list failed")
             return _api_error(API_CODE_DB, "活动列表查询失败")
 
+    def backfill_missing_weather(self, limit: int = WEATHER_BACKFILL_BATCH_LIMIT) -> dict:
+        """手动触发缺失天气回填。"""
+        try:
+            status = _start_weather_backfill_if_needed(max(1, _safe_int(limit, WEATHER_BACKFILL_BATCH_LIMIT)), force=True)
+            return _api_success({"weather_backfill": status})
+        except Exception:
+            logger.exception("backfill_missing_weather failed")
+            return _api_error(API_CODE_DB, "天气回填启动失败")
+
+    def get_weather_backfill_status(self) -> dict:
+        try:
+            return _api_success({"weather_backfill": _weather_backfill_status()})
+        except Exception:
+            return _api_error(API_CODE_DB, "天气回填状态查询失败")
+
     def get_sport_hub_activity_page(self, page: int = 1, page_size: int = 10, sport_filter: str = "all", title_keyword: str = "") -> dict:
         """个人运动数据 - 后端分页活动记录。"""
         try:
@@ -7328,6 +7787,28 @@ class Api:
         except Exception:
             logger.exception("get_activity_detail failed activity_id=%s", activity_id)
             return _api_error(API_CODE_DB, "活动详情查询失败")
+
+    def backfill_activity_weather(self, activity_id: int) -> dict:
+        """仅为当前活动补全一次天气快照。"""
+        try:
+            result = _backfill_activity_weather_once(_safe_int(activity_id), force=True)
+            if not result.get("ok"):
+                return _api_error(
+                    _safe_int(result.get("code"), API_CODE_DB),
+                    str(result.get("msg") or "当前活动天气补全失败"),
+                    {"status": result.get("status"), "updated": result.get("updated", False)},
+                )
+            row = self._fetch_activity_row(_safe_int(activity_id))
+            record = _build_record_from_row(self, row, 0) if row else None
+            return _api_success({
+                "weather": result.get("weather"),
+                "updated": result.get("updated", False),
+                "status": result.get("status"),
+                "record": record,
+            })
+        except Exception:
+            logger.exception("backfill_activity_weather failed activity_id=%s", activity_id)
+            return _api_error(API_CODE_DB, "当前活动天气补全失败")
 
     def get_fatigue_review(self, activity_id: int) -> dict:
         """V6.3 运动复盘覆盖层数据源。

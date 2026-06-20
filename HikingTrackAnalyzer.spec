@@ -79,4 +79,8 @@ app = BUNDLE(
     name='脉图.app',
     icon='assets/app_icon.icns',
     bundle_identifier='com.mrfang.maitu',
+    info_plist={
+        'CFBundleShortVersionString': '1.0.1',
+        'CFBundleVersion': '1.0.1',
+    },
 )

@@ -213,7 +213,15 @@ def _activity_list_semantic_identity(row: dict[str, Any]) -> str:
         if row.get("duration_sec") is not None
         else row.get("duration")
     )
+    has_track = bool(row.get("has_track"))
     if start_time and dist_km is not None and dist_km > 0 and duration_sec and duration_sec > 0:
+        if not has_track:
+            filename = str(row.get("filename") or row.get("file_name") or "").strip()
+            if filename:
+                return f"file:{filename}"
+            file_path = str(row.get("file_path") or "").strip()
+            if file_path:
+                return f"file:{os.path.basename(file_path)}"
         sport_type = str(row.get("sub_sport_type") or row.get("sport_type") or "unknown").strip() or "unknown"
         return f"semantic:{sport_type}:{start_time}:{round(dist_km, 3):.3f}:{duration_sec}"
 
@@ -265,7 +273,11 @@ def build_activity_dedupe_key(data: dict[str, Any]) -> str:
     )
     if not start_time or dist_km is None or dist_km <= 0 or not duration_sec or duration_sec <= 0:
         return ""
-    return f"{_canonical_dedupe_sport(data)}|{start_time}|{round(dist_km, 3):.3f}|{duration_sec}"
+    key = f"{_canonical_dedupe_sport(data)}|{start_time}|{round(dist_km, 3):.3f}|{duration_sec}"
+    file_identity = str(data.get("file_name") or data.get("filename") or data.get("file_path") or "").strip()
+    if file_identity:
+        key = f"{key}|{file_identity}"
+    return key
 
 
 def find_activity_by_dedupe_key(conn: sqlite3.Connection, data: dict[str, Any]) -> dict[str, Any] | None:
@@ -941,6 +953,10 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             start_lon      REAL,
             region         TEXT,
             weather_json   TEXT,
+            weather_status TEXT DEFAULT 'pending',
+            weather_updated_at TEXT,
+            weather_attempt_count INTEGER DEFAULT 0,
+            weather_error  TEXT,
             file_mtime     REAL,
             file_size      INTEGER,
             deleted_at     TEXT,
@@ -959,13 +975,15 @@ def _init_schema(conn: sqlite3.Connection) -> None:
     """)
 
     activity_columns = (
+        "filename",     "dist_km",     "duration_sec","avg_hr",
         "file_name",    "distance",    "duration",    "track_json",
         "advanced_metrics",
         "file_path",    "start_time",  "title",       "title_source",
         "start_time_utc","start_lat",  "start_lon",   "region",
         "region_city",  "region_country","region_display",
         "region_status","region_error","region_updated_at","region_attempt_count",
-        "weather_json", "file_mtime",  "file_size",   "deleted_at",
+        "weather_json", "weather_status", "weather_updated_at", "weather_attempt_count", "weather_error",
+        "file_mtime",  "file_size",   "deleted_at",
         "avg_pace",     "calories",    "avg_power",   "max_power",
         "normalized_power","avg_stroke_distance","swolf","list_metric_backfill_version",
         "device_name",  "source_type", "is_mock",     "shadow_diff_json",
@@ -976,20 +994,22 @@ def _init_schema(conn: sqlite3.Connection) -> None:
         "processing_status", "processing_error",
     )
     activity_dtypes = (
-        "TEXT",   "REAL", "INTEGER","TEXT",
+        "TEXT", "REAL", "INTEGER", "INTEGER",
+        "TEXT", "REAL", "INTEGER", "TEXT",
         "TEXT",
-        "TEXT",   "TEXT", "TEXT",   "TEXT",
-        "TEXT",   "REAL", "REAL",   "TEXT",
-        "TEXT",   "TEXT", "TEXT",
-        "TEXT DEFAULT 'pending'","TEXT","TEXT","INTEGER DEFAULT 0",
-        "TEXT",   "REAL", "INTEGER","TEXT",
-        "REAL",   "INTEGER","REAL","REAL",
-        "REAL",   "REAL","REAL","INTEGER DEFAULT 0",
-        "TEXT",   "TEXT", "INTEGER","TEXT",
-        "TEXT",   "TEXT",
-        "REAL",   "REAL",  "INTEGER","REAL",
-        "REAL",   "REAL",  "TEXT",   "TEXT DEFAULT (datetime('now'))",
-        "TEXT",   "TEXT DEFAULT 'unknown'",
+        "TEXT", "TEXT", "TEXT", "TEXT",
+        "TEXT", "REAL", "REAL", "TEXT",
+        "TEXT", "TEXT", "TEXT",
+        "TEXT DEFAULT 'pending'", "TEXT", "TEXT", "INTEGER DEFAULT 0",
+        "TEXT", "TEXT DEFAULT 'pending'", "TEXT", "INTEGER DEFAULT 0", "TEXT",
+        "REAL", "INTEGER", "TEXT",
+        "REAL", "INTEGER", "REAL", "REAL",
+        "REAL", "REAL", "REAL", "INTEGER DEFAULT 0",
+        "TEXT", "TEXT", "INTEGER", "TEXT",
+        "TEXT", "TEXT",
+        "REAL", "REAL", "INTEGER", "REAL",
+        "REAL", "REAL", "TEXT", "TEXT DEFAULT (datetime('now'))",
+        "TEXT", "TEXT DEFAULT 'unknown'",
         "TEXT DEFAULT 'ready'", "TEXT",
     )
     assert len(activity_columns) == len(activity_dtypes), "activity_columns/dtypes mismatch"
@@ -1002,6 +1022,10 @@ def _init_schema(conn: sqlite3.Connection) -> None:
     for col, dtype in [
         ("processing_status", "TEXT DEFAULT 'ready'"),
         ("processing_error", "TEXT"),
+        ("weather_status", "TEXT DEFAULT 'pending'"),
+        ("weather_updated_at", "TEXT"),
+        ("weather_attempt_count", "INTEGER DEFAULT 0"),
+        ("weather_error", "TEXT"),
     ]:
         try:
             conn.execute(f"ALTER TABLE activities ADD COLUMN {col} {dtype}")
@@ -1047,6 +1071,10 @@ def _init_schema(conn: sqlite3.Connection) -> None:
         ("region_updated_at", "TEXT"),
         ("region_attempt_count", "INTEGER DEFAULT 0"),
         ("weather_json", "TEXT"),
+        ("weather_status", "TEXT DEFAULT 'pending'"),
+        ("weather_updated_at", "TEXT"),
+        ("weather_attempt_count", "INTEGER DEFAULT 0"),
+        ("weather_error", "TEXT"),
         ("file_mtime", "REAL"),
         ("file_size", "INTEGER"),
         ("deleted_at", "TEXT"),
@@ -1438,11 +1466,13 @@ def save_activity(data: dict[str, Any]) -> int:
                     (filename, title, title_source, sport_type, sub_sport_type, dist_km, duration_sec, gain_m, max_alt_m,
                      avg_hr, max_hr, avg_cadence, hr_decoupling, tss, points_json, file_path, start_time, start_time_utc,
                      start_lat, start_lon, region, region_city, region_country, region_display, region_status, region_error,
-                     region_updated_at, region_attempt_count, weather_json, avg_pace, calories, avg_power, max_power,
+                     region_updated_at, region_attempt_count, weather_json, weather_status, weather_updated_at,
+                     weather_attempt_count, weather_error, avg_pace, calories, avg_power, max_power,
                      normalized_power, avg_stroke_distance, swolf, shadow_diff_json,
                      min_alt_m, total_descent_m, up_count, down_count, max_single_climb_m, difficulty_score, report_metrics_version,
                      avg_grade_pct, max_slope_pct, min_slope_pct, uphill_pct, downhill_pct)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?,
                         ?, ?, ?, ?, ?, ?, ?,
                         ?, ?, ?, ?, ?)
                 """,
@@ -1476,6 +1506,10 @@ def save_activity(data: dict[str, Any]) -> int:
                     data.get("region_updated_at"),
                     data.get("region_attempt_count", 0),
                     data.get("weather_json"),
+                    data.get("weather_status"),
+                    data.get("weather_updated_at"),
+                    data.get("weather_attempt_count", 0),
+                    data.get("weather_error"),
                     data.get("avg_pace"),
                     data.get("calories"),
                     data.get("avg_power"),
@@ -1752,7 +1786,7 @@ def get_activity_list_filtered(
         "source_type, "
         "is_mock, "
         "updated_at, "
-        "1 AS has_track"
+        "CASE WHEN TRIM(COALESCE(NULLIF(track_json, ''), NULLIF(points_json, ''), '')) NOT IN ('', '[]', '{}') THEN 1 ELSE 0 END AS has_track"
     )
 
     conn = _conn()
@@ -1926,6 +1960,14 @@ def build_activity_payload(filename: str, data: dict[str, Any], src_path: str | 
     resolved_start_lat = data.get("start_lat") if data.get("start_lat") is not None else start_lat
     resolved_start_lon = data.get("start_lon") if data.get("start_lon") is not None else start_lon
     region_fields = build_initial_region_fields(resolved_start_lat, resolved_start_lon)
+    raw_weather_json = data.get("weather_json")
+    weather_json = raw_weather_json
+    if not weather_json and isinstance(data.get("weather"), dict) and data.get("weather"):
+        weather_json = json.dumps(data.get("weather"), ensure_ascii=False)
+    elif isinstance(weather_json, dict):
+        weather_json = json.dumps(weather_json, ensure_ascii=False)
+    has_gps = resolved_start_lat is not None and resolved_start_lon is not None
+    has_weather = bool(weather_json)
 
     avg_stroke_distance = float(
         data.get("avg_stroke_distance")
@@ -1957,7 +1999,11 @@ def build_activity_payload(filename: str, data: dict[str, Any], src_path: str | 
         "start_lat": resolved_start_lat,
         "start_lon": resolved_start_lon,
         **region_fields,
-        "weather_json": data.get("weather_json"),
+        "weather_json": weather_json,
+        "weather_status": "success" if has_weather else ("pending" if has_gps else "none"),
+        "weather_updated_at": datetime.now().isoformat() if has_weather else None,
+        "weather_attempt_count": 1 if has_gps else 0,
+        "weather_error": None if has_weather or not has_gps else "weather unavailable",
         "device_name": data.get("device_name") or "",
         "avg_pace": round(duration_sec / dist_km, 2) if dist_km > 0 and duration_sec > 0 else None,
         "calories": data.get("calories"),

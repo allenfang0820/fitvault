@@ -2959,6 +2959,7 @@
         .weather-glass-label { font-size:0.66rem; color:#94a3b8; margin-bottom:2px; }
         .weather-glass-value { font-size:0.8rem; color:#f8fafc; font-weight:700; word-break:break-word; }
         .weather-glass-empty { font-size:0.72rem; color:#94a3b8; line-height:1.6; }
+        .activity-weather-backfill-btn { margin-top:10px; width:100%; justify-content:center; }
         /* V9.4.0:训练收益卡(契约 §7 玻璃态) */
         .training-benefit-card { /* 复用 .weather-glass-card 玻璃态,本类仅语义化 */ }
         /* V9.4.4:训练收益总结 — 与卡片主标签(0.8rem)同级,不再用 .weather-glass-empty 缩小字号 */
@@ -5118,7 +5119,7 @@
     <div class="boot-splash-panel" aria-live="polite">
         <div class="boot-splash-brand">
             <div class="boot-splash-title">脉图</div>
-            <div class="boot-splash-version">V1.0</div>
+            <div class="boot-splash-version">V1.0.1</div>
         </div>
         <div class="boot-splash-subtitle">正在唤醒本地运动数据、轨迹引擎与 AI 分析能力</div>
         <div class="boot-splash-progress" aria-hidden="true"></div>
@@ -8804,7 +8805,7 @@
             });
         }
         var html = '';
-        html += _buildWeatherCard(weather, esc);
+        html += _buildWeatherCard(weather, esc, record);
         // V9.4.0:训练收益卡(契约 §7) — 真值从 record.detail.training_effect 读
         html += _buildTrainingBenefitCard(record);
         // V_ENV.1.7:环境挑战卡 — 真值从 record.detail.environment_challenge 读
@@ -8815,7 +8816,7 @@
     // V9.2.3 §E12a 侧栏环境卡(玻璃态 2x2 4 字段:温度/湿度/风速/状况)
     // 复用轨迹报告 .weather-glass-* 玻璃态样式,标题统一为"🌦 历史天气"
     // §六 shadow_diff 隔离:由 renderActivityDetailSidebar 渲染前校验
-    function _buildWeatherCard(weather, esc) {
+    function _buildWeatherCard(weather, esc, record) {
         // §六 shadow_diff 隔离:严禁展示 audit-only 字段
         if (weather && (weather.shadow_diff || weather.shadow_diff_json || weather.diff)) {
             return '';
@@ -8831,9 +8832,15 @@
                 '</div>' +
             '</div>';
         }
+        var canBackfill = !!(record && record.id && (record.start_time || record.start_time_utc) &&
+            record.start_lat != null && record.start_lon != null);
+        var buttonHtml = canBackfill
+            ? '<button type="button" class="hub-sync-btn activity-weather-backfill-btn" onclick="backfillActivityWeather(' + Number(record.id) + ', this)">补全当前活动天气</button>'
+            : '';
         return '<div class="weather-glass-card">' +
             '<div class="weather-glass-head"><div><div class="weather-glass-title">🌦 历史天气</div><div class="weather-glass-subtitle">离线或无定位天气时不影响轨迹解析</div></div></div>' +
             '<div class="weather-glass-empty">当前没有可用的历史天气快照,轨迹分析与 AI 报告仍可正常生成。</div>' +
+            buttonHtml +
         '</div>';
     }
 
@@ -9733,6 +9740,37 @@
 
     async function forceRefreshMovementRecords() {
         await importLocalFitFiles();
+    }
+
+    async function backfillActivityWeather(activityId, btn) {
+        if (!(window.pywebview && window.pywebview.api && typeof window.pywebview.api.backfill_activity_weather === 'function')) {
+            showToast('当前版本不支持天气补全');
+            return;
+        }
+        try {
+            if (btn) btn.disabled = true;
+            if (btn) btn.innerText = '补全中...';
+            const res = await window.pywebview.api.backfill_activity_weather(activityId);
+            if (!res || !res.ok) throw new Error((res && (res.error || res.msg)) || '天气补全失败');
+            const record = res.data && res.data.record ? mergeSportHubRecord(res.data.record) : null;
+            if (record) {
+                renderActivityDetail(record);
+            } else if (sportHubState.activeDetailId === activityId) {
+                const detail = await window.pywebview.api.get_activity_detail(activityId);
+                if (detail && detail.code === 0 && detail.data && detail.data.record) {
+                    renderActivityDetail(mergeSportHubRecord(detail.data.record));
+                }
+            }
+            showToast('当前活动天气已补全');
+        } catch (e) {
+            console.error('backfillActivityWeather error:', e);
+            showToast('天气补全失败：' + String((e && e.message) || e || '未知错误'));
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerText = '补全当前活动天气';
+            }
+        }
     }
 
     async function syncRemoteSportHubActivities() {

@@ -1,0 +1,6 @@
+interface:
+  display_name: "Garmin Stats"
+  short_description: "同步佳明用户画像到脉图"
+  default_prompt: "使用 $garmin-stats 同步用户画像，并返回可供脉图使用的原始 JSON 数组。"
+policy:
+  allow_implicit_invocation: true
