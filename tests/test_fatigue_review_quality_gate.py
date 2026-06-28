@@ -105,6 +105,7 @@ class TestP5FrontendZeroInferenceGate(unittest.TestCase):
 class TestP5SnapshotWhitelistGate(unittest.TestCase):
     TOP_LEVEL_KEYS = {
         "sport_type",
+        "summary",
         "metrics",
         "collapse_events",
         "fatigue_zones",
@@ -113,6 +114,7 @@ class TestP5SnapshotWhitelistGate(unittest.TestCase):
         "display_meta",
         "context_tags",
         "environment_context",
+        "cycling_explanation_signals",
         "ai_insight",
         "advice",
         "disclaimer",
@@ -127,6 +129,8 @@ class TestP5SnapshotWhitelistGate(unittest.TestCase):
         "gap",
         "efficiency",
         "terrain_load",
+        "power",
+        "cadence",
         "total_distance_m",
     }
     DISPLAY_CURVE_KEYS = {
@@ -359,13 +363,7 @@ class TestP5P4UiStructureGate(unittest.TestCase):
             "var grid = []",
             "var xAxis = []",
             "var yAxis = []",
-            "hr_curve",
-            "pace_curve",
-            "altitude_curve",
-            "efficiency_curve",
-            "gap_pace_curve",
-            "grade_curve",
-            "terrain_load_curve",
+            "var laneDefs = _fatigueReviewChartLaneDefs(activityData)",
             "_frLayeredMarkArea(fatigueZones)",
             "_frLayeredEventMarkLine(insightEvents)",
             "markArea: { silent: true, data: markAreaData }",
@@ -375,11 +373,22 @@ class TestP5P4UiStructureGate(unittest.TestCase):
             "xAxis: xAxis",
             "yAxis: yAxis",
             "_frRobustAxisRange(pairedData",
-            "robustAxis: { hardMin: -35, hardMax: 35, minSpan: 4 }",
             "min: lane.axisMin != null ? lane.axisMin : (shouldPlayIntroAnimation",
             "max: lane.axisMax != null ? lane.axisMax : (shouldPlayIntroAnimation",
         ):
             self.assertIn(text, fn_body)
+        lane_defs = _extract_js_function(self.html, "_fatigueReviewChartLaneDefs")
+        for text in (
+            "hr_curve",
+            "pace_curve",
+            "altitude_curve",
+            "efficiency_curve",
+            "gap_pace_curve",
+            "grade_curve",
+            "terrain_load_curve",
+            "robustAxis: { hardMin: -35, hardMax: 35, minSpan: 4 }",
+        ):
+            self.assertIn(text, lane_defs)
         for token in (
             "_distanceFromSpeedTime",
             "total_distance_m",
@@ -875,22 +884,10 @@ class TestP5P4UiStructureGate(unittest.TestCase):
             'id="fr-chart-footer"',
             'id="fr-layer-toggle-row"',
             'id="fr-layer-chip-row"',
-            'data-fr-layer-toggle="hr"',
-            'data-fr-layer-toggle="speed"',
-            'data-fr-layer-toggle="altitude"',
-            'data-fr-layer-toggle="terrainLoad"',
-            'data-fr-layer-toggle="efficiency"',
-            'data-fr-layer-toggle="gap"',
-            'data-fr-layer-toggle="grade"',
-            'data-fr-layer-toggle="zones"',
-            'data-fr-layer-toggle="events"',
-            "--fr-layer-color:#ef4444",
-            "--fr-layer-color:#3b82f6",
-            "--fr-layer-color:#94a3b8",
-            "--fr-layer-color:#14b8a6",
-            "--fr-layer-color:#22c55e",
-            "--fr-layer-color:#eab308",
-            "--fr-layer-color:#f97316",
+            "function _renderFatigueReviewLayerToggles(activityData)",
+            "function _fatigueReviewHasRenderableLayer(activityData, def)",
+            "data-fr-layer-toggle=\"' + safeHtml(item.key) + '\"",
+            "style=\"--fr-layer-color:' + safeHtml(item.color || '#14b8a6')",
             "function _resizeFatigueReviewChartWhenStable()",
             "function _bindFatigueReviewChartAutoResize()",
             "function _unbindFatigueReviewChartAutoResize()",
@@ -999,6 +996,8 @@ class TestP5P4UiStructureGate(unittest.TestCase):
         toggle_fn = _extract_js_function(self.html, "onFatigueReviewLayerToggle")
         for text in (
             "next.hr_curve = []",
+            "next.power_curve = []",
+            "next.cadence_curve = []",
             "next.pace_curve = []",
             "next.altitude_curve = []",
             "next.efficiency_curve = []",
@@ -1026,10 +1025,141 @@ class TestP5P4UiStructureGate(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, apply_fn + toggle_fn)
 
+    def test_fatigue_review_layer_toggles_follow_renderable_lanes(self):
+        footer_html = self.html[
+            self.html.find('id="fr-chart-footer"'):
+            self.html.find('</div>\n                        </div>', self.html.find('id="fr-chart-footer"'))
+        ]
+        self.assertIn('id="fr-layer-toggle-row"', footer_html)
+        for stale_label in (
+            "data-fr-layer-toggle=\"power\" checked",
+            "data-fr-layer-toggle=\"cadence\" checked",
+            "data-fr-layer-toggle=\"speed\" checked",
+            "data-fr-layer-toggle=\"gap\" checked",
+            "坡度修正配速（GAP）",
+            "地形负荷</label>",
+        ):
+            self.assertNotIn(stale_label, footer_html)
+
+        render_fn = _extract_js_function(self.html, "_renderFatigueReviewLayerToggles")
+        has_layer_fn = _extract_js_function(self.html, "_fatigueReviewHasRenderableLayer")
+        key_fn = _extract_js_function(self.html, "_fatigueReviewLayerKeyForCurveKey")
+        for text in (
+            "var laneDefs = _fatigueReviewChartLaneDefs(activityData)",
+            "_fatigueReviewHasRenderableLayer(activityData, def)",
+            "_fatigueReviewLayerKeyForCurveKey(def.key)",
+            "items.push({ key: 'zones', label: '疲劳带'",
+            "items.push({ key: 'events', label: '事件'",
+            "togglesEl.hidden = items.length === 0",
+        ):
+            self.assertIn(text, render_fn)
+        for text in (
+            "hr_curve: 'hr'",
+            "power_curve: 'power'",
+            "cadence_curve: 'cadence'",
+            "pace_curve: 'speed'",
+            "gap_pace_curve: 'gap'",
+            "terrain_load_curve: 'terrainLoad'",
+        ):
+            self.assertIn(text, key_fn)
+        for text in (
+            "_frPairDistanceDisplayCurve(distanceCurve, curve)",
+            "_frPairDistanceCurve(distanceCurve, curve)",
+            "pairedData[i][0] != null && pairedData[i][1] != null",
+        ):
+            self.assertIn(text, has_layer_fn)
+
+    def test_p4_cycling_chart_payload_and_layers_use_backend_curves(self):
+        idx = self.html.find("var chartPayload = {")
+        self.assertGreater(idx, 0)
+        end = self.html.find("renderProfileAnalysisChart(chartPayload", idx)
+        body = self.html[idx:end]
+        for text in (
+            "sport_type: data.sport_type",
+            "power_curve:     data.curves && data.curves.power",
+            "cadence_curve:   data.curves && data.curves.cadence",
+            "distance_curve: Array.isArray(curvesObj.distance) ? curvesObj.distance : []",
+        ):
+            self.assertIn(text, body)
+        review_fn = _extract_js_function(self.html, "openFatigueReview")
+        for text in (
+            "chartSportMode === 'cycling'",
+            "后端未返回可绘制的功率、心率、海拔、踏频、坡度或地形负荷曲线。",
+        ):
+            self.assertIn(text, review_fn)
+        apply_fn = _extract_js_function(self.html, "_applyFatigueReviewLayerVisibility")
+        for text in (
+            "if (!visible.power) next.power_curve = []",
+            "if (!visible.cadence) next.cadence_curve = []",
+        ):
+            self.assertIn(text, apply_fn)
+        for forbidden in (
+            "speed *",
+            "speed_curve",
+            "pace_curve *",
+            "cadence =",
+            "power =",
+            "querySelector",
+            "getBoundingClientRect",
+            "points",
+        ):
+            self.assertNotIn(forbidden, body + apply_fn)
+
+    def test_p4_cycling_lane_defs_are_distinct_from_running(self):
+        lane_defs = _extract_js_function(self.html, "_fatigueReviewChartLaneDefs")
+        self.assertIn("function _fatigueReviewChartSportMode(sportType)", self.html)
+        self.assertIn("normalized === 'cycling'", self.html)
+        self.assertIn("normalized === 'road_cycling'", self.html)
+        self.assertIn("normalized === 'mountain_biking'", self.html)
+        self.assertIn("if (sportMode === 'cycling')", lane_defs)
+
+        cycling_start = lane_defs.find("if (sportMode === 'cycling')")
+        cycling_end = lane_defs.find("\n        return [", cycling_start + 1)
+        cycling_block = lane_defs[cycling_start:cycling_end]
+        expected_order = [
+            "key: 'power_curve'",
+            "name: '功率'",
+            "unit: 'W'",
+            "key: 'hr_curve'",
+            "key: 'altitude_curve'",
+            "key: 'cadence_curve'",
+            "name: '踏频'",
+            "unit: 'rpm'",
+            "key: 'grade_curve'",
+            "key: 'terrain_load_curve'",
+        ]
+        cursor = -1
+        for text in expected_order:
+            next_idx = cycling_block.find(text)
+            self.assertGreater(next_idx, cursor)
+            cursor = next_idx
+        for forbidden in (
+            "key: 'pace_curve'",
+            "key: 'gap_pace_curve'",
+            "key: 'efficiency_curve'",
+            "displayAsPace: true",
+        ):
+            self.assertNotIn(forbidden, cycling_block)
+
+        running_block = lane_defs[cycling_end:]
+        for text in (
+            "key: 'pace_curve'",
+            "key: 'gap_pace_curve'",
+            "key: 'efficiency_curve'",
+            "displayAsPace: true",
+            "name: '坡度修正配速（GAP）'",
+            "unit: 'Speed/HR'",
+        ):
+            self.assertIn(text, running_block)
+
     def test_p7_18d_lane_order_labels_and_tooltip_format_are_preserved(self):
         fn_idx = self.html.find("function _renderFatigueReviewLayeredEcharts")
         self.assertGreater(fn_idx, 0)
         fn_body = self.html[fn_idx:self.html.find("\n    function clearProfileAnalysisChart", fn_idx)]
+        lane_defs = _extract_js_function(self.html, "_fatigueReviewChartLaneDefs")
+        running_start = lane_defs.find("\n        return [")
+        self.assertGreater(running_start, 0)
+        running_lane_defs = lane_defs[running_start:]
         expected_order = [
             "name: '心率'",
             "name: '配速'",
@@ -1041,7 +1171,7 @@ class TestP5P4UiStructureGate(unittest.TestCase):
         ]
         cursor = -1
         for text in expected_order:
-            next_idx = fn_body.find(text)
+            next_idx = running_lane_defs.find(text)
             self.assertGreater(next_idx, cursor)
             cursor = next_idx
         for text in (
@@ -1073,7 +1203,7 @@ class TestP5P4UiStructureGate(unittest.TestCase):
             "_frPairDistanceDisplayCurve(distanceCurve, curve)",
             "unit: '/km'",
         ):
-            self.assertIn(text, fn_body)
+            self.assertIn(text, fn_body + lane_defs)
         for text in (
             "pace_curve:      data.display_curves && data.display_curves.pace_sec_per_km",
             "gap_pace_curve:  data.display_curves && data.display_curves.gap_pace_sec_per_km",
@@ -1087,12 +1217,13 @@ class TestP5P4UiStructureGate(unittest.TestCase):
             "1000 / speedMps",
             "_frSpeedMpsToPaceSecPerKm",
         ):
-            self.assertNotIn(forbidden, fn_body)
+            self.assertNotIn(forbidden, fn_body + lane_defs)
 
     def test_p7_20_pace_lanes_are_display_only_and_keep_backend_sources(self):
         fn_idx = self.html.find("function _renderFatigueReviewLayeredEcharts")
         self.assertGreater(fn_idx, 0)
         fn_body = self.html[fn_idx:self.html.find("\n    function clearProfileAnalysisChart", fn_idx)]
+        lane_defs = _extract_js_function(self.html, "_fatigueReviewChartLaneDefs")
         for text in (
             "key: 'pace_curve'",
             "key: 'gap_pace_curve'",
@@ -1105,7 +1236,7 @@ class TestP5P4UiStructureGate(unittest.TestCase):
             "unit: 'Speed/HR'",
             "unit: 'grade×speed×s'",
         ):
-            self.assertIn(text, fn_body)
+            self.assertIn(text, fn_body + lane_defs)
         for forbidden in (
             "INSERT",
             "UPDATE",
@@ -1229,6 +1360,384 @@ class TestP5P4UiStructureGate(unittest.TestCase):
         self.assertNotIn("TRIMP 简化版", self.html)
         self.assertNotIn("std + late_decay 综合", self.html)
 
+    def test_p5_cycling_metric_cards_use_backend_power_and_pedaling_metrics(self):
+        card_defs = _extract_js_function(self.html, "_fatigueReviewMetricCardDefs")
+        render_body_idx = self.html.find("function _renderFatigueReviewMetrics(metrics, sportType)")
+        self.assertGreater(render_body_idx, 0)
+        render_body = self.html[render_body_idx:self.html.find("\n    function _renderFatigueReviewDimensions", render_body_idx)]
+        for text in (
+            "function _fatigueReviewMetricSportMode(sportType)",
+            "sport === 'cycling' || sport === 'road_cycling' || sport === 'mountain_biking'",
+            "if (sportMode === 'cycling')",
+            "'power_variability'",
+            "'输出节奏'",
+            "'pedaling_stability'",
+            "'踩踏组织'",
+            "'心肺对照'",
+            "'相对强度'",
+            "比较标准化功率和平均功率的差距",
+            "看踩踏是否连续、有章法",
+            "踏频忽高忽低",
+        ):
+            self.assertIn(text, self.html)
+
+        cycling_start = card_defs.find("if (sportMode === 'cycling')")
+        cycling_end = card_defs.find("\n        return [", cycling_start + 1)
+        cycling_block = card_defs[cycling_start:cycling_end]
+        self.assertIn("withSlot('hr_drift', 'power_variability'", cycling_block)
+        self.assertIn("withSlot('decoupling', 'efficiency', '功率效率'", cycling_block)
+        self.assertIn("withSlot('bonk_risk', 'durability', '后程功率保持'", cycling_block)
+        self.assertIn("withSlot('events', 'events', '状态下滑点'", cycling_block)
+        self.assertIn("withSlot('efficiency', 'hr_drift', '心肺对照'", cycling_block)
+        self.assertIn("withSlot('durability', 'pedaling_stability', '踩踏组织'", cycling_block)
+        self.assertIn("withSlot('cadence_stability', 'training_load', '相对强度'", cycling_block)
+        self.assertIn("withSlot('training_load', 'bonk_risk', '能量风险'", cycling_block)
+        self.assertNotIn("withSlot('bonk_risk', 'cadence_stability'", cycling_block)
+        self.assertNotIn("'心率漂移'", cycling_block)
+        self.assertNotIn("'踏频稳定性'", cycling_block)
+        self.assertNotIn("'训练负荷'", cycling_block)
+        self.assertNotIn("后程保持参考", cycling_block)
+        self.assertNotIn("当前不等同于 power-based durability", cycling_block)
+        for dev_copy in (
+            "读取后端 metrics",
+            "前端不计算",
+            "前端不从功率曲线计算",
+        ):
+            self.assertNotIn(dev_copy, cycling_block)
+
+        for text in (
+            "var powerVar = metrics.power_variability || {}",
+            "powerVar.vi",
+            "_fatigueReviewPowerVariabilityHeadline(powerVar, pvMissing)",
+            "_fatigueReviewPowerVariabilityEvidence(powerVar, pvMissing)",
+            "var pedaling = metrics.pedaling_stability || {}",
+            "pedaling.score",
+            "_fatigueReviewPedalingStabilityEvidence(pedaling, pedalingMissing)",
+            "unstable:'明显波动'",
+            "poor:'波动很大'",
+            "var effCycling = metrics.efficiency || {}",
+            "effCycling.basis !== 'power_hr'",
+            "effCycling.power_per_hr",
+            "_fatigueReviewPowerEfficiencyEvidence(effCycling, effMissingCycling)",
+            "var durCycling = metrics.durability || {}",
+            "durCycling.basis !== 'power_retention'",
+            "durCycling.power_retention_pct",
+            "_fatigueReviewPowerRetentionEvidence(durCycling, durMissingCycling)",
+        ):
+            self.assertIn(text, render_body)
+        power_variability_evidence = _extract_js_function(self.html, "_fatigueReviewPowerVariabilityEvidence")
+        for text in (
+            "功率波动约 ",
+            "标准化功率 ",
+            "平均功率 ",
+            "专业参考 VI ",
+        ):
+            self.assertIn(text, power_variability_evidence)
+        for forbidden in (
+            "summary.",
+            "curves.",
+            "chartPayload",
+            "getOption",
+            "querySelector",
+            "innerText",
+            "powerVar.normalized_power / powerVar.avg_power",
+            "'VI ' + _fatigueReviewMetricNumber(powerVar.vi, 2)",
+            "normalized_power / avg_power",
+            "avg_power / normalized_power",
+            "avg_power / avg_hr",
+            "tail_power / head_power",
+            "power_per_hr =",
+            "power_retention_pct =",
+            "curves.cadence",
+        ):
+            self.assertNotIn(forbidden, render_body)
+
+    def test_p5_cycling_ui_reads_backend_explanation_signals_only(self):
+        open_body = _extract_js_function(self.html, "openFatigueReview")
+        helper_body = self.html[
+            self.html.find("function _fatigueReviewCyclingSignal("):
+            self.html.find("function _renderFatigueReviewMetrics(", self.html.find("function _fatigueReviewCyclingSignal("))
+        ]
+        render_body = _extract_js_function(self.html, "_renderFatigueReviewMetrics")
+
+        self.assertIn(
+            "_renderFatigueReviewMetrics(data.metrics || {}, data.sport_type, data.cycling_explanation_signals || {})",
+            open_body,
+        )
+        for text in (
+            "_fatigueReviewCyclingSignal(cyclingSignals, 'pacing_signal')",
+            "_fatigueReviewCyclingSignal(cyclingSignals, 'aerobic_drift_signal')",
+            "_fatigueReviewCyclingSignal(cyclingSignals, 'cadence_signal')",
+            "_fatigueReviewCyclingSignal(cyclingSignals, 'intensity_signal')",
+            "_fatigueReviewCyclingSignal(cyclingSignals, 'power_retention_signal')",
+            "_fatigueReviewCyclingSignalCopy(pacingSignal",
+            "_fatigueReviewCyclingSignalCopy(aerobicSignal",
+            "_fatigueReviewCyclingSignalCopy(cadenceSignal",
+            "_fatigueReviewCyclingSignalCopy(intensitySignal",
+            "_fatigueReviewCyclingSignalCopy(retentionSignal",
+            "_fatigueReviewCyclingSignalHeadline(pacingSignal",
+            "_fatigueReviewCyclingSignalHeadline(aerobicSignal",
+            "_fatigueReviewCyclingSignalHeadline(cadenceSignal",
+            "_fatigueReviewCyclingSignalHeadline(intensitySignal",
+            "_fatigueReviewCyclingSignalHeadline(retentionSignal",
+        ):
+            self.assertIn(text, render_body)
+
+        for text in (
+            "signals[key]",
+            "signal['summary']",
+            "signal.evidence",
+            "signal.reasons",
+            "_fatigueReviewCyclingSignalEvidenceItemText",
+            "_fatigueReviewCyclingSignalReasonText",
+            "_fatigueReviewCyclingCadenceLevelText",
+            "_fatigueReviewCyclingCadenceTone",
+            "_fatigueReviewCyclingSignalVisibility",
+            "_fatigueReviewCyclingSignalCanOwnHeadline",
+            "_fatigueReviewCyclingSignalHeadline",
+            "_fatigueReviewCyclingSignalSummaryText",
+            "status === 'unavailable'",
+            "status === 'partial'",
+            "canOwnHeadline: state === 'available'",
+            "canShowAsReference: state === 'available' || state === 'partial'",
+            "if (!_fatigueReviewCyclingSignalCanOwnHeadline(signal))",
+            "依据：",
+            "缺少个人 FTP",
+            "当前只作为辅助依据",
+            "可参考",
+            "_fatigueReviewCyclingCardHeadlinePolicy",
+            "if (key === 'intensity_signal' || key === 'aerobic_drift_signal')",
+            "return { allowMetricFallback: false",
+            "强度暂不分级",
+            "暂不单独判断",
+        ):
+            self.assertIn(text, helper_body)
+
+        for forbidden_text in (
+            "String(item.type).replace(/_/g, ' ')",
+            "key.replace(/_/g, ' ')",
+            "signal.reasons.join",
+            "专项算法尚未完成",
+            "后端证据",
+            "本阶段",
+            "后端未返回可展示",
+        ):
+            self.assertNotIn(forbidden_text, helper_body)
+
+        for forbidden in (
+            "_build_cycling_explanation_signals",
+            "querySelector",
+            "getOption",
+            "innerText",
+            "chartPayload",
+            "curves.",
+            "summary.avg_power",
+            "metrics.",
+            "powerVar.vi",
+            "hrDrift.pct",
+            "durCycling.power_retention_pct",
+            "avg_power / avg_hr",
+            "tail_power / head_power",
+        ):
+            self.assertNotIn(forbidden, helper_body)
+
+        headline_fn = _extract_js_function(self.html, "_fatigueReviewMetricHeadline")
+        evidence_fn = _extract_js_function(self.html, "_fatigueReviewPedalingStabilityEvidence")
+        for text in (
+            "high|unstable",
+            "bad|very_high|poor",
+            "踏频波动明显",
+            "踏频很不稳定",
+            "波动系数 ",
+            "Number(metric.cv) * 100",
+        ):
+            self.assertIn(text, headline_fn + evidence_fn)
+
+    def test_cycling_signal_render_slots_match_card_labels(self):
+        render_body = _extract_js_function(self.html, "_renderFatigueReviewMetrics")
+        expected = {
+            "pacingSignal": "'fr-hr-drift', 'fr-hr-drift-status', 'fr-hr-drift-sub'",
+            "aerobicSignal": "'fr-efficiency-score', 'fr-efficiency-status', 'fr-efficiency-sub'",
+            "cadenceSignal": "'fr-durability-score', 'fr-durability-status', 'fr-durability-sub'",
+            "intensitySignal": "'fr-cadence-stability-score', 'fr-cadence-stability-status', 'fr-cadence-stability-sub'",
+            "retentionSignal": "'fr-bonk', 'fr-bonk-status', 'fr-bonk-sub'",
+        }
+        for signal_name, slot_ids in expected.items():
+            signal_pos = render_body.find("_fatigueReviewCyclingSignalHeadline(" + signal_name)
+            self.assertGreater(signal_pos, -1, signal_name)
+            set_metric_pos = render_body.rfind("setMetricCard(", 0, signal_pos)
+            self.assertGreater(set_metric_pos, -1, signal_name)
+            call_prefix = render_body[set_metric_pos:signal_pos]
+            self.assertIn(slot_ids, call_prefix, signal_name)
+
+    def test_cycling_cadence_signal_headline_and_status_use_signal_level(self):
+        helpers = self.html[
+            self.html.find("function _fatigueReviewCyclingCadenceLevelText("):
+            self.html.find("function _fatigueReviewCyclingSignalVisibility", self.html.find("function _fatigueReviewCyclingCadenceLevelText("))
+        ]
+        render_body = _extract_js_function(self.html, "_renderFatigueReviewMetrics")
+
+        for text in (
+            "level === 'steady'",
+            "return '踏频稳定'",
+            "level === 'variable'",
+            "return '踏频波动明显'",
+            "level === 'interrupted'",
+            "return '踩踏中断较多'",
+            "level === 'low_cadence_bias'",
+            "return '踏频整体偏低'",
+            "level === 'cadence_drop'",
+            "return '后段踏频下降'",
+        ):
+            self.assertIn(text, helpers)
+
+        cadence_call = render_body[
+            render_body.find("'fr-durability-score', 'fr-durability-status', 'fr-durability-sub'"):
+            render_body.find("var bonkMissingCycling", render_body.find("'fr-durability-score', 'fr-durability-status', 'fr-durability-sub'"))
+        ]
+        self.assertIn("_fatigueReviewCyclingCadenceLevelText(cadenceSignal", cadence_call)
+        self.assertIn("_fatigueReviewCyclingCadenceTone(cadenceSignal", cadence_call)
+        self.assertNotIn("_fatigueReviewCyclingSignalTone(cadenceSignal", cadence_call)
+
+    def test_p1_cycling_card_headlines_do_not_overstate_partial_signals(self):
+        helpers = self.html[
+            self.html.find("function _fatigueReviewCyclingSignal("):
+            self.html.find("function _renderFatigueReviewMetrics(", self.html.find("function _fatigueReviewCyclingSignal("))
+        ]
+        render_body = _extract_js_function(self.html, "_renderFatigueReviewMetrics")
+
+        self.assertIn("function _fatigueReviewCyclingCardHeadlinePolicy(key)", helpers)
+        self.assertIn("if (key === 'intensity_signal' || key === 'aerobic_drift_signal')", helpers)
+        self.assertIn("return { allowMetricFallback: false", helpers)
+        self.assertIn("return { allowMetricFallback: true", helpers)
+        self.assertIn("if (!visibility.canOwnHeadline)", helpers)
+        self.assertIn("if (!policy.allowMetricFallback)", helpers)
+        self.assertIn("return policy.downgradeHeadline || '暂不判断'", helpers)
+
+        intensity_call = (
+            "_fatigueReviewCyclingSignalHeadline("
+            "intensitySignal, _fatigueReviewMetricHeadline('training_load'"
+        )
+        aerobic_call = (
+            "_fatigueReviewCyclingSignalHeadline("
+            "aerobicSignal, _fatigueReviewHrDriftHeadline("
+        )
+        cadence_call = (
+            "_fatigueReviewCyclingSignalHeadline("
+            "cadenceSignal, _fatigueReviewMetricHeadline('pedaling_stability'"
+        )
+        pacing_call = (
+            "_fatigueReviewCyclingSignalHeadline("
+            "pacingSignal, _fatigueReviewPowerVariabilityHeadline("
+        )
+        retention_call = (
+            "_fatigueReviewCyclingSignalHeadline("
+            "retentionSignal, _fatigueReviewMetricHeadline('power_retention'"
+        )
+        for text in (intensity_call, aerobic_call, cadence_call, pacing_call, retention_call):
+            self.assertIn(text, render_body)
+
+        self.assertIn("key === 'intensity_signal'", helpers)
+        self.assertIn("key === 'aerobic_drift_signal'", helpers)
+        self.assertIn("key === 'cadence_signal'", helpers)
+        self.assertIn("key === 'pacing_signal'", helpers)
+        self.assertIn("key === 'power_retention_signal'", helpers)
+
+    def test_p3_cycling_overview_downgrades_from_backend_signals_when_power_missing(self):
+        helper_body = _extract_js_function(self.html, "_fatigueReviewCyclingOverviewStabilityOverride")
+        overview_body = _extract_js_function(self.html, "_buildFatigueReviewOverviewDimensions")
+
+        for text in (
+            "data.cycling_explanation_signals",
+            "_fatigueReviewCyclingSignal(signals, key)",
+            "_fatigueReviewCyclingSignalState(",
+            "pacingState === 'missing' && retentionState === 'missing'",
+            "缺少可用功率依据，暂不判断本次骑行输出稳定性。",
+            "踏频依据不足，暂不单独判断本次骑行踩踏稳定性。",
+            "level: '暂不判断'",
+        ):
+            self.assertIn(text, helper_body)
+        self.assertIn("_fatigueReviewCyclingOverviewStabilityOverride(data)", overview_body)
+        self.assertIn("Object.assign({", overview_body)
+        self.assertIn("cyclingStabilityOverride || {}", overview_body)
+
+        for forbidden in (
+            "curves",
+            "summary",
+            "points",
+            "querySelector",
+            "getElementById",
+            "getOption",
+            "chartPayload",
+            "innerText",
+            "powerVar",
+            "hrDrift",
+            "durCycling",
+            "avg_power",
+            "tail_power / head_power",
+        ):
+            self.assertNotIn(forbidden, helper_body)
+
+    def test_pedaling_stability_unstable_and_poor_use_risk_copy(self):
+        state_fn = _extract_js_function(self.html, "_fatigueReviewMetricState")
+        copy_block_start = self.html.find("pedaling_stability: {")
+        self.assertGreater(copy_block_start, 0)
+        copy_block_end = self.html.find("\n        training_load:", copy_block_start)
+        pedaling_copy = self.html[copy_block_start:copy_block_end]
+        self.assertIn("unstable|poor", state_fn)
+        self.assertIn("踏频波动偏大，踩踏节奏被疲劳或地形打断。", pedaling_copy)
+        self.assertIn("踏频节奏比较稳，踩踏组织较顺。", pedaling_copy)
+
+    def test_metric_tooltips_and_missing_reasons_are_user_facing(self):
+        card_defs = _extract_js_function(self.html, "_fatigueReviewMetricCardDefs")
+        missing_fn = _extract_js_function(self.html, "_fatigueReviewMetricMissingReason")
+        lane_defs = _extract_js_function(self.html, "_fatigueReviewChartLaneDefs")
+        for text in (
+            "比较标准化功率和平均功率的差距",
+            "心率变化和功率输出",
+            "看踩踏是否连续、有章法",
+            "看每一次心跳大约换来多少功率输出",
+            "比较前半程和后半程的功率",
+            "本次变速或停顿较多，不能可靠判断心率漂移",
+            "显示每一段实际踩出来的输出强度",
+        ):
+            self.assertIn(text, card_defs + missing_fn + lane_defs)
+        cycling_start = card_defs.find("if (sportMode === 'cycling')")
+        cycling_end = card_defs.find("\n        return [", cycling_start + 1)
+        cycling_block = card_defs[cycling_start:cycling_end]
+        for forbidden in (
+            "读取后端",
+            "metrics.",
+            "前端不计算",
+            "前端不从功率曲线计算",
+        ):
+            self.assertNotIn(forbidden, cycling_block)
+        cycling_lane_start = lane_defs.find("if (sportMode === 'cycling')")
+        cycling_lane_end = lane_defs.find("\n        return [", cycling_lane_start + 1)
+        cycling_lane_block = lane_defs[cycling_lane_start:cycling_lane_end]
+        for forbidden in (
+            "curves.power",
+            "前端不补算",
+            "前端不推断",
+        ):
+            self.assertNotIn(forbidden, cycling_lane_block)
+
+    def test_p5_running_metric_cards_keep_cadence_stability_semantics(self):
+        card_defs = _extract_js_function(self.html, "_fatigueReviewMetricCardDefs")
+        running_start = card_defs.find("\n        return [")
+        self.assertGreater(running_start, 0)
+        running_block = card_defs[running_start:]
+        for text in (
+            "withSlot('cadence_stability', 'cadence_stability', '步频稳定性'",
+            "withSlot('efficiency', 'efficiency', '运动效率'",
+            "withSlot('durability', 'durability', '耐久指数'",
+        ):
+            self.assertIn(text, running_block)
+        self.assertNotIn("withSlot('cadence_stability', 'pedaling_stability'", running_block)
+        self.assertNotIn("withSlot('hr_drift', 'power_variability'", running_block)
+        self.assertNotIn("功率效率", running_block)
+        self.assertNotIn("后程功率保持", running_block)
+
     def test_metric_card_primary_values_are_user_facing_not_raw_numbers(self):
         body_idx = self.html.find("function _renderFatigueReviewMetrics(metrics, sportType)")
         self.assertGreater(body_idx, 0)
@@ -1296,7 +1805,7 @@ class TestP5P4UiStructureGate(unittest.TestCase):
             "function _fatigueReviewHasSustainedZone(zones, totalDistanceKm)",
             "function _fatigueReviewEventDisplayCopy(ev, sportGroup, hasSustainedZone)",
             "这个位置是系统识别到的参考点；本次状态压力更像是在大部分路段持续存在，建议结合整段配速、心率和恢复段回看。",
-            "这个位置是系统识别到的参考点；本次输出压力更像在大部分路段持续存在，建议结合心率、坡度和功率回看。",
+            "这个位置是系统识别到的参考点；本次更像存在较长状态变化区间，不能单独等同于体能下降。",
             "return _fatigueReviewEventCopy(ev, sportGroup)",
         ):
             self.assertIn(text, self.html)
@@ -1367,9 +1876,9 @@ class TestP5P4UiStructureGate(unittest.TestCase):
             "sourceCount",
             "由 ' + item.sourceCount + ' 个状态片段合并",
             "summaryItems.slice(0, 3)",
-            "title: '整体偏吃力'",
+            "title: sportGroup === 'cycling' ? '整体参考区间' : '整体偏吃力'",
             "title: '多段波动'",
-            "末段输出压力更明显",
+            "末段状态变化更明显，不能单独判断为后程功率保持下降。",
         ):
             self.assertIn(text, self.html)
         fn_idx = self.html.find("function _renderFatigueReviewZones(zones, sportType, totalDistanceKm, metrics, events)")
@@ -1415,6 +1924,8 @@ class TestP5P4UiStructureGate(unittest.TestCase):
             "本次状态整体平稳，未识别到明显压力转折点或持续压力路段。",
             "事件点",
             "参考位置：",
+            "参考区间：这段状态变化较明显，需结合功率、踏频、心率和地形判断。",
+            "不直接等同于输出下降或体能下降",
             "持续压力区间",
             "无持续压力区间",
             "配速、心率和恢复段",
@@ -1422,7 +1933,7 @@ class TestP5P4UiStructureGate(unittest.TestCase):
             "心率、坡度和功率",
             "这个图钉表示能量断档风险窗口起点",
             "这个图钉表示乏力风险窗口起点",
-            "这个图钉表示掉功率风险窗口起点",
+            "这个图钉表示后端识别到的风险窗口起点",
         ):
             self.assertIn(text, self.html)
         for text in (

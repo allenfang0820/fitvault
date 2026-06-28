@@ -442,7 +442,8 @@ class FITCoreEngine:
         """提取 FIT record_mesgs 为逐秒轨迹点。
 
         字段契约(§2.1 全链路可追溯):
-          基础: lat, lon, alt, time, hr, pace
+          基础: lat, lon, alt, time, hr, pace, distance
+          distance: FIT record 累计距离,单位米;缺失时为 None
           跑步动态: cadence, fraction_cadence, stance_time, stance_time_percent,
                     stance_time_balance, vertical_oscillation, vertical_ratio,
                     step_length, power
@@ -471,6 +472,7 @@ class FITCoreEngine:
             pace = None
             if speed and speed > 0:
                 pace = round(1000.0 / speed, 2)
+            distance = FITCoreEngine._float_or_none(values.get("distance"))
             rows.append(
                 {
                     "_ts": ts,
@@ -480,6 +482,7 @@ class FITCoreEngine:
                     "time": FITCoreEngine._iso_utc(ts) if isinstance(ts, datetime) else None,
                     "hr": hr,
                     "pace": pace,
+                    "distance": distance,
                     # 跑步动态字段 — Garmin Running Dynamics (可能为 None)
                     "cadence": FITCoreEngine._int_or_none(values.get("cadence")),
                     "fraction_cadence": FITCoreEngine._float_or_none(values.get("fraction_cadence")),
@@ -507,6 +510,7 @@ class FITCoreEngine:
                     "time": row["time"],
                     "hr": row["hr"],
                     "pace": row["pace"],
+                    "distance": row["distance"],
                     # 跑步动态字段透传
                     "cadence": row["cadence"],
                     "fraction_cadence": row["fraction_cadence"],

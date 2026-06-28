@@ -9,7 +9,6 @@
 import argparse
 import json
 import os
-import subprocess
 import sys
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -19,11 +18,17 @@ hermes_libs = os.path.expanduser("~/Library/Application Support/QClaw/hermes/lib
 if hermes_libs in sys.path:
     sys.path.remove(hermes_libs)
 
-AUTH_FILE = Path.home() / ".qclaw" / "workspace" / "garmin_auth.json"
-CACHE_DIR = Path.home() / ".qclaw" / "workspace" / "garmin_data"
+WORKSPACE_DIR = Path(
+    os.environ.get("QCLAW_WORKSPACE_DIR", str(Path.home() / ".qclaw" / "workspace"))
+).expanduser()
+CACHE_DIR = Path(
+    os.environ.get("GARMIN_STATS_CACHE_DIR", str(WORKSPACE_DIR / "garmin_data"))
+).expanduser()
 CACHE_FILE = CACHE_DIR / "all_activities.json"
 CACHE_META_FILE = CACHE_DIR / "all_activities.meta.json"
 DEFAULT_CACHE_TTL_DAYS = 7
+
+from garmin_auth import GarminStatsAuthError, build_client, default_tokenstore
 
 
 def parse_args() -> argparse.Namespace:
@@ -33,7 +38,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--no-cache-refresh", action="store_true", help="缓存不存在时也不自动生成")
     parser.add_argument("--cache-ttl-days", type=int, default=DEFAULT_CACHE_TTL_DAYS, help="活动缓存自动刷新间隔天数，默认 7 天")
     parser.add_argument("--region", choices=["cn", "global"], default=os.environ.get("GARMIN_REGION", "cn"))
-    parser.add_argument("--auth-file", default=str(AUTH_FILE))
+    parser.add_argument("--tokenstore", default=None, help="Garmin token 目录；默认按区域读取")
+    parser.add_argument("--auth-file", default=None, help=argparse.SUPPRESS)
     parser.add_argument("--debug", action="store_true", help="向 stderr 输出调试信息")
     return parser.parse_args()
 
@@ -41,45 +47,6 @@ def parse_args() -> argparse.Namespace:
 def debug(msg: str, enabled: bool) -> None:
     if enabled:
         print(f"[garmin-stats] {msg}", file=sys.stderr)
-
-
-def patch_garth_ssl_consumer() -> None:
-    import garth
-
-    try:
-        result = subprocess.run(
-            [
-                "curl",
-                "-s",
-                "--max-time",
-                "10",
-                "https://thegarth.s3.amazonaws.com/oauth_consumer.json",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=15,
-        )
-        if result.returncode == 0 and result.stdout.strip().startswith("{"):
-            garth.sso.OAUTH_CONSUMER = json.loads(result.stdout.strip())
-    except Exception:
-        pass
-
-
-def build_client(region: str, auth_file: Path):
-    try:
-        import garminconnect
-        import garth
-    except ModuleNotFoundError as exc:
-        raise SystemExit(
-            f"缺少依赖 {exc.name}。请先运行: pip3 install -r ~/.qclaw/skills/garmin-stats/requirements.txt"
-        )
-
-    patch_garth_ssl_consumer()
-    garth_client = garth.Client()
-    garth_client.load(str(auth_file.expanduser()))
-    client = garminconnect.Garmin(is_cn=(region == "cn"))
-    client.garth = garth_client
-    return client, garth_client
 
 
 def format_time(seconds):
@@ -177,6 +144,18 @@ def cache_age_days() -> Optional[float]:
         return None
 
 
+def cache_region() -> Optional[str]:
+    if not CACHE_META_FILE.exists():
+        return None
+    try:
+        with CACHE_META_FILE.open("r", encoding="utf-8") as f:
+            meta = json.load(f)
+        region = meta.get("region")
+        return str(region) if region else None
+    except Exception:
+        return None
+
+
 def cache_is_fresh(ttl_days: int) -> bool:
     if ttl_days <= 0:
         return False
@@ -186,14 +165,23 @@ def cache_is_fresh(ttl_days: int) -> bool:
 
 def ensure_activity_cache(client, region: str, display_name: Optional[str], args: argparse.Namespace) -> List[Dict]:
     activities = None if args.refresh else load_activity_cache()
-    if activities is not None and cache_is_fresh(args.cache_ttl_days):
+    cached_region = cache_region()
+    region_matches = cached_region in (None, region)
+    if activities is not None and region_matches and cache_is_fresh(args.cache_ttl_days):
         age = cache_age_days()
         age_text = f"{age:.1f} 天" if age is not None else "未知"
         debug(f"使用活动缓存: {len(activities)} 条，缓存年龄 {age_text}", args.debug)
         return activities
     if args.no_cache_refresh:
         if activities is not None:
-            debug("活动缓存已过期，但 --no-cache-refresh 已启用，继续使用旧缓存", args.debug)
+            if not region_matches:
+                debug(
+                    f"活动缓存 region={cached_region} 与当前 region={region} 不一致；"
+                    "--no-cache-refresh 已启用，继续使用旧缓存",
+                    args.debug,
+                )
+            else:
+                debug("活动缓存已过期，但 --no-cache-refresh 已启用，继续使用旧缓存", args.debug)
             return activities
         debug("活动缓存不存在且 --no-cache-refresh 已启用", args.debug)
         return []
@@ -201,6 +189,8 @@ def ensure_activity_cache(client, region: str, display_name: Optional[str], args
         debug("活动缓存不存在，自动生成", args.debug)
     elif args.refresh:
         debug("收到 --refresh，强制刷新活动缓存", args.debug)
+    elif not region_matches:
+        debug(f"活动缓存 region={cached_region} 与当前 region={region} 不一致，自动刷新", args.debug)
     else:
         age = cache_age_days()
         age_text = f"{age:.1f} 天" if age is not None else "未知"
@@ -226,10 +216,14 @@ def main() -> None:
     try:
         import pytz
     except ModuleNotFoundError:
-        raise SystemExit("缺少依赖 pytz。请先运行: pip3 install -r ~/.qclaw/skills/garmin-stats/requirements.txt")
+        raise SystemExit("缺少依赖 pytz。请先在 skill 目录运行: python -m pip install -r requirements.txt")
 
-    auth_file = Path(args.auth_file).expanduser()
-    client, garth_client = build_client(args.region, auth_file)
+    tokenstore = args.tokenstore or args.auth_file or str(default_tokenstore(args.region))
+    try:
+        client, garth_client, token_path = build_client(args.region, tokenstore)
+    except GarminStatsAuthError as exc:
+        raise SystemExit(str(exc))
+    debug(f"使用 Garmin token: {token_path}", args.debug)
     display_name = garth_client.profile["displayName"]
 
     today = date.today()

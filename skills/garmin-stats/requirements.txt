@@ -1,3 +1,4 @@
 garminconnect
 garth
 pytz
+curl_cffi

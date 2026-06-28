@@ -1,6 +1,6 @@
 # 脉图帮助说明
 
-当前正式版本：V1.0
+当前正式版本：V1.0.4
 
 ## 前言
 
@@ -166,7 +166,7 @@ AI 生成内容仅供训练参考。它不会改写 FIT 文件、不会写入原
 
 OpenClaw 是脉图里非常重要的本地网关。可以把它理解成脉图和本地 AI 助手、MCP 技能、Garmin 活动下载能力之间的连接桥。配置好 OpenClaw 后，脉图才能稳定使用 AI 洞察、活动建议、复盘解读，以及按日期同步佳明活动 FIT 文件。
 
-如果你使用佳明，需要在本地 OpenClaw 中安装 `garmin-stats` skill；如果你使用高驰，需要安装 `coros-stats` skill。这两个 skill 用于从佳明/高驰账户获取用户画像数据；其中 `garmin-stats` 还支持佳明活动 FIT 文件同步。下载对应 zip 后，在 OpenClaw 或其他兼容工具中使用 Skill 安装/导入功能选择该 zip 即可。
+如果你使用佳明，需要在本地 OpenClaw 或 QClaw 中安装 `garmin-stats` skill；如果你使用高驰，需要安装 `coros-stats` skill。这两个 skill 用于从佳明/高驰账户获取用户画像数据；其中 `garmin-stats` 还支持佳明活动 FIT 文件同步。下载对应 zip 后，在 OpenClaw / QClaw 中使用 Skill 安装/导入功能选择该 zip 即可。
 
 Skill 下载：
 
@@ -184,11 +184,11 @@ Skill 下载：
 - `coros-stats` 的 Training Hub 通道可能会唤起或连接一个带 DevTools 端口的 Chrome，用于读取已登录的 Training Hub 页面。请在浏览器中自行完成登录，不要把密码发给 AI 助手。
 - 如果 Chrome 被关闭、Training Hub 登录态过期，或高驰页面结构变化，`coros-stats` 会尽量退回 MCP 可用字段；PB、最大心率、静息心率等 Training Hub 字段可能暂时返回 `null`。
 - 首次授权、首次缓存生成或活动历史刷新可能比普通静默同步更慢；后续同步会优先复用有效授权和缓存。
-- 安装或更新 skill 后，建议重启 OpenClaw/兼容工具，使新 skill 和依赖被重新加载。
+- 安装或更新 skill 后，建议重启 OpenClaw / QClaw，使新 skill 和依赖被重新加载。
 
 在「配置」页中，OpenClaw 相关字段通常这样理解：
 
-- 服务商：选择「本地 + MCP（如 OpenClaw / WorkBuddy）」。
+- 服务商：选择「本地 + MCP（OpenClaw / QClaw）」。
 - 自定义 API 地址：填写 OpenClaw 提供的网关地址，例如本机服务地址或你实际部署的网关地址。
 - 模型：选择或填写 OpenClaw 网关可调用的模型名称。
 - Agent ID：如果 OpenClaw 给你分配了专用 Agent ID，就填入这里；没有则可以留空。
@@ -196,7 +196,7 @@ Skill 下载：
 
 配置时建议按这个顺序操作：
 
-1. 先确认 OpenClaw 已启动，并且已按设备类型安装对应 skill：佳明安装 `garmin-stats`，高驰安装 `coros-stats`。
+1. 先确认 OpenClaw / QClaw 已启动，并且已按设备类型安装对应 skill：佳明安装 `garmin-stats`，高驰安装 `coros-stats`。
 2. 在脉图「配置」页填写 OpenClaw API 地址、模型、Agent ID 和 Token。
 3. 点击「测试连接」。测试成功后，脉图会保存这组网关配置。
 4. 选择手表品牌。如果你要使用按日期同步 Garmin 活动，请选择「佳明」。

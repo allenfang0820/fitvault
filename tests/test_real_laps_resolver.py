@@ -51,10 +51,11 @@ class TestLapOutputContract(unittest.TestCase):
             "lap_no", "distance_km", "pace_sec", "hr", "max_hr",
             "cadence", "gct_ms", "power_w", "ascent_m", "descent_m",
             "calories", "swolf", "stroke_style", "stroke_distance_m",
-            "length_distance_m",
+            "length_distance_m", "source_type",
         }
         self.assertEqual(set(lap.keys()), expected_keys,
                          f"每圈字段必须恰好是 {expected_keys}")
+        self.assertEqual(lap["source_type"], "fit_sdk")
 
     def test_no_unregistered_fields(self):
         """不允许出现圈速表未登记字段"""
@@ -67,7 +68,7 @@ class TestLapOutputContract(unittest.TestCase):
             "lap_no", "distance_km", "pace_sec", "hr", "max_hr",
             "cadence", "gct_ms", "power_w", "ascent_m", "descent_m",
             "calories", "swolf", "stroke_style", "stroke_distance_m",
-            "length_distance_m",
+            "length_distance_m", "source_type",
         }
         for lap in r:
             for key in lap:

@@ -11,6 +11,18 @@ _CYCLING_SPORT_TYPES: frozenset[str] = frozenset({
     "mountain_biking",
 })
 
+_RUNNING_SPORT_TYPES: frozenset[str] = frozenset({
+    "running",
+    "trail_running",
+    "treadmill_running",
+})
+
+_HIKING_SPORT_TYPES: frozenset[str] = frozenset({
+    "hiking",
+    "walking",
+    "mountaineering",
+})
+
 
 class AdvancedMetricsCalc:
 
@@ -321,59 +333,586 @@ class AdvancedMetricsCalc:
             return round(max_20m_avg_hr * 0.95, 1)
         return None
 
+    @staticmethod
+    def _profile_ftp(user_profile):
+        if not isinstance(user_profile, dict):
+            return None
+        for key in ("ftp", "cycling_ftp", "threshold_power", "ftp_w"):
+            value = user_profile.get(key)
+            if AdvancedMetricsCalc._is_valid_number(value) and 50 <= float(value) <= 800:
+                return float(value)
+        return None
+
+    @staticmethod
+    def _profile_threshold_hr(user_profile):
+        if not isinstance(user_profile, dict):
+            return None
+        for key in ("lactate_threshold_hr", "threshold_hr"):
+            value = user_profile.get(key)
+            if AdvancedMetricsCalc._is_valid_number(value) and 60 <= float(value) <= 230:
+                return float(value)
+        return None
+
+    @staticmethod
+    def calculate_threshold_detail(records, sport_type=None, user_profile=None):
+        """Return sport-aware threshold detail while keeping threshold_hr available."""
+        records = AdvancedMetricsCalc._sort_records(records or [])
+        sport = str(sport_type or "").strip().lower()
+        user_profile = user_profile or {}
+        threshold_hr = (
+            AdvancedMetricsCalc._profile_threshold_hr(user_profile)
+            or AdvancedMetricsCalc.calculate_threshold_hr(records)
+        )
+        best_20m_hr = AdvancedMetricsCalc.calculate_threshold_hr(records)
+
+        detail = {
+            "value": threshold_hr,
+            "source": "threshold_hr" if threshold_hr is not None else "none",
+            "confidence": "medium" if threshold_hr is not None else "low",
+            "threshold_hr": threshold_hr,
+            "threshold_power": None,
+            "threshold_wkg": None,
+            "best_20m_power": None,
+            "best_20m_hr": best_20m_hr,
+        }
+
+        if sport not in _CYCLING_SPORT_TYPES:
+            return detail
+
+        weight_kg = AdvancedMetricsCalc._profile_weight_kg(user_profile)
+        profile_ftp = AdvancedMetricsCalc._profile_ftp(user_profile)
+        if profile_ftp is not None:
+            detail["threshold_power"] = round(profile_ftp, 1)
+            if weight_kg:
+                detail["threshold_wkg"] = round(profile_ftp / weight_kg, 2)
+                detail["value"] = detail["threshold_wkg"]
+                detail["source"] = "ftp_wkg"
+            else:
+                detail["value"] = detail["threshold_power"]
+                detail["source"] = "ftp_w"
+            detail["confidence"] = "high"
+            return detail
+
+        def power_value(record):
+            power = AdvancedMetricsCalc._record_power(record)
+            if power is None or power <= 0 or power > 2500:
+                return None
+            return power
+
+        best_power, _ = AdvancedMetricsCalc._window_best_average(
+            records,
+            power_value,
+            1200,
+            min_coverage=0.8,
+        )
+        if best_power is not None:
+            threshold_power = best_power * 0.95
+            detail["best_20m_power"] = round(best_power, 1)
+            detail["threshold_power"] = round(threshold_power, 1)
+            if weight_kg:
+                detail["threshold_wkg"] = round(threshold_power / weight_kg, 2)
+                detail["value"] = detail["threshold_wkg"]
+                detail["source"] = "ftp_wkg"
+            else:
+                detail["value"] = detail["threshold_power"]
+                detail["source"] = "ftp_w"
+            detail["confidence"] = "medium"
+            return detail
+
+        if threshold_hr is not None:
+            detail["source"] = "threshold_hr"
+            detail["confidence"] = "low"
+        return detail
+
     # =========================================================
     # 6. Anaerobic Peak
     # =========================================================
 
     @staticmethod
-    def calculate_anaerobic_peak(records):
-        if not records:
+    def _record_power(record):
+        for key in ("power", "watts", "Power", "enhanced_power"):
+            value = record.get(key)
+            if AdvancedMetricsCalc._is_valid_number(value):
+                return float(value)
+        return None
+
+    @staticmethod
+    def _profile_weight_kg(user_profile):
+        if not isinstance(user_profile, dict):
             return None
-        records = AdvancedMetricsCalc._sort_records(records)
+        for key in ("weight_kg", "weight", "body_weight_kg"):
+            value = user_profile.get(key)
+            if AdvancedMetricsCalc._is_valid_number(value) and 25 <= float(value) <= 250:
+                return float(value)
+        return None
+
+    @staticmethod
+    def _profile_max_hr(user_profile):
+        if not isinstance(user_profile, dict):
+            return None
+        value = user_profile.get("max_hr")
+        if AdvancedMetricsCalc._is_valid_number(value) and 80 <= float(value) <= 240:
+            return float(value)
+        return None
+
+    @staticmethod
+    def _window_best_average(
+        records,
+        value_getter,
+        window_seconds,
+        *,
+        min_coverage=0.8,
+        window_filter=None,
+    ):
+        """Return best average value over a time window with coverage checks."""
         window = deque()
-        spd_sum = 0.0
-        max_30s_avg_spd = 0.0
-        for r in records:
-            ts = AdvancedMetricsCalc._safe_timestamp(r)
-            spd = r.get('speed')
+        value_sum = 0.0
+        best = None
+        best_records = None
+        min_span = window_seconds * min_coverage
+        for record in records:
+            ts = AdvancedMetricsCalc._safe_timestamp(record)
             if not ts:
                 continue
-            if not AdvancedMetricsCalc._is_valid_number(spd):
+            value = value_getter(record)
+            if value is None:
                 continue
-            if not (0 <= spd <= 35):
+            window.append((ts, float(value), record))
+            value_sum += float(value)
+            while window and (ts - window[0][0]).total_seconds() > window_seconds:
+                _, old_value, _ = window.popleft()
+                value_sum -= old_value
+            if len(window) < 2:
                 continue
-            window.append((ts, spd))
-            spd_sum += spd
-            while (window and (ts - window[0][0]).total_seconds() > 30):
-                _, old_spd = window.popleft()
-                spd_sum -= old_spd
-            if len(window) > 3:
-                span = (window[-1][0] - window[0][0]).total_seconds()
-                if span >= 24:
-                    avg_spd = spd_sum / len(window)
-                    if avg_spd > max_30s_avg_spd:
-                        max_30s_avg_spd = avg_spd
-        if max_30s_avg_spd > 0:
-            return round(max_30s_avg_spd, 2)
-        return None
+            span = (window[-1][0] - window[0][0]).total_seconds()
+            if span < min_span:
+                continue
+            records_in_window = [item[2] for item in window]
+            if window_filter and not window_filter(records_in_window):
+                continue
+            avg_value = value_sum / len(window)
+            if best is None or avg_value > best:
+                best = avg_value
+                best_records = records_in_window
+        return best, best_records
+
+    @staticmethod
+    def _window_grade(records):
+        if not records or len(records) < 2:
+            return None
+        first = records[0]
+        last = records[-1]
+        alt0 = first.get("altitude")
+        alt1 = last.get("altitude")
+        dist0 = first.get("distance")
+        dist1 = last.get("distance")
+        if not (
+            AdvancedMetricsCalc._is_valid_number(alt0)
+            and AdvancedMetricsCalc._is_valid_number(alt1)
+            and AdvancedMetricsCalc._is_valid_number(dist0)
+            and AdvancedMetricsCalc._is_valid_number(dist1)
+        ):
+            return None
+        delta_dist = float(dist1) - float(dist0)
+        if delta_dist <= 0:
+            return None
+        return (float(alt1) - float(alt0)) / delta_dist
+
+    @staticmethod
+    def _has_speed_spike(records, max_delta):
+        prev_speed = None
+        for record in records:
+            speed = record.get("speed")
+            if not AdvancedMetricsCalc._is_valid_number(speed):
+                continue
+            speed = float(speed)
+            if prev_speed is not None and abs(speed - prev_speed) > max_delta:
+                return True
+            prev_speed = speed
+        return False
+
+    @staticmethod
+    def _avg_window_hr(records):
+        values = [
+            float(r.get("heart_rate"))
+            for r in records
+            if AdvancedMetricsCalc._is_valid_number(r.get("heart_rate"))
+            and 30 < float(r.get("heart_rate")) < 240
+        ]
+        if not values:
+            return None
+        return sum(values) / len(values)
+
+    @staticmethod
+    def _cycling_speed_fallback_filter(records, max_hr):
+        grade = AdvancedMetricsCalc._window_grade(records)
+        if grade is not None and grade < -0.02:
+            return False
+        if AdvancedMetricsCalc._has_speed_spike(records, 8.0):
+            return False
+        avg_hr = AdvancedMetricsCalc._avg_window_hr(records)
+        if max_hr and avg_hr is not None and avg_hr < max_hr * 0.75:
+            return False
+        return True
+
+    @staticmethod
+    def _running_speed_filter(records):
+        grade = AdvancedMetricsCalc._window_grade(records)
+        if grade is not None and grade < -0.04:
+            return False
+        if AdvancedMetricsCalc._has_speed_spike(records, 4.0):
+            return False
+        return True
+
+    @staticmethod
+    def calculate_anaerobic_peak_detail(records, sport_type=None, user_profile=None):
+        """Detailed anaerobic capability estimate.
+
+        Cycling prefers short-duration power and only falls back to speed with
+        conservative confidence. The legacy calculate_anaerobic_peak wrapper
+        keeps returning a float for older callers.
+        """
+        if not records:
+            return {
+                "value": None,
+                "source": "none",
+                "confidence": "low",
+                "best_5s_power": None,
+                "best_15s_power": None,
+                "best_30s_power": None,
+                "best_60s_power": None,
+                "best_15s_wkg": None,
+                "best_30s_wkg": None,
+                "best_60s_wkg": None,
+                "best_30s_speed": None,
+            }
+        records = AdvancedMetricsCalc._sort_records(records)
+        sport = str(sport_type or "").strip().lower()
+        user_profile = user_profile or {}
+        weight_kg = AdvancedMetricsCalc._profile_weight_kg(user_profile)
+        max_hr = AdvancedMetricsCalc._profile_max_hr(user_profile)
+
+        detail = {
+            "value": None,
+            "source": "none",
+            "confidence": "low",
+            "best_5s_power": None,
+            "best_15s_power": None,
+            "best_30s_power": None,
+            "best_60s_power": None,
+            "best_15s_wkg": None,
+            "best_30s_wkg": None,
+            "best_60s_wkg": None,
+            "best_30s_speed": None,
+        }
+
+        if sport in _CYCLING_SPORT_TYPES:
+            def power_value(record):
+                power = AdvancedMetricsCalc._record_power(record)
+                if power is None or power <= 0 or power > 2500:
+                    return None
+                return power
+
+            for seconds, key in (
+                (5, "best_5s_power"),
+                (15, "best_15s_power"),
+                (30, "best_30s_power"),
+                (60, "best_60s_power"),
+            ):
+                value, _ = AdvancedMetricsCalc._window_best_average(
+                    records,
+                    power_value,
+                    seconds,
+                    min_coverage=0.8,
+                )
+                if value is not None:
+                    detail[key] = round(value, 1)
+
+            if detail["best_30s_power"] is not None:
+                if weight_kg:
+                    for seconds_key, wkg_key in (
+                        ("best_15s_power", "best_15s_wkg"),
+                        ("best_30s_power", "best_30s_wkg"),
+                        ("best_60s_power", "best_60s_wkg"),
+                    ):
+                        if detail[seconds_key] is not None:
+                            detail[wkg_key] = round(detail[seconds_key] / weight_kg, 2)
+                    w15 = detail["best_15s_wkg"] or detail["best_30s_wkg"]
+                    w30 = detail["best_30s_wkg"]
+                    w60 = detail["best_60s_wkg"] or detail["best_30s_wkg"]
+                    detail["value"] = round(0.5 * w15 + 0.3 * w30 + 0.2 * w60, 2)
+                    detail["source"] = "power_wkg"
+                    detail["confidence"] = "high"
+                    return detail
+                detail["value"] = round(detail["best_30s_power"], 1)
+                detail["source"] = "power_w"
+                detail["confidence"] = "medium"
+                return detail
+
+            def cycling_speed(record):
+                speed = record.get("speed")
+                if not AdvancedMetricsCalc._is_valid_number(speed):
+                    return None
+                speed = float(speed)
+                if speed <= 0 or speed > 30:
+                    return None
+                return speed
+
+            best_speed, _ = AdvancedMetricsCalc._window_best_average(
+                records,
+                cycling_speed,
+                30,
+                min_coverage=0.8,
+                window_filter=lambda win: AdvancedMetricsCalc._cycling_speed_fallback_filter(win, max_hr),
+            )
+            if best_speed is not None:
+                detail["value"] = round(best_speed, 2)
+                detail["source"] = "speed_fallback"
+                detail["confidence"] = "low"
+                detail["best_30s_speed"] = round(best_speed, 2)
+            return detail
+
+        def running_speed(record):
+            speed = record.get("speed")
+            if not AdvancedMetricsCalc._is_valid_number(speed):
+                return None
+            speed = float(speed)
+            if speed <= 0 or speed > 12:
+                return None
+            return speed
+
+        best_speed, _ = AdvancedMetricsCalc._window_best_average(
+            records,
+            running_speed,
+            30,
+            min_coverage=0.8,
+            window_filter=AdvancedMetricsCalc._running_speed_filter,
+        )
+        if best_speed is not None:
+            detail["value"] = round(best_speed, 2)
+            detail["source"] = "speed" if sport in ("running", "trail_running") else "speed_fallback"
+            detail["confidence"] = "medium" if sport in ("running", "trail_running") else "low"
+            detail["best_30s_speed"] = round(best_speed, 2)
+        return detail
+
+    @staticmethod
+    def calculate_anaerobic_peak(records, sport_type=None, user_profile=None):
+        detail = AdvancedMetricsCalc.calculate_anaerobic_peak_detail(records, sport_type, user_profile)
+        return detail.get("value")
 
 
 class RadarScoreEngine:
     @staticmethod
-    def score_endurance(trimp):
+    def _score_by_thresholds(value, thresholds):
+        if not value:
+            return 0
+        low, mid, high = thresholds
+        if value < low:
+            return 20
+        if value < mid:
+            return 50
+        if value < high:
+            return 75
+        return 95
+
+    @classmethod
+    def score_endurance(cls, trimp, sport_type=None):
         if not trimp:
             return 0
-        if trimp < 30:
+        if sport_type in _RUNNING_SPORT_TYPES:
+            return cls._score_by_thresholds(trimp, (20, 45, 70))
+        if sport_type in _CYCLING_SPORT_TYPES:
+            return cls._score_by_thresholds(trimp, (30, 80, 130))
+        if sport_type in _HIKING_SPORT_TYPES:
+            return cls._score_by_thresholds(trimp, (10, 25, 45))
+        return cls._score_by_thresholds(trimp, (30, 80, 150))
+
+    @staticmethod
+    def _score_training_consistency(training_days_28d):
+        days = int(training_days_28d or 0)
+        if days < 4:
             return 20
-        if trimp < 80:
+        if days <= 8:
             return 50
-        if trimp < 150:
+        if days <= 14:
             return 75
         return 95
 
     @staticmethod
+    def _endurance_confidence(sample_count):
+        count = int(sample_count or 0)
+        if count >= 12:
+            return "high"
+        if count >= 6:
+            return "medium"
+        return "low"
+
+    @classmethod
+    def score_endurance_detail(cls, ctl, sport_type=None, training_days_28d=0, sample_count=0):
+        ctl_score = cls.score_endurance(ctl, sport_type)
+        consistency_score = cls._score_training_consistency(training_days_28d) if sample_count else 0
+        score = round(0.75 * ctl_score + 0.25 * consistency_score) if sample_count else 0
+        return {
+            "score": score,
+            "ctl_score": ctl_score,
+            "consistency_score": consistency_score,
+            "training_days_28d": int(training_days_28d or 0),
+            "sample_count": int(sample_count or 0),
+            "confidence": cls._endurance_confidence(sample_count),
+            "source": "ctl_42d_plus_28d_consistency" if sample_count else "no_valid_trimp",
+        }
+
+    @staticmethod
     def score_recovery(hrv_score):
         return min(max(int(hrv_score or 0), 0), 100)
+
+    @staticmethod
+    def _first_number(data, keys):
+        if not isinstance(data, dict):
+            return None
+        for key in keys:
+            value = data.get(key)
+            if isinstance(value, (int, float)) and not math.isnan(value):
+                return float(value)
+        return None
+
+    @staticmethod
+    def _recovery_hrv_score(ratio):
+        if ratio >= 1.0:
+            return 95
+        if ratio >= 0.95:
+            return 80
+        if ratio >= 0.90:
+            return 65
+        if ratio >= 0.80:
+            return 45
+        return 25
+
+    @staticmethod
+    def _recovery_tsb_score(tsb, atl=None):
+        if tsb >= 5:
+            score = 85
+        elif tsb >= -10:
+            score = 75
+        elif tsb >= -25:
+            score = 55
+        else:
+            score = 35
+        if atl is not None and atl > 100 and tsb < -10:
+            score = max(25, score - 10)
+        return score
+
+    @staticmethod
+    def _recovery_sleep_score(hours):
+        if hours >= 7.0:
+            return 90
+        if hours >= 6.0:
+            return 75
+        if hours >= 5.0:
+            return 55
+        return 35
+
+    @staticmethod
+    def _recovery_resting_hr_score(delta):
+        if delta <= 0:
+            return 90
+        if delta <= 3:
+            return 75
+        if delta <= 6:
+            return 55
+        return 35
+
+    @staticmethod
+    def score_recovery_detail(profile_data=None, load_data=None):
+        """Return recovery score from relative recovery signals, not HRV absolute value."""
+        profile_data = profile_data if isinstance(profile_data, dict) else {}
+        load_data = load_data if isinstance(load_data, dict) else {}
+        reasons = []
+
+        hrv_baseline = RadarScoreEngine._first_number(
+            profile_data,
+            ("hrv_baseline", "baseline_hrv", "hrv_baseline_ms"),
+        )
+        recent_hrv = RadarScoreEngine._first_number(
+            profile_data,
+            ("hrv_7d_avg", "recent_hrv", "last_7d_hrv", "hrv_current"),
+        )
+        resting_hr = RadarScoreEngine._first_number(profile_data, ("resting_hr", "rest_hr"))
+        recent_resting_hr = RadarScoreEngine._first_number(
+            profile_data,
+            ("recent_resting_hr", "resting_hr_7d_avg"),
+        )
+        sleep_hours = RadarScoreEngine._first_number(
+            profile_data,
+            ("avg_sleep_hours", "sleep_hours", "sleep_7d_avg"),
+        )
+        tsb = RadarScoreEngine._first_number(load_data, ("tsb",))
+        atl = RadarScoreEngine._first_number(load_data, ("atl",))
+
+        parts = []
+        hrv_ratio = None
+        source = "fallback"
+
+        if hrv_baseline and hrv_baseline > 0 and recent_hrv and recent_hrv > 0:
+            hrv_ratio = recent_hrv / hrv_baseline
+            parts.append(("hrv", RadarScoreEngine._recovery_hrv_score(hrv_ratio), 0.40))
+            source = "hrv_trend"
+        elif hrv_baseline and hrv_baseline > 0:
+            reasons.append("缺少近期 HRV,无法判断相对恢复状态")
+            source = "baseline_only"
+        else:
+            reasons.append("缺少 HRV 基线")
+
+        if tsb is not None:
+            parts.append(("tsb", RadarScoreEngine._recovery_tsb_score(tsb, atl), 0.30 if hrv_ratio else 0.45))
+        else:
+            reasons.append("缺少 TSB 训练压力")
+
+        if sleep_hours is not None and sleep_hours > 0:
+            parts.append(("sleep", RadarScoreEngine._recovery_sleep_score(sleep_hours), 0.20 if hrv_ratio else 0.35))
+        else:
+            reasons.append("缺少近期睡眠")
+
+        resting_hr_delta = None
+        if resting_hr is not None and recent_resting_hr is not None:
+            resting_hr_delta = recent_resting_hr - resting_hr
+            parts.append(("resting_hr", RadarScoreEngine._recovery_resting_hr_score(resting_hr_delta), 0.10 if hrv_ratio else 0.20))
+        else:
+            reasons.append("缺少近期静息心率对比")
+
+        if not parts:
+            if source == "baseline_only":
+                score = 60
+            else:
+                score = 0
+            confidence = "low"
+        else:
+            total_weight = sum(weight for _, _, weight in parts)
+            score = round(sum(value * weight for _, value, weight in parts) / total_weight)
+            if hrv_ratio and len(parts) >= 3:
+                confidence = "high"
+            elif hrv_ratio or len(parts) >= 2:
+                confidence = "medium"
+            else:
+                confidence = "low"
+            if source in ("fallback", "baseline_only"):
+                source = "load_balance" if tsb is not None else "fallback"
+
+        if source == "baseline_only" and not parts:
+            score = 60
+            confidence = "low"
+
+        return {
+            "score": int(min(max(score, 0), 100)),
+            "source": source,
+            "confidence": confidence,
+            "hrv_ratio": round(hrv_ratio, 3) if hrv_ratio is not None else None,
+            "tsb": tsb,
+            "atl": atl,
+            "sleep_hours": sleep_hours,
+            "resting_hr_delta": round(resting_hr_delta, 1) if resting_hr_delta is not None else None,
+            "reasons": reasons,
+        }
 
     @staticmethod
     def score_stability(decoupling):
@@ -395,19 +934,19 @@ class RadarScoreEngine:
         if not vam:
             return 0
         if sport_type in _CYCLING_SPORT_TYPES:
-            if vam < 100:
+            if vam < 300:
                 return 20
-            if vam < 250:
+            if vam < 600:
                 return 50
-            if vam < 500:
+            if vam < 900:
                 return 75
             return 95
-        if sport_type == "hiking":
-            if vam < 100:
+        if sport_type in ("hiking", "mountaineering"):
+            if vam < 150:
                 return 20
-            if vam < 200:
+            if vam < 300:
                 return 50
-            if vam < 400:
+            if vam < 500:
                 return 75
             return 95
         if vam < 300:
@@ -419,38 +958,72 @@ class RadarScoreEngine:
         return 95
 
     @staticmethod
-    def score_threshold(threshold_hr, max_hr):
-        if not threshold_hr or not max_hr:
+    def score_threshold(value, max_hr=None, sport_type=None, source=None, confidence=None):
+        if not value:
             return 0
-        ratio = threshold_hr / max_hr
+        if sport_type in _CYCLING_SPORT_TYPES:
+            if source == "ftp_wkg":
+                if value < 2.0:
+                    return 40
+                if value < 2.8:
+                    return 65
+                if value < 3.6:
+                    return 82
+                return 95
+            if source == "ftp_w":
+                if value < 150:
+                    return 40
+                if value < 220:
+                    return 65
+                return 82
+            cap = 82 if source == "threshold_hr" or confidence == "low" else 95
+        else:
+            cap = 95
+        if not max_hr:
+            return 0
+        ratio = value / max_hr
         if ratio < 0.75:
             return 40
         if ratio < 0.82:
             return 65
         if ratio < 0.88:
             return 82
-        return 95
+        return min(95, cap)
 
     @staticmethod
-    def score_anaerobic(peak_speed, sport_type="running"):
-        if not peak_speed:
+    def score_anaerobic(peak_value, sport_type="running", source=None, confidence=None):
+        if not peak_value:
             return 0
         if sport_type in _CYCLING_SPORT_TYPES:
-            if peak_speed < 8:
-                return 20
-            if peak_speed < 12:
-                return 50
-            if peak_speed < 16:
+            if source == "power_wkg":
+                if peak_value < 5.0:
+                    return 20
+                if peak_value < 7.5:
+                    return 50
+                if peak_value < 10.0:
+                    return 75
+                return 95
+            if source == "power_w":
+                if peak_value < 400:
+                    return 20
+                if peak_value < 650:
+                    return 50
                 return 75
-            return 95
-        else:
-            if peak_speed < 3:
+            score_cap = 75 if source == "speed_fallback" or confidence == "low" else 95
+            if peak_value < 8:
                 return 20
-            if peak_speed < 5:
+            if peak_value < 12:
                 return 50
-            if peak_speed < 7:
+            if peak_value < 16:
                 return 75
-            return 95
+            return min(95, score_cap)
+        if peak_value < 4.0:
+            return 20
+        if peak_value < 5.0:
+            return 50
+        if peak_value < 5.8:
+            return 75
+        return 95
 
     RADAR_SCHEMAS = {
         "running": ["endurance", "recovery", "stability", "threshold", "climbing", "anaerobic"],
@@ -469,26 +1042,303 @@ class RadarScoreEngine:
         "anaerobic": "无氧爆发",
     }
 
+    @staticmethod
+    def _optional_int(value):
+        if value is None:
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _normalize_confidence(value):
+        token = str(value or "").strip().lower()
+        return token if token in {"high", "medium", "low"} else None
+
+    @staticmethod
+    def _append_low_confidence_note(reason, confidence):
+        if confidence != "low":
+            return reason
+        note = "样本不足或数据来源较弱，分数仅供参考"
+        if reason:
+            return f"{reason}；{note}"
+        return note
+
+    @staticmethod
+    def _optional_float(value):
+        if value is None:
+            return None
+        try:
+            value = float(value)
+            if math.isnan(value):
+                return None
+            return value
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _score_cycling_climb_scale(gain_p90, distance_p90):
+        """Scale score follows the same idea as climb categorization: real climbs need size.
+
+        Strava-style climb categories use distance and grade; with activity-level data we use
+        gain and distance as a conservative proxy, avoiding VAM-only 95 scores from short efforts.
+        """
+        gain = float(gain_p90 or 0)
+        distance = float(distance_p90 or 0)
+        if gain <= 0 or distance <= 0:
+            return 0
+        grade = gain / max(distance * 1000.0, 1.0)
+        climb_score = distance * 1000.0 * grade
+        if gain >= 1000 and distance >= 40:
+            return 95
+        if gain >= 500 and distance >= 8:
+            return 82
+        if gain >= 250 and distance >= 5:
+            return 70
+        if gain >= 100 and distance >= 3:
+            return 55
+        if gain >= 50 and distance >= 1:
+            return 40
+        return 25 if climb_score > 0 else 0
+
+    @staticmethod
+    def _score_cycling_climb_consistency(sample_count):
+        count = int(sample_count or 0)
+        if count >= 6:
+            return 95
+        if count >= 3:
+            return 65
+        if count >= 1:
+            return 40
+        return 0
+
+    @classmethod
+    def score_cycling_climbing_detail(cls, metrics_data):
+        """Composite cycling climbing score.
+
+        Contract: VAM remains the performance signal, but final cycling climbing score is capped
+        by sample count and data richness. This keeps VAM useful without letting a few short climbs
+        imply a near-perfect all-round climbing profile.
+        """
+        metrics_data = metrics_data if isinstance(metrics_data, dict) else {}
+        vam = cls._optional_float(metrics_data.get("climbing_vam_p90"))
+        if vam is None:
+            vam = cls._optional_float(metrics_data.get("vam"))
+        sample_count = int(metrics_data.get("climbing_sample_count") or 0)
+        gain_p90 = cls._optional_float(metrics_data.get("climbing_gain_p90"))
+        distance_p90 = cls._optional_float(metrics_data.get("climbing_distance_p90"))
+        duration_p90 = cls._optional_float(metrics_data.get("climbing_duration_p90"))
+        power_count = int(metrics_data.get("climbing_power_available_count") or 0)
+        power_available = power_count > 0
+
+        if not vam or sample_count <= 0:
+            return {
+                "score": 0,
+                "confidence": "low",
+                "source": "cycling_climb_composite",
+                "reason": "无有效骑行爬坡样本",
+                "score_cap": 0,
+                "components": {
+                    "performance": 0,
+                    "scale": 0,
+                    "consistency": 0,
+                    "data_quality": 0,
+                },
+            }
+
+        performance_score = cls.score_climbing(vam, "cycling")
+        scale_score = cls._score_cycling_climb_scale(gain_p90, distance_p90)
+        consistency_score = cls._score_cycling_climb_consistency(sample_count)
+        data_quality_score = 85 if power_available else 55
+        if duration_p90 and duration_p90 >= 300:
+            data_quality_score = min(95, data_quality_score + 10)
+
+        score = round(
+            performance_score * 0.45
+            + scale_score * 0.25
+            + consistency_score * 0.20
+            + data_quality_score * 0.10
+        )
+
+        score_cap = 95
+        cap_reasons = []
+        if sample_count <= 2:
+            score_cap = min(score_cap, 75)
+            cap_reasons.append("有效爬坡样本不足3个,最高75")
+        elif sample_count <= 5:
+            score_cap = min(score_cap, 85)
+            cap_reasons.append("有效爬坡样本3-5个,最高85")
+        if not power_available:
+            score_cap = min(score_cap, 85)
+            cap_reasons.append("缺少爬坡功率/Wkg,仅VAM fallback最高85")
+        if duration_p90 and duration_p90 < 300:
+            score_cap = min(score_cap, 80)
+            cap_reasons.append("多数爬坡持续时间不足5分钟,最高80")
+
+        final_score = int(min(max(score, 0), score_cap))
+        if sample_count >= 6 and power_available:
+            confidence = "high"
+        elif sample_count >= 3:
+            confidence = "medium"
+        else:
+            confidence = "low"
+        if not power_available and confidence == "high":
+            confidence = "medium"
+
+        parts = [
+            f"VAM(每小时爬升速度) P90 {round(vam, 1)} m/h",
+            f"有效VAM样本{sample_count}个",
+            f"表现分{performance_score}",
+            f"规模分{scale_score}",
+            f"稳定分{consistency_score}",
+            "使用功率字段" if power_available else "缺少爬坡功率/Wkg,采用VAM fallback",
+        ]
+        activity_count = int(metrics_data.get("climbing_activity_count_90d") or 0)
+        elevation_count = int(metrics_data.get("climbing_elevation_activity_count_90d") or 0)
+        if activity_count or elevation_count:
+            parts.insert(
+                1,
+                f"90天骑行{activity_count}条/有爬升活动{elevation_count}条",
+            )
+        if cap_reasons:
+            parts.append("；".join(cap_reasons))
+        return {
+            "score": final_score,
+            "confidence": confidence,
+            "source": "cycling_climb_composite",
+            "reason": "，".join(parts),
+            "score_cap": score_cap,
+            "components": {
+                "performance": performance_score,
+                "scale": scale_score,
+                "consistency": consistency_score,
+                "data_quality": data_quality_score,
+            },
+        }
+
+    @classmethod
+    def _dimension_meta(cls, key, metrics_data):
+        confidence = None
+        sample_count = None
+        source = None
+        reason = ""
+
+        if key == "endurance":
+            confidence = cls._normalize_confidence(metrics_data.get("endurance_confidence"))
+            sample_count = cls._optional_int(metrics_data.get("endurance_sample_count"))
+            source = metrics_data.get("endurance_source")
+            ctl_score = metrics_data.get("endurance_ctl_score")
+            consistency_score = metrics_data.get("endurance_consistency_score")
+            training_days = metrics_data.get("endurance_training_days_28d")
+            parts = []
+            if ctl_score is not None:
+                parts.append(f"CTL分{ctl_score}")
+            if consistency_score is not None:
+                parts.append(f"连续性分{consistency_score}")
+            if training_days is not None:
+                parts.append(f"28天训练{training_days}天")
+            reason = "，".join(parts)
+        elif key == "recovery":
+            confidence = cls._normalize_confidence(metrics_data.get("recovery_confidence"))
+            source = metrics_data.get("recovery_source")
+            reasons = metrics_data.get("recovery_reasons") or []
+            if isinstance(reasons, (list, tuple)):
+                reason = "；".join(str(item) for item in reasons if item)
+            elif reasons:
+                reason = str(reasons)
+        elif key == "stability":
+            confidence = cls._normalize_confidence(metrics_data.get("stability_confidence"))
+            sample_count = cls._optional_int(metrics_data.get("stability_sample_count"))
+            source = "pa_hr_decoupling_filtered"
+        elif key == "climbing":
+            confidence = cls._normalize_confidence(metrics_data.get("climbing_confidence"))
+            sample_count = cls._optional_int(metrics_data.get("climbing_sample_count"))
+            source = metrics_data.get("climbing_source") or "valid_climb_vam_p90"
+            reason = str(metrics_data.get("climbing_reason") or "")
+        elif key == "threshold":
+            confidence = cls._normalize_confidence(metrics_data.get("threshold_confidence"))
+            sample_count = cls._optional_int(metrics_data.get("threshold_sample_count"))
+            source = metrics_data.get("threshold_source")
+        elif key == "anaerobic":
+            confidence = cls._normalize_confidence(
+                metrics_data.get("anaerobic_peak_confidence") or metrics_data.get("anaerobic_confidence")
+            )
+            sample_count = cls._optional_int(metrics_data.get("anaerobic_sample_count"))
+            source = metrics_data.get("anaerobic_peak_source")
+
+        source = str(source) if source is not None else None
+        reason = cls._append_low_confidence_note(reason, confidence)
+        return {
+            "confidence": confidence,
+            "sample_count": sample_count,
+            "source": source,
+            "reason": reason or "",
+        }
+
     @classmethod
     def build_radar_profile(cls, sport_type, metrics_data, user_profile=None):
         schema = cls.RADAR_SCHEMAS.get(sport_type, cls.RADAR_SCHEMAS["running"])
         max_hr = user_profile.get("max_hr", 190) if user_profile else 190
+        threshold_source = metrics_data.get("threshold_source")
+        threshold_value = metrics_data.get("threshold_hr")
+        if threshold_source == "ftp_wkg" and metrics_data.get("threshold_wkg") is not None:
+            threshold_value = metrics_data.get("threshold_wkg")
+        elif threshold_source == "ftp_w" and metrics_data.get("threshold_power") is not None:
+            threshold_value = metrics_data.get("threshold_power")
+
+        endurance_score = metrics_data.get("endurance_score")
+        if endurance_score is None:
+            endurance_score = cls.score_endurance(metrics_data.get("trimp"), sport_type)
+        cycling_climbing_detail = None
+        if sport_type in _CYCLING_SPORT_TYPES:
+            cycling_climbing_detail = cls.score_cycling_climbing_detail(metrics_data)
+            metrics_data = dict(metrics_data)
+            metrics_data["climbing_confidence"] = cycling_climbing_detail.get("confidence")
+            metrics_data["climbing_source"] = cycling_climbing_detail.get("source")
+            metrics_data["climbing_reason"] = cycling_climbing_detail.get("reason")
+            metrics_data["climbing_score_cap"] = cycling_climbing_detail.get("score_cap")
+            metrics_data["climbing_score_components"] = cycling_climbing_detail.get("components")
 
         scores = {
-            "endurance": cls.score_endurance(metrics_data.get("trimp")),
-            "recovery": cls.score_recovery(metrics_data.get("hrv")),
+            "endurance": endurance_score,
+            "recovery": cls.score_recovery(
+                metrics_data.get("recovery_score")
+                if metrics_data.get("recovery_score") is not None
+                else metrics_data.get("hrv")
+            ),
             "stability": cls.score_stability(metrics_data.get("decoupling")),
-            "climbing": cls.score_climbing(metrics_data.get("vam"), sport_type),
-            "threshold": cls.score_threshold(metrics_data.get("threshold_hr"), max_hr),
-            "anaerobic": cls.score_anaerobic(metrics_data.get("anaerobic_peak"), sport_type),
+            "climbing": (
+                cycling_climbing_detail.get("score")
+                if cycling_climbing_detail is not None
+                else cls.score_climbing(metrics_data.get("vam"), sport_type)
+            ),
+            "threshold": cls.score_threshold(
+                threshold_value,
+                max_hr,
+                sport_type,
+                threshold_source,
+                metrics_data.get("threshold_confidence"),
+            ),
+            "anaerobic": cls.score_anaerobic(
+                metrics_data.get("anaerobic_peak"),
+                sport_type,
+                metrics_data.get("anaerobic_peak_source"),
+                metrics_data.get("anaerobic_peak_confidence") or metrics_data.get("anaerobic_confidence"),
+            ),
         }
 
         dimensions = []
         for key in schema:
-            dimensions.append({
+            dimension = {
                 "key": key,
                 "label": cls.LABELS.get(key, key),
                 "score": scores.get(key, 0),
-            })
+            }
+            dimension.update(cls._dimension_meta(key, metrics_data))
+            if key == "climbing" and cycling_climbing_detail is not None:
+                dimension["score_cap"] = cycling_climbing_detail.get("score_cap")
+                dimension["score_components"] = cycling_climbing_detail.get("components")
+            dimensions.append(dimension)
 
         return {"type": sport_type, "dimensions": dimensions}

@@ -318,6 +318,86 @@ class TestFitSync(unittest.TestCase):
              mock.patch.object(llm_backend, "test_llm_connection", return_value={"ok": True}):
             return profile_backend.fetch_mcp_persona(platform)
 
+    def test_garmin_persona_maps_7d_recovery_fields(self):
+        payload = [
+            {"metric": "username", "value": "garmin-user"},
+            {"metric": "resting_heart_rate", "value": 52},
+            {"metric": "hrv", "value": 56.4},
+            {"metric": "avg_sleep_hours", "value": 6.7},
+        ]
+
+        result = self._fetch_persona_with_payload("garmin", payload)
+
+        self.assertTrue(result["ok"], result)
+        profile = profile_backend.get_profile().to_dict()
+        self.assertEqual(profile["hrv_baseline"], 56.4)
+        self.assertEqual(profile["recent_hrv"], 56.4)
+        self.assertEqual(profile["hrv_7d_avg"], 56.4)
+        self.assertEqual(profile["resting_hr"], 52)
+        self.assertEqual(profile["recent_resting_hr"], 52)
+        self.assertEqual(profile["resting_hr_7d_avg"], 52)
+
+    def test_persona_dict_maps_7d_recovery_fields(self):
+        payload = {
+            "username": "persona-user",
+            "resting_heart_rate": 51,
+            "hrv": 58.2,
+            "avg_sleep_hours": 7.1,
+        }
+
+        result = self._fetch_coros_persona_with_payload(payload)
+
+        self.assertTrue(result["ok"], result)
+        profile = profile_backend.get_profile().to_dict()
+        self.assertEqual(profile["hrv_baseline"], 58.2)
+        self.assertEqual(profile["recent_hrv"], 58.2)
+        self.assertEqual(profile["hrv_7d_avg"], 58.2)
+        self.assertEqual(profile["resting_hr"], 51)
+        self.assertEqual(profile["recent_resting_hr"], 51)
+        self.assertEqual(profile["resting_hr_7d_avg"], 51)
+
+    def test_recovery_detail_consumes_synced_recent_fields(self):
+        from utils.metrics_calc import RadarScoreEngine
+
+        payload = [
+            {"metric": "username", "value": "garmin-user"},
+            {"metric": "resting_heart_rate", "value": 52},
+            {"metric": "hrv", "value": 56.4},
+            {"metric": "avg_sleep_hours", "value": 6.7},
+        ]
+        result = self._fetch_persona_with_payload("garmin", payload)
+        self.assertTrue(result["ok"], result)
+
+        detail = RadarScoreEngine.score_recovery_detail(
+            profile_backend.get_profile().to_dict(),
+            {"tsb": -5, "atl": 40},
+        )
+
+        self.assertEqual(detail["source"], "hrv_trend")
+        self.assertNotIn("缺少近期 HRV", "；".join(detail["reasons"]))
+        self.assertNotIn("缺少近期静息心率对比", "；".join(detail["reasons"]))
+
+    def test_upsert_profile_persists_recent_recovery_fields(self):
+        profile_backend.upsert_profile({
+            "name": "db-user",
+            "resting_hr": 50,
+            "recent_resting_hr": 53,
+            "resting_hr_7d_avg": 53,
+            "hrv_baseline": 60.0,
+            "recent_hrv": 55.5,
+            "hrv_7d_avg": 55.5,
+            "avg_sleep_hours": 7.2,
+        })
+
+        profile = profile_backend.get_profile().to_dict()
+
+        self.assertEqual(profile["resting_hr"], 50)
+        self.assertEqual(profile["recent_resting_hr"], 53)
+        self.assertEqual(profile["resting_hr_7d_avg"], 53)
+        self.assertEqual(profile["hrv_baseline"], 60.0)
+        self.assertEqual(profile["recent_hrv"], 55.5)
+        self.assertEqual(profile["hrv_7d_avg"], 55.5)
+
     def test_coros_persona_maps_full_training_hub_payload(self):
         payload = {
             "username": "户外大叔MrFang",
@@ -676,6 +756,39 @@ class TestFitSync(unittest.TestCase):
         self.assertGreater(trimp, 0)
         self.assertNotEqual(trimp, default_trimp)
 
+    def test_algorithm_records_prefer_fit_record_distance(self):
+        from metrics_resolver import MetricsResolver
+        from utils.metrics_calc import AdvancedMetricsCalc
+
+        track_data = [
+            {"lat": 30.0, "lon": 104.0, "alt": 100.0, "time": "2026-05-19T00:00:00Z", "distance": 0.0},
+            {"lat": 30.0, "lon": 104.0, "alt": 105.0, "time": "2026-05-19T00:00:30Z", "distance": 75.0},
+            {"lat": 30.0, "lon": 104.0, "alt": 110.0, "time": "2026-05-19T00:01:00Z", "distance": 150.0},
+            {"lat": 30.0, "lon": 104.0, "alt": 115.0, "time": "2026-05-19T00:01:30Z", "distance": 225.0},
+            {"lat": 30.0, "lon": 104.0, "alt": 120.0, "time": "2026-05-19T00:02:00Z", "distance": 300.0},
+        ]
+
+        records = MetricsResolver._convert_track_to_algorithm_records(track_data)
+
+        self.assertEqual(records[-1]["distance"], 300.0)
+        self.assertGreater(AdvancedMetricsCalc.calculate_vam(records), 0)
+
+    def test_algorithm_records_without_distance_keep_legacy_zero_vam_behavior(self):
+        from metrics_resolver import MetricsResolver
+        from utils.metrics_calc import AdvancedMetricsCalc
+
+        track_data = [
+            {"lat": 30.0, "lon": 104.0, "alt": 100.0, "time": "2026-05-19T00:00:00Z"},
+            {"lat": 30.0, "lon": 104.0, "alt": 105.0, "time": "2026-05-19T00:00:30Z"},
+            {"lat": 30.0, "lon": 104.0, "alt": 110.0, "time": "2026-05-19T00:01:00Z"},
+            {"lat": 30.0, "lon": 104.0, "alt": 115.0, "time": "2026-05-19T00:01:30Z"},
+            {"lat": 30.0, "lon": 104.0, "alt": 120.0, "time": "2026-05-19T00:02:00Z"},
+        ]
+
+        records = MetricsResolver._convert_track_to_algorithm_records(track_data)
+
+        self.assertEqual(AdvancedMetricsCalc.calculate_vam(records), 0.0)
+
     def test_pick_and_import_fit_files_uses_batch_import_tracks(self):
         selected = [str(self.temp_dir / "manual.fit")]
         fake_window = mock.Mock()
@@ -690,7 +803,11 @@ class TestFitSync(unittest.TestCase):
             result = self.api.pick_and_import_fit_files()
 
         self.assertTrue(result["ok"], result)
-        import_mock.assert_called_once_with(selected)
+        import_mock.assert_called_once()
+        args, kwargs = import_mock.call_args
+        self.assertEqual(args, (selected,))
+        self.assertIn("progress_callback", kwargs)
+        self.assertTrue(callable(kwargs["progress_callback"]))
         chat_mock.assert_not_called()
 
     def test_parse_fit_activity_for_sync_defers_region_enrichment(self):
@@ -795,6 +912,49 @@ class TestFitSync(unittest.TestCase):
         self.assertEqual(activity["normalized_power"], 254)
         self.assertEqual(activity["avg_power"], 239)
         self.assertEqual(activity["max_power"], 402)
+
+    def test_parse_fit_activity_for_sync_computes_vam_from_fit_distance(self):
+        fit_path = self.temp_dir / "climb.fit"
+        fit_path.write_bytes(b"fit")
+        climb_points = [
+            {"lat": 30.0, "lon": 104.0, "alt": 100.0, "time": "2026-05-19T00:00:00Z", "hr": 140, "distance": 0.0},
+            {"lat": 30.0, "lon": 104.0, "alt": 105.0, "time": "2026-05-19T00:00:30Z", "hr": 145, "distance": 75.0},
+            {"lat": 30.0, "lon": 104.0, "alt": 110.0, "time": "2026-05-19T00:01:00Z", "hr": 150, "distance": 150.0},
+            {"lat": 30.0, "lon": 104.0, "alt": 115.0, "time": "2026-05-19T00:01:30Z", "hr": 155, "distance": 225.0},
+            {"lat": 30.0, "lon": 104.0, "alt": 120.0, "time": "2026-05-19T00:02:00Z", "hr": 160, "distance": 300.0},
+        ]
+        fake_core = {
+            "basic_info": {
+                "title": "爬坡骑行",
+                "title_source": "sport_name",
+                "sport": "cycling",
+                "sub_sport": "generic",
+                "start_time": "2026-05-19T08:00:00+08:00",
+                "start_time_utc": "2026-05-19T00:00:00Z",
+                "total_distance_km": 0.3,
+                "total_timer_time": 120,
+                "total_calories": 50,
+                "total_ascent": 20.0,
+                "max_altitude": 120.0,
+                "avg_hr": 150,
+                "max_hr": 160,
+            },
+            "track_data": climb_points,
+            "lap_data": [],
+        }
+
+        with mock.patch.object(main.FITCoreEngine, "parse_fit_file", return_value=fake_core), \
+             mock.patch.object(main.FITCoreEngine, "parse_fit_file_raw", return_value={"raw": {}, "meta": {}}), \
+             mock.patch.object(main.MetricsResolver, "resolve", return_value={"storage_model": {}}), \
+             mock.patch.object(profile_backend, "resolve_activity_region", return_value=""), \
+             mock.patch.object(main, "fetch_historical_weather", return_value=None):
+            activity = main._parse_fit_activity_for_sync(fit_path)
+
+        advanced_metrics = json.loads(activity["advanced_metrics"])
+        stored_points = json.loads(activity["track_json"])
+
+        self.assertGreater(advanced_metrics["vam"], 0)
+        self.assertEqual(stored_points[-1]["distance"], 300.0)
 
     def test_new_fit_sync_persists_canonical_power_and_stroke_distance_contract(self):
         main.ensure_activity_sync_schema()

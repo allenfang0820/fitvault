@@ -166,7 +166,29 @@ class TestHasElevation(unittest.TestCase):
             self.assertTrue(
                 caps["has_elevation"],
                 f"仅 {field}={value} 存在时 has_elevation 应为 True"
-            )
+        )
+
+
+class TestDetailSummaryFields(unittest.TestCase):
+    """验证详情核心卡片依赖的 summary 派生字段完整。"""
+
+    def test_cycling_summary_exposes_avg_speed_mps(self):
+        from main import _build_record_from_row
+
+        api = _FakeApi()
+        row = _make_row(
+            sport_type="cycling",
+            sub_sport_type="generic",
+            dist_km=23.64418,
+            distance=23644.18,
+            duration=2791,
+            duration_sec=2791,
+        )
+        record = _build_record_from_row(api, row, 0)
+
+        summary = record["detail"]["summary"]
+        self.assertIn("avg_speed", summary)
+        self.assertAlmostEqual(summary["avg_speed"], 23644.18 / 2791, places=6)
 
 
 class TestHasPower(unittest.TestCase):

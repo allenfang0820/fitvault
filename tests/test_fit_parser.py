@@ -188,6 +188,37 @@ class TestFitParser(unittest.TestCase):
         self.assertEqual(data.get("start_time_utc"), "2026-05-13T11:07:02Z")
         self.assertEqual(data.get("start_time"), "2026-05-13T19:07:02+08:00")
 
+    def test_fit_track_data_preserves_record_distance_meters(self):
+        class DistanceFitFile:
+            def get_messages(self, kind):
+                if kind != "record":
+                    return iter([])
+                return iter(
+                    [
+                        FakeMessage(
+                            timestamp=datetime(2026, 5, 20, 0, 0, 0),
+                            position_lat=30.0,
+                            position_long=104.0,
+                            altitude=10.0,
+                            distance=0.0,
+                        ),
+                        FakeMessage(
+                            timestamp=datetime(2026, 5, 20, 0, 1, 0),
+                            position_lat=31.0,
+                            position_long=105.0,
+                            altitude=12.0,
+                            distance=1234.5,
+                        ),
+                    ]
+                )
+
+        track_data = fit_engine.FITCoreEngine._read_track_data(DistanceFitFile())
+
+        self.assertEqual(track_data[0]["distance"], 0.0)
+        self.assertEqual(track_data[1]["distance"], 1234.5)
+        for key in ("lat", "lon", "alt", "time", "hr", "pace", "cadence", "power"):
+            self.assertIn(key, track_data[0])
+
     def test_hiking_fit_prefers_human_filename_title(self):
         path = _first_existing(
             [

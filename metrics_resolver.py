@@ -968,6 +968,7 @@ class MetricsResolver:
                 "stroke_style": lap_stroke_style if lap_stroke_style else None,
                 "stroke_distance_m": round(lap_stroke_distance, 2) if lap_stroke_distance else None,
                 "length_distance_m": round(lap_length_distance, 1) if lap_length_distance else None,
+                "source_type": lap.get("source_type") or "fit_sdk",
             })
         return rows
 
@@ -1012,10 +1013,14 @@ class MetricsResolver:
 
             lat = pt.get("lat")
             lon = pt.get("lon")
-            dist_segment = 0.0
-            if lat is not None and lon is not None and prev_lat is not None and prev_lon is not None:
-                dist_segment = track_backend.haversine_m(prev_lat, prev_lon, lat, lon)
-            cumulative_dist += dist_segment
+            raw_distance = MetricsResolver._safe_float(pt.get("distance"))
+            if raw_distance is not None and raw_distance >= 0:
+                cumulative_dist = raw_distance
+            else:
+                dist_segment = 0.0
+                if lat is not None and lon is not None and prev_lat is not None and prev_lon is not None:
+                    dist_segment = track_backend.haversine_m(prev_lat, prev_lon, lat, lon)
+                cumulative_dist += dist_segment
             prev_lat, prev_lon = lat, lon
 
             raw_speed = pt.get("speed")
@@ -1030,6 +1035,7 @@ class MetricsResolver:
                 "altitude": pt.get("altitude") or pt.get("alt"),
                 "distance": cumulative_dist,
                 "power": pt.get("power"),
+                "cadence": pt.get("cadence"),
             })
         return records
 
@@ -1037,6 +1043,7 @@ class MetricsResolver:
     def _compute_advanced_metrics(
         records: list[dict],
         user_profile_dict: dict[str, Any],
+        sport_type: str | None = None,
     ) -> dict[str, Any]:
         """6 维雷达算法:TRIMP / 有氧解耦 / VAM / Threshold HR / Anaerobic Peak。
 
@@ -1047,6 +1054,7 @@ class MetricsResolver:
         Args:
             records: _convert_track_to_algorithm_records 的输出(list of dict)
             user_profile_dict: profile_backend.get_profile().to_dict() 的输出(含可能 None 值的字段)
+            sport_type: 活动运动类型,用于运动专项无氧算法分支
 
         Returns:
             dict 含 trimp/decoupling/vam/threshold_hr/anaerobic_peak, 不含 metrics_version
@@ -1059,15 +1067,36 @@ class MetricsResolver:
         trimp = calc.calculate_trimp(records, user_profile_dict)
         decoupling = calc.calculate_aerobic_decoupling(records)
         vam = calc.calculate_vam(records)
-        threshold_hr = calc.calculate_threshold_hr(records)
-        anaerobic_peak = calc.calculate_anaerobic_peak(records)
-        return {
+        threshold_detail = calc.calculate_threshold_detail(records, sport_type, user_profile_dict)
+        threshold_hr = threshold_detail.get("threshold_hr")
+        anaerobic_detail = calc.calculate_anaerobic_peak_detail(records, sport_type, user_profile_dict)
+        anaerobic_peak = anaerobic_detail.get("value")
+        result = {
             "trimp": trimp,
             "decoupling": decoupling,
             "vam": vam,
             "threshold_hr": threshold_hr,
             "anaerobic_peak": anaerobic_peak,
         }
+        result.update({
+            "threshold_source": threshold_detail.get("source"),
+            "threshold_confidence": threshold_detail.get("confidence"),
+            "threshold_power": threshold_detail.get("threshold_power"),
+            "threshold_wkg": threshold_detail.get("threshold_wkg"),
+            "best_20m_power": threshold_detail.get("best_20m_power"),
+            "best_20m_hr": threshold_detail.get("best_20m_hr"),
+            "anaerobic_peak_source": anaerobic_detail.get("source"),
+            "anaerobic_peak_confidence": anaerobic_detail.get("confidence"),
+            "best_5s_power": anaerobic_detail.get("best_5s_power"),
+            "best_15s_power": anaerobic_detail.get("best_15s_power"),
+            "best_30s_power": anaerobic_detail.get("best_30s_power"),
+            "best_60s_power": anaerobic_detail.get("best_60s_power"),
+            "best_15s_wkg": anaerobic_detail.get("best_15s_wkg"),
+            "best_30s_wkg": anaerobic_detail.get("best_30s_wkg"),
+            "best_60s_wkg": anaerobic_detail.get("best_60s_wkg"),
+            "best_30s_speed": anaerobic_detail.get("best_30s_speed"),
+        })
+        return result
 
     @staticmethod
     def _build_ai_snapshot_block(row: dict[str, Any]) -> dict[str, Any]:
@@ -2333,6 +2362,263 @@ class MetricsResolver:
                 "vertical_ratio_pct": vertical_ratio_pct,
                 "stance_time_balance_pct": stance_time_balance_pct,
             })
+        return result
+
+    # ── V10.0 任务 1:按距离桶聚合逐秒记录(骑行 5km 自动切圈) ──
+    # 见 docs/cycling_auto_laps_plan.md §P0-1
+    #
+    # 契约:fit-arch-contrac §2.2 数据可信分层 / §2.1 字段全链路可追溯
+    #   - 输入:activities.points_json 解码后的逐秒记录(来自 fit_engine._read_track_data)
+    #   - 输出:与 _normalize_laps 同字段结构的圈数据
+    #   - 数据层级:frontend_fallback(由 fit_sdk records 派生,非 canonical,严禁写回)
+    #   - 严禁写回 laps_json(§八 8.3 canonical 只接受 fit_sdk)
+    #   - 严禁进 ai_snapshots(§五 5.3 AI Snapshot 白名单)
+    #
+    # V10.0 R-1 修订:字段命名 source → source_type,与契约 §2.2 层级命名对齐
+    #   - fit_sdk: FIT 真实圈
+    #   - frontend_fallback: 本函数输出(UI 临时推导数据)
+    #   - mock: 测试数据
+    #   - synthetic: AI 生成数据
+    _AUTO_LAP_MIN_BUCKET_M: float = 5000.0
+    _NP_WINDOW_SEC: int = 30
+
+    @staticmethod
+    def _parse_record_time_to_sec(t: Any) -> float:
+        """统一 record.time 字段为秒。
+
+        支持:
+          - float / int(已是秒数,FIT distance 推导的相对秒数)
+          - ISO 字符串(2026-06-26T08:27:44)
+          - datetime 对象
+          - None → 0.0
+        """
+        if t is None:
+            return 0.0
+        if isinstance(t, (int, float)):
+            return float(t)
+        if isinstance(t, str):
+            try:
+                from datetime import datetime
+                normalized = t.strip()
+                if normalized.endswith("Z"):
+                    normalized = normalized[:-1] + "+00:00"
+                return datetime.fromisoformat(normalized).timestamp()
+            except (TypeError, ValueError):
+                return 0.0
+        try:
+            from datetime import datetime as _dt
+            if isinstance(t, _dt):
+                return t.timestamp()
+        except Exception:
+            pass
+        return 0.0
+
+    @staticmethod
+    def _compute_normalized_power(
+        power_values: list[Any],
+        window_sec: int = 30,
+    ) -> int | None:
+        """标准化功率 NP:30s 滚动平均的 4 阶平均。
+
+        §2.1 数据来源契约:输入必须是 fit_sdk record.power,严禁合成。
+        数据不足 window_sec 或全为 None/0 时返回 None。
+        """
+        valid = [MetricsResolver._num(p) for p in power_values if p is not None]
+        valid = [v for v in valid if v > 0]
+        if len(valid) < window_sec:
+            return None
+        rolling_means: list[float] = []
+        for i in range(len(valid) - window_sec + 1):
+            window = valid[i:i + window_sec]
+            rolling_means.append(sum(window) / window_sec)
+        if not rolling_means:
+            return None
+        fourth_power_mean = sum(x ** 4 for x in rolling_means) / len(rolling_means)
+        if fourth_power_mean <= 0:
+            return None
+        return int(round(fourth_power_mean ** 0.25))
+
+    @staticmethod
+    def _interpolate_time_at_distance(records: list[dict[str, Any]], target_distance_m: float) -> float:
+        """在单调 distance records 中按距离线性插值 time。
+
+        仅用于自动切圈边界。距离边界本身是 UI fallback 的分段需要,
+        时间仍来自相邻 FIT record.time 的线性插值,不写回 canonical 数据。
+        """
+        if not records:
+            return 0.0
+        if target_distance_m <= records[0]["distance_m"]:
+            return records[0]["time_sec"]
+        if target_distance_m >= records[-1]["distance_m"]:
+            return records[-1]["time_sec"]
+        prev = records[0]
+        for current in records[1:]:
+            prev_d = prev["distance_m"]
+            current_d = current["distance_m"]
+            if current_d < target_distance_m:
+                prev = current
+                continue
+            prev_t = prev["time_sec"]
+            current_t = current["time_sec"]
+            if current_d <= prev_d:
+                return current_t
+            ratio = (target_distance_m - prev_d) / (current_d - prev_d)
+            return prev_t + (current_t - prev_t) * ratio
+        return records[-1]["time_sec"]
+
+    @staticmethod
+    def _build_synthetic_laps_from_points(
+        points: list[dict[str, Any]],
+        sport_type: str,
+        bucket_m: float = 5000.0,
+    ) -> list[dict[str, Any]]:
+        """按距离桶聚合逐秒记录,生成等效圈数据。
+
+        V10.0 任务 1 实现,仅用于骑行类活动(FIT 只有 1 lap 或 laps_json 为空时)。
+
+        契约:
+          - 纯计算,无 IO(§V4.0 防腐层)
+          - 不写回 canonical DB(§八 8.3)
+          - 输出 source_type="frontend_fallback"(V10.0 R-1 修订,与契约 §2.2 层级命名一致)
+          - 跑步/徒步/游泳等其他运动类型严禁调用(由调用方在 main.py 控制)
+
+        Args:
+            points: 从 activities.points_json / track_json 解码的逐秒记录
+                    必含字段:distance(累积距离,米)、time(秒或ISO)、hr、power、cadence、alt
+            sport_type: 运动类型字符串(仅用于 source 标签,不参与计算)
+            bucket_m: 距离桶大小(米),骑行固定 5000
+
+        Returns:
+            list[dict]: 圈数据,字段结构与 _normalize_laps 完全一致
+                        每项额外带 source_type="frontend_fallback"(V10.0 R-1)
+        """
+        # ── 防御:空数据 ──
+        if not points or len(points) < 2:
+            return []
+
+        # ── 防御:bucket_m 必须为正 ──
+        if bucket_m <= 0:
+            return []
+
+        # ── 清洗为单调累积距离 records ──
+        raw_records: list[dict[str, Any]] = []
+        last_abs_distance: float | None = None
+        first_abs_distance: float | None = None
+        for p in points:
+            if not isinstance(p, dict) or p.get("distance") is None:
+                continue
+            d_abs = MetricsResolver._safe_float(p.get("distance"))
+            if d_abs is None or d_abs < 0:
+                continue
+            if last_abs_distance is not None and d_abs < last_abs_distance:
+                continue
+            if first_abs_distance is None:
+                first_abs_distance = d_abs
+            rel_distance = d_abs - first_abs_distance
+            if rel_distance < 0:
+                continue
+            raw_records.append({
+                "distance_m": rel_distance,
+                "time_sec": MetricsResolver._parse_record_time_to_sec(p.get("time")),
+                "point": p,
+            })
+            last_abs_distance = d_abs
+
+        if len(raw_records) < 2 or raw_records[-1]["distance_m"] <= 0:
+            return []
+
+        total_distance_m = raw_records[-1]["distance_m"]
+
+        # ── 按精确距离边界聚合:0-5km,5-10km,...,剩余段 ──
+        result: list[dict[str, Any]] = []
+        segment_start = 0.0
+        bucket_idx = 0
+        epsilon = 1e-6
+        while segment_start < total_distance_m - epsilon:
+            segment_end = min(segment_start + bucket_m, total_distance_m)
+            distance_m = segment_end - segment_start
+            if distance_m <= 0:
+                break
+
+            # 用时(秒)
+            elapsed_sec = (
+                MetricsResolver._interpolate_time_at_distance(raw_records, segment_end)
+                - MetricsResolver._interpolate_time_at_distance(raw_records, segment_start)
+            )
+            if elapsed_sec < 0:
+                elapsed_sec = 0.0
+
+            segment_records = [
+                r for r in raw_records
+                if segment_start <= r["distance_m"] <= segment_end
+            ]
+            if not segment_records:
+                segment_records = [
+                    r for r in raw_records
+                    if segment_start < r["distance_m"] <= segment_end
+                ]
+            segment_points = [r["point"] for r in segment_records]
+
+            # ── 聚合 hr / power / cadence ──
+            hr_vals = [p.get("hr") for p in segment_points]
+            hr_clean = [MetricsResolver._num(v) for v in hr_vals if v is not None and MetricsResolver._num(v) > 0]
+            avg_hr = int(round(sum(hr_clean) / len(hr_clean))) if hr_clean else None
+            max_hr = int(round(max(hr_clean))) if hr_clean else None
+
+            power_vals = [p.get("power") for p in segment_points]
+            power_clean = [MetricsResolver._num(v) for v in power_vals if v is not None and MetricsResolver._num(v) > 0]
+            avg_power = int(round(sum(power_clean) / len(power_clean))) if power_clean else None
+            max_power = int(round(max(power_clean))) if power_clean else None
+            np_value = MetricsResolver._compute_normalized_power(power_vals, MetricsResolver._NP_WINDOW_SEC)
+
+            cadence_vals = [p.get("cadence") for p in segment_points]
+            cadence_clean = [MetricsResolver._num(v) for v in cadence_vals if v is not None and MetricsResolver._num(v) > 0]
+            avg_cadence = int(round(sum(cadence_clean) / len(cadence_clean))) if cadence_clean else None
+
+            # ── 累计爬升/下降(alt 差分累加) ──
+            total_ascent = 0.0
+            total_descent = 0.0
+            prev_alt = None
+            for p in segment_points:
+                alt_raw = p.get("alt")
+                alt = MetricsResolver._num(alt_raw) if alt_raw is not None else None
+                if alt is None:
+                    continue
+                if prev_alt is not None:
+                    delta = alt - prev_alt
+                    if delta > 0:
+                        total_ascent += delta
+                    elif delta < 0:
+                        total_descent += -delta
+                prev_alt = alt
+
+            # ── 平均速度(米/秒) ──
+            avg_speed_mps = (distance_m / elapsed_sec) if elapsed_sec > 0 else None
+
+            # ── 跳过空桶(防御:distance_m==0 且 elapsed_sec==0) ──
+            # 同时防御:distance 全为 0 时(无有效距离数据)不应输出圈
+            if distance_m == 0:
+                continue
+
+            result.append({
+                "lap_index": bucket_idx,
+                "distance_m": round(distance_m, 2),
+                "elapsed_sec": round(elapsed_sec, 2),
+                "avg_hr": avg_hr,
+                "max_hr": max_hr,
+                "avg_power": avg_power,
+                "max_power": max_power,
+                "normalized_power": np_value,
+                "avg_cadence": avg_cadence,
+                "total_ascent": round(total_ascent, 2),
+                "total_descent": round(total_descent, 2),
+                "total_calories": None,
+                "avg_speed_mps": round(avg_speed_mps, 3) if avg_speed_mps is not None else None,
+                "source_type": "frontend_fallback",  # V10.0 R-1:对齐契约 §2.2 层级命名
+            })
+            segment_start = segment_end
+            bucket_idx += 1
+
         return result
 
     # === V7.9 指标 5:Efficiency Score(21d baseline 归一化) ===

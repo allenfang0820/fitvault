@@ -27,7 +27,7 @@ from fit_engine import FITCoreEngine
 from metrics_resolver import MetricsResolver, SemanticSportsEngine, build_training_effect, _build_environment_challenge_block  # V9.4.0 修复 NameError:build_training_effect 已在 metrics_resolver.py:2760 定义, 此处补 import;V_ENV.1.16:补 _build_environment_challenge_block
 
 DEBUG_MODE = False
-APP_VERSION = "V1.0.1"
+APP_VERSION = "V1.0.4"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -45,14 +45,21 @@ APP_ICON_FILENAME = "assets/app_icon.icns"
 
 # ─── Managed Workspace ───────────────────────────────────────────
 CURRENT_SCHEMA_VERSION = 2
-CURRENT_METRICS_VERSION = 4  # v4: 修复 VAM 平路海拔噪声 + 雷达 90 天 VAM 聚合可信度过滤
+CURRENT_METRICS_VERSION = 6  # v6: P1-P4 雷达解释字段与评分上下文升级
 # v3 → v4 变更要点(2026-Q2):
 # 1) calculate_vam 重写为"有效爬坡段"算法(rolling median + 段级过滤),
 #    消除 1m/5s 海拔噪声被算成 720 m/h 的根因。
 # 2) _rolling_aggregate_radar_metrics 增加 _is_valid_vam_activity 过滤
 #    (cycling/road/mtb/running ≥ 20m@1km, trail_running ≥ 30m, hiking ≥ 50m),
 #    避免 gain_m=0/4/5m 的通勤旧 VAM 污染雷达图。
-# 触发条件:历史 advanced_metrics.metrics_version < 4 → 由
+# v4 → v5 变更要点(2026-Q2):
+# 1) 骑行无氧优先使用 5/15/30/60s 功率与 W/kg。
+# 2) 无功率时速度 fallback 只做低可信度样本,雷达评分封顶。
+# v5 → v6 变更要点(2026-Q2):
+# 1) endurance detail / confidence / source / sample_count 参与雷达解释。
+# 2) radar.dimensions 透传 confidence/source/sample_count/reason 元信息。
+# 3) stability/climbing/threshold/anaerobic 的 source/confidence 参与聚合解释。
+# 触发条件:历史 advanced_metrics.metrics_version < 6 → 由
 # api_force_rebuild_radar_data / rebuild_advanced_metrics_for_all_activities 强制清洗重建。
 WORKSPACE_ROOT = os.path.abspath(os.path.expanduser("~/.fitvault/workspace/"))
 TRACKS_DIR = os.path.abspath(os.path.expanduser("~/.fitvault/workspace/tracks/"))
@@ -148,6 +155,10 @@ LIST_POWER_ELIGIBLE_TYPES: frozenset[str] = frozenset({
     "cycling", "road_cycling", "mountain_biking", "indoor_cycling",
 })
 
+CYCLING_REVIEW_TYPES: frozenset[str] = frozenset({
+    "cycling", "road_cycling", "mountain_biking", "indoor_cycling",
+})
+
 IRRELEVANT_LIST_METRICS: dict[str, frozenset[str]] = {
     "cardio": frozenset({"distance", "pace"}),
     "strength_training": frozenset({"distance", "pace"}),
@@ -159,6 +170,9 @@ IRRELEVANT_LIST_METRICS: dict[str, frozenset[str]] = {
 }
 
 # V9.4.5:圈速表列规则真理源(后端决定,前端只消费 detail.lap_columns)
+# V10.0 P1-1:骑行类活动圈表升级为 9 列,字段对齐自动切圈 P0-1 输出
+#   圈号 + 圈距离 + 圈用时 + 平均速度 + 平均心率 + 平均功率 + 最大功率 + NP + 累计爬升
+#   跑步/徒步/室内骑行/游泳等运动类型严禁变更(V10.0 §P1-1 约束)
 LAP_COLUMN_PRESETS: dict[str, list[str]] = {
     "running": ["avg_pace", "avg_hr", "cadence", "gct", "power"],
     "treadmill_running": ["avg_pace", "avg_hr", "cadence", "gct", "power"],
@@ -166,9 +180,10 @@ LAP_COLUMN_PRESETS: dict[str, list[str]] = {
     "hiking": ["avg_pace", "avg_hr", "max_hr", "ascent", "descent"],
     "mountaineering": ["avg_pace", "avg_hr", "max_hr", "ascent", "descent"],
     "walking": ["avg_pace", "avg_hr", "max_hr", "ascent", "descent"],
-    "cycling": ["avg_pace", "avg_hr", "power", "ascent", "descent"],
-    "road_cycling": ["avg_pace", "avg_hr", "power", "ascent", "descent"],
-    "mountain_biking": ["avg_pace", "avg_hr", "power", "ascent", "descent"],
+    # V10.0 P1-1:户外骑行升级为 9 列
+    "cycling": ["lap_no", "lap_distance_km", "elapsed_sec", "avg_speed_kmh", "avg_hr", "avg_power", "max_power", "normalized_power", "total_ascent"],
+    "road_cycling": ["lap_no", "lap_distance_km", "elapsed_sec", "avg_speed_kmh", "avg_hr", "avg_power", "max_power", "normalized_power", "total_ascent"],
+    "mountain_biking": ["lap_no", "lap_distance_km", "elapsed_sec", "avg_speed_kmh", "avg_hr", "avg_power", "max_power", "normalized_power", "total_ascent"],
     "indoor_cycling": ["avg_pace", "avg_hr", "power"],
     "swimming": ["avg_hr", "swolf", "stroke_style", "length_distance"],
     "lap_swimming": ["avg_hr", "swolf", "stroke_style", "length_distance"],
@@ -228,6 +243,15 @@ ZIP_MAX_MEMBERS = 500
 ZIP_MAX_MEMBER_UNCOMPRESSED_BYTES = 100 * 1024 * 1024
 ZIP_MAX_TOTAL_UNCOMPRESSED_BYTES = 1024 * 1024 * 1024
 ZIP_COPY_CHUNK_BYTES = 1024 * 1024
+
+# V10.1 误导入健康数据防护(契约 §2.2 fit_sdk 严格语义:仅运动数据入库)
+# 误导入阈值,命中任一即跳过(走 skipped 通道,不算 error,不动 AI Snapshot)
+# - MIN_FIT_FILE_SIZE_KB: 健康监测/HRV/压力监测等 FIT 通常 < 5 KB
+# - MIN_FIT_DISTANCE_M: 实际运动通常 ≥ 100m,健康数据 distance=0
+# - MIN_FIT_RECORD_COUNT: 运动 record ≥ 30 条(约 30 秒以上)
+MIN_FIT_FILE_SIZE_KB = 5.0
+MIN_FIT_DISTANCE_M = 100.0
+MIN_FIT_RECORD_COUNT = 30
 ZIP_ALLOWED_SUFFIXES = frozenset({".fit"})
 WEATHER_BACKFILL_BATCH_LIMIT = 30
 WEATHER_BACKFILL_RETRY_COOLDOWN_SEC = 6 * 60 * 60
@@ -970,7 +994,7 @@ def _build_fatigue_review_curve_bundle(row: dict[str, Any]) -> dict[str, Any]:
         "hr_curve": [r.get("heart_rate") for r in records],
         "speed_curve_mps": [float(r.get("speed") or 0.0) for r in records],
         "altitude_curve_m": [r.get("altitude") for r in records],
-        "cadence_curve": _safe_json_list(row.get("cadence_curve")) or [],
+        "cadence_curve": [r.get("cadence") for r in records] or _safe_json_list(row.get("cadence_curve")) or [],
         "power_curve": [r.get("power") for r in records],
         "calories": _safe_float(row.get("calories")) or 0.0,
         "duration_sec": _safe_int(row.get("duration_sec") or row.get("duration")) or 0,
@@ -993,12 +1017,17 @@ def _build_fatigue_review_curve_bundle(row: dict[str, Any]) -> dict[str, Any]:
         bundle["profile_weight_kg"] = _safe_float(prof.weight) if prof and prof.weight else None
         bundle["profile_vo2max"] = _safe_float(prof.vo2max) if prof and prof.vo2max else None
         bundle["lactate_threshold_hr"] = _safe_float(prof.lactate_threshold_hr) if prof and prof.lactate_threshold_hr else None
+        bundle["profile_ftp_watts"] = _safe_float(
+            (prof.ftp_watts if prof and prof.ftp_watts else None)
+            or (prof.ftp if prof and prof.ftp else None)
+        )
     except Exception:
         bundle["profile_max_hr"] = None
         bundle["profile_resting_hr"] = None
         bundle["profile_weight_kg"] = None
         bundle["profile_vo2max"] = None
         bundle["lactate_threshold_hr"] = None
+        bundle["profile_ftp_watts"] = None
     return bundle
 
 
@@ -1012,6 +1041,7 @@ def _build_resolved_payload_v81(
         "altitude_curve": [],
         "hr_curve": [],
         "speed_curve": [],
+        "power_curve": [],
         "cadence_curve": [],
         "gap_curve": [],
         "grade_curve": [],
@@ -1163,6 +1193,7 @@ def _build_resolved_payload_v81(
             "altitude_curve": resolver_altitude_curve,
             "hr_curve": resolver_hr_curve,
             "speed_curve": resolver_speed_curve,
+            "power_curve": resolver_power_curve,
             "cadence_curve": resolver_cadence_curve,
             "gap_curve": resolved.get("gap_curve") or [],
             "grade_curve": resolved.get("grade_curve") or [],
@@ -1290,6 +1321,168 @@ def _is_fatigue_review_trusted_pressure_zone(
     )
 
 
+def _is_cycling_review_sport(sport_type: Any) -> bool:
+    return str(sport_type or "").strip().lower() in CYCLING_REVIEW_TYPES
+
+
+def _normalize_cycling_fatigue_zone_contract(zone: dict[str, Any]) -> dict[str, Any]:
+    """Keep cycling zones as review references, not fatigue-collapse claims."""
+    item = dict(zone)
+    item["semantic"] = str(item.get("semantic") or "state_change_reference")
+    item["interpretation"] = str(item.get("interpretation") or "reference_only")
+    item["confidence"] = str(item.get("confidence") or "partial")
+    item["description"] = str(
+        item.get("description")
+        or item.get("reason")
+        or "参考区间：这段状态变化较明显，需结合功率、踏频、心率和地形判断。"
+    )
+    return item
+
+
+def _cycling_signal_status(signals: Any, key: str) -> str:
+    if not isinstance(signals, dict):
+        return "unavailable"
+    signal = signals.get(key)
+    if not isinstance(signal, dict):
+        return "unavailable"
+    status = str(signal.get("status") or "unavailable").strip().lower()
+    return status if status in {"available", "partial", "unavailable"} else "unavailable"
+
+
+def _cycling_zone_indices(zone: dict[str, Any], distance_curve_km: Any) -> list[int]:
+    if not isinstance(distance_curve_km, list) or not distance_curve_km:
+        return []
+    start = _safe_float(zone.get("start_km"), None)
+    end = _safe_float(zone.get("end_km"), None)
+    if start is None or end is None or end <= start:
+        return []
+    indices: list[int] = []
+    for idx, value in enumerate(distance_curve_km):
+        dist = _safe_float(value, None)
+        if dist is not None and start <= dist <= end:
+            indices.append(idx)
+    return indices
+
+
+def _cycling_zone_segment_stats(curves_snapshot: Any, indices: list[int]) -> dict[str, Any]:
+    curves = curves_snapshot if isinstance(curves_snapshot, dict) else {}
+
+    def values(name: str) -> list[Any]:
+        series = curves.get(name)
+        if not isinstance(series, list):
+            return []
+        out: list[float | None] = []
+        for idx in indices:
+            if 0 <= idx < len(series):
+                out.append(_safe_float(series[idx], None))
+        return out
+
+    powers = values("power")
+    speeds = values("speed")
+    grades = values("grade")
+    cadences = values("cadence")
+    hrs = values("hr")
+
+    total = max(len(indices), 1)
+    power_observed = [v for v in powers if v is not None]
+    speed_observed = [v for v in speeds if v is not None]
+    grade_observed = [v for v in grades if v is not None]
+    cadence_observed = [v for v in cadences if v is not None]
+    hr_observed = [v for v in hrs if v is not None]
+
+    low_power_count = sum(1 for v in power_observed if v <= 20)
+    stopped_count = sum(1 for v in speed_observed if v <= 0.8)
+    downhill_count = sum(1 for v in grade_observed if v <= -1.5)
+    zero_cadence_count = sum(1 for v in cadence_observed if v <= 0)
+
+    return {
+        "points_count": len(indices),
+        "power_points_count": len([v for v in power_observed if 0 < v <= 2500]),
+        "hr_points_count": len([v for v in hr_observed if v > 30]),
+        "cadence_points_count": len([v for v in cadence_observed if 0 < v <= 250]),
+        "low_power_ratio": low_power_count / max(len(power_observed), 1) if power_observed else 0.0,
+        "stopped_ratio": stopped_count / max(len(speed_observed), 1) if speed_observed else 0.0,
+        "downhill_ratio": downhill_count / max(len(grade_observed), 1) if grade_observed else 0.0,
+        "zero_cadence_ratio": zero_cadence_count / max(len(cadence_observed), 1) if cadence_observed else 0.0,
+        "coverage_ratio": len(indices) / total,
+    }
+
+
+def _calibrate_cycling_fatigue_zones_for_review(
+    zones: Any,
+    summary: Any,
+    curves_snapshot: Any,
+    cycling_explanation_signals: Any,
+) -> list[dict[str, Any]]:
+    """P14: reduce cycling fatigue-zone overclaims before UI exposure.
+
+    The resolver still emits generic EI-drop windows. For cycling, review zones
+    remain reference intervals unless supported by dedicated explanation signals;
+    coasting, stopping, and downhill-dominant windows are not shown as fatigue.
+    """
+    if not isinstance(zones, list):
+        return []
+    summary = summary if isinstance(summary, dict) else {}
+    curves = curves_snapshot if isinstance(curves_snapshot, dict) else {}
+    distance = curves.get("distance") if isinstance(curves.get("distance"), list) else []
+
+    power_quality = str(summary.get("power_data_quality") or "missing")
+    cadence_quality = str(summary.get("cadence_data_quality") or "missing")
+    has_power = bool(summary.get("power_available")) and power_quality == "available"
+    has_cadence = bool(summary.get("cadence_available")) and cadence_quality == "available"
+    has_hr = bool(curves.get("hr"))
+
+    power_status = _cycling_signal_status(cycling_explanation_signals, "power_retention_signal")
+    aerobic_status = _cycling_signal_status(cycling_explanation_signals, "aerobic_drift_signal")
+    cadence_status = _cycling_signal_status(cycling_explanation_signals, "cadence_signal")
+
+    calibrated: list[dict[str, Any]] = []
+    for zone in zones:
+        if not isinstance(zone, dict):
+            continue
+        item = _normalize_cycling_fatigue_zone_contract(zone)
+        indices = _cycling_zone_indices(item, distance)
+        stats = _cycling_zone_segment_stats(curves, indices)
+
+        if (
+            stats["stopped_ratio"] >= 0.45
+            or (stats["downhill_ratio"] >= 0.45 and stats["low_power_ratio"] >= 0.45)
+            or (stats["downhill_ratio"] >= 0.25 and stats["zero_cadence_ratio"] >= 0.55)
+        ):
+            continue
+
+        reasons: list[str] = []
+        descriptions: list[str] = []
+        if not has_power or power_status != "available":
+            reasons.append(f"power_signal_{power_status}")
+            descriptions.append("功率数据或有效踩踏证据不足，不能判断功率回落。")
+        else:
+            reasons.append("power_signal_available")
+        if not has_hr or aerobic_status != "available":
+            reasons.append(f"aerobic_signal_{aerobic_status}")
+            descriptions.append("心率或功率-心率证据不足，不能判断有氧漂移或心率压力。")
+        else:
+            reasons.append("aerobic_signal_available")
+        if not has_cadence or cadence_status != "available":
+            reasons.append(f"cadence_signal_{cadence_status}")
+            descriptions.append("踏频证据不足时，不判断踩踏组织中断。")
+        else:
+            reasons.append("cadence_signal_available")
+
+        item["semantic"] = "state_change_reference"
+        item["interpretation"] = "reference_only"
+        item["confidence"] = "partial"
+        item["calibration"] = "p14_cycling_reference_zone"
+        item["reasons"] = list(dict.fromkeys((item.get("reasons") or []) + reasons)) if isinstance(item.get("reasons"), list) else reasons
+        item["description"] = (
+            "参考区间：这段状态变化较明显，需结合功率、踏频、心率和地形判断。"
+            + (" " + " ".join(descriptions) if descriptions else " 专项解释以可用的骑行解释信号为准。")
+        )
+        calibrated.append(item)
+
+    return calibrated
+
+
 def _filter_trusted_fatigue_zones_for_review(
     zones: Any,
     sport_type: str,
@@ -1304,7 +1497,10 @@ def _filter_trusted_fatigue_zones_for_review(
             continue
         if not _is_fatigue_review_trusted_pressure_zone(zone, sport_type, total_distance_m):
             continue
-        trusted.append(dict(zone))
+        item = dict(zone)
+        if _is_cycling_review_sport(sport_type):
+            item = _normalize_cycling_fatigue_zone_contract(item)
+        trusted.append(item)
     return trusted
 
 
@@ -1395,13 +1591,31 @@ def _build_fatigue_review_collapse_events(
         )
 
     event_zones = [zone for zone in zones if is_review_fatigue_event_zone(zone)]
+    if _is_cycling_review_sport(sport_type):
+        event_zones = [
+            zone for zone in event_zones
+            if str(zone.get("event_semantic") or "").strip().lower() in {
+                "power_drop",
+                "cadence_interruption",
+                "hr_power_decoupling",
+                "non_fitness_event",
+                "data_insufficient",
+            }
+        ]
     if event_zones:
         first = event_zones[0]
+        first_type = str(first.get("event_semantic") or "FATIGUE_PRESSURE_START")
+        first_title = str(first.get("event_title") or "状态压力开始")
+        first_fallback = (
+            "状态变化参考: 需结合功率、踏频、心率和地形判断"
+            if _is_cycling_review_sport(sport_type)
+            else "状态压力开始: 强度和效率变化都达到转折点门槛"
+        )
         add_event(
-            "FATIGUE_PRESSURE_START",
+            first_type,
             _fatigue_review_zone_trigger_km(first),
-            "状态压力开始",
-            zone_desc(first, "状态压力开始: 强度和效率变化都达到转折点门槛"),
+            first_title,
+            zone_desc(first, first_fallback),
         )
 
         high_levels = {"high", "collapse", "critical", "severe"}
@@ -1671,10 +1885,9 @@ def _merge_fatigue_zones_for_review(
             "end_km": round(end, 2),
             "level": level,
         }
-        for optional_key in ("reason", "description"):
+        for optional_key in ("reason", "description", "semantic", "interpretation", "confidence"):
             if zone.get(optional_key):
                 item[optional_key] = str(zone.get(optional_key))
-                break
         normalized.append(item)
 
     normalized.sort(key=lambda item: (item["start_km"], item["end_km"], item["level"]))
@@ -1694,6 +1907,9 @@ def _merge_fatigue_zones_for_review(
                 previous["reason"] = zone["reason"]
             if not previous.get("description") and zone.get("description"):
                 previous["description"] = zone["description"]
+            for optional_key in ("semantic", "interpretation", "confidence"):
+                if not previous.get(optional_key) and zone.get(optional_key):
+                    previous[optional_key] = zone[optional_key]
             continue
         merged.append(dict(zone))
 
@@ -1838,6 +2054,1676 @@ def _build_fatigue_review_display_meta() -> dict[str, Any]:
     }
 
 
+def _fatigue_review_data_quality(
+    values: Any,
+    min_points: int = 20,
+    axis_len: int | None = None,
+    valid_min: float = 0.0,
+    valid_max: float | None = None,
+    invalid_ratio_threshold: float = 0.2,
+    ignore_below_or_equal_min_for_invalid_ratio: bool = False,
+) -> tuple[bool, int, str]:
+    if not isinstance(values, list) or not values:
+        return False, 0, "missing"
+    if axis_len is not None and axis_len > 0 and len(values) != axis_len:
+        return False, 0, "length_mismatch"
+    count = 0
+    invalid_count = 0
+    observed_count = 0
+    for value in values:
+        num = _safe_float(value, None)
+        if num is None:
+            continue
+        observed_count += 1
+        if num <= valid_min or (valid_max is not None and num > valid_max):
+            if not (ignore_below_or_equal_min_for_invalid_ratio and num <= valid_min):
+                invalid_count += 1
+            continue
+        if num > valid_min:
+            count += 1
+    if observed_count > 0 and invalid_count / observed_count > invalid_ratio_threshold:
+        return False, count, "invalid_values"
+    if count <= 0:
+        return False, 0, "missing"
+    if count < min_points:
+        return False, count, "insufficient_points"
+    return True, count, "available"
+
+
+def _build_fatigue_review_summary(
+    row: dict[str, Any],
+    bundle: dict[str, Any],
+    curves_snapshot: dict[str, Any],
+) -> dict[str, Any]:
+    """Activity-level review summary used by cycling contracts and AI preflight."""
+    power_curve = curves_snapshot.get("power") or bundle.get("power_curve") or []
+    cadence_curve = curves_snapshot.get("cadence") or bundle.get("cadence_curve") or []
+    axis_len = len(curves_snapshot.get("distance") or [])
+    power_available, power_count, power_quality = _fatigue_review_data_quality(
+        power_curve,
+        axis_len=axis_len,
+        valid_min=0.0,
+        valid_max=2500.0,
+    )
+    cadence_available, cadence_count, cadence_quality = _fatigue_review_data_quality(
+        cadence_curve,
+        axis_len=axis_len,
+        valid_min=0.0,
+        valid_max=250.0,
+        ignore_below_or_equal_min_for_invalid_ratio=True,
+    )
+    return {
+        "avg_power": _safe_float(row.get("avg_power"), None),
+        "max_power": _safe_float(row.get("max_power"), None),
+        "normalized_power": _safe_float(row.get("normalized_power"), None),
+        "avg_cadence": _safe_float(row.get("avg_cadence"), None),
+        "duration_sec": _safe_int(row.get("duration_sec") or row.get("duration") or bundle.get("duration_sec") or 0),
+        "power_available": power_available,
+        "cadence_available": cadence_available,
+        "power_points_count": power_count,
+        "cadence_points_count": cadence_count,
+        "power_data_quality": power_quality,
+        "cadence_data_quality": cadence_quality,
+    }
+
+
+def _cycling_power_variability_unavailable(
+    summary: dict[str, Any] | None = None,
+    reason: str = "power data unavailable",
+    confidence: str = "unavailable",
+) -> dict[str, Any]:
+    summary = summary or {}
+    return {
+        "vi": None,
+        "level": "unknown",
+        "confidence": confidence,
+        "avg_power": _safe_float(summary.get("avg_power"), None),
+        "normalized_power": _safe_float(summary.get("normalized_power"), None),
+        "power_points_count": _safe_int(summary.get("power_points_count") or 0),
+        "power_data_quality": str(summary.get("power_data_quality") or "missing"),
+        "reasons": [reason],
+    }
+
+
+def _cycling_pedaling_stability_unavailable(
+    summary: dict[str, Any] | None = None,
+    reason: str = "cadence data unavailable",
+    confidence: str = "unavailable",
+) -> dict[str, Any]:
+    summary = summary or {}
+    return {
+        "score": None,
+        "level": "unknown",
+        "confidence": confidence,
+        "cv": None,
+        "decay_pct": None,
+        "avg_cadence": _safe_float(summary.get("avg_cadence"), None),
+        "cadence_points_count": _safe_int(summary.get("cadence_points_count") or 0),
+        "cadence_data_quality": str(summary.get("cadence_data_quality") or "missing"),
+        "reasons": [reason],
+    }
+
+
+def _cycling_metric_confidence(points_count: int) -> str:
+    if points_count >= 120:
+        return "high"
+    if points_count >= 20:
+        return "medium"
+    if points_count > 0:
+        return "low"
+    return "unavailable"
+
+
+def _build_cycling_power_variability_metric(summary: dict[str, Any]) -> dict[str, Any]:
+    """P3 cycling metric: VI = normalized_power / avg_power, never recompute NP."""
+    summary = summary or {}
+    quality = str(summary.get("power_data_quality") or "missing")
+    points_count = _safe_int(summary.get("power_points_count") or 0)
+    if quality != "available":
+        return _cycling_power_variability_unavailable(
+            summary,
+            reason=f"power data unavailable: {quality}",
+        )
+
+    avg_power = _safe_float(summary.get("avg_power"), None)
+    normalized_power = _safe_float(summary.get("normalized_power"), None)
+    if avg_power is None or avg_power <= 0:
+        return _cycling_power_variability_unavailable(
+            summary,
+            reason="missing avg_power",
+            confidence="low" if points_count > 0 else "unavailable",
+        )
+    if normalized_power is None or normalized_power <= 0:
+        return _cycling_power_variability_unavailable(
+            summary,
+            reason="missing normalized_power",
+            confidence="low" if points_count > 0 else "unavailable",
+        )
+
+    vi = round(normalized_power / avg_power, 2)
+    if vi < 1.05:
+        level = "good"
+    elif vi < 1.15:
+        level = "moderate"
+    elif vi < 1.30:
+        level = "variable"
+    else:
+        level = "surging"
+
+    return {
+        "vi": vi,
+        "level": level,
+        "confidence": _cycling_metric_confidence(points_count),
+        "avg_power": avg_power,
+        "normalized_power": normalized_power,
+        "power_points_count": points_count,
+        "power_data_quality": quality,
+        "reasons": [],
+    }
+
+
+def _build_cycling_pedaling_stability_metric(
+    summary: dict[str, Any],
+    cadence_curve: list[Any],
+) -> dict[str, Any]:
+    """P3 cycling metric: conservative cadence stability from same-axis cadence curve."""
+    summary = summary or {}
+    quality = str(summary.get("cadence_data_quality") or "missing")
+    points_count = _safe_int(summary.get("cadence_points_count") or 0)
+    if quality != "available":
+        return _cycling_pedaling_stability_unavailable(
+            summary,
+            reason=f"cadence data unavailable: {quality}",
+        )
+    if not isinstance(cadence_curve, list):
+        return _cycling_pedaling_stability_unavailable(
+            summary,
+            reason="cadence curve unavailable",
+        )
+
+    values = []
+    for value in cadence_curve:
+        num = _safe_float(value, None)
+        if num is not None and 0 < num <= 250:
+            values.append(num)
+    if len(values) < 20:
+        return _cycling_pedaling_stability_unavailable(
+            summary,
+            reason="cadence data unavailable: insufficient_points",
+            confidence="low" if values else "unavailable",
+        )
+
+    mean_value = sum(values) / len(values)
+    if mean_value <= 0:
+        return _cycling_pedaling_stability_unavailable(
+            summary,
+            reason="cadence mean unavailable",
+        )
+    variance = sum((value - mean_value) ** 2 for value in values) / len(values)
+    cv = variance ** 0.5 / mean_value
+
+    midpoint = len(values) // 2
+    head_values = values[:midpoint]
+    tail_values = values[midpoint:]
+    head_avg = sum(head_values) / len(head_values) if head_values else 0.0
+    tail_avg = sum(tail_values) / len(tail_values) if tail_values else 0.0
+    decay_pct = ((tail_avg - head_avg) / head_avg * 100.0) if head_avg > 0 else 0.0
+
+    cv_penalty = min(45.0, cv * 300.0)
+    decay_penalty = min(35.0, abs(decay_pct) * 1.5)
+    score = round(max(0.0, min(100.0, 100.0 - cv_penalty - decay_penalty)), 1)
+    if score >= 80:
+        level = "good"
+    elif score >= 60:
+        level = "moderate"
+    elif score >= 40:
+        level = "unstable"
+    else:
+        level = "poor"
+
+    return {
+        "score": score,
+        "level": level,
+        "confidence": _cycling_metric_confidence(points_count),
+        "cv": round(cv, 3),
+        "decay_pct": round(decay_pct, 1),
+        "avg_cadence": _safe_float(summary.get("avg_cadence"), None),
+        "cadence_points_count": points_count,
+        "cadence_data_quality": quality,
+        "reasons": [],
+    }
+
+
+def _cycling_power_efficiency_unavailable(
+    summary: dict[str, Any] | None = None,
+    avg_hr: Any = None,
+    reason: str = "cycling power efficiency unavailable",
+    confidence: str = "unavailable",
+) -> dict[str, Any]:
+    summary = summary or {}
+    return {
+        "score": None,
+        "level": "unknown",
+        "confidence": confidence,
+        "delta_pct": None,
+        "sample_size": 0,
+        "basis": "power_hr",
+        "power_per_hr": None,
+        "avg_power": _safe_float(summary.get("avg_power"), None),
+        "avg_hr": _safe_float(avg_hr, None),
+        "power_data_quality": str(summary.get("power_data_quality") or "missing"),
+        "reasons": [reason],
+    }
+
+
+def _build_cycling_power_efficiency_metric(
+    summary: dict[str, Any],
+    avg_hr: Any,
+) -> dict[str, Any]:
+    """P3b cycling metric: conservative power-per-heart-rate efficiency."""
+    summary = summary or {}
+    quality = str(summary.get("power_data_quality") or "missing")
+    if quality != "available":
+        return _cycling_power_efficiency_unavailable(
+            summary,
+            avg_hr=avg_hr,
+            reason=f"power data unavailable: {quality}",
+        )
+
+    avg_power = _safe_float(summary.get("avg_power"), None)
+    avg_hr_value = _safe_float(avg_hr, None)
+    if avg_power is None or avg_power <= 0:
+        return _cycling_power_efficiency_unavailable(
+            summary,
+            avg_hr=avg_hr,
+            reason="missing avg_power",
+            confidence="low",
+        )
+    if avg_hr_value is None or avg_hr_value <= 0:
+        return _cycling_power_efficiency_unavailable(
+            summary,
+            avg_hr=avg_hr,
+            reason="missing avg_hr",
+            confidence="low",
+        )
+
+    power_per_hr = round(avg_power / avg_hr_value, 3)
+    if power_per_hr < 1.2:
+        score, level = 45, "low"
+    elif power_per_hr < 1.8:
+        score, level = 65, "moderate"
+    elif power_per_hr < 2.5:
+        score, level = 80, "good"
+    else:
+        score, level = 90, "good"
+
+    return {
+        "score": score,
+        "level": level,
+        "confidence": _cycling_metric_confidence(_safe_int(summary.get("power_points_count") or 0)),
+        "delta_pct": None,
+        "sample_size": 0,
+        "basis": "power_hr",
+        "power_per_hr": power_per_hr,
+        "avg_power": avg_power,
+        "avg_hr": avg_hr_value,
+        "power_data_quality": quality,
+        "reasons": [],
+    }
+
+
+def _cycling_power_durability_unavailable(
+    summary: dict[str, Any] | None = None,
+    reason: str = "cycling power durability unavailable",
+    confidence: str = "unavailable",
+) -> dict[str, Any]:
+    summary = summary or {}
+    return {
+        "score": None,
+        "level": "unknown",
+        "confidence": confidence,
+        "head_speed": None,
+        "tail_speed": None,
+        "basis": "power_retention",
+        "head_power": None,
+        "tail_power": None,
+        "power_retention_pct": None,
+        "power_points_count": _safe_int(summary.get("power_points_count") or 0),
+        "power_data_quality": str(summary.get("power_data_quality") or "missing"),
+        "reasons": [reason],
+    }
+
+
+def _build_cycling_power_durability_metric(
+    summary: dict[str, Any],
+    power_curve: list[Any],
+) -> dict[str, Any]:
+    """P3b cycling metric: late-ride power retention from same-axis power curve."""
+    summary = summary or {}
+    quality = str(summary.get("power_data_quality") or "missing")
+    if quality != "available":
+        return _cycling_power_durability_unavailable(
+            summary,
+            reason=f"power data unavailable: {quality}",
+        )
+    if not isinstance(power_curve, list):
+        return _cycling_power_durability_unavailable(
+            summary,
+            reason="power curve unavailable",
+        )
+
+    values = []
+    for value in power_curve:
+        num = _safe_float(value, None)
+        if num is not None and 0 < num <= 2500:
+            values.append(num)
+    if len(values) < 20:
+        return _cycling_power_durability_unavailable(
+            summary,
+            reason="power data unavailable: insufficient_points",
+            confidence="low" if values else "unavailable",
+        )
+
+    midpoint = len(values) // 2
+    head_values = values[:midpoint]
+    tail_values = values[midpoint:]
+    head_power = sum(head_values) / len(head_values) if head_values else 0.0
+    tail_power = sum(tail_values) / len(tail_values) if tail_values else 0.0
+    if head_power <= 0 or tail_power <= 0:
+        return _cycling_power_durability_unavailable(
+            summary,
+            reason="power retention unavailable",
+        )
+
+    retention = round(tail_power / head_power * 100.0, 1)
+    if retention >= 95:
+        score, level = 90, "good"
+    elif retention >= 90:
+        score, level = 78, "moderate"
+    elif retention >= 80:
+        score, level = 62, "dropping"
+    else:
+        score, level = 45, "dropping"
+
+    points_count = _safe_int(summary.get("power_points_count") or len(values))
+    return {
+        "score": score,
+        "level": level,
+        "confidence": _cycling_metric_confidence(points_count),
+        "head_speed": None,
+        "tail_speed": None,
+        "basis": "power_retention",
+        "head_power": round(head_power, 1),
+        "tail_power": round(tail_power, 1),
+        "power_retention_pct": retention,
+        "power_points_count": points_count,
+        "power_data_quality": quality,
+        "reasons": [],
+    }
+
+
+def _build_unavailable_cycling_metrics(summary: dict[str, Any] | None = None) -> dict[str, dict[str, Any]]:
+    return {
+        "power_variability": _cycling_power_variability_unavailable(
+            summary,
+            reason="cycling power metric unavailable for this sport",
+        ),
+        "pedaling_stability": _cycling_pedaling_stability_unavailable(
+            summary,
+            reason="cycling cadence metric unavailable for this sport",
+        ),
+    }
+
+
+def _build_cycling_review_metrics(
+    sport_type: str | None,
+    summary: dict[str, Any],
+    curves_snapshot: dict[str, Any],
+    avg_hr: Any = None,
+) -> dict[str, dict[str, Any]]:
+    if sport_type not in _CYCLING_SPORT_TYPES:
+        return _build_unavailable_cycling_metrics(summary)
+    return {
+        "efficiency": _build_cycling_power_efficiency_metric(summary, avg_hr),
+        "durability": _build_cycling_power_durability_metric(
+            summary,
+            curves_snapshot.get("power") if isinstance(curves_snapshot, dict) else [],
+        ),
+        "power_variability": _build_cycling_power_variability_metric(summary),
+        "pedaling_stability": _build_cycling_pedaling_stability_metric(
+            summary,
+            curves_snapshot.get("cadence") if isinstance(curves_snapshot, dict) else [],
+        ),
+    }
+
+
+def _cycling_format_watts(value: Any) -> str:
+    num = _safe_float(value, None)
+    if num is None:
+        return ""
+    return f"{int(round(num))}W"
+
+
+def _cycling_format_pct(value: Any, digits: int = 1) -> str:
+    num = _safe_float(value, None)
+    if num is None:
+        return ""
+    return f"{num:.{digits}f}%"
+
+
+def _cycling_evidence_display_fields(item: dict[str, Any]) -> dict[str, Any]:
+    item_type = str(item.get("type") or "")
+    hidden = {
+        "power_data_quality",
+        "aerobic_drift_data_quality",
+        "cadence_data_quality",
+        "cycling_pacing_data_quality",
+        "hr_drift_reference",
+        "review_decoupling_reference",
+        "power_retention_metric_reference",
+        "pedaling_stability_metric_reference",
+    }
+    base = {
+        "visibility": "hidden" if item_type in hidden else "visible",
+        "source": "review_snapshot",
+    }
+
+    def fields(label: str, display_value: str, description: str, unit: str = "") -> dict[str, Any]:
+        return {
+            **base,
+            "label": label,
+            "display_value": display_value,
+            "unit": unit,
+            "description": description,
+        }
+
+    if item_type in hidden:
+        return fields("参考依据", "", "该证据仅用于内部解释权重，不直接展示给用户。")
+
+    if item_type == "ride_power_summary":
+        parts = []
+        avg_power = _cycling_format_watts(item.get("avg_power"))
+        normalized_power = _cycling_format_watts(item.get("normalized_power"))
+        max_power = _cycling_format_watts(item.get("max_power"))
+        if avg_power:
+            parts.append(f"平均功率 {avg_power}")
+        if normalized_power:
+            parts.append(f"标准化功率 {normalized_power}")
+        if max_power:
+            parts.append(f"最高功率 {max_power}")
+        return fields("本次功率", " / ".join(parts), "用于判断本次输出强度的功率摘要。", "W")
+
+    if item_type == "personal_ftp":
+        parts = []
+        ftp_watts = _cycling_format_watts(item.get("ftp_watts"))
+        if ftp_watts:
+            parts.append(f"个人 FTP {ftp_watts}")
+        ratio = _safe_float(item.get("normalized_power_to_ftp"), None)
+        if ratio is None:
+            ratio = _safe_float(item.get("avg_power_to_ftp"), None)
+        if ratio is not None:
+            parts.append(f"相对个人阈值约 {int(round(ratio * 100))}%")
+        display = " / ".join(parts)
+        result = fields("相对个人阈值", display, "用个人 FTP 和本次功率摘要判断这次对你来说强不强。", "%")
+        result["source"] = "user_profile"
+        return result
+
+    if item_type == "cycling_aerobic_drift":
+        parts = []
+        decoupling = _cycling_format_pct(item.get("decoupling_pct"), 1)
+        if decoupling:
+            parts.append(f"后半程效率变化 {decoupling}")
+        head_power = _cycling_format_watts(item.get("head_power"))
+        tail_power = _cycling_format_watts(item.get("tail_power"))
+        if head_power and tail_power:
+            parts.append(f"前段 {head_power} / 后段 {tail_power}")
+        head_hr = _safe_float(item.get("head_hr"), None)
+        tail_hr = _safe_float(item.get("tail_hr"), None)
+        if head_hr is not None and tail_hr is not None:
+            parts.append(f"前段心率 {int(round(head_hr))} / 后段 {int(round(tail_hr))} bpm")
+        return fields("功率心率关系", " / ".join(parts), "比较前后段功率和心率关系，判断后半程是否更吃力。")
+
+    if item_type == "effective_pedaling_power_retention":
+        parts = []
+        head_power = _cycling_format_watts(item.get("head_effective_power"))
+        tail_power = _cycling_format_watts(item.get("tail_effective_power"))
+        if head_power and tail_power:
+            parts.append(f"有效踩踏前半 {head_power} / 后半 {tail_power}")
+        retention = _cycling_format_pct(item.get("power_retention_pct"), 1)
+        if retention:
+            parts.append(f"后程保持 {retention}")
+        if not parts and _safe_int(item.get("filtered_points_count") or 0) > 0:
+            parts.append("已排除滑行和停顿影响")
+        return fields("有效踩踏后程", " / ".join(parts), "先排除滑行、停顿和异常片段，再比较前后段功率。")
+
+    if item_type == "cycling_pacing_reference":
+        parts = []
+        head_power = _cycling_format_watts(item.get("head_power"))
+        tail_power = _cycling_format_watts(item.get("tail_power"))
+        if head_power and tail_power:
+            parts.append(f"前半 {head_power} / 后半 {tail_power}")
+        early_delta = _safe_float(item.get("early_to_mid_delta_pct"), None)
+        if early_delta is not None and abs(early_delta) >= 8:
+            parts.append(f"开局相对中段变化 {early_delta:.1f}%")
+        power_cv = _safe_float(item.get("power_cv"), None)
+        if power_cv is not None:
+            parts.append(f"功率波动约 {power_cv * 100:.1f}%")
+        return fields("功率节奏", " / ".join(parts), "观察前段是否过冲、后段是否回落，以及输出是否忽高忽低。")
+
+    if item_type == "cycling_cadence_rhythm":
+        parts = []
+        avg_cadence = _safe_float(item.get("avg_cadence"), None)
+        if avg_cadence is not None:
+            parts.append(f"平均踏频 {avg_cadence:.0f} rpm")
+        cadence_cv = _safe_float(item.get("cadence_cv"), None)
+        if cadence_cv is not None:
+            parts.append(f"踏频波动 {cadence_cv * 100:.1f}%")
+        cadence_drop = _cycling_format_pct(item.get("cadence_drop_pct"), 1)
+        if cadence_drop:
+            parts.append(f"后段踏频变化 {cadence_drop}")
+        zero_ratio = _safe_float(item.get("zero_cadence_ratio"), None)
+        if zero_ratio is not None and zero_ratio >= 0.05:
+            parts.append(f"零踏频占比约 {zero_ratio * 100:.1f}%")
+        return fields("踏频节奏", " / ".join(parts), "观察踩踏是否连续、是否波动大，以及后段节奏是否变散。", "rpm")
+
+    return fields("参考依据", "", "该证据暂不直接展示。")
+
+
+def _decorate_cycling_evidence(evidence: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    decorated: list[dict[str, Any]] = []
+    for item in evidence or []:
+        if not isinstance(item, dict):
+            continue
+        merged = dict(item)
+        display_fields = _cycling_evidence_display_fields(merged)
+        for key, value in display_fields.items():
+            merged.setdefault(key, value)
+        if merged.get("visibility") == "hidden":
+            merged["display_value"] = ""
+        if not str(merged.get("display_value") or "").strip() and merged.get("visibility") == "visible":
+            merged["visibility"] = "hidden"
+        decorated.append(merged)
+    return decorated
+
+
+def _cycling_explanation_signal(
+    status: str,
+    summary: str,
+    reasons: list[str] | None = None,
+    evidence: list[dict[str, Any]] | None = None,
+    level: str = "unknown",
+) -> dict[str, Any]:
+    return {
+        "status": status,
+        "level": level,
+        "summary": summary,
+        "evidence": _decorate_cycling_evidence(evidence),
+        "reasons": reasons or [],
+    }
+
+
+def _build_cycling_intensity_signal(
+    summary: dict[str, Any],
+    profile_ftp_watts: Any = None,
+    profile_weight_kg: Any = None,
+) -> dict[str, Any]:
+    power_quality = str(summary.get("power_data_quality") or "missing")
+    has_power = bool(summary.get("power_available"))
+    avg_power = _safe_float(summary.get("avg_power"), None)
+    normalized_power = _safe_float(summary.get("normalized_power"), None)
+    max_power = _safe_float(summary.get("max_power"), None)
+    points_count = _safe_int(summary.get("power_points_count") or 0)
+    duration_sec = _safe_int(summary.get("duration_sec") or 0)
+    ftp_watts = _safe_float(profile_ftp_watts, None)
+    weight_kg = _safe_float(profile_weight_kg, None)
+
+    evidence: list[dict[str, Any]] = [{
+        "type": "power_data_quality",
+        "power_available": has_power,
+        "power_data_quality": power_quality,
+        "power_points_count": points_count,
+    }]
+    if duration_sec > 0:
+        evidence[0]["duration_sec"] = duration_sec
+    power_facts: dict[str, Any] = {"type": "ride_power_summary"}
+    if avg_power is not None:
+        power_facts["avg_power"] = avg_power
+    if normalized_power is not None:
+        power_facts["normalized_power"] = normalized_power
+    if max_power is not None:
+        power_facts["max_power"] = max_power
+    if len(power_facts) > 1:
+        if not has_power or power_quality != "available":
+            power_facts["visibility"] = "hidden"
+        evidence.append(power_facts)
+
+    if not has_power:
+        reasons = [f"power_data_unavailable:{power_quality}"]
+        if ftp_watts is None or ftp_watts <= 0:
+            reasons.append("missing_ftp")
+        return _cycling_explanation_signal(
+            "unavailable",
+            "缺少可用功率数据，暂不判断本次骑行的个人强度。",
+            reasons,
+        evidence,
+    )
+
+    if power_quality != "available":
+        return _cycling_explanation_signal(
+            "unavailable",
+            "功率数据质量不足，暂不判断本次骑行的个人强度。",
+            [f"power_data_unavailable:{power_quality}"],
+            evidence,
+        )
+
+    if points_count < 60:
+        return _cycling_explanation_signal(
+            "unavailable",
+            "可用功率样本太少，暂不判断本次骑行的个人强度。",
+            ["insufficient_power_points"],
+            evidence,
+        )
+
+    if ftp_watts is None or ftp_watts <= 0:
+        return _cycling_explanation_signal(
+            "unavailable",
+            "缺少个人 FTP，暂不判断本次骑行相对强度。",
+            ["missing_ftp"],
+            evidence,
+        )
+
+    ftp_evidence: dict[str, Any] = {
+        "type": "personal_ftp",
+        "ftp_watts": round(ftp_watts, 1),
+        "source": "user_profile",
+    }
+    if weight_kg is not None and weight_kg > 0:
+        ftp_evidence["weight_kg"] = round(weight_kg, 1)
+    if avg_power is not None and avg_power > 0:
+        ftp_evidence["avg_power_to_ftp"] = round(avg_power / ftp_watts, 3)
+    if normalized_power is not None and normalized_power > 0:
+        ftp_evidence["normalized_power_to_ftp"] = round(normalized_power / ftp_watts, 3)
+
+    reference_power = normalized_power if normalized_power is not None and normalized_power > 0 else avg_power
+    reference_source = "normalized_power" if normalized_power is not None and normalized_power > 0 else "avg_power"
+    if reference_power is None or reference_power <= 0:
+        evidence.append(ftp_evidence)
+        return _cycling_explanation_signal(
+            "unavailable",
+            "缺少可用功率摘要，暂不判断本次骑行的个人强度。",
+            ["missing_power_summary"],
+            evidence,
+        )
+
+    intensity_ratio = reference_power / ftp_watts
+    ftp_evidence["intensity_ratio"] = round(intensity_ratio, 3)
+    ftp_evidence["intensity_basis"] = reference_source
+    evidence.append(ftp_evidence)
+
+    if intensity_ratio < 0.55:
+        level = "recovery"
+        summary_text = "这次骑行相对强度偏恢复，主要是轻刺激。"
+    elif intensity_ratio < 0.75:
+        level = "endurance"
+        summary_text = "这次骑行主要是耐力强度，整体刺激可控。"
+    elif intensity_ratio < 0.90:
+        level = "tempo"
+        summary_text = "这次骑行进入节奏强度，对你来说已经不是轻松骑。"
+    elif intensity_ratio <= 1.05:
+        level = "threshold"
+        summary_text = "这次骑行相对强度接近阈值，对你来说负荷不轻。"
+    else:
+        level = "high_intensity"
+        summary_text = "这次骑行相对强度高于阈值，属于高压力输出。"
+
+    reasons = ["personal_ftp_available", f"intensity_basis:{reference_source}"]
+    return _cycling_explanation_signal("available", summary_text, reasons, evidence, level=level)
+
+
+def _build_cycling_aerobic_drift_signal(
+    summary: dict[str, Any],
+    curves_snapshot: dict[str, Any],
+    metrics: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    def _unavailable_result(reason: str, evidence_item: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "status": "unavailable",
+            "level": "unknown",
+            "reasons": [reason],
+            "evidence": evidence_item,
+        }
+
+    power_quality = str(summary.get("power_data_quality") or "missing")
+    has_power = bool(summary.get("power_available"))
+    power_points_count = _safe_int(summary.get("power_points_count") or 0)
+    hr_curve = curves_snapshot.get("hr") if isinstance(curves_snapshot.get("hr"), list) else []
+    power_curve = curves_snapshot.get("power") if isinstance(curves_snapshot.get("power"), list) else []
+    has_hr = bool(hr_curve)
+    metrics = metrics if isinstance(metrics, dict) else {}
+
+    evidence: list[dict[str, Any]] = [{
+        "type": "aerobic_drift_data_quality",
+        "has_hr": has_hr,
+        "power_available": has_power,
+        "power_data_quality": power_quality,
+        "power_points_count": power_points_count,
+    }]
+
+    hr_drift = metrics.get("hr_drift") if isinstance(metrics.get("hr_drift"), dict) else {}
+    if hr_drift:
+        item: dict[str, Any] = {"type": "hr_drift_reference"}
+        for key in ("pct", "level", "confidence"):
+            if key in hr_drift:
+                item[key] = hr_drift.get(key)
+        reasons = hr_drift.get("reasons")
+        if isinstance(reasons, list) and reasons:
+            item["reasons"] = [str(reason) for reason in reasons[:3]]
+        if len(item) > 1:
+            evidence.append(item)
+
+    decoupling = metrics.get("decoupling") if isinstance(metrics.get("decoupling"), dict) else {}
+    if decoupling:
+        item = {"type": "review_decoupling_reference"}
+        for key in ("pct", "level", "confidence"):
+            if key in decoupling:
+                item[key] = decoupling.get(key)
+        if len(item) > 1:
+            evidence.append(item)
+
+    if not has_power:
+        return _cycling_explanation_signal(
+            "unavailable",
+            "缺少可用功率数据，暂不判断本次骑行有氧漂移。",
+            [f"power_data_unavailable:{power_quality}"],
+            evidence,
+        )
+
+    if power_quality != "available":
+        return _cycling_explanation_signal(
+            "unavailable",
+            "功率数据质量不足，暂不判断本次骑行有氧漂移。",
+            [f"power_data_unavailable:{power_quality}"],
+            evidence,
+        )
+
+    if not has_hr:
+        return _cycling_explanation_signal(
+            "unavailable",
+            "缺少心率曲线，暂不判断本次骑行有氧漂移。",
+            ["missing_hr"],
+            evidence,
+        )
+
+    if not power_curve:
+        return _cycling_explanation_signal(
+            "unavailable",
+            "缺少功率曲线，暂不判断本次骑行有氧漂移。",
+            ["missing_power_curve"],
+            evidence,
+        )
+
+    axis_len = min(len(power_curve), len(hr_curve))
+    if axis_len < 40:
+        drift_result = _unavailable_result(
+            "insufficient_power_hr_points",
+            {
+                "type": "cycling_aerobic_drift",
+                "basis": "effective_power_hr_decoupling",
+                "power_data_quality": power_quality,
+                "power_points_count": power_points_count,
+                "effective_points_count": 0,
+                "filtered_points_count": axis_len,
+                "filter_reasons": ["insufficient_points"],
+            },
+        )
+        evidence.append(drift_result["evidence"])
+        return _cycling_explanation_signal(
+            "unavailable",
+            "功率与心率有效样本不足，暂不判断本次骑行有氧漂移。",
+            drift_result["reasons"],
+            evidence,
+        )
+
+    if len(power_curve) != len(hr_curve):
+        length_evidence = {
+            "type": "cycling_aerobic_drift",
+            "basis": "effective_power_hr_decoupling",
+            "power_data_quality": power_quality,
+            "power_points_count": power_points_count,
+            "effective_points_count": 0,
+            "filtered_points_count": max(len(power_curve), len(hr_curve)),
+            "filter_reasons": ["curve_length_mismatch"],
+        }
+        evidence.append(length_evidence)
+        return _cycling_explanation_signal(
+            "unavailable",
+            "功率与心率曲线无法稳定对齐，暂不判断本次骑行有氧漂移。",
+            ["curve_length_mismatch"],
+            evidence,
+        )
+
+    speed_curve = curves_snapshot.get("speed") if isinstance(curves_snapshot.get("speed"), list) else []
+    if len(speed_curve) != axis_len:
+        speed_curve = []
+    time_curve = curves_snapshot.get("time") if isinstance(curves_snapshot.get("time"), list) else []
+    if len(time_curve) != axis_len:
+        time_curve = []
+
+    avg_power = _safe_float(summary.get("avg_power"), None)
+    power_threshold = max(30.0, (avg_power * 0.2) if avg_power and avg_power > 0 else 30.0)
+    midpoint = axis_len // 2
+    head_power_values: list[float] = []
+    head_hr_values: list[float] = []
+    tail_power_values: list[float] = []
+    tail_hr_values: list[float] = []
+    filtered_points_count = 0
+    filter_reasons: list[str] = []
+    prev_time: float | None = None
+
+    for idx in range(axis_len):
+        current_time = _safe_float(time_curve[idx], None) if time_curve else None
+        reason = None
+        power = _safe_float(power_curve[idx], None)
+        hr = _safe_float(hr_curve[idx], None)
+        if power is None:
+            reason = "invalid_power"
+        elif power > 2500:
+            reason = "abnormal_power"
+        elif power <= power_threshold:
+            reason = "coasting"
+        elif hr is None:
+            reason = "invalid_hr"
+        elif hr < 35 or hr > 230:
+            reason = "abnormal_hr"
+
+        if reason is None and speed_curve:
+            speed = _safe_float(speed_curve[idx], None)
+            if speed is not None and speed <= 1.0:
+                reason = "stopped"
+
+        if reason is None and time_curve:
+            if current_time is None:
+                reason = "time_gap"
+            elif prev_time is not None:
+                delta = current_time - prev_time
+                if delta <= 0 or delta > 30:
+                    reason = "time_gap"
+
+        if current_time is not None:
+            prev_time = current_time
+
+        if reason is not None:
+            filtered_points_count += 1
+            if reason not in filter_reasons:
+                filter_reasons.append(reason)
+            continue
+
+        if idx < midpoint:
+            head_power_values.append(float(power))
+            head_hr_values.append(float(hr))
+        else:
+            tail_power_values.append(float(power))
+            tail_hr_values.append(float(hr))
+
+    effective_count = len(head_power_values) + len(tail_power_values)
+    if len(head_power_values) < 20 or len(tail_power_values) < 20:
+        evidence.append({
+            "type": "cycling_aerobic_drift",
+            "basis": "effective_power_hr_decoupling",
+            "power_data_quality": power_quality,
+            "power_points_count": power_points_count,
+            "effective_points_count": effective_count,
+            "head_effective_points_count": len(head_power_values),
+            "tail_effective_points_count": len(tail_power_values),
+            "filtered_points_count": filtered_points_count,
+            "filter_reasons": filter_reasons or ["insufficient_points"],
+            "power_threshold_watts": round(power_threshold, 1),
+        })
+        return _cycling_explanation_signal(
+            "unavailable",
+            "功率与心率有效样本不足，暂不判断本次骑行有氧漂移。",
+            ["insufficient_power_hr_points"],
+            evidence,
+        )
+
+    head_power = sum(head_power_values) / len(head_power_values)
+    tail_power = sum(tail_power_values) / len(tail_power_values)
+    head_hr = sum(head_hr_values) / len(head_hr_values)
+    tail_hr = sum(tail_hr_values) / len(tail_hr_values)
+    if head_power <= 0 or tail_power <= 0 or head_hr <= 0 or tail_hr <= 0:
+        evidence.append({
+            "type": "cycling_aerobic_drift",
+            "basis": "effective_power_hr_decoupling",
+            "power_data_quality": power_quality,
+            "power_points_count": power_points_count,
+            "effective_points_count": effective_count,
+            "filtered_points_count": filtered_points_count,
+            "filter_reasons": filter_reasons,
+        })
+        return _cycling_explanation_signal(
+            "unavailable",
+            "功率与心率关系无法稳定计算，暂不判断本次骑行有氧漂移。",
+            ["power_hr_ratio_unavailable"],
+            evidence,
+        )
+
+    head_power_per_hr = head_power / head_hr
+    tail_power_per_hr = tail_power / tail_hr
+    decoupling_pct = (head_power_per_hr - tail_power_per_hr) / head_power_per_hr * 100.0
+    decoupling_pct = round(decoupling_pct, 1)
+    if decoupling_pct <= 5.0:
+        level = "stable"
+        summary_text = "后半程功率与心率关系保持稳定，暂未看到明显有氧漂移。"
+    elif decoupling_pct <= 10.0:
+        level = "mild_drift"
+        summary_text = "后半程同等心率下的功率略有下降，出现轻微有氧漂移。"
+    else:
+        level = "significant_drift"
+        summary_text = "后半程功率与心率关系明显分离，有氧漂移较明显。"
+
+    confidence = "high" if effective_count >= 180 else "medium" if effective_count >= 80 else "low"
+    evidence.append({
+        "type": "cycling_aerobic_drift",
+        "basis": "effective_power_hr_decoupling",
+        "head_power": round(head_power, 1),
+        "tail_power": round(tail_power, 1),
+        "head_hr": round(head_hr, 1),
+        "tail_hr": round(tail_hr, 1),
+        "head_power_per_hr": round(head_power_per_hr, 3),
+        "tail_power_per_hr": round(tail_power_per_hr, 3),
+        "decoupling_pct": decoupling_pct,
+        "effective_points_count": effective_count,
+        "head_effective_points_count": len(head_power_values),
+        "tail_effective_points_count": len(tail_power_values),
+        "filtered_points_count": filtered_points_count,
+        "filter_reasons": filter_reasons,
+        "power_threshold_watts": round(power_threshold, 1),
+        "power_data_quality": power_quality,
+        "confidence": confidence,
+    })
+    return _cycling_explanation_signal(
+        "available" if confidence != "low" else "partial",
+        summary_text,
+        ["effective_power_hr_decoupling"],
+        evidence,
+        level=level,
+    )
+
+
+def _build_effective_pedaling_power_retention(
+    summary: dict[str, Any],
+    curves_snapshot: dict[str, Any],
+) -> dict[str, Any]:
+    """P3: compare front/back power after filtering coasting, stops, and time gaps."""
+    summary = summary if isinstance(summary, dict) else {}
+    curves_snapshot = curves_snapshot if isinstance(curves_snapshot, dict) else {}
+    quality = str(summary.get("power_data_quality") or "missing")
+    has_power = bool(summary.get("power_available"))
+    points_count = _safe_int(summary.get("power_points_count") or 0)
+
+    if not has_power or quality != "available":
+        return {
+            "status": "unavailable",
+            "level": "unknown",
+            "reasons": [f"power_data_unavailable:{quality}"],
+            "evidence": {
+                "type": "effective_pedaling_power_retention",
+                "basis": "effective_pedaling_power",
+                "power_data_quality": quality,
+                "power_points_count": points_count,
+                "effective_power_points_count": 0,
+                "filtered_points_count": 0,
+                "filter_reasons": [],
+            },
+        }
+
+    power_curve = curves_snapshot.get("power") if isinstance(curves_snapshot.get("power"), list) else []
+    axis_len = len(power_curve)
+    if axis_len < 20:
+        return {
+            "status": "unavailable",
+            "level": "unknown",
+            "reasons": ["insufficient_effective_pedaling_points"],
+            "evidence": {
+                "type": "effective_pedaling_power_retention",
+                "basis": "effective_pedaling_power",
+                "power_data_quality": quality,
+                "power_points_count": points_count,
+                "effective_power_points_count": 0,
+                "filtered_points_count": axis_len,
+                "filter_reasons": ["insufficient_points"],
+            },
+        }
+
+    speed_curve = curves_snapshot.get("speed") if isinstance(curves_snapshot.get("speed"), list) else []
+    if len(speed_curve) != axis_len:
+        speed_curve = []
+    time_curve = curves_snapshot.get("time") if isinstance(curves_snapshot.get("time"), list) else []
+    if len(time_curve) != axis_len:
+        time_curve = []
+
+    avg_power = _safe_float(summary.get("avg_power"), None)
+    power_threshold = max(30.0, (avg_power * 0.2) if avg_power and avg_power > 0 else 30.0)
+    midpoint = axis_len // 2
+    head_values: list[float] = []
+    tail_values: list[float] = []
+    filtered_points_count = 0
+    filter_reasons: list[str] = []
+    prev_time: float | None = None
+
+    for idx, raw_power in enumerate(power_curve):
+        current_time = _safe_float(time_curve[idx], None) if time_curve else None
+        reason = None
+        power = _safe_float(raw_power, None)
+        if power is None:
+            reason = "invalid_power"
+        elif power > 2500:
+            reason = "abnormal_power"
+        elif power <= power_threshold:
+            reason = "coasting"
+
+        if reason is None and speed_curve:
+            speed = _safe_float(speed_curve[idx], None)
+            if speed is not None and speed <= 1.0:
+                reason = "stopped"
+
+        if reason is None and time_curve:
+            if current_time is None:
+                reason = "time_gap"
+            elif prev_time is not None:
+                delta = current_time - prev_time
+                if delta <= 0 or delta > 30:
+                    reason = "time_gap"
+
+        if current_time is not None:
+            prev_time = current_time
+
+        if reason is not None:
+            filtered_points_count += 1
+            if reason not in filter_reasons:
+                filter_reasons.append(reason)
+            continue
+
+        if idx < midpoint:
+            head_values.append(float(power))
+        else:
+            tail_values.append(float(power))
+
+    effective_count = len(head_values) + len(tail_values)
+    if len(head_values) < 10 or len(tail_values) < 10:
+        return {
+            "status": "unavailable",
+            "level": "unknown",
+            "reasons": ["insufficient_effective_pedaling_points"],
+            "evidence": {
+                "type": "effective_pedaling_power_retention",
+                "basis": "effective_pedaling_power",
+                "power_data_quality": quality,
+                "power_points_count": points_count,
+                "effective_power_points_count": effective_count,
+                "head_effective_points_count": len(head_values),
+                "tail_effective_points_count": len(tail_values),
+                "filtered_points_count": filtered_points_count,
+                "filter_reasons": filter_reasons or ["insufficient_points"],
+            },
+        }
+
+    head_power = sum(head_values) / len(head_values)
+    tail_power = sum(tail_values) / len(tail_values)
+    if head_power <= 0 or tail_power <= 0:
+        return {
+            "status": "unavailable",
+            "level": "unknown",
+            "reasons": ["effective_power_retention_unavailable"],
+            "evidence": {
+                "type": "effective_pedaling_power_retention",
+                "basis": "effective_pedaling_power",
+                "power_data_quality": quality,
+                "power_points_count": points_count,
+                "effective_power_points_count": effective_count,
+                "filtered_points_count": filtered_points_count,
+                "filter_reasons": filter_reasons,
+            },
+        }
+
+    retention = round(tail_power / head_power * 100.0, 1)
+    if retention >= 95.0:
+        level = "held"
+    elif retention >= 85.0:
+        level = "slight_drop"
+    else:
+        level = "clear_drop"
+
+    confidence = "high" if effective_count >= 120 else "medium" if effective_count >= 40 else "low"
+    return {
+        "status": "available" if confidence != "low" else "partial",
+        "level": level,
+        "reasons": [],
+        "evidence": {
+            "type": "effective_pedaling_power_retention",
+            "basis": "effective_pedaling_power",
+            "head_effective_power": round(head_power, 1),
+            "tail_effective_power": round(tail_power, 1),
+            "power_retention_pct": retention,
+            "effective_power_points_count": effective_count,
+            "head_effective_points_count": len(head_values),
+            "tail_effective_points_count": len(tail_values),
+            "filtered_points_count": filtered_points_count,
+            "filter_reasons": filter_reasons,
+            "power_threshold_watts": round(power_threshold, 1),
+            "power_data_quality": quality,
+            "confidence": confidence,
+        },
+    }
+
+
+def _build_cycling_power_retention_signal(
+    summary: dict[str, Any],
+    curves_snapshot: dict[str, Any],
+    metrics: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    metrics = metrics if isinstance(metrics, dict) else {}
+    result = _build_effective_pedaling_power_retention(summary, curves_snapshot)
+    evidence: list[dict[str, Any]] = []
+    result_evidence = result.get("evidence")
+    if isinstance(result_evidence, dict):
+        evidence.append(result_evidence)
+
+    durability = metrics.get("durability") if isinstance(metrics.get("durability"), dict) else {}
+    if durability.get("basis") == "power_retention":
+        reference: dict[str, Any] = {"type": "power_retention_metric_reference"}
+        for key in (
+            "basis",
+            "head_power",
+            "tail_power",
+            "power_retention_pct",
+            "power_points_count",
+            "power_data_quality",
+        ):
+            if key in durability:
+                reference[key] = durability.get(key)
+        if len(reference) > 1:
+            evidence.append(reference)
+
+    status = str(result.get("status") or "unavailable")
+    level = str(result.get("level") or "unknown")
+    reasons = [str(reason) for reason in (result.get("reasons") or [])]
+
+    if status == "available" or status == "partial":
+        if level == "held":
+            summary_text = "有效踩踏段后半程功率保持稳定。"
+        elif level == "slight_drop":
+            summary_text = "有效踩踏段后半程功率有小幅回落。"
+        elif level == "clear_drop":
+            summary_text = "有效踩踏段后半程功率明显回落。"
+        else:
+            summary_text = "已生成有效踩踏段后程保持参考证据。"
+        return _cycling_explanation_signal(status, summary_text, reasons, evidence, level=level)
+
+    if reasons and reasons[0].startswith("power_data_unavailable:"):
+        summary_text = "缺少可用功率曲线，暂不判断有效踩踏段后程保持。"
+    else:
+        summary_text = "有效踩踏段样本不足，暂不判断后程功率保持。"
+    return _cycling_explanation_signal("unavailable", summary_text, reasons, evidence, level="unknown")
+
+
+def _build_cycling_pacing_signal(
+    summary: dict[str, Any],
+    curves_snapshot: dict[str, Any],
+    metrics: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    summary = summary if isinstance(summary, dict) else {}
+    curves_snapshot = curves_snapshot if isinstance(curves_snapshot, dict) else {}
+    metrics = metrics if isinstance(metrics, dict) else {}
+
+    quality = str(summary.get("power_data_quality") or "missing")
+    has_power = bool(summary.get("power_available"))
+    points_count = _safe_int(summary.get("power_points_count") or 0)
+
+    variability = metrics.get("power_variability") if isinstance(metrics.get("power_variability"), dict) else {}
+    durability = metrics.get("durability") if isinstance(metrics.get("durability"), dict) else {}
+
+    evidence: list[dict[str, Any]] = [{
+        "type": "cycling_pacing_data_quality",
+        "power_available": has_power,
+        "power_data_quality": quality,
+        "power_points_count": points_count,
+    }]
+
+    if not has_power or quality != "available":
+        return _cycling_explanation_signal(
+            "unavailable",
+            "缺少可用功率曲线，暂不判断骑行功率节奏。",
+            [f"power_data_unavailable:{quality}"],
+            evidence,
+        )
+
+    power_curve = curves_snapshot.get("power") if isinstance(curves_snapshot.get("power"), list) else []
+    values: list[float] = []
+    for value in power_curve:
+        power = _safe_float(value, None)
+        if power is not None and 0 < power <= 2500:
+            values.append(power)
+
+    if len(values) < 20:
+        return _cycling_explanation_signal(
+            "unavailable",
+            "功率样本不足，暂不判断骑行功率节奏。",
+            ["insufficient_power_points"],
+            evidence,
+        )
+
+    midpoint = len(values) // 2
+    quarter = max(1, len(values) // 4)
+    head_values = values[:midpoint]
+    tail_values = values[midpoint:]
+    early_values = values[:quarter]
+    mid_values = values[quarter:midpoint] or head_values
+    avg_power = sum(values) / len(values)
+    head_power = sum(head_values) / len(head_values)
+    tail_power = sum(tail_values) / len(tail_values)
+    early_power = sum(early_values) / len(early_values)
+    mid_power = sum(mid_values) / len(mid_values)
+    variance = sum((value - avg_power) ** 2 for value in values) / len(values)
+    power_cv = (variance ** 0.5 / avg_power) if avg_power > 0 else 0.0
+    front_to_tail_delta_pct = ((tail_power - head_power) / head_power * 100.0) if head_power > 0 else 0.0
+    early_to_mid_delta_pct = ((early_power - mid_power) / mid_power * 100.0) if mid_power > 0 else 0.0
+
+    vi = _safe_float(variability.get("vi"), None)
+    power_variability_level = str(variability.get("level") or "unknown")
+    pacing_evidence: dict[str, Any] = {
+        "type": "cycling_pacing_reference",
+        "basis": "power_curve_and_vi",
+        "head_power": round(head_power, 1),
+        "tail_power": round(tail_power, 1),
+        "early_power": round(early_power, 1),
+        "mid_power": round(mid_power, 1),
+        "front_to_tail_delta_pct": round(front_to_tail_delta_pct, 1),
+        "early_to_mid_delta_pct": round(early_to_mid_delta_pct, 1),
+        "power_cv": round(power_cv, 3),
+        "power_points_count": points_count or len(values),
+    }
+    if vi is not None:
+        pacing_evidence["vi"] = round(vi, 2)
+    if power_variability_level:
+        pacing_evidence["power_variability_level"] = power_variability_level
+    if durability.get("power_retention_pct") is not None:
+        pacing_evidence["power_retention_pct"] = durability.get("power_retention_pct")
+    evidence.append(pacing_evidence)
+
+    variable_by_vi = vi is not None and vi >= 1.15
+    variable_by_cv = power_cv >= 0.25
+    front_loaded = early_to_mid_delta_pct >= 10.0 and front_to_tail_delta_pct <= -10.0
+    late_fade = front_to_tail_delta_pct <= -12.0
+    steady = (
+        (vi is None or vi <= 1.08)
+        and power_cv <= 0.15
+        and abs(front_to_tail_delta_pct) <= 8.0
+        and early_to_mid_delta_pct < 10.0
+    )
+
+    if variable_by_vi or variable_by_cv:
+        level = "variable"
+        summary_text = "本次骑行功率输出波动较大。"
+    elif front_loaded:
+        level = "front_loaded"
+        summary_text = "本次骑行前段输出偏高，可能增加后程回落压力。"
+    elif late_fade:
+        level = "late_fade"
+        summary_text = "本次骑行后段功率出现回落。"
+    elif steady:
+        level = "steady"
+        summary_text = "本次骑行功率输出较平稳，未看到明显前段过冲。"
+    else:
+        level = "variable"
+        summary_text = "本次骑行功率节奏有一定波动。"
+
+    return _cycling_explanation_signal("available", summary_text, [], evidence, level=level)
+
+
+def _build_cycling_cadence_signal(
+    summary: dict[str, Any],
+    curves_snapshot: dict[str, Any],
+    metrics: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    summary = summary if isinstance(summary, dict) else {}
+    curves_snapshot = curves_snapshot if isinstance(curves_snapshot, dict) else {}
+    metrics = metrics if isinstance(metrics, dict) else {}
+
+    quality = str(summary.get("cadence_data_quality") or "missing")
+    has_cadence = bool(summary.get("cadence_available"))
+    points_count = _safe_int(summary.get("cadence_points_count") or 0)
+    avg_cadence_summary = _safe_float(summary.get("avg_cadence"), None)
+
+    evidence: list[dict[str, Any]] = [{
+        "type": "cadence_data_quality",
+        "cadence_available": has_cadence,
+        "cadence_data_quality": quality,
+        "cadence_points_count": points_count,
+    }]
+    if avg_cadence_summary is not None and avg_cadence_summary > 0:
+        evidence[0]["avg_cadence"] = round(avg_cadence_summary, 1)
+
+    if not has_cadence or quality != "available":
+        return _cycling_explanation_signal(
+            "unavailable",
+            "缺少可用踏频曲线，暂不判断踩踏节奏。",
+            [f"cadence_data_unavailable:{quality}"],
+            evidence,
+        )
+
+    cadence_curve = curves_snapshot.get("cadence") if isinstance(curves_snapshot.get("cadence"), list) else []
+    axis_len = len(cadence_curve)
+    if axis_len < 20:
+        evidence.append({
+            "type": "cycling_cadence_rhythm",
+            "basis": "effective_cadence_curve",
+            "cadence_data_quality": quality,
+            "cadence_points_count": points_count,
+            "effective_cadence_points_count": 0,
+            "filtered_points_count": axis_len,
+            "filter_reasons": ["insufficient_points"],
+        })
+        return _cycling_explanation_signal(
+            "unavailable",
+            "踏频有效样本不足，暂不判断踩踏节奏。",
+            ["insufficient_cadence_points"],
+            evidence,
+        )
+
+    speed_curve = curves_snapshot.get("speed") if isinstance(curves_snapshot.get("speed"), list) else []
+    if speed_curve and len(speed_curve) != axis_len:
+        evidence.append({
+            "type": "cycling_cadence_rhythm",
+            "basis": "effective_cadence_curve",
+            "cadence_data_quality": quality,
+            "cadence_points_count": points_count,
+            "effective_cadence_points_count": 0,
+            "filtered_points_count": max(axis_len, len(speed_curve)),
+            "filter_reasons": ["curve_length_mismatch"],
+        })
+        return _cycling_explanation_signal(
+            "unavailable",
+            "踏频与速度曲线无法稳定对齐，暂不判断踩踏节奏。",
+            ["curve_length_mismatch"],
+            evidence,
+        )
+
+    power_curve = curves_snapshot.get("power") if isinstance(curves_snapshot.get("power"), list) else []
+    if power_curve and len(power_curve) != axis_len:
+        evidence.append({
+            "type": "cycling_cadence_rhythm",
+            "basis": "effective_cadence_curve",
+            "cadence_data_quality": quality,
+            "cadence_points_count": points_count,
+            "effective_cadence_points_count": 0,
+            "filtered_points_count": max(axis_len, len(power_curve)),
+            "filter_reasons": ["curve_length_mismatch"],
+        })
+        return _cycling_explanation_signal(
+            "unavailable",
+            "踏频与功率曲线无法稳定对齐，暂不判断踩踏节奏。",
+            ["curve_length_mismatch"],
+            evidence,
+        )
+
+    time_curve = curves_snapshot.get("time") if isinstance(curves_snapshot.get("time"), list) else []
+    if time_curve and len(time_curve) != axis_len:
+        evidence.append({
+            "type": "cycling_cadence_rhythm",
+            "basis": "effective_cadence_curve",
+            "cadence_data_quality": quality,
+            "cadence_points_count": points_count,
+            "effective_cadence_points_count": 0,
+            "filtered_points_count": max(axis_len, len(time_curve)),
+            "filter_reasons": ["curve_length_mismatch"],
+        })
+        return _cycling_explanation_signal(
+            "unavailable",
+            "踏频与时间曲线无法稳定对齐，暂不判断踩踏节奏。",
+            ["curve_length_mismatch"],
+            evidence,
+        )
+
+    midpoint = axis_len // 2
+    effective_values: list[float] = []
+    head_values: list[float] = []
+    tail_values: list[float] = []
+    zero_cadence_count = 0
+    filtered_points_count = 0
+    filter_reasons: list[str] = []
+    prev_time: float | None = None
+
+    for idx, raw_cadence in enumerate(cadence_curve):
+        current_time = _safe_float(time_curve[idx], None) if time_curve else None
+        reason = None
+        cadence = _safe_float(raw_cadence, None)
+        if cadence is None:
+            reason = "invalid_cadence"
+        elif cadence <= 0:
+            reason = "zero_cadence"
+            zero_cadence_count += 1
+        elif cadence > 250:
+            reason = "abnormal_cadence"
+
+        if reason is None and speed_curve:
+            speed = _safe_float(speed_curve[idx], None)
+            if speed is not None and speed <= 1.0:
+                reason = "stopped"
+
+        if reason is None and power_curve:
+            power = _safe_float(power_curve[idx], None)
+            if power is not None and power <= 5.0:
+                reason = "coasting"
+        elif reason == "zero_cadence" and power_curve:
+            power = _safe_float(power_curve[idx], None)
+            if power is not None and power <= 5.0 and "coasting" not in filter_reasons:
+                filter_reasons.append("coasting")
+
+        if reason is None and time_curve:
+            if current_time is None:
+                reason = "time_gap"
+            elif prev_time is not None:
+                delta = current_time - prev_time
+                if delta <= 0 or delta > 30:
+                    reason = "time_gap"
+
+        if current_time is not None:
+            prev_time = current_time
+
+        if reason is not None:
+            filtered_points_count += 1
+            if reason not in filter_reasons:
+                filter_reasons.append(reason)
+            continue
+
+        effective_values.append(float(cadence))
+        if idx < midpoint:
+            head_values.append(float(cadence))
+        else:
+            tail_values.append(float(cadence))
+
+    effective_count = len(effective_values)
+    zero_cadence_ratio = zero_cadence_count / axis_len if axis_len > 0 else 0.0
+    if effective_count < 20 or len(head_values) < 10 or len(tail_values) < 10:
+        evidence.append({
+            "type": "cycling_cadence_rhythm",
+            "basis": "effective_cadence_curve",
+            "cadence_data_quality": quality,
+            "cadence_points_count": points_count,
+            "effective_cadence_points_count": effective_count,
+            "head_effective_points_count": len(head_values),
+            "tail_effective_points_count": len(tail_values),
+            "filtered_points_count": filtered_points_count,
+            "filter_reasons": filter_reasons or ["insufficient_points"],
+            "zero_cadence_ratio": round(zero_cadence_ratio, 3),
+        })
+        return _cycling_explanation_signal(
+            "unavailable",
+            "踏频有效样本不足，暂不判断踩踏节奏。",
+            ["insufficient_cadence_points"],
+            evidence,
+        )
+
+    avg_cadence = sum(effective_values) / effective_count
+    head_cadence = sum(head_values) / len(head_values)
+    tail_cadence = sum(tail_values) / len(tail_values)
+    variance = sum((value - avg_cadence) ** 2 for value in effective_values) / effective_count
+    cadence_std = variance ** 0.5
+    cadence_cv = cadence_std / avg_cadence if avg_cadence > 0 else 0.0
+    cadence_drop_pct = ((tail_cadence - head_cadence) / head_cadence * 100.0) if head_cadence > 0 else 0.0
+    low_cadence_count = sum(1 for value in effective_values if value < 70.0)
+    low_cadence_ratio = low_cadence_count / effective_count if effective_count else 0.0
+
+    pedaling = metrics.get("pedaling_stability") if isinstance(metrics.get("pedaling_stability"), dict) else {}
+    pedaling_reference: dict[str, Any] = {"type": "pedaling_stability_metric_reference"}
+    for key in ("score", "level", "confidence", "cv", "decay_pct", "avg_cadence", "cadence_points_count", "cadence_data_quality"):
+        if key in pedaling:
+            pedaling_reference[key] = pedaling.get(key)
+    if len(pedaling_reference) > 1:
+        evidence.append(pedaling_reference)
+
+    confidence = "high" if effective_count >= 180 else "medium" if effective_count >= 80 else "low"
+    cadence_evidence = {
+        "type": "cycling_cadence_rhythm",
+        "basis": "effective_cadence_curve",
+        "avg_cadence": round(avg_cadence, 1),
+        "head_cadence": round(head_cadence, 1),
+        "tail_cadence": round(tail_cadence, 1),
+        "cadence_cv": round(cadence_cv, 3),
+        "cadence_std": round(cadence_std, 1),
+        "cadence_drop_pct": round(cadence_drop_pct, 1),
+        "low_cadence_ratio": round(low_cadence_ratio, 3),
+        "zero_cadence_ratio": round(zero_cadence_ratio, 3),
+        "effective_cadence_points_count": effective_count,
+        "head_effective_points_count": len(head_values),
+        "tail_effective_points_count": len(tail_values),
+        "filtered_points_count": filtered_points_count,
+        "filter_reasons": filter_reasons,
+        "cadence_data_quality": quality,
+        "confidence": confidence,
+    }
+    evidence.append(cadence_evidence)
+
+    if zero_cadence_ratio >= 0.20 or "coasting" in filter_reasons and filtered_points_count / axis_len >= 0.25:
+        level = "interrupted"
+        summary_text = "本次踩踏中断较多，节奏连续性一般。"
+    elif cadence_cv >= 0.12 or cadence_std >= 10.0:
+        level = "variable"
+        summary_text = "本次骑行踏频波动较大，踩踏节奏不够连续。"
+    elif avg_cadence < 72.0 or low_cadence_ratio >= 0.45:
+        level = "low_cadence_bias"
+        summary_text = "本次骑行踏频整体偏低，更像偏力量型输出。"
+    elif cadence_drop_pct <= -10.0:
+        level = "cadence_drop"
+        summary_text = "后半程踏频有所下降，踩踏节奏后段变得不够利落。"
+    else:
+        level = "steady"
+        summary_text = "本次骑行踏频节奏比较稳定，踩踏组织没有明显散掉。"
+
+    return _cycling_explanation_signal(
+        "available" if confidence != "low" else "partial",
+        summary_text,
+        ["effective_cadence_rhythm"],
+        evidence,
+        level=level,
+    )
+
+
+def _build_cycling_explanation_signals(
+    sport_type: str | None,
+    summary: dict[str, Any] | None = None,
+    curves_snapshot: dict[str, Any] | None = None,
+    profile_ftp_watts: Any = None,
+    profile_weight_kg: Any = None,
+    metrics: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Cycling explanation contract; each task only advances its named signal."""
+    summary = summary if isinstance(summary, dict) else {}
+    curves_snapshot = curves_snapshot if isinstance(curves_snapshot, dict) else {}
+    metrics = metrics if isinstance(metrics, dict) else {}
+    if sport_type not in _CYCLING_SPORT_TYPES:
+        unavailable = ["not_cycling_activity"]
+        return {
+            "status": "unavailable",
+            "intensity_signal": _cycling_explanation_signal(
+                "unavailable",
+                "非骑行活动不生成骑行解释信号。",
+                unavailable,
+            ),
+            "aerobic_drift_signal": _cycling_explanation_signal(
+                "unavailable",
+                "非骑行活动不判断骑行有氧漂移。",
+                unavailable,
+            ),
+            "power_retention_signal": _cycling_explanation_signal(
+                "unavailable",
+                "非骑行活动不判断骑行后程功率保持。",
+                unavailable,
+            ),
+            "pacing_signal": _cycling_explanation_signal(
+                "unavailable",
+                "非骑行活动不判断骑行功率节奏。",
+                unavailable,
+            ),
+            "cadence_signal": _cycling_explanation_signal(
+                "unavailable",
+                "非骑行活动不判断骑行踏频解释。",
+                unavailable,
+            ),
+            "evidence": [],
+            "unavailable_reasons": unavailable,
+        }
+
+    power_quality = str(summary.get("power_data_quality") or "missing")
+    cadence_quality = str(summary.get("cadence_data_quality") or "missing")
+    has_power = bool(summary.get("power_available"))
+    has_cadence = bool(summary.get("cadence_available"))
+    has_hr = bool(curves_snapshot.get("hr"))
+    ftp_watts = _safe_float(profile_ftp_watts, None)
+
+    unavailable_reasons: list[str] = []
+    if ftp_watts is None or ftp_watts <= 0:
+        unavailable_reasons.append("missing_ftp")
+    if not has_power:
+        unavailable_reasons.append(f"power_data_unavailable:{power_quality}")
+    if not has_hr:
+        unavailable_reasons.append("missing_hr")
+    if not has_cadence:
+        unavailable_reasons.append(f"cadence_data_unavailable:{cadence_quality}")
+
+    return {
+        "status": "partial",
+        "intensity_signal": _build_cycling_intensity_signal(
+            summary,
+            profile_ftp_watts=ftp_watts,
+            profile_weight_kg=profile_weight_kg,
+        ),
+        "aerobic_drift_signal": _build_cycling_aerobic_drift_signal(
+            summary,
+            curves_snapshot,
+            metrics=metrics,
+        ),
+        "power_retention_signal": _build_cycling_power_retention_signal(
+            summary,
+            curves_snapshot,
+            metrics=metrics,
+        ),
+        "pacing_signal": _build_cycling_pacing_signal(
+            summary,
+            curves_snapshot,
+            metrics=metrics,
+        ),
+        "cadence_signal": _build_cycling_cadence_signal(
+            summary,
+            curves_snapshot,
+            metrics=metrics,
+        ),
+        "evidence": [],
+        "unavailable_reasons": list(dict.fromkeys(unavailable_reasons)),
+    }
+
+
 def _build_fatigue_review_curves_snapshot(
     bundle: dict[str, Any],
     resolved: dict[str, Any],
@@ -1862,6 +3748,8 @@ def _build_fatigue_review_curves_snapshot(
             "hr": [],
             "altitude": [],
             "speed": [],
+            "power": [],
+            "cadence": [],
             "total_distance_m": total_distance_m,
         }
 
@@ -1909,6 +3797,14 @@ def _build_fatigue_review_curves_snapshot(
             axis_len,
         ),
         "speed": speed_curve,
+        "power": _fatigue_review_numeric_curve(
+            resolved.get("power_curve") or bundle.get("power_curve") or [],
+            axis_len,
+        ),
+        "cadence": _fatigue_review_numeric_curve(
+            resolved.get("cadence_curve") or bundle.get("cadence_curve") or [],
+            axis_len,
+        ),
         "total_distance_m": total_distance_m,
     }
 
@@ -2276,7 +4172,7 @@ def _convert_track_to_algorithm_records(track_data: list[dict]) -> list[dict]:
     return MetricsResolver._convert_track_to_algorithm_records(track_data)
 
 
-def _compute_advanced_metrics(track_data: list[dict]) -> dict:
+def _compute_advanced_metrics(track_data: list[dict], sport_type: str | None = None) -> dict:
     """V4.0 治理: IO 隔离，纯计算下沉至 MetricsResolver。
 
     IO 层留在 main.py(profile_backend.get_profile()),
@@ -2287,10 +4183,29 @@ def _compute_advanced_metrics(track_data: list[dict]) -> dict:
         return {}
     prof = profile_backend.get_profile()
     user_profile_dict = prof.to_dict() if prof else {}
-    result = MetricsResolver._compute_advanced_metrics(records, user_profile_dict)
+    result = MetricsResolver._compute_advanced_metrics(records, user_profile_dict, sport_type)
     if result:
         result["metrics_version"] = CURRENT_METRICS_VERSION
     return result
+
+
+def needs_advanced_metrics_rebuild(metrics: dict | str | None) -> bool:
+    """Return True when stored advanced_metrics is missing, invalid, or stale."""
+    if not metrics:
+        return True
+    try:
+        if isinstance(metrics, str):
+            parsed = json.loads(metrics)
+        else:
+            parsed = metrics
+        if not isinstance(parsed, dict):
+            return True
+        version = parsed.get("metrics_version")
+        if version is None:
+            return True
+        return int(float(version)) < CURRENT_METRICS_VERSION
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return True
 
 
 def _resolve_normalized_power_for_sync(
@@ -3309,6 +5224,133 @@ def _p90(values: list[float]) -> float:
     return sorted_vals[lower_idx] * (1 - fraction) + sorted_vals[upper_idx] * fraction
 
 
+_ANAEROBIC_SOURCE_PRIORITY: dict[str, int] = {
+    "power_wkg": 4,
+    "power_w": 3,
+    "speed": 2,
+    "speed_fallback": 1,
+    "legacy": 0,
+}
+
+
+_THRESHOLD_SOURCE_PRIORITY: dict[str, int] = {
+    "ftp_wkg": 3,
+    "ftp_w": 2,
+    "threshold_hr": 1,
+    "legacy": 0,
+}
+
+
+def _normalize_anaerobic_source(source: Any, sport_type: str | None) -> str:
+    token = str(source or "").strip().lower()
+    if token in _ANAEROBIC_SOURCE_PRIORITY:
+        return token
+    if sport_type in _CYCLING_SPORT_TYPES:
+        return "legacy"
+    if sport_type in ("running", "trail_running"):
+        return "speed"
+    return "legacy"
+
+
+def _normalize_threshold_source(source: Any, sport_type: str | None) -> str:
+    token = str(source or "").strip().lower()
+    if token in _THRESHOLD_SOURCE_PRIORITY:
+        return token
+    if sport_type in _CYCLING_SPORT_TYPES:
+        return "legacy"
+    return "threshold_hr"
+
+
+def _climbing_confidence(sample_count: int) -> str:
+    if sample_count >= 6:
+        return "high"
+    if sample_count >= 3:
+        return "medium"
+    return "low"
+
+
+_STABILITY_SPORT_TYPES: frozenset[str] = frozenset({
+    "running",
+    "trail_running",
+    "treadmill_running",
+    "cycling",
+    "road_cycling",
+    "mountain_biking",
+    "hiking",
+    "walking",
+    "mountaineering",
+})
+
+
+def _stability_confidence(sample_count: int) -> str:
+    if sample_count >= 5:
+        return "high"
+    if sample_count >= 3:
+        return "medium"
+    return "low"
+
+
+def _is_truthy_metric(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y"}
+    return False
+
+
+def _is_valid_stability_activity(row: dict, sport_type: str | None, metrics: dict) -> bool:
+    """Pa:Hr stability only trusts steady aerobic samples."""
+    sport = str(sport_type or "").strip().lower()
+    if sport not in _STABILITY_SPORT_TYPES:
+        return False
+
+    decoupling = _safe_float(metrics.get("decoupling"), None)
+    if decoupling is None or decoupling < -20 or decoupling > 50:
+        return False
+
+    duration_sec = _safe_float(row.get("duration_sec"), 0.0)
+    if duration_sec <= 0:
+        duration_sec = _safe_float(row.get("duration"), 0.0)
+    min_duration = 3600.0 if sport in {"hiking", "walking", "mountaineering"} else 2400.0
+    if duration_sec < min_duration:
+        return False
+
+    if _is_truthy_metric(row.get("is_intermittent")) or _is_truthy_metric(metrics.get("is_intermittent")):
+        return False
+    workout_type = str(metrics.get("workout_type") or row.get("workout_type") or "").strip().lower()
+    if any(token in workout_type for token in ("interval", "intervals", "hiit", "fartlek")):
+        return False
+    if _is_truthy_metric(metrics.get("intervals")):
+        return False
+
+    paused_time = _safe_float(metrics.get("paused_time"), None)
+    elapsed_time = _safe_float(metrics.get("elapsed_time"), None)
+    moving_time = _safe_float(metrics.get("moving_time"), None)
+    if paused_time is None and elapsed_time is not None and moving_time is not None:
+        paused_time = max(elapsed_time - moving_time, 0.0)
+    if elapsed_time is None:
+        elapsed_time = duration_sec
+    if paused_time is not None and elapsed_time and elapsed_time > 0:
+        if paused_time / elapsed_time > 0.15:
+            return False
+
+    dist_km = _safe_float(row.get("dist_km"), 0.0)
+    if dist_km <= 0:
+        dist_m = _safe_float(row.get("distance"), 0.0)
+        if dist_m > 0:
+            dist_km = dist_m / 1000.0
+    gain_m = _safe_float(row.get("gain_m"), 0.0)
+    if dist_km > 0 and gain_m > 0:
+        climb_density = gain_m / dist_km
+        max_density = 80.0 if sport in {"hiking", "walking", "mountaineering"} else 25.0
+        if climb_density > max_density:
+            return False
+
+    return True
+
+
 # 雷达 90 天聚合 VAM 可信度阈值
 # (最小总爬升 m, 最小距离 km)
 # 设计意图:即使单次 calculate_vam 已修复,历史 advanced_metrics 中
@@ -3358,6 +5400,7 @@ def _rolling_aggregate_radar_metrics(sport_type: str | None = None) -> dict:
 
     prof = profile_backend.get_profile()
     hrv_from_profile = prof.hrv_baseline if prof else None
+    profile_dict = prof.to_dict() if prof else {}
 
     conn = profile_backend._conn()
     try:
@@ -3372,7 +5415,7 @@ def _rolling_aggregate_radar_metrics(sport_type: str | None = None) -> dict:
                 rows = conn.execute(
                     f"""
                     SELECT id, start_time_utc, start_time, advanced_metrics,
-                           sport_type, gain_m, dist_km, distance, duration_sec, duration
+                           sport_type, gain_m, dist_km, distance, duration_sec, duration, is_intermittent
                     FROM activities
                     WHERE deleted_at IS NULL
                       AND sport_type IN ({placeholders})
@@ -3387,7 +5430,7 @@ def _rolling_aggregate_radar_metrics(sport_type: str | None = None) -> dict:
                 rows = conn.execute(
                     """
                     SELECT id, start_time_utc, start_time, advanced_metrics,
-                           sport_type, gain_m, dist_km, distance, duration_sec, duration
+                           sport_type, gain_m, dist_km, distance, duration_sec, duration, is_intermittent
                     FROM activities
                     WHERE deleted_at IS NULL
                       AND sport_type = ?
@@ -3402,7 +5445,7 @@ def _rolling_aggregate_radar_metrics(sport_type: str | None = None) -> dict:
             rows = conn.execute(
                 """
                 SELECT id, start_time_utc, start_time, advanced_metrics,
-                       sport_type, gain_m, dist_km, distance, duration_sec, duration
+                       sport_type, gain_m, dist_km, distance, duration_sec, duration, is_intermittent
                 FROM activities
                 WHERE deleted_at IS NULL
                   AND advanced_metrics IS NOT NULL
@@ -3415,14 +5458,23 @@ def _rolling_aggregate_radar_metrics(sport_type: str | None = None) -> dict:
         conn.close()
 
     vam_values = []
-    threshold_hr_values = []
-    anaerobic_peak_values = []
+    climbing_gain_values = []
+    climbing_distance_values = []
+    climbing_duration_values = []
+    climbing_power_available_count = 0
+    climbing_elevation_activity_count = 0
+    threshold_values_by_source: dict[str, list[float]] = {}
+    anaerobic_peak_values_by_source: dict[str, list[float]] = {}
     decoupling_values = []
 
     ctl = 0.0
     atl = 0.0
     last_date: datetime | None = None
     valid_sample_count = 0
+    latest_metrics_version = 0
+    stale_metrics_count = 0
+    endurance_sample_count = 0
+    endurance_training_dates_28d: set[date] = set()
 
     for row in rows:
         row = dict(row)
@@ -3444,24 +5496,73 @@ def _rolling_aggregate_radar_metrics(sport_type: str | None = None) -> dict:
                 continue
             metrics = json.loads(metrics_str)
             if not isinstance(metrics, dict):
+                stale_metrics_count += 1
                 continue
             valid_sample_count += 1
+            if needs_advanced_metrics_rebuild(metrics):
+                stale_metrics_count += 1
+            try:
+                latest_metrics_version = max(latest_metrics_version, int(float(metrics.get("metrics_version") or 0)))
+            except (TypeError, ValueError):
+                pass
+
+            row_sport_type = row.get("sport_type") or sport_type
+            valid_climb_activity = _is_valid_vam_activity(row, row_sport_type)
+            if valid_climb_activity:
+                climbing_elevation_activity_count += 1
 
             # §任务 2 VAM 可信度过滤:仅真实爬升/距离达标的活动允许 VAM 入聚合
             if "vam" in metrics and metrics["vam"] is not None:
+                vam_value = float(metrics["vam"])
+                if vam_value > 0 and valid_climb_activity:
+                    vam_values.append(vam_value)
+                    gain_m = _safe_float(row.get("gain_m"), 0.0)
+                    dist_km = _safe_float(row.get("dist_km"), 0.0)
+                    if dist_km <= 0:
+                        dist_m = _safe_float(row.get("distance"), 0.0)
+                        if dist_m > 0:
+                            dist_km = dist_m / 1000.0
+                    duration_sec = _safe_float(row.get("duration_sec") or row.get("duration"), 0.0)
+                    if gain_m > 0:
+                        climbing_gain_values.append(gain_m)
+                    if dist_km > 0:
+                        climbing_distance_values.append(dist_km)
+                    if duration_sec > 0:
+                        climbing_duration_values.append(duration_sec)
+                    if row_sport_type in _CYCLING_SPORT_TYPES and any(
+                        _safe_float(metrics.get(key), 0.0) > 0
+                        for key in ("climbing_power_wkg", "climbing_power", "threshold_wkg", "avg_power", "normalized_power", "max_power")
+                    ):
+                        climbing_power_available_count += 1
+            if any(metrics.get(key) is not None for key in ("threshold_hr", "threshold_power", "threshold_wkg")):
                 row_sport_type = row.get("sport_type") or sport_type
-                if _is_valid_vam_activity(row, row_sport_type):
-                    vam_values.append(float(metrics["vam"]))
-            if "threshold_hr" in metrics and metrics["threshold_hr"] is not None:
-                threshold_hr_values.append(float(metrics["threshold_hr"]))
+                source = _normalize_threshold_source(metrics.get("threshold_source"), row_sport_type)
+                threshold_value = None
+                if source == "ftp_wkg":
+                    threshold_value = metrics.get("threshold_wkg")
+                elif source == "ftp_w":
+                    threshold_value = metrics.get("threshold_power")
+                else:
+                    threshold_value = metrics.get("threshold_hr")
+                    source = "threshold_hr" if source == "legacy" and row_sport_type not in _CYCLING_SPORT_TYPES else source
+                if threshold_value is not None:
+                    threshold_values_by_source.setdefault(source, []).append(float(threshold_value))
             if "anaerobic_peak" in metrics and metrics["anaerobic_peak"] is not None:
-                anaerobic_peak_values.append(float(metrics["anaerobic_peak"]))
+                row_sport_type = row.get("sport_type") or sport_type
+                source = _normalize_anaerobic_source(metrics.get("anaerobic_peak_source"), row_sport_type)
+                anaerobic_peak_values_by_source.setdefault(source, []).append(float(metrics["anaerobic_peak"]))
 
             if "decoupling" in metrics and metrics["decoupling"] is not None:
-                decoupling_values.append(float(metrics["decoupling"]))
+                row_sport_type = row.get("sport_type") or sport_type
+                if _is_valid_stability_activity(row, row_sport_type, metrics):
+                    decoupling_values.append(float(metrics["decoupling"]))
 
             trimp = float(metrics.get("trimp") or 0.0)
             if trimp > 0:
+                endurance_sample_count += 1
+                duration_sec = _safe_float(row.get("duration_sec") or row.get("duration"))
+                if age_days <= 28 and duration_sec >= 600:
+                    endurance_training_dates_28d.add(dt.astimezone().date())
                 if last_date is None:
                     ctl = trimp / 42.0
                     atl = trimp / 7.0
@@ -3475,15 +5576,48 @@ def _rolling_aggregate_radar_metrics(sport_type: str | None = None) -> dict:
             continue
 
     if valid_sample_count == 0:
+        recovery_detail = RadarScoreEngine.score_recovery_detail(
+            profile_dict,
+            {"ctl": 0.0, "atl": 0.0, "tsb": 0.0},
+        )
         return {
             "ctl": 0.0,
             "atl": 0.0,
             "tsb": 0.0,
+            "metrics_version": latest_metrics_version or None,
+            "expected_metrics_version": CURRENT_METRICS_VERSION,
+            "needs_rebuild": stale_metrics_count > 0,
+            "stale_metrics_count": stale_metrics_count,
             "hrv": round(float(hrv_from_profile), 1) if hrv_from_profile is not None else None,
+            "endurance_score": 0,
+            "endurance_ctl_score": 0,
+            "endurance_consistency_score": 0,
+            "endurance_training_days_28d": 0,
+            "endurance_sample_count": 0,
+            "endurance_confidence": "low",
+            "endurance_source": "no_valid_trimp",
+            "recovery_score": recovery_detail.get("score"),
+            "recovery_source": recovery_detail.get("source"),
+            "recovery_confidence": recovery_detail.get("confidence"),
+            "recovery_reasons": recovery_detail.get("reasons"),
             "decoupling": 0.0,
+            "stability_sample_count": 0,
+            "stability_confidence": "low",
             "vam": 0.0,
+            "climbing_activity_count_90d": valid_sample_count,
+            "climbing_elevation_activity_count_90d": climbing_elevation_activity_count,
+            "climbing_sample_count": 0,
+            "climbing_confidence": "low",
             "threshold_hr": 0.0,
+            "threshold_source": None,
+            "threshold_confidence": "low",
+            "threshold_sample_count": 0,
+            "threshold_power": None,
+            "threshold_wkg": None,
             "anaerobic_peak": 0.0,
+            "anaerobic_peak_source": None,
+            "anaerobic_peak_confidence": "low",
+            "anaerobic_sample_count": 0,
             "radar": {"type": sport_type or "running", "dimensions": []},
         }
 
@@ -3496,33 +5630,153 @@ def _rolling_aggregate_radar_metrics(sport_type: str | None = None) -> dict:
 
     # §5 雷达聚合:p90 替代 max 消除异常值主导(审计 §8 / §9.1 P0)
     vam_max = _p90(vam_values)
-    threshold_hr_max = _p90(threshold_hr_values)
-    anaerobic_peak_max = _p90(anaerobic_peak_values)
+    climbing_sample_count = len(vam_values)
+    climbing_confidence = _climbing_confidence(climbing_sample_count)
+    climbing_gain_p90 = _p90(climbing_gain_values)
+    climbing_distance_p90 = _p90(climbing_distance_values)
+    climbing_duration_p90 = _p90(climbing_duration_values)
+    selected_threshold_source = None
+    selected_threshold_values: list[float] = []
+    for source, _priority in sorted(_THRESHOLD_SOURCE_PRIORITY.items(), key=lambda item: item[1], reverse=True):
+        values = threshold_values_by_source.get(source) or []
+        if values:
+            selected_threshold_source = source
+            selected_threshold_values = values
+            break
+    threshold_max = _p90(selected_threshold_values)
+    threshold_hr_max = threshold_max if selected_threshold_source in ("threshold_hr", "legacy") else 0.0
+    threshold_power_max = threshold_max if selected_threshold_source == "ftp_w" else None
+    threshold_wkg_max = threshold_max if selected_threshold_source == "ftp_wkg" else None
+    threshold_confidence = "low"
+    if selected_threshold_source == "ftp_wkg":
+        threshold_confidence = "high"
+    elif selected_threshold_source == "ftp_w":
+        threshold_confidence = "medium"
+    elif selected_threshold_source == "threshold_hr":
+        threshold_confidence = "medium" if sport_type not in _CYCLING_SPORT_TYPES else "low"
+    selected_anaerobic_source = None
+    selected_anaerobic_values: list[float] = []
+    for source, _priority in sorted(_ANAEROBIC_SOURCE_PRIORITY.items(), key=lambda item: item[1], reverse=True):
+        values = anaerobic_peak_values_by_source.get(source) or []
+        if values:
+            selected_anaerobic_source = source
+            selected_anaerobic_values = values
+            break
+    anaerobic_peak_max = _p90(selected_anaerobic_values)
+    anaerobic_confidence = "low"
+    if selected_anaerobic_source == "power_wkg":
+        anaerobic_confidence = "high"
+    elif selected_anaerobic_source == "power_w":
+        anaerobic_confidence = "medium"
+    elif selected_anaerobic_source == "speed":
+        anaerobic_confidence = "medium"
 
     last_5_decoupling = decoupling_values[-5:] if decoupling_values else []
     decoupling_avg = sum(last_5_decoupling) / len(last_5_decoupling) if last_5_decoupling else 0.0
+    stability_sample_count = len(decoupling_values)
+    stability_confidence = _stability_confidence(stability_sample_count)
 
     hrv = float(hrv_from_profile) if hrv_from_profile is not None else 60.0
+    endurance_detail = RadarScoreEngine.score_endurance_detail(
+        ctl,
+        sport_type,
+        len(endurance_training_dates_28d),
+        endurance_sample_count,
+    )
+    recovery_detail = RadarScoreEngine.score_recovery_detail(
+        profile_dict,
+        {"ctl": ctl, "atl": atl, "tsb": tsb},
+    )
 
     max_hr = prof.max_hr if prof and prof.max_hr else 190
-    radar_profile = RadarScoreEngine.build_radar_profile(sport_type or "running", {
+    radar_input = {
         "trimp": ctl,
+        "endurance_score": endurance_detail.get("score"),
+        "endurance_ctl_score": endurance_detail.get("ctl_score"),
+        "endurance_consistency_score": endurance_detail.get("consistency_score"),
+        "endurance_training_days_28d": endurance_detail.get("training_days_28d"),
+        "endurance_sample_count": endurance_detail.get("sample_count"),
+        "endurance_confidence": endurance_detail.get("confidence"),
+        "endurance_source": endurance_detail.get("source"),
         "hrv": hrv,
+        "recovery_score": recovery_detail.get("score"),
+        "recovery_source": recovery_detail.get("source"),
+        "recovery_confidence": recovery_detail.get("confidence"),
         "decoupling": decoupling_avg,
+        "stability_sample_count": stability_sample_count,
+        "stability_confidence": stability_confidence,
         "vam": vam_max,
+        "climbing_vam_p90": vam_max,
+        "climbing_activity_count_90d": valid_sample_count,
+        "climbing_elevation_activity_count_90d": climbing_elevation_activity_count,
+        "climbing_sample_count": climbing_sample_count,
+        "climbing_confidence": climbing_confidence,
+        "climbing_gain_p90": climbing_gain_p90,
+        "climbing_distance_p90": climbing_distance_p90,
+        "climbing_duration_p90": climbing_duration_p90,
+        "climbing_power_available_count": climbing_power_available_count,
         "threshold_hr": threshold_hr_max,
+        "threshold_source": selected_threshold_source,
+        "threshold_confidence": threshold_confidence,
+        "threshold_power": threshold_power_max,
+        "threshold_wkg": threshold_wkg_max,
         "anaerobic_peak": anaerobic_peak_max,
-    }, {"max_hr": max_hr})
+        "anaerobic_peak_source": selected_anaerobic_source,
+        "anaerobic_peak_confidence": anaerobic_confidence,
+    }
+    radar_profile = RadarScoreEngine.build_radar_profile(sport_type or "running", radar_input, {"max_hr": max_hr})
+    climbing_dimension = next(
+        (dim for dim in radar_profile.get("dimensions", []) if dim.get("key") == "climbing"),
+        {},
+    )
 
     return {
         "ctl": round(ctl, 1),
         "atl": round(atl, 1),
         "tsb": round(tsb, 1),
+        "metrics_version": latest_metrics_version or None,
+        "expected_metrics_version": CURRENT_METRICS_VERSION,
+        "needs_rebuild": stale_metrics_count > 0,
+        "stale_metrics_count": stale_metrics_count,
         "hrv": round(hrv, 1),
+        "endurance_score": endurance_detail.get("score"),
+        "endurance_ctl_score": endurance_detail.get("ctl_score"),
+        "endurance_consistency_score": endurance_detail.get("consistency_score"),
+        "endurance_training_days_28d": endurance_detail.get("training_days_28d"),
+        "endurance_sample_count": endurance_detail.get("sample_count"),
+        "endurance_confidence": endurance_detail.get("confidence"),
+        "endurance_source": endurance_detail.get("source"),
+        "recovery_score": recovery_detail.get("score"),
+        "recovery_source": recovery_detail.get("source"),
+        "recovery_confidence": recovery_detail.get("confidence"),
+        "recovery_reasons": recovery_detail.get("reasons"),
         "decoupling": round(decoupling_avg, 2),
+        "stability_sample_count": stability_sample_count,
+        "stability_confidence": stability_confidence,
         "vam": round(vam_max, 1),
+        "climbing_vam_p90": round(vam_max, 1),
+        "climbing_activity_count_90d": valid_sample_count,
+        "climbing_elevation_activity_count_90d": climbing_elevation_activity_count,
+        "climbing_sample_count": climbing_sample_count,
+        "climbing_confidence": climbing_confidence,
+        "climbing_gain_p90": round(climbing_gain_p90, 1),
+        "climbing_distance_p90": round(climbing_distance_p90, 2),
+        "climbing_duration_p90": round(climbing_duration_p90, 1),
+        "climbing_power_available_count": climbing_power_available_count,
+        "climbing_score_cap": climbing_dimension.get("score_cap"),
+        "climbing_score_components": climbing_dimension.get("score_components"),
+        "climbing_reason": climbing_dimension.get("reason"),
+        "climbing_source": climbing_dimension.get("source"),
         "threshold_hr": round(threshold_hr_max, 1),
+        "threshold_source": selected_threshold_source,
+        "threshold_confidence": threshold_confidence,
+        "threshold_sample_count": len(selected_threshold_values),
+        "threshold_power": round(threshold_power_max, 1) if threshold_power_max is not None else None,
+        "threshold_wkg": round(threshold_wkg_max, 2) if threshold_wkg_max is not None else None,
         "anaerobic_peak": round(anaerobic_peak_max, 2),
+        "anaerobic_peak_source": selected_anaerobic_source,
+        "anaerobic_peak_confidence": anaerobic_confidence,
+        "anaerobic_sample_count": len(selected_anaerobic_values),
         "radar": radar_profile,
     }
 
@@ -3709,7 +5963,7 @@ def _parse_fit_activity_for_sync(file_path: Path) -> dict[str, Any]:
         weather_error = None if weather else "weather unavailable"
 
     stat = file_path.stat()
-    advanced_metrics = _compute_advanced_metrics(track_data)
+    advanced_metrics = _compute_advanced_metrics(track_data, payload.get("sport_type") or basic.get("sport"))
     # 规范化 lap 数据:复用 MetricsResolver._normalize_laps 保持字段语义一致
     normalized_laps = MetricsResolver._normalize_laps(raw_laps) if raw_laps else []
     laps_json = json.dumps(normalized_laps, ensure_ascii=False) if normalized_laps else None
@@ -4721,7 +6975,63 @@ def _sync_single_fit_file(file_path: str | Path) -> dict[str, Any]:
         raise FileNotFoundError(f"未找到 FIT 文件: {target}")
     if target.suffix.lower() != ".fit":
         raise ValueError(f"仅支持监控 FIT 文件: {target}")
+
+    # V10.1 健康数据过滤(契约 §2.2 fit_sdk 严格语义)
+    # 在解析前先做文件大小检查,避免对明显是健康监测的小文件做无谓解析
+    try:
+        file_size_kb = target.stat().st_size / 1024
+    except OSError:
+        file_size_kb = 0.0
+    if file_size_kb < MIN_FIT_FILE_SIZE_KB:
+        logger.info(
+            "[V10.1 filter] skip %s: file_size_kb=%.2f < %.2f (疑似健康监测数据)",
+            target.name, file_size_kb, MIN_FIT_FILE_SIZE_KB,
+        )
+        return {
+            "ok": True,
+            "op": "skipped",
+            "reason": "filtered_as_health_data",
+            "filter_reasons": ["file_too_small"],
+            "file_size_kb": round(file_size_kb, 2),
+            "file_path": str(target),
+            "filename": target.name,
+            "activity_id": 0,
+        }
+
     activity = _parse_fit_activity_for_sync(target)
+
+    # V10.1 解析后过滤:距离和记录数(契约 §2.1 全链路可追溯:过滤逻辑在后端边界层)
+    filter_reasons: list[str] = []
+    try:
+        dist_km_val = _safe_float(activity.get("dist_km"))
+    except Exception:
+        dist_km_val = 0.0
+    total_distance_m = (dist_km_val or 0.0) * 1000.0
+    if total_distance_m < MIN_FIT_DISTANCE_M:
+        filter_reasons.append("distance_too_short")
+
+    record_count = len(activity.get("points") or [])
+    if record_count < MIN_FIT_RECORD_COUNT:
+        filter_reasons.append("record_count_too_low")
+
+    if filter_reasons:
+        logger.info(
+            "[V10.1 filter] skip %s: reasons=%s, file_size_kb=%.2f, total_distance_m=%.1f, record_count=%d",
+            target.name, filter_reasons, file_size_kb, total_distance_m, record_count,
+        )
+        return {
+            "ok": True,
+            "op": "skipped",
+            "reason": "filtered_as_health_data",
+            "filter_reasons": filter_reasons,
+            "file_size_kb": round(file_size_kb, 2),
+            "total_distance_m": round(total_distance_m, 1),
+            "record_count": record_count,
+            "file_path": str(target),
+            "filename": target.name,
+            "activity_id": 0,
+        }
+
     write_res = _persist_sync_activity(activity)
     activity_id = int(write_res.get("id") or 0)
 
@@ -5470,14 +7780,27 @@ def _build_radar_insight_snapshot(sport_type: str) -> dict[str, Any]:
 
     ALLOWED_METRIC_KEYS = (
         "ctl", "atl", "tsb", "hrv",
+        "endurance_score", "endurance_ctl_score", "endurance_consistency_score",
+        "endurance_training_days_28d", "endurance_sample_count",
+        "endurance_confidence", "endurance_source",
+        "recovery_score", "recovery_source", "recovery_confidence", "recovery_reasons",
         "decoupling", "vam", "threshold_hr", "anaerobic_peak",
+        "stability_sample_count", "stability_confidence",
+        "climbing_activity_count_90d", "climbing_elevation_activity_count_90d",
+        "climbing_sample_count", "climbing_confidence", "climbing_reason",
+        "climbing_vam_p90", "climbing_score_cap", "climbing_score_components",
+        "threshold_source", "threshold_confidence", "threshold_sample_count", "threshold_power", "threshold_wkg",
+        "anaerobic_peak_source", "anaerobic_peak_confidence", "anaerobic_sample_count",
         "radar",
     )
     safe_metrics = {k: metrics.get(k) for k in ALLOWED_METRIC_KEYS if k in metrics}
 
     safe_user_profile = {}
     if prof is not None:
-        for k in ("age", "gender", "resting_hr", "max_hr", "hrv_baseline"):
+        for k in (
+            "age", "gender", "resting_hr", "recent_resting_hr", "resting_hr_7d_avg",
+            "max_hr", "hrv_baseline", "recent_hrv", "hrv_7d_avg",
+        ):
             v = getattr(prof, k, None)
             if v is not None:
                 safe_user_profile[k] = v
@@ -5771,6 +8094,12 @@ class Api:
         cfg["workspace_track_abs_path"] = TRACKS_DIR
         cfg["ai_notified"] = bool(llm_backend.load_llm_config().get("ai_notified", False))
         return _api_success(cfg)
+
+    def get_app_info(self) -> dict:
+        return _api_success({
+            "name": "脉图 FitVault",
+            "version": APP_VERSION,
+        })
 
     def set_ai_notified(self, value: bool) -> dict:
         """独立写入 ai_notified 标志，不触发网络测试。"""
@@ -6448,6 +8777,9 @@ class Api:
                 "error": str(e),
                 "metrics": {
                     "ctl": 0,
+                    "metrics_version": None,
+                    "expected_metrics_version": CURRENT_METRICS_VERSION,
+                    "needs_rebuild": False,
                     "hrv": 60,
                     "decoupling": 0,
                     "vam": 0,
@@ -7121,7 +9453,23 @@ class Api:
         members = zf.infolist()
         report = {"extracted": [], "skipped": [], "errors": [], "total_uncompressed": 0}
         if len(members) > ZIP_MAX_MEMBERS:
-            report["errors"].append({"error": "ZIP 成员数量超过上限", "code": API_CODE_VALIDATION, "limit": ZIP_MAX_MEMBERS, "actual": len(members)})
+            # 一次性导入过多 FIT 文件会导致:
+            #   1. 进程长时间阻塞(fitparse 每文件 1-3 秒,3617 个 ≈ 1-3 小时)
+            #   2. 内存溢出风险
+            #   3. UI 进度回调失去响应
+            # 建议拆分后分批上传,或使用 sync_local_fit_files 增量扫描
+            report["errors"].append({
+                "error": "ZIP 成员数量超过单次上传上限",
+                "code": API_CODE_VALIDATION,
+                "limit": ZIP_MAX_MEMBERS,
+                "actual": len(members),
+                "hint": (
+                    f"当前 ZIP 包含 {len(members)} 个文件,超过单次上传上限 {ZIP_MAX_MEMBERS} 个。"
+                    f"建议:\n"
+                    f"  1. 在文件管理器中将 ZIP 拆分为多个(每个不超过 {ZIP_MAX_MEMBERS} 个 FIT 文件),分批上传;\n"
+                    f"  2. 或将 FIT 文件直接放入 TRACKS_DIR(默认 ~/.fitvault/workspace/tracks/),然后使用「扫描本地目录」功能增量导入。"
+                ),
+            })
             return report
         for member in members:
             entry_name = member.filename
@@ -7213,6 +9561,8 @@ class Api:
         imported: list[str] = []
         skipped: list[dict] = []
         errors: list[dict] = []
+        # V10.1 健康数据过滤累计(契约 §2.2 fit_sdk 严格语义)
+        health_filtered: list[dict] = []
         total = len(file_paths)
         current = 0
 
@@ -7252,15 +9602,26 @@ class Api:
                         # 手动调用单入口同步解析
                         res = _sync_single_fit_file(dst)
                         if res.get("ok"):
-                            if res.get("op") == "skipped" and res.get("dedupe") == "strict_key":
-                                skipped.append({
-                                    "file": str(fp),
-                                    "duplicate_of": res.get("activity_id"),
-                                    "dedupe": "strict_key",
-                                })
-                                current += 1
-                                emit_progress(f"已跳过重复活动 {current}/{total}：{src.name}", src.name)
-                                continue
+                            if res.get("op") == "skipped":
+                                # V10.1 健康数据过滤跳过(契约 §2.2)
+                                if res.get("reason") == "filtered_as_health_data":
+                                    health_filtered.append({
+                                        "file": str(fp),
+                                        "file_size_kb": res.get("file_size_kb"),
+                                        "filter_reasons": res.get("filter_reasons"),
+                                    })
+                                    current += 1
+                                    emit_progress(f"已跳过疑似健康数据 {current}/{total}：{src.name}", src.name)
+                                    continue
+                                if res.get("dedupe") == "strict_key":
+                                    skipped.append({
+                                        "file": str(fp),
+                                        "duplicate_of": res.get("activity_id"),
+                                        "dedupe": "strict_key",
+                                    })
+                                    current += 1
+                                    emit_progress(f"已跳过重复活动 {current}/{total}：{src.name}", src.name)
+                                    continue
                             # T-IMPORT-FIT-DEDUP (二次扩展): FIT 分支同样用文件名 stem 覆盖 title
                             # 防止 FIT 内部 title 字段(如 GBK 误读)导致活动列表显示乱码
                             self._apply_title_override(res.get("activity_id"), dst)
@@ -7304,15 +9665,26 @@ class Api:
                             emit_progress(f"正在解析 {min(current + 1, total)}/{total}：{fit.name}", fit.name)
                             res = _sync_single_fit_file(dst)
                             if res.get("ok"):
-                                if res.get("op") == "skipped" and res.get("dedupe") == "strict_key":
-                                    skipped.append({
-                                        "file": str(fit),
-                                        "duplicate_of": res.get("activity_id"),
-                                        "dedupe": "strict_key",
-                                    })
-                                    current += 1
-                                    emit_progress(f"已跳过重复活动 {current}/{total}：{fit.name}", fit.name)
-                                    continue
+                                if res.get("op") == "skipped":
+                                    # V10.1 健康数据过滤跳过(契约 §2.2)
+                                    if res.get("reason") == "filtered_as_health_data":
+                                        health_filtered.append({
+                                            "file": str(fit),
+                                            "file_size_kb": res.get("file_size_kb"),
+                                            "filter_reasons": res.get("filter_reasons"),
+                                        })
+                                        current += 1
+                                        emit_progress(f"已跳过疑似健康数据 {current}/{total}：{fit.name}", fit.name)
+                                        continue
+                                    if res.get("dedupe") == "strict_key":
+                                        skipped.append({
+                                            "file": str(fit),
+                                            "duplicate_of": res.get("activity_id"),
+                                            "dedupe": "strict_key",
+                                        })
+                                        current += 1
+                                        emit_progress(f"已跳过重复活动 {current}/{total}：{fit.name}", fit.name)
+                                        continue
                                 # T-IMPORT-FIT-DEDUP (二次): ZIP 分支同样覆盖 title
                                 self._apply_title_override(res.get("activity_id"), dst)
                                 skip_entry = self._rollback_if_semantic_duplicate(res, dst, fp)
@@ -7343,6 +9715,8 @@ class Api:
             return _api_success({
                 "imported": imported,
                 "skipped": skipped,
+                # V10.1 健康数据过滤累计(契约 §2.2)
+                "health_filtered": health_filtered,
                 "errors": errors if errors else None,
             }, msg=f"导入完成：新增 {len(imported)} 条，跳过 {len(skipped)} 条，异常 {len(errors)} 条")
 
@@ -7452,20 +9826,17 @@ class Api:
         }
 
     def api_force_rebuild_radar_data(self) -> dict:
-        """【P1 异步清洗网关】允许用户手动一键强刷全库雷达指标，安全更新至 METRICS_VERSION 3。"""
+        """手动强刷 derived advanced_metrics,不触碰原始轨迹或 canonical 活动字段。"""
         try:
-            def _async_run():
-                print("[API] 收到全量数据清洗指令，正在后台启动清洗 worker...")
-                res = force_rebuild_all_records()
-                print(f"[API] 后台全量清洗完成: {res}")
-                try:
-                    _report_result = rebuild_report_metrics_for_all_activities(dry_run=False)
-                    print(f"[API] 报告指标回填完成: {_report_result}")
-                except Exception:
-                    pass
-
-            threading.Thread(target=_async_run, daemon=True, name="metrics-rebuild-worker").start()
-            return _api_success({"message": "全量雷达指标重建任务已在后台异步启动，请稍后刷新页面查看成果。"})
+            res = force_rebuild_all_records(force=True)
+            return _api_success({
+                "message": "雷达 derived 指标重建完成，请刷新页面查看成果。",
+                "rebuilt_count": int(res.get("rebuilt_count") or res.get("migrated") or 0),
+                "skipped_count": int(res.get("skipped_count") or 0),
+                "failed_count": int(res.get("failed_count") or 0),
+                "metrics_version": CURRENT_METRICS_VERSION,
+                "raw": res,
+            })
         except Exception:
             logger.exception("api_force_rebuild_radar_data failed")
             return _api_error(API_CODE_INTERNAL, "全量雷达指标重建启动失败")
@@ -8362,12 +10733,29 @@ class Api:
                 # V7.9 - V7.13 4 个新指标完整兜底
                 "efficiency": {
                     "score": None, "level": "unknown", "confidence": "unavailable",
-                    "delta_pct": None, "sample_size": 0, "reasons": ["review snapshot unavailable"],
+                    "delta_pct": None, "sample_size": 0,
+                    **({
+                        "basis": "power_hr",
+                        "power_per_hr": None,
+                        "avg_power": None,
+                        "avg_hr": None,
+                        "power_data_quality": "missing",
+                    } if sport_type in _CYCLING_SPORT_TYPES else {}),
+                    "reasons": ["power data unavailable: missing"] if sport_type in _CYCLING_SPORT_TYPES else ["review snapshot unavailable"],
                     "trend": {"level": "flat", "compared_count": 0, "baseline_ratio": None, "source": "v7_14_error"},
                 },
                 "durability": {
                     "score": None, "level": "unknown", "confidence": "unavailable",
-                    "head_speed": None, "tail_speed": None, "reasons": ["review snapshot unavailable"],
+                    "head_speed": None, "tail_speed": None,
+                    **({
+                        "basis": "power_retention",
+                        "head_power": None,
+                        "tail_power": None,
+                        "power_retention_pct": None,
+                        "power_points_count": 0,
+                        "power_data_quality": "missing",
+                    } if sport_type in _CYCLING_SPORT_TYPES else {}),
+                    "reasons": ["power data unavailable: missing"] if sport_type in _CYCLING_SPORT_TYPES else ["review snapshot unavailable"],
                     "trend": {"level": "flat", "compared_count": 0, "baseline_ratio": None, "source": "v7_14_error"},
                 },
                 "cadence_stability": {
@@ -8379,6 +10767,18 @@ class Api:
                     "load": None, "level": "unknown", "zone_used": None, "confidence": "unavailable",
                     "load_ratio": None, "ratio_7d_42d": "v7_14_error", "reasons": ["review snapshot unavailable"],
                     "trend": {"level": "flat", "compared_count": 0, "is_improving": None, "baseline_load": None, "source": "v8_5_error"},
+                },
+                "power_variability": {
+                    "vi": None, "level": "unknown", "confidence": "unavailable",
+                    "avg_power": None, "normalized_power": None,
+                    "power_points_count": 0, "power_data_quality": "missing",
+                    "reasons": ["power data unavailable: missing"],
+                },
+                "pedaling_stability": {
+                    "score": None, "level": "unknown", "confidence": "unavailable",
+                    "cv": None, "decay_pct": None, "avg_cadence": None,
+                    "cadence_points_count": 0, "cadence_data_quality": "missing",
+                    "reasons": ["cadence data unavailable: missing"],
                 },
             },
             "collapse_events": [],
@@ -8393,7 +10793,21 @@ class Api:
                 "hr": [],
                 "altitude": [],
                 "speed": [],
+                "power": [],
+                "cadence": [],
                 "total_distance_m": 0.0,
+            },
+            "summary": {
+                "avg_power": None,
+                "max_power": None,
+                "normalized_power": None,
+                "avg_cadence": None,
+                "power_available": False,
+                "cadence_available": False,
+                "power_points_count": 0,
+                "cadence_points_count": 0,
+                "power_data_quality": "missing",
+                "cadence_data_quality": "missing",
             },
             "display_curves": {
                 "pace_sec_per_km": [],
@@ -8406,6 +10820,16 @@ class Api:
             "display_meta": _build_fatigue_review_display_meta(),
             "context_tags": {},
             "environment_context": _build_fatigue_review_environment_context(),
+            "cycling_explanation_signals": _build_cycling_explanation_signals(
+                sport_type=sport_type,
+                summary={
+                    "power_available": False,
+                    "cadence_available": False,
+                    "power_data_quality": "missing",
+                    "cadence_data_quality": "missing",
+                },
+                curves_snapshot={},
+            ),
             "ai_insight": None,
             "advice": advice_text,
             "disclaimer": "AI 生成仅供参考 · 数据来源：FIT 解析 + 后端算法",
@@ -8441,6 +10865,10 @@ class Api:
             "has_grade": bool(curves.get("grade")),
             "has_gap": bool(curves.get("gap")),
             "has_efficiency": bool(curves.get("efficiency")),
+            "has_power": bool(curves.get("power")),
+            "has_cadence": bool(curves.get("cadence")),
+            "power_points_count": len(curves.get("power")) if isinstance(curves.get("power"), list) else 0,
+            "cadence_points_count": len(curves.get("cadence")) if isinstance(curves.get("cadence"), list) else 0,
             "total_distance_m": _safe_float(curves.get("total_distance_m")) or 0.0,
         }
 
@@ -8461,6 +10889,7 @@ class Api:
             "activity_id": aid,
             "sport_type": review_snapshot.get("sport_type") or row.get("sport_type") or sport_type or "running",
             "metrics": review_snapshot.get("metrics") or {},
+            "summary": review_snapshot.get("summary") or {},
             "fatigue_zones": review_snapshot.get("fatigue_zones") or [],
             "collapse_events": review_snapshot.get("collapse_events") or [],
             "curves_summary": self._summarize_fatigue_review_curves_for_ai(
@@ -8468,6 +10897,7 @@ class Api:
             ),
             "context_tags": review_snapshot.get("context_tags") or {},
             "environment_context": review_snapshot.get("environment_context") or {},
+            "cycling_explanation_signals": review_snapshot.get("cycling_explanation_signals") or {},
             "advice": review_snapshot.get("advice") or "",
             "disclaimer": review_snapshot.get("disclaimer") or "",
         }
@@ -8634,15 +11064,21 @@ class Api:
                 },
                 "decoupling": decoupling,
                 "bonk_risk": bonk_risk,
+                "power_variability": {
+                    "vi": None,
+                    "level": "unknown",
+                    "confidence": "unavailable",
+                    "reasons": ["cycling power metric pending implementation"],
+                },
+                "pedaling_stability": {
+                    "score": None,
+                    "level": "unknown",
+                    "confidence": "unavailable",
+                    "cv": None,
+                    "decay_pct": None,
+                    "reasons": ["cycling cadence metric pending implementation"],
+                },
             }
-
-            # 5. collapse_events 白名单(每条带 event_id 联动标识)
-            collapse_events = _build_fatigue_review_collapse_events(
-                bonk_events=bonk_events,
-                fatigue_zones=fatigue_zones,
-                sport_type=sport_type,
-                total_distance_m=total_distance_m,
-            )
 
             # V7.6 trend 派生:挂在 metrics 子字段,不扩展 V6.3 顶级 7 段白名单
             _TREND_COMPARE_COUNT = 5
@@ -8679,18 +11115,6 @@ class Api:
                 "level": "up" if (bonk_at_risk and historical_avg.get("bonk_count", 0) == 0) else "flat",
                 "source": "historical_avg",
             }
-            historical_bonk_count = historical_avg.get("bonk_count", 0)
-            event_delta = len(collapse_events) - historical_bonk_count
-            metrics["events"] = {
-                "count": len(collapse_events),
-                "trend": {
-                    "delta_count": event_delta,
-                    "level": "up" if event_delta > 0 else ("down" if event_delta < 0 else "flat"),
-                    "compared_count": sample_size,
-                    "source": "historical_avg",
-                },
-            }
-
             # V7.9 指标 5:Efficiency Score(注入 metrics 子字段,不扩展 7 段顶级白名单)
             # 见 docs/physiology_reference.md §指标 5
             try:
@@ -8999,9 +11423,54 @@ class Api:
                 avg_temperature=bundle.get("avg_temperature"),
                 context_tags=context_tags,
             )
+            summary = _build_fatigue_review_summary(
+                row=row,
+                bundle=bundle,
+                curves_snapshot=curves_snapshot,
+            )
+            metrics.update(_build_cycling_review_metrics(
+                sport_type=sport_type,
+                summary=summary,
+                curves_snapshot=curves_snapshot,
+                avg_hr=row.get("avg_hr"),
+            ))
+            cycling_explanation_signals = _build_cycling_explanation_signals(
+                sport_type=sport_type,
+                summary=summary,
+                curves_snapshot=curves_snapshot,
+                profile_ftp_watts=bundle.get("profile_ftp_watts"),
+                profile_weight_kg=bundle.get("profile_weight_kg"),
+                metrics=metrics,
+            )
+            if _is_cycling_review_sport(sport_type):
+                fatigue_zones = _calibrate_cycling_fatigue_zones_for_review(
+                    fatigue_zones,
+                    summary=summary,
+                    curves_snapshot=curves_snapshot,
+                    cycling_explanation_signals=cycling_explanation_signals,
+                )
+            # 5. collapse_events 白名单(每条带 event_id 联动标识)
+            collapse_events = _build_fatigue_review_collapse_events(
+                bonk_events=bonk_events,
+                fatigue_zones=fatigue_zones,
+                sport_type=sport_type,
+                total_distance_m=total_distance_m,
+            )
+            historical_bonk_count = historical_avg.get("bonk_count", 0)
+            event_delta = len(collapse_events) - historical_bonk_count
+            metrics["events"] = {
+                "count": len(collapse_events),
+                "trend": {
+                    "delta_count": event_delta,
+                    "level": "up" if event_delta > 0 else ("down" if event_delta < 0 else "flat"),
+                    "compared_count": sample_size,
+                    "source": "historical_avg",
+                },
+            }
             snapshot = {
                 "sport_type": sport_type,
                 "metrics": metrics,
+                "summary": summary,
                 "collapse_events": collapse_events,
                 "fatigue_zones": fatigue_zones,  # V8.11: Layer 2 疲劳背景带
                 "curves": curves_snapshot,
@@ -9009,6 +11478,7 @@ class Api:
                 "display_meta": display_meta,
                 "context_tags": context_tags,
                 "environment_context": environment_context,
+                "cycling_explanation_signals": cycling_explanation_signals,
                 "ai_insight": None,
                 "advice": "暂未生成",
                 "disclaimer": "AI 生成仅供参考 · 数据来源：FIT 解析 + 后端算法",
@@ -9199,6 +11669,12 @@ class Api:
         return MetricsResolver._lttb_sample(points, limit)
 
     def _build_lap_rows(self, dist_km: float, duration_sec: int, avg_hr: int | None, base_power: int) -> list[dict]:
+        """V4.0 mock 圈速数据生成器(V10.0 R-3:添加 source_type 标记)。
+
+        ⚠️ 契约警告:fit-arch-contrac §2.2
+            本函数输出 source_type="mock",**严禁进入生产 UI**。
+            前端 P1-1 渲染时必须过滤掉 source_type="mock" 的圈数据。
+        """
         import math
 
         if dist_km <= 0 or duration_sec <= 0:
@@ -9217,6 +11693,7 @@ class Api:
                 "cadence": 176 + (idx % 4),
                 "gct_ms": 228 + (idx % 5) * 3,
                 "power_w": base_power + (idx % 6) * 6,
+                "source_type": "mock",  # V10.0 R-3:对齐契约 §2.2 层级命名
             })
         return rows
 
@@ -9224,19 +11701,91 @@ class Api:
 def _build_real_laps_from_row(row: dict, dist_km: float = 0, duration_sec: int = 0, avg_hr = None, base_power: int = 0) -> list[dict[str, Any]]:
     """V4.0 治理: 业务逻辑已下沉至 MetricsResolver。
     完整实现见 metrics_resolver.py: MetricsResolver._build_real_laps_from_row
+
+    V10.0 R-4 配套:为 FIT 真实圈打 source_type="fit_sdk" 标记,与契约 §2.2 层级命名对齐
     """
     return MetricsResolver._build_real_laps_from_row(row)
 
 
 FULL_ACTIVITY_LAP_FALLBACK_DISPLAY_TYPES = frozenset({"hiking", "mountaineering", "walking"})
 
+# V10.0 任务 2:户外骑行类自动切圈适用范围
+# 仅 cycling / road_cycling / mountain_biking,室内骑行由智能骑行台自带切圈,
+# 跑步/徒步/游泳等其他运动类型严禁进入此分支。
+_AUTO_LAP_ELIGIBLE_DISPLAY_TYPES = frozenset({"cycling", "road_cycling", "mountain_biking"})
+_AUTO_LAP_BUCKET_M: float = 5000.0
+_AUTO_LAP_MIN_DISTANCE_KM: float = 5.0
+
 
 def _build_detail_laps(api_self, row: dict, display_type: str, dist_km: float, duration_sec: int, avg_hr = None, base_power: int = 0) -> list[dict[str, Any]]:
-    """详情页圈速数据契约:徒步类无真实 FIT lap 时展示全程汇总,不按公里模拟拆分。"""
+    """详情页圈速数据契约(V10.0 升级:户外骑行支持按 5km 自动切圈)。
+
+    优先级(V10.0 调整后):
+      1. FIT 真实圈(laps_json)>= 2 圈 → 直接返回(保留 FIT 真实数据)
+      2. FIT 真实圈 == 1 圈 + 非骑行类(徒步等)→ 直接返回(V4.0 既有行为)
+      3. FIT 真实圈 == 1 圈 + 户外骑行类 + 距离 >= 5km + 有 points → 调用 P0-1 自动切圈
+      4. FIT 真实圈 == 1 圈 + 户外骑行类 + 其他情况 → 直接返回 FIT 1 圈
+      5. FIT 真实圈 == 0 圈 + 户外骑行类 + 距离 >= 5km + 有 points → 调用 P0-1 自动切圈
+      6. FIT 真实圈 == 0 圈 + 徒步类 → 返回全程 1 圈汇总
+      7. 其他情况(跑步、室内骑行等)→ mock fallback
+
+    契约:fit-arch-contrac §2.1 / §2.2 / §八 8.3
+      - 自动切圈结果 source_type="frontend_fallback"(V10.0 R-1 修订)
+      - FIT 真实圈 source_type="fit_sdk"(V10.0 R-4)
+      - mock 数据 source_type="mock"(V10.0 R-3)
+      - 严禁写回 laps_json,严禁进 ai_snapshots
+      - indoor_cycling 不进入自动切圈(智能骑行台自带切圈,保留原状)
+      - 非骑行类的 1 圈 FIT 圈保持原 V4.0 行为直接返回(不进入自动切圈逻辑)
+    """
+    normalized_type = (display_type or "").strip().lower()
     real_laps = _build_real_laps_from_row(row, dist_km, duration_sec, avg_hr, base_power)
-    if real_laps:
+
+    # 多圈 FIT 真实数据:始终优先返回
+    if real_laps and len(real_laps) >= 2:
         return real_laps
-    if (display_type or "").lower() in FULL_ACTIVITY_LAP_FALLBACK_DISPLAY_TYPES:
+
+    # 单圈 FIT 真实数据:仅骑行类会考虑替换为自动切圈,其他运动保持原状
+    if real_laps and len(real_laps) == 1:
+        if normalized_type in _AUTO_LAP_ELIGIBLE_DISPLAY_TYPES and dist_km >= _AUTO_LAP_MIN_DISTANCE_KM:
+            points = api_self._decode_points_json(
+                row.get("track_json") or row.get("points_json") or row.get("merged_track_json")
+            )
+            if points and len(points) >= 2:
+                synthetic = MetricsResolver._build_synthetic_laps_from_points(
+                    points, normalized_type, _AUTO_LAP_BUCKET_M
+                )
+                if synthetic and len(synthetic) >= 1:
+                    import logging
+                    logging.getLogger("maitu.laps").info(
+                        "[V10.0] auto-lap cycling %s: %.2fkm → %d segments (replaced 1 FIT lap)",
+                        normalized_type, dist_km, len(synthetic),
+                    )
+                    return synthetic
+        # 非骑行类或骑行类但无 points 数据:保持 V4.0 行为
+        return real_laps
+
+    # 无 FIT 圈:骑行类尝试自动切圈
+    if (
+        normalized_type in _AUTO_LAP_ELIGIBLE_DISPLAY_TYPES
+        and dist_km >= _AUTO_LAP_MIN_DISTANCE_KM
+    ):
+        points = api_self._decode_points_json(
+            row.get("track_json") or row.get("points_json") or row.get("merged_track_json")
+        )
+        if points and len(points) >= 2:
+            synthetic = MetricsResolver._build_synthetic_laps_from_points(
+                points, normalized_type, _AUTO_LAP_BUCKET_M
+            )
+            if synthetic and len(synthetic) >= 1:
+                import logging
+                logging.getLogger("maitu.laps").info(
+                    "[V10.0] auto-lap cycling %s: %.2fkm → %d segments (no FIT lap)",
+                    normalized_type, dist_km, len(synthetic),
+                )
+                return synthetic
+
+    # 现有 fallback:徒步类返回全程 1 圈
+    if normalized_type in FULL_ACTIVITY_LAP_FALLBACK_DISPLAY_TYPES:
         if dist_km <= 0 or duration_sec <= 0:
             return []
         pace_sec = _safe_int(row.get("avg_pace")) or int(round(duration_sec / max(dist_km, 0.001)))
@@ -9248,7 +11797,10 @@ def _build_detail_laps(api_self, row: dict, display_type: str, dist_km: float, d
             "max_hr": _safe_int(row.get("max_hr")) or None,
             "ascent_m": _safe_int(row.get("gain_m")) if row.get("gain_m") is not None else None,
             "descent_m": _safe_int(row.get("total_descent_m")) if row.get("total_descent_m") is not None else None,
+            "source_type": "fit_sdk",  # V10.0 R-4:徒步整段汇总也打 fit_sdk 标记
         }]
+
+    # 现有 fallback:其他情况返回 mock(仅用于跑步、室内骑行等)
     return api_self._build_lap_rows(dist_km, duration_sec, avg_hr, base_power)
 
 
@@ -9303,6 +11855,7 @@ def _build_record_from_row(api_self, row: dict, idx: int) -> dict:
     raw_for_engine = {
         "distance_km": dist_km,
         "duration_sec": duration_sec,
+        "avg_speed": (dist_km * 1000.0 / duration_sec) if dist_km > 0 and duration_sec > 0 else None,
         "avg_pace_sec": pace_sec,
         "avg_pace_display": pace_display_detail,
         "distance_display": distance_display_detail,
@@ -9764,14 +12317,14 @@ def _set_schema_version(version: int) -> None:
         conn.close()
 
 
-def force_rebuild_all_records() -> dict[str, Any]:
-    """强制重建所有活动记录的 advanced_metrics。"""
+def force_rebuild_all_records(force: bool = True) -> dict[str, Any]:
+    """Safely rebuild derived advanced_metrics without touching canonical activity data."""
     ensure_activity_sync_schema()
     conn = profile_backend._conn()
     try:
         rows = conn.execute(
             """
-            SELECT id, track_json, points_json
+            SELECT id, track_json, points_json, sport_type, advanced_metrics
             FROM activities
             WHERE deleted_at IS NULL
               AND (track_json IS NOT NULL AND track_json != '')
@@ -9781,41 +12334,74 @@ def force_rebuild_all_records() -> dict[str, Any]:
         if not rows:
             logger.info("全量重建: 无活动记录需要处理")
             _set_schema_version(CURRENT_SCHEMA_VERSION)
-            return {"ok": True, "migrated": 0}
+            return {
+                "ok": True,
+                "rebuilt_count": 0,
+                "skipped_count": 0,
+                "failed_count": 0,
+                "metrics_version": CURRENT_METRICS_VERSION,
+                "migrated": 0,
+                "total": 0,
+            }
 
         logger.info("全量重建: 开始处理 %s 条记录...", len(rows))
-        migrated = 0
+        rebuilt_count = 0
+        skipped_count = 0
+        failed_count = 0
         for row in rows:
+            row = dict(row)
             try:
-                row = dict(row)
+                if not force and not needs_advanced_metrics_rebuild(row.get("advanced_metrics")):
+                    skipped_count += 1
+                    continue
                 track_json = row.get("track_json") or row.get("points_json")
                 if not track_json:
+                    skipped_count += 1
                     continue
                 track_data = json.loads(track_json) if isinstance(track_json, str) else track_json
                 if not isinstance(track_data, list) or len(track_data) < 2:
+                    skipped_count += 1
                     continue
-                advanced = _compute_advanced_metrics(track_data)
+                advanced = _compute_advanced_metrics(track_data, row.get("sport_type"))
                 if advanced:
-                    advanced["metrics_version"] = CURRENT_METRICS_VERSION
                     advanced_json = json.dumps(advanced, ensure_ascii=False)
                     conn.execute(
                         "UPDATE activities SET advanced_metrics = ?, updated_at = datetime('now') WHERE id = ?",
                         (advanced_json, int(row["id"])),
                     )
-                    migrated += 1
-                    if migrated % 10 == 0:
+                    rebuilt_count += 1
+                    if rebuilt_count % 10 == 0:
                         conn.commit()
+                else:
+                    skipped_count += 1
             except Exception as exc:
                 logger.warning("全量重建: 记录 id=%s 计算失败: %s", row.get("id"), exc)
+                failed_count += 1
                 continue
         conn.commit()
-        logger.info("全量重建完成: 成功重建 %s / %s 条记录", migrated, len(rows))
+        logger.info("全量重建完成: 成功重建 %s / %s 条记录", rebuilt_count, len(rows))
         _set_schema_version(CURRENT_SCHEMA_VERSION)
-        return {"ok": True, "migrated": migrated, "total": len(rows)}
+        return {
+            "ok": True,
+            "rebuilt_count": rebuilt_count,
+            "skipped_count": skipped_count,
+            "failed_count": failed_count,
+            "metrics_version": CURRENT_METRICS_VERSION,
+            "migrated": rebuilt_count,
+            "total": len(rows),
+        }
     except Exception as e:
         conn.rollback()
         logger.exception("全量重建失败: %s", e)
-        return {"ok": False, "error": str(e), "migrated": 0}
+        return {
+            "ok": False,
+            "error": str(e),
+            "rebuilt_count": 0,
+            "skipped_count": 0,
+            "failed_count": 0,
+            "metrics_version": CURRENT_METRICS_VERSION,
+            "migrated": 0,
+        }
     finally:
         conn.close()
 
@@ -9842,7 +12428,7 @@ def main() -> None:
         height=800,
         min_size=(800, 600),
         hidden=True,
-        frameless=True,
+        frameless=(sys.platform == "darwin"),
         easy_drag=False,
         draggable=True,
         background_color='#061626',  # 匹配启动图主背景色，降低原生窗口预绘制闪烁

@@ -2101,21 +2101,105 @@
             border: 1px solid rgba(255,255,255,0.06);
             margin-top: 12px;
         }
+        /* V10.0 P1-1:自动切圈标签(契约 §2.2 frontend_fallback 来源) */
+        .lap-source-tag {
+            display: inline-block;
+            font-size: 11px;
+            color: #64748b;
+            padding: 3px 8px;
+            background: rgba(100, 116, 139, 0.08);
+            border-radius: 6px;
+            margin-top: 6px;
+            font-weight: 500;
+            letter-spacing: 0.02em;
+        }
         .lap-table {
             width: 100%;
             border-collapse: collapse;
             font-size: 0.72rem;
-        }
-        .lap-table th, .lap-table td {
-            padding: 9px 10px;
-            border-bottom: 1px solid rgba(255,255,255,0.05);
-            text-align: left;
         }
         .lap-table th {
             position: sticky;
             top: 0;
             background: rgba(15,23,42,0.95);
             color: #94a3b8;
+        }
+        .lap-table th, .lap-table td {
+            padding: 9px 10px;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            text-align: left;
+            white-space: nowrap;
+        }
+        /* V10.0 P1-2:圈表行交替色 + hover 高亮 */
+        .lap-table tbody tr:nth-child(even) {
+            background: rgba(255, 255, 255, 0.02);
+        }
+        .lap-table tbody tr:hover {
+            background: rgba(59, 130, 246, 0.08);
+        }
+        /* V10.0 P1-2:键盘焦点可见性 */
+        .lap-table tbody tr:focus-visible,
+        .lap-table th:focus-visible,
+        .lap-table td:focus-visible {
+            outline: 2px solid #3b82f6;
+            outline-offset: -2px;
+        }
+        /* V10.0 P1-2:视觉隐藏(屏幕阅读器可访问) */
+        .visually-hidden {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
+        }
+        /* V10.0 P1-2:响应式断点 — 大屏(>=1920px) */
+        @media (min-width: 1920px) {
+            .lap-table {
+                font-size: 0.78rem;
+            }
+            .lap-table th, .lap-table td {
+                padding: 11px 14px;
+            }
+        }
+        /* V10.0 P1-2:小屏(<1366px) — 横向滚动 */
+        @media (max-width: 1365px) {
+            .lap-table-wrap {
+                overflow-x: auto;
+            }
+            .lap-table {
+                min-width: 1100px;
+                font-size: 0.68rem;
+            }
+            .lap-table th, .lap-table td {
+                padding: 7px 8px;
+            }
+        }
+        /* V10.0 P1-2:移动端(<768px) — 更紧凑 */
+        @media (max-width: 767px) {
+            .lap-table {
+                min-width: 950px;
+                font-size: 0.62rem;
+            }
+            .lap-source-tag {
+                font-size: 10px;
+            }
+        }
+        /* V10.0 P1-2:暗色模式适配 */
+        @media (prefers-color-scheme: dark) {
+            .lap-source-tag {
+                color: #94a3b8;
+                background: rgba(148, 163, 184, 0.1);
+            }
+        }
+        /* V10.0 P1-2:减弱动画偏好 */
+        @media (prefers-reduced-motion: reduce) {
+            .lap-table tbody tr {
+                transition: none;
+            }
         }
         .detail-track-thumb {
             margin-top: 14px;
@@ -2199,21 +2283,24 @@
             overflow-y: auto;
         }
 
-        /* === 【帮助说明】面板 — 视觉优化 === */
+        /* === 【帮助说明 / 关于】面板 — 视觉优化 === */
         /* §1 不透明背景层(94% 不透明度)隔绝底层界面,同时保留微弱半透明质感 */
-        #panel-help {
+        #panel-help,
+        #panel-about {
             background:
                 linear-gradient(180deg, rgba(15, 23, 42, 0.96) 0%, rgba(11, 18, 32, 0.94) 100%),
                 var(--bg);
             overflow-y: auto;
         }
-        #panel-help .panel-header {
+        #panel-help .panel-header,
+        #panel-about .panel-header {
             /* header 区单独加深,与滚动内容区分 */
             background: linear-gradient(180deg, rgba(15, 23, 42, 0.98) 0%, rgba(15, 23, 42, 0.94) 100%);
             border-bottom: 1px solid rgba(212, 175, 55, 0.25);
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
         }
-        #panel-help .panel-body {
+        #panel-help .panel-body,
+        #panel-about .panel-body {
             /* body 加一个略浅的二级底色,与卡片形成层次 */
             background: rgba(15, 23, 42, 0.55);
         }
@@ -2345,41 +2432,52 @@
 
         /* §2 WCAG 可访问性 — 文字对比度/行高/字间距 */
         /* 普通正文 16px 起步,行高 1.7,字间距 0.02em,对比度 ≥ 7:1(AAA) */
-        #panel-help {
+        #panel-help,
+        #panel-about {
             color: #e2e8f0;
             font-size: 0.82rem;
             line-height: 1.75;
             letter-spacing: 0.02em;
         }
-        #panel-help .section-card {
+        #panel-help .section-card,
+        #panel-about .section-card {
             color: #e2e8f0;
         }
         #panel-help .section-card p,
         #panel-help .section-card li,
         #panel-help .section-card td,
-        #panel-help .section-card th {
+        #panel-help .section-card th,
+        #panel-about .section-card p,
+        #panel-about .section-card li,
+        #panel-about .section-card td,
+        #panel-about .section-card th {
             color: #e2e8f0;
             line-height: 1.75;
             letter-spacing: 0.02em;
         }
         /* 次要说明文字用 #cbd5e1,主标题/关键字段用 #f8fafc,对比度全部 ≥ AAA */
-        #panel-help .section-card .help-muted {
+        #panel-help .section-card .help-muted,
+        #panel-about .section-card .help-muted {
             color: #cbd5e1;
             font-size: 0.78rem;
             letter-spacing: 0.015em;
         }
         #panel-help .section-card b,
-        #panel-help .section-card strong {
+        #panel-help .section-card strong,
+        #panel-about .section-card b,
+        #panel-about .section-card strong {
             color: #f8fafc;
             font-weight: 700;
         }
-        #panel-help .section-card .help-emphasis {
+        #panel-help .section-card .help-emphasis,
+        #panel-about .section-card .help-emphasis {
             color: #fde68a;
             font-weight: 600;
         }
 
         /* §3 阴影 + 边界 — 强化卡片层级独立性 */
-        #panel-help .section-card {
+        #panel-help .section-card,
+        #panel-about .section-card {
             background: linear-gradient(180deg, rgba(30, 41, 59, 0.92) 0%, rgba(15, 23, 42, 0.88) 100%);
             border: 1px solid rgba(212, 175, 55, 0.18);
             border-radius: 12px;
@@ -2391,13 +2489,15 @@
             margin-bottom: 14px;
             transition: box-shadow 0.2s ease, transform 0.2s ease;
         }
-        #panel-help .section-card:hover {
+        #panel-help .section-card:hover,
+        #panel-about .section-card:hover {
             box-shadow:
                 0 6px 20px rgba(0, 0, 0, 0.55),
                 0 2px 5px rgba(0, 0, 0, 0.4),
                 inset 0 1px 0 rgba(255, 255, 255, 0.05);
         }
-        #panel-help .section-title {
+        #panel-help .section-title,
+        #panel-about .section-title {
             color: #f8fafc;
             font-size: 0.95rem;
             font-weight: 700;
@@ -2428,6 +2528,61 @@
             border-radius: 5px;
         }
         #panel-help::-webkit-scrollbar-thumb:hover { background: rgba(212, 175, 55, 0.55); }
+        #panel-about::-webkit-scrollbar { width: 10px; }
+        #panel-about::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.5); }
+        #panel-about::-webkit-scrollbar-thumb {
+            background: rgba(212, 175, 55, 0.35);
+            border-radius: 5px;
+        }
+        #panel-about::-webkit-scrollbar-thumb:hover { background: rgba(212, 175, 55, 0.55); }
+        .about-version-card {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 14px;
+            align-items: center;
+        }
+        .about-app-name {
+            margin: 0 0 4px 0;
+            color: #f8fafc;
+            font-size: 1.02rem;
+            font-weight: 800;
+        }
+        .about-version-pill {
+            padding: 7px 12px;
+            border-radius: 999px;
+            border: 1px solid rgba(212, 175, 55, 0.35);
+            background: rgba(212, 175, 55, 0.12);
+            color: #fde68a;
+            font-size: 0.82rem;
+            font-weight: 800;
+            font-variant-numeric: tabular-nums;
+            white-space: nowrap;
+        }
+        .about-update-list {
+            margin: 0;
+            padding-left: 19px;
+        }
+        .about-update-list li {
+            margin: 4px 0;
+        }
+        .about-summary-line {
+            margin: 12px 0 0 0;
+            padding: 10px 12px;
+            border-radius: 8px;
+            border-left: 2px solid rgba(34, 197, 94, 0.55);
+            background: rgba(34, 197, 94, 0.07);
+            color: #bbf7d0;
+            font-size: 0.8rem;
+            line-height: 1.7;
+        }
+        @media (max-width: 720px) {
+            .about-version-card {
+                grid-template-columns: 1fr;
+            }
+            .about-version-pill {
+                justify-self: start;
+            }
+        }
 
         /* === Cesium 地球（始终渲染） === */
         #cesiumContainer { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 0; touch-action: auto; }
@@ -5104,12 +5259,8 @@
             opacity: 0.8;
         }
 
-        /* ===== 模型 fallback 容器 — 防跳动 ===== */
-        #llm-custom-model-container {
-            margin-top: 8px;
-            min-height: 0;
-            overflow: hidden;
-            transition: all 0.2s ease;
+        #llm-model-options {
+            background: rgba(15, 23, 42, 0.95);
         }
     </style>
 </head>
@@ -5119,7 +5270,7 @@
     <div class="boot-splash-panel" aria-live="polite">
         <div class="boot-splash-brand">
             <div class="boot-splash-title">脉图</div>
-            <div class="boot-splash-version">V1.0.1</div>
+            <div class="boot-splash-version">V1.0.4</div>
         </div>
         <div class="boot-splash-subtitle">正在唤醒本地运动数据、轨迹引擎与 AI 分析能力</div>
         <div class="boot-splash-progress" aria-hidden="true"></div>
@@ -5166,9 +5317,15 @@
             <span class="tab-label">帮助说明</span>
             <span class="tab-arrow">➜</span>
         </button>
+        <div class="bookmark-spacer"></div>
+        <button class="bookmark-tab" data-panel="about" onclick="switchTab(this)">
+            <span class="tab-icon">ℹ️</span>
+            <span class="tab-label">关于</span>
+            <span class="tab-arrow">➜</span>
+        </button>
     </div>
 
-    <!-- ========== 主内容区（4个面板） ========== -->
+    <!-- ========== 主内容区 ========== -->
     <div id="main-content">
 
         <!-- ========== 【个人运动数据】面板 ========== -->
@@ -5286,6 +5443,11 @@
                                 </span>
                             </div>
                             <div id="performanceRadar" style="width: 100%; flex: 1; min-height: 128px;"></div>
+                            <div id="radarRebuildHint" style="display:none; margin-top: 6px; color: #fbbf24; font-size: 12px; align-items:center; gap:8px; flex-wrap:wrap;">
+                                <span id="radarRebuildHintText">部分历史指标版本较旧，建议重新构建雷达数据</span>
+                                <button id="radarRebuildBtn" type="button" onclick="onRadarRebuildData()" style="border:1px solid rgba(251,191,36,0.45); background:rgba(251,191,36,0.12); color:#fde68a; border-radius:999px; padding:3px 10px; font-size:12px; cursor:pointer;">重新构建</button>
+                                <span id="radarRebuildResult" style="color:#94a3b8;"></span>
+                            </div>
                             <button
                                 id="radar-ai-insight-btn"
                                 class="radar-ai-btn"
@@ -5596,7 +5758,7 @@
                         <div class="settings-form-row">
                             <label class="settings-label">服务商 (Provider)</label>
                             <select id="llm-provider" class="modal-input" onchange="updateLLMModels(); syncLLMConfigFromFields();" style="background:rgba(15,23,42,0.8);cursor:pointer;">
-                                <option value="local_mcp">本地 + MCP (如 OpenClaw / WorkBuddy)</option>
+                                <option value="local_mcp">本地 + MCP (OpenClaw / QClaw)</option>
                             </select>
                         </div>
                         <div class="settings-form-row" id="llm-custom-url-container" style="display:block;">
@@ -5605,10 +5767,8 @@
                         </div>
                         <div class="settings-form-row">
                             <label class="settings-label">模型 (Model)</label>
-                            <select id="llm-model" class="modal-input" onchange="syncLLMConfigFromFields()" style="background:rgba(15,23,42,0.8);cursor:pointer;"></select>
-                            <div id="llm-custom-model-container" style="margin-top:8px;display:none;">
-                                <input type="text" id="llm-custom-model" class="modal-input" placeholder="自定义模型名" autocomplete="off" oninput="syncLLMConfigFromFields()" style="background:rgba(15,23,42,0.8);">
-                            </div>
+                            <input type="text" id="llm-model" class="modal-input" list="llm-model-options" value="openclaw" placeholder="openclaw 或自定义模型名" autocomplete="off" oninput="syncLLMConfigFromFields()" style="background:rgba(15,23,42,0.8);">
+                            <datalist id="llm-model-options"></datalist>
                         </div>
                         <div class="settings-form-row">
                             <label class="settings-label">Agent ID（选填）</label>
@@ -5758,7 +5918,7 @@
                         <p style="margin:0 0 8px 0; color:#cbd5e1; font-size:0.78rem; line-height:1.7;">OpenClaw 是脉图连接本地 AI 助手、MCP 技能和 Garmin 活动下载能力的本地网关。配置好 OpenClaw 后，脉图才能稳定使用 AI 洞察、活动建议、复盘解读，以及按日期同步佳明活动 FIT 文件。</p>
                         <div style="margin:8px 0; padding:9px 10px; border-radius:8px; background:rgba(15,23,42,0.45); border:1px solid rgba(147,197,253,0.18); color:#cbd5e1; font-size:0.76rem; line-height:1.7;">
                             <b style="color:#bfdbfe;">设备 Skill 要求</b><br>
-                            佳明用户需要在本地 OpenClaw 中安装 <b>garmin-stats</b> skill；高驰用户需要安装 <b>coros-stats</b> skill。这两个 skill 用于从佳明/高驰账户获取用户画像数据；其中 <b>garmin-stats</b> 还支持佳明活动 FIT 文件同步。下载 zip 后，在 OpenClaw 或其他兼容工具中使用 Skill 安装/导入功能选择该 zip，再按安装界面中的说明完成依赖安装和账号授权。
+                            佳明用户需要在本地 OpenClaw 或 QClaw 中安装 <b>garmin-stats</b> skill；高驰用户需要安装 <b>coros-stats</b> skill。这两个 skill 用于从佳明/高驰账户获取用户画像数据；其中 <b>garmin-stats</b> 还支持佳明活动 FIT 文件同步。下载 zip 后，在 OpenClaw / QClaw 中使用 Skill 安装/导入功能选择该 zip，再按安装界面中的说明完成依赖安装和账号授权。
                             <div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:8px;">
                                 <button type="button" onclick="saveSkillZip('garmin-stats')" style="display:inline-flex; align-items:center; gap:6px; padding:5px 9px; border-radius:6px; background:rgba(59,130,246,0.16); border:1px solid rgba(147,197,253,0.28); color:#bfdbfe; text-decoration:none; font-size:0.74rem; cursor:pointer;"><span style="display:inline-flex; align-items:center; gap:3px; padding:1px 5px; border-radius:4px; background:rgba(15,23,42,0.9); border:1px solid rgba(125,211,252,0.38); color:#e0f2fe; font-size:0.62rem; font-weight:800; letter-spacing:0.08em; line-height:1.2;"><span>GARMIN</span><span style="width:0; height:0; border-left:4px solid transparent; border-right:4px solid transparent; border-bottom:7px solid #38bdf8; transform:translateY(-1px);"></span></span>下载 garmin-stats.zip</button>
                                 <button type="button" onclick="saveSkillZip('coros-stats')" style="display:inline-flex; align-items:center; gap:6px; padding:5px 9px; border-radius:6px; background:rgba(59,130,246,0.16); border:1px solid rgba(147,197,253,0.28); color:#bfdbfe; text-decoration:none; font-size:0.74rem; cursor:pointer;"><span style="display:inline-flex; align-items:center; gap:3px; padding:1px 5px; border-radius:4px; background:rgba(15,23,42,0.9); border:1px solid rgba(74,222,128,0.38); color:#dcfce7; font-size:0.62rem; font-weight:800; letter-spacing:0.08em; line-height:1.2;"><span style="width:7px; height:7px; border-radius:50%; border:2px solid #4ade80; box-sizing:border-box;"></span><span>COROS</span></span>下载 coros-stats.zip</button>
@@ -5768,16 +5928,24 @@
                                 <li>Garmin 首次使用需要登录并保存 OAuth 授权；授权失效时需要重新登录。活动历史缓存超过 7 天会自动刷新。</li>
                                 <li>COROS 需要完成 MCP 授权；Training Hub 字段还需要在本机 Chrome 中登录高驰网页。</li>
                                 <li>COROS 可能会唤起或连接带 DevTools 端口的 Chrome；如果 Chrome 关闭或登录态过期，部分 Training Hub 字段可能暂时为空。</li>
-                                <li>安装或更新 skill 后，建议重启 OpenClaw 或兼容工具，让新 skill 重新加载。</li>
+                                <li>安装或更新 skill 后，建议重启 OpenClaw / QClaw，让新 skill 重新加载。</li>
                             </ul>
+                            <div style="margin-top:8px; padding:8px 9px; border-radius:7px; background:rgba(2,6,23,0.35); border:1px solid rgba(148,163,184,0.18); color:#cbd5e1; font-size:0.72rem; line-height:1.65;">
+                                脉图不是 Garmin 或 COROS 官方应用，也不代表获得其认可或支持。相关 skill 仅用于用户在本机、基于本人账号授权整理自己的运动数据；脉图不提供云端托管同步，不上传或转售用户运动数据。设备厂商接口或登录方式变化时，同步能力可能需要重新授权或更新 skill。
+                            </div>
                         </div>
                         <ul style="margin:4px 0 0 0; padding-left:18px; color:#cbd5e1; font-size:0.78rem; line-height:1.7;">
-                            <li><b>服务商</b>：选择「本地 + MCP（如 OpenClaw / WorkBuddy）」。</li>
+                            <li><b>服务商</b>：选择「本地 + MCP（OpenClaw / QClaw）」。</li>
                             <li><b>自定义 API 地址</b>：填写 OpenClaw 提供的网关地址。</li>
                             <li><b>模型</b>：选择或填写 OpenClaw 网关可调用的模型名称。</li>
                             <li><b>Agent ID</b>：如果 OpenClaw 分配了专用 Agent ID，就填入这里；没有则可留空。</li>
                             <li><b>Gateway Token</b>：如果网关开启鉴权，就填写 Token；本地网关没有鉴权时可留空。</li>
                         </ul>
+                        <div style="margin:8px 0 0 0; padding:8px 9px; border-radius:7px; background:rgba(15,23,42,0.45); border:1px solid rgba(147,197,253,0.16); color:#cbd5e1; font-size:0.74rem; line-height:1.65;">
+                            不知道怎么找这些信息时，可以直接在 OpenClaw 里问 AI 助手：<br>
+                            <span style="display:block; margin-top:4px; color:#bfdbfe;">“我需要让一个本地应用连接 OpenClaw 网关，请告诉我当前本地网关的 API 地址、可用模型名称、Agent ID 和 Gateway Token 应该分别填什么；没有启用的项目请告诉我可以留空。”</span>
+                            网关地址通常形如 <code>http://127.0.0.1:端口号</code> 或 <code>http://localhost:端口号</code>；没有开启鉴权时 Token 可以留空。
+                        </div>
                         <p style="margin:8px 0 0 0; color:#bfdbfe; font-size:0.74rem; line-height:1.7;">「测试连接」只确认网关可用；「告诉 AI 助手存储规范」会告诉 OpenClaw FIT 文件应该下载、解压并保存到哪里。Garmin 同步依赖这两步都完成。</p>
                     </div>
 
@@ -5889,6 +6057,42 @@
             </div>
         </div>
 
+        <!-- ========== 【关于】面板 ========== -->
+        <div id="panel-about" class="tab-panel">
+            <div class="panel-header">
+                <h2>关于</h2>
+                <p>版本信息与近期更新说明</p>
+            </div>
+            <div class="panel-body" style="padding:18px 22px; overflow-y:auto;">
+                <div class="section-card">
+                    <div class="about-version-card">
+                        <div>
+                            <div class="about-app-name">脉图 FitVault</div>
+                            <p style="margin:0; color:#cbd5e1; font-size:0.82rem; line-height:1.7;">脉图是一款本地优先的 AI 运动数据分析工具，帮助你管理、查看和复盘自己的运动记录。</p>
+                        </div>
+                        <div class="about-version-pill" id="about-version">版本 --</div>
+                    </div>
+                </div>
+
+                <div class="section-card">
+                    <div class="section-title">近期更新</div>
+                    <ul class="about-update-list">
+                        <li>FIT 文件导入更稳定，减少重复导入、漏导入和异常文件导致的问题。</li>
+                        <li>支持更好地识别活动地点，历史活动可以显示和筛选地区。</li>
+                        <li>优化运动详情页和复盘页面，图表、指标和 AI 解读更清晰。</li>
+                        <li>大幅增强骑行分析，新增功率、踏频、后程保持等骑行相关解读。</li>
+                        <li>活动建议会结合当前路线、距离、爬升、地区等信息生成。</li>
+                        <li>增强 Garmin 和 COROS 数据接入，支持同步更多运动画像和能力数据。</li>
+                        <li>优化启动速度和导入速度，减少等待时间。</li>
+                        <li>修复 Windows 版本窗口没有最小化、最大化、关闭按钮的问题。</li>
+                        <li>改进 Windows 中文压缩包和中文 FIT 文件名的兼容性。</li>
+                        <li>修复部分非运动 FIT 文件被误导入的问题。</li>
+                    </ul>
+                    <p class="about-summary-line">最新版脉图更稳定、更懂骑行，也更适合日常管理和复盘自己的运动数据。</p>
+                </div>
+            </div>
+        </div>
+
     </div><!-- end #main-content -->
 
 </div><!-- end #app-wrapper -->
@@ -5948,24 +6152,29 @@
                             </div>
                         </div>
                         <!-- Row 2 Col 1-2: 圈速统计(跨左+中列) -->
-                        <div class="overview-laps-area">
-                            <div class="overview-laps-title">📈 圈速统计</div>
+                        <section class="overview-laps-area" aria-labelledby="overview-laps-title">
+                            <h3 id="overview-laps-title" class="overview-laps-title">📈 圈速统计</h3>
+                            <!-- V10.0 P1-1:自动切圈标签(默认隐藏,JS 根据 source_type 控制) -->
+                            <!-- V10.0 P1-2:role=status + aria-live=polite 让屏幕阅读器朗读 -->
+                            <div id="activity-detail-laps-auto-banner" class="lap-source-tag"
+                                 role="status" aria-live="polite" style="display:none;"></div>
                             <div class="lap-table-wrap">
                                 <table class="lap-table">
+                                    <caption class="visually-hidden">圈速统计表,展示每次切圈的详细数据(距离、用时、速度、心率、功率、爬升)</caption>
                                     <thead>
                                         <tr id="activity-detail-laps-head">
-                                            <th>圈速</th>
-                                            <th>配速</th>
-                                            <th>心率</th>
-                                            <th>步频</th>
-                                            <th>GCT</th>
-                                            <th>功率</th>
+                                            <th scope="col">圈号</th>
+                                            <th scope="col">配速</th>
+                                            <th scope="col">心率</th>
+                                            <th scope="col">步频</th>
+                                            <th scope="col">GCT</th>
+                                            <th scope="col">功率</th>
                                         </tr>
                                     </thead>
                                     <tbody id="activity-detail-laps"></tbody>
                                 </table>
                             </div>
-                        </div>
+                        </section>
                     </div>
                     <!-- Row 1+2 Col 3: 3 张卡垂直堆叠(天气/训练收益/环境挑战) -->
                     <div class="overview-sidebar-stack" id="activity-detail-sidebar">
@@ -6037,25 +6246,25 @@
                             </div>
                             <div class="metric-bar">
                                 <div class="metric-card fr-metric-card" data-fr-metric="hr_drift">
-                                    <div class="lbl fr-metric-label">心率漂移 <span class="fr-metric-info" tabindex="0" aria-label="心率漂移说明" data-tooltip="看后半程心率是否比前半程更难控制。越稳定，通常说明体能分配越合理。">i</span></div>
+                                    <div class="lbl fr-metric-label" id="fr-hr-drift-label">心率漂移 <span class="fr-metric-info" id="fr-hr-drift-info" tabindex="0" aria-label="心率漂移说明" data-tooltip="看后半程心率是否比前半程更难控制。越稳定，通常说明体能分配越合理。">i</span></div>
                                     <div class="val" id="fr-hr-drift">--</div>
                                     <div class="fr-metric-status empty" id="fr-hr-drift-status">待接入</div>
                                     <div class="sub" id="fr-hr-drift-sub">等待本次后程心率数据。</div>
                                 </div>
                                 <div class="metric-card fr-metric-card" data-fr-metric="decoupling">
-                                    <div class="lbl fr-metric-label">后程效率变化 <span class="fr-metric-info" tabindex="0" aria-label="后程效率变化说明" data-tooltip="看后半程是否需要更高的心肺负担，才能维持前半程的速度或输出。这个指标也常叫有氧解耦率。">i</span></div>
+                                    <div class="lbl fr-metric-label" id="fr-decoupling-label">后程效率变化 <span class="fr-metric-info" id="fr-decoupling-info" tabindex="0" aria-label="后程效率变化说明" data-tooltip="看后半程是否需要更高的心肺负担，才能维持前半程的速度或输出。这个指标也常叫有氧解耦率。">i</span></div>
                                     <div class="val" id="fr-decoupling">--</div>
                                     <div class="fr-metric-status empty" id="fr-decoupling-status">待接入</div>
                                     <div class="sub" id="fr-decoupling-sub">等待本次后程效率数据。</div>
                                 </div>
                                 <div class="metric-card fr-metric-card" data-fr-metric="bonk_risk">
-                                    <div class="lbl fr-metric-label">能量断档风险 <span class="fr-metric-info" tabindex="0" aria-label="能量断档风险说明" data-tooltip="结合能量储备和持续表现变化判断风险线索。图钉表示风险窗口起点，不是精确撞墙坐标。">i</span></div>
+                                    <div class="lbl fr-metric-label" id="fr-bonk-label">能量断档风险 <span class="fr-metric-info" id="fr-bonk-info" tabindex="0" aria-label="能量断档风险说明" data-tooltip="结合能量储备和持续表现变化判断风险线索。图钉表示风险窗口起点，不是精确撞墙坐标。">i</span></div>
                                     <div class="val" id="fr-bonk">--</div>
                                     <div class="fr-metric-status empty" id="fr-bonk-status">待接入</div>
                                     <div class="sub" id="fr-bonk-sub">等待本次能量风险判断。</div>
                                 </div>
                                 <div class="metric-card fr-metric-card" data-fr-metric="events">
-                                    <div class="lbl fr-metric-label">状态下滑点 <span class="fr-metric-info" tabindex="0" aria-label="状态下滑点说明" data-tooltip="系统识别出的明显状态下滑参考点，通常对应掉速、掉输出或疲劳突增。">i</span></div>
+                                    <div class="lbl fr-metric-label" id="fr-events-label">状态下滑点 <span class="fr-metric-info" id="fr-events-info" tabindex="0" aria-label="状态下滑点说明" data-tooltip="系统识别出的明显状态下滑参考点，通常对应掉速、掉输出或疲劳突增。">i</span></div>
                                     <div class="val" id="fr-events-count">0</div>
                                     <div class="fr-metric-status empty" id="fr-events-status">待接入</div>
                                     <div class="sub" id="fr-events-sub">等待本次状态下滑识别。</div>
@@ -6070,25 +6279,25 @@
                             </div>
                             <div class="metric-bar">
                                 <div class="metric-card fr-metric-card" data-fr-metric="efficiency">
-                                    <div class="lbl fr-metric-label">运动效率 <span class="fr-metric-info" tabindex="0" aria-label="运动效率说明" data-tooltip="看体能投入是否有效转成速度、推进或输出表现。">i</span></div>
+                                    <div class="lbl fr-metric-label" id="fr-efficiency-label">运动效率 <span class="fr-metric-info" id="fr-efficiency-info" tabindex="0" aria-label="运动效率说明" data-tooltip="看体能投入是否有效转成速度、推进或输出表现。">i</span></div>
                                     <div class="val" id="fr-efficiency-score">--</div>
                                     <div class="fr-metric-status empty" id="fr-efficiency-status">待接入</div>
                                     <div class="sub" id="fr-efficiency-sub">等待本次效率判断。</div>
                                 </div>
                                 <div class="metric-card fr-metric-card" data-fr-metric="durability">
-                                    <div class="lbl fr-metric-label">耐久指数 <span class="fr-metric-info" tabindex="0" aria-label="耐久指数说明" data-tooltip="看到了后半程，还能不能维持住前半程的表现。">i</span></div>
+                                    <div class="lbl fr-metric-label" id="fr-durability-label">耐久指数 <span class="fr-metric-info" id="fr-durability-info" tabindex="0" aria-label="耐久指数说明" data-tooltip="看到了后半程，还能不能维持住前半程的表现。">i</span></div>
                                     <div class="val" id="fr-durability-score">--</div>
                                     <div class="fr-metric-status empty" id="fr-durability-status">待接入</div>
                                     <div class="sub" id="fr-durability-sub">等待本次后程保持能力判断。</div>
                                 </div>
                                 <div class="metric-card fr-metric-card" data-fr-metric="cadence_stability">
-                                    <div class="lbl fr-metric-label">步频稳定性 <span class="fr-metric-info" tabindex="0" aria-label="步频稳定性说明" data-tooltip="看动作或节奏是否稳定，不代表步频越高越好。">i</span></div>
+                                    <div class="lbl fr-metric-label" id="fr-cadence-stability-label">步频稳定性 <span class="fr-metric-info" id="fr-cadence-stability-info" tabindex="0" aria-label="步频稳定性说明" data-tooltip="看动作或节奏是否稳定，不代表步频越高越好。">i</span></div>
                                     <div class="val" id="fr-cadence-stability-score">--</div>
                                     <div class="fr-metric-status empty" id="fr-cadence-stability-status">待接入</div>
                                     <div class="sub" id="fr-cadence-stability-sub">等待本次节奏稳定性判断。</div>
                                 </div>
                                 <div class="metric-card fr-metric-card" data-fr-metric="training_load">
-                                    <div class="lbl fr-metric-label">训练负荷 <span class="fr-metric-info" tabindex="0" aria-label="训练负荷说明" data-tooltip="看这次运动给身体带来的整体刺激大小，不等于运动质量好坏。">i</span></div>
+                                    <div class="lbl fr-metric-label" id="fr-training-load-label">训练负荷 <span class="fr-metric-info" id="fr-training-load-info" tabindex="0" aria-label="训练负荷说明" data-tooltip="看这次运动给身体带来的整体刺激大小，不等于运动质量好坏。">i</span></div>
                                     <div class="val" id="fr-training-load-value">--</div>
                                     <div class="fr-metric-status empty" id="fr-training-load-status">待接入</div>
                                     <div class="sub" id="fr-training-load-sub">等待本次负荷判断。</div>
@@ -6126,17 +6335,7 @@
                             </div>
                             <div class="fr-chart-footer" id="fr-chart-footer">
                                 <div class="fr-layer-chip-row" id="fr-layer-chip-row"></div>
-                                <div class="fr-layer-toggle-row" id="fr-layer-toggle-row">
-                                    <label style="--fr-layer-color:#ef4444"><input type="checkbox" data-fr-layer-toggle="hr" checked onchange="onFatigueReviewLayerToggle(this)"> 心率</label>
-                                    <label style="--fr-layer-color:#3b82f6"><input type="checkbox" data-fr-layer-toggle="speed" checked onchange="onFatigueReviewLayerToggle(this)"> 配速</label>
-                                    <label style="--fr-layer-color:#eab308"><input type="checkbox" data-fr-layer-toggle="gap" checked onchange="onFatigueReviewLayerToggle(this)"> 坡度修正配速（GAP）</label>
-                                    <label style="--fr-layer-color:#22c55e"><input type="checkbox" data-fr-layer-toggle="efficiency" checked onchange="onFatigueReviewLayerToggle(this)"> 效率</label>
-                                    <label style="--fr-layer-color:#94a3b8"><input type="checkbox" data-fr-layer-toggle="altitude" checked onchange="onFatigueReviewLayerToggle(this)"> 海拔</label>
-                                    <label style="--fr-layer-color:#f97316"><input type="checkbox" data-fr-layer-toggle="grade" checked onchange="onFatigueReviewLayerToggle(this)"> 坡度</label>
-                                    <label style="--fr-layer-color:#14b8a6"><input type="checkbox" data-fr-layer-toggle="terrainLoad" checked onchange="onFatigueReviewLayerToggle(this)"> 地形负荷</label>
-                                    <label style="--fr-layer-color:#facc15"><input type="checkbox" data-fr-layer-toggle="zones" checked onchange="onFatigueReviewLayerToggle(this)"> 疲劳带</label>
-                                    <label style="--fr-layer-color:#f87171"><input type="checkbox" data-fr-layer-toggle="events" checked onchange="onFatigueReviewLayerToggle(this)"> 事件</label>
-                                </div>
+                                <div class="fr-layer-toggle-row" id="fr-layer-toggle-row"></div>
                             </div>
                         </div>
                     </div>
@@ -6725,6 +6924,7 @@
     let _lastRadarDimensions = null;
     let _radarAnimationFrame = null;
     let _radarRenderSeq = 0;
+    let _radarRebuildLoading = false;
     let profileAnalysisChartInstance = null; // 兼容旧引用
     let profileAnalysisChartInstances = {}; // V4.0: 按 containerId 管理多实例
     let currentUserProfile = null;
@@ -6742,6 +6942,8 @@
     let _fatigueReviewChartIntroSeq = 0;
     let _fatigueReviewLayerVisibility = {
         hr: true,
+        power: true,
+        cadence: true,
         speed: true,
         altitude: true,
         efficiency: true,
@@ -6843,6 +7045,23 @@
         return map;
     }
 
+    function _radarConfidenceLabel(confidence) {
+        var normalized = String(confidence || '').toLowerCase();
+        if (normalized === 'high') return '高';
+        if (normalized === 'medium') return '中';
+        if (normalized === 'low') return '低';
+        return '未提供';
+    }
+
+    function _radarDimensionMetaLine(dim) {
+        if (!dim) return '';
+        var sample = dim.sample_count == null ? '未提供' : dim.sample_count;
+        var source = dim.source || '未提供';
+        return '可信度：' + _radarConfidenceLabel(dim.confidence) +
+            '｜样本：' + sample +
+            '｜来源：' + source;
+    }
+
     function _radarStartScores(previousDimensions, nextDimensions) {
         var previous = _radarScoreMap(previousDimensions);
         return (nextDimensions || []).map(function(dim) {
@@ -6855,13 +7074,27 @@
         return 1 - Math.pow(1 - t, 3);
     }
 
-    function _buildRadarChartOption(dynamicIndicators, scores, animationEnabled) {
+    function _buildRadarChartOption(dynamicIndicators, scores, animationEnabled, dimensions) {
         return {
             backgroundColor: 'transparent',
             animation: animationEnabled !== false,
             animationDuration: 450,
             animationDurationUpdate: 650,
             animationEasingUpdate: 'cubicOut',
+            tooltip: {
+                trigger: 'item',
+                confine: true,
+                formatter: function(params) {
+                    var values = (params && params.value) || [];
+                    return (dimensions || []).map(function(dim, idx) {
+                        var score = _radarScoreValue(values[idx] == null ? dim.score : values[idx]).toFixed(0);
+                        var reason = dim.reason ? '<br/><span style="color:#94a3b8">' + dim.reason + '</span>' : '';
+                        return '<div style="margin:4px 0"><strong>' + (dim.label || dim.key || '-') + '</strong>：' +
+                            score + '<br/><span style="color:#94a3b8">' +
+                            _radarDimensionMetaLine(dim) + '</span>' + reason + '</div>';
+                    }).join('');
+                }
+            },
             radar: {
                 id: 'performance-radar-axis',
                 indicator: dynamicIndicators,
@@ -6902,14 +7135,14 @@
         };
     }
 
-    function _setRadarChartOption(chart, indicators, scores, animationEnabled) {
+    function _setRadarChartOption(chart, indicators, scores, animationEnabled, dimensions) {
         chart.setOption(
-            _buildRadarChartOption(indicators, scores, animationEnabled),
+            _buildRadarChartOption(indicators, scores, animationEnabled, dimensions),
             { notMerge: false, lazyUpdate: false }
         );
     }
 
-    function _animateRadarScores(chart, indicators, fromScores, toScores, done) {
+    function _animateRadarScores(chart, indicators, fromScores, toScores, dimensions, done) {
         var duration = 650;
         var renderSeq = ++_radarRenderSeq;
         var startedAt = (window.performance && performance.now) ? performance.now() : Date.now();
@@ -6918,7 +7151,7 @@
             window.cancelAnimationFrame(_radarAnimationFrame);
         }
 
-        _setRadarChartOption(chart, indicators, fromScores, false);
+        _setRadarChartOption(chart, indicators, fromScores, false, dimensions);
 
         var step = function(now) {
             if (renderSeq !== _radarRenderSeq) return;
@@ -6929,12 +7162,12 @@
                 var start = fromScores[idx] == null ? 0 : fromScores[idx];
                 return start + (target - start) * eased;
             });
-            _setRadarChartOption(chart, indicators, frameScores, false);
+            _setRadarChartOption(chart, indicators, frameScores, false, dimensions);
             if (progress < 1 && typeof window.requestAnimationFrame === 'function') {
                 _radarAnimationFrame = window.requestAnimationFrame(step);
             } else {
                 _radarAnimationFrame = null;
-                _setRadarChartOption(chart, indicators, toScores, false);
+                _setRadarChartOption(chart, indicators, toScores, false, dimensions);
                 if (typeof done === 'function') done();
             }
         };
@@ -6942,7 +7175,7 @@
         if (typeof window.requestAnimationFrame === 'function') {
             _radarAnimationFrame = window.requestAnimationFrame(step);
         } else {
-            _setRadarChartOption(chart, indicators, toScores, false);
+            _setRadarChartOption(chart, indicators, toScores, false, dimensions);
             if (typeof done === 'function') done();
         }
     }
@@ -7017,19 +7250,24 @@
                         dynamicIndicators,
                         _radarStartScores(previousDimensions, dimensions),
                         dynamicScores,
+                        dimensions,
                         function() {
                             stableResizeChart(radarChartInstance, radarContainer);
                         }
                     );
                 } else {
-                    _setRadarChartOption(radarChartInstance, dynamicIndicators, dynamicScores, true);
+                    _setRadarChartOption(radarChartInstance, dynamicIndicators, dynamicScores, true, dimensions);
                     stableResizeChart(radarChartInstance, radarContainer);
                 }
                 _lastRadarDimensions = dimensions.map(function(dim) {
                     return {
                         key: _radarDimensionKey(dim),
                         label: dim.label,
-                        score: _radarScoreValue(dim.score)
+                        score: _radarScoreValue(dim.score),
+                        confidence: dim.confidence,
+                        sample_count: dim.sample_count,
+                        source: dim.source,
+                        reason: dim.reason
                     };
                 });
             } catch (e) {
@@ -7055,6 +7293,65 @@
         }
     }
 
+    function updateRadarRebuildHint(metricsData) {
+        var hint = document.getElementById('radarRebuildHint');
+        if (!hint) return;
+        var result = document.getElementById('radarRebuildResult');
+        var shouldShow = !!(metricsData && metricsData.needs_rebuild);
+        hint.style.display = shouldShow ? 'flex' : 'none';
+        if (!shouldShow && result && !_radarRebuildLoading) result.textContent = '';
+    }
+
+    function _setRadarRebuildButtonLoading(isLoading) {
+        _radarRebuildLoading = !!isLoading;
+        var btn = document.getElementById('radarRebuildBtn');
+        if (!btn) return;
+        btn.disabled = _radarRebuildLoading;
+        btn.style.opacity = _radarRebuildLoading ? '0.55' : '';
+        btn.style.cursor = _radarRebuildLoading ? 'not-allowed' : 'pointer';
+        btn.textContent = _radarRebuildLoading ? '重建中…' : '重新构建';
+    }
+
+    function _radarRebuildPayload(res) {
+        if (!res) return {};
+        return res.data || res;
+    }
+
+    function _radarCount(value) {
+        var n = Number(value);
+        return Number.isFinite(n) ? n : 0;
+    }
+
+    async function onRadarRebuildData() {
+        if (_radarRebuildLoading) return;
+        var result = document.getElementById('radarRebuildResult');
+        try {
+            if (!window.pywebview || !window.pywebview.api ||
+                typeof window.pywebview.api.api_force_rebuild_radar_data !== 'function') {
+                if (result) result.textContent = '重建失败，请稍后重试';
+                return;
+            }
+            _setRadarRebuildButtonLoading(true);
+            if (result) result.textContent = '';
+            var res = await window.pywebview.api.api_force_rebuild_radar_data();
+            var data = _radarRebuildPayload(res);
+            if (res && res.ok !== false) {
+                var rebuilt = _radarCount(data.rebuilt_count);
+                var skipped = _radarCount(data.skipped_count);
+                var failed = _radarCount(data.failed_count);
+                if (result) result.textContent = '已重建 ' + rebuilt + ' 条，跳过 ' + skipped + ' 条，失败 ' + failed + ' 条';
+                await renderPerformanceRadar();
+            } else {
+                if (result) result.textContent = '重建失败，请稍后重试';
+            }
+        } catch (e) {
+            console.warn('雷达指标重建失败', e);
+            if (result) result.textContent = '重建失败，请稍后重试';
+        } finally {
+            _setRadarRebuildButtonLoading(false);
+        }
+    }
+
     async function renderPerformanceRadar() {
         var radarContainer = document.getElementById('performanceRadar');
         if (!radarContainer) return;
@@ -7071,6 +7368,7 @@
             console.warn("滚动聚合雷达 API 调用失败", e);
         }
 
+        updateRadarRebuildHint(metrics);
         renderRadarChart(_currentRadarSportType, metrics);
     }
 
@@ -7225,11 +7523,12 @@
         }
     };
 
-    function showToast(msg) {
+    function showToast(msg, duration) {
         const toast = document.getElementById('toast');
         toast.innerText = msg; toast.style.opacity = '1';
         if (toastTimeout) clearTimeout(toastTimeout);
-        toastTimeout = setTimeout(() => { toast.style.opacity = '0'; }, 3500);
+        const ms = (typeof duration === 'number' && duration > 0) ? duration : 3500;
+        toastTimeout = setTimeout(() => { toast.style.opacity = '0'; }, ms);
     }
 
     function showCompassBadge() {
@@ -7420,7 +7719,7 @@
     }
 
     function switchTab(tabBtn) {
-        const panels = ['profile', 'trace', 'settings', 'help'];
+        const panels = ['profile', 'trace', 'settings', 'help', 'about'];
         const activePanel = tabBtn ? tabBtn.getAttribute('data-panel') : 'profile';
 
         document.querySelectorAll('.bookmark-tab').forEach(function(t) { t.classList.remove('active'); });
@@ -7457,6 +7756,9 @@
         if (activePanel === 'help') {
             // 帮助说明面板为纯静态内容,无需加载后端数据
         }
+        if (activePanel === 'about') {
+            loadAboutInfo();
+        }
 
         // §5.4 规则 6:切换 Tab 时清空 AI 洞察(阅后即焚)
         _clearRadarInsight();
@@ -7466,6 +7768,25 @@
         resetActivityAdviceState();
         // 同步 title 搜索框 UI(不触发重查,只回填 input.value 与 has-value class)
         syncSportHubTitleFilterUI();
+    }
+
+    async function loadAboutInfo() {
+        const versionEl = document.getElementById('about-version');
+        if (!versionEl || versionEl.dataset.loaded === '1') return;
+        try {
+            if (!window.pywebview || !window.pywebview.api || typeof window.pywebview.api.get_app_info !== 'function') {
+                versionEl.textContent = '版本 V1.0.4';
+                return;
+            }
+            const res = await window.pywebview.api.get_app_info();
+            const data = res && res.data ? res.data : res;
+            const version = data && data.version ? String(data.version) : 'V1.0.4';
+            versionEl.textContent = '版本 ' + version;
+            versionEl.dataset.loaded = '1';
+        } catch (e) {
+            console.warn('loadAboutInfo failed', e);
+            versionEl.textContent = '版本 V1.0.4';
+        }
     }
 
     function syncSportHubTitleFilterUI() {
@@ -8725,32 +9046,92 @@
         // V9.4.4:圈速表头真理源 = 后端 resolve_lap_columns(detail.lap_columns)
         // 列 label 走 HERO_FIELD_LABELS,格式化走 _formatHeroValue
         // lap dict 字段名映射:后端 lap_columns 字段 → detail.laps 行字段
+        // V10.0 P1-1:扩展骑行 9 列字段映射
         var _lapCols = (detail && Array.isArray(detail.lap_columns)) ? detail.lap_columns : [];
-        var _lapKeyMap = { avg_pace: 'pace_sec', avg_hr: 'hr', max_hr: 'max_hr', cadence: 'cadence', gct: 'gct_ms', power: 'power_w', ascent: 'ascent_m', descent: 'descent_m', swolf: 'swolf', stroke_style: 'stroke_style', length_distance: 'length_distance_m', stroke_distance: 'stroke_distance_m', calories: 'calories' };
+        var _lapKeyMap = {
+            // V4.0 旧字段(跑步/徒步等保持)
+            avg_pace: 'pace_sec',
+            avg_hr: 'hr',
+            max_hr: 'max_hr',
+            cadence: 'cadence',
+            gct: 'gct_ms',
+            power: 'power_w',
+            ascent: 'ascent_m',
+            descent: 'descent_m',
+            swolf: 'swolf',
+            stroke_style: 'stroke_style',
+            length_distance: 'length_distance_m',
+            stroke_distance: 'stroke_distance_m',
+            calories: 'calories',
+            // V10.0 P1-1:骑行 9 列新增字段
+            lap_no: 'lap_no',                    // 圈号(FIT/auto 用 lap_index,mock 用 lap_no)
+            lap_distance_km: 'distance_m',       // 圈距离(m,前端格式化时 /1000)
+            elapsed_sec: 'elapsed_sec',          // 圈用时(秒)
+            avg_speed_kmh: 'avg_speed_mps',      // 平均速度(m/s,前端 *3.6)
+            avg_power: 'avg_power',              // 平均功率(W)
+            max_power: 'max_power',              // 最大功率(W)
+            normalized_power: 'normalized_power',// 标准化功率(W)
+            total_ascent: 'total_ascent',        // 累计爬升(m)
+        };
         var _sportOpts = (function(){
             var s = (record.display_sport_type || record.sport_type || '').toLowerCase();
             return (s === 'swimming' || s === 'lap_swimming' || s === 'open_water' || s === 'open_water_swimming') ? { unit_m: true, unit_per_100m: true } : {};
         })();
         var _headRow = document.getElementById('activity-detail-laps-head');
         if (_headRow) {
-            _headRow.innerHTML = '<th>圈速</th>' + _lapCols.map(function(c){
-                return '<th>' + (HERO_FIELD_LABELS[c] || c) + '</th>';
+            _headRow.innerHTML = '<th scope="col">圈号</th>' + _lapCols.map(function(c){
+                return '<th scope="col" data-field="' + c + '">' + (HERO_FIELD_LABELS[c] || c) + '</th>';
             }).join('');
         }
         var laps = (detail.laps) || [];
+
+        // V10.0 P1-1 §2.2 严格执行:前端只消费 source_type='fit_sdk' 或 'frontend_fallback' 的圈数据
+        // mock (source_type='mock') 严禁进入生产 UI
+        var _filteredLaps = laps.filter(function(lap) {
+            return lap && (lap.source_type === 'fit_sdk' || lap.source_type === 'frontend_fallback');
+        });
+        var _filteredCount = laps.length - _filteredLaps.length;
+        if (_filteredCount > 0 && typeof console !== 'undefined' && console.warn) {
+            console.warn('[V10.0 P1-1] Filtered ' + _filteredCount + ' mock laps from UI rendering (契约 §2.2)');
+        }
+
+        // V10.0 P1-1:检测是否包含自动切圈数据,用于渲染提示标签
+        var _isAutoLapped = _filteredLaps.some(function(lap) {
+            return lap && lap.source_type === 'frontend_fallback';
+        });
+
         var _colCount = _lapCols.length + 1;
-        lapsBody.innerHTML = laps.length ? laps.map(function(lap) {
-            var cells = '<td>' + lap.lap_no + '</td>' + _lapCols.map(function(c){
+        lapsBody.innerHTML = _filteredLaps.length ? _filteredLaps.map(function(lap, rowIdx) {
+            var cells = '<th scope="row">' + (lap.lap_no != null ? lap.lap_no : (lap.lap_index != null ? (lap.lap_index + 1) : '--')) + '</th>' + _lapCols.map(function(c){
                 var key = _lapKeyMap[c] || c;
                 var raw = lap[key];
                 if (c === 'stroke_distance' && raw == null && lap.avg_stroke_distance != null) {
                     raw = lap.avg_stroke_distance;
                 }
-                var f = _formatHeroValue(c, raw, _sportOpts);
-                return '<td>' + f.value + (f.unit ? '<span class="unit">' + f.unit + '</span>' : '') + '</td>';
+                // V10.0:自动切圈沿用 _normalize_laps 字段 avg_hr;旧展示圈保留 hr
+                if (c === 'avg_hr' && raw == null && lap.avg_hr != null) {
+                    raw = lap.avg_hr;
+                }
+                // V10.0 P1-1: lap_no 列直接读 lap.lap_index(FIT/auto 用 0 开始)或 lap.lap_no(mock)
+                if (c === 'lap_no') {
+                    raw = (lap.lap_index != null) ? lap.lap_index : lap.lap_no;
+                }
+                var f = _formatHeroValue(c, raw, _sportOpts, lap);
+                return '<td data-field="' + c + '">' + f.value + (f.unit ? '<span class="unit">' + f.unit + '</span>' : '') + '</td>';
             }).join('');
-            return '<tr>' + cells + '</tr>';
+            return '<tr tabindex="0" data-row="' + rowIdx + '">' + cells + '</tr>';
         }).join('') : '<tr><td colspan="' + _colCount + '" style="color:#64748b;">暂无圈速统计数据</td></tr>';
+
+        // V10.0 P1-1:自动切圈标签(仅当存在 frontend_fallback 数据时显示)
+        var _autoBannerEl = document.getElementById('activity-detail-laps-auto-banner');
+        if (_autoBannerEl) {
+            if (_isAutoLapped) {
+                _autoBannerEl.textContent = '自动切圈(每 5km) · 共 ' + _filteredLaps.length + ' 段';
+                _autoBannerEl.style.display = '';
+            } else {
+                _autoBannerEl.style.display = 'none';
+            }
+        }
 
         // V6 轨迹快照(E11) — 固定 260×260 一次渲染,不再动态
         if (caps.has_gps && record.thumbnail_points && record.thumbnail_points.length) {
@@ -9052,6 +9433,15 @@
         'stroke_style': '泳姿',
         'length_distance': '单趟距离',
         'stroke_distance': '单次划水距离',
+        // V10.0 P1-1:骑行 9 列新增 label
+        'lap_no': '圈号',
+        'lap_distance_km': '圈距离',
+        'elapsed_sec': '圈用时',
+        'avg_speed_kmh': '平均速度',
+        'avg_power': '平均功率',
+        'max_power': '最大功率',
+        'normalized_power': 'NP',
+        'total_ascent': '累计爬升',
     };
 
     // === V9.3 §需求 5:Hero 字段矢量图标(M0 用 emoji) ===
@@ -9087,7 +9477,8 @@
 
     // === V9.3 §需求 1:统一 Hero 字段格式化(单点真理) ===
     // V9.3.1:精简到 6 字段(M0 实际使用);avg_pace 配速单位由 _formatHeroValue 视 sport 决定
-    function _formatHeroValue(field, raw, opts) {
+    // V10.0 P1-1:扩展骑行 9 列字段格式化
+    function _formatHeroValue(field, raw, opts, lap) {
         opts = opts || {};
         if (raw == null) return { value: '--', unit: '' };
         switch (field) {
@@ -9111,12 +9502,16 @@
             case 'elevation_gain':
             case 'ascent':
             case 'descent':
+            case 'total_ascent':
                 return { value: Math.round(raw), unit: 'm' };
             case 'cadence':
                 return { value: Math.round(raw), unit: 'spm' };
             case 'gct':
                 return { value: Math.round(raw), unit: 'ms' };
             case 'power':
+            case 'avg_power':
+            case 'max_power':
+            case 'normalized_power':
                 return { value: Math.round(raw), unit: 'W' };
             case 'swolf':
                 return { value: Math.round(raw), unit: '' };
@@ -9125,6 +9520,29 @@
             case 'length_distance':
             case 'stroke_distance':
                 return { value: Number(raw).toFixed(1), unit: 'm' };
+            // V10.0 P1-1:骑行新增字段格式化
+            case 'lap_no':
+                // lap_no 来源可能是 lap_index(从 0 开始)或 lap_no(从 1 开始,mock)
+                // V10.0 P1-3:区分自动切圈「第 N 段」与 FIT 圈「Lap N」
+                var _idx = (typeof raw === 'number') ? raw : parseInt(raw, 10);
+                if (isNaN(_idx)) return { value: '--', unit: '' };
+                var _humanIdx = _idx + 1;
+                if (lap && lap.source_type === 'frontend_fallback') {
+                    return { value: '第 ' + _humanIdx + ' 段', unit: '' };
+                }
+                return { value: 'Lap ' + _humanIdx, unit: '' };
+            case 'lap_distance_km':
+                // distance_m (米) → 公里
+                if (typeof raw !== 'number') return { value: '--', unit: '' };
+                return { value: (raw / 1000).toFixed(2), unit: 'km' };
+            case 'elapsed_sec':
+                // 圈用时格式化 HH:MM:SS 或 MM:SS
+                if (typeof raw !== 'number' || raw <= 0) return { value: '--', unit: '' };
+                return _formatDurationSplit(raw);
+            case 'avg_speed_kmh':
+                // avg_speed_mps (m/s) → km/h
+                if (typeof raw !== 'number' || raw <= 0) return { value: '--', unit: '' };
+                return { value: (raw * 3.6).toFixed(1), unit: 'km/h' };
             default:
                 return { value: String(raw), unit: '' };
         }
@@ -9724,7 +10142,22 @@
             const importedCount = Array.isArray(importData.imported) ? importData.imported.length : 0;
             const skippedCount = Array.isArray(importData.skipped) ? importData.skipped.length : 0;
             const errorCount = Array.isArray(importData.errors) ? importData.errors.length : 0;
-            showToast(`已导入 ${importedCount} 个本地文件${skippedCount ? `，跳过 ${skippedCount} 个` : ''}${errorCount ? `，${errorCount} 个文件异常` : ''}`);
+            const healthFilteredCount = Array.isArray(importData.health_filtered) ? importData.health_filtered.length : 0;
+            let toastMsg = `已导入 ${importedCount} 个本地文件`;
+            if (skippedCount) toastMsg += `，去重跳过 ${skippedCount} 个`;
+            if (healthFilteredCount) toastMsg += `，${healthFilteredCount} 个疑似健康数据已过滤`;
+            if (errorCount) toastMsg += `，${errorCount} 个文件异常`;
+            showToast(toastMsg);
+            // V10.0 P0-X:展示后端 hint 字段(契约 §2.1 全链路可追溯 - 错误建议必须能被前端完整消费)
+            if (errorCount > 0 && Array.isArray(importData.errors)) {
+                const hintErrors = importData.errors.filter(e => e && e.hint);
+                if (hintErrors.length > 0) {
+                    const firstHint = hintErrors[0];
+                    setTimeout(() => {
+                        showToast(firstHint.hint, 8000);
+                    }, 4000);
+                }
+            }
         } catch (e) {
             console.error('importLocalFitFiles error:', e);
             sportHubState.recordsError = String((e && e.message) || e || '本地 FIT 文件导入失败');
@@ -10727,7 +11160,7 @@
     // 大模型 API 配置与逻辑
     // ==========================================
     const llmProviders = {
-        'local_mcp': { url: 'http://localhost:3000/v1/chat/completions', models: ['openclaw', 'workbuddy'] },
+        'local_mcp': { url: 'http://localhost:3000/v1/chat/completions', models: ['openclaw'] },
         'openai': { url: 'https://api.openai.com/v1/chat/completions', models: ['gpt-4o-mini', 'gpt-4o', 'gpt-4.1-mini'] },
         'deepseek': { url: 'https://api.deepseek.com/chat/completions', models: ['deepseek-chat', 'deepseek-reasoner'] },
         'zhipu': { url: 'https://open.bigmodel.cn/api/paas/v4/chat/completions', models: ['glm-4-flash', 'glm-4', 'glm-4-plus'] },
@@ -10737,6 +11170,11 @@
         'custom': { url: '', models: [] }
     };
 
+    function normalizeLocalGatewayModel(provider, model) {
+        const cleanModel = String(model || '').trim();
+        return cleanModel || 'openclaw';
+    }
+
     async function initLLMConfig() {
         if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.get_llm_config === 'function') {
             try {
@@ -10745,9 +11183,11 @@
                 // data 才是真正的配置 payload；顶层只有 ok/code/msg 三个元字段。
                 const c = (raw && typeof raw === 'object' && 'data' in raw) ? (raw.data || {}) : (raw || {});
                 if (c) {
+                    const storedProvider = c.provider || 'local_mcp';
+                    const storedModel = normalizeLocalGatewayModel(storedProvider, c.model || 'openclaw');
                     currentLLMConfig = {
-                        provider: c.provider || 'local_mcp',
-                        model: c.model || 'openclaw',
+                        provider: storedProvider,
+                        model: storedModel,
                         url: (c.url && String(c.url).trim()) ? String(c.url).trim() : '',
                         apiKey: '',
                         hasApiKey: !!c.has_api_key,
@@ -10761,7 +11201,10 @@
         }
         try {
             const saved = localStorage.getItem('llm_config_v2');
-            if (saved) currentLLMConfig = { ...currentLLMConfig, ...JSON.parse(saved) };
+            if (saved) {
+                currentLLMConfig = { ...currentLLMConfig, ...JSON.parse(saved) };
+                currentLLMConfig.model = normalizeLocalGatewayModel(currentLLMConfig.provider, currentLLMConfig.model);
+            }
         } catch (e) {}
     }
     initLLMConfig().catch(function () {});
@@ -10778,16 +11221,15 @@
 
     function syncLLMConfigFromFields() {
         const providerInput = document.getElementById('llm-provider');
-        const modelSelect = document.getElementById('llm-model');
-        const customModelInput = document.getElementById('llm-custom-model');
+        const modelInput = document.getElementById('llm-model');
         const urlInput = document.getElementById('llm-custom-url');
         const apiKeyInput = document.getElementById('llm-api-key');
         const agentIdInput = document.getElementById('llm-agent-id');
         const brandInput = document.querySelector('input[name="watch_brand"]:checked');
-        if (!providerInput || !modelSelect || !customModelInput || !urlInput || !apiKeyInput || !agentIdInput) return;
+        if (!providerInput || !modelInput || !urlInput || !apiKeyInput || !agentIdInput) return;
         const provider = providerInput.value || 'local_mcp';
         const agentId = agentIdInput.value.trim();
-        const selectedModel = (customModelInput.style.display !== 'none' ? customModelInput.value : modelSelect.value) || currentLLMConfig.model || 'openclaw';
+        const selectedModel = modelInput.value || currentLLMConfig.model || 'openclaw';
         const model = normalizeAgentModel(selectedModel, agentId);
         currentLLMConfig = {
             provider: provider,
@@ -10802,13 +11244,12 @@
 
     function renderLLMConfigFields() {
         const providerInput = document.getElementById('llm-provider');
-        const modelSelect = document.getElementById('llm-model');
-        const customModelContainer = document.getElementById('llm-custom-model-container');
-        const customModelInput = document.getElementById('llm-custom-model');
+        const modelInput = document.getElementById('llm-model');
+        const modelOptions = document.getElementById('llm-model-options');
         const urlInput = document.getElementById('llm-custom-url');
         const apiKeyInput = document.getElementById('llm-api-key');
         const agentIdInput = document.getElementById('llm-agent-id');
-        if (!providerInput || !modelSelect || !customModelContainer || !customModelInput || !urlInput || !apiKeyInput || !agentIdInput) return;
+        if (!providerInput || !modelInput || !modelOptions || !urlInput || !apiKeyInput || !agentIdInput) return;
         const provider = currentLLMConfig.provider || 'local_mcp';
         providerInput.value = llmProviders[provider] ? provider : 'custom';
         const providerConfig = llmProviders[providerInput.value] || llmProviders.custom;
@@ -10822,28 +11263,20 @@
         if (watchBrand) selectUserType(watchBrand);
         // 任务：用户设备必选 — 启动时若未选则显示红色提示
         validateWatchBrandRequired();
-        modelSelect.innerHTML = '';
-        if (models.length > 0) {
-            modelSelect.style.display = 'block';
-            customModelContainer.style.display = 'none';
-            models.forEach(function(model) {
-                const option = document.createElement('option');
-                option.value = model;
-                option.innerText = model;
-                modelSelect.appendChild(option);
-            });
-            if ((currentLLMConfig.model || '') && !models.includes(currentLLMConfig.model || '') && !String(currentLLMConfig.model || '').startsWith('openclaw/agent-')) {
-                const option = document.createElement('option');
-                option.value = currentLLMConfig.model || 'openclaw';
-                option.innerText = currentLLMConfig.model || 'openclaw';
-                modelSelect.appendChild(option);
-            }
-            modelSelect.value = String(currentLLMConfig.model || '').startsWith('openclaw/agent-') ? 'openclaw' : (currentLLMConfig.model || 'openclaw');
-        } else {
-            modelSelect.style.display = 'none';
-            customModelContainer.style.display = 'block';
-            customModelInput.value = currentLLMConfig.model || 'openclaw';
+        modelOptions.innerHTML = '';
+        models.forEach(function(model) {
+            const option = document.createElement('option');
+            option.value = model;
+            option.label = model;
+            modelOptions.appendChild(option);
+        });
+        if ((currentLLMConfig.model || '') && !models.includes(currentLLMConfig.model || '') && !String(currentLLMConfig.model || '').startsWith('openclaw/agent-')) {
+            const option = document.createElement('option');
+            option.value = currentLLMConfig.model || 'openclaw';
+            option.label = currentLLMConfig.model || 'openclaw';
+            modelOptions.appendChild(option);
         }
+        modelInput.value = String(currentLLMConfig.model || '').startsWith('openclaw/agent-') ? 'openclaw' : (currentLLMConfig.model || models[0] || 'openclaw');
         if (!urlInput._userModified || !urlInput.value.trim()) {
             // 未配置时不要回退到 LLM_DEFAULT_URL，避免静默指向错端口。
             urlInput.value = currentLLMConfig.url || '';
@@ -10851,9 +11284,8 @@
         apiKeyInput.value = currentLLMConfig.apiKey || '';
         agentIdInput.value = currentLLMConfig.agentId || '';
         providerInput.disabled = false;
-        modelSelect.disabled = false;
-        customModelInput.readOnly = false;
-        customModelInput.disabled = false;
+        modelInput.disabled = false;
+        modelInput.readOnly = false;
         urlInput.readOnly = false;
         urlInput.disabled = false;
         apiKeyInput.readOnly = false;
@@ -13995,7 +14427,7 @@ function stopLLMHeartbeat() {
                 return;
             }
             _renderFatigueReviewSummary(data);
-            _renderFatigueReviewMetrics(data.metrics || {}, data.sport_type);
+            _renderFatigueReviewMetrics(data.metrics || {}, data.sport_type, data.cycling_explanation_signals || {});
             _renderFatigueReviewDimensions(data.metrics || {});
             var reviewTotalDistanceKm = _fatigueReviewTotalDistanceKm(data);
             var hasSustainedZone = _fatigueReviewHasSustainedZone(data.fatigue_zones || [], reviewTotalDistanceKm);
@@ -14007,14 +14439,26 @@ function stopLLMHeartbeat() {
             _renderFatigueReviewChartFooter(data);
             // P7.10:分层主图全部空时不渲染 ECharts,改展示占位卡
             var curvesObj = data.curves || {};
+            var chartSportMode = _fatigueReviewChartSportMode(data.sport_type);
             var allCurvesEmpty = (
-                !(curvesObj.gap && curvesObj.gap.length) &&
-                !(curvesObj.hr && curvesObj.hr.length) &&
-                !(curvesObj.efficiency && curvesObj.efficiency.length) &&
-                !(curvesObj.speed && curvesObj.speed.length) &&
-                !(curvesObj.altitude && curvesObj.altitude.length) &&
-                !(curvesObj.grade && curvesObj.grade.length) &&
-                !(curvesObj.terrain_load && curvesObj.terrain_load.length)
+                chartSportMode === 'cycling'
+                    ? (
+                        !(curvesObj.power && curvesObj.power.length) &&
+                        !(curvesObj.hr && curvesObj.hr.length) &&
+                        !(curvesObj.altitude && curvesObj.altitude.length) &&
+                        !(curvesObj.cadence && curvesObj.cadence.length) &&
+                        !(curvesObj.grade && curvesObj.grade.length) &&
+                        !(curvesObj.terrain_load && curvesObj.terrain_load.length)
+                    )
+                    : (
+                        !(curvesObj.gap && curvesObj.gap.length) &&
+                        !(curvesObj.hr && curvesObj.hr.length) &&
+                        !(curvesObj.efficiency && curvesObj.efficiency.length) &&
+                        !(curvesObj.speed && curvesObj.speed.length) &&
+                        !(curvesObj.altitude && curvesObj.altitude.length) &&
+                        !(curvesObj.grade && curvesObj.grade.length) &&
+                        !(curvesObj.terrain_load && curvesObj.terrain_load.length)
+                    )
             );
             var chartContainer = document.getElementById('fatigue-review-chart');
             if (allCurvesEmpty && chartContainer) {
@@ -14026,15 +14470,20 @@ function stopLLMHeartbeat() {
                 _renderFatigueReviewLaneRail([]);
                 chartContainer.innerHTML = _frEmptyStateHtml({
                     icon: '📉',
-                    title: '本次活动未记录曲线数据',
-                    desc: '该活动缺少可绘制的心率、配速、海拔、效率、GAP、坡度或地形负荷曲线。',
+                    title: chartSportMode === 'cycling' ? '本次骑行未记录可绘制曲线' : '本次活动未记录曲线数据',
+                    desc: chartSportMode === 'cycling'
+                        ? '后端未返回可绘制的功率、心率、海拔、踏频、坡度或地形负荷曲线。'
+                        : '该活动缺少可绘制的心率、配速、海拔、效率、GAP、坡度或地形负荷曲线。',
                     tag: '暂无可用曲线'
                 });
             } else {
                 // 渲染 P7.10 分层 ECharts 主图(复用渲染函数,容器 ID 区分)
                 var chartPayload = {
+                    sport_type: data.sport_type,
                     distance_curve: Array.isArray(curvesObj.distance) ? curvesObj.distance : [],
                     hr_curve:        data.curves && data.curves.hr,
+                    power_curve:     data.curves && data.curves.power,
+                    cadence_curve:   data.curves && data.curves.cadence,
                     pace_curve:      data.display_curves && data.display_curves.pace_sec_per_km,
                     pace_raw_curve:  data.display_curves && data.display_curves.pace_raw_sec_per_km,
                     pace_capped_curve:data.display_curves && data.display_curves.pace_capped,
@@ -14050,6 +14499,7 @@ function stopLLMHeartbeat() {
                     insight_events:  data.collapse_events || [],
                 };
                 _lastFatigueReviewChartPayload = chartPayload;
+                _renderFatigueReviewChartFooter(chartPayload);
                 chartPayload = _applyFatigueReviewLayerVisibility(chartPayload);
                 renderProfileAnalysisChart(chartPayload, 'fatigue-review-chart', { introAnimation: true });
                 // 解决从 display:none 或布局变更切出来的 ECharts 宽度塌陷
@@ -14189,6 +14639,31 @@ function stopLLMHeartbeat() {
         return labels.muted || '数据不足';
     }
 
+    function _fatigueReviewCyclingOverviewStabilityOverride(data) {
+        data = data || {};
+        if (_fatigueReviewMetricSportMode(data.sport_type) !== 'cycling') return null;
+        var signals = data.cycling_explanation_signals && typeof data.cycling_explanation_signals === 'object'
+            ? data.cycling_explanation_signals
+            : {};
+        var signalState = function(key) {
+            return _fatigueReviewCyclingSignalState(_fatigueReviewCyclingSignal(signals, key), false);
+        };
+        var pacingState = signalState('pacing_signal');
+        var retentionState = signalState('power_retention_signal');
+        var cadenceState = signalState('cadence_signal');
+        var lacksPowerBasis = pacingState === 'missing' && retentionState === 'missing';
+        var lacksCadenceBasis = cadenceState === 'missing';
+        if (!lacksPowerBasis && !lacksCadenceBasis) return null;
+        return {
+            level: '暂不判断',
+            tone: 'muted',
+            comment: lacksPowerBasis
+                ? '缺少可用功率依据，暂不判断本次骑行输出稳定性。'
+                : '踏频依据不足，暂不单独判断本次骑行踩踏稳定性。',
+            tags: '功率 · 踏频 · 心率'
+        };
+    }
+
     function _buildFatigueReviewOverviewDimensions(data) {
         data = data || {};
         var metrics = data.metrics || {};
@@ -14210,6 +14685,7 @@ function stopLLMHeartbeat() {
             else if (tone === 'warn' && stabilityTone !== 'bad') stabilityTone = 'warn';
             else if (tone === 'ok' && stabilityTone === 'muted') stabilityTone = 'ok';
         });
+        var cyclingStabilityOverride = _fatigueReviewCyclingOverviewStabilityOverride(data);
 
         var firstZone = zones[0] || {};
         var fatigueTone = zones.length ? _fatigueReviewOverviewTone(firstZone.level || 'warn') : 'ok';
@@ -14220,7 +14696,7 @@ function stopLLMHeartbeat() {
         var contextComment = _fatigueReviewContextOverviewComment(contextTags);
 
         return [
-            {
+            Object.assign({
                 key: 'overall_stability',
                 label: labels.overall_stability,
                 level: _fatigueReviewOverviewLevelText(stabilityTone, {
@@ -14234,7 +14710,7 @@ function stopLLMHeartbeat() {
                     ? '心率、效率或步频记录不足，暂时无法判断全程稳定性。'
                     : '结合心率漂移、后程效率和步频稳定性，本次整体状态' + _fatigueReviewOverviewLevelText(stabilityTone, { ok: '较稳', warn: '有波动', bad: '波动明显' }) + '。',
                 tags: '心率 · 效率 · 步频'
-            },
+            }, cyclingStabilityOverride || {}),
             {
                 key: 'fatigue_progression',
                 label: labels.fatigue_progression,
@@ -14562,19 +15038,19 @@ function stopLLMHeartbeat() {
                 running: '这次心肺投入基本转成了有效速度。',
                 trail_running: '在复杂地形里，整体推进效率还不错。',
                 hiking: '体能更多转成了稳定前进。',
-                cycling: '这次输出转化比较顺。'
+                cycling: '单位心率输出较顺，功率和心肺成本匹配较好。'
             },
             risk: {
                 running: '这次投入了不少体能，但转成速度的效果一般。',
                 trail_running: '地形消耗偏大，推进效率被明显拉低。',
                 hiking: '体能更多花在对抗地形和疲劳上。',
-                cycling: '输出不少，但转成有效速度的表现一般。'
+                cycling: '同样心率成本下输出偏弱，可能受疲劳、地形或补给影响。'
             },
             missing: {
                 running: '当前数据不足，暂时无法判断投入和速度的转化效果。',
                 trail_running: '当前数据不足，暂时无法判断复杂地形下的推进效率。',
                 hiking: '当前数据不足，暂时无法判断体能利用效果。',
-                cycling: '当前数据不足，暂时无法判断输出转化效果。'
+                cycling: '功率或心率数据不足，暂时无法判断功率效率。'
             }
         },
         durability: {
@@ -14582,19 +15058,19 @@ function stopLLMHeartbeat() {
                 running: '到了后半程，还能基本维持住节奏。',
                 trail_running: '长距离和爬升之后，后程仍有持续推进能力。',
                 hiking: '走到后半段，体能没有明显垮掉。',
-                cycling: '长时间输出后，后程保持能力还可以。'
+                cycling: '后半程功率保持较好，持续输出没有明显掉下去。'
             },
             risk: {
                 running: '到了后半程，节奏保持开始吃力。',
                 trail_running: '后程推进能力下滑，长距离承受力不足。',
                 hiking: '走到后半段，体能保持能力明显变弱。',
-                cycling: '骑到后程，持续输出能力开始下滑。'
+                cycling: '后半程功率保持下降，持续输出能力开始回落。'
             },
             missing: {
                 running: '时长或记录不足，暂时看不出后程保持能力。',
                 trail_running: '时长或记录不足，暂时看不出长距离保持能力。',
                 hiking: '时长或记录不足，暂时看不出后半段体能保持能力。',
-                cycling: '时长或记录不足，暂时看不出后程持续输出能力。'
+                cycling: '功率曲线或样本不足，暂时无法判断后程功率保持。'
             }
         },
         cadence_stability: {
@@ -14615,6 +15091,46 @@ function stopLLMHeartbeat() {
                 trail_running: '步频记录不足，暂时无法判断节奏是否稳定。',
                 hiking: '步频记录不足，暂时无法判断行进节奏稳定性。',
                 cycling: '踩踏节奏记录不足，暂时无法判断输出稳定性。'
+            }
+        },
+        power_variability: {
+            normal: {
+                running: '功率指标不用于本次跑步复盘。',
+                trail_running: '功率指标不用于本次越野跑复盘。',
+                hiking: '功率指标不用于本次徒步复盘。',
+                cycling: '功率波动可控，输出节奏比较稳。'
+            },
+            risk: {
+                running: '功率指标不用于本次跑步复盘。',
+                trail_running: '功率指标不用于本次越野跑复盘。',
+                hiking: '功率指标不用于本次徒步复盘。',
+                cycling: '功率波动偏大，说明输出节奏不够连续。'
+            },
+            missing: {
+                running: '功率指标不用于本次跑步复盘。',
+                trail_running: '功率指标不用于本次越野跑复盘。',
+                hiking: '功率指标不用于本次徒步复盘。',
+                cycling: '功率数据不足，暂时无法判断输出波动。'
+            }
+        },
+        pedaling_stability: {
+            normal: {
+                running: '踏频指标不用于本次跑步复盘。',
+                trail_running: '踏频指标不用于本次越野跑复盘。',
+                hiking: '踏频指标不用于本次徒步复盘。',
+                cycling: '踏频节奏比较稳，踩踏组织较顺。'
+            },
+            risk: {
+                running: '踏频指标不用于本次跑步复盘。',
+                trail_running: '踏频指标不用于本次越野跑复盘。',
+                hiking: '踏频指标不用于本次徒步复盘。',
+                cycling: '踏频波动偏大，踩踏节奏被疲劳或地形打断。'
+            },
+            missing: {
+                running: '踏频指标不用于本次跑步复盘。',
+                trail_running: '踏频指标不用于本次越野跑复盘。',
+                hiking: '踏频指标不用于本次徒步复盘。',
+                cycling: '踏频数据不足，暂时无法判断踩踏稳定性。'
             }
         },
         training_load: {
@@ -14665,24 +15181,32 @@ function stopLLMHeartbeat() {
     function _fatigueReviewMetricMissingReason(metricKey, metric) {
         var reasons = Array.isArray(metric && metric.reasons) ? metric.reasons : [];
         var text = reasons.join(' | ');
+        if (metricKey === 'efficiency' && metric && metric.basis && metric.basis !== 'power_hr') return '后端未返回功率口径指标';
+        if (metricKey === 'durability' && metric && metric.basis && metric.basis !== 'power_retention') return '后端未返回功率口径指标';
+        if (metricKey === 'efficiency' && /missing avg_hr|missing_hr|avg_hr|heart/i.test(text)) return '心率数据不足';
+        if (metricKey === 'durability' && /power data unavailable|insufficient_points|points<20|valid.*<20/i.test(text)) return '功率曲线样本不足';
+        if (/power_data_quality|missing_power|power.*missing|avg_power|normalized_power|insufficient_power/i.test(text)) return '功率数据不足';
+        if (/cadence_data_quality|missing_cadence|cadence.*missing|insufficient_cadence/i.test(text)) return metricKey === 'pedaling_stability' ? '踏频数据不足' : '步频数据不足';
         if (/duration<45min|duration < 45min/.test(text)) return '活动时长小于 45 分钟';
         if (/duration<30min|duration < 30min/.test(text)) return '活动时长小于 30 分钟';
         if (/duration<20min|duration < 20min/.test(text)) return '活动时长小于 20 分钟';
         if (/duration<15min|duration < 15min/.test(text)) return '活动时长小于 15 分钟';
         if (/duration<5min|duration < 5min/.test(text)) return '活动时长小于 5 分钟';
-        if (/pace_cv/.test(text)) return '节奏波动较大，不适合计算';
+        if (/pace_cv/.test(text)) return metricKey === 'hr_drift' ? '本次变速或停顿较多，不能可靠判断心率漂移' : '节奏波动较大，不适合计算';
         if (/records<20|points<20|samples<20|valid.*<20/.test(text)) return '有效采样点不足 20 个';
         if (/missing_hr|avg_hr|max_hr|heart/i.test(text)) return '心率数据不足';
         if (/missing_pace|pace/i.test(text)) return '配速数据不足';
         if (/missing_cadence|cadence/i.test(text)) return '步频数据不足';
         if (/swim|swolf|unsupported_sport/i.test(text)) return '当前运动类型暂不适用';
         var defaults = {
-            hr_drift: '需要 45 分钟以上且节奏稳定的连续记录',
+            hr_drift: metricKey === 'hr_drift' && /pace_cv/.test(text) ? '本次变速或停顿较多，不能可靠判断心率漂移' : '需要 45 分钟以上且节奏稳定的连续记录',
             decoupling: '需要有效的后程效率曲线',
             bonk_risk: '热量或时长信息不足',
-            efficiency: '需要至少 15 分钟且有心率、配速数据',
-            durability: '需要 45 分钟以上且有有效速度曲线',
+            efficiency: metric && metric.basis === 'power_hr' ? '需要可用功率和心率数据' : '需要至少 15 分钟且有心率、配速数据',
+            durability: metric && metric.basis === 'power_retention' ? '需要可用功率曲线和足够样本' : '需要 45 分钟以上且有有效速度曲线',
             cadence_stability: '需要 20 分钟以上且有足够步频记录',
+            power_variability: '需要可用功率、平均功率和标准化功率',
+            pedaling_stability: '需要 20 分钟以上且有足够踏频记录',
             training_load: '需要 5 分钟以上且有心率数据'
         };
         return defaults[metricKey] || '数据不足，暂时不能计算';
@@ -14703,6 +15227,12 @@ function stopLLMHeartbeat() {
             if (/^(declining|warn|bad|high|very_high)$/.test(normalized)) return '转化效率偏弱';
             return '暂不明确';
         }
+        if (kind === 'power_efficiency') {
+            if (/^(excellent|good)$/.test(normalized)) return '功率效率稳定';
+            if (/^(moderate|stable)$/.test(normalized)) return '功率效率尚可';
+            if (/^(low|warn|bad|declining)$/.test(normalized)) return '单位心率输出偏弱';
+            return '暂不明确';
+        }
         if (kind === 'durability') {
             if (/^(excellent)$/.test(normalized)) return '后程保持很好';
             if (/^(good|stable)$/.test(normalized)) return '后程保持尚可';
@@ -14710,11 +15240,30 @@ function stopLLMHeartbeat() {
             if (/^(bad|very_high)$/.test(normalized)) return '后程明显吃力';
             return '暂不明确';
         }
+        if (kind === 'power_retention') {
+            if (/^(excellent|good)$/.test(normalized)) return '后程功率保持良好';
+            if (/^(moderate|stable)$/.test(normalized)) return '后程功率基本稳住';
+            if (/^(dropping|warn|bad|declining)$/.test(normalized)) return '后程功率明显回落';
+            return '暂不明确';
+        }
         if (kind === 'cadence_stability') {
             if (/^(excellent)$/.test(normalized)) return '步频很稳';
             if (/^(good|stable)$/.test(normalized)) return '步频基本稳定';
             if (/^(warn|moderate|declining|high)$/.test(normalized)) return '步频有些波动';
             if (/^(bad|very_high)$/.test(normalized)) return '步频明显波动';
+            return '暂不明确';
+        }
+        if (kind === 'power_variability') {
+            if (/^(excellent|good|stable|low|very_low)$/.test(normalized)) return '输出很稳';
+            if (/^(warn|moderate|declining|high)$/.test(normalized)) return '功率波动偏大';
+            if (/^(bad|very_high)$/.test(normalized)) return '输出波动明显';
+            return '暂不明确';
+        }
+        if (kind === 'pedaling_stability') {
+            if (/^(excellent)$/.test(normalized)) return '踏频很稳';
+            if (/^(good|stable)$/.test(normalized)) return '踏频基本稳定';
+            if (/^(warn|moderate|declining|high|unstable)$/.test(normalized)) return '踏频波动明显';
+            if (/^(bad|very_high|poor)$/.test(normalized)) return '踏频很不稳定';
             return '暂不明确';
         }
         if (kind === 'training_load') {
@@ -14736,8 +15285,437 @@ function stopLLMHeartbeat() {
         if (missing) return 'missing';
         if (isRisk) return 'risk';
         var normalized = String(level || '').toLowerCase();
-        if (/^(warn|bad|declining|high|very_high|danger|collapse|critical|severe)$/.test(normalized)) return 'risk';
+        if (/^(warn|bad|declining|dropping|high|very_high|danger|collapse|critical|severe|unstable|poor)$/.test(normalized)) return 'risk';
         return 'normal';
+    }
+    function _fatigueReviewMetricSportMode(sportType) {
+        var sport = String(sportType || '').toLowerCase();
+        if (sport === 'cycling' || sport === 'road_cycling' || sport === 'mountain_biking') return 'cycling';
+        if (sport === 'running' || sport === 'trail_running' || sport === 'treadmill_running') return 'running';
+        return 'general';
+    }
+    function _fatigueReviewMetricCardSlots() {
+        return {
+            hr_drift: {
+                valueId: 'fr-hr-drift',
+                statusId: 'fr-hr-drift-status',
+                subId: 'fr-hr-drift-sub',
+                labelId: 'fr-hr-drift-label',
+                infoId: 'fr-hr-drift-info'
+            },
+            decoupling: {
+                valueId: 'fr-decoupling',
+                statusId: 'fr-decoupling-status',
+                subId: 'fr-decoupling-sub',
+                labelId: 'fr-decoupling-label',
+                infoId: 'fr-decoupling-info'
+            },
+            bonk_risk: {
+                valueId: 'fr-bonk',
+                statusId: 'fr-bonk-status',
+                subId: 'fr-bonk-sub',
+                labelId: 'fr-bonk-label',
+                infoId: 'fr-bonk-info'
+            },
+            events: {
+                valueId: 'fr-events-count',
+                statusId: 'fr-events-status',
+                subId: 'fr-events-sub',
+                labelId: 'fr-events-label',
+                infoId: 'fr-events-info'
+            },
+            efficiency: {
+                valueId: 'fr-efficiency-score',
+                statusId: 'fr-efficiency-status',
+                subId: 'fr-efficiency-sub',
+                labelId: 'fr-efficiency-label',
+                infoId: 'fr-efficiency-info'
+            },
+            durability: {
+                valueId: 'fr-durability-score',
+                statusId: 'fr-durability-status',
+                subId: 'fr-durability-sub',
+                labelId: 'fr-durability-label',
+                infoId: 'fr-durability-info'
+            },
+            cadence_stability: {
+                valueId: 'fr-cadence-stability-score',
+                statusId: 'fr-cadence-stability-status',
+                subId: 'fr-cadence-stability-sub',
+                labelId: 'fr-cadence-stability-label',
+                infoId: 'fr-cadence-stability-info'
+            },
+            training_load: {
+                valueId: 'fr-training-load-value',
+                statusId: 'fr-training-load-status',
+                subId: 'fr-training-load-sub',
+                labelId: 'fr-training-load-label',
+                infoId: 'fr-training-load-info'
+            }
+        };
+    }
+    function _fatigueReviewMetricCardDefs(sportType) {
+        var slots = _fatigueReviewMetricCardSlots();
+        var sportMode = _fatigueReviewMetricSportMode(sportType);
+        var withSlot = function(slotKey, metricKey, label, ariaLabel, tooltip, valueSource, unit) {
+            var slot = slots[slotKey] || {};
+            return {
+                slotKey: slotKey,
+                metricKey: metricKey,
+                label: label,
+                ariaLabel: ariaLabel,
+                tooltip: tooltip,
+                valueSource: valueSource || '',
+                unit: unit || '',
+                valueId: slot.valueId,
+                statusId: slot.statusId,
+                subId: slot.subId,
+                labelId: slot.labelId,
+                infoId: slot.infoId
+            };
+        };
+        if (sportMode === 'cycling') {
+            return [
+                withSlot('hr_drift', 'power_variability', '输出节奏', '输出节奏说明', '比较标准化功率和平均功率的差距。差距越小，说明踩得越连续；差距越大，说明冲刺、滑行或忽高忽低更多。', 'vi', 'VI'),
+                withSlot('decoupling', 'efficiency', '功率效率', '功率效率说明', '看每一次心跳大约换来多少功率输出。数值越高，通常说明同样心率下输出更省力。', 'power_per_hr', 'W/bpm'),
+                withSlot('bonk_risk', 'durability', '后程功率保持', '后程功率保持说明', '比较前半程和后半程的功率。后半程还能稳住，说明持续输出能力较好。', 'power_retention_pct', '%'),
+                withSlot('events', 'events', '状态下滑点', '状态下滑点说明', '系统识别出的明显状态下滑参考点，通常对应掉输出、疲劳突增或状态突然变差。', 'count', ''),
+                withSlot('efficiency', 'hr_drift', '心肺对照', '心肺对照说明', '把心率变化和功率输出放在一起看。证据不足时只作为辅助线索，不单独下结论。', 'pct', '%'),
+                withSlot('durability', 'pedaling_stability', '踩踏组织', '踩踏组织说明', '看踩踏是否连续、有章法。踏频忽高忽低，通常说明被坡度、滑行、停顿或疲劳打断。', 'score', ''),
+                withSlot('cadence_stability', 'training_load', '相对强度', '相对强度说明', '结合个人 FTP 和本次功率记录看这次对你来说有多重。缺少个人阈值或证据不足时，不做强度分级。', 'load', ''),
+                withSlot('training_load', 'bonk_risk', '能量风险', '能量风险说明', '结合能量储备和持续表现变化判断风险线索。图钉表示风险窗口起点，不是精确撞墙坐标。', 'is_at_risk', '')
+            ];
+        }
+        return [
+            withSlot('hr_drift', 'hr_drift', '心率漂移', '心率漂移说明', '看后半程心率是否比前半程更难控制。越稳定，通常说明体能分配越合理。', 'pct', '%'),
+            withSlot('decoupling', 'decoupling', '后程效率变化', '后程效率变化说明', '看后半程是否需要更高的心肺负担，才能维持前半程的速度或输出。这个指标也常叫有氧解耦率。', 'pct', '%'),
+            withSlot('bonk_risk', 'bonk_risk', '能量断档风险', '能量断档风险说明', '结合能量储备和持续表现变化判断风险线索。图钉表示风险窗口起点，不是精确撞墙坐标。', 'is_at_risk', ''),
+            withSlot('events', 'events', '状态下滑点', '状态下滑点说明', '系统识别出的明显状态下滑参考点，通常对应掉速、掉输出或疲劳突增。', 'count', ''),
+            withSlot('efficiency', 'efficiency', '运动效率', '运动效率说明', '看体能投入是否有效转成速度、推进或输出表现。', 'score', ''),
+            withSlot('durability', 'durability', '耐久指数', '耐久指数说明', '看到了后半程，还能不能维持住前半程的表现。', 'score', ''),
+            withSlot('cadence_stability', 'cadence_stability', '步频稳定性', '步频稳定性说明', '看动作或节奏是否稳定，不代表步频越高越好。', 'score', ''),
+            withSlot('training_load', 'training_load', '训练负荷', '训练负荷说明', '看这次运动给身体带来的整体刺激大小，不等于运动质量好坏。', 'load', '')
+        ];
+    }
+    function _applyFatigueReviewMetricCardDef(cardDef) {
+        cardDef = cardDef || {};
+        var valueEl = document.getElementById(cardDef.valueId);
+        var cardEl = valueEl && valueEl.closest ? valueEl.closest('.fr-metric-card') : null;
+        if (cardEl) cardEl.setAttribute('data-fr-metric', cardDef.metricKey || '');
+        var labelEl = document.getElementById(cardDef.labelId);
+        if (labelEl) {
+            for (var i = 0; i < labelEl.childNodes.length; i++) {
+                if (labelEl.childNodes[i].nodeType === 3) {
+                    labelEl.childNodes[i].nodeValue = (cardDef.label || '') + ' ';
+                    break;
+                }
+            }
+        }
+        var infoEl = document.getElementById(cardDef.infoId);
+        if (infoEl) {
+            infoEl.setAttribute('aria-label', cardDef.ariaLabel || ((cardDef.label || '指标') + '说明'));
+            infoEl.setAttribute('data-tooltip', cardDef.tooltip || '');
+        }
+    }
+    function _fatigueReviewMetricNumber(value, digits) {
+        if (value == null || value === '' || isNaN(value)) return '--';
+        var num = Number(value);
+        if (digits == null) digits = 1;
+        return num.toFixed(digits);
+    }
+    function _fatigueReviewPowerVariabilityHeadline(metric, missing) {
+        if (missing) return '不适合判断';
+        var normalized = String((metric && metric.level) || '').toLowerCase();
+        if (/^(excellent|good|stable|low|very_low)$/.test(normalized)) return '输出节奏很稳';
+        if (/^(moderate|warn|high)$/.test(normalized)) return '输出有起伏';
+        if (/^(bad|very_high)$/.test(normalized)) return '输出忽高忽低';
+        return '输出节奏待判断';
+    }
+    function _fatigueReviewPowerVariabilityEvidence(metric, missing) {
+        if (missing) return _fatigueReviewMetricMissingReason('power_variability', metric);
+        var parts = [];
+        if (metric && metric.vi != null && !isNaN(metric.vi)) {
+            var variabilityPct = Math.max(0, (Number(metric.vi) - 1) * 100);
+            parts.push('功率波动约 ' + _fatigueReviewMetricNumber(variabilityPct, 0) + '%');
+        }
+        if (metric && metric.normalized_power != null && !isNaN(metric.normalized_power)) {
+            parts.push('标准化功率 ' + Math.round(Number(metric.normalized_power)) + 'W');
+        }
+        if (metric && metric.avg_power != null && !isNaN(metric.avg_power)) {
+            parts.push('平均功率 ' + Math.round(Number(metric.avg_power)) + 'W');
+        }
+        if (metric && metric.vi != null && !isNaN(metric.vi)) {
+            parts.push('专业参考 VI ' + _fatigueReviewMetricNumber(metric.vi, 2));
+        }
+        return parts.length ? parts.join(' / ') : '功率数据不足，暂不判断输出节奏';
+    }
+    function _fatigueReviewPedalingStabilityEvidence(metric, missing) {
+        if (missing) return _fatigueReviewMetricMissingReason('pedaling_stability', metric);
+        var parts = [];
+        if (metric && metric.score != null && !isNaN(metric.score)) {
+            parts.push(_fatigueReviewMetricEvidence('评分', metric.score, ''));
+        }
+        if (metric && metric.cv != null && !isNaN(metric.cv)) {
+            parts.push('波动系数 ' + _fatigueReviewMetricNumber(Number(metric.cv) * 100, 1) + '%');
+        }
+        if (metric && metric.decay_pct != null && !isNaN(metric.decay_pct)) {
+            parts.push('后程变化 ' + _fatigueReviewMetricNumber(metric.decay_pct, 1) + '%');
+        }
+        return parts.length ? parts.join(' / ') : '踏频数据不足，暂不判断踩踏组织';
+    }
+    function _fatigueReviewPowerEfficiencyEvidence(metric, missing) {
+        if (missing) return _fatigueReviewMetricMissingReason('efficiency', metric);
+        var parts = [];
+        if (metric && metric.power_per_hr != null && !isNaN(metric.power_per_hr)) {
+            parts.push(_fatigueReviewMetricNumber(metric.power_per_hr, 2) + ' W/bpm');
+        }
+        if (metric && metric.avg_power != null && !isNaN(metric.avg_power)) {
+            parts.push('Avg ' + Math.round(Number(metric.avg_power)) + 'W');
+        }
+        if (metric && metric.avg_hr != null && !isNaN(metric.avg_hr)) {
+            parts.push('HR ' + Math.round(Number(metric.avg_hr)));
+        }
+        return parts.length ? parts.join(' / ') : '功率或心率数据不足，暂不判断功率效率';
+    }
+    function _fatigueReviewPowerRetentionEvidence(metric, missing) {
+        if (missing) return _fatigueReviewMetricMissingReason('durability', metric);
+        var parts = [];
+        if (metric && metric.power_retention_pct != null && !isNaN(metric.power_retention_pct)) {
+            parts.push('保持 ' + _fatigueReviewMetricNumber(metric.power_retention_pct, 1) + '%');
+        }
+        if (metric && metric.head_power != null && !isNaN(metric.head_power)) {
+            parts.push('前半 ' + Math.round(Number(metric.head_power)) + 'W');
+        }
+        if (metric && metric.tail_power != null && !isNaN(metric.tail_power)) {
+            parts.push('后半 ' + Math.round(Number(metric.tail_power)) + 'W');
+        }
+        return parts.length ? parts.join(' / ') : '功率数据不足，暂不判断后程保持';
+    }
+    function _fatigueReviewCyclingSignal(signals, key) {
+        signals = signals && typeof signals === 'object' ? signals : {};
+        var signal = signals[key];
+        return signal && typeof signal === 'object' ? signal : {};
+    }
+    function _fatigueReviewCyclingSignalState(signal, fallbackMissing) {
+        var status = String((signal && signal.status) || '').toLowerCase();
+        if (fallbackMissing || status === 'unavailable') return 'missing';
+        if (status === 'partial') return 'partial';
+        if (status === 'available') return 'available';
+        return '';
+    }
+    function _fatigueReviewCyclingSignalStatus(signal, fallbackText) {
+        var state = _fatigueReviewCyclingSignalState(signal, false);
+        if (state === 'missing') return '数据不足';
+        if (state === 'partial') return '可参考';
+        if (state === 'available') return fallbackText || '已解释';
+        return fallbackText || '';
+    }
+    function _fatigueReviewCyclingCadenceLevelText(signal, fallbackText) {
+        var state = _fatigueReviewCyclingSignalState(signal, false);
+        if (state !== 'available') return fallbackText || '';
+        var level = String(signal && signal.level || '').toLowerCase();
+        if (level === 'steady') return '踏频稳定';
+        if (level === 'variable') return '踏频波动明显';
+        if (level === 'interrupted') return '踩踏中断较多';
+        if (level === 'low_cadence_bias') return '踏频整体偏低';
+        if (level === 'cadence_drop') return '后段踏频下降';
+        return fallbackText || '踩踏可看';
+    }
+    function _fatigueReviewCyclingCadenceTone(signal, fallbackTone) {
+        var state = _fatigueReviewCyclingSignalState(signal, false);
+        if (state === 'missing') return 'empty';
+        if (state === 'partial') return 'warn';
+        var level = String(signal && signal.level || '').toLowerCase();
+        if (level === 'steady') return 'ok';
+        if (level === 'variable' || level === 'interrupted' || level === 'low_cadence_bias' || level === 'cadence_drop') return 'warn';
+        return fallbackTone || 'empty';
+    }
+    function _fatigueReviewCyclingSignalTone(signal, fallbackTone) {
+        var state = _fatigueReviewCyclingSignalState(signal, false);
+        if (state === 'missing') return 'empty';
+        if (state === 'partial') return 'warn';
+        return fallbackTone || 'empty';
+    }
+    function _fatigueReviewCyclingSignalVisibility(signal) {
+        var state = _fatigueReviewCyclingSignalState(signal, false);
+        return {
+            state: state,
+            canOwnHeadline: state === 'available',
+            canShowAsReference: state === 'available' || state === 'partial',
+            mustDowngrade: state === 'partial' || state === 'missing'
+        };
+    }
+    function _fatigueReviewCyclingSignalCanOwnHeadline(signal) {
+        return _fatigueReviewCyclingSignalVisibility(signal).canOwnHeadline;
+    }
+    function _fatigueReviewCyclingCardHeadlinePolicy(key) {
+        if (key === 'intensity_signal' || key === 'aerobic_drift_signal') {
+            return { allowMetricFallback: false, downgradeHeadline: key === 'intensity_signal' ? '强度暂不分级' : '暂不单独判断' };
+        }
+        return { allowMetricFallback: true, downgradeHeadline: '可参考' };
+    }
+    function _fatigueReviewCyclingSignalReasonText(reason) {
+        reason = reason == null ? '' : String(reason);
+        if (!reason) return '';
+        if (reason === 'pending_algorithm') return '当前只作为辅助依据';
+        if (reason === 'missing_ftp') return '缺少个人 FTP';
+        if (reason === 'missing_hr') return '缺少可用心率曲线';
+        if (reason === 'personal_ftp_available') return '已读取个人 FTP';
+        if (reason === 'intensity_classification_not_enabled') return '暂不做强度分级';
+        if (reason === 'insufficient_effective_pedaling_points') return '有效踩踏样本不足';
+        if (reason === 'insufficient_power_points') return '功率样本不足';
+        if (reason === 'not_cycling_activity') return '非骑行活动';
+        if (reason.indexOf('power_data_unavailable:') === 0) return '缺少可用功率曲线';
+        if (reason.indexOf('cadence_data_unavailable:') === 0) return '缺少可用踏频曲线';
+        return '';
+    }
+    function _fatigueReviewCyclingSignalHeadline(signal, fallbackText, key) {
+        signal = signal && typeof signal === 'object' ? signal : {};
+        var visibility = _fatigueReviewCyclingSignalVisibility(signal);
+        var policy = _fatigueReviewCyclingCardHeadlinePolicy(key);
+        var state = _fatigueReviewCyclingSignalState(signal, false);
+        var level = String(signal.level || '').toLowerCase();
+        if (!visibility.canOwnHeadline) {
+            if (!_fatigueReviewCyclingSignalCanOwnHeadline(signal)) {
+                if (!policy.allowMetricFallback) return policy.downgradeHeadline || '暂不判断';
+            }
+            return fallbackText || (state === 'missing' ? '暂不判断' : '可参考');
+        }
+        if (key === 'intensity_signal') {
+            return '强度有依据';
+        }
+        if (key === 'aerobic_drift_signal') {
+            if (state === 'available') {
+                if (level === 'stable') return '漂移不明显';
+                if (level === 'mild_drift') return '有轻微漂移';
+                if (level === 'significant_drift') return '漂移较明显';
+            }
+            return '暂不单独判断';
+        }
+        if (key === 'cadence_signal') {
+            return _fatigueReviewCyclingCadenceLevelText(signal, fallbackText || '踩踏可看');
+        }
+        if (key === 'pacing_signal') {
+            if (level === 'steady') return '输出较平稳';
+            if (level === 'variable') return '输出有起伏';
+            if (level === 'front_loaded') return '前段偏猛';
+            if (level === 'late_fade') return '后段回落';
+        }
+        if (key === 'power_retention_signal') {
+            if (level === 'held') return '后程功率保持良好';
+            if (level === 'slight_drop') return '后程小幅回落';
+            if (level === 'clear_drop') return '后程回落明显';
+        }
+        return fallbackText || '';
+    }
+    function _fatigueReviewCyclingSignalSummaryText(signal, fallbackText, key) {
+        signal = signal && typeof signal === 'object' ? signal : {};
+        var raw = typeof signal['summary'] === 'string' ? signal['summary'].trim() : '';
+        if (key === 'intensity_signal' && /后端\s*证据|本.?阶段|训练负荷结论|intensity/i.test(raw)) {
+            return '已读取个人 FTP 和本次功率记录，可以参考这次相对强度；暂不做训练负荷分级。';
+        }
+        if (key === 'aerobic_drift_signal' && /尚未启用|专用算法|后端参考|确定性漂移/.test(raw)) {
+            return '心率和功率关系能提供一些身体反应线索，但这次先不单独判断有氧漂移。';
+        }
+        if (key === 'cadence_signal' && /已保留|后续|占位|pending/i.test(raw)) {
+            return '踏频数据能帮助观察踩踏组织，结合功率和心率一起看更稳妥。';
+        }
+        if (/后端\s*证据|本.?阶段|尚未启用|已保留|后续将|pending_algorithm/i.test(raw)) {
+            return fallbackText || raw
+                .replace(/本.?阶段/g, '当前')
+                .replace(/后端\s*证据/g, '参考依据')
+                .replace(/尚未启用/g, '暂不使用')
+                .replace(/后续将/g, '后续可');
+        }
+        return raw || (fallbackText || '');
+    }
+    function _fatigueReviewCyclingSignalEvidenceItemText(item) {
+        if (!item || typeof item !== 'object') return '';
+        if (String(item.visibility || '').toLowerCase() === 'hidden') return '';
+        if (item.display_value != null && String(item.display_value).trim() !== '') {
+            var label = item.label != null ? String(item.label).trim() : '';
+            var value = String(item.display_value).trim();
+            return label ? (label + '：' + value) : value;
+        }
+        var type = item.type ? String(item.type) : '';
+        var num = function(value, digits) {
+            if (value == null || isNaN(Number(value))) return '';
+            return Number(value).toFixed(digits == null ? 0 : digits);
+        };
+        if (type === 'ride_power_summary') {
+            var powerParts = [];
+            if (item.avg_power != null && !isNaN(Number(item.avg_power))) powerParts.push('均功率 ' + Math.round(Number(item.avg_power)) + 'W');
+            if (item.normalized_power != null && !isNaN(Number(item.normalized_power))) powerParts.push('标准化功率 ' + Math.round(Number(item.normalized_power)) + 'W');
+            return powerParts.join('，');
+        }
+        if (type === 'personal_ftp') {
+            var ftpParts = [];
+            if (item.ftp_watts != null && !isNaN(Number(item.ftp_watts))) ftpParts.push('个人 FTP ' + Math.round(Number(item.ftp_watts)) + 'W');
+            if (item.normalized_power_to_ftp != null && !isNaN(Number(item.normalized_power_to_ftp))) {
+                ftpParts.push('本次标准化功率约为 FTP 的 ' + Math.round(Number(item.normalized_power_to_ftp) * 100) + '%');
+            }
+            return ftpParts.join('，');
+        }
+        if (type === 'effective_pedaling_power_retention' || type === 'power_retention_metric_reference') {
+            if (item.head_effective_power != null && item.tail_effective_power != null) {
+                return '有效踩踏前半约 ' + Math.round(Number(item.head_effective_power)) + 'W，后半约 ' + Math.round(Number(item.tail_effective_power)) + 'W';
+            }
+            if (item.head_power != null && item.tail_power != null) {
+                return '前半约 ' + Math.round(Number(item.head_power)) + 'W，后半约 ' + Math.round(Number(item.tail_power)) + 'W';
+            }
+            if (item.filtered_points_count != null && Number(item.filtered_points_count) > 0) {
+                return '已过滤滑行或停顿后的片段再评估';
+            }
+        }
+        if (type === 'cycling_pacing_reference') {
+            var pacingParts = [];
+            if (item.head_power != null && item.tail_power != null) {
+                pacingParts.push('前半约 ' + Math.round(Number(item.head_power)) + 'W，后半约 ' + Math.round(Number(item.tail_power)) + 'W');
+            }
+            if (item.early_to_mid_delta_pct != null && !isNaN(Number(item.early_to_mid_delta_pct))) {
+                var earlyDelta = Number(item.early_to_mid_delta_pct);
+                if (Math.abs(earlyDelta) >= 8) pacingParts.push('开局相对中段变化约 ' + num(earlyDelta, 1) + '%');
+            }
+            return pacingParts.join('，');
+        }
+        if (type === 'hr_drift_reference' && item.pct != null && !isNaN(Number(item.pct))) {
+            return '后程心率变化参考约 ' + num(item.pct, 1) + '%';
+        }
+        return '';
+    }
+    function _fatigueReviewCyclingSignalEvidence(signal) {
+        var evidence = Array.isArray(signal && signal.evidence) ? signal.evidence : [];
+        var parts = [];
+        evidence.forEach(function(item) {
+            if (parts.length >= 2) return;
+            var text = _fatigueReviewCyclingSignalEvidenceItemText(item);
+            if (text) parts.push(text);
+        });
+        return parts.join('；');
+    }
+    function _fatigueReviewCyclingSignalCopy(signal, fallbackText, key) {
+        signal = signal && typeof signal === 'object' ? signal : {};
+        var visibility = _fatigueReviewCyclingSignalVisibility(signal);
+        if (!visibility.canShowAsReference) return fallbackText || '数据不足，暂不判断。';
+        var summaryText = _fatigueReviewCyclingSignalSummaryText(signal, fallbackText, key);
+        var evidenceText = _fatigueReviewCyclingSignalEvidence(signal);
+        var reasons = Array.isArray(signal.reasons) ? signal.reasons.map(_fatigueReviewCyclingSignalReasonText).filter(function(reason) {
+            return reason != null && String(reason).trim() !== '';
+        }) : [];
+        reasons = reasons.filter(function(reason, index) {
+            return reasons.indexOf(reason) === index;
+        }).slice(0, 2);
+        var pieces = [];
+        if (summaryText) pieces.push(summaryText);
+        if (evidenceText) pieces.push('依据：' + evidenceText);
+        if (
+            _fatigueReviewCyclingSignalState(signal, false) !== 'available'
+            && reasons.length
+            && !/(暂不|先不|不单独|不做|尚未|缺少|样本不足|更稳妥|只作为)/.test(summaryText)
+        ) {
+            pieces.push('暂不强判断：' + reasons.join(' / '));
+        }
+        return pieces.length ? pieces.join('。') : (fallbackText || '暂未返回可展示的骑行解释。');
     }
     function _renderFatigueReviewMetrics(metrics, sportType) {
         var hrDrift = metrics.hr_drift || {};
@@ -14745,14 +15723,17 @@ function stopLLMHeartbeat() {
         var bonk = metrics.bonk_risk || {};
         var events = metrics.events || { count: 0 };
         var sportGroup = getFatigueReviewSportCopyGroup(sportType);
+        var sportMode = _fatigueReviewMetricSportMode(sportType);
+        var cardDefs = _fatigueReviewMetricCardDefs(sportType);
+        var cyclingSignals = arguments.length > 2 && arguments[2] && typeof arguments[2] === 'object' ? arguments[2] : {};
         var levelText = function(v, map) {
             return (map || {excellent:'极佳', good:'良好', warn:'轻度', bad:'严重', unknown:'未知'})[v] || v || '数据不足';
         };
         var levelTone = function(v, missing) {
             if (missing || v == null || v === 'unknown') return 'empty';
             if (v === 'excellent' || v === 'good' || v === 'improving' || v === 'stable' || v === 'low' || v === 'very_low') return 'ok';
-            if (v === 'warn' || v === 'declining' || v === 'moderate' || v === 'high') return 'warn';
-            if (v === 'bad' || v === 'very_high') return 'bad';
+            if (v === 'warn' || v === 'declining' || v === 'moderate' || v === 'high' || v === 'unstable') return 'warn';
+            if (v === 'bad' || v === 'very_high' || v === 'poor') return 'bad';
             return 'empty';
         };
         var setMetricCard = function(valueId, statusId, subId, value, statusText, tone, subText) {
@@ -14766,6 +15747,107 @@ function stopLLMHeartbeat() {
             }
             if (subEl) subEl.textContent = subText || '待接入';
         };
+        for (var cardDefIndex = 0; cardDefIndex < cardDefs.length; cardDefIndex++) {
+            _applyFatigueReviewMetricCardDef(cardDefs[cardDefIndex]);
+        }
+        if (sportMode === 'cycling') {
+            var pacingSignal = _fatigueReviewCyclingSignal(cyclingSignals, 'pacing_signal');
+            var aerobicSignal = _fatigueReviewCyclingSignal(cyclingSignals, 'aerobic_drift_signal');
+            var cadenceSignal = _fatigueReviewCyclingSignal(cyclingSignals, 'cadence_signal');
+            var intensitySignal = _fatigueReviewCyclingSignal(cyclingSignals, 'intensity_signal');
+            var retentionSignal = _fatigueReviewCyclingSignal(cyclingSignals, 'power_retention_signal');
+            var powerVar = metrics.power_variability || {};
+            var pvMissing = !metrics.power_variability || powerVar.confidence === 'unavailable' || powerVar.vi == null;
+            var pvStatus = levelText(powerVar.level, {excellent:'极佳', good:'良好', stable:'稳定', low:'低波动', moderate:'中等波动', warn:'波动偏大', bad:'波动明显', high:'偏高', very_high:'很高', unknown:'未知'});
+            var pvState = _fatigueReviewMetricState(pvMissing, powerVar.level);
+            setMetricCard(
+                'fr-hr-drift', 'fr-hr-drift-status', 'fr-hr-drift-sub',
+                _fatigueReviewCyclingSignalHeadline(pacingSignal, _fatigueReviewPowerVariabilityHeadline(powerVar, pvMissing), 'pacing_signal'),
+                _fatigueReviewCyclingSignalStatus(pacingSignal, pvMissing ? '功率不足' : pvStatus),
+                _fatigueReviewCyclingSignalTone(pacingSignal, levelTone(powerVar.level, pvMissing)),
+                _fatigueReviewCyclingSignalCopy(pacingSignal, _fatigueReviewPowerVariabilityEvidence(powerVar, pvMissing) + '。' + _fatigueReviewMetricCopy('power_variability', pvState, sportGroup), 'pacing_signal')
+            );
+
+            var hrMissingCycling = !metrics.hr_drift || hrDrift.confidence === 'unavailable' || hrDrift.pct == null;
+            var hrStatusCycling = levelText(hrDrift.level);
+            var hrStateCycling = _fatigueReviewMetricState(hrMissingCycling, hrDrift.level);
+            setMetricCard(
+                'fr-efficiency-score', 'fr-efficiency-status', 'fr-efficiency-sub',
+                _fatigueReviewCyclingSignalHeadline(aerobicSignal, _fatigueReviewHrDriftHeadline(hrDrift.level, hrMissingCycling), 'aerobic_drift_signal'),
+                _fatigueReviewCyclingSignalStatus(aerobicSignal, hrMissingCycling ? '数据不足' : hrStatusCycling),
+                _fatigueReviewCyclingSignalTone(aerobicSignal, levelTone(hrDrift.level, hrMissingCycling)),
+                _fatigueReviewCyclingSignalCopy(aerobicSignal, _fatigueReviewHrDriftEvidence(hrDrift, hrMissingCycling) + '。' + _fatigueReviewMetricCopy('hr_drift', hrStateCycling, sportGroup), 'aerobic_drift_signal')
+            );
+
+            var pedaling = metrics.pedaling_stability || {};
+            var pedalingMissing = !metrics.pedaling_stability || pedaling.confidence === 'unavailable' || pedaling.score == null;
+            var pedalingStatus = levelText(pedaling.level, {excellent:'极佳', good:'良好', stable:'稳定', warn:'轻度波动', moderate:'中等波动', unstable:'明显波动', poor:'波动很大', bad:'明显波动', high:'偏高', very_high:'很高', unknown:'未知'});
+            var pedalingState = _fatigueReviewMetricState(pedalingMissing, pedaling.level);
+            setMetricCard(
+                'fr-durability-score', 'fr-durability-status', 'fr-durability-sub',
+                _fatigueReviewCyclingSignalHeadline(cadenceSignal, _fatigueReviewMetricHeadline('pedaling_stability', pedaling.level, pedalingMissing), 'cadence_signal'),
+                _fatigueReviewCyclingSignalStatus(cadenceSignal, _fatigueReviewCyclingCadenceLevelText(cadenceSignal, pedalingMissing ? '踏频不足' : pedalingStatus)),
+                _fatigueReviewCyclingCadenceTone(cadenceSignal, levelTone(pedaling.level, pedalingMissing)),
+                _fatigueReviewCyclingSignalCopy(cadenceSignal, _fatigueReviewPedalingStabilityEvidence(pedaling, pedalingMissing) + '。' + _fatigueReviewMetricCopy('pedaling_stability', pedalingState, sportGroup), 'cadence_signal')
+            );
+
+            var bonkMissingCycling = !metrics.bonk_risk || bonk.confidence === 'unavailable';
+            var bonkStateCycling = _fatigueReviewMetricState(bonkMissingCycling, null, bonk.is_at_risk);
+            setMetricCard(
+                'fr-training-load-value', 'fr-training-load-status', 'fr-training-load-sub',
+                _fatigueReviewMetricHeadline('bonk_risk', null, bonkMissingCycling, bonk.is_at_risk),
+                bonkMissingCycling ? '待接入' : (bonk.is_at_risk ? '高风险' : '未触发'),
+                bonkMissingCycling ? 'empty' : (bonk.is_at_risk ? 'bad' : 'ok'),
+                (bonkMissingCycling ? _fatigueReviewMetricMissingReason('bonk_risk', bonk) + '。' : '') + _fatigueReviewMetricCopy('bonk_risk', bonkStateCycling, sportGroup)
+            );
+
+            var effCycling = metrics.efficiency || {};
+            var effMissingCycling = !metrics.efficiency || effCycling.basis !== 'power_hr' || effCycling.confidence === 'unavailable' || !(effCycling.power_per_hr != null);
+            var effStatusCycling = levelText(effCycling.level, {good:'良好', moderate:'中等', low:'偏弱', unknown:'未知'});
+            var effStateCycling = _fatigueReviewMetricState(effMissingCycling, effCycling.level);
+            setMetricCard(
+                'fr-decoupling', 'fr-decoupling-status', 'fr-decoupling-sub',
+                _fatigueReviewMetricHeadline('power_efficiency', effCycling.level, effMissingCycling),
+                effMissingCycling ? '功率效率不足' : effStatusCycling,
+                levelTone(effCycling.level, effMissingCycling),
+                _fatigueReviewPowerEfficiencyEvidence(effCycling, effMissingCycling) + '。' + _fatigueReviewMetricCopy('efficiency', effStateCycling, sportGroup)
+            );
+
+            var tloadCycling = metrics.training_load || {};
+            var tloadMissingCycling = !metrics.training_load || tloadCycling.confidence === 'unavailable' || tloadCycling.load == null;
+            var tlStatusCycling = levelText(tloadCycling.level, {very_high:'极高', high:'高', moderate:'中', low:'低', very_low:'极低', unknown:'未知'});
+            var tloadStateCycling = _fatigueReviewMetricState(tloadMissingCycling, tloadCycling.level);
+            setMetricCard(
+                'fr-cadence-stability-score', 'fr-cadence-stability-status', 'fr-cadence-stability-sub',
+                _fatigueReviewCyclingSignalHeadline(intensitySignal, _fatigueReviewMetricHeadline('training_load', tloadCycling.level, tloadMissingCycling), 'intensity_signal'),
+                _fatigueReviewCyclingSignalStatus(intensitySignal, tloadMissingCycling ? '待接入' : tlStatusCycling),
+                _fatigueReviewCyclingSignalTone(intensitySignal, levelTone(tloadCycling.level, tloadMissingCycling)),
+                _fatigueReviewCyclingSignalCopy(intensitySignal, (tloadMissingCycling ? _fatigueReviewMetricMissingReason('training_load', tloadCycling) : _fatigueReviewMetricEvidence('本次刺激', tloadCycling.load, '')) + '。' + _fatigueReviewMetricCopy('training_load', tloadStateCycling, sportGroup), 'intensity_signal')
+            );
+
+            var durCycling = metrics.durability || {};
+            var durMissingCycling = !metrics.durability || durCycling.basis !== 'power_retention' || durCycling.confidence === 'unavailable' || !(durCycling.power_retention_pct != null);
+            var durStatusCycling = levelText(durCycling.level, {excellent:'极佳', good:'良好', moderate:'中等', dropping:'回落', warn:'轻度退化', bad:'严重退化', unknown:'未知'});
+            var durStateCycling = _fatigueReviewMetricState(durMissingCycling, durCycling.level);
+            setMetricCard(
+                'fr-bonk', 'fr-bonk-status', 'fr-bonk-sub',
+                _fatigueReviewCyclingSignalHeadline(retentionSignal, _fatigueReviewMetricHeadline('power_retention', durCycling.level, durMissingCycling), 'power_retention_signal'),
+                _fatigueReviewCyclingSignalStatus(retentionSignal, durMissingCycling ? '功率保持不足' : durStatusCycling),
+                _fatigueReviewCyclingSignalTone(retentionSignal, levelTone(durCycling.level, durMissingCycling)),
+                _fatigueReviewCyclingSignalCopy(retentionSignal, _fatigueReviewPowerRetentionEvidence(durCycling, durMissingCycling) + '。' + _fatigueReviewMetricCopy('durability', durStateCycling, sportGroup), 'power_retention_signal')
+            );
+
+            var eventCountCycling = events.count != null ? events.count : 0;
+            var eventsStateCycling = _fatigueReviewMetricState(false, null, eventCountCycling > 0);
+            setMetricCard(
+                'fr-events-count', 'fr-events-status', 'fr-events-sub',
+                _fatigueReviewMetricHeadline('events', null, false, false, eventCountCycling),
+                eventCountCycling > 0 ? '已识别' : '状态平稳',
+                eventCountCycling > 0 ? 'warn' : 'ok',
+                '识别到 ' + eventCountCycling + ' 个参考点。' + _fatigueReviewMetricCopy('events', eventsStateCycling, sportGroup)
+            );
+            return;
+        }
         var hrMissing = !metrics.hr_drift || hrDrift.confidence === 'unavailable' || hrDrift.pct == null;
         var hrStatus = levelText(hrDrift.level);
         var hrState = _fatigueReviewMetricState(hrMissing, hrDrift.level);
@@ -14900,25 +15982,25 @@ function stopLLMHeartbeat() {
             running: '这段开始比前面更费力，建议回看当时配速和心率。',
             trail_running: '这段推进开始变吃力，可能受爬升或技术路段影响。',
             hiking: '这段开始更耗体力，可能和爬升、路况或时长累积有关。',
-            cycling: '这段持续输出开始变吃力，建议回看踏频、心率或坡度。'
+            cycling: '参考区间：这段状态变化较明显，需结合功率、踏频、心率和地形判断。'
         },
         high: {
             running: '这段状态下滑更明显，可能是间歇、掉速或心率压力集中出现。',
             trail_running: '这段状态下滑更明显，地形和疲劳影响开始放大。',
             hiking: '这段体能压力明显加重，后续要更注意节奏和补给。',
-            cycling: '这段输出压力明显加重，可能出现掉功率或恢复不足。'
+            cycling: '参考区间：这段状态变化更集中，不直接等同于输出下降或体能下降。'
         },
         low: {
             running: '这段整体还算稳定，可以作为前后状态变化的参照。',
             trail_running: '这段整体还算稳定，地形影响暂时不明显。',
             hiking: '这段行进状态相对平稳，体能消耗还可控。',
-            cycling: '这段输出相对平稳，可以作为前后状态变化的参照。'
+            cycling: '这段可作为前后状态变化参照，仍需结合功率、踏频、心率和地形判断。'
         },
         unknown: {
             running: '这段状态变化不够明确，建议结合主图曲线一起查看。',
             trail_running: '这段状态变化不够明确，建议结合爬升和心率一起查看。',
             hiking: '这段状态变化不够明确，建议结合爬升、步速和心率一起查看。',
-            cycling: '这段状态变化不够明确，建议结合心率、坡度和输出一起查看。'
+            cycling: '参考区间：当前无法可靠区分体能、滑行、停顿或地形影响。'
         }
     };
     var FATIGUE_REVIEW_EVENT_COPY = {
@@ -14927,54 +16009,89 @@ function stopLLMHeartbeat() {
             running: '这个参考点附近，状态压力开始变得更明显；它是状态区间起点，不等同于心率漂移指标。',
             trail_running: '这个参考点附近，爬升或路况带来的状态压力更明显；它是状态区间起点，不等同于心率漂移指标。',
             hiking: '这个参考点附近，长时间行进的体能消耗开始显现。',
-            cycling: '这个参考点附近，持续输出带来的状态压力更明显。'
+            cycling: '这个参考点附近出现状态变化线索，需结合功率、踏频、心率和地形判断。'
         },
         efficiency_drop: {
             title: '推进效率开始下降',
             running: '这个参考点附近，同样心肺负担下速度保持变难。',
             trail_running: '这个参考点附近，地形和疲劳让推进效率变差。',
             hiking: '这个参考点附近，继续前进变得更费体力。',
-            cycling: '这个参考点附近，输出转成速度的效率变差。'
+            cycling: '这个参考点附近可能有功率、心率或地形关系变化；数据不足时只作参考。'
         },
         fatigue_deepening: {
             title: '体能压力明显加重',
             running: '这个参考点后的一段状态下滑更明显，建议重点回看配速和心率变化。',
             trail_running: '这个参考点后的一段状态下滑更明显，建议回看爬升、路况和心率变化。',
             hiking: '这个参考点后的一段体能压力明显加重，建议回看爬升、补给和停歇。',
-            cycling: '这个参考点后的一段输出压力更集中，建议回看坡度、心率和功率变化。'
+            cycling: '这个参考点后状态变化更集中，不能单独判断为掉功率或体能下降。'
+        },
+        power_drop: {
+            title: '有效踩踏输出回落参考',
+            running: '这个参考点附近出现推进变化，建议结合配速、心率和恢复段复盘。',
+            trail_running: '这个参考点附近出现推进变化，建议结合爬升、路况和心率复盘。',
+            hiking: '这个参考点附近出现行进变化，建议结合爬升、停歇和补给复盘。',
+            cycling: '这处更像有效踩踏段输出回落的回看点；先对照后程功率保持卡片，再看坡度、踏频和前段发力。'
+        },
+        cadence_interruption: {
+            title: '踩踏节奏被打断',
+            running: '这个参考点附近节奏连续性变化明显，建议结合配速和心率回看。',
+            trail_running: '这个参考点附近节奏连续性变化明显，建议结合地形和心率回看。',
+            hiking: '这个参考点附近行进连续性变化明显，建议结合路况和停歇回看。',
+            cycling: '这处提示踩踏节奏连续性被打断；优先对照踏频卡片，再看坡度、滑行或停顿是否参与影响。'
+        },
+        hr_power_decoupling: {
+            title: '功率和心率关系变化',
+            running: '这个参考点附近心率和推进关系出现变化，建议结合配速和心率回看。',
+            trail_running: '这个参考点附近心率和推进关系出现变化，建议结合爬升、路况和心率回看。',
+            hiking: '这个参考点附近心率和行进关系出现变化，建议结合爬升、停歇和补给回看。',
+            cycling: '这处提示功率和心率关系发生变化；先看心率反应卡片，再结合功率保持、坡度和踩踏节奏复盘。'
+        },
+        non_fitness_event: {
+            title: '路线或停顿影响参考',
+            running: '这个参考点更像外部节奏变化，建议结合路线和停顿回看。',
+            trail_running: '这个参考点更像地形或路况变化，建议结合爬升和技术路段回看。',
+            hiking: '这个参考点更像路况、停歇或补给安排影响，建议结合当时行进情境回看。',
+            cycling: '这处更像路线、下坡、滑行或停顿带来的变化；不要直接解读为体能下降。'
+        },
+        data_insufficient: {
+            title: '数据不足参考点',
+            running: '这个参考点附近数据依据不足，只适合定位回看，不适合下结论。',
+            trail_running: '这个参考点附近数据依据不足，只适合结合地形定位回看。',
+            hiking: '这个参考点附近数据依据不足，只适合结合路线和停歇定位回看。',
+            cycling: '这处数据依据不足，只能作为回看位置；暂不判断功率回落、心率压力或踩踏组织问题。'
         },
         energy_gap: {
             title: '能量断档风险线索',
             running: '这个图钉表示能量断档风险窗口起点，建议复盘补给、配速和前段消耗。',
             trail_running: '这个图钉表示体力断档风险窗口起点，建议复盘补给、爬升和前段消耗。',
             hiking: '这个图钉表示乏力风险窗口起点，建议复盘补给、节奏和停歇安排。',
-            cycling: '这个图钉表示掉功率风险窗口起点，建议复盘补给、输出节奏和前段消耗。'
+            cycling: '这个图钉表示后端识别到的风险窗口起点，需结合功率、踏频、心率和路线复盘。'
         },
         generic: {
             title: '状态变化点',
             running: '这个参考点附近出现值得回看的状态变化，建议结合配速、心率和主图曲线判断。',
             trail_running: '这个参考点附近出现值得回看的状态变化，建议结合爬升、心率和主图曲线判断。',
             hiking: '这个参考点附近出现值得回看的状态变化，建议结合爬升、心率和停歇判断。',
-            cycling: '这个参考点附近出现值得回看的状态变化，建议结合心率、坡度和输出判断。'
+            cycling: '这个参考点附近出现值得回看的状态变化，前端不补判功率回落或体能下降。'
         }
     };
     var FATIGUE_REVIEW_SUSTAINED_ZONE_COPY = {
         running: '本次大部分路段都处在较吃力状态，建议重点看心率、配速和恢复段。',
         trail_running: '本次大部分路段都偏吃力，建议重点看爬升、路况和心率变化。',
         hiking: '本次大部分路段体能压力偏高，建议重点看爬升、补给和停歇安排。',
-        cycling: '本次大部分路段输出压力偏高，建议重点看心率、坡度和功率变化。'
+        cycling: '本次大部分路段都有状态变化参考，需结合功率、踏频、心率和地形判断。'
     };
     var FATIGUE_REVIEW_SUSTAINED_EVENT_COPY = {
         running: '这个位置是系统识别到的参考点；本次状态压力更像是在大部分路段持续存在，建议结合整段配速、心率和恢复段回看。',
         trail_running: '这个位置是系统识别到的参考点；本次压力更像和爬升、路况及持续时间共同相关，建议结合整段曲线回看。',
         hiking: '这个位置是系统识别到的参考点；本次体能压力更像在较长路段中持续累积，建议结合爬升、补给和停歇安排回看。',
-        cycling: '这个位置是系统识别到的参考点；本次输出压力更像在大部分路段持续存在，建议结合心率、坡度和功率回看。'
+        cycling: '这个位置是系统识别到的参考点；本次更像存在较长状态变化区间，不能单独等同于体能下降。'
     };
     var FATIGUE_REVIEW_FRAGMENTED_ZONE_COPY = {
         running: '本次状态变化分布在多个路段，建议结合主图逐段查看配速、心率和恢复段。',
         trail_running: '本次状态变化分布在多个路段，建议结合主图逐段查看爬升、路况和心率变化。',
         hiking: '本次体能压力分布在多个路段，建议结合主图逐段查看爬升、补给和停歇安排。',
-        cycling: '本次输出压力分布在多个路段，建议结合主图逐段查看心率、坡度和功率变化。'
+        cycling: '本次状态变化参考分布在多个路段，建议逐段结合功率、踏频、心率和地形回看。'
     };
     function _fatigueReviewZoneLevel(level) {
         var normalized = String(level || 'unknown').toLowerCase();
@@ -14990,6 +16107,14 @@ function stopLLMHeartbeat() {
             high: '明显吃力',
             unknown: '状态变化'
         })[_fatigueReviewZoneLevel(level)] || '状态变化';
+    }
+    function _fatigueReviewCyclingZoneTitle(level) {
+        return ({
+            low: '参考区间',
+            medium: '状态变化参考',
+            high: '重点参考区间',
+            unknown: '参考区间'
+        })[_fatigueReviewZoneLevel(level)] || '参考区间';
     }
     function _fatigueReviewZoneCopy(level, sportGroup) {
         var group = FATIGUE_REVIEW_ZONE_COPY[_fatigueReviewZoneLevel(level)] || FATIGUE_REVIEW_ZONE_COPY.unknown;
@@ -15033,6 +16158,12 @@ function stopLLMHeartbeat() {
         if (_fatigueReviewZoneCoverageState(zone, totalDistanceKm) === 'sustained') return '整体偏吃力';
         return _fatigueReviewZoneTitle(zone && zone.level);
     }
+    function _fatigueReviewZoneStageTitle(zone, sportGroup, totalDistanceKm) {
+        if (sportGroup === 'cycling') {
+            return _fatigueReviewCyclingZoneSummaryTitle(zone, totalDistanceKm);
+        }
+        return _fatigueReviewZoneDisplayTitle(zone, totalDistanceKm);
+    }
     function _fatigueReviewZoneDisplayCopy(zone, sportGroup, totalDistanceKm) {
         if (_fatigueReviewZoneCoverageState(zone, totalDistanceKm) === 'sustained') {
             return _fatigueReviewSustainedZoneCopy(sportGroup);
@@ -15069,14 +16200,60 @@ function stopLLMHeartbeat() {
         })[level] || '状态变化';
         return position ? position + title : title;
     }
+    function _fatigueReviewCyclingZoneSummaryTitle(zone, totalDistanceKm) {
+        if (_fatigueReviewZoneCoverageState(zone, totalDistanceKm) === 'sustained') return '整体参考区间';
+        var start = Number(zone && zone.start_km);
+        var end = Number(zone && zone.end_km);
+        var position = _fatigueReviewZonePositionText(start, end, totalDistanceKm);
+        var title = _fatigueReviewCyclingZoneTitle(zone && zone.level);
+        return position ? position + title : title;
+    }
+    function _fatigueReviewCyclingZoneSummaryDesc(zone, totalDistanceKm) {
+        zone = zone || {};
+        if (_fatigueReviewZoneCoverageState(zone, totalDistanceKm) === 'sustained') {
+            return '本次存在较长状态变化参考区间；先看骑行关键指标卡，再结合坡度、滑行、停顿和踩踏连续性复盘。';
+        }
+        var reasonText = [
+            zone.reason,
+            zone.description,
+            Array.isArray(zone.reasons) ? zone.reasons.join(' ') : '',
+            zone.semantic,
+            zone.interpretation,
+            zone.calibration
+        ].map(function(value) {
+            return String(value || '').toLowerCase();
+        }).join(' ');
+        if (/data_insufficient|insufficient|unavailable|missing|invalid|数据不足/.test(reasonText)) {
+            return '这段只能作为回看位置；数据依据不足，先对照功率、踏频、心率可用性，再结合坡度、滑行或停顿判断。';
+        }
+        if (/non_fitness|downhill|coast|stop|pause|route|下坡|滑行|停顿|路线/.test(reasonText)) {
+            return '这段更可能受路线、下坡、滑行或停顿影响；把它当作情境参考，不直接归因为体能下降。';
+        }
+        if (/power_signal_unavailable|power_unavailable|invalid_power|power_data/.test(reasonText)) {
+            return '这段有状态变化线索，但功率依据不足；先看坡度、踏频和是否滑行或停顿，不判断有效踩踏输出回落。';
+        }
+        if (/aerobic_signal_unavailable|hr_unavailable|missing_hr|heart/.test(reasonText)) {
+            return '这段有状态变化线索，但心率依据不足；先把它当作参考区间，对照功率、踏频和路线情境复盘。';
+        }
+        if (/cadence_signal_unavailable|cadence_unavailable|missing_cadence/.test(reasonText)) {
+            return '这段有状态变化线索，但踏频依据不足；重点回看坡度、滑行或停顿是否打断了踩踏连续性。';
+        }
+        if (/power_signal_available|aerobic_signal_available|cadence_signal_available|available/.test(reasonText)) {
+            return '这段状态变化值得单独回看；具体原因以功率保持、心率反应和踏频节奏卡片为准。';
+        }
+        return _fatigueReviewZoneDisplayCopy(zone, 'cycling', totalDistanceKm);
+    }
     function _fatigueReviewZoneSummaryDesc(zone, sportGroup, totalDistanceKm) {
+        if (sportGroup === 'cycling') {
+            return _fatigueReviewCyclingZoneSummaryDesc(zone, totalDistanceKm);
+        }
         var title = _fatigueReviewZoneSummaryTitle(zone, totalDistanceKm);
         if (/前段开始吃力/.test(title)) {
             return ({
                 running: '较早就出现吃力迹象，建议回看开局配速是否偏急。',
                 trail_running: '较早就出现吃力迹象，建议回看开局爬升、路况和心率变化。',
                 hiking: '较早就出现体能压力，建议回看开局爬升、负重和停歇安排。',
-                cycling: '较早就出现输出压力，建议回看开局坡度、心率和功率变化。'
+                cycling: '较早出现状态变化参考，需结合开局坡度、心率、功率和踏频判断。'
             })[sportGroup] || '较早就出现吃力迹象，建议回看开局节奏是否偏急。';
         }
         if (/中后段/.test(title)) {
@@ -15084,7 +16261,7 @@ function stopLLMHeartbeat() {
                 running: '中后段压力持续存在，建议结合心率、配速和补给回看。',
                 trail_running: '中后段压力持续存在，建议结合爬升、路况和心率回看。',
                 hiking: '中后段体能压力持续存在，建议结合爬升、补给和停歇安排回看。',
-                cycling: '中后段输出压力持续存在，建议结合心率、坡度和功率回看。'
+                cycling: '中后段状态变化持续存在，需结合功率、踏频、心率和地形判断。'
             })[sportGroup] || '中后段压力持续存在，建议结合心率、节奏和补给回看。';
         }
         if (/末段/.test(title)) {
@@ -15092,7 +16269,7 @@ function stopLLMHeartbeat() {
                 running: '末段状态下滑更明显，建议关注后程体能和恢复安排。',
                 trail_running: '末段状态下滑更明显，建议关注后程爬升、技术路段和恢复安排。',
                 hiking: '末段体能压力更明显，建议关注后程补给、停歇和下撤节奏。',
-                cycling: '末段输出压力更明显，建议关注后程功率分配和恢复安排。'
+                cycling: '末段状态变化更明显，不能单独判断为后程功率保持下降。'
             })[sportGroup] || '末段状态下滑更明显，建议关注后程体能和恢复安排。';
         }
         return _fatigueReviewZoneDisplayCopy(zone, sportGroup, totalDistanceKm);
@@ -15119,7 +16296,9 @@ function stopLLMHeartbeat() {
     function _fatigueReviewZoneSummaryFromItem(item, sportGroup, totalDistanceKm) {
         var zone = item.zone || {};
         return {
-            title: _fatigueReviewZoneSummaryTitle(zone, totalDistanceKm),
+            title: sportGroup === 'cycling'
+                ? _fatigueReviewCyclingZoneSummaryTitle(zone, totalDistanceKm)
+                : _fatigueReviewZoneSummaryTitle(zone, totalDistanceKm),
             rangeText: _fatigueReviewZoneRangeText(item.start, item.end),
             desc: _fatigueReviewZoneSummaryDesc(zone, sportGroup, totalDistanceKm),
             level: item.level || 'unknown',
@@ -15164,7 +16343,7 @@ function stopLLMHeartbeat() {
         for (var i = 0; i < items.length; i++) {
             if (_fatigueReviewZoneCoverageState(items[i].zone, totalDistanceKm) === 'sustained') {
                 return [{
-                    title: '整体偏吃力',
+                    title: sportGroup === 'cycling' ? '整体参考区间' : '整体偏吃力',
                     rangeText: _fatigueReviewZoneRangeText(items[i].start, items[i].end),
                     desc: _fatigueReviewSustainedZoneCopy(sportGroup),
                     level: items[i].level,
@@ -15193,7 +16372,14 @@ function stopLLMHeartbeat() {
     }
     function _fatigueReviewEventKind(ev) {
         ev = ev || {};
+        var semantic = String(ev.semantic || ev.event_semantic || ev.type || ev.reason_code || '').toLowerCase();
+        if (/^(power_drop|cadence_interruption|hr_power_decoupling|non_fitness_event|data_insufficient)$/.test(semantic)) {
+            return semantic;
+        }
         var raw = [
+            ev.semantic,
+            ev.event_semantic,
+            ev.reason_code,
             ev.type,
             ev.title,
             ev.label,
@@ -15201,6 +16387,11 @@ function stopLLMHeartbeat() {
         ].map(function(value) {
             return String(value || '').toLowerCase();
         }).join(' ');
+        if (/power_drop|功率回落|输出回落/.test(raw)) return 'power_drop';
+        if (/cadence_interruption|踏频中断|踩踏节奏|踏频组织/.test(raw)) return 'cadence_interruption';
+        if (/hr_power_decoupling|power_hr|心率.*功率|功率.*心率/.test(raw)) return 'hr_power_decoupling';
+        if (/non_fitness|downhill|coast|stop|pause|route|下坡|滑行|停顿|路线/.test(raw)) return 'non_fitness_event';
+        if (/data_insufficient|insufficient|unavailable|missing|invalid|数据不足/.test(raw)) return 'data_insufficient';
         if (/bonk|energy|能量|断档|掉电/.test(raw)) return 'energy_gap';
         if (/效率|efficiency|drop/.test(raw)) return 'efficiency_drop';
         if (/疲劳|fatigue|high|加深|加重/.test(raw)) return 'fatigue_deepening';
@@ -15244,7 +16435,7 @@ function stopLLMHeartbeat() {
         }
         events = Array.isArray(events) ? events : [];
         return events.some(function(ev) {
-            return /^(energy_gap|efficiency_drop|fatigue_deepening|drift)$/.test(_fatigueReviewEventKind(ev));
+            return /^(energy_gap|efficiency_drop|fatigue_deepening|drift|power_drop|cadence_interruption|hr_power_decoupling)$/.test(_fatigueReviewEventKind(ev));
         });
     }
     function _fatigueReviewSignalRelationCopy(hasEvents, hasZones, hasRiskSignals) {
@@ -15398,6 +16589,12 @@ function stopLLMHeartbeat() {
                 unknown: '状态变化'
             }[normalized] || normalized;
         };
+        var stageTitleText = function(zone) {
+            if (sportGroup === 'cycling') {
+                return _fatigueReviewCyclingZoneSummaryTitle(zone, totalDistanceKm);
+            }
+            return levelText(zone && zone.level);
+        };
         var stageItems = [];
         for (var i = 0; i < zones.length; i++) {
             var zone = zones[i] || {};
@@ -15437,8 +16634,8 @@ function stopLLMHeartbeat() {
             zone = zone || {};
             var level = normalizeLevel(zone.level);
             var title = _fatigueReviewZoneCoverageState(zone, totalDistanceKm) === 'sustained'
-                ? _fatigueReviewZoneDisplayTitle(zone, totalDistanceKm)
-                : levelText(zone.level);
+                ? _fatigueReviewZoneStageTitle(zone, sportGroup, totalDistanceKm)
+                : stageTitleText(zone);
             var reason = _fatigueReviewZoneDisplayCopy(zone, sportGroup, totalDistanceKm);
             var tooltip = _fatigueReviewStageTooltip(zone, sportGroup, totalDistanceKm, stageItems.length);
             var compact = item.span < 0.35 ? ' compact' : '';
@@ -15979,6 +17176,8 @@ function stopLLMHeartbeat() {
             next[key] = chartPayload[key];
         });
         if (!visible.hr) next.hr_curve = [];
+        if (!visible.power) next.power_curve = [];
+        if (!visible.cadence) next.cadence_curve = [];
         if (!visible.speed) next.pace_curve = [];
         if (!visible.altitude) next.altitude_curve = [];
         if (!visible.efficiency) next.efficiency_curve = [];
@@ -16064,6 +17263,70 @@ function stopLLMHeartbeat() {
             chipsEl.innerHTML = '';
             chipsEl.hidden = true;
         }
+        _renderFatigueReviewLayerToggles(data);
+    }
+
+    function _fatigueReviewLayerKeyForCurveKey(curveKey) {
+        return ({
+            hr_curve: 'hr',
+            power_curve: 'power',
+            cadence_curve: 'cadence',
+            pace_curve: 'speed',
+            altitude_curve: 'altitude',
+            efficiency_curve: 'efficiency',
+            gap_pace_curve: 'gap',
+            grade_curve: 'grade',
+            terrain_load_curve: 'terrainLoad'
+        })[curveKey] || '';
+    }
+
+    function _fatigueReviewHasRenderableLayer(activityData, def) {
+        if (!activityData || !def || !def.key) return false;
+        var distanceCurve = activityData.distance_curve;
+        var curve = activityData[def.key];
+        var pairedData = def.displayAsPace
+            ? _frPairDistanceDisplayCurve(distanceCurve, curve)
+            : _frPairDistanceCurve(distanceCurve, curve);
+        if (!pairedData.length) return false;
+        for (var i = 0; i < pairedData.length; i++) {
+            if (pairedData[i][0] != null && pairedData[i][1] != null) return true;
+        }
+        return false;
+    }
+
+    function _renderFatigueReviewLayerToggles(activityData) {
+        var togglesEl = document.getElementById('fr-layer-toggle-row');
+        if (!togglesEl) return;
+        if (!activityData || !Array.isArray(activityData.distance_curve) || activityData.distance_curve.length < 2) {
+            togglesEl.innerHTML = '';
+            togglesEl.hidden = true;
+            return;
+        }
+        var laneDefs = _fatigueReviewChartLaneDefs(activityData);
+        var items = [];
+        for (var i = 0; i < laneDefs.length; i++) {
+            var def = laneDefs[i];
+            if (!_fatigueReviewHasRenderableLayer(activityData, def)) continue;
+            var layerKey = _fatigueReviewLayerKeyForCurveKey(def.key);
+            if (!layerKey || !_fatigueReviewLayerVisibility.hasOwnProperty(layerKey)) continue;
+            items.push({
+                key: layerKey,
+                label: def.name,
+                color: def.color
+            });
+        }
+        if (items.length) {
+            items.push({ key: 'zones', label: '疲劳带', color: '#facc15' });
+            items.push({ key: 'events', label: '事件', color: '#f87171' });
+        }
+        togglesEl.innerHTML = items.map(function(item) {
+            var checked = _fatigueReviewLayerVisibility[item.key] !== false ? ' checked' : '';
+            return '<label style="--fr-layer-color:' + safeHtml(item.color || '#14b8a6') + '">'
+                + '<input type="checkbox" data-fr-layer-toggle="' + safeHtml(item.key) + '"' + checked + ' onchange="onFatigueReviewLayerToggle(this)"> '
+                + safeHtml(item.label)
+                + '</label>';
+        }).join('');
+        togglesEl.hidden = items.length === 0;
     }
 
     // === V4.0 运动剖面分析 ECharts 双 Y 轴渲染 (HR + Speed + GAP) ===
@@ -16701,6 +17964,40 @@ function stopLLMHeartbeat() {
         }).join('');
     }
 
+    function _fatigueReviewChartSportMode(sportType) {
+        var normalized = String(sportType || '').toLowerCase();
+        if (normalized === 'cycling' || normalized === 'road_cycling' || normalized === 'mountain_biking') {
+            return 'cycling';
+        }
+        if (normalized === 'running' || normalized === 'trail_running' || normalized === 'treadmill_running') {
+            return 'running';
+        }
+        return 'general';
+    }
+
+    function _fatigueReviewChartLaneDefs(activityData) {
+        var sportMode = _fatigueReviewChartSportMode(activityData && activityData.sport_type);
+        if (sportMode === 'cycling') {
+            return [
+                { key: 'power_curve', name: '功率', unit: 'W', color: '#f59e0b', area: 'rgba(245, 158, 11, 0.10)', tooltip: '显示每一段实际踩出来的输出强度。高低起伏越大，说明冲刺、爬坡、滑行或停顿越多；和心率一起看，可以区分是主动发力还是地形影响。' },
+                { key: 'hr_curve', name: '心率', unit: 'bpm', color: '#ef4444', area: 'rgba(239, 68, 68, 0.08)' },
+                { key: 'altitude_curve', name: '海拔', unit: 'm', color: '#94a3b8', area: 'rgba(148, 163, 184, 0.08)', tooltip: '显示路线所处高度变化。骑行时适合和功率、心率一起看，区分地形压力和体能变化。' },
+                { key: 'cadence_curve', name: '踏频', unit: 'rpm', color: '#38bdf8', area: 'rgba(56, 189, 248, 0.08)', tooltip: '显示每分钟踩踏次数。结合功率和心率一起看，可以判断是稳定踩踏、滑行变多，还是被坡度和停顿打断。' },
+                { key: 'grade_curve', name: '坡度', unit: '%', color: '#f97316', area: 'rgba(249, 115, 22, 0.08)', robustAxis: { hardMin: -35, hardMax: 35, minSpan: 4 }, tooltip: '显示当前路段的上坡或下坡程度。正值多为上坡，负值多为下坡，短时尖峰更适合作为地形参考。' },
+                { key: 'terrain_load_curve', name: '地形负荷', unit: 'grade×speed×s', color: '#14b8a6', area: 'rgba(20, 184, 166, 0.12)', seriesType: 'bar', tooltip: '把坡度、速度和持续时间合成的地形压力参考。柱子越高，说明这一小段地形对体能消耗越集中。' }
+            ];
+        }
+        return [
+            { key: 'hr_curve', name: '心率', unit: 'bpm', color: '#ef4444', area: 'rgba(239, 68, 68, 0.08)' },
+            { key: 'pace_curve', name: '配速', unit: '/km', color: '#3b82f6', area: 'rgba(59, 130, 246, 0.08)', displayAsPace: true, rawKey: 'pace_raw_curve', cappedKey: 'pace_capped_curve' },
+            { key: 'gap_pace_curve', name: '坡度修正配速（GAP）', unit: '/km', color: '#eab308', area: 'rgba(234, 179, 8, 0.08)', displayAsPace: true, rawKey: 'gap_pace_raw_curve', cappedKey: 'gap_pace_capped_curve', tooltip: '把上坡和下坡影响折算进去后的配速。用于判断体力输出是否真的变慢，而不只看原始配速。' },
+            { key: 'efficiency_curve', name: '效率', unit: 'Speed/HR', color: '#22c55e', area: 'rgba(34, 197, 94, 0.08)', tooltip: '用速度和心率的关系观察推进效率。数值下降通常表示同样心肺负担下，速度或推进表现变弱。' },
+            { key: 'altitude_curve', name: '海拔', unit: 'm', color: '#94a3b8', area: 'rgba(148, 163, 184, 0.08)', tooltip: '显示路线所处高度变化。海拔起伏会影响心率、配速和体感，适合和坡度、GAP一起看。' },
+            { key: 'grade_curve', name: '坡度', unit: '%', color: '#f97316', area: 'rgba(249, 115, 22, 0.08)', robustAxis: { hardMin: -35, hardMax: 35, minSpan: 4 }, tooltip: '显示当前路段的上坡或下坡程度。正值多为上坡，负值多为下坡，短时尖峰更适合作为地形参考。' },
+            { key: 'terrain_load_curve', name: '地形负荷', unit: 'grade×speed×s', color: '#14b8a6', area: 'rgba(20, 184, 166, 0.12)', seriesType: 'bar', tooltip: '把坡度、速度和持续时间合成的地形压力参考。柱子越高，说明这一小段地形对体能消耗越集中。' }
+        ];
+    }
+
     function _renderFatigueReviewLayeredEcharts(activityData, targetId, distanceCurve) {
         var chart = profileAnalysisChartInstances[targetId];
         if (!chart) return;
@@ -16711,15 +18008,7 @@ function stopLLMHeartbeat() {
         var insightEvents = (activityData && activityData.insight_events) || [];
         var displayMeta = (activityData && activityData.display_meta) || {};
         var maxDist = _frMaxDistance(distanceCurve);
-        var laneDefs = [
-            { key: 'hr_curve', name: '心率', unit: 'bpm', color: '#ef4444', area: 'rgba(239, 68, 68, 0.08)' },
-            { key: 'pace_curve', name: '配速', unit: '/km', color: '#3b82f6', area: 'rgba(59, 130, 246, 0.08)', displayAsPace: true, rawKey: 'pace_raw_curve', cappedKey: 'pace_capped_curve' },
-            { key: 'gap_pace_curve', name: '坡度修正配速（GAP）', unit: '/km', color: '#eab308', area: 'rgba(234, 179, 8, 0.08)', displayAsPace: true, rawKey: 'gap_pace_raw_curve', cappedKey: 'gap_pace_capped_curve', tooltip: '把上坡和下坡影响折算进去后的配速。用于判断体力输出是否真的变慢，而不只看原始配速。' },
-            { key: 'efficiency_curve', name: '效率', unit: 'Speed/HR', color: '#22c55e', area: 'rgba(34, 197, 94, 0.08)', tooltip: '用速度和心率的关系观察推进效率。数值下降通常表示同样心肺负担下，速度或推进表现变弱。' },
-            { key: 'altitude_curve', name: '海拔', unit: 'm', color: '#94a3b8', area: 'rgba(148, 163, 184, 0.08)', tooltip: '显示路线所处高度变化。海拔起伏会影响心率、配速和体感，适合和坡度、GAP一起看。' },
-            { key: 'grade_curve', name: '坡度', unit: '%', color: '#f97316', area: 'rgba(249, 115, 22, 0.08)', robustAxis: { hardMin: -35, hardMax: 35, minSpan: 4 }, tooltip: '显示当前路段的上坡或下坡程度。正值多为上坡，负值多为下坡，短时尖峰更适合作为地形参考。' },
-            { key: 'terrain_load_curve', name: '地形负荷', unit: 'grade×speed×s', color: '#14b8a6', area: 'rgba(20, 184, 166, 0.12)', seriesType: 'bar', tooltip: '把坡度、速度和持续时间合成的地形压力参考。柱子越高，说明这一小段地形对体能消耗越集中。' }
-        ];
+        var laneDefs = _fatigueReviewChartLaneDefs(activityData);
 
         var lanes = [];
         for (var i = 0; i < laneDefs.length; i++) {

@@ -38,15 +38,23 @@ class TestFatigueReviewBackendOutputContract(unittest.TestCase):
 
     EXPECTED_TOP_KEYS = {
         "sport_type", "metrics", "collapse_events", "fatigue_zones",
-        "curves", "context_tags", "environment_context", "ai_insight", "advice", "disclaimer",
+        "curves", "summary", "context_tags", "environment_context", "ai_insight", "advice", "disclaimer",
     }
     EXPECTED_METRICS_KEYS = {
         "hr_drift", "decoupling", "bonk_risk", "events",
         # 后续追加(V7.9 - V7.13)
         "efficiency", "durability", "cadence_stability", "training_load",
+        # P0-cycling 预留字段,真实算法留到后续专项阶段
+        "power_variability", "pedaling_stability",
     }
     EXPECTED_CURVES_KEYS = {
-        "distance", "time", "efficiency", "gap", "grade", "terrain_load", "hr", "altitude", "speed", "total_distance_m",
+        "distance", "time", "efficiency", "gap", "grade", "terrain_load", "hr", "altitude", "speed", "power", "cadence", "total_distance_m",
+    }
+    EXPECTED_SUMMARY_KEYS = {
+        "avg_power", "max_power", "normalized_power", "avg_cadence",
+        "power_available", "cadence_available",
+        "power_points_count", "cadence_points_count",
+        "power_data_quality", "cadence_data_quality",
     }
     EXPECTED_HR_DRIFT_KEYS = {"pct", "level", "confidence", "trend", "reasons"}
     EXPECTED_DECOUPLING_KEYS = {"pct", "level", "trend"}
@@ -77,6 +85,12 @@ class TestFatigueReviewBackendOutputContract(unittest.TestCase):
         for key in self.EXPECTED_CURVES_KEYS:
             self.assertIn(key, sample["curves"],
                           f"curves 子字段 '{key}' 必须存在")
+
+    def test_summary_whitelist(self):
+        """summary 活动级摘要字段必须存在"""
+        sample = self._build_sample_snapshot()
+        for key in self.EXPECTED_SUMMARY_KEYS:
+            self.assertIn(key, sample["summary"], f"summary.{key} 必须存在")
 
     def test_hr_drift_subfields(self):
         """hr_drift 子字段:pct/level/confidence/trend"""
@@ -138,6 +152,30 @@ class TestFatigueReviewBackendOutputContract(unittest.TestCase):
                                  "reasons": [],
                                  "ratio_7d_42d": "optimal", "acute_7d": 350, "chronic_42d": 305, "ratio_compared_count": 5,
                                  "trend": {"delta_pct": 8.0, "level": "flat", "compared_count": 5, "is_improving": None, "baseline_load": 110, "source": "v8_5_21d_median_daily_load"}},
+                "power_variability": {
+                    "vi": None, "level": "unknown", "confidence": "unavailable",
+                    "avg_power": None, "normalized_power": None,
+                    "power_points_count": 0, "power_data_quality": "missing",
+                    "reasons": ["power data unavailable: missing"],
+                },
+                "pedaling_stability": {
+                    "score": None, "level": "unknown", "confidence": "unavailable",
+                    "cv": None, "decay_pct": None, "avg_cadence": None,
+                    "cadence_points_count": 0, "cadence_data_quality": "missing",
+                    "reasons": ["cadence data unavailable: missing"],
+                },
+            },
+            "summary": {
+                "avg_power": None,
+                "max_power": None,
+                "normalized_power": None,
+                "avg_cadence": None,
+                "power_available": False,
+                "cadence_available": False,
+                "power_points_count": 0,
+                "cadence_points_count": 0,
+                "power_data_quality": "missing",
+                "cadence_data_quality": "missing",
             },
             "collapse_events": [],
             "fatigue_zones": [],
@@ -151,6 +189,8 @@ class TestFatigueReviewBackendOutputContract(unittest.TestCase):
                 "hr": [140, 145, 150, 155, 160],
                 "altitude": [100, 105, 118, 121, 116],
                 "speed": [4.0, 4.1, 4.0, 3.9, 3.8],
+                "power": [],
+                "cadence": [],
                 "total_distance_m": 10000.0,
             },
             "context_tags": {},

@@ -1,46 +1,75 @@
 ---
 name: garmin-stats
 description: 佳明/Garmin 用户画像、运动健康数据、活动缓存和 FIT 文件下载 Skill。用于通过 OpenClaw/QClaw/Codex 获取佳明用户画像 JSON 数组，给脉图同步用户画像，查询 HRV、睡眠、静息心率、VO2max、PB、累计里程、最长距离，或下载佳明 FIT 文件。触发词包括「同步用户画像」「更新脉图用户画像」「查一下佳明数据」「我的HRV是多少」「跑步PB成绩」「刷新佳明缓存」「更新活动」「下载FIT文件」。
+metadata:
+  version: "1.0.3"
 ---
 
 # garmin-stats
+
+版本：`1.0.3`
 
 这个 Skill 用来获取佳明/Garmin 用户画像 JSON 数组，主要供脉图用户画像同步使用；也支持刷新活动缓存和下载 FIT 文件。
 
 ## 安装
 
-把整个 `garmin-stats` 文件夹复制到 OpenClaw/QClaw 的本地 Skill 目录：
+在 OpenClaw/QClaw 中使用 Skill 安装/导入功能选择 `garmin-stats.zip`。不建议让普通用户手动寻找隐藏目录；不同系统和工具的 Skill 目录可能不同。
+
+运行环境要求：Python 3.8 或更高版本，建议 Windows 用户使用 64 位 Python 3.10/3.11。
+
+安装依赖时，先进入 OpenClaw/QClaw 已安装的 `garmin-stats` skill 目录，然后运行：
+
+macOS/Linux：
 
 ```bash
-~/.qclaw/skills/garmin-stats
+python3 -m pip install -r requirements.txt
 ```
 
-运行环境要求：Python 3.8 或更高版本。
+Windows：
 
-安装依赖：
+```powershell
+py -m pip install -r requirements.txt
+```
 
-```bash
-cd ~/.qclaw/skills/garmin-stats
-pip3 install -r requirements.txt
+如果 `py` 命令不可用，也可以使用：
+
+```powershell
+python -m pip install -r requirements.txt
 ```
 
 首次登录并保存 OAuth token：
 
-```bash
-python3 ~/.qclaw/skills/garmin-stats/scripts/login.py --region cn
-```
-
-国际区账号使用：
+macOS/Linux：
 
 ```bash
-python3 ~/.qclaw/skills/garmin-stats/scripts/login.py --region global
+python3 scripts/login.py --region cn
 ```
 
-认证文件默认保存到：
+Windows：
+
+```powershell
+py scripts\login.py --region cn
+```
+
+国际区账号把 `--region cn` 改为 `--region global`。
+
+认证 token 按账号区域分开保存，避免大陆区和国际区混用。默认位于当前用户主目录下：
 
 ```bash
-~/.qclaw/workspace/garmin_auth.json
+~/.qclaw/workspace/garmin_auth_cn
+~/.qclaw/workspace/garmin_auth_global
 ```
+
+Windows 上对应类似：
+
+```text
+C:\Users\你的用户名\.qclaw\workspace\garmin_auth_cn
+C:\Users\你的用户名\.qclaw\workspace\garmin_auth_global
+```
+
+如需改 workspace 根目录，可以设置环境变量 `QCLAW_WORKSPACE_DIR`。
+
+如果 Garmin 要求 MFA/两步验证码，按终端提示输入一次性验证码。国际区账号不要频繁重新登录；如果遇到 `429`、`Too Many Requests` 或类似风控提示，请停止重试，等待一段时间后再登录。
 
 ## 脉图用户画像同步
 
@@ -53,13 +82,19 @@ python3 ~/.qclaw/skills/garmin-stats/scripts/login.py --region global
 OpenClaw/QClaw 路径：
 
 ```bash
-python3 ~/.qclaw/skills/garmin-stats/scripts/get_garmin_stats.py sync
+python3 scripts/get_garmin_stats.py sync
 ```
 
-Codex 路径：
+国际区账号同步时使用：
 
 ```bash
-python3 ~/.codex/skills/garmin-stats/scripts/get_garmin_stats.py sync
+python3 scripts/get_garmin_stats.py sync --region global
+```
+
+Windows 可使用：
+
+```powershell
+py scripts\get_garmin_stats.py sync
 ```
 
 输出示例：
@@ -81,19 +116,25 @@ python3 ~/.codex/skills/garmin-stats/scripts/get_garmin_stats.py sync
 强制刷新活动缓存：
 
 ```bash
-python3 ~/.qclaw/skills/garmin-stats/scripts/get_garmin_stats.py sync --refresh
+python3 scripts/get_garmin_stats.py sync --refresh
 ```
 
 调整自动刷新间隔：
 
 ```bash
-python3 ~/.qclaw/skills/garmin-stats/scripts/get_garmin_stats.py sync --cache-ttl-days 7
+python3 scripts/get_garmin_stats.py sync --cache-ttl-days 7
 ```
 
 只刷新活动缓存：
 
 ```bash
-python3 ~/.qclaw/skills/garmin-stats/scripts/generate_cache.py --region cn
+python3 scripts/generate_cache.py --region cn
+```
+
+国际区账号刷新缓存：
+
+```bash
+python3 scripts/generate_cache.py --region global
 ```
 
 触发词建议：
@@ -165,13 +206,25 @@ python3 ~/.qclaw/skills/garmin-stats/scripts/generate_cache.py --region cn
 用户说「下载FIT文件」触发 FIT 下载流程。
 
 ```bash
-python3 ~/.qclaw/skills/garmin-stats/scripts/download_fit.py
-python3 ~/.qclaw/skills/garmin-stats/scripts/download_fit.py <activity_id>
-python3 ~/.qclaw/skills/garmin-stats/scripts/download_fit.py --from 2023-01-01 --to 2023-12-31
-python3 ~/.qclaw/skills/garmin-stats/scripts/download_fit.py --update
-python3 ~/.qclaw/skills/garmin-stats/scripts/download_fit.py --update-1m
-python3 ~/.qclaw/skills/garmin-stats/scripts/download_fit.py --update-3m
-python3 ~/.qclaw/skills/garmin-stats/scripts/download_fit.py --update-1y
+python3 scripts/download_fit.py
+python3 scripts/download_fit.py <activity_id>
+python3 scripts/download_fit.py --from 2023-01-01 --to 2023-12-31
+python3 scripts/download_fit.py --update
+python3 scripts/download_fit.py --update-1m
+python3 scripts/download_fit.py --update-3m
+python3 scripts/download_fit.py --update-1y
+```
+
+国际区账号下载 FIT 时同样使用 `--region global`，确保读取国际区 token：
+
+```bash
+python3 scripts/download_fit.py --from 2026-01-01 --to 2026-01-31 --region global
+```
+
+Windows 可使用：
+
+```powershell
+py scripts\download_fit.py --update
 ```
 
 下载文件默认保存到脉图工作区，脉图会扫描这个目录并导入 FIT：
@@ -179,6 +232,20 @@ python3 ~/.qclaw/skills/garmin-stats/scripts/download_fit.py --update-1y
 ```bash
 ~/.fitvault/workspace/tracks/
 ```
+
+Windows 上对应类似：
+
+```text
+C:\Users\你的用户名\.fitvault\workspace\tracks
+```
+
+如果 Windows 版脉图使用了不同的 FIT 目录，可以通过参数或环境变量指定：
+
+```powershell
+py scripts\download_fit.py --update --output-dir "D:\fitvault\tracks"
+```
+
+或设置环境变量 `FITVAULT_TRACKS_DIR`。
 
 文件名格式：
 
@@ -189,6 +256,7 @@ python3 ~/.qclaw/skills/garmin-stats/scripts/download_fit.py --update-1y
 ## 常见问题
 
 - 认证失败：重新运行 `scripts/login.py`。
-- 缺依赖：运行 `pip3 install -r requirements.txt`。
+- 国际区账号认证失败：确认登录、同步、刷新缓存、下载 FIT 都使用同一个 `--region global`；遇到 `429` 不要连续重试。
+- 缺依赖：在 skill 目录运行 `python -m pip install -r requirements.txt`；Windows 可运行 `py -m pip install -r requirements.txt`。
 - 活动字段不是最新：运行 `刷新佳明缓存` 或 `get_garmin_stats.py sync --refresh`。
 - 某些字段为 `null`：佳明账号可能没有对应数据，属于正常情况。

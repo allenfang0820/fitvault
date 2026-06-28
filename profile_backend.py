@@ -59,7 +59,9 @@ _PROFILE_SYNC_LOCK = threading.Lock()
 
 PROFILE_CANONICAL_FIELDS: tuple[str, ...] = (
     "name", "gender", "age", "weight", "resting_hr", "max_hr",
-    "hrv_baseline", "vo2max", "avg_bedtime", "avg_sleep_hours", "bmi",
+    "recent_resting_hr", "resting_hr_7d_avg",
+    "hrv_baseline", "recent_hrv", "hrv_7d_avg",
+    "vo2max", "avg_bedtime", "avg_sleep_hours", "bmi",
     "body_fat_pct", "body_water_pct", "bone_mass", "muscle_mass",
     "longest_hike_km", "height_cm", "pb_5km", "pb_10km",
     "pb_half_marathon", "pb_full_marathon", "lactate_threshold_hr",
@@ -74,7 +76,9 @@ PROFILE_ANALYSIS_REQUIRED_FIELDS: tuple[str, ...] = (
     "resting_hr", "max_hr", "weight", "vo2max", "lactate_threshold_hr",
 )
 PROFILE_ANALYSIS_OPTIONAL_FIELDS: tuple[str, ...] = (
-    "hrv_baseline", "avg_sleep_hours", "avg_bedtime", "body_fat_pct",
+    "hrv_baseline", "recent_hrv", "hrv_7d_avg",
+    "recent_resting_hr", "resting_hr_7d_avg",
+    "avg_sleep_hours", "avg_bedtime", "body_fat_pct",
     "body_water_pct", "bone_mass", "muscle_mass", "ftp", "ftp_watts",
 )
 PROFILE_DISPLAY_ONLY_FIELDS: tuple[str, ...] = (
@@ -880,8 +884,12 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             age         INTEGER,
             weight      REAL,
             resting_hr  INTEGER,
+            recent_resting_hr INTEGER,
+            resting_hr_7d_avg INTEGER,
             max_hr      INTEGER,
             hrv_baseline REAL,
+            recent_hrv REAL,
+            hrv_7d_avg REAL,
             vo2max      REAL,
             avg_sleep_hours REAL,
             longest_hike_km REAL,
@@ -1140,6 +1148,10 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             pass
 
     for col, dtype in [
+        ("recent_resting_hr", "INTEGER"),
+        ("resting_hr_7d_avg", "INTEGER"),
+        ("recent_hrv", "REAL"),
+        ("hrv_7d_avg", "REAL"),
         ("avg_bedtime", "TEXT"),
         ("avg_sleep_hours", "REAL"),
         ("bmi", "REAL"),
@@ -1210,6 +1222,10 @@ class UserProfile:
     vo2max: float | None
     avg_sleep_hours: float | None
     longest_hike_km: float | None
+    recent_resting_hr: int | None = None
+    resting_hr_7d_avg: int | None = None
+    recent_hrv: float | None = None
+    hrv_7d_avg: float | None = None
     avg_bedtime: str | None = None
     bmi: float | None = None
     body_fat_pct: float | None = None
@@ -1249,9 +1265,13 @@ class UserProfile:
             "weight_kg": self.weight,
             "resting_hr": self.resting_hr,
             "resting_heart_rate": self.resting_hr,
+            "recent_resting_hr": self.recent_resting_hr,
+            "resting_hr_7d_avg": self.resting_hr_7d_avg,
             "max_hr": self.max_hr,
             "hrv_baseline": self.hrv_baseline,
             "hrv": self.hrv_baseline,
+            "recent_hrv": self.recent_hrv,
+            "hrv_7d_avg": self.hrv_7d_avg,
             "vo2max": self.vo2max,
             "vo2_max": self.vo2max,
             "avg_bedtime": self.avg_bedtime,
@@ -1317,6 +1337,10 @@ def get_profile() -> UserProfile:
         vo2max=row["vo2max"] if "vo2max" in row.keys() else None,
         avg_sleep_hours=row["avg_sleep_hours"] if "avg_sleep_hours" in row.keys() else None,
         longest_hike_km=row["longest_hike_km"] if "longest_hike_km" in row.keys() else None,
+        recent_resting_hr=row["recent_resting_hr"] if "recent_resting_hr" in row.keys() else None,
+        resting_hr_7d_avg=row["resting_hr_7d_avg"] if "resting_hr_7d_avg" in row.keys() else None,
+        recent_hrv=row["recent_hrv"] if "recent_hrv" in row.keys() else None,
+        hrv_7d_avg=row["hrv_7d_avg"] if "hrv_7d_avg" in row.keys() else None,
         avg_bedtime=row["avg_bedtime"] if "avg_bedtime" in row.keys() else None,
         bmi=row["bmi"] if "bmi" in row.keys() else None,
         body_fat_pct=row["body_fat_pct"] if "body_fat_pct" in row.keys() else None,
@@ -1351,59 +1375,22 @@ def get_profile() -> UserProfile:
 def upsert_profile(data: dict[str, Any]) -> UserProfile:
     conn = _conn()
     conn.execute("DELETE FROM user_profile")
+    fields = (
+        "name", "gender", "age", "weight", "resting_hr",
+        "recent_resting_hr", "resting_hr_7d_avg",
+        "max_hr", "hrv_baseline", "recent_hrv", "hrv_7d_avg", "vo2max",
+        "avg_bedtime", "avg_sleep_hours", "bmi", "body_fat_pct", "body_water_pct", "bone_mass",
+        "muscle_mass", "longest_hike_km", "height_cm", "pb_5km", "pb_10km", "pb_half_marathon",
+        "pb_full_marathon", "lactate_threshold_hr", "ftp", "ftp_watts",
+        "lactate_threshold_pace", "pb_1km", "longest_run_km",
+        "longest_ride_time", "cycling_40km_time", "cycling_80km_time", "longest_cycle_km",
+        "longest_swim_distance_m", "swimming_100m_pb",
+        "total_run_km", "total_hike_km", "total_cycle_km", "total_swim_km",
+    )
+    placeholders = ", ".join(["?"] * len(fields))
     conn.execute(
-        """
-        INSERT INTO user_profile
-            (name, gender, age, weight, resting_hr, max_hr, hrv_baseline, vo2max,
-             avg_bedtime, avg_sleep_hours, bmi, body_fat_pct, body_water_pct, bone_mass,
-             muscle_mass, longest_hike_km, height_cm, pb_5km, pb_10km, pb_half_marathon,
-             pb_full_marathon, lactate_threshold_hr, ftp, ftp_watts,
-             lactate_threshold_pace, pb_1km, longest_run_km,
-             longest_ride_time, cycling_40km_time, cycling_80km_time, longest_cycle_km,
-             longest_swim_distance_m, swimming_100m_pb,
-             total_run_km, total_hike_km, total_cycle_km, total_swim_km)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            data.get("name"),
-            data.get("gender"),
-            data.get("age"),
-            data.get("weight"),
-            data.get("resting_hr"),
-            data.get("max_hr"),
-            data.get("hrv_baseline"),
-            data.get("vo2max"),
-            data.get("avg_bedtime"),
-            data.get("avg_sleep_hours"),
-            data.get("bmi"),
-            data.get("body_fat_pct"),
-            data.get("body_water_pct"),
-            data.get("bone_mass"),
-            data.get("muscle_mass"),
-            data.get("longest_hike_km"),
-            data.get("height_cm"),
-            data.get("pb_5km"),
-            data.get("pb_10km"),
-            data.get("pb_half_marathon"),
-            data.get("pb_full_marathon"),
-            data.get("lactate_threshold_hr"),
-            data.get("ftp"),
-            data.get("ftp_watts"),
-            data.get("lactate_threshold_pace"),
-            data.get("pb_1km"),
-            data.get("longest_run_km"),
-            data.get("longest_ride_time"),
-            data.get("cycling_40km_time"),
-            data.get("cycling_80km_time"),
-            data.get("longest_cycle_km"),
-            data.get("longest_swim_distance_m"),
-            data.get("swimming_100m_pb"),
-            data.get("total_run_km"),
-            data.get("total_hike_km"),
-            data.get("total_cycle_km"),
-            data.get("total_swim_km"),
-        ),
+        f"INSERT INTO user_profile ({', '.join(fields)}) VALUES ({placeholders})",
+        tuple(data.get(field) for field in fields),
     )
     conn.commit()
     last_updated = conn.execute("SELECT updated_at FROM user_profile ORDER BY id DESC LIMIT 1").fetchone()
@@ -1421,6 +1408,10 @@ def upsert_profile(data: dict[str, Any]) -> UserProfile:
         avg_bedtime=data.get("avg_bedtime"),
         avg_sleep_hours=data.get("avg_sleep_hours"),
         bmi=data.get("bmi"),
+        recent_resting_hr=data.get("recent_resting_hr"),
+        resting_hr_7d_avg=data.get("resting_hr_7d_avg"),
+        recent_hrv=data.get("recent_hrv"),
+        hrv_7d_avg=data.get("hrv_7d_avg"),
         body_fat_pct=data.get("body_fat_pct"),
         body_water_pct=data.get("body_water_pct"),
         bone_mass=data.get("bone_mass"),
@@ -3819,8 +3810,12 @@ def fetch_mcp_persona(platform: str, trigger_type: str = "manual") -> dict[str, 
                 "age": _validate_int(data_map.get("age")),
                 "weight": _validate_number(data_map.get("weight_kg")),
                 "resting_hr": _validate_int(data_map.get("resting_heart_rate")),
+                "recent_resting_hr": _validate_int(data_map.get("resting_heart_rate")),
+                "resting_hr_7d_avg": _validate_int(data_map.get("resting_heart_rate")),
                 "max_hr": synced_max_hr,
                 "hrv_baseline": _validate_number(data_map.get("hrv")),
+                "recent_hrv": _validate_number(data_map.get("hrv")),
+                "hrv_7d_avg": _validate_number(data_map.get("hrv")),
                 "vo2max": _validate_number(data_map.get("vo2_max")),
                 "avg_bedtime": str(data_map.get("avg_bedtime")).strip() if data_map.get("avg_bedtime") is not None else None,
                 "avg_sleep_hours": _validate_number(data_map.get("avg_sleep_hours")),
@@ -3864,8 +3859,12 @@ def fetch_mcp_persona(platform: str, trigger_type: str = "manual") -> dict[str, 
                 "age": _validate_int(_first_present(persona, "age")),
                 "weight": _validate_number(_first_present(persona, "weight_kg", "weight")),
                 "resting_hr": _validate_int(_first_present(persona, "resting_heart_rate", "resting_hr")),
+                "recent_resting_hr": _validate_int(_first_present(persona, "recent_resting_hr", "resting_hr_7d_avg", "resting_heart_rate", "resting_hr")),
+                "resting_hr_7d_avg": _validate_int(_first_present(persona, "resting_hr_7d_avg", "recent_resting_hr", "resting_heart_rate", "resting_hr")),
                 "max_hr": synced_max_hr,
                 "hrv_baseline": _validate_number(_first_present(persona, "hrv", "hrv_baseline")),
+                "recent_hrv": _validate_number(_first_present(persona, "recent_hrv", "hrv_7d_avg", "hrv", "hrv_baseline")),
+                "hrv_7d_avg": _validate_number(_first_present(persona, "hrv_7d_avg", "recent_hrv", "hrv", "hrv_baseline")),
                 "vo2max": _validate_number(_first_present(persona, "vo2_max", "vo2max")),
                 "avg_bedtime": str(_first_present(persona, "avg_bedtime")).strip() if _first_present(persona, "avg_bedtime") is not None else None,
                 "avg_sleep_hours": _validate_number(_first_present(persona, "avg_sleep_hours")),

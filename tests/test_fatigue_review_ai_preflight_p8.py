@@ -103,6 +103,10 @@ class TestP80BackendPreflight(unittest.TestCase):
                 "points": [{"hr": 150}],
                 "nested": {"fit_records": [{"bad": True}]},
             },
+            "summary": {
+                "avg_power": 180,
+                "points": [{"bad": True}],
+            },
             "fatigue_zones": [
                 {"start_km": 0, "end_km": 1, "level": "medium", "gpx_points": [1, 2]},
             ],
@@ -116,6 +120,17 @@ class TestP80BackendPreflight(unittest.TestCase):
             },
             "context_tags": {"weather": "晴", "track_points": [{"bad": True}]},
             "environment_context": {"has_weather": True, "temperature_c": 18.0, "points": [{"bad": True}]},
+            "cycling_explanation_signals": {
+                "status": "unavailable",
+                "intensity_signal": {
+                    "status": "unavailable",
+                    "level": "unknown",
+                    "summary": "非骑行活动不生成骑行解释信号。",
+                    "evidence": [{"points": [{"bad": True}]}],
+                    "reasons": ["not_cycling_activity"],
+                },
+                "records": [{"bad": True}],
+            },
             "advice": "保持节奏",
             "disclaimer": "AI 生成仅供参考",
             "shadow_diff": {"bad": True},
@@ -130,11 +145,13 @@ class TestP80BackendPreflight(unittest.TestCase):
                 "activity_id",
                 "sport_type",
                 "metrics",
+                "summary",
                 "fatigue_zones",
                 "collapse_events",
                 "curves_summary",
                 "context_tags",
                 "environment_context",
+                "cycling_explanation_signals",
                 "advice",
                 "disclaimer",
             },
@@ -161,6 +178,20 @@ class TestP80BackendPreflight(unittest.TestCase):
             self.assertNotIn(forbidden, branch)
         self.assertIn("_build_fatigue_review_insight_snapshot(activity_id, sport_type)", branch)
         self.assertIn("llm_backend.normalize_fatigue_review_json(text)", branch)
+
+    def test_p6_compact_snapshot_only_passes_backend_cycling_signals_through(self):
+        main = _read(MAIN_PY)
+        start = main.index("def _build_fatigue_review_insight_snapshot(")
+        end = main.index("def _build_fatigue_review_snapshot(", start)
+        compact_builder = main[start:end]
+
+        self.assertIn(
+            '"cycling_explanation_signals": review_snapshot.get("cycling_explanation_signals") or {}',
+            compact_builder,
+        )
+        self.assertNotIn("_build_cycling_explanation_signals(", compact_builder)
+        for forbidden in ("curves_summary.get", "summary.get", "metrics.get"):
+            self.assertNotIn(forbidden, compact_builder)
 
 
 class TestP80DocsPreflight(unittest.TestCase):

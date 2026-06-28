@@ -142,9 +142,43 @@ class TestClimbingSportTypeInterpretation(unittest.TestCase):
                 prompt = build_radar_insight_system_prompt(
                     _make_sample_snapshot(sport_type), sport_type
                 )
-                for phrase in ("100/250/500 m/h", "100/200/400 m/h", "VAM 基准", "vam 数值本身"):
+                for phrase in ("300/600/900 m/h", "150/300/500 m/h", "climbing_confidence", "vam 数值"):
                     with self.subTest(phrase=phrase):
                         self.assertIn(phrase, prompt)
+
+    def test_climbing_prompt_explains_vam_and_sample_count_types(self):
+        prompt = build_radar_insight_system_prompt(_make_sample_snapshot("cycling"), "cycling")
+        for phrase in (
+            "VAM(每小时爬升速度)",
+            "climbing_activity_count_90d",
+            "climbing_elevation_activity_count_90d",
+            "climbing_sample_count = 生成 VAM",
+            "不得把 climbing_sample_count 直接说成\"骑行活动数\"",
+            "很多活动有累计爬升",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, prompt)
+
+
+class TestRadarInsightConfidenceContract(unittest.TestCase):
+    """P4:AI 只能解释后端透传的可信度上下文。"""
+
+    def test_prompt_contains_confidence_source_sample_count_contract(self):
+        prompt = build_radar_insight_system_prompt(_make_sample_snapshot(), "running")
+        for phrase in ("confidence / source / sample_count", "只能引用", "禁止自行补算", "不得伪造样本数"):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, prompt)
+
+    def test_prompt_requires_low_confidence_warning(self):
+        prompt = build_radar_insight_system_prompt(_make_sample_snapshot(), "running")
+        self.assertIn("confidence == \"low\"", prompt)
+        self.assertIn("样本不足或数据来源较弱,分数仅供参考", prompt)
+
+    def test_prompt_requires_fallback_source_explanation(self):
+        prompt = build_radar_insight_system_prompt(_make_sample_snapshot(), "cycling")
+        for phrase in ("fallback", "legacy", "speed_fallback", "threshold_hr", "不是最优数据源"):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, prompt)
 
 
 class TestBuildRadarInsightSystemPromptSnapshotPayload(unittest.TestCase):
@@ -197,7 +231,7 @@ class TestBuildRadarInsightSystemPromptSafetyBoundaries(unittest.TestCase):
     def test_prompt_contains_dimensional_interpretation_dict(self):
         """6 维度解读字典(RADAR_DIMENSION_INTERPRETATION)的内容出现在 prompt。"""
         prompt = build_radar_insight_system_prompt(_make_sample_snapshot(), "running")
-        for sample_phrase in ("Banister 专业训练负荷", "有氧解耦", "垂直爬升速率", "30 秒滑动窗口"):
+        for sample_phrase in ("Banister 专业训练负荷", "有氧解耦", "有效爬坡段", "30 秒速度"):
             with self.subTest(phrase=sample_phrase):
                 self.assertIn(sample_phrase, prompt)
 
@@ -353,7 +387,22 @@ class TestBuildRadarInsightSnapshot(unittest.TestCase):
     def test_metrics_uses_whitelist_only(self, mock_metrics, mock_profile):
         mock_metrics.return_value = {
             "ctl": 50, "atl": 30, "tsb": 20, "hrv": 65,
+            "endurance_score": 61,
+            "endurance_ctl_score": 50,
+            "endurance_consistency_score": 95,
+            "endurance_training_days_28d": 18,
+            "endurance_sample_count": 22,
+            "endurance_confidence": "high",
+            "endurance_source": "ctl_42d_plus_28d_consistency",
             "decoupling": 4.8, "vam": 750, "threshold_hr": 175,
+            "climbing_vam_p90": 750,
+            "climbing_activity_count_90d": 61,
+            "climbing_elevation_activity_count_90d": 53,
+            "climbing_sample_count": 3,
+            "climbing_confidence": "medium",
+            "climbing_reason": "90天骑行61条/有爬升活动53条，有效VAM样本3个",
+            "climbing_score_cap": 85,
+            "climbing_score_components": {"performance": 95},
             "anaerobic_peak": 5.2, "radar": {},
             "shadow_diff": {"legacy": 1},
             "extra_junk": "should_be_filtered",
@@ -361,11 +410,20 @@ class TestBuildRadarInsightSnapshot(unittest.TestCase):
         }
         mock_profile.get_profile.return_value = None
         result = _build_radar_insight_snapshot("running")
-        ALLOWED = {
-            "ctl", "atl", "tsb", "hrv", "decoupling", "vam",
-            "threshold_hr", "anaerobic_peak", "radar",
-        }
-        self.assertEqual(set(result["metrics"].keys()), ALLOWED)
+        for key in (
+            "ctl", "atl", "tsb", "hrv",
+            "endurance_score", "endurance_ctl_score", "endurance_consistency_score",
+            "endurance_training_days_28d", "endurance_sample_count",
+            "endurance_confidence", "endurance_source",
+            "decoupling", "vam", "threshold_hr",
+            "climbing_vam_p90", "climbing_activity_count_90d",
+            "climbing_elevation_activity_count_90d", "climbing_sample_count",
+            "climbing_confidence", "climbing_reason", "climbing_score_cap",
+            "climbing_score_components",
+            "anaerobic_peak", "radar",
+        ):
+            with self.subTest(key=key):
+                self.assertIn(key, result["metrics"])
         self.assertNotIn("shadow_diff", result["metrics"])
         self.assertNotIn("extra_junk", result["metrics"])
         self.assertNotIn("_private", result["metrics"])
@@ -401,6 +459,32 @@ class TestBuildRadarInsightSnapshot(unittest.TestCase):
         self.assertIn("age", result["user_profile"])
         self.assertNotIn("gender", result["user_profile"])
         self.assertIn("max_hr", result["user_profile"])
+
+    @mock.patch("main.profile_backend")
+    @mock.patch("main._rolling_aggregate_radar_metrics")
+    def test_climbing_sample_count_context_is_whitelisted(self, mock_metrics, mock_profile):
+        mock_metrics.return_value = {
+            "vam": 1041.6,
+            "climbing_vam_p90": 1041.6,
+            "climbing_activity_count_90d": 61,
+            "climbing_elevation_activity_count_90d": 53,
+            "climbing_sample_count": 3,
+            "climbing_confidence": "medium",
+            "climbing_reason": "90天骑行61条/有爬升活动53条，有效VAM样本3个",
+            "climbing_score_cap": 85,
+            "climbing_score_components": {"performance": 95},
+            "radar": {"dimensions": []},
+        }
+        mock_profile.get_profile.return_value = None
+
+        result = _build_radar_insight_snapshot("cycling")
+        metrics = result["metrics"]
+
+        self.assertEqual(metrics["climbing_activity_count_90d"], 61)
+        self.assertEqual(metrics["climbing_elevation_activity_count_90d"], 53)
+        self.assertEqual(metrics["climbing_sample_count"], 3)
+        self.assertIn("有效VAM样本3个", metrics["climbing_reason"])
+        self.assertEqual(metrics["climbing_score_cap"], 85)
 
 
 if __name__ == "__main__":

@@ -2,39 +2,20 @@
 """佳明账号首次授权脚本。
 
 用法：
-  python3 login.py
+  python3 login.py --region cn
   python3 login.py --region global
+
+说明：
+- 大陆区和国际区 token 分开保存，避免区域混用。
+- 如 Garmin 要求 MFA，按终端提示输入验证码。
+- 国际区账号遇到 429/Too Many Requests 时，不要连续重试。
 """
 import argparse
 import getpass
-import json
 import os
-import subprocess
 from pathlib import Path
 
-AUTH_FILE = Path.home() / ".qclaw" / "workspace" / "garmin_auth.json"
-
-
-def patch_garth_ssl_consumer() -> None:
-    import garth
-
-    try:
-        result = subprocess.run(
-            [
-                "curl",
-                "-s",
-                "--max-time",
-                "10",
-                "https://thegarth.s3.amazonaws.com/oauth_consumer.json",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=15,
-        )
-        if result.returncode == 0 and result.stdout.strip().startswith("{"):
-            garth.sso.OAUTH_CONSUMER = json.loads(result.stdout.strip())
-    except Exception:
-        pass
+from garmin_auth import GarminStatsAuthError, DEFAULT_AUTH_DIRS, login_and_save, normalize_region
 
 
 def main() -> None:
@@ -46,32 +27,30 @@ def main() -> None:
         help="佳明账号区域，默认 cn；国际区用 global",
     )
     parser.add_argument(
-        "--auth-file",
-        default=str(AUTH_FILE),
-        help="认证文件保存路径",
+        "--tokenstore",
+        default=None,
+        help="token 保存目录；默认按区域保存到用户主目录下的 .qclaw/workspace/garmin_auth_cn 或 garmin_auth_global",
     )
+    # 兼容旧参数名；如果传入文件名，实际仍按目录处理。
+    parser.add_argument("--auth-file", default=None, help=argparse.SUPPRESS)
     args = parser.parse_args()
 
-    try:
-        import garth
-    except ModuleNotFoundError:
-        raise SystemExit("缺少依赖 garth。请先运行: pip3 install -r ~/.qclaw/skills/garmin-stats/requirements.txt")
-
-    patch_garth_ssl_consumer()
+    region = normalize_region(args.region)
+    tokenstore = args.tokenstore or args.auth_file or str(DEFAULT_AUTH_DIRS[region])
 
     email = input("佳明账号邮箱/用户名: ").strip()
     password = getpass.getpass("佳明账号密码（不会显示）: ")
     if not email or not password:
         raise SystemExit("账号或密码不能为空。")
 
-    auth_path = Path(args.auth_file).expanduser()
-    auth_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        token_path = login_and_save(email, password, region, Path(tokenstore).expanduser())
+    except GarminStatsAuthError as exc:
+        raise SystemExit(str(exc))
 
-    client = garth.Client(domain="garmin.cn" if args.region == "cn" else "garmin.com")
-    client.login(email, password)
-    client.save(str(auth_path))
-
-    print(f"登录成功，认证文件已保存: {auth_path}")
+    print(f"登录成功，region={region}")
+    print(f"认证 token 已保存: {token_path}")
+    print("后续同步、刷新缓存、下载 FIT 请使用同一个 --region。")
 
 
 if __name__ == "__main__":

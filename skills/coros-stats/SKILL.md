@@ -1,6 +1,6 @@
 ---
 name: coros-stats
-description: 高驰/COROS 用户画像与运动健康数据查询 Skill。用于在 Codex/OpenClaw/QClaw/WorkBuddy 中安装或调用 COROS MCP，连接高驰账号，查询高驰用户画像，给脉图同步用户画像，返回用户画像 JSON 数组，或通过 https://t.coros.com/admin/views/dash-board 获取 Training Hub 仪表盘数据。触发词包括「高驰数据」「COROS MCP」「同步用户画像」「更新脉图用户画像」「查询我的跑步档案」「返回所有运动指标 JSON」。
+description: 高驰/COROS 用户画像与运动健康数据查询 Skill。用于在 OpenClaw/QClaw 中安装或调用 COROS MCP，连接高驰账号，查询高驰用户画像，给脉图同步用户画像，返回用户画像 JSON 数组，或通过 https://t.coros.com/admin/views/dash-board 获取 Training Hub 仪表盘数据。触发词包括「高驰数据」「COROS MCP」「同步用户画像」「更新脉图用户画像」「查询我的跑步档案」「返回所有运动指标 JSON」。
 ---
 
 # coros-stats

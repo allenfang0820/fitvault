@@ -170,19 +170,22 @@ class TestV9_3HeroIcons(unittest.TestCase):
         """HERO_FIELD_ICONS 必须包含 M0 实际使用的 6+1 字段"""
         self.assertIn("const HERO_FIELD_ICONS", self.html,
                       "V9.3.1 FAIL: 缺少 HERO_FIELD_ICONS 常量")
+        icons_start = self.html.find("const HERO_FIELD_ICONS")
+        icons_end = self.html.find("};", icons_start)
+        icons_body = self.html[icons_start:icons_end if icons_end > 0 else icons_start + 1000]
         required_fields = [
             'distance', 'duration', 'avg_pace', 'avg_speed',
             'avg_hr', 'max_hr', 'calories', 'elevation_gain', 'swolf',
         ]
         for field in required_fields:
-            self.assertIn("'" + field + "':", self.html,
+            self.assertIn("'" + field + "':", icons_body,
                           f"V9.3.1 FAIL: HERO_FIELD_ICONS 缺 {field} 字段")
         # V9.3.1 删除了 9 个死字段
         dead_fields = ['avg_power', 'avg_cadence', 'training_load',
                        'moving_time', 'sets', 'total_volume']
         for field in dead_fields:
             # 字段不应在 HERO_FIELD_ICONS 中(否则意味着没精简)
-            self.assertNotIn("'" + field + "':", self.html,
+            self.assertNotIn("'" + field + "':", icons_body,
                              f"V9.3.1 FAIL: HERO_FIELD_ICONS 仍含死字段 {field}")
 
     def test_render_activity_detail_uses_icon(self):  # 8/10
@@ -267,6 +270,18 @@ class TestV9_3_4FieldNameAdaptation(unittest.TestCase):
             self.assertIn(field, body, f"V9.3.4 FAIL: pick 缺 {field} 字段")
         # summary 必须被引用
         self.assertIn("summary.", body, "V9.3.4 FAIL: pick 未走 summary 回退")
+
+    def test_lap_avg_hr_supports_normalized_field(self):
+        """V10.0:自动切圈输出 avg_hr,前端应兼容 lap.avg_hr。"""
+        idx = self.html.find("var _lapKeyMap =")
+        end = self.html.find("var _sportOpts", idx)
+        body = self.html[idx:end if end > 0 else idx + 3000]
+        self.assertIn("avg_hr: 'hr'", body, "旧 FIT 圈 hr 字段兼容应保留")
+        render_idx = self.html.find("lapsBody.innerHTML")
+        render_end = self.html.find("var f = _formatHeroValue", render_idx)
+        render_body = self.html[render_idx:render_end if render_end > 0 else render_idx + 3000]
+        self.assertIn("c === 'avg_hr'", render_body)
+        self.assertIn("lap.avg_hr", render_body, "自动切圈 avg_hr 字段应被前端读取")
 
 
 class TestV9_3_4TitleCleaning(unittest.TestCase):

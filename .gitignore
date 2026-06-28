@@ -1,4 +1,5 @@
 .venv/
+.venv-*/
 __pycache__/
 *.pyc
 *.pyo
@@ -22,6 +23,8 @@ dist/
 .pyinstaller_cache/
 *.spec
 !HikingTrackAnalyzer.spec
+*.dmg
+脉图-source-for-windows-packaging-*.zip
 
 # Local tracks (user data)
 local_tracks/

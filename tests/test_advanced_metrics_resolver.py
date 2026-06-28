@@ -14,6 +14,7 @@ import os
 import sys
 import unittest
 from datetime import datetime, timezone
+from unittest.mock import MagicMock, patch
 
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _PROJECT_ROOT not in sys.path:
@@ -164,14 +165,19 @@ class TestComputeAdvancedMetricsContract(unittest.TestCase):
             })
         return records
 
-    def test_output_has_5_keys(self):
-        """输出必须含 trimp/decoupling/vam/threshold_hr/anaerobic_peak 5 键"""
+    def test_output_keeps_legacy_keys_and_adds_anaerobic_detail(self):
+        """输出必须保留旧 5 键,并扩展 P0 无氧 detail 字段。"""
         records = self._make_sample_records(10)
         profile = {"rest_hr": 55, "max_hr": 190, "age": 30}
         r = MetricsResolver._compute_advanced_metrics(records, profile)
-        expected = {"trimp", "decoupling", "vam", "threshold_hr", "anaerobic_peak"}
-        self.assertEqual(set(r.keys()), expected,
-                         f"输出必须恰好含 {expected} 5 个键")
+        legacy = {"trimp", "decoupling", "vam", "threshold_hr", "anaerobic_peak"}
+        self.assertTrue(legacy.issubset(set(r.keys())))
+        self.assertIn("threshold_source", r)
+        self.assertIn("threshold_confidence", r)
+        self.assertIn("threshold_power", r)
+        self.assertIn("threshold_wkg", r)
+        self.assertIn("anaerobic_peak_source", r)
+        self.assertIn("anaerobic_peak_confidence", r)
 
     def test_no_metrics_version_in_output(self):
         """metrics_version 由 main.py 设置,不应出现在 Resolver 输出中"""
@@ -183,7 +189,7 @@ class TestComputeAdvancedMetricsContract(unittest.TestCase):
     def test_empty_records_safe(self):
         """空 records → 仍返回 5 键结构(AdvancedMetricsCalc 内部处理)"""
         r = MetricsResolver._compute_advanced_metrics([], {"rest_hr": 55})
-        self.assertEqual(set(r.keys()), {"trimp", "decoupling", "vam", "threshold_hr", "anaerobic_peak"})
+        self.assertTrue({"trimp", "decoupling", "vam", "threshold_hr", "anaerobic_peak"}.issubset(set(r.keys())))
 
     def test_performance_stable(self):
         """10 点数据调用不应超时(性能基准)"""
@@ -256,6 +262,23 @@ class TestMainPyPassthroughConstraint(unittest.TestCase):
                         self.fail(
                             "main.py _compute_advanced_metrics 不应直接引用 AdvancedMetricsCalc,"
                             "应通过 MetricsResolver._compute_advanced_metrics")
+
+    def test_main_compute_advanced_metrics_writes_current_version(self):
+        """main.py IO 层负责写入 CURRENT_METRICS_VERSION。"""
+        from main import CURRENT_METRICS_VERSION, _compute_advanced_metrics
+
+        profile = MagicMock()
+        profile.to_dict.return_value = {"rest_hr": 55, "max_hr": 190}
+        pts = [
+            _make_track_point("2026-05-20T10:00:00Z", lat=30.0, lon=120.0, hr=140, speed=4.0, altitude=100.0),
+            _make_track_point("2026-05-20T10:00:05Z", lat=30.001, lon=120.001, hr=145, speed=4.2, altitude=101.0),
+            _make_track_point("2026-05-20T10:00:10Z", lat=30.002, lon=120.002, hr=148, speed=4.1, altitude=102.0),
+        ]
+
+        with patch("main.profile_backend.get_profile", return_value=profile):
+            result = _compute_advanced_metrics(pts, "running")
+
+        self.assertEqual(result["metrics_version"], CURRENT_METRICS_VERSION)
 
     def test_profile_backend_still_in_main(self):
         """profile_backend.get_profile() IO 调用留在 main.py(IO 隔离验证)"""

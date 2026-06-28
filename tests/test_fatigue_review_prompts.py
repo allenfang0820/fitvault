@@ -163,8 +163,35 @@ class TestSportSpecificConstraints:
         from llm_backend import build_fatigue_review_messages
         messages = build_fatigue_review_messages(mock_snapshot, "cycling", "骑行")
         system = messages[0]["content"]
-        assert "功率" in system or "NP" in system
-        assert "数据质量" in system or "功率" in system
+        for keyword in ["功率", "NP", "avg_power", "normalized_power", "power_data_quality", "avg_cadence", "踏频"]:
+            assert keyword in system, f"cycling prompt 缺少关键词:{keyword}"
+        for quality in ["missing", "insufficient_points", "invalid_values", "length_mismatch", "unavailable"]:
+            assert quality in system, f"cycling prompt 缺少降级枚举:{quality}"
+        assert "必须依赖功率(NP)评估" not in system
+        assert "配速" not in system or "不得把\"配速\"" in system
+
+    def test_cycling_specific_bounded_degradation(self, mock_snapshot):
+        from llm_backend import build_fatigue_review_messages
+        messages = build_fatigue_review_messages(mock_snapshot, "cycling", "骑行")
+        system = messages[0]["content"]
+        for phrase in [
+            "无功率或功率质量不足",
+            "稳定性判断受限",
+            "不能输出完整功率复盘",
+            "不能写\"功率稳定\"",
+            "踏频缺失或质量不足",
+            "无法评估踩踏组织",
+        ]:
+            assert phrase in system, f"cycling prompt 缺少边界语句:{phrase}"
+
+    def test_cycling_specific_running_words_are_not_core_frame(self, mock_snapshot):
+        from llm_backend import build_fatigue_review_messages
+        messages = build_fatigue_review_messages(mock_snapshot, "cycling", "骑行")
+        system = messages[0]["content"]
+        for keyword in ["配速", "步频", "跑姿", "触地", "步幅", "跑步节奏", "恢复跑", "跑步赛道"]:
+            assert keyword in system, f"cycling prompt 应明确禁止跑步化表达:{keyword}"
+        assert "不得把\"配速\"" in system or "骑行不得把\"配速\"" in system
+        assert "overall_stability / 全程稳定性:按运动类型解释整体稳定性" in system
 
     def test_swimming_specific_endurance(self, mock_snapshot):
         from llm_backend import build_fatigue_review_messages
@@ -406,6 +433,50 @@ class TestMessagesStructure:
         user = messages[1]["content"]
         assert len(user) < 500, f"user 消息过长({len(user)}),可能含冗余"
         assert "JSON" in user or "json" in user
+
+    def test_cycling_prompt_mentions_summary_fields_and_curve_summary(self, mock_snapshot):
+        from llm_backend import build_fatigue_review_messages
+        messages = build_fatigue_review_messages(mock_snapshot, "cycling", "骑行")
+        system = messages[0]["content"]
+        for keyword in [
+            "summary.power_data_quality",
+            "summary.normalized_power",
+            "summary.avg_power",
+            "summary.power_points_count",
+            "summary.cadence_data_quality",
+            "summary.avg_cadence",
+            "curves_summary.has_power",
+            "curves_summary.has_cadence",
+        ]:
+            assert keyword in system, f"cycling prompt 缺少字段约束:{keyword}"
+
+    def test_cycling_prompt_bans_cycle_specific_metrics_not_present(self, mock_snapshot):
+        from llm_backend import build_fatigue_review_messages
+        messages = build_fatigue_review_messages(mock_snapshot, "cycling", "骑行")
+        system = messages[0]["content"]
+        for keyword in ["VI", "FTP", "IF", "TSS", "W/kg", "左右平衡", "扭矩", "齿比"]:
+            assert keyword in system, f"cycling prompt 应明确禁止/不计算:{keyword}"
+
+    def test_cycling_prompt_uses_backend_explanation_signals_only(self, mock_snapshot):
+        from llm_backend import build_fatigue_review_messages
+        messages = build_fatigue_review_messages(mock_snapshot, "cycling", "骑行")
+        system = messages[0]["content"]
+        for keyword in [
+            "cycling_explanation_signals",
+            "唯一依据",
+            "intensity_signal",
+            "aerobic_drift_signal",
+            "power_retention_signal",
+            "pacing_signal",
+            "cadence_signal",
+            "不得从 summary / metrics / curves_summary / DOM / ECharts / points 自行构造",
+            "status=unavailable 或 partial",
+            "无 FTP 不得编造 FTP、IF、TSS、训练负荷",
+            "无功率不得输出功率强度、后程功率保持或 pacing 结论",
+            "无心率不得输出有氧漂移结论",
+            "不得编造补给、天气、设备、路况",
+        ]:
+            assert keyword in system, f"cycling prompt 缺少 P6 AI 输入约束:{keyword}"
 
 
 # === 测试 8: empty / error 态不调 LLM ===

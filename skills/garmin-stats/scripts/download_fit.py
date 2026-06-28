@@ -3,17 +3,17 @@
 下载佳明活动 FIT 文件，以活动标题+ID命名。
 
 用法:
-  python3 download_fit.py <activity_id>               # 下载单个活动
-  python3 download_fit.py <id1> <id2> ...             # 下载多个活动
-  python3 download_fit.py --from YYYY-MM-DD --to YYYY-MM-DD    # 时间范围
-  python3 download_fit.py --update                     # 更新活动（上次下载至今）
-  python3 download_fit.py --update-1m                  # 更新近一个月（30天）
-  python3 download_fit.py --update-3m                  # 更新近三个月（90天）
-  python3 download_fit.py --update-1y                  # 更新近一年（365天）
-  python3 download_fit.py --update-2y                  # 更新近两年
-  python3 download_fit.py --update-3y                  # 更新近三年
+  python download_fit.py <activity_id>               # 下载单个活动
+  python download_fit.py <id1> <id2> ...             # 下载多个活动
+  python download_fit.py --from YYYY-MM-DD --to YYYY-MM-DD    # 时间范围
+  python download_fit.py --update                     # 更新活动（上次下载至今）
+  python download_fit.py --update-1m                  # 更新近一个月（30天）
+  python download_fit.py --update-3m                  # 更新近三个月（90天）
+  python download_fit.py --update-1y                  # 更新近一年（365天）
+  python download_fit.py --update-2y                  # 更新近两年
+  python download_fit.py --update-3y                  # 更新近三年
 """
-import sys, os, json, subprocess, re, io, zipfile
+import sys, os, re, io, zipfile
 from datetime import date, timedelta
 
 # 通用移除 hermes libs
@@ -37,34 +37,31 @@ def _extract_option(name, default=None):
             return arg.split("=", 1)[1]
     return default
 
-# SSL 修复
-try:
-    import garth
-    result = subprocess.run(
-        ["curl", "-s", "--max-time", "10",
-         "https://thegarth.s3.amazonaws.com/oauth_consumer.json"],
-        capture_output=True, text=True, timeout=15
+OUTPUT_DIR = os.path.abspath(os.path.expanduser(
+    _extract_option(
+        "--output-dir",
+        os.environ.get("FITVAULT_TRACKS_DIR", "~/.fitvault/workspace/tracks"),
     )
-    if result.returncode == 0 and result.stdout.strip().startswith("{"):
-        garth.sso.OAUTH_CONSUMER = json.loads(result.stdout.strip())
-except Exception:
-    pass
-
-AUTH_FILE = os.path.expanduser("~/.qclaw/workspace/garmin_auth.json")
-OUTPUT_DIR = os.path.expanduser("~/.fitvault/workspace/tracks")
+))
 REGION = _extract_option("--region", os.environ.get("GARMIN_REGION", "cn"))
+TOKENSTORE = _extract_option("--tokenstore")
+LEGACY_AUTH_FILE = _extract_option("--auth-file")
 
 try:
-    import garminconnect, garth
+    import garminconnect
 except ModuleNotFoundError as exc:
     raise SystemExit(
-        f"缺少依赖 {exc.name}。请先运行: pip3 install -r ~/.qclaw/skills/garmin-stats/requirements.txt"
+        f"缺少依赖 {exc.name}。请先在 skill 目录运行: python -m pip install -r requirements.txt"
     )
 
-garth_client = garth.Client()
-garth_client.load(AUTH_FILE)
-client = garminconnect.Garmin(is_cn=(REGION == "cn"))
-client.garth = garth_client
+from garmin_auth import GarminStatsAuthError, build_client, default_tokenstore
+
+try:
+    tokenstore = TOKENSTORE or LEGACY_AUTH_FILE or str(default_tokenstore(REGION))
+    client, garth_client, token_path = build_client(REGION, tokenstore)
+except GarminStatsAuthError as exc:
+    raise SystemExit(str(exc))
+
 display_name = garth_client.profile["displayName"]
 
 
@@ -80,7 +77,7 @@ def sanitize_filename(name):
 def get_activity_detail(activity_id):
     """获取活动详情（含标题、日期）"""
     try:
-        return client.garth.connectapi(
+        return client.connectapi(
             f"/activity-service/activity/{activity_id}"
         )
     except Exception as e:
@@ -238,7 +235,7 @@ def do_update(last_days=None):
 def list_recent_activities(limit=20):
     """列出最近活动供选择"""
     try:
-        activities = client.garth.connectapi(
+        activities = client.connectapi(
             f"/activitylist-service/activities/search/activities?start=0&limit={limit}"
         )
         if not activities:
@@ -323,13 +320,14 @@ if __name__ == "__main__":
         # 无参数，列出最近活动+帮助
         print("=== 佳明 FIT 文件下载工具 ===\n")
         print("用法:")
-        print("  python3 download_fit.py <activity_id>                      # 单个活动")
-        print("  python3 download_fit.py <id1> <id2> ...                   # 多个活动")
-        print("  python3 download_fit.py --from YYYY-MM-DD --to YYYY-MM-DD  # 时间范围")
-        print("  python3 download_fit.py --update                          # 更新活动（增量）")
-        print("  python3 download_fit.py --update-1m                       # 近一个月")
-        print("  python3 download_fit.py --update-3m                       # 近三个月")
-        print("  python3 download_fit.py --update-1y                       # 近一年")
-        print("  python3 download_fit.py --update-2y                       # 近两年")
-        print("  python3 download_fit.py --update-3y                       # 近三年\n")
+        print("  python download_fit.py <activity_id>                      # 单个活动")
+        print("  python download_fit.py <id1> <id2> ...                   # 多个活动")
+        print("  python download_fit.py --from YYYY-MM-DD --to YYYY-MM-DD  # 时间范围")
+        print("  python download_fit.py --update                          # 更新活动（增量）")
+        print("  python download_fit.py --update-1m                       # 近一个月")
+        print("  python download_fit.py --update-3m                       # 近三个月")
+        print("  python download_fit.py --update-1y                       # 近一年")
+        print("  python download_fit.py --update-2y                       # 近两年")
+        print("  python download_fit.py --update-3y                       # 近三年")
+        print("  python download_fit.py --output-dir \"D:\\fitvault\\tracks\" # 指定保存目录\n")
         list_recent_activities()

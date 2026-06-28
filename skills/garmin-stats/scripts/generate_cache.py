@@ -7,7 +7,6 @@
 import argparse
 import json
 import os
-import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -17,49 +16,16 @@ hermes_libs = os.path.expanduser("~/Library/Application Support/QClaw/hermes/lib
 if hermes_libs in sys.path:
     sys.path.remove(hermes_libs)
 
-AUTH_FILE = Path.home() / ".qclaw" / "workspace" / "garmin_auth.json"
-CACHE_DIR = Path.home() / ".qclaw" / "workspace" / "garmin_data"
+WORKSPACE_DIR = Path(
+    os.environ.get("QCLAW_WORKSPACE_DIR", str(Path.home() / ".qclaw" / "workspace"))
+).expanduser()
+CACHE_DIR = Path(
+    os.environ.get("GARMIN_STATS_CACHE_DIR", str(WORKSPACE_DIR / "garmin_data"))
+).expanduser()
 CACHE_FILE = CACHE_DIR / "all_activities.json"
 CACHE_META_FILE = CACHE_DIR / "all_activities.meta.json"
 
-
-def patch_garth_ssl_consumer() -> None:
-    import garth
-
-    try:
-        result = subprocess.run(
-            [
-                "curl",
-                "-s",
-                "--max-time",
-                "10",
-                "https://thegarth.s3.amazonaws.com/oauth_consumer.json",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=15,
-        )
-        if result.returncode == 0 and result.stdout.strip().startswith("{"):
-            garth.sso.OAUTH_CONSUMER = json.loads(result.stdout.strip())
-    except Exception:
-        pass
-
-
-def build_client(region: str, auth_file: Path):
-    try:
-        import garminconnect
-        import garth
-    except ModuleNotFoundError as exc:
-        raise SystemExit(
-            f"缺少依赖 {exc.name}。请先运行: pip3 install -r ~/.qclaw/skills/garmin-stats/requirements.txt"
-        )
-
-    patch_garth_ssl_consumer()
-    garth_client = garth.Client()
-    garth_client.load(str(auth_file.expanduser()))
-    client = garminconnect.Garmin(is_cn=(region == "cn"))
-    client.garth = garth_client
-    return client, garth_client
+from garmin_auth import GarminStatsAuthError, build_client, default_tokenstore
 
 
 def fetch_all_activities(client, limit: int, verbose: bool = True) -> List[Dict]:
@@ -98,13 +64,19 @@ def write_cache(activities: List[Dict], region: str, display_name: Optional[str]
 def main() -> None:
     parser = argparse.ArgumentParser(description="生成佳明活动缓存")
     parser.add_argument("--region", choices=["cn", "global"], default=os.environ.get("GARMIN_REGION", "cn"))
-    parser.add_argument("--auth-file", default=str(AUTH_FILE))
+    parser.add_argument("--tokenstore", default=None, help="Garmin token 目录；默认按区域读取")
+    parser.add_argument("--auth-file", default=None, help=argparse.SUPPRESS)
     parser.add_argument("--limit", type=int, default=100)
     args = parser.parse_args()
 
     print("正在连接佳明账户...")
-    client, garth_client = build_client(args.region, Path(args.auth_file))
+    tokenstore = args.tokenstore or args.auth_file or str(default_tokenstore(args.region))
+    try:
+        client, garth_client, token_path = build_client(args.region, tokenstore)
+    except GarminStatsAuthError as exc:
+        raise SystemExit(str(exc))
     display_name = garth_client.profile.get("displayName")
+    print(f"使用 token: {token_path}")
 
     print("正在获取活动列表（活动多时可能需要几分钟）...")
     activities = fetch_all_activities(client, args.limit)

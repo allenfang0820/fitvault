@@ -409,6 +409,56 @@ class TestCalculateThresholdHr(unittest.TestCase):
         result = AdvancedMetricsCalc.calculate_threshold_hr(records)
         self.assertAlmostEqual(result, 170.0 * 0.95, places=1)
 
+    def test_cycling_profile_ftp_with_weight_uses_ftp_wkg(self):
+        detail = AdvancedMetricsCalc.calculate_threshold_detail(
+            [],
+            "cycling",
+            {"ftp": 245, "weight_kg": 70, "max_hr": 185},
+        )
+        self.assertEqual(detail["source"], "ftp_wkg")
+        self.assertEqual(detail["confidence"], "high")
+        self.assertAlmostEqual(detail["threshold_wkg"], 3.5, places=1)
+
+    def test_cycling_profile_ftp_without_weight_uses_ftp_w(self):
+        detail = AdvancedMetricsCalc.calculate_threshold_detail(
+            [],
+            "cycling",
+            {"ftp": 260, "max_hr": 185},
+        )
+        self.assertEqual(detail["source"], "ftp_w")
+        self.assertEqual(detail["confidence"], "high")
+        self.assertEqual(detail["threshold_power"], 260)
+
+    def test_cycling_records_power_estimates_threshold_power(self):
+        start = _ts(2026, 1, 1)
+        records = [
+            _record(start + timedelta(seconds=i), hr=150, speed=8.0, altitude=100.0, distance=i * 8.0, power=300)
+            for i in range(1300)
+        ]
+        detail = AdvancedMetricsCalc.calculate_threshold_detail(records, "cycling", {"weight_kg": 75, "max_hr": 185})
+        self.assertEqual(detail["source"], "ftp_wkg")
+        self.assertEqual(detail["confidence"], "medium")
+        self.assertAlmostEqual(detail["threshold_power"], 285.0, places=1)
+        self.assertAlmostEqual(detail["threshold_wkg"], 3.8, places=1)
+
+    def test_cycling_short_power_falls_back_to_threshold_hr(self):
+        start = _ts(2026, 1, 1)
+        records = [
+            _record(start + timedelta(seconds=i), hr=160, speed=8.0, altitude=100.0, distance=i * 8.0, power=300)
+            for i in range(600)
+        ]
+        detail = AdvancedMetricsCalc.calculate_threshold_detail(records, "cycling", {"max_hr": 185})
+        self.assertEqual(detail["source"], "none")
+        self.assertIsNone(detail["threshold_power"])
+
+    def test_cycling_without_power_uses_threshold_hr_fallback(self):
+        start = _ts(2026, 1, 1)
+        records = [_record(start + timedelta(seconds=i), hr=160) for i in range(1300)]
+        detail = AdvancedMetricsCalc.calculate_threshold_detail(records, "cycling", {"max_hr": 185})
+        self.assertEqual(detail["source"], "threshold_hr")
+        self.assertEqual(detail["confidence"], "low")
+        self.assertIsNotNone(detail["threshold_hr"])
+
 
 class TestCalculateAnaerobicPeak(unittest.TestCase):
 
@@ -441,7 +491,7 @@ class TestCalculateAnaerobicPeak(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertGreaterEqual(result, 5.5)
 
-    def test_zero_speed_counted(self):
+    def test_zero_speed_filtered(self):
         start = _ts(2026, 1, 1)
         records = []
         for i in range(60):
@@ -455,6 +505,93 @@ class TestCalculateAnaerobicPeak(unittest.TestCase):
         result = AdvancedMetricsCalc.calculate_anaerobic_peak(records)
         if result is not None:
             self.assertEqual(result, round(result, 2))
+
+    def test_cycling_power_with_weight_uses_wkg_high_confidence(self):
+        start = _ts(2026, 1, 1)
+        records = [
+            _record(start + timedelta(seconds=i), speed=8.0, altitude=100.0, distance=i * 8.0, power=700)
+            for i in range(70)
+        ]
+        detail = AdvancedMetricsCalc.calculate_anaerobic_peak_detail(
+            records,
+            "cycling",
+            {"weight_kg": 70, "max_hr": 185},
+        )
+        self.assertEqual(detail["source"], "power_wkg")
+        self.assertEqual(detail["confidence"], "high")
+        self.assertAlmostEqual(detail["best_30s_wkg"], 10.0, places=1)
+        self.assertGreaterEqual(detail["value"], 9.0)
+
+    def test_cycling_power_without_weight_uses_power_medium_confidence(self):
+        start = _ts(2026, 1, 1)
+        records = [
+            _record(start + timedelta(seconds=i), speed=8.0, altitude=100.0, distance=i * 8.0, power=920)
+            for i in range(70)
+        ]
+        detail = AdvancedMetricsCalc.calculate_anaerobic_peak_detail(records, "cycling", {"max_hr": 185})
+        self.assertEqual(detail["source"], "power_w")
+        self.assertEqual(detail["confidence"], "medium")
+        self.assertGreaterEqual(detail["best_30s_power"], 900)
+        self.assertEqual(RadarScoreEngine.score_anaerobic(detail["value"], "cycling", detail["source"]), 75)
+
+    def test_cycling_downhill_speed_fallback_does_not_score_95(self):
+        start = _ts(2026, 1, 1)
+        records = [
+            _record(
+                start + timedelta(seconds=i),
+                hr=120,
+                speed=18.0,
+                altitude=200.0 - i * 0.4,
+                distance=i * 18.0,
+            )
+            for i in range(70)
+        ]
+        detail = AdvancedMetricsCalc.calculate_anaerobic_peak_detail(records, "cycling", {"max_hr": 185})
+        self.assertIsNone(detail["value"])
+        self.assertEqual(detail["source"], "none")
+
+    def test_cycling_flat_speed_fallback_is_capped_at_75(self):
+        start = _ts(2026, 1, 1)
+        records = [
+            _record(
+                start + timedelta(seconds=i),
+                hr=155,
+                speed=18.0,
+                altitude=100.0,
+                distance=i * 18.0,
+            )
+            for i in range(70)
+        ]
+        detail = AdvancedMetricsCalc.calculate_anaerobic_peak_detail(records, "cycling", {"max_hr": 185})
+        self.assertEqual(detail["source"], "speed_fallback")
+        self.assertEqual(detail["confidence"], "low")
+        self.assertEqual(
+            RadarScoreEngine.score_anaerobic(detail["value"], "cycling", detail["source"], detail["confidence"]),
+            75,
+        )
+
+    def test_running_downhill_speed_spike_is_filtered(self):
+        start = _ts(2026, 1, 1)
+        records = [
+            _record(
+                start + timedelta(seconds=i),
+                speed=6.5,
+                altitude=200.0 - i * 0.4,
+                distance=i * 6.5,
+            )
+            for i in range(70)
+        ]
+        detail = AdvancedMetricsCalc.calculate_anaerobic_peak_detail(records, "running")
+        self.assertIsNone(detail["value"])
+
+    def test_legacy_call_still_returns_float(self):
+        start = _ts(2026, 1, 1)
+        records = [
+            _record(start + timedelta(seconds=i), speed=5.0, altitude=100.0, distance=i * 5.0)
+            for i in range(70)
+        ]
+        result = AdvancedMetricsCalc.calculate_anaerobic_peak(records)
+        self.assertIsInstance(result, float)
 
 
 class TestScoreEndurance(unittest.TestCase):
@@ -479,6 +616,50 @@ class TestScoreEndurance(unittest.TestCase):
         self.assertEqual(RadarScoreEngine.score_endurance(150), 95)
         self.assertEqual(RadarScoreEngine.score_endurance(300), 95)
 
+    def test_running_thresholds_are_sport_specific(self):
+        self.assertEqual(RadarScoreEngine.score_endurance(19.9, "running"), 20)
+        self.assertEqual(RadarScoreEngine.score_endurance(20, "running"), 50)
+        self.assertEqual(RadarScoreEngine.score_endurance(45, "trail_running"), 75)
+        self.assertEqual(RadarScoreEngine.score_endurance(70, "treadmill_running"), 95)
+
+    def test_cycling_thresholds_are_sport_specific(self):
+        self.assertEqual(RadarScoreEngine.score_endurance(29.9, "cycling"), 20)
+        self.assertEqual(RadarScoreEngine.score_endurance(30, "road_cycling"), 50)
+        self.assertEqual(RadarScoreEngine.score_endurance(80, "mountain_biking"), 75)
+        self.assertEqual(RadarScoreEngine.score_endurance(130, "cycling"), 95)
+
+    def test_hiking_thresholds_are_sport_specific(self):
+        self.assertEqual(RadarScoreEngine.score_endurance(9.9, "hiking"), 20)
+        self.assertEqual(RadarScoreEngine.score_endurance(10, "walking"), 50)
+        self.assertEqual(RadarScoreEngine.score_endurance(25, "mountaineering"), 75)
+        self.assertEqual(RadarScoreEngine.score_endurance(45, "hiking"), 95)
+
+    def test_endurance_detail_combines_ctl_and_consistency(self):
+        detail = RadarScoreEngine.score_endurance_detail(
+            50,
+            "running",
+            training_days_28d=10,
+            sample_count=8,
+        )
+        self.assertEqual(detail["ctl_score"], 75)
+        self.assertEqual(detail["consistency_score"], 75)
+        self.assertEqual(detail["score"], 75)
+        self.assertEqual(detail["confidence"], "medium")
+        self.assertEqual(detail["source"], "ctl_42d_plus_28d_consistency")
+
+    def test_endurance_detail_no_sample_returns_zero(self):
+        detail = RadarScoreEngine.score_endurance_detail(100, "running")
+        self.assertEqual(detail["score"], 0)
+        self.assertEqual(detail["ctl_score"], 95)
+        self.assertEqual(detail["consistency_score"], 0)
+        self.assertEqual(detail["confidence"], "low")
+        self.assertEqual(detail["source"], "no_valid_trimp")
+
+    def test_endurance_confidence_buckets(self):
+        self.assertEqual(RadarScoreEngine.score_endurance_detail(50, "running", 4, 5)["confidence"], "low")
+        self.assertEqual(RadarScoreEngine.score_endurance_detail(50, "running", 4, 6)["confidence"], "medium")
+        self.assertEqual(RadarScoreEngine.score_endurance_detail(50, "running", 4, 12)["confidence"], "high")
+
 
 class TestScoreRecovery(unittest.TestCase):
 
@@ -499,6 +680,60 @@ class TestScoreRecovery(unittest.TestCase):
     def test_float_input_truncated_to_int(self):
         self.assertEqual(RadarScoreEngine.score_recovery(60.7), 60)
         self.assertEqual(RadarScoreEngine.score_recovery(60.9), 60)
+
+    def test_baseline_only_is_conservative_not_absolute_hrv(self):
+        detail = RadarScoreEngine.score_recovery_detail({"hrv_baseline": 56.4}, {})
+        self.assertEqual(detail["source"], "baseline_only")
+        self.assertEqual(detail["confidence"], "low")
+        self.assertEqual(detail["score"], 60)
+        self.assertNotEqual(detail["score"], 56)
+
+    def test_recent_hrv_at_or_above_baseline_scores_high(self):
+        detail = RadarScoreEngine.score_recovery_detail(
+            {"hrv_baseline": 50, "recent_hrv": 52, "avg_sleep_hours": 7.5, "resting_hr": 52, "recent_resting_hr": 51},
+            {"tsb": 2, "atl": 50},
+        )
+        self.assertEqual(detail["source"], "hrv_trend")
+        self.assertEqual(detail["confidence"], "high")
+        self.assertGreaterEqual(detail["score"], 85)
+
+    def test_low_recent_hrv_scores_low(self):
+        detail = RadarScoreEngine.score_recovery_detail(
+            {"hrv_baseline": 60, "recent_hrv": 45},
+            {"tsb": -5},
+        )
+        self.assertEqual(detail["source"], "hrv_trend")
+        self.assertLessEqual(detail["score"], 50)
+
+    def test_low_tsb_reduces_recovery(self):
+        detail = RadarScoreEngine.score_recovery_detail(
+            {"hrv_baseline": 60, "recent_hrv": 60, "avg_sleep_hours": 7.0},
+            {"tsb": -30, "atl": 110},
+        )
+        self.assertLess(detail["score"], 80)
+
+    def test_short_sleep_reduces_recovery(self):
+        good = RadarScoreEngine.score_recovery_detail(
+            {"hrv_baseline": 60, "recent_hrv": 60, "avg_sleep_hours": 7.5},
+            {"tsb": 0},
+        )
+        poor = RadarScoreEngine.score_recovery_detail(
+            {"hrv_baseline": 60, "recent_hrv": 60, "avg_sleep_hours": 4.5},
+            {"tsb": 0},
+        )
+        self.assertLess(poor["score"], good["score"])
+
+    def test_resting_hr_increase_reduces_recovery(self):
+        detail = RadarScoreEngine.score_recovery_detail(
+            {"hrv_baseline": 60, "recent_hrv": 60, "resting_hr": 52, "recent_resting_hr": 60},
+            {"tsb": 0},
+        )
+        self.assertLess(detail["score"], 85)
+
+    def test_missing_profile_does_not_crash(self):
+        detail = RadarScoreEngine.score_recovery_detail(None, None)
+        self.assertEqual(detail["confidence"], "low")
+        self.assertIn("score", detail)
 
 
 class TestScoreStability(unittest.TestCase):
@@ -570,6 +805,23 @@ class TestScoreThreshold(unittest.TestCase):
         self.assertEqual(RadarScoreEngine.score_threshold(168, 190), 95)
         self.assertEqual(RadarScoreEngine.score_threshold(180, 190), 95)
 
+    def test_cycling_ftp_wkg_brackets(self):
+        self.assertEqual(RadarScoreEngine.score_threshold(1.9, 190, "cycling", "ftp_wkg"), 40)
+        self.assertEqual(RadarScoreEngine.score_threshold(2.4, 190, "cycling", "ftp_wkg"), 65)
+        self.assertEqual(RadarScoreEngine.score_threshold(3.0, 190, "cycling", "ftp_wkg"), 82)
+        self.assertEqual(RadarScoreEngine.score_threshold(3.7, 190, "cycling", "ftp_wkg"), 95)
+
+    def test_cycling_ftp_w_caps_at_82(self):
+        self.assertEqual(RadarScoreEngine.score_threshold(140, 190, "cycling", "ftp_w"), 40)
+        self.assertEqual(RadarScoreEngine.score_threshold(180, 190, "cycling", "ftp_w"), 65)
+        self.assertEqual(RadarScoreEngine.score_threshold(320, 190, "cycling", "ftp_w"), 82)
+
+    def test_cycling_threshold_hr_caps_at_82(self):
+        self.assertEqual(RadarScoreEngine.score_threshold(180, 190, "cycling", "threshold_hr", "low"), 82)
+
+    def test_running_threshold_keeps_legacy_hr_ratio(self):
+        self.assertEqual(RadarScoreEngine.score_threshold(180, 190, "running", "threshold_hr"), 95)
+
 
 class TestScoreAnaerobic(unittest.TestCase):
 
@@ -577,23 +829,37 @@ class TestScoreAnaerobic(unittest.TestCase):
         self.assertEqual(RadarScoreEngine.score_anaerobic(0), 0)
         self.assertEqual(RadarScoreEngine.score_anaerobic(None), 0)
 
-    def test_running_bracket_below_3(self):
-        self.assertEqual(RadarScoreEngine.score_anaerobic(2.5, "running"), 20)
+    def test_running_bracket_below_4(self):
+        self.assertEqual(RadarScoreEngine.score_anaerobic(3.5, "running"), 20)
 
-    def test_running_bracket_3_to_5(self):
-        self.assertEqual(RadarScoreEngine.score_anaerobic(4, "running"), 50)
+    def test_running_bracket_4_to_5(self):
+        self.assertEqual(RadarScoreEngine.score_anaerobic(4.5, "running"), 50)
 
-    def test_running_bracket_5_to_7(self):
-        self.assertEqual(RadarScoreEngine.score_anaerobic(6, "running"), 75)
+    def test_running_bracket_5_to_5_8(self):
+        self.assertEqual(RadarScoreEngine.score_anaerobic(5.5, "running"), 75)
 
-    def test_running_bracket_above_7(self):
-        self.assertEqual(RadarScoreEngine.score_anaerobic(8, "running"), 95)
+    def test_running_bracket_above_5_8(self):
+        self.assertEqual(RadarScoreEngine.score_anaerobic(6, "running"), 95)
 
-    def test_cycling_uses_different_brackets(self):
+    def test_cycling_legacy_speed_uses_different_brackets(self):
         self.assertEqual(RadarScoreEngine.score_anaerobic(4, "cycling"), 20)
         self.assertEqual(RadarScoreEngine.score_anaerobic(10, "cycling"), 50)
         self.assertEqual(RadarScoreEngine.score_anaerobic(14, "cycling"), 75)
         self.assertEqual(RadarScoreEngine.score_anaerobic(20, "cycling"), 95)
+
+    def test_cycling_power_wkg_brackets(self):
+        self.assertEqual(RadarScoreEngine.score_anaerobic(4.9, "cycling", "power_wkg"), 20)
+        self.assertEqual(RadarScoreEngine.score_anaerobic(6.0, "cycling", "power_wkg"), 50)
+        self.assertEqual(RadarScoreEngine.score_anaerobic(8.0, "cycling", "power_wkg"), 75)
+        self.assertEqual(RadarScoreEngine.score_anaerobic(10.0, "cycling", "power_wkg"), 95)
+
+    def test_cycling_power_w_caps_at_75(self):
+        self.assertEqual(RadarScoreEngine.score_anaerobic(350, "cycling", "power_w"), 20)
+        self.assertEqual(RadarScoreEngine.score_anaerobic(500, "cycling", "power_w"), 50)
+        self.assertEqual(RadarScoreEngine.score_anaerobic(1200, "cycling", "power_w"), 75)
+
+    def test_cycling_speed_fallback_caps_at_75(self):
+        self.assertEqual(RadarScoreEngine.score_anaerobic(20, "cycling", "speed_fallback", "low"), 75)
 
     def test_road_cycling_uses_cycling_brackets(self):
         self.assertEqual(RadarScoreEngine.score_anaerobic(10, "road_cycling"), 50)
@@ -709,6 +975,57 @@ class TestBuildRadarProfile(unittest.TestCase):
             self.assertIn("label", dim)
             self.assertIn("score", dim)
 
+    def test_dimension_structure_appends_optional_meta(self):
+        profile = RadarScoreEngine.build_radar_profile(
+            "running",
+            {
+                "endurance_score": 63,
+                "endurance_ctl_score": 50,
+                "endurance_consistency_score": 95,
+                "endurance_training_days_28d": 18,
+                "endurance_sample_count": 22,
+                "endurance_confidence": "high",
+                "endurance_source": "ctl_42d_plus_28d_consistency",
+                "recovery_score": 70,
+                "recovery_confidence": "medium",
+                "recovery_source": "load_balance",
+                "stability_sample_count": 5,
+                "stability_confidence": "high",
+                "climbing_sample_count": 3,
+                "climbing_confidence": "medium",
+                "threshold_sample_count": 2,
+                "threshold_confidence": "low",
+                "threshold_source": "threshold_hr",
+                "anaerobic_sample_count": 4,
+                "anaerobic_peak_confidence": "low",
+                "anaerobic_peak_source": "speed_fallback",
+            },
+            {"max_hr": 190},
+        )
+        dims = {dim["key"]: dim for dim in profile["dimensions"]}
+
+        self.assertEqual(dims["endurance"]["confidence"], "high")
+        self.assertEqual(dims["endurance"]["sample_count"], 22)
+        self.assertEqual(dims["endurance"]["source"], "ctl_42d_plus_28d_consistency")
+        self.assertIn("CTL分50", dims["endurance"]["reason"])
+        self.assertIn("28天训练18天", dims["endurance"]["reason"])
+        self.assertEqual(dims["stability"]["source"], "pa_hr_decoupling_filtered")
+        self.assertEqual(dims["climbing"]["source"], "valid_climb_vam_p90")
+        self.assertEqual(dims["threshold"]["source"], "threshold_hr")
+        self.assertIn("仅供参考", dims["threshold"]["reason"])
+        self.assertEqual(dims["anaerobic"]["source"], "speed_fallback")
+        self.assertIn("仅供参考", dims["anaerobic"]["reason"])
+
+    def test_dimension_meta_missing_fields_are_safe(self):
+        profile = RadarScoreEngine.build_radar_profile("running", {}, {"max_hr": 190})
+        for dim in profile["dimensions"]:
+            self.assertIn("confidence", dim)
+            self.assertIn("sample_count", dim)
+            self.assertIn("source", dim)
+            self.assertIn("reason", dim)
+            self.assertIsNone(dim["confidence"])
+            self.assertIsNone(dim["sample_count"])
+
     def test_dimension_order_matches_schema(self):
         profile = RadarScoreEngine.build_radar_profile(
             "running",
@@ -736,6 +1053,24 @@ class TestBuildRadarProfile(unittest.TestCase):
         self.assertEqual(scores["climbing"], 95)
         self.assertEqual(scores["threshold"], 95)
         self.assertEqual(scores["anaerobic"], 95)
+
+    def test_recovery_score_overrides_legacy_hrv(self):
+        profile = RadarScoreEngine.build_radar_profile(
+            "running",
+            {"trimp": 100, "hrv": 56.4, "recovery_score": 75, "decoupling": 4, "vam": 700, "threshold_hr": 170, "anaerobic_peak": 5},
+            {"max_hr": 190},
+        )
+        scores = {d["key"]: d["score"] for d in profile["dimensions"]}
+        self.assertEqual(scores["recovery"], 75)
+
+    def test_endurance_score_overrides_legacy_trimp(self):
+        profile = RadarScoreEngine.build_radar_profile(
+            "running",
+            {"trimp": 0, "endurance_score": 63},
+            {"max_hr": 190},
+        )
+        scores = {d["key"]: d["score"] for d in profile["dimensions"]}
+        self.assertEqual(scores["endurance"], 63)
 
 
 class TestP90Helper(unittest.TestCase):
@@ -851,27 +1186,35 @@ class TestScoreClimbingSportType(unittest.TestCase):
         self.assertEqual(RadarScoreEngine.score_climbing(50, "cycling"), 20)
 
     def test_score_climbing_cycling_mid(self):
-        """用户核心场景:骑行 280 m/h 公路通勤 75 分。"""
-        self.assertEqual(RadarScoreEngine.score_climbing(280, "cycling"), 75)
+        """P2 重标定:骑行 280 m/h 低于 300,只给 20 分。"""
+        self.assertEqual(RadarScoreEngine.score_climbing(280, "cycling"), 20)
+        self.assertEqual(RadarScoreEngine.score_climbing(300, "cycling"), 50)
+        self.assertEqual(RadarScoreEngine.score_climbing(600, "cycling"), 75)
+        self.assertEqual(RadarScoreEngine.score_climbing(900, "cycling"), 95)
 
     def test_score_climbing_cycling_high(self):
-        self.assertEqual(RadarScoreEngine.score_climbing(600, "cycling"), 95)
+        self.assertEqual(RadarScoreEngine.score_climbing(900, "cycling"), 95)
 
     def test_score_climbing_road_cycling_mid(self):
         """road_cycling 复用 cycling 阈值。"""
-        self.assertEqual(RadarScoreEngine.score_climbing(280, "road_cycling"), 75)
+        self.assertEqual(RadarScoreEngine.score_climbing(280, "road_cycling"), 20)
+        self.assertEqual(RadarScoreEngine.score_climbing(600, "road_cycling"), 75)
 
     def test_score_climbing_mountain_biking_mid(self):
         """mountain_biking 复用 cycling 阈值。"""
-        self.assertEqual(RadarScoreEngine.score_climbing(280, "mountain_biking"), 75)
+        self.assertEqual(RadarScoreEngine.score_climbing(280, "mountain_biking"), 20)
+        self.assertEqual(RadarScoreEngine.score_climbing(600, "mountain_biking"), 75)
 
     # === 徒步分支 ===
     def test_score_climbing_hiking_low(self):
         self.assertEqual(RadarScoreEngine.score_climbing(80, "hiking"), 20)
 
     def test_score_climbing_hiking_mid(self):
-        """徒步 280 m/h 75 分。"""
-        self.assertEqual(RadarScoreEngine.score_climbing(280, "hiking"), 75)
+        """徒步 280 m/h 在 150~300 档,50 分。"""
+        self.assertEqual(RadarScoreEngine.score_climbing(149.9, "hiking"), 20)
+        self.assertEqual(RadarScoreEngine.score_climbing(150, "hiking"), 50)
+        self.assertEqual(RadarScoreEngine.score_climbing(280, "hiking"), 50)
+        self.assertEqual(RadarScoreEngine.score_climbing(300, "hiking"), 75)
 
     def test_score_climbing_hiking_high(self):
         self.assertEqual(RadarScoreEngine.score_climbing(500, "hiking"), 95)
@@ -887,12 +1230,11 @@ class TestScoreClimbingSportType(unittest.TestCase):
 
     # === 核心场景:跨运动不混分 ===
     def test_cycling_uses_different_climbing_brackets_from_running(self):
-        """同 VAM 数值下,骑行得分应显著高于跑步。"""
+        """P2 后 cycling 与 running 共享 300/600/900 VAM 阈值。"""
         vam = 280
         running_score = RadarScoreEngine.score_climbing(vam, "running")
         cycling_score = RadarScoreEngine.score_climbing(vam, "cycling")
-        self.assertLess(running_score, cycling_score,
-                        f"跑步 {running_score} 应低于骑行 {cycling_score}")
+        self.assertEqual(running_score, cycling_score)
 
     def test_trail_running_uses_default_brackets(self):
         """越野跑走默认分支(与跑步同阈值)。"""
@@ -900,6 +1242,75 @@ class TestScoreClimbingSportType(unittest.TestCase):
             RadarScoreEngine.score_climbing(280, "trail_running"),
             RadarScoreEngine.score_climbing(280, "running")
         )
+
+
+class TestCyclingClimbingCompositeScore(unittest.TestCase):
+    """骑行爬升复合评分:VAM 仍参与,但少样本/无功率不能直接满分。"""
+
+    def test_three_high_vam_samples_capped_at_85(self):
+        detail = RadarScoreEngine.score_cycling_climbing_detail({
+            "climbing_vam_p90": 1041.6,
+            "climbing_sample_count": 3,
+            "climbing_gain_p90": 1021.8,
+            "climbing_distance_p90": 59.7,
+            "climbing_duration_p90": 9900,
+            "climbing_power_available_count": 0,
+        })
+
+        self.assertLessEqual(detail["score"], 85)
+        self.assertEqual(detail["score_cap"], 85)
+        self.assertEqual(detail["confidence"], "medium")
+        self.assertIn("有效爬坡样本3-5个", detail["reason"])
+        self.assertIn("缺少爬坡功率", detail["reason"])
+
+    def test_one_or_two_high_vam_samples_capped_at_75(self):
+        detail = RadarScoreEngine.score_cycling_climbing_detail({
+            "climbing_vam_p90": 1300,
+            "climbing_sample_count": 2,
+            "climbing_gain_p90": 600,
+            "climbing_distance_p90": 10,
+            "climbing_duration_p90": 2400,
+            "climbing_power_available_count": 2,
+        })
+
+        self.assertLessEqual(detail["score"], 75)
+        self.assertEqual(detail["score_cap"], 75)
+        self.assertEqual(detail["confidence"], "low")
+
+    def test_six_samples_with_power_can_score_95(self):
+        detail = RadarScoreEngine.score_cycling_climbing_detail({
+            "climbing_vam_p90": 1100,
+            "climbing_sample_count": 6,
+            "climbing_gain_p90": 1200,
+            "climbing_distance_p90": 45,
+            "climbing_duration_p90": 7200,
+            "climbing_power_available_count": 6,
+        })
+
+        self.assertEqual(detail["score"], 95)
+        self.assertEqual(detail["score_cap"], 95)
+        self.assertEqual(detail["confidence"], "high")
+
+    def test_vam_only_fallback_capped_at_85(self):
+        detail = RadarScoreEngine.score_cycling_climbing_detail({
+            "climbing_vam_p90": 1500,
+            "climbing_sample_count": 10,
+            "climbing_gain_p90": 1200,
+            "climbing_distance_p90": 45,
+            "climbing_duration_p90": 7200,
+            "climbing_power_available_count": 0,
+        })
+
+        self.assertLessEqual(detail["score"], 85)
+        self.assertEqual(detail["score_cap"], 85)
+        self.assertIn("仅VAM fallback最高85", detail["reason"])
+
+    def test_build_radar_profile_keeps_running_climbing_unchanged(self):
+        radar = RadarScoreEngine.build_radar_profile("running", {"vam": 1000}, {"max_hr": 190})
+        climbing = next(dim for dim in radar["dimensions"] if dim["key"] == "climbing")
+
+        self.assertEqual(climbing["score"], 95)
+        self.assertNotIn("score_cap", climbing)
 
 
 # =========================================================
@@ -1010,13 +1421,14 @@ class TestVamFixEndToEndRegression(unittest.TestCase):
         self.assertEqual(_climbing_score_e2e(result), 0)
 
     # === 场景 4: 雷达聚合真实骑行爬坡 ===
-    def test_e2e_4_aggregation_real_cycling_climbing_95(self):
+    def test_e2e_4_aggregation_real_cycling_climbing_uses_composite_cap(self):
         """gain_m 足够(80m ≥ 20m 阈值)且 vam=600 → 通过过滤
-        → cycling score_climbing(600) = 95(cycling 阈值 >=500 → 95)。"""
+        → cycling 走复合爬升评分,单样本不能只靠 VAM 得到 75。"""
         row = _make_metrics_row_e2e("cycling", gain_m=80, dist_km=20, vam=600)
         result = _run_agg_e2e([row], sport_type="cycling")
         self.assertEqual(result["vam"], 600.0)
-        self.assertEqual(_climbing_score_e2e(result), 95)
+        self.assertLessEqual(_climbing_score_e2e(result), 75)
+        self.assertEqual(result["climbing_score_cap"], 75)
 
     # === 场景 5: 跑步公路低爬升 ===
     def test_e2e_5_aggregation_running_low_climb_filtered(self):
@@ -1032,7 +1444,7 @@ class TestVamFixEndToEndRegression(unittest.TestCase):
     # === 场景 6: 徒步真实爬升 ===
     def test_e2e_6_aggregation_hiking_real_climb_climbing_95(self):
         """hiking gain_m=100m vam=500 → 通过 hiking 50m 门槛
-        → hiking score_climbing(500) = 95(hiking 阈值 >=400 → 95)。"""
+        → hiking score_climbing(500) = 95(P2 hiking 阈值 >=500 → 95)。"""
         row = _make_metrics_row_e2e("hiking", gain_m=100, dist_km=15, vam=500)
         result = _run_agg_e2e([row], sport_type="hiking")
         self.assertEqual(result["vam"], 500.0)
