@@ -4,7 +4,6 @@
 
 ## 前言
 
-![户外大叔 MrFang 小红书主页二维码](../assets/social/xiaohongshu-mrfang.jpg)
 
 脉图（MaiTu）诞生于一个再普通不过的念头：能不能让运动数据变得更有价值？
 
