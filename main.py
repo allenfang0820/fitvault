@@ -27,7 +27,7 @@ from fit_engine import FITCoreEngine
 from metrics_resolver import MetricsResolver, SemanticSportsEngine, build_training_effect, _build_environment_challenge_block  # V9.4.0 修复 NameError:build_training_effect 已在 metrics_resolver.py:2760 定义, 此处补 import;V_ENV.1.16:补 _build_environment_challenge_block
 
 DEBUG_MODE = False
-APP_VERSION = "V1.0.4"
+APP_VERSION = "V1.1.0"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -172,7 +172,7 @@ IRRELEVANT_LIST_METRICS: dict[str, frozenset[str]] = {
 # V9.4.5:圈速表列规则真理源(后端决定,前端只消费 detail.lap_columns)
 # V10.0 P1-1:骑行类活动圈表升级为 9 列,字段对齐自动切圈 P0-1 输出
 #   圈号 + 圈距离 + 圈用时 + 平均速度 + 平均心率 + 平均功率 + 最大功率 + NP + 累计爬升
-#   跑步/徒步/室内骑行/游泳等运动类型严禁变更(V10.0 §P1-1 约束)
+#   跑步圈表保持基础列,左右平衡按数据存在性在 detail 构建阶段追加。
 LAP_COLUMN_PRESETS: dict[str, list[str]] = {
     "running": ["avg_pace", "avg_hr", "cadence", "gct", "power"],
     "treadmill_running": ["avg_pace", "avg_hr", "cadence", "gct", "power"],
@@ -198,6 +198,21 @@ def resolve_lap_columns(sport_type: str) -> list[str]:
     """V9.4.5:详情页圈速表列真理源(后端计算,前端消费)。"""
     sport = (sport_type or "").lower()
     return list(LAP_COLUMN_PRESETS.get(sport, []))
+
+
+def resolve_detail_lap_columns(sport_type: str, laps: list[dict[str, Any]] | None = None) -> list[str]:
+    """Return visible detail lap columns; optional columns only appear when data exists."""
+    columns = resolve_lap_columns(sport_type)
+    sport = (sport_type or "").lower()
+    if sport in ("running", "treadmill_running"):
+        has_balance = any(
+            isinstance(lap, dict) and lap.get("stance_time_balance_pct") is not None
+            for lap in (laps or [])
+        )
+        if has_balance and "stance_balance" not in columns:
+            insert_at = columns.index("gct") + 1 if "gct" in columns else len(columns)
+            columns.insert(insert_at, "stance_balance")
+    return columns
 
 
 WATER_METRIC_DISPLAY_TYPES = {
@@ -6968,6 +6983,100 @@ def _persist_sync_activity(
     return profile_backend.run_with_db_retry(_write)
 
 
+def _fit_file_size_kb(target: Path) -> float:
+    try:
+        return target.stat().st_size / 1024
+    except OSError:
+        return 0.0
+
+
+def _fit_health_skip_result(
+    target: Path,
+    *,
+    filter_reasons: list[str],
+    file_size_kb: float,
+    total_distance_m: float | None = None,
+    record_count: int | None = None,
+) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "ok": True,
+        "op": "skipped",
+        "reason": "filtered_as_health_data",
+        "filter_reasons": filter_reasons,
+        "file_size_kb": round(file_size_kb, 2),
+        "file_path": str(target),
+        "filename": target.name,
+        "activity_id": 0,
+    }
+    if total_distance_m is not None:
+        result["total_distance_m"] = round(total_distance_m, 1)
+    if record_count is not None:
+        result["record_count"] = record_count
+    return result
+
+
+def _filter_fit_file_before_parse(target: Path) -> dict[str, Any] | None:
+    """Fast health-data filter for tiny FIT files before expensive parsing."""
+    file_size_kb = _fit_file_size_kb(target)
+    if file_size_kb < MIN_FIT_FILE_SIZE_KB:
+        logger.info(
+            "[V10.1 filter] skip %s: file_size_kb=%.2f < %.2f (疑似健康监测数据)",
+            target.name, file_size_kb, MIN_FIT_FILE_SIZE_KB,
+        )
+        return _fit_health_skip_result(
+            target,
+            filter_reasons=["file_too_small"],
+            file_size_kb=file_size_kb,
+        )
+    return None
+
+
+def _fit_activity_record_count(activity: dict[str, Any]) -> int:
+    for key in ("points", "points_json", "track_json"):
+        raw = activity.get(key)
+        if not raw:
+            continue
+        try:
+            obj = json.loads(raw) if isinstance(raw, str) else raw
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+        if isinstance(obj, list):
+            return len(obj)
+    return 0
+
+
+def _filter_fit_activity_after_parse(activity: dict[str, Any], target: Path, file_size_kb: float | None = None) -> dict[str, Any] | None:
+    """Filter parsed FIT payloads that are health snapshots rather than workouts."""
+    filter_reasons: list[str] = []
+    try:
+        dist_km_val = _safe_float(activity.get("dist_km"))
+    except Exception:
+        dist_km_val = 0.0
+    total_distance_m = (dist_km_val or 0.0) * 1000.0
+    if total_distance_m < MIN_FIT_DISTANCE_M:
+        filter_reasons.append("distance_too_short")
+
+    record_count = _fit_activity_record_count(activity)
+    if record_count < MIN_FIT_RECORD_COUNT:
+        filter_reasons.append("record_count_too_low")
+
+    if not filter_reasons:
+        return None
+    if file_size_kb is None:
+        file_size_kb = _fit_file_size_kb(target)
+    logger.info(
+        "[V10.1 filter] skip %s: reasons=%s, file_size_kb=%.2f, total_distance_m=%.1f, record_count=%d",
+        target.name, filter_reasons, file_size_kb, total_distance_m, record_count,
+    )
+    return _fit_health_skip_result(
+        target,
+        filter_reasons=filter_reasons,
+        file_size_kb=file_size_kb,
+        total_distance_m=total_distance_m,
+        record_count=record_count,
+    )
+
+
 def _sync_single_fit_file(file_path: str | Path) -> dict[str, Any]:
     ensure_activity_sync_schema()
     target = Path(file_path).expanduser().resolve()
@@ -6978,59 +7087,16 @@ def _sync_single_fit_file(file_path: str | Path) -> dict[str, Any]:
 
     # V10.1 健康数据过滤(契约 §2.2 fit_sdk 严格语义)
     # 在解析前先做文件大小检查,避免对明显是健康监测的小文件做无谓解析
-    try:
-        file_size_kb = target.stat().st_size / 1024
-    except OSError:
-        file_size_kb = 0.0
-    if file_size_kb < MIN_FIT_FILE_SIZE_KB:
-        logger.info(
-            "[V10.1 filter] skip %s: file_size_kb=%.2f < %.2f (疑似健康监测数据)",
-            target.name, file_size_kb, MIN_FIT_FILE_SIZE_KB,
-        )
-        return {
-            "ok": True,
-            "op": "skipped",
-            "reason": "filtered_as_health_data",
-            "filter_reasons": ["file_too_small"],
-            "file_size_kb": round(file_size_kb, 2),
-            "file_path": str(target),
-            "filename": target.name,
-            "activity_id": 0,
-        }
+    pre_filter = _filter_fit_file_before_parse(target)
+    if pre_filter:
+        return pre_filter
 
     activity = _parse_fit_activity_for_sync(target)
 
     # V10.1 解析后过滤:距离和记录数(契约 §2.1 全链路可追溯:过滤逻辑在后端边界层)
-    filter_reasons: list[str] = []
-    try:
-        dist_km_val = _safe_float(activity.get("dist_km"))
-    except Exception:
-        dist_km_val = 0.0
-    total_distance_m = (dist_km_val or 0.0) * 1000.0
-    if total_distance_m < MIN_FIT_DISTANCE_M:
-        filter_reasons.append("distance_too_short")
-
-    record_count = len(activity.get("points") or [])
-    if record_count < MIN_FIT_RECORD_COUNT:
-        filter_reasons.append("record_count_too_low")
-
-    if filter_reasons:
-        logger.info(
-            "[V10.1 filter] skip %s: reasons=%s, file_size_kb=%.2f, total_distance_m=%.1f, record_count=%d",
-            target.name, filter_reasons, file_size_kb, total_distance_m, record_count,
-        )
-        return {
-            "ok": True,
-            "op": "skipped",
-            "reason": "filtered_as_health_data",
-            "filter_reasons": filter_reasons,
-            "file_size_kb": round(file_size_kb, 2),
-            "total_distance_m": round(total_distance_m, 1),
-            "record_count": record_count,
-            "file_path": str(target),
-            "filename": target.name,
-            "activity_id": 0,
-        }
+    post_filter = _filter_fit_activity_after_parse(activity, target)
+    if post_filter:
+        return post_filter
 
     write_res = _persist_sync_activity(activity)
     activity_id = int(write_res.get("id") or 0)
@@ -9185,6 +9251,7 @@ class Api:
 
             for index, fit_path in enumerate(pending_files, start=1):
                 file_name = fit_path.name
+                resolved_fit = fit_path.expanduser().resolve()
                 _emit_sync_progress(
                     progress_callback,
                     stage="parsing",
@@ -9198,7 +9265,41 @@ class Api:
                     errors=errors[-5:],
                 )
                 try:
-                    activity = _parse_fit_activity_for_sync(fit_path)
+                    pre_filter = _filter_fit_file_before_parse(resolved_fit)
+                    if pre_filter:
+                        skipped += 1
+                        _emit_sync_progress(
+                            progress_callback,
+                            stage="running",
+                            current=index,
+                            total=len(pending_files),
+                            inserted=inserted,
+                            updated=updated,
+                            skipped=skipped + pre_skipped,
+                            current_file=file_name,
+                            message=f"已过滤健康数据 FIT {index}/{len(pending_files)}: {file_name}",
+                            errors=errors[-5:],
+                        )
+                        continue
+
+                    activity = _parse_fit_activity_for_sync(resolved_fit)
+                    post_filter = _filter_fit_activity_after_parse(activity, resolved_fit)
+                    if post_filter:
+                        skipped += 1
+                        _emit_sync_progress(
+                            progress_callback,
+                            stage="running",
+                            current=index,
+                            total=len(pending_files),
+                            inserted=inserted,
+                            updated=updated,
+                            skipped=skipped + pre_skipped,
+                            current_file=file_name,
+                            message=f"已过滤健康数据 FIT {index}/{len(pending_files)}: {file_name}",
+                            errors=errors[-5:],
+                        )
+                        continue
+
                     _emit_sync_progress(
                         progress_callback,
                         stage="writing",
@@ -9217,7 +9318,6 @@ class Api:
                     elif write_res.get("op") == "skipped":
                         if write_res.get("dedupe") == "strict_key":
                             try:
-                                resolved_fit = fit_path.expanduser().resolve()
                                 if resolved_fit.exists() and resolved_fit.is_file() and _is_path_under_dir(resolved_fit, Path(TRACKS_DIR).expanduser().resolve()):
                                     resolved_fit.unlink()
                             except OSError:
@@ -11881,14 +11981,16 @@ def _build_record_from_row(api_self, row: dict, idx: int) -> dict:
         "has_power": bool(row.get("avg_power") or row.get("normalized_power")),
     }
 
+    detail_laps = _build_detail_laps(api_self, row, display_type, dist_km, duration_sec, avg_hr, base_power)
+
     detail = {
         "display_metrics": SemanticSportsEngine.build_display_metrics(display_type, raw_for_engine),
         "layout": SemanticSportsEngine.get_layout(display_type),
         "capabilities": capabilities,
         "summary": raw_for_engine,
-        "laps": _build_detail_laps(api_self, row, display_type, dist_km, duration_sec, avg_hr, base_power),
-        # V9.4.4:圈速表列真理源(后端基于 sport_type 决定,前端不再硬编码 if/else)
-        "lap_columns": resolve_lap_columns(display_type),
+        "laps": detail_laps,
+        # V9.4.4:圈速表列真理源(后端决定,前端不再硬编码 if/else)
+        "lap_columns": resolve_detail_lap_columns(display_type, detail_laps),
         "thumbnail_points": api_self._sample_thumbnail_points(points),
         # V9.4.4:Training Effect 派生(契约 §2.2 路径 record.detail.training_effect)
         # 真理源:FIT session.total_training_effect / total_anaerobic_training_effect

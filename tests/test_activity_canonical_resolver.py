@@ -2,7 +2,7 @@
 
 契约:fit-arch-contrac §V4.0 防腐层 / §2.1 全链路可追溯 / §5.5 轨迹报告 v3 边界
 验证:
-  1. 输出必须包含 29 个字段(完整契约)
+  1. 输出必须包含 31 个字段(完整契约)
   2. 完整数据快照:所有字段正确映射
   3. 数据缺失降级:空行/partial 字段不抛异常
   4. 难度等级映射:difficulty_score → 4 类等级
@@ -27,26 +27,27 @@ from metrics_resolver import MetricsResolver
 
 
 # ══════════════════════════════════════════════════════════════════
-# Test 1: 输出结构契约(29 字段完整性)
+# Test 1: 输出结构契约(31 字段完整性)
 # ══════════════════════════════════════════════════════════════════
 
 class TestActivityCanonicalOutputContract(unittest.TestCase):
-    """§5.5 轨迹报告 v3 边界:输出必须包含 29 个字段"""
+    """§5.5 轨迹报告 v3 边界:输出必须包含 31 个字段"""
 
     REQUIRED_FIELDS = [
         "id", "sport_type", "sub_sport_type", "region", "weather",
         "dist_km", "distance_display", "duration_sec", "gain_m", "max_alt_m",
         "avg_hr", "max_hr", "calories", "avg_pace", "avg_pace_display",
-        "pace_unit", "start_time", "min_alt_m", "total_descent_m",
+        "avg_speed_mps", "avg_speed_display", "pace_unit",
+        "start_time", "min_alt_m", "total_descent_m",
         "up_count", "down_count", "max_single_climb_m", "difficulty_score",
         "avg_grade_pct", "max_slope_pct", "min_slope_pct",
         "uphill_pct", "downhill_pct", "report_metrics_version",
     ]
 
-    def test_exactly_29_fields(self):
-        """输出必须恰好 29 个字段,不得多/不得少"""
+    def test_exactly_31_fields(self):
+        """输出必须恰好 31 个字段,不得多/不得少"""
         r = MetricsResolver._build_activity_canonical({})
-        self.assertEqual(len(r), 29, f"输出字段数应为 29,实际 {len(r)}")
+        self.assertEqual(len(r), 31, f"输出字段数应为 31,实际 {len(r)}")
 
     def test_all_required_fields_present(self):
         """每个必填字段都必须存在"""
@@ -192,7 +193,7 @@ class TestDegradedInput(unittest.TestCase):
         """空 dict 不抛异常,返回全默认值"""
         r = MetricsResolver._build_activity_canonical({})
         self.assertIsInstance(r, dict)
-        self.assertEqual(len(r), 29)
+        self.assertEqual(len(r), 31)
 
     def test_empty_row_defaults(self):
         """空行默认值:数值为 0/0.0,字符串为 unknown/空"""
@@ -225,7 +226,7 @@ class TestDegradedInput(unittest.TestCase):
         ]}
         r = MetricsResolver._build_activity_canonical(none_row)
         self.assertIsInstance(r, dict)
-        self.assertEqual(len(r), 29)
+        self.assertEqual(len(r), 31)
 
     def test_weather_json_str_invalid(self):
         """无效 JSON 字符串 weather 安全降级为 None"""
@@ -435,6 +436,26 @@ class TestAvgPaceDisplay(unittest.TestCase):
             "dist_km": 10.0,
         })
         self.assertEqual(r["avg_pace_display"], "5'05''/km")
+
+
+class TestAvgSpeedDisplay(unittest.TestCase):
+    """avg_speed_display 由后端 canonical 生成,前端只消费"""
+
+    def test_avg_speed_display_from_distance_and_duration(self):
+        r = MetricsResolver._build_activity_canonical({
+            "dist_km": 140.41,
+            "duration_sec": 16627,
+        })
+        self.assertAlmostEqual(r["avg_speed_mps"], 8.445, places=3)
+        self.assertEqual(r["avg_speed_display"], "30.4 km/h")
+
+    def test_avg_speed_missing_without_distance_or_duration(self):
+        r = MetricsResolver._build_activity_canonical({
+            "dist_km": 0,
+            "duration_sec": 0,
+        })
+        self.assertIsNone(r["avg_speed_mps"])
+        self.assertEqual(r["avg_speed_display"], "--")
 
 
 # ══════════════════════════════════════════════════════════════════

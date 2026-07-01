@@ -87,6 +87,13 @@ class TestActivityAdviceFrontendContract(unittest.TestCase):
         ):
             self.assertIn(token, report_body)
 
+    def test_snapshot_speed_consumes_backend_fields_only(self):
+        body = _slice_function_body(self.html, "formatSnapshotSpeed")
+        self.assertIn("avg_speed_display", body)
+        self.assertIn("avg_speed_mps", body)
+        self.assertNotIn("dist_km", body)
+        self.assertNotIn("duration_sec", body)
+
     def test_ai_coach_prompt_no_longer_claims_pace_supply_cards_are_visible(self):
         backend = _read_llm_backend()
         self.assertNotIn("用户在 UI 面板上已经看到了这些核心建议", backend)

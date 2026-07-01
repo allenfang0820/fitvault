@@ -80,7 +80,7 @@ app = BUNDLE(
     icon='assets/app_icon.icns',
     bundle_identifier='com.mrfang.maitu',
     info_plist={
-        'CFBundleShortVersionString': '1.0.4',
-        'CFBundleVersion': '1.0.4',
+        'CFBundleShortVersionString': '1.1.0',
+        'CFBundleVersion': '1.1.0',
     },
 )

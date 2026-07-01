@@ -5270,7 +5270,7 @@
     <div class="boot-splash-panel" aria-live="polite">
         <div class="boot-splash-brand">
             <div class="boot-splash-title">脉图</div>
-            <div class="boot-splash-version">V1.0.4</div>
+            <div class="boot-splash-version">V1.1.0</div>
         </div>
         <div class="boot-splash-subtitle">正在唤醒本地运动数据、轨迹引擎与 AI 分析能力</div>
         <div class="boot-splash-progress" aria-hidden="true"></div>
@@ -7775,17 +7775,17 @@
         if (!versionEl || versionEl.dataset.loaded === '1') return;
         try {
             if (!window.pywebview || !window.pywebview.api || typeof window.pywebview.api.get_app_info !== 'function') {
-                versionEl.textContent = '版本 V1.0.4';
+                versionEl.textContent = '版本 V1.1.0';
                 return;
             }
             const res = await window.pywebview.api.get_app_info();
             const data = res && res.data ? res.data : res;
-            const version = data && data.version ? String(data.version) : 'V1.0.4';
+            const version = data && data.version ? String(data.version) : 'V1.1.0';
             versionEl.textContent = '版本 ' + version;
             versionEl.dataset.loaded = '1';
         } catch (e) {
             console.warn('loadAboutInfo failed', e);
-            versionEl.textContent = '版本 V1.0.4';
+            versionEl.textContent = '版本 V1.1.0';
         }
     }
 
@@ -9055,6 +9055,7 @@
             max_hr: 'max_hr',
             cadence: 'cadence',
             gct: 'gct_ms',
+            stance_balance: 'stance_time_balance_pct',
             power: 'power_w',
             ascent: 'ascent_m',
             descent: 'descent_m',
@@ -9111,6 +9112,10 @@
                 // V10.0:自动切圈沿用 _normalize_laps 字段 avg_hr;旧展示圈保留 hr
                 if (c === 'avg_hr' && raw == null && lap.avg_hr != null) {
                     raw = lap.avg_hr;
+                }
+                // 跑步 FIT cadence 常为单脚轮转频率；详情圈速表优先显示双脚总步频。
+                if (c === 'cadence' && lap.cadence_spm != null) {
+                    raw = lap.cadence_spm;
                 }
                 // V10.0 P1-1: lap_no 列直接读 lap.lap_index(FIT/auto 用 0 开始)或 lap.lap_no(mock)
                 if (c === 'lap_no') {
@@ -9427,6 +9432,7 @@
         // V9.4.4:圈速表新增字段(同源映射,前端不写硬编码 label)
         'cadence': '步频',
         'gct': 'GCT',
+        'stance_balance': '左右平衡',
         'power': '功率',
         'ascent': '累计爬升',
         'descent': '累计下降',
@@ -9508,6 +9514,10 @@
                 return { value: Math.round(raw), unit: 'spm' };
             case 'gct':
                 return { value: Math.round(raw), unit: 'ms' };
+            case 'stance_balance':
+                var leftBalance = Number(raw);
+                if (!Number.isFinite(leftBalance) || leftBalance <= 0 || leftBalance >= 100) return { value: '--', unit: '' };
+                return { value: leftBalance.toFixed(1) + ' / ' + (100 - leftBalance).toFixed(1), unit: '%' };
             case 'power':
             case 'avg_power':
             case 'max_power':
@@ -12324,17 +12334,42 @@
         return pm + "'" + String(ps).padStart(2, '0') + "''" + unit;
     }
 
+    function isCyclingActivityType(sportType) {
+        var t = normalizeActivityToken(sportType);
+        return t === 'cycling' || t === 'road_cycling' || t === 'mountain_biking' ||
+            t === 'indoor_cycling' || t.includes('cycl') || t.includes('bik');
+    }
+
+    function formatSnapshotSpeed(activityMetrics) {
+        var m = activityMetrics || {};
+        if (m.avg_speed_display) return String(m.avg_speed_display);
+        var speedMps = null;
+        if (m.avg_speed != null && m.avg_speed !== '') speedMps = Number(m.avg_speed);
+        else if (m.avg_speed_mps != null && m.avg_speed_mps !== '') speedMps = Number(m.avg_speed_mps);
+        if (!Number.isFinite(speedMps) || speedMps <= 0) return '--';
+        return (speedMps * 3.6).toFixed(1) + ' km/h';
+    }
+
+    function buildSnapshotPaceOrSpeedCard(activityMetrics) {
+        var sportType = (activityMetrics && (activityMetrics.sport_type || activityMetrics.sub_sport_type)) || appState.sportType;
+        if (isCyclingActivityType(sportType)) {
+            return { icon: '💨', label: '均速', value: formatSnapshotSpeed(activityMetrics) };
+        }
+        return { icon: '🏃', label: '配速', value: formatSnapshotPace(activityMetrics && activityMetrics.avg_pace, sportType) };
+    }
+
     function buildActivitySnapshotHTML(activityMetrics) {
         if (!activityMetrics || typeof activityMetrics !== 'object') {
             return '<div class="ai-section"><h3>📸 运动数据快照</h3><div class="ai-empty">暂无运动数据快照</div></div>';
         }
         var m = activityMetrics;
+        var paceOrSpeedCard = buildSnapshotPaceOrSpeedCard(m);
         var html = '<div class="ai-section activity-snapshot-section"><h3>📸 运动数据快照</h3>';
         var cards = [
             { icon: '📏', label: '距离', value: formatSnapshotNumber(m.dist_km, 2, ' km') },
             { icon: '⏱️', label: '时间', value: formatSnapshotDuration(m.duration_sec) },
             { icon: '⬆️', label: '爬升', value: formatSnapshotNumber(m.gain_m, 0, ' m') },
-            { icon: '🏃', label: '配速', value: formatSnapshotPace(m.avg_pace, appState.sportType) },
+            paceOrSpeedCard,
             { icon: '🔥', label: '消耗', value: formatSnapshotNumber(m.calories, 0, ' kcal') },
             { icon: '📐', label: '坡度', value: (m.avg_grade_pct != null ? Number(m.avg_grade_pct).toFixed(1) + '%' : '--') }
         ];

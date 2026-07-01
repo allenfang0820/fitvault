@@ -98,6 +98,10 @@ class TestFitSync(unittest.TestCase):
 
     def _activity(self, file_name: str) -> dict:
         resolved = str((self.temp_dir / file_name).resolve())
+        points = [
+            {"time": f"2026-05-19T08:00:{idx:02d}Z", "distance": float(idx) * 10.0}
+            for idx in range(35)
+        ]
         return {
             "file_name": file_name,
             "filename": file_name,
@@ -115,8 +119,8 @@ class TestFitSync(unittest.TestCase):
             "avg_hr": 150,
             "max_hr": 170,
             "calories": 620,
-            "track_json": "[]",
-            "points_json": "[]",
+            "track_json": json.dumps(points),
+            "points_json": json.dumps(points),
             "file_path": resolved,
             "gain_m": 120.0,
             "max_alt_m": 60.0,
@@ -124,6 +128,10 @@ class TestFitSync(unittest.TestCase):
             "start_lon": 104.06,
             "region": "成都市",
         }
+
+    def _set_activity_start(self, activity: dict, start_time: str) -> None:
+        activity["start_time"] = start_time
+        activity["start_time_utc"] = start_time
 
     def _duplicate_points(self, start_minute: int = 0) -> list[dict]:
         return [
@@ -143,7 +151,7 @@ class TestFitSync(unittest.TestCase):
 
     def test_sync_local_fit_files_recovers_after_temporary_db_lock(self):
         fit_path = self.temp_dir / "locked.fit"
-        fit_path.write_bytes(b"fit")
+        fit_path.write_bytes(b"x" * 8192)
         main.ensure_activity_sync_schema()
 
         profile_backend.SQLITE_BUSY_TIMEOUT_MS = 100
@@ -183,12 +191,15 @@ class TestFitSync(unittest.TestCase):
         fit_files = []
         for name in ("batch_a.fit", "batch_b.fit", "batch_c.fit"):
             path = self.temp_dir / name
-            path.write_bytes(b"fit")
+            path.write_bytes(b"x" * 8192)
             fit_files.append(path)
 
         def parse_side_effect(path_obj):
             time.sleep(0.08)
-            return self._activity(Path(path_obj).name)
+            activity = self._activity(Path(path_obj).name)
+            minute = {"batch_a.fit": 0, "batch_b.fit": 10, "batch_c.fit": 20}[Path(path_obj).name]
+            self._set_activity_start(activity, f"2026-05-19T08:{minute:02d}:00Z")
+            return activity
 
         with mock.patch.object(main, "resolve_workspace_track_dir", return_value=self._workspace_config()), \
              mock.patch.object(main, "_walk_fit_files", return_value=fit_files), \
@@ -209,12 +220,15 @@ class TestFitSync(unittest.TestCase):
         fit_files = []
         for name in ("concurrent_a.fit", "concurrent_b.fit"):
             path = self.temp_dir / name
-            path.write_bytes(b"fit")
+            path.write_bytes(b"x" * 8192)
             fit_files.append(path)
 
         def parse_side_effect(path_obj):
             time.sleep(0.25)
-            return self._activity(Path(path_obj).name)
+            activity = self._activity(Path(path_obj).name)
+            minute = {"concurrent_a.fit": 0, "concurrent_b.fit": 10}[Path(path_obj).name]
+            self._set_activity_start(activity, f"2026-05-19T09:{minute:02d}:00Z")
+            return activity
 
         with mock.patch.object(main, "resolve_workspace_track_dir", return_value=self._workspace_config()), \
              mock.patch.object(main, "_walk_fit_files", return_value=fit_files), \
@@ -234,7 +248,7 @@ class TestFitSync(unittest.TestCase):
 
     def test_single_file_sync_finishes_quickly_with_mock_parser(self):
         fit_path = self.temp_dir / "single.fit"
-        fit_path.write_bytes(b"fit")
+        fit_path.write_bytes(b"x" * 8192)
 
         with mock.patch.object(main, "resolve_workspace_track_dir", return_value=self._workspace_config()), \
              mock.patch.object(main, "_walk_fit_files", return_value=[fit_path]), \
@@ -243,6 +257,49 @@ class TestFitSync(unittest.TestCase):
 
         self.assertTrue(result["ok"], result)
         self.assertLess(result.get("elapsed_sec", 99), 1.0)
+
+    def test_local_fit_sync_filters_tiny_health_fit_before_parse(self):
+        fit_path = self.temp_dir / "health.fit"
+        fit_path.write_bytes(b"fit")
+
+        with mock.patch.object(main, "resolve_workspace_track_dir", return_value=self._workspace_config()), \
+             mock.patch.object(main, "_walk_fit_files", return_value=[fit_path]), \
+             mock.patch.object(main, "_parse_fit_activity_for_sync") as parse_mock, \
+             mock.patch.object(main, "_persist_sync_activity") as persist_mock:
+            result = self.api.sync_local_fit_files()
+
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["inserted"], 0)
+        self.assertEqual(result["skipped"], 1)
+        parse_mock.assert_not_called()
+        persist_mock.assert_not_called()
+
+    def test_local_fit_sync_filters_zero_activity_after_parse(self):
+        fit_path = self.temp_dir / "8618600673630.fit"
+        fit_path.write_bytes(b"x" * 8192)
+        activity = self._activity(fit_path.name)
+        activity.update({
+            "title": "8618600673630",
+            "sport_type": "unknown",
+            "distance": 0,
+            "dist_km": 0,
+            "duration": 0,
+            "duration_sec": 0,
+            "track_json": "[]",
+            "points_json": "[]",
+        })
+
+        with mock.patch.object(main, "resolve_workspace_track_dir", return_value=self._workspace_config()), \
+             mock.patch.object(main, "_walk_fit_files", return_value=[fit_path]), \
+             mock.patch.object(main, "_parse_fit_activity_for_sync", return_value=activity) as parse_mock, \
+             mock.patch.object(main, "_persist_sync_activity") as persist_mock:
+            result = self.api.sync_local_fit_files()
+
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["inserted"], 0)
+        self.assertEqual(result["skipped"], 1)
+        parse_mock.assert_called_once()
+        persist_mock.assert_not_called()
 
     def test_remote_fit_sync_sends_date_range_prompt_to_openclaw(self):
         api = object.__new__(main.Api)
@@ -1518,12 +1575,16 @@ class TestFitSync(unittest.TestCase):
         pool.update({
             "sport_type": "swimming",
             "sub_sport_type": "lap_swimming",
+            "start_time": "2026-05-19T08:00:00Z",
+            "start_time_utc": "2026-05-19T08:00:00Z",
             "swolf": 42,
         })
         open_water = self._activity("open_water.fit")
         open_water.update({
             "sport_type": "swimming",
             "sub_sport_type": "open_water",
+            "start_time": "2026-05-19T09:00:00Z",
+            "start_time_utc": "2026-05-19T09:00:00Z",
             "swolf": 2.1,
         })
         main._persist_sync_activity(pool)
@@ -1546,7 +1607,8 @@ class TestFitSync(unittest.TestCase):
             run.update({
                 "sport_type": "running",
                 "sub_sport_type": "generic",
-                "start_time": f"2026-05-19T10:{idx:02d}:00+08:00",
+                "start_time": f"2026-05-19T{10 + idx:02d}:00:00+08:00",
+                "start_time_utc": f"2026-05-19T{10 + idx:02d}:00:00+08:00",
                 "gain_m": 80,
                 "normalized_power": 230,
             })
@@ -1555,7 +1617,8 @@ class TestFitSync(unittest.TestCase):
         swim.update({
             "sport_type": "swimming",
             "sub_sport_type": "lap_swimming",
-            "start_time": "2026-05-19T09:00:00+08:00",
+            "start_time": "2026-05-19T08:00:00+08:00",
+            "start_time_utc": "2026-05-19T08:00:00+08:00",
             "swolf": 42,
         })
         main._persist_sync_activity(swim)
@@ -2159,7 +2222,7 @@ class TestFitSync(unittest.TestCase):
                 report = self.api.safe_extract_zip(zf, main.IMPORTS_DIR)
 
         self.assertEqual(report["extracted"], [])
-        self.assertEqual(report["errors"][0]["error"], "ZIP 成员数量超过上限")
+        self.assertEqual(report["errors"][0]["error"], "ZIP 成员数量超过单次上传上限")
 
     def test_safe_extract_zip_rejects_oversized_member(self):
         zip_path = self.temp_dir / "large.zip"
