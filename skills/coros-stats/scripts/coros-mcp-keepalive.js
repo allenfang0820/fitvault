@@ -9,6 +9,9 @@
  * 4. 所有调用必须在同一个 Node.js 进程内完成（进程结束 = 连接断开 = session 丢失）
  *
  * 用法：
+ *   COROS_REGION=eu node coros-mcp-keepalive.js call queryUserInfo '{}'
+ *   node coros-mcp-keepalive.js --region us call queryUserInfo '{}'
+ *   node coros-mcp-keepalive.js --print-config
  *   node coros-mcp-keepalive.js call queryUserInfo '{}'
  *   node coros-mcp-keepalive.js call queryFitnessAssessmentOverview '{}'
  *   node coros-mcp-keepalive.js batch queryUserInfo queryFitnessAssessmentOverview queryRecoveryStatus queryDevices
@@ -18,8 +21,57 @@ const fs = require('fs');
 const path = require('path');
 const { URL } = require('url');
 
-const TOKEN_PATH = path.join(process.env.HOME, '.coros-mcp-skill-gateway-ts', 'cn', 'token.json');
-const MCP_URL = 'https://mcpcn.coros.com/mcp';
+const REGION_CONFIG = {
+  cn: {
+    mcpUrl: 'https://mcpcn.coros.com/mcp',
+  },
+  us: {
+    mcpUrl: 'https://mcpus.coros.com/mcp',
+  },
+  eu: {
+    mcpUrl: 'https://mcpeu.coros.com/mcp',
+  },
+};
+
+function normalizeRegion(value) {
+  const region = String(value || process.env.COROS_REGION || 'cn').trim().toLowerCase();
+  if (!REGION_CONFIG[region]) {
+    throw new Error(`不支持的 COROS 区域: ${region || '(empty)'}，仅支持 cn / us / eu`);
+  }
+  return region;
+}
+
+function parseRuntimeArgs(argv) {
+  const rest = [];
+  let region = null;
+  let printConfig = false;
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === '--print-config') {
+      printConfig = true;
+    } else if (arg === '--region') {
+      i += 1;
+      if (i >= argv.length) throw new Error('--region 需要参数: cn / us / eu');
+      region = argv[i];
+    } else if (arg.startsWith('--region=')) {
+      region = arg.slice('--region='.length);
+    } else {
+      rest.push(arg);
+    }
+  }
+  return { region: normalizeRegion(region), printConfig, args: rest };
+}
+
+let runtime;
+try {
+  runtime = parseRuntimeArgs(process.argv.slice(2));
+} catch (err) {
+  console.error('Error:', err.message);
+  process.exit(1);
+}
+const COROS_REGION = runtime.region;
+const MCP_URL = REGION_CONFIG[COROS_REGION].mcpUrl;
+const TOKEN_PATH = path.join(process.env.HOME, '.coros-mcp-skill-gateway-ts', COROS_REGION, 'token.json');
 const URL_INFO = new URL(MCP_URL);
 
 let token;
@@ -34,7 +86,11 @@ const agent = new https.Agent({
 });
 
 function loadToken() {
-  return JSON.parse(fs.readFileSync(TOKEN_PATH, 'utf8')).access_token;
+  try {
+    return JSON.parse(fs.readFileSync(TOKEN_PATH, 'utf8')).access_token;
+  } catch (err) {
+    throw new Error(`未找到或无法读取 COROS ${COROS_REGION} 区域 MCP token: ${TOKEN_PATH}。请先在配置页完成 COROS 授权。`);
+  }
 }
 
 function mcpRequest(method, params = {}) {
@@ -98,7 +154,7 @@ async function initSession() {
   const resp = await mcpRequest('initialize', {
     protocolVersion: '2024-11-05',
     capabilities: {},
-    clientInfo: { name: 'coros-stats', version: '1.0' },
+    clientInfo: { name: 'coros-stats', version: `1.0-${COROS_REGION}` },
   });
   if (resp.error) {
     throw new Error('初始化失败: ' + JSON.stringify(resp.error, null, 2));
@@ -126,8 +182,18 @@ async function callTool(toolName, toolArgs = {}) {
 }
 
 async function main() {
+  if (runtime.printConfig) {
+    console.log(JSON.stringify({
+      region: COROS_REGION,
+      mcpUrl: MCP_URL,
+      tokenPath: TOKEN_PATH,
+      host: URL_INFO.host,
+    }, null, 2));
+    return;
+  }
+
   token = loadToken();
-  const args = process.argv.slice(2);
+  const args = runtime.args;
 
   await initSession();
 

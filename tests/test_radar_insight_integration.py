@@ -92,7 +92,7 @@ def _fake_messages():
 class TestCallLlmRadarInsightHappyPath(unittest.TestCase):
     """happy path:LLM 返回合法 JSON,正常流程。"""
 
-    @mock.patch("main.llm_backend.chat_completions")
+    @mock.patch("main.llm_backend.generate_text")
     @mock.patch("main.llm_backend.load_llm_config")
     @mock.patch("main._build_radar_insight_messages")
     @mock.patch("main._build_radar_insight_snapshot")
@@ -127,7 +127,7 @@ class TestCallLlmRadarInsightHappyPath(unittest.TestCase):
         self.assertEqual(result["radar_insight"]["weakest_dim"], "recovery")
         self.assertEqual(result["radar_insight"]["load_status"]["status"], "optimal")
 
-    @mock.patch("main.llm_backend.chat_completions")
+    @mock.patch("main.llm_backend.generate_text")
     @mock.patch("main.llm_backend.load_llm_config")
     @mock.patch("main._build_radar_insight_messages")
     @mock.patch("main._build_radar_insight_snapshot")
@@ -144,7 +144,7 @@ class TestCallLlmRadarInsightHappyPath(unittest.TestCase):
         result = api.call_llm("__RADAR_INSIGHT__", "running")
         self.assertEqual(set(result.keys()), {"ok", "radar_insight", "sport_type"})
 
-    @mock.patch("main.llm_backend.chat_completions")
+    @mock.patch("main.llm_backend.generate_text")
     @mock.patch("main.llm_backend.load_llm_config")
     @mock.patch("main._build_radar_insight_messages")
     @mock.patch("main._build_radar_insight_snapshot")
@@ -164,6 +164,32 @@ class TestCallLlmRadarInsightHappyPath(unittest.TestCase):
         # success 时 error 字段应为空
         self.assertEqual(result["radar_insight"]["error"], "")
 
+    @mock.patch("main.llm_backend.generate_text")
+    @mock.patch("main.llm_backend.load_llm_config")
+    @mock.patch("main._build_radar_insight_messages")
+    @mock.patch("main._build_radar_insight_snapshot")
+    def test_cli_transport_does_not_require_http_url_or_model(
+        self, mock_snap, mock_msgs, mock_cfg, mock_llm,
+    ):
+        """CLI 模式下 call_llm 只把配置交给统一后端,不再要求 HTTP url/model。"""
+        mock_snap.return_value = _fake_radar_snapshot()
+        mock_msgs.return_value = _fake_messages()
+        mock_cfg.return_value = {
+            "transport": "cli",
+            "cli_type": "codex",
+            "url": "",
+            "model": "",
+        }
+        mock_llm.return_value = '{"summary": "ok", "sport_type": "running"}'
+
+        api = _make_api_with_state()
+        result = api.call_llm("__RADAR_INSIGHT__", "running")
+
+        self.assertTrue(result["ok"])
+        kwargs = mock_llm.call_args.kwargs
+        self.assertEqual(kwargs["config"]["transport"], "cli")
+        self.assertEqual(kwargs["config"]["cli_type"], "codex")
+
 
 class TestCallLlmRadarInsightSessionBoundary(unittest.TestCase):
     """§5.4 规则 5:洞察调用后清空 _chat_messages + 刷新 session_id。
@@ -172,7 +198,7 @@ class TestCallLlmRadarInsightSessionBoundary(unittest.TestCase):
     覆盖 happy path 和所有降级路径(空 sport_type / 无 metrics / 无 dimensions)。
     """
 
-    @mock.patch("main.llm_backend.chat_completions")
+    @mock.patch("main.llm_backend.generate_text")
     @mock.patch("main.llm_backend.load_llm_config")
     @mock.patch("main._build_radar_insight_messages")
     @mock.patch("main._build_radar_insight_snapshot")
@@ -196,7 +222,7 @@ class TestCallLlmRadarInsightSessionBoundary(unittest.TestCase):
         # §5.4 规则 5:清空
         self.assertEqual(api._chat_messages, [])
 
-    @mock.patch("main.llm_backend.chat_completions")
+    @mock.patch("main.llm_backend.generate_text")
     @mock.patch("main.llm_backend.load_llm_config")
     @mock.patch("main._build_radar_insight_messages")
     @mock.patch("main._build_radar_insight_snapshot")
@@ -216,7 +242,7 @@ class TestCallLlmRadarInsightSessionBoundary(unittest.TestCase):
         self.assertNotEqual(api._session_id, old_sid)
         self.assertTrue(api._session_id.startswith("session_"))
 
-    @mock.patch("main.llm_backend.chat_completions")
+    @mock.patch("main.llm_backend.generate_text")
     @mock.patch("main.llm_backend.load_llm_config")
     @mock.patch("main._build_radar_insight_messages")
     @mock.patch("main._build_radar_insight_snapshot")
@@ -242,7 +268,7 @@ class TestCallLlmRadarInsightSessionBoundary(unittest.TestCase):
         mock_snap.assert_not_called()
         mock_msgs.assert_not_called()
 
-    @mock.patch("main.llm_backend.chat_completions")
+    @mock.patch("main.llm_backend.generate_text")
     @mock.patch("main.llm_backend.load_llm_config")
     @mock.patch("main._build_radar_insight_messages")
     @mock.patch("main._build_radar_insight_snapshot")
@@ -272,7 +298,7 @@ class TestCallLlmRadarInsightSessionBoundary(unittest.TestCase):
 class TestCallLlmRadarInsightFallbackPaths(unittest.TestCase):
     """3 种降级路径(均不调 LLM,直接返回 empty_radar_insight)。"""
 
-    @mock.patch("main.llm_backend.chat_completions")
+    @mock.patch("main.llm_backend.generate_text")
     @mock.patch("main.llm_backend.load_llm_config")
     @mock.patch("main._build_radar_insight_messages")
     @mock.patch("main._build_radar_insight_snapshot")
@@ -289,7 +315,7 @@ class TestCallLlmRadarInsightFallbackPaths(unittest.TestCase):
         mock_snap.assert_not_called()
         mock_msgs.assert_not_called()
 
-    @mock.patch("main.llm_backend.chat_completions")
+    @mock.patch("main.llm_backend.generate_text")
     @mock.patch("main.llm_backend.load_llm_config")
     @mock.patch("main._build_radar_insight_messages")
     @mock.patch("main._build_radar_insight_snapshot")
@@ -309,7 +335,7 @@ class TestCallLlmRadarInsightFallbackPaths(unittest.TestCase):
         mock_llm.assert_not_called()
         mock_msgs.assert_not_called()
 
-    @mock.patch("main.llm_backend.chat_completions")
+    @mock.patch("main.llm_backend.generate_text")
     @mock.patch("main.llm_backend.load_llm_config")
     @mock.patch("main._build_radar_insight_messages")
     @mock.patch("main._build_radar_insight_snapshot")
@@ -330,7 +356,7 @@ class TestCallLlmRadarInsightFallbackPaths(unittest.TestCase):
 class TestCallLlmRadarInsightSafetyBoundaries(unittest.TestCase):
     """§5.4 规则 7 + 与其他 sentinel 共存不污染。"""
 
-    @mock.patch("main.llm_backend.chat_completions")
+    @mock.patch("main.llm_backend.generate_text")
     @mock.patch("main.llm_backend.load_llm_config")
     @mock.patch("main._build_radar_insight_messages")
     @mock.patch("main._build_radar_insight_snapshot")
@@ -354,7 +380,7 @@ class TestCallLlmRadarInsightSafetyBoundaries(unittest.TestCase):
         self.assertEqual(api._ai_snapshot, {"legacy": "do_not_overwrite"})
         self.assertEqual(api._track_points, [{"lat": 1, "lon": 2}])
 
-    @mock.patch("main.llm_backend.chat_completions")
+    @mock.patch("main.llm_backend.generate_text")
     @mock.patch("main.llm_backend.load_llm_config")
     @mock.patch("main._build_radar_insight_messages")
     @mock.patch("main._build_radar_insight_snapshot")

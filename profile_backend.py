@@ -9,6 +9,7 @@ import logging
 import math
 import os
 import random
+import re
 import requests
 import shutil
 import sqlite3
@@ -20,6 +21,8 @@ from pathlib import Path
 from typing import Any
 
 import llm_backend
+import garmin_sync
+import coros_sync
 from utils.geocoding import reverse_geocode
 import sys
 if getattr(sys, "frozen", False):
@@ -1661,6 +1664,117 @@ def translate_sport_type(sport_type: str | None) -> str:
     return raw.replace("_", " ").title() if raw else "综合运动"
 
 
+_AUTO_ACTIVITY_TITLE_SOURCES = {"auto_sport", "auto_region_sport"}
+_GENERIC_SUB_SPORT_TYPES = {"", "unknown", "generic", "other"}
+_TECHNICAL_ACTIVITY_TITLE_RE = re.compile(
+    r"^(?:coros[\s_-]*)?(?:activity[\s_-]*fit[\s_-]*files?|activity)(?:[\s_-]+[0-9a-f]{8,})?$",
+    re.IGNORECASE,
+)
+
+
+def _is_technical_activity_title(title: Any) -> bool:
+    text = str(title or "").strip()
+    if not text:
+        return True
+    stem = Path(text).stem if text.lower().endswith(".fit") else text
+    normalized = re.sub(r"[_\s]+", " ", stem).strip().lower()
+    if "activity-fit-files" in stem.lower() or "activity fit files" in normalized:
+        return True
+    if _TECHNICAL_ACTIVITY_TITLE_RE.match(normalized.replace(" ", "-")):
+        return True
+    return bool(re.fullmatch(r"[0-9a-f]{16,}", normalized))
+
+
+def _title_region_prefix(region_display: Any) -> str:
+    text = str(region_display or "").strip()
+    if not text or text in {"待补全", "室内运动", "未知地点", "室内运动（无GPS）"}:
+        return ""
+    for sep in ("/", "，", ","):
+        if sep in text:
+            text = text.split(sep, 1)[0].strip()
+            break
+    return "" if text in {"中国", "中华人民共和国"} else text
+
+
+def build_activity_display_title(
+    *,
+    current_title: Any = "",
+    title_source: Any = "",
+    sport_type: Any = "",
+    sub_sport_type: Any = "",
+    region_display: Any = "",
+) -> tuple[str, str]:
+    """Build a user-facing activity title without exposing provider temp filenames."""
+    source = str(title_source or "").strip()
+    title = str(current_title or "").strip()
+    should_replace = not title or source in _AUTO_ACTIVITY_TITLE_SOURCES or _is_technical_activity_title(title)
+    if not should_replace:
+        return title, source or "fit"
+
+    sub = str(sub_sport_type or "").strip().lower()
+    sport_key = sub if sub not in _GENERIC_SUB_SPORT_TYPES else str(sport_type or "").strip().lower()
+    sport_cn = translate_sport_type(sport_key or "unknown")
+    region_prefix = _title_region_prefix(region_display)
+    if region_prefix:
+        return f"{region_prefix} {sport_cn}", "auto_region_sport"
+    return sport_cn, "auto_sport"
+
+
+def backfill_auto_activity_titles(conn: sqlite3.Connection | None = None, limit: int = 500) -> int:
+    """Upgrade legacy technical titles to display titles; preserve real/manual titles."""
+    owns_conn = conn is None
+    db = conn or _conn()
+    updated = 0
+    try:
+        rows = db.execute(
+            """
+            SELECT id, title, title_source, sport_type, sub_sport_type, region_display, region
+            FROM activities
+            WHERE COALESCE(deleted_at, '') = ''
+              AND (
+                COALESCE(title_source, '') IN ('filename', 'auto_sport', 'auto_region_sport')
+                OR lower(COALESCE(title, '')) LIKE '%activity-fit-files%'
+                OR lower(COALESCE(filename, '')) LIKE 'coros___activity-fit-files%'
+                OR lower(COALESCE(file_name, '')) LIKE 'coros___activity-fit-files%'
+              )
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (int(limit),),
+        ).fetchall()
+        for row in rows:
+            current_title = row["title"]
+            current_source = row["title_source"]
+            title, title_source = build_activity_display_title(
+                current_title=current_title,
+                title_source=current_source,
+                sport_type=row["sport_type"],
+                sub_sport_type=row["sub_sport_type"],
+                region_display=row["region_display"] or row["region"] or "",
+            )
+            if title == (current_title or "") and title_source == (current_source or ""):
+                continue
+            db.execute(
+                """
+                UPDATE activities
+                SET title = ?, title_source = ?, updated_at = updated_at
+                WHERE id = ?
+                """,
+                (title, title_source, int(row["id"])),
+            )
+            updated += 1
+        if owns_conn:
+            db.commit()
+        return updated
+    except sqlite3.OperationalError:
+        if owns_conn:
+            db.rollback()
+        return 0
+    finally:
+        if owns_conn:
+            db.close()
+
+
 def get_activity_list_filtered(
     offset: int,
     limit: int,
@@ -1943,14 +2057,21 @@ def build_activity_payload(filename: str, data: dict[str, Any], src_path: str | 
 
     hr_values = [int(p["hr"]) for p in points if p.get("hr") is not None]
     alt_values = [float(p.get("alt") or 0.0) for p in points if p.get("alt") is not None]
-    title = str(data.get("title") or data.get("fit_title") or filename).strip()
-    title_source = str(data.get("title_source") or ("fit_title" if data.get("title") or data.get("fit_title") else "filename")).strip()
+    raw_title = str(data.get("title") or data.get("fit_title") or filename).strip()
+    raw_title_source = str(data.get("title_source") or ("fit_title" if data.get("title") or data.get("fit_title") else "filename")).strip()
     avg_hr = data.get("avg_hr")
     max_hr = data.get("max_hr")
     start_lat, start_lon = _extract_start_coordinates(points)
     resolved_start_lat = data.get("start_lat") if data.get("start_lat") is not None else start_lat
     resolved_start_lon = data.get("start_lon") if data.get("start_lon") is not None else start_lon
     region_fields = build_initial_region_fields(resolved_start_lat, resolved_start_lon)
+    title, title_source = build_activity_display_title(
+        current_title=raw_title,
+        title_source=raw_title_source,
+        sport_type=data.get("sport_type", "unknown"),
+        sub_sport_type=data.get("fit_sub_sport") or data.get("sub_sport_type") or "unknown",
+        region_display=region_fields.get("region_display") or region_fields.get("region") or "",
+    )
     raw_weather_json = data.get("weather_json")
     weather_json = raw_weather_json
     if not weather_json and isinstance(data.get("weather"), dict) and data.get("weather"):
@@ -2301,7 +2422,8 @@ def run_region_enrichment_once(limit: int = REGION_ENRICH_LIMIT, max_requests: i
         try:
             rows = conn.execute(
                 """
-                SELECT id, start_lat, start_lon, region_attempt_count
+                SELECT id, start_lat, start_lon, region_attempt_count,
+                       title, title_source, sport_type, sub_sport_type
                 FROM activities
                 WHERE COALESCE(deleted_at, '') = ''
                   AND region_status IN ('pending', 'failed')
@@ -2327,15 +2449,23 @@ def run_region_enrichment_once(limit: int = REGION_ENRICH_LIMIT, max_requests: i
             activity_id = int(row["id"])
             cache_info = _region_cache_key(row["start_lat"], row["start_lon"])
             if cache_info is None:
+                title, title_source = build_activity_display_title(
+                    current_title=row["title"],
+                    title_source=row["title_source"],
+                    sport_type=row["sport_type"],
+                    sub_sport_type=row["sub_sport_type"],
+                    region_display="室内运动",
+                )
                 conn = _conn()
                 try:
                     conn.execute(
                         """
                         UPDATE activities
-                        SET region_status = 'none', region_display = '室内运动', region = '室内运动（无GPS）', region_error = NULL, region_updated_at = ?, updated_at = updated_at
+                        SET title = ?, title_source = ?,
+                            region_status = 'none', region_display = '室内运动', region = '室内运动（无GPS）', region_error = NULL, region_updated_at = ?, updated_at = updated_at
                         WHERE id = ?
                         """,
-                        (datetime.now().isoformat(), activity_id),
+                        (title, title_source, datetime.now().isoformat(), activity_id),
                     )
                     conn.commit()
                 finally:
@@ -2350,13 +2480,21 @@ def run_region_enrichment_once(limit: int = REGION_ENRICH_LIMIT, max_requests: i
                 ).fetchone()
                 if cached:
                     display = str(cached["display"] or "").strip()
+                    title, title_source = build_activity_display_title(
+                        current_title=row["title"],
+                        title_source=row["title_source"],
+                        sport_type=row["sport_type"],
+                        sub_sport_type=row["sub_sport_type"],
+                        region_display=display,
+                    )
                     conn.execute(
                         """
                         UPDATE activities
-                        SET region_city = ?, region_country = ?, region_display = ?, region = ?, region_status = 'success', region_error = NULL, region_updated_at = ?, updated_at = updated_at
+                        SET title = ?, title_source = ?,
+                            region_city = ?, region_country = ?, region_display = ?, region = ?, region_status = 'success', region_error = NULL, region_updated_at = ?, updated_at = updated_at
                         WHERE id = ?
                         """,
-                        (cached["city"], cached["country"], display, display, datetime.now().isoformat(), activity_id),
+                        (title, title_source, cached["city"], cached["country"], display, display, datetime.now().isoformat(), activity_id),
                     )
                     conn.execute("UPDATE geocode_cache SET last_used_at = ? WHERE cache_key = ?", (datetime.now().isoformat(), cache_key))
                     conn.commit()
@@ -2374,16 +2512,24 @@ def run_region_enrichment_once(limit: int = REGION_ENRICH_LIMIT, max_requests: i
                 city, country, display = _extract_city_country(geo)
                 if not display:
                     raise RuntimeError("未返回城市/国家")
+                title, title_source = build_activity_display_title(
+                    current_title=row["title"],
+                    title_source=row["title_source"],
+                    sport_type=row["sport_type"],
+                    sub_sport_type=row["sub_sport_type"],
+                    region_display=display,
+                )
                 conn = _conn()
                 try:
                     _write_geocode_cache(conn, cache_key, lat_round, lon_round, city, country, display, "success", None)
                     conn.execute(
                         """
                         UPDATE activities
-                        SET region_city = ?, region_country = ?, region_display = ?, region = ?, region_status = 'success', region_error = NULL, region_updated_at = ?, updated_at = updated_at
+                        SET title = ?, title_source = ?,
+                            region_city = ?, region_country = ?, region_display = ?, region = ?, region_status = 'success', region_error = NULL, region_updated_at = ?, updated_at = updated_at
                         WHERE id = ?
                         """,
-                        (city, country, display, display, datetime.now().isoformat(), activity_id),
+                        (title, title_source, city, country, display, display, datetime.now().isoformat(), activity_id),
                     )
                     conn.commit()
                 finally:
@@ -3002,6 +3148,7 @@ def check_duplicate_activity(
     duration_sec: int,
     points_json: list[dict[str, Any]] | None = None,
     start_time_utc: str | None = None,
+    include_deleted: bool = False,
 ) -> dict[str, Any]:
     """
     检查是否有重复的活动记录。
@@ -3024,9 +3171,15 @@ def check_duplicate_activity(
         fh.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
         logger.addHandler(fh)
 
+    deleted_clause = "" if include_deleted else "WHERE deleted_at IS NULL"
     conn = _conn()
     rows = conn.execute(
-        "SELECT id, filename, file_path, start_time, start_time_utc, dist_km, duration_sec, points_json, updated_at FROM activities"
+        f"""
+        SELECT id, filename, file_path, start_time, start_time_utc, dist_km,
+               duration_sec, points_json, updated_at, deleted_at
+        FROM activities
+        {deleted_clause}
+        """
     ).fetchall()
     conn.close()
 
@@ -3057,7 +3210,8 @@ def check_duplicate_activity(
     if not target_utc and points_json and len(points_json) > 0:
         target_utc = _parse_time(points_json[0].get("time"))
 
-    logger.info(f"--- 开始查重 --- 目标: start={start_time}, utc={start_time_utc}, dist={dist_km}km, dur={duration_sec}s, points={len(points_json) if points_json else 0}")
+    scope = "active+deleted" if include_deleted else "active"
+    logger.info(f"--- 开始查重 --- scope={scope}, 目标: start={start_time}, utc={start_time_utc}, dist={dist_km}km, dur={duration_sec}s, points={len(points_json) if points_json else 0}")
 
     for r in rows:
         r_dict = dict(r)
@@ -3179,7 +3333,8 @@ def check_duplicate_activity(
         ):
             score = max(score, 85.0)
 
-        logger.info(f"[{r_dict['filename']}] 查重得分: {score} (时间差: {time_diff_sec if time_diff_sec is not None else 'N/A'}s, 里程差: {dist_diff_ratio*100:.1f}%, 时长差: {dur_diff_ratio*100 if duration_sec>0 and db_dur>0 else 'N/A'}%, 重合度: {overlap_ratio*100:.1f}%)")
+        record_status = "history/deleted" if r_dict.get("deleted_at") else "active"
+        logger.info(f"[{r_dict['filename']}] 查重得分: {score} ({record_status}, 时间差: {time_diff_sec if time_diff_sec is not None else 'N/A'}s, 里程差: {dist_diff_ratio*100:.1f}%, 时长差: {dur_diff_ratio*100 if duration_sec>0 and db_dur>0 else 'N/A'}%, 重合度: {overlap_ratio*100:.1f}%)")
 
         if score > max_score:
             max_score = score
@@ -3187,7 +3342,8 @@ def check_duplicate_activity(
 
     # 设置阈值 80 为重复
     if max_score >= 80.0 and best_match:
-        logger.info(f"--- 查重结果: 发现重复 --- 匹配记录: {best_match['filename']}, 分数: {max_score}")
+        match_status = "history/deleted" if best_match.get("deleted_at") else "active"
+        logger.info(f"--- 查重结果: 发现重复 --- 匹配记录: {best_match['filename']}, 状态: {match_status}, 分数: {max_score}")
         # 不返回完整的 points_json 以免日志过大
         best_match.pop("points_json", None)
         return {
@@ -3485,7 +3641,7 @@ def build_profile_sync_field_summary(
         "analysis_optional_field_labels": _profile_field_labels(PROFILE_ANALYSIS_OPTIONAL_FIELDS),
         "supports_remote_activity_sync": supports_remote,
         "activity_sync_hint": (
-            "可按日期范围通过 OpenClaw 同步 Garmin 活动 FIT 文件。"
+            "可按日期范围直接同步 Garmin 活动 FIT 文件。"
             if supports_remote else
             "COROS 暂不支持远程活动同步；请使用本地 FIT、ZIP 或目录监听导入活动。"
         ),
@@ -3537,7 +3693,7 @@ def build_profile_status_summary(current_watch_brand: str = "") -> dict[str, Any
         "analysis_optional_field_labels": _profile_field_labels(PROFILE_ANALYSIS_OPTIONAL_FIELDS),
         "supports_remote_activity_sync": supports_remote,
         "activity_sync_hint": (
-            "可按日期范围通过 OpenClaw 同步 Garmin 活动 FIT 文件。"
+            "可按日期范围直接同步 Garmin 活动 FIT 文件。"
             if supports_remote else
             "COROS 暂不支持远程活动同步；请使用本地 FIT、ZIP 或目录监听导入活动。"
         ),
@@ -3624,18 +3780,110 @@ def _extract_json_substring(text: str) -> str:
     return text
 
 
+def _configured_garmin_region() -> str:
+    cfg = llm_backend.load_llm_config()
+    return str(cfg.get("garmin_region") or "").strip()
+
+
+def _configured_coros_region() -> str:
+    cfg = llm_backend.load_llm_config()
+    return str(cfg.get("coros_region") or "").strip()
+
+
+def _profile_metric_array_to_map(parsed_json: Any) -> dict[str, Any]:
+    data_map: dict[str, Any] = {}
+    if not isinstance(parsed_json, list):
+        return data_map
+    for item in parsed_json:
+        if not isinstance(item, dict):
+            continue
+        metric = item.get("metric")
+        if metric is None:
+            metric = item.get("name")
+        if metric is None or "value" not in item:
+            continue
+        data_map[str(metric)] = item.get("value")
+    return data_map
+
+
+def _profile_data_from_metric_map(data_map: dict[str, Any]) -> dict[str, Any]:
+    ftp = _validate_int(_first_present(data_map, "ftp_watts", "ftp"))
+    synced_max_hr = (
+        _validate_int(_first_present(data_map, "max_hr", "max_heart_rate", "maximum_heart_rate"))
+    )
+    return {
+        "name": str(_first_present(data_map, "username", "name", "nickname")) if _first_present(data_map, "username", "name", "nickname") is not None else None,
+        "gender": str(_first_present(data_map, "gender")) if _first_present(data_map, "gender") is not None else None,
+        "age": _validate_int(_first_present(data_map, "age")),
+        "weight": _validate_number(_first_present(data_map, "weight_kg", "weight")),
+        "resting_hr": _validate_int(_first_present(data_map, "resting_heart_rate", "resting_hr")),
+        "recent_resting_hr": _validate_int(_first_present(data_map, "recent_resting_hr", "resting_hr_7d_avg", "resting_heart_rate", "resting_hr")),
+        "resting_hr_7d_avg": _validate_int(_first_present(data_map, "resting_hr_7d_avg", "recent_resting_hr", "resting_heart_rate", "resting_hr")),
+        "max_hr": synced_max_hr,
+        "hrv_baseline": _validate_number(_first_present(data_map, "hrv", "hrv_baseline")),
+        "recent_hrv": _validate_number(_first_present(data_map, "recent_hrv", "hrv_7d_avg", "hrv", "hrv_baseline")),
+        "hrv_7d_avg": _validate_number(_first_present(data_map, "hrv_7d_avg", "recent_hrv", "hrv", "hrv_baseline")),
+        "vo2max": _validate_number(_first_present(data_map, "vo2_max", "vo2max")),
+        "avg_bedtime": str(_first_present(data_map, "avg_bedtime")).strip() if _first_present(data_map, "avg_bedtime") is not None else None,
+        "avg_sleep_hours": _validate_number(_first_present(data_map, "avg_sleep_hours")),
+        "bmi": _validate_number(_first_present(data_map, "bmi")),
+        "body_fat_pct": _validate_number(_first_present(data_map, "body_fat_percent", "body_fat_pct")),
+        "body_water_pct": _validate_number(_first_present(data_map, "body_water_percent", "body_water_pct")),
+        "bone_mass": _validate_number(_first_present(data_map, "bone_mass_kg", "bone_mass")),
+        "muscle_mass": _validate_number(_first_present(data_map, "muscle_mass_kg", "muscle_mass")),
+        "longest_hike_km": _validate_number(_first_present(data_map, "longest_hike_km")),
+        "height_cm": _validate_number(_first_present(data_map, "height_cm")),
+        "pb_5km": _merge_pb_predict(_first_present(data_map, "5km_pb", "pb_5km"), _first_present(data_map, "race_predict_5k")),
+        "pb_10km": _merge_pb_predict(_first_present(data_map, "10km_pb", "pb_10km"), _first_present(data_map, "race_predict_10k")),
+        "pb_half_marathon": _merge_pb_predict(_first_present(data_map, "half_marathon_pb", "pb_half_marathon"), _first_present(data_map, "race_predict_half")),
+        "pb_full_marathon": _merge_pb_predict(_first_present(data_map, "full_marathon_pb", "pb_full_marathon"), _first_present(data_map, "race_predict_full")),
+        "lactate_threshold_hr": _validate_int(_first_present(data_map, "lactate_threshold_hr")),
+        "ftp": ftp,
+        "ftp_watts": ftp,
+        "lactate_threshold_pace": _validate_time_format(_first_present(data_map, "lactate_threshold_pace")),
+        "longest_run_km": _validate_number(_first_present(data_map, "longest_run_km")),
+        "pb_1km": _validate_time_format(_first_present(data_map, "1km_pb", "pb_1km")),
+        "longest_ride_time": _validate_time_format(_first_present(data_map, "longest_ride_time")),
+        "cycling_40km_time": _validate_time_format(_first_present(data_map, "cycling_40km_time")),
+        "cycling_80km_time": _validate_time_format(_first_present(data_map, "cycling_80km_time")),
+        "longest_cycle_km": _validate_number(_first_present(data_map, "longest_cycle_km")),
+        "swimming_100m_pb": _validate_time_format(_first_present(data_map, "swimming_100m_pb")),
+        "longest_swim_distance_m": _validate_number(_first_present(data_map, "longest_swim_distance_m")),
+        "total_run_km": _validate_number(_first_present(data_map, "total_run_km")),
+        "total_hike_km": _validate_number(_first_present(data_map, "total_hike_km")),
+        "total_cycle_km": _validate_number(_first_present(data_map, "total_cycle_km")),
+        "total_swim_km": _validate_number(_first_present(data_map, "total_swim_km")),
+    }
+
+
+def _provider_failure_payload(platform: str, exc: Exception, message: str | None = None) -> dict[str, Any]:
+    provider = str(platform or "").strip().lower()
+    code = str(getattr(exc, "code", "") or f"{provider}_sync_error").strip()
+    text = str(message if message is not None else exc)
+    action_hints = {
+        "coros_auth_required": "请到配置页选择正确 COROS 区域，点击检查状态并完成 MCP 授权。",
+        "coros_skill_not_found": "未找到 coros-stats skill 脚本，请确认应用内 COROS skill 安装完整。",
+        "coros_script_failed": "请确认 COROS 授权、Node.js 与 coros-stats skill 可用后重试。",
+        "coros_json_parse_error": "COROS 画像脚本返回格式异常，请更新 coros-stats skill 后重试。",
+        "invalid_coros_region": "请检查 COROS 区域配置，仅支持 cn / us / eu。",
+        "garmin_sync_error": "Garmin 数据同步失败，请检查 Garmin 授权和本地 skill 状态。",
+    }
+    return {
+        "ok": False,
+        "error": text,
+        "provider": provider,
+        "provider_error_code": code,
+        "action_hint": action_hints.get(code, f"{provider.upper()} 同步失败，请检查配置页授权状态后重试。"),
+        "profile_sync_summary": build_profile_status_summary(provider),
+    }
+
+
 def fetch_mcp_persona(platform: str, trigger_type: str = "manual") -> dict[str, Any]:
     """
     获取用户运动画像：通过 MCP 工具拉取生理数据 + 徒步历史。
     """
     if platform not in ("garmin", "coros"):
         return {"ok": False, "error": "不支持的平台，仅支持 garmin / coros"}
-
-    if platform == "garmin":
-        conn = check_llm_gateway_connection()
-        if not conn.get("connected"):
-            mark_profile_sync_blocked(str(conn.get("message") or "LLM 网关未配置"))
-            return {"ok": False, "error": conn.get("message") or "LLM 网关未配置"}
 
     state = read_sync_state()
     if state.get("active_job_id"):
@@ -3668,235 +3916,22 @@ def fetch_mcp_persona(platform: str, trigger_type: str = "manual") -> dict[str, 
     })
     write_sync_state(state)
 
-    cfg = llm_backend.load_llm_config()
-    url = cfg.get("url", "").strip()
-    if not url:
-        mark_profile_sync_failed("LLM URL 未配置，请在设置页填写")
-        return {"ok": False, "error": "LLM URL 未配置，请在设置页填写"}
-    model = (cfg.get("model") or "").strip()
-    if not model:
-        mark_profile_sync_failed("模型名未配置，请在设置页填写")
-        return {"ok": False, "error": "模型名未配置，请在设置页填写"}
-    api_key = str(cfg.get("api_key") or "")
     existing_profile = get_profile()
     existing_profile_data = existing_profile.to_dict() if existing_profile else {}
 
-    if platform == "coros":
-        step1_prompt = (
-            "你是一个数据分析助手，严格按顺序调用以下工具来构建用户完整画像。\n\n"
-            "【第一步】获取最长徒步距离：\n"
-            "调用 querySportRecords 工具，参数固定为：\n"
-            '{ "startDate": "20100101", "sportTypeCodes": [104, 105], "limit": 20 }\n'
-            "取返回记录中 distance 最大值（单位km，保留两位小数）作为 longest_hike_km。若无记录设为 null。\n\n"
-            "同时把返回记录中 distance 求和（单位km，保留两位小数）作为 total_hike_km。若无记录设为 null。\n\n"
-            "【第二步】获取体能评估：\n"
-            "调用 queryFitnessAssessmentOverview 工具，取 vo2max 字段。若无数据则设为 null。\n\n"
-            "【第三步】获取基础生理数据：\n"
-            "- 调用 queryUserInfo，取 nickname 作为 name、age 作为 age、gender 作为 gender、weight 作为 weight（kg）\n"
-            "- 调用 querySleepData，取最近一次记录的 sleepMainDuration（小时），再取多次平均值作为 avg_sleep_hours\n\n"
-            "【第四步】获取跑步记录：\n"
-            "调用 querySportRecords 工具，参数为：\n"
-            '{ "startDate": "20100101", "sportTypeCodes": [101, 102, 103], "limit": 20 }\n'
-            "取返回记录中 distance 最大值（单位km，保留两位小数）作为 longest_run_km。若无记录设为 null。\n"
-            "把返回记录中 distance 求和（单位km，保留两位小数）作为 total_run_km。若无记录设为 null。\n"
-            "此外，若返回记录中包含跑步时长信息，取最大值作为 longest_running_duration（格式 mm:ss 或 h:mm:ss）。若无则设为 null。\n\n"
-            "【第五步】获取骑行记录：\n"
-            "调用 querySportRecords 工具，参数为：\n"
-            '{ "startDate": "20100101", "sportTypeCodes": [201, 202], "limit": 20 }\n'
-            "取返回记录中 distance 最大值（单位km，保留两位小数）作为 longest_cycle_km。若无记录设为 null。\n"
-            "把返回记录中 distance 求和（单位km，保留两位小数）作为 total_cycle_km。若无记录设为 null。\n"
-            "取返回记录中时长最大值（格式 h:mm:ss）作为 longest_ride_time。若无则设为 null。\n\n"
-            "【第六步】获取游泳记录：\n"
-            "调用 querySportRecords 工具，参数为：\n"
-            '{ "startDate": "20100101", "sportTypeCodes": [301, 302], "limit": 20 }\n'
-            "取返回记录中 distance 最大值（单位m）作为 longest_swim_distance_m。若无记录设为 null。\n"
-            "把返回记录中 distance 求和（单位km，保留两位小数）作为 total_swim_km。若返回 distance 单位为米，先换算为公里。若无记录设为 null。\n"
-            "若存在 100m 游泳记录，取其用时（格式 mm:ss）作为 swimming_100m_pb。若无则设为 null。\n\n"
-            "【输出格式】输出一个完整 JSON，绝对不输出任何其他文字：\n"
-            "{\n"
-            '  "username": "字符串或null",\n'
-            '  "age": 整数或null,\n'
-            '  "gender": "字符串或null",\n'
-            '  "height_cm": 浮点数或null,\n'
-            '  "weight_kg": 浮点数或null,\n'
-            '  "body_fat_percent": 浮点数或null,\n'
-            '  "body_water_percent": 浮点数或null,\n'
-            '  "bone_mass_kg": 浮点数或null,\n'
-            '  "muscle_mass_kg": 浮点数或null,\n'
-            '  "resting_heart_rate": 整数或null,\n'
-            '  "max_heart_rate": 整数或null,\n'
-            '  "hrv": 浮点数或null,\n'
-            '  "vo2_max": 浮点数或null,\n'
-            '  "avg_bedtime": "字符串或null",\n'
-            '  "avg_sleep_hours": 浮点数或null,\n'
-            '  "lactate_threshold_hr": 整数或null,\n'
-            '  "lactate_threshold_pace": "字符串或null",\n'
-            '  "ftp_watts": 整数或null,\n'
-            '  "1km_pb": "字符串或null",\n'
-            '  "5km_pb": "字符串或null",\n'
-            '  "10km_pb": "字符串或null",\n'
-            '  "half_marathon_pb": "字符串或null",\n'
-            '  "full_marathon_pb": "字符串或null",\n'
-            '  "race_predict_5k": "字符串或null",\n'
-            '  "race_predict_10k": "字符串或null",\n'
-            '  "race_predict_half": "字符串或null",\n'
-            '  "race_predict_full": "字符串或null",\n'
-            '  "longest_run_km": 浮点数或null,\n'
-            '  "total_run_km": 浮点数或null,\n'
-            '  "longest_hike_km": 浮点数或null,\n'
-            '  "total_hike_km": 浮点数或null,\n'
-            '  "longest_ride_time": "字符串或null",\n'
-            '  "cycling_40km_time": "字符串或null",\n'
-            '  "cycling_80km_time": "字符串或null",\n'
-            '  "longest_cycle_km": 浮点数或null,\n'
-            '  "total_cycle_km": 浮点数或null,\n'
-            '  "swimming_100m_pb": "字符串或null",\n'
-            '  "longest_swim_distance_m": 整数或null,\n'
-            '  "total_swim_km": 浮点数或null\n'
-            "}"
-        )
-        messages = [
-            {"role": "system", "content": step1_prompt},
-            {"role": "user", "content": "请立即执行上述 COROS 画像数据提取和计算任务。"},
-        ]
-    else:
-        messages = [
-            {"role": "user", "content": "同步用户画像"}
-        ]
-
-    agent_id = str(cfg.get("agent_id") or "")
     try:
-        text = llm_backend.chat_completions(
-            url=url,
-            api_key=api_key,
-            model=model,
-            messages=messages,
-            session_id=f"mcp_persona_{platform}_{job_id}",
-            agent_id=agent_id,
-            timeout=300,
-        )
-
-        json_str = text.strip()
-        if json_str.startswith("```"):
-            lines = json_str.split("\n")
-            json_str = "\n".join(lines[1:-1] if lines[-1].startswith("```") else lines[1:])
-
-        json_str = _extract_json_substring(json_str)
-
-        parsed_json = json.loads(json_str)
-
         if platform == "garmin":
-            if not isinstance(parsed_json, list):
-                mark_profile_sync_failed("Garmin 数据同步失败，返回的不是 JSON 数组。")
-                return {"ok": False, "error": "Garmin 数据同步失败，返回的不是 JSON 数组。"}
-            
-            # Map array to dict
-            data_map = {}
-            for item in parsed_json:
-                if isinstance(item, dict) and "metric" in item and "value" in item:
-                    data_map[item["metric"]] = item["value"]
-                elif isinstance(item, dict) and "name" in item and "value" in item:
-                    data_map[item["name"]] = item["value"]
-            
-            ftp = _validate_int(data_map.get("ftp_watts"))
-            synced_max_hr = (
-                _validate_int(data_map.get("max_hr"))
-                or _validate_int(data_map.get("max_heart_rate"))
-                or _validate_int(data_map.get("maximum_heart_rate"))
-            )
-            profile_data = {
-                "name": str(data_map.get("username")) if data_map.get("username") is not None else None,
-                "gender": str(data_map.get("gender")) if data_map.get("gender") is not None else None,
-                "age": _validate_int(data_map.get("age")),
-                "weight": _validate_number(data_map.get("weight_kg")),
-                "resting_hr": _validate_int(data_map.get("resting_heart_rate")),
-                "recent_resting_hr": _validate_int(data_map.get("resting_heart_rate")),
-                "resting_hr_7d_avg": _validate_int(data_map.get("resting_heart_rate")),
-                "max_hr": synced_max_hr,
-                "hrv_baseline": _validate_number(data_map.get("hrv")),
-                "recent_hrv": _validate_number(data_map.get("hrv")),
-                "hrv_7d_avg": _validate_number(data_map.get("hrv")),
-                "vo2max": _validate_number(data_map.get("vo2_max")),
-                "avg_bedtime": str(data_map.get("avg_bedtime")).strip() if data_map.get("avg_bedtime") is not None else None,
-                "avg_sleep_hours": _validate_number(data_map.get("avg_sleep_hours")),
-                "bmi": _validate_number(data_map.get("bmi")),
-                "body_fat_pct": _validate_number(data_map.get("body_fat_percent")),
-                "body_water_pct": _validate_number(data_map.get("body_water_percent")),
-                "bone_mass": _validate_number(data_map.get("bone_mass_kg")),
-                "muscle_mass": _validate_number(data_map.get("muscle_mass_kg")),
-                "longest_hike_km": _validate_number(data_map.get("longest_hike_km")),
-                "height_cm": _validate_number(data_map.get("height_cm")),
-                "pb_5km": _merge_pb_predict(data_map.get("5km_pb"), data_map.get("race_predict_5k")),
-                "pb_10km": _merge_pb_predict(data_map.get("10km_pb"), data_map.get("race_predict_10k")),
-                "pb_half_marathon": _merge_pb_predict(data_map.get("half_marathon_pb"), data_map.get("race_predict_half")),
-                "pb_full_marathon": _merge_pb_predict(data_map.get("full_marathon_pb"), data_map.get("race_predict_full")),
-                "lactate_threshold_hr": _validate_int(data_map.get("lactate_threshold_hr")),
-                "ftp": ftp,
-                "ftp_watts": ftp,
-                "lactate_threshold_pace": _validate_time_format(data_map.get("lactate_threshold_pace")),
-                "longest_run_km": _validate_number(data_map.get("longest_run_km")),
-                "pb_1km": _merge_pb_predict(data_map.get("1km_pb"), None),
-                "longest_ride_time": _validate_time_format(data_map.get("longest_ride_time")),
-                "cycling_40km_time": _validate_time_format(data_map.get("cycling_40km_time")),
-                "cycling_80km_time": _validate_time_format(data_map.get("cycling_80km_time")),
-                "longest_cycle_km": _validate_number(data_map.get("longest_cycle_km")),
-                "swimming_100m_pb": _validate_time_format(data_map.get("swimming_100m_pb")),
-                "longest_swim_distance_m": _validate_number(data_map.get("longest_swim_distance_m")),
-                "total_run_km": _validate_number(data_map.get("total_run_km")),
-                "total_hike_km": _validate_number(data_map.get("total_hike_km")),
-                "total_cycle_km": _validate_number(data_map.get("total_cycle_km")),
-                "total_swim_km": _validate_number(data_map.get("total_swim_km")),
-            }
+            parsed_json = garmin_sync.sync_profile_json(region=_configured_garmin_region() or None)
         else:
-            persona = parsed_json
-            ftp = _validate_int(_first_present(persona, "ftp_watts", "ftp"))
-            synced_max_hr = (
-                _validate_int(_first_present(persona, "max_heart_rate", "max_hr", "maximum_heart_rate"))
-            )
-            profile_data = {
-                "name": str(_first_present(persona, "username", "name", "nickname")) if _first_present(persona, "username", "name", "nickname") is not None else None,
-                "gender": str(_first_present(persona, "gender")) if _first_present(persona, "gender") is not None else None,
-                "age": _validate_int(_first_present(persona, "age")),
-                "weight": _validate_number(_first_present(persona, "weight_kg", "weight")),
-                "resting_hr": _validate_int(_first_present(persona, "resting_heart_rate", "resting_hr")),
-                "recent_resting_hr": _validate_int(_first_present(persona, "recent_resting_hr", "resting_hr_7d_avg", "resting_heart_rate", "resting_hr")),
-                "resting_hr_7d_avg": _validate_int(_first_present(persona, "resting_hr_7d_avg", "recent_resting_hr", "resting_heart_rate", "resting_hr")),
-                "max_hr": synced_max_hr,
-                "hrv_baseline": _validate_number(_first_present(persona, "hrv", "hrv_baseline")),
-                "recent_hrv": _validate_number(_first_present(persona, "recent_hrv", "hrv_7d_avg", "hrv", "hrv_baseline")),
-                "hrv_7d_avg": _validate_number(_first_present(persona, "hrv_7d_avg", "recent_hrv", "hrv", "hrv_baseline")),
-                "vo2max": _validate_number(_first_present(persona, "vo2_max", "vo2max")),
-                "avg_bedtime": str(_first_present(persona, "avg_bedtime")).strip() if _first_present(persona, "avg_bedtime") is not None else None,
-                "avg_sleep_hours": _validate_number(_first_present(persona, "avg_sleep_hours")),
-                "bmi": _validate_number(_first_present(persona, "bmi")),
-                "body_fat_pct": _validate_number(_first_present(persona, "body_fat_percent", "body_fat_pct")),
-                "body_water_pct": _validate_number(_first_present(persona, "body_water_percent", "body_water_pct")),
-                "bone_mass": _validate_number(_first_present(persona, "bone_mass_kg", "bone_mass")),
-                "muscle_mass": _validate_number(_first_present(persona, "muscle_mass_kg", "muscle_mass")),
-                "longest_hike_km": _validate_number(_first_present(persona, "longest_hike_km")),
-                "height_cm": _validate_number(_first_present(persona, "height_cm")),
-                "pb_5km": _merge_pb_predict(_first_present(persona, "5km_pb", "pb_5km"), _first_present(persona, "race_predict_5k")),
-                "pb_10km": _merge_pb_predict(_first_present(persona, "10km_pb", "pb_10km"), _first_present(persona, "race_predict_10k")),
-                "pb_half_marathon": _merge_pb_predict(_first_present(persona, "half_marathon_pb", "pb_half_marathon"), _first_present(persona, "race_predict_half")),
-                "pb_full_marathon": _merge_pb_predict(_first_present(persona, "full_marathon_pb", "pb_full_marathon"), _first_present(persona, "race_predict_full")),
-                "lactate_threshold_hr": _validate_int(_first_present(persona, "lactate_threshold_hr")),
-                "ftp": ftp,
-                "ftp_watts": ftp,
-                "lactate_threshold_pace": _validate_time_format(_first_present(persona, "lactate_threshold_pace")),
-                "longest_run_km": _validate_number(_first_present(persona, "longest_run_km")),
-                "pb_1km": _validate_time_format(_first_present(persona, "1km_pb", "pb_1km")),
-                "longest_ride_time": _validate_time_format(_first_present(persona, "longest_ride_time")),
-                "cycling_40km_time": _validate_time_format(_first_present(persona, "cycling_40km_time")),
-                "cycling_80km_time": _validate_time_format(_first_present(persona, "cycling_80km_time")),
-                "longest_cycle_km": _validate_number(_first_present(persona, "longest_cycle_km")),
-                "swimming_100m_pb": _validate_time_format(_first_present(persona, "swimming_100m_pb")),
-                "longest_swim_distance_m": _validate_number(_first_present(persona, "longest_swim_distance_m")),
-                # COROS MCP 的 total_run_km 可能是近 7 天合计；raw snapshot 保留原始来源语义。
-                "total_run_km": _validate_number(_first_present(persona, "total_run_km")),
-                "total_hike_km": _validate_number(_first_present(persona, "total_hike_km")),
-                "total_cycle_km": _validate_number(_first_present(persona, "total_cycle_km")),
-                "total_swim_km": _validate_number(_first_present(persona, "total_swim_km")),
-            }
+            parsed_json = coros_sync.sync_profile_json(region=_configured_coros_region() or None)
+
+        if not isinstance(parsed_json, list):
+            label = "Garmin" if platform == "garmin" else "COROS"
+            error = f"{label} 数据同步失败，返回的不是 JSON 数组。"
+            mark_profile_sync_failed(error)
+            return {"ok": False, "error": error}
+
+        profile_data = _profile_data_from_metric_map(_profile_metric_array_to_map(parsed_json))
 
         incoming_profile_data = dict(profile_data)
         profile_data = merge_profile_with_existing(incoming_profile_data, existing_profile_data)
@@ -3916,6 +3951,21 @@ def fetch_mcp_persona(platform: str, trigger_type: str = "manual") -> dict[str, 
         error = f"JSON 解析失败: {e}\n原始返回: {text[:500] if 'text' in dir() else 'N/A'}"
         mark_profile_sync_failed(error)
         return {"ok": False, "error": error}
+    except coros_sync.CorosAuthRequiredError as e:
+        error = "COROS 授权不可用或已失效，请到配置页完成授权。"
+        detail = str(e).strip()
+        if detail and detail != error:
+            error = f"{error} {detail}"
+        mark_profile_sync_failed(error)
+        return _provider_failure_payload(platform, e, error)
+    except coros_sync.CorosSyncError as e:
+        error = f"COROS 数据同步失败: {e}"
+        mark_profile_sync_failed(error)
+        return _provider_failure_payload(platform, e, error)
+    except garmin_sync.GarminSyncError as e:
+        error = f"Garmin 数据同步失败: {e}"
+        mark_profile_sync_failed(error)
+        return _provider_failure_payload(platform, e, error)
     except Exception as e:
         error = f"MCP 同步失败: {e}"
         mark_profile_sync_failed(error)

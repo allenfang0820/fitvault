@@ -175,7 +175,7 @@ class TestFatigueReviewP6AiInsight(unittest.TestCase):
             "api_key": "",
             "agent_id": "",
         }), patch("llm_backend.build_fatigue_review_messages", side_effect=fake_messages), \
-             patch("llm_backend.chat_completions", return_value=json.dumps({
+             patch("llm_backend.generate_text", return_value=json.dumps({
                  "summary": "本次状态稳定",
                  "sport_type": "running",
                  "key_dimensions": [],
@@ -190,6 +190,35 @@ class TestFatigueReviewP6AiInsight(unittest.TestCase):
         self.assertIn("curves_summary", captured["snapshot"])
         self.assertNotIn("curves", captured["snapshot"])
         self.assertEqual(captured["sport_cn"], "跑步")
+
+    def test_call_llm_cli_transport_does_not_require_http_url_or_model(self):
+        api = self._api()
+        api._ai_snapshot = {"activity_id": 9}
+        captured = {}
+
+        def fake_generate_text(**kwargs):
+            captured.update(kwargs)
+            return json.dumps({
+                "summary": "CLI 洞察",
+                "sport_type": "running",
+                "key_dimensions": [],
+                "event_interpretation": "无明显事件",
+                "training_advice": "保持节奏",
+                "disclaimer": "AI 生成仅供参考",
+            }, ensure_ascii=False)
+
+        with patch("llm_backend.load_llm_config", return_value={
+            "transport": "cli",
+            "cli_type": "codex",
+            "url": "",
+            "model": "",
+        }), patch("llm_backend.generate_text", side_effect=fake_generate_text):
+            res = api.call_llm("__FATIGUE_REVIEW_INSIGHT__", "running")
+
+        self.assertEqual(res["code"], 0)
+        self.assertEqual(res["data"]["fatigue_review_insight"]["summary"], "CLI 洞察")
+        self.assertEqual(captured["config"]["transport"], "cli")
+        self.assertEqual(captured["config"]["cli_type"], "codex")
 
     def test_call_llm_prefers_authoritative_snapshot_sport_type(self):
         api = self._api()
@@ -218,7 +247,7 @@ class TestFatigueReviewP6AiInsight(unittest.TestCase):
             "api_key": "",
             "agent_id": "",
         }), patch("llm_backend.build_fatigue_review_messages", side_effect=fake_messages), \
-             patch("llm_backend.chat_completions", return_value=json.dumps({
+             patch("llm_backend.generate_text", return_value=json.dumps({
                  "summary": "本次状态稳定",
                  "sport_type": "running",
                  "key_dimensions": [],
@@ -241,7 +270,7 @@ class TestFatigueReviewP6AiInsight(unittest.TestCase):
             "model": "test",
             "api_key": "",
             "agent_id": "",
-        }), patch("llm_backend.chat_completions", side_effect=RuntimeError("gateway timeout")):
+        }), patch("llm_backend.generate_text", side_effect=RuntimeError("gateway timeout")):
             res = api.call_llm("__FATIGUE_REVIEW_INSIGHT__", "running")
 
         self.assertEqual(res["code"], 0)

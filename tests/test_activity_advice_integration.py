@@ -49,7 +49,7 @@ class TestActivityAdviceIntegration(unittest.TestCase):
         self.api._chat_messages = [{"role": "user", "content": "stale"}]
         captured = {}
 
-        def fake_chat(**kwargs):
+        def fake_generate_text(**kwargs):
             captured.update(kwargs)
             return json.dumps({
                 "supply_advice": {"status": "提示", "basis": "距离 12km", "advice": "带水"},
@@ -58,7 +58,7 @@ class TestActivityAdviceIntegration(unittest.TestCase):
 
         context = json.dumps({"user_activity_type": "hiking", "planned_start_time": "2026-06-12T08:30"})
         with patch("llm_backend.load_llm_config", return_value={"url": "http://llm", "model": "m", "api_key": "", "agent_id": ""}):
-            with patch("llm_backend.chat_completions", side_effect=fake_chat):
+            with patch("llm_backend.generate_text", side_effect=fake_generate_text):
                 res = self.api.call_llm(self.api.REPORT_ACTIVITY_ADVICE, context)
 
         self.assertTrue(res["ok"])
@@ -71,6 +71,28 @@ class TestActivityAdviceIntegration(unittest.TestCase):
         self.assertIn("2026-06-12T08:30", encoded_messages)
         self.assertNotIn("2020-01-01", encoded_messages)
         self.assertNotIn("temperature_c", encoded_messages)
+
+    def test_cli_transport_does_not_require_http_url_or_model(self):
+        captured = {}
+
+        def fake_generate_text(**kwargs):
+            captured.update(kwargs)
+            return json.dumps({
+                "supply_advice": {"status": "提示", "basis": "CLI", "advice": "ok"},
+            }, ensure_ascii=False)
+
+        with patch("llm_backend.load_llm_config", return_value={
+            "transport": "cli",
+            "cli_type": "codex",
+            "url": "",
+            "model": "",
+        }):
+            with patch("llm_backend.generate_text", side_effect=fake_generate_text):
+                res = self.api.call_llm(self.api.REPORT_ACTIVITY_ADVICE, "{}")
+
+        self.assertTrue(res["ok"])
+        self.assertEqual(captured["config"]["transport"], "cli")
+        self.assertEqual(captured["config"]["cli_type"], "codex")
 
     def test_empty_without_snapshot_clears_session(self):
         old_sid = self.api._session_id
@@ -104,7 +126,7 @@ class TestActivityAdviceIntegration(unittest.TestCase):
         self.api._chat_messages = [{"role": "user", "content": "stale"}]
 
         with patch("llm_backend.load_llm_config", return_value={"url": "http://llm", "model": "m"}):
-            with patch("llm_backend.chat_completions", side_effect=Exception("gateway timeout")):
+            with patch("llm_backend.generate_text", side_effect=Exception("gateway timeout")):
                 res = self.api.call_llm(self.api.REPORT_ACTIVITY_ADVICE, "{}")
 
         self.assertTrue(res["ok"])
@@ -121,7 +143,7 @@ class TestActivityAdviceIntegration(unittest.TestCase):
 
         with patch("llm_backend.load_llm_config", return_value={"url": "http://llm", "model": "m"}):
             with patch("main._build_activity_advice_messages", side_effect=fake_messages):
-                with patch("llm_backend.chat_completions", return_value="{}"):
+                with patch("llm_backend.generate_text", return_value="{}"):
                     self.api.call_llm(self.api.REPORT_ACTIVITY_ADVICE, "hiking")
 
         self.assertEqual(captured["planning_context"]["user_activity_type"], "hiking")
@@ -131,7 +153,7 @@ class TestActivityAdviceIntegration(unittest.TestCase):
     def test_messages_builder_does_not_accept_weather_argument(self):
         with patch("llm_backend.load_llm_config", return_value={"url": "http://llm", "model": "m"}):
             with patch("main._build_activity_advice_messages", return_value=[{"role": "user", "content": "go"}]) as builder:
-                with patch("llm_backend.chat_completions", return_value="{}"):
+                with patch("llm_backend.generate_text", return_value="{}"):
                     self.api.call_llm(self.api.REPORT_ACTIVITY_ADVICE, "{}")
 
         args, _kwargs = builder.call_args
@@ -238,11 +260,11 @@ class TestActivityAdviceIntegration(unittest.TestCase):
 
         with patch("llm_backend.load_llm_config", return_value={"url": "http://llm", "model": "m"}):
             with patch("main._build_activity_advice_messages", side_effect=fake_messages):
-                with patch("llm_backend.chat_completions", return_value="{}") as chat:
+                with patch("llm_backend.generate_text", return_value="{}") as generate_text:
                     res = self.api.call_llm(self.api.REPORT_ACTIVITY_ADVICE, "{}")
 
         self.assertTrue(res["ok"])
-        chat.assert_called_once()
+        generate_text.assert_called_once()
         snapshot = captured["snapshot"]
         self.assertGreater(snapshot["distance_km"], 0)
         self.assertEqual(snapshot["elevation_gain_m"], 60)

@@ -22,6 +22,7 @@ _datas = [
     ("track.html", "."),
     ("lib", "lib"),
     ("assets", "assets"),
+    ("docs/脉图帮助说明.md", "docs"),
     ("skills/garmin-stats.zip", "skills"),
     ("skills/coros-stats.zip", "skills"),
 ]

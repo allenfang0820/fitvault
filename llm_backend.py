@@ -7,10 +7,15 @@ from __future__ import annotations
 
 import io
 import csv
+import errno
 import json
 import math
+import os
+import plistlib
 import re
 import secrets
+import shlex
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -22,6 +27,28 @@ DEFAULT_URL = "http://localhost:3000/v1/chat/completions"
 DEFAULT_MODEL = "openclaw"
 DEFAULT_PROVIDER = "local_mcp"
 DEFAULT_AGENT_ID = ""
+DEFAULT_TRANSPORT = "http"
+DEFAULT_CLI_TIMEOUT_SEC = 300
+VALID_TRANSPORTS = {"http", "cli"}
+VALID_CLI_TYPES = {"codex", "openclaw", "claude", "custom"}
+VALID_GARMIN_REGIONS = {"cn", "global"}
+VALID_COROS_REGIONS = {"cn", "us", "eu"}
+CLI_ERROR_SNIPPET_CHARS = 800
+QCLAW_LAUNCHAGENT_ENV_KEYS = {
+    "AUTH_GATEWAY_PORT",
+    "NODE_EXTRA_CA_CERTS",
+    "NODE_USE_SYSTEM_CA",
+    "OPENCLAW_CONFIG_PATH",
+    "OPENCLAW_GATEWAY_PORT",
+    "OPENCLAW_LAUNCHD_LABEL",
+    "OPENCLAW_SERVICE_KIND",
+    "OPENCLAW_SERVICE_MARKER",
+    "OPENCLAW_SERVICE_VERSION",
+    "OPENCLAW_STATE_DIR",
+    "QCLAW_LLM_API_KEY",
+    "QCLAW_LLM_BASE_URL",
+    "QCLAW_WECHAT_WS_URL",
+}
 CONFIG_DIR_NAME = ".fitvault"
 CONFIG_FILE_NAME = "llm_config.json"
 
@@ -76,27 +103,71 @@ def load_llm_config() -> dict[str, Any]:
     p = _config_file()
     if not p.is_file():
         return {
+            "transport": DEFAULT_TRANSPORT,
             "provider": DEFAULT_PROVIDER,
             "url": "",
             "model": "",
             "api_key": "",
             "agent_id": DEFAULT_AGENT_ID,
+            "cli_type": "",
+            "cli_path": "",
+            "cli_args": "",
+            "cli_model": "",
+            "cli_timeout_sec": DEFAULT_CLI_TIMEOUT_SEC,
+            "garmin_region": _normalize_garmin_region(None),
+            "coros_region": _normalize_coros_region(None),
         }
     try:
         data = json.loads(p.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         data = {}
     return {
+        "transport": _normalize_transport(data.get("transport")),
         "provider": str(data.get("provider") or DEFAULT_PROVIDER),
         "url": str(data.get("url") or "").strip(),
         "model": str(data.get("model") or "").strip(),
         "api_key": str(data.get("api_key") or ""),
         "agent_id": str(data.get("agent_id") or DEFAULT_AGENT_ID).strip(),
+        "cli_type": _normalize_cli_type(data.get("cli_type")),
+        "cli_path": str(data.get("cli_path") or "").strip(),
+        "cli_args": str(data.get("cli_args") or "").strip(),
+        "cli_model": str(data.get("cli_model") or "").strip(),
+        "cli_timeout_sec": _normalize_cli_timeout(data.get("cli_timeout_sec")),
         "watch_brand": str(data.get("watch_brand") or "").strip(),
+        "garmin_region": _normalize_garmin_region(data.get("garmin_region")),
+        "coros_region": _normalize_coros_region(data.get("coros_region")),
         "local_dir": str(data.get("local_dir") or "").strip(),
         "ai_notified": bool(data.get("ai_notified", False)),
         "ai_notified_hash": str(data.get("ai_notified_hash") or "").strip(),
     }
+
+
+def _normalize_transport(value: Any) -> str:
+    text = str(value or "").strip().lower()
+    return text if text in VALID_TRANSPORTS else DEFAULT_TRANSPORT
+
+
+def _normalize_cli_type(value: Any) -> str:
+    text = str(value or "").strip().lower()
+    return text if text in VALID_CLI_TYPES else ""
+
+
+def _normalize_cli_timeout(value: Any) -> int:
+    try:
+        seconds = int(value)
+    except (TypeError, ValueError):
+        return DEFAULT_CLI_TIMEOUT_SEC
+    return max(5, min(seconds, 1800))
+
+
+def _normalize_garmin_region(value: Any) -> str:
+    text = str(value or os.environ.get("GARMIN_REGION") or "cn").strip().lower()
+    return text if text in VALID_GARMIN_REGIONS else "cn"
+
+
+def _normalize_coros_region(value: Any) -> str:
+    text = str(value or os.environ.get("COROS_REGION") or "cn").strip().lower()
+    return text if text in VALID_COROS_REGIONS else "cn"
 
 
 def mask_secret(value: Any) -> str:
@@ -117,7 +188,25 @@ def redact_llm_config(config: dict[str, Any]) -> dict[str, Any]:
     return redacted
 
 
-def save_llm_config(provider: str, url: str, model: str, api_key: str, agent_id: str = "", watch_brand: str = "", local_dir: str = "", ai_notified: bool = False, ai_notified_hash: str = "") -> None:
+def save_llm_config(
+    provider: str,
+    url: str,
+    model: str,
+    api_key: str,
+    agent_id: str = "",
+    watch_brand: str = "",
+    local_dir: str = "",
+    ai_notified: bool = False,
+    ai_notified_hash: str = "",
+    transport: str = DEFAULT_TRANSPORT,
+    cli_type: str = "",
+    cli_path: str = "",
+    cli_args: str = "",
+    cli_model: str = "",
+    cli_timeout_sec: int = DEFAULT_CLI_TIMEOUT_SEC,
+    garmin_region: str = "",
+    coros_region: str = "",
+) -> None:
     """持久化 LLM 配置。
 
     CONTRACT §2.1 / §7.2: 严格按调用方传入的 url / model 原样落盘。
@@ -126,12 +215,20 @@ def save_llm_config(provider: str, url: str, model: str, api_key: str, agent_id:
     否则下游 load_llm_config 会再次误以为"已配置"。
     """
     cfg = {
+        "transport": _normalize_transport(transport),
         "provider": (provider or DEFAULT_PROVIDER).strip(),
         "url": (url or "").strip(),
         "model": (model or "").strip(),
         "api_key": (api_key or "").strip(),
         "agent_id": (agent_id or "").strip(),
+        "cli_type": _normalize_cli_type(cli_type),
+        "cli_path": (cli_path or "").strip(),
+        "cli_args": (cli_args or "").strip(),
+        "cli_model": (cli_model or "").strip(),
+        "cli_timeout_sec": _normalize_cli_timeout(cli_timeout_sec),
         "watch_brand": (watch_brand or "").strip(),
+        "garmin_region": _normalize_garmin_region(garmin_region),
+        "coros_region": _normalize_coros_region(coros_region),
         "local_dir": (local_dir or "").strip(),
         "ai_notified": bool(ai_notified),
         "ai_notified_hash": str(ai_notified_hash or "").strip(),
@@ -368,6 +465,416 @@ def build_chat_system_block(
 
 
 def chat_completions(
+    *,
+    url: str,
+    api_key: str,
+    model: str,
+    messages: list[dict[str, str]],
+    session_id: str,
+    agent_id: str = "",
+    timeout: int = 300,
+) -> str:
+    return _chat_completions_http(
+        url=url,
+        api_key=api_key,
+        model=model,
+        messages=messages,
+        session_id=session_id,
+        agent_id=agent_id,
+        timeout=timeout,
+    )
+
+
+def generate_text(
+    *,
+    config: dict[str, Any],
+    messages: list[dict[str, str]],
+    session_id: str,
+    timeout: int = 300,
+) -> str:
+    """Generate text via the configured transport.
+
+    This is the single entry point for AI text generation. CLI mode is handled
+    as a first-class transport and never falls back to HTTP implicitly.
+    """
+    cfg = config if isinstance(config, dict) else {}
+    transport = _normalize_transport(cfg.get("transport"))
+    if transport == "cli":
+        return _run_cli_completion(
+            config=cfg,
+            messages=messages,
+            session_id=session_id,
+            timeout=timeout,
+        )
+    return _chat_completions_http(
+        url=str(cfg.get("url") or "").strip(),
+        api_key=str(cfg.get("api_key") or ""),
+        model=str(cfg.get("model") or "").strip(),
+        messages=messages,
+        session_id=session_id,
+        agent_id=str(cfg.get("agent_id") or "").strip(),
+        timeout=timeout,
+    )
+
+
+def serialize_messages_for_cli(messages: list[dict[str, str]]) -> str:
+    """Serialize chat messages into one prompt while preserving role boundaries."""
+    blocks: list[str] = []
+    for idx, msg in enumerate(messages or []):
+        if not isinstance(msg, dict):
+            continue
+        role = str(msg.get("role") or "user").strip().lower() or "user"
+        if role not in {"system", "user", "assistant"}:
+            role = "user"
+        content = str(msg.get("content") or "").strip()
+        if not content:
+            continue
+        blocks.append(f"[{role.upper()}]\n{content}")
+    return "\n\n".join(blocks).strip()
+
+
+def _split_cli_args(args_text: str) -> list[str]:
+    text = str(args_text or "").strip()
+    if not text:
+        return []
+    try:
+        return shlex.split(text)
+    except ValueError as exc:
+        raise RuntimeError(f"CLI 参数解析失败: {exc}") from exc
+
+
+def _validate_cli_executable_path(cli_path: str) -> str:
+    path = str(cli_path or "").strip()
+    if not path:
+        return ""
+    try:
+        parts = shlex.split(path)
+    except ValueError:
+        parts = [path]
+    if len(parts) > 1 and any(part.startswith("-") or part in {"exec", "agent", "-p"} for part in parts[1:]):
+        raise RuntimeError("CLI 路径只能填写可执行文件路径，参数请填写到 CLI 参数模板")
+    return path
+
+
+def _expand_cli_template(args: list[str], *, prompt: str, model: str) -> list[str]:
+    return [
+        str(part).replace("{prompt}", prompt).replace("{model}", model)
+        for part in args
+    ]
+
+
+def _ensure_prompt_placeholder(args: list[str]) -> list[str]:
+    normalized = [str(part) for part in args]
+    if any("{prompt}" in part for part in normalized):
+        return normalized
+    return normalized + ["{prompt}"]
+
+
+def _build_cli_command(config: dict[str, Any], prompt: str) -> list[str]:
+    cli_type = _normalize_cli_type(config.get("cli_type"))
+    cli_path = _validate_cli_executable_path(str(config.get("cli_path") or ""))
+    model = str(config.get("cli_model") or config.get("model") or "").strip()
+    if cli_type == "codex":
+        base = [cli_path or "codex", "exec", "{prompt}"]
+    elif cli_type == "claude":
+        base = [cli_path or "claude", "-p", "{prompt}"]
+    elif cli_type == "openclaw":
+        agent_id = str(config.get("agent_id") or "").strip() or "main"
+        cli_timeout = str(_normalize_cli_timeout(config.get("cli_timeout_sec")))
+        base = [
+            cli_path or _default_openclaw_cli_path() or "openclaw",
+            "agent",
+            "--agent",
+            agent_id,
+            "--timeout",
+            cli_timeout,
+            "--json",
+            "--message",
+            "{prompt}",
+        ]
+    elif cli_type == "custom":
+        if not cli_path:
+            raise RuntimeError("自定义 CLI 路径未配置")
+        custom_args = _split_cli_args(str(config.get("cli_args") or ""))
+        base = [cli_path] + _ensure_prompt_placeholder(custom_args)
+    else:
+        raise RuntimeError("CLI 类型未配置")
+    return _expand_cli_template(base, prompt=prompt, model=model)
+
+
+def _default_openclaw_cli_path() -> str:
+    qclaw_wrapper = Path.home() / "Library/Application Support/QClaw/openclaw/config/bin/openclaw"
+    if qclaw_wrapper.is_file():
+        return str(qclaw_wrapper)
+    return ""
+
+
+def _cli_not_found_message(cli_type: str) -> str:
+    clean = _normalize_cli_type(cli_type)
+    if clean == "openclaw":
+        return "未找到 OpenClaw CLI，请确认 QClaw 已安装或填写 CLI 路径"
+    if clean == "codex":
+        return "未找到 Codex CLI，请确认已安装或填写 CLI 路径"
+    if clean == "claude":
+        return "未找到 Claude CLI，请确认已安装或填写 CLI 路径"
+    return "未找到自定义 CLI，请确认 CLI 路径填写正确"
+
+
+def _is_cli_not_found_error(exc: OSError) -> bool:
+    return isinstance(exc, FileNotFoundError) or getattr(exc, "errno", None) == errno.ENOENT
+
+
+def _is_openclaw_agent_unusable_detail(detail: str) -> bool:
+    text = str(detail or "").lower()
+    if not text:
+        return False
+    if "no target session selected" in text:
+        return True
+    if "agent" in text and any(token in text for token in ("not found", "not exist", "missing", "unavailable", "invalid")):
+        return True
+    return "agent 不存在" in text or "agent不可用" in text or "agent 不可用" in text
+
+
+def _build_openclaw_cli_env(config: dict[str, Any], executable: str) -> dict[str, str] | None:
+    if _normalize_cli_type(config.get("cli_type")) != "openclaw":
+        return None
+
+    env = os.environ.copy()
+    changed = False
+    if not env.get("QCLAW_CLI_NODE_BINARY"):
+        qclaw_node = Path("/Applications/QClaw.app/Contents/Resources/node/node")
+        codex_node = Path("/Applications/Codex.app/Contents/Resources/cua_node/bin/node")
+        if qclaw_node.is_file():
+            env["QCLAW_CLI_NODE_BINARY"] = str(qclaw_node)
+            changed = True
+        elif codex_node.is_file():
+            env["QCLAW_CLI_NODE_BINARY"] = str(codex_node)
+            changed = True
+
+    if not env.get("QCLAW_CLI_OPENCLAW_MJS"):
+        openclaw_mjs = Path.home() / "Library/Application Support/QClaw/openclaw/node_modules/openclaw/openclaw.mjs"
+        if openclaw_mjs.is_file():
+            env["QCLAW_CLI_OPENCLAW_MJS"] = str(openclaw_mjs)
+            changed = True
+
+    for key, value in _read_qclaw_launchagent_env().items():
+        if key in QCLAW_LAUNCHAGENT_ENV_KEYS and value and not env.get(key):
+            env[key] = value
+            changed = True
+
+    if not env.get("OPENCLAW_STATE_DIR"):
+        qclaw_state_dir = Path.home() / ".qclaw"
+        if qclaw_state_dir.is_dir():
+            env["OPENCLAW_STATE_DIR"] = str(qclaw_state_dir)
+            changed = True
+
+    if not env.get("OPENCLAW_CONFIG_PATH"):
+        qclaw_config_path = Path.home() / ".qclaw/openclaw.json"
+        if qclaw_config_path.is_file():
+            env["OPENCLAW_CONFIG_PATH"] = str(qclaw_config_path)
+            changed = True
+
+    if changed:
+        return env
+    return None
+
+
+def _read_qclaw_launchagent_env() -> dict[str, str]:
+    plist_path = Path.home() / "Library/LaunchAgents/ai.openclaw.gateway.plist"
+    try:
+        with plist_path.open("rb") as f:
+            data = plistlib.load(f)
+    except (OSError, plistlib.InvalidFileException, ValueError):
+        return {}
+    raw_env = data.get("EnvironmentVariables") if isinstance(data, dict) else None
+    if not isinstance(raw_env, dict):
+        return {}
+    return {
+        str(key): str(value)
+        for key, value in raw_env.items()
+        if key is not None and value is not None
+    }
+
+
+def _parse_last_json_object(text: str) -> dict[str, Any] | None:
+    raw = str(text or "").strip()
+    for idx, char in enumerate(raw):
+        if char != "{":
+            continue
+        try:
+            parsed = json.loads(raw[idx:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict):
+            return parsed
+    return None
+
+
+def _extract_openclaw_agent_text(output: str) -> str:
+    def find_text(value: Any) -> str:
+        if isinstance(value, dict):
+            for key in ("finalAssistantVisibleText", "finalAssistantRawText", "text", "content"):
+                text = value.get(key)
+                if isinstance(text, str) and text.strip():
+                    return text.strip()
+            for child in value.values():
+                found = find_text(child)
+                if found:
+                    return found
+        elif isinstance(value, list):
+            for item in value:
+                found = find_text(item)
+                if found:
+                    return found
+        return ""
+
+    parsed = _parse_last_json_object(output)
+    if not parsed:
+        return str(output or "").strip()
+    return find_text(parsed) or str(output or "").strip()
+
+
+def _run_openclaw_readonly_json(config: dict[str, Any], args: list[str], timeout: int) -> tuple[dict[str, Any] | None, str]:
+    cli_path = _validate_cli_executable_path(str(config.get("cli_path") or ""))
+    cmd = [cli_path or "openclaw"] + args
+    cli_env = _build_openclaw_cli_env(config, cmd[0])
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=_normalize_cli_timeout(timeout),
+            shell=False,
+            env=cli_env,
+        )
+    except Exception as exc:
+        return None, str(exc)
+
+    parsed = _parse_last_json_object(result.stdout)
+    if parsed is not None:
+        return parsed, ""
+    detail = _error_snippet(str(result.stderr or result.stdout or "").strip())
+    if result.returncode != 0:
+        return None, f"exit {result.returncode}: {detail}" if detail else f"exit {result.returncode}"
+    return None, detail
+
+
+def _extract_ws_port(value: Any) -> str:
+    match = re.search(r":(\d+)(?:/|$)", str(value or ""))
+    return match.group(1) if match else ""
+
+
+def _extract_gateway_exec_port(value: Any) -> str:
+    match = re.search(r"(?:^|\s)--port\s+(\d+)(?:\s|$)", str(value or ""))
+    return match.group(1) if match else ""
+
+
+def diagnose_openclaw_cli(config: dict[str, Any], timeout: int = 15) -> str:
+    if _normalize_cli_type((config or {}).get("cli_type")) != "openclaw":
+        return ""
+
+    status, status_error = _run_openclaw_readonly_json(config, ["status", "--json"], timeout)
+    if status:
+        gateway = status.get("gateway") if isinstance(status.get("gateway"), dict) else {}
+        service = status.get("gatewayService") if isinstance(status.get("gatewayService"), dict) else {}
+        if gateway.get("reachable") is False:
+            url = str(gateway.get("url") or "")
+            runtime_short = str(service.get("runtimeShort") or "")
+            layout = service.get("layout") if isinstance(service.get("layout"), dict) else {}
+            exec_start = str(layout.get("execStart") or "")
+            configured_port = _extract_ws_port(url)
+            exec_port = _extract_gateway_exec_port(exec_start)
+            parts = ["OpenClaw Gateway 当前不可达"]
+            if url:
+                parts.append(f"配置 URL：{url}")
+            if runtime_short:
+                parts.append(f"服务状态：{runtime_short}")
+            if exec_start:
+                parts.append(f"启动参数：{exec_start}")
+            if configured_port and exec_port and configured_port != exec_port:
+                parts.append(f"检测到端口不一致：配置为 {configured_port}，但服务启动参数为 {exec_port}")
+            return "；".join(parts)
+
+    models, models_error = _run_openclaw_readonly_json(config, ["models", "status", "--json"], timeout)
+    if models:
+        auth = models.get("auth") if isinstance(models.get("auth"), dict) else {}
+        missing = auth.get("missingProvidersInUse") if isinstance(auth.get("missingProvidersInUse"), list) else []
+        routes = auth.get("runtimeAuthRoutes") if isinstance(auth.get("runtimeAuthRoutes"), list) else []
+        missing_routes = [
+            str(route.get("provider") or route.get("authProvider") or "").strip()
+            for route in routes
+            if isinstance(route, dict) and str(route.get("status") or "").strip().lower() == "missing"
+        ]
+        providers = sorted({item for item in [*(str(x) for x in missing), *missing_routes] if item})
+        if providers:
+            default_model = str(models.get("defaultModel") or models.get("resolvedDefault") or "").strip()
+            parts = [f"OpenClaw 模型授权缺失：{', '.join(providers)}"]
+            if default_model:
+                parts.append(f"默认模型：{default_model}")
+            parts.append("请在 OpenClaw/QClaw 中完成模型授权或切换可用模型")
+            return "；".join(parts)
+
+    if status_error:
+        return f"OpenClaw 状态诊断失败：{status_error}"
+    if models_error:
+        return f"OpenClaw 模型诊断失败：{models_error}"
+    return ""
+
+
+def _error_snippet(value: str) -> str:
+    text = str(value or "").strip()
+    if len(text) <= CLI_ERROR_SNIPPET_CHARS:
+        return text
+    head_chars = CLI_ERROR_SNIPPET_CHARS // 2
+    tail_chars = CLI_ERROR_SNIPPET_CHARS - head_chars
+    return text[:head_chars] + "\n...\n" + text[-tail_chars:]
+
+
+def _run_cli_completion(
+    *,
+    config: dict[str, Any],
+    messages: list[dict[str, str]],
+    session_id: str,
+    timeout: int = 300,
+) -> str:
+    prompt = serialize_messages_for_cli(messages)
+    if not prompt:
+        raise RuntimeError("CLI prompt 为空")
+    cmd = _build_cli_command(config, prompt)
+    effective_timeout = _normalize_cli_timeout(config.get("cli_timeout_sec") or timeout)
+    cli_env = _build_openclaw_cli_env(config, cmd[0] if cmd else "")
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=effective_timeout,
+            shell=False,
+            env=cli_env,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(f"CLI 已启动但模型未在超时时间内返回 ({effective_timeout}s)") from exc
+    except OSError as exc:
+        if _is_cli_not_found_error(exc):
+            raise RuntimeError(_cli_not_found_message(str(config.get("cli_type") or ""))) from exc
+        raise RuntimeError(f"CLI 启动失败: {exc}") from exc
+
+    stdout = str(result.stdout or "").strip()
+    stderr = str(result.stderr or "").strip()
+    if result.returncode != 0:
+        detail = _error_snippet(stderr or stdout)
+        if _normalize_cli_type(config.get("cli_type")) == "openclaw" and _is_openclaw_agent_unusable_detail(detail):
+            raise RuntimeError("OpenClaw Agent 不存在或不可用，请检查 Agent ID")
+        suffix = f": {detail}" if detail else ""
+        raise RuntimeError(f"CLI 调用失败 (exit {result.returncode}){suffix}")
+    if not stdout:
+        raise RuntimeError("模型未返回内容")
+    if _normalize_cli_type(config.get("cli_type")) == "openclaw":
+        return _extract_openclaw_agent_text(stdout)
+    return stdout
+
+
+def _chat_completions_http(
     *,
     url: str,
     api_key: str,

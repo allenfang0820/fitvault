@@ -1,0 +1,89 @@
+import unittest
+from pathlib import Path
+
+import main
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+TRACK_HTML_PATH = PROJECT_ROOT / "track.html"
+HELP_DOC_PATH = PROJECT_ROOT / "docs" / "脉图帮助说明.md"
+SPEC_PATH = PROJECT_ROOT / "HikingTrackAnalyzer.spec"
+
+
+class TestHelpSingleSource(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.html = TRACK_HTML_PATH.read_text(encoding="utf-8")
+        cls.help_doc = HELP_DOC_PATH.read_text(encoding="utf-8")
+        cls.spec = SPEC_PATH.read_text(encoding="utf-8")
+
+    def test_help_markdown_doc_is_the_full_user_help_source(self):
+        self.assertIn("# 脉图帮助说明", self.help_doc)
+        self.assertIn("## 前言", self.help_doc)
+        self.assertIn("[请博主喝杯咖啡](../assets/social/alipay-donate.jpg)", self.help_doc)
+        self.assertNotIn("![支付宝赞助二维码]", self.help_doc)
+        self.assertIn("## 一、软件简介", self.help_doc)
+        self.assertIn("### 大模型连接配置说明", self.help_doc)
+        self.assertIn("账号授权与数据同步说明", self.help_doc)
+        self.assertIn("AI 洞察一直加载或失败怎么办？", self.help_doc)
+
+    def test_track_html_loads_help_from_backend_instead_of_hardcoding_full_copy(self):
+        for token in (
+            'id="help-preface-content"',
+            'id="help-usage-content"',
+            "async function loadHelpContent()",
+            "window.pywebview.api.get_help_markdown",
+            "splitHelpMarkdown",
+            "renderHelpMarkdown",
+            "renderHelpPrefaceMarkdown",
+            "help-preface-layout",
+            "help-donate-toggle",
+            "helpContentLoadPromise",
+        ):
+            self.assertIn(token, self.html)
+
+        self.assertNotIn("OpenClaw 配置说明", self.html)
+        self.assertNotIn("AI 洞察一直加载或失败怎么办？", self.html)
+        self.assertNotIn("Garmin 同步按钮不可用怎么办？", self.html)
+
+    def test_readme_garmin_sync_no_longer_requires_openclaw_prompt(self):
+        readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertIn("Garmin 和 COROS 同步能力随应用提供，普通用户不需要准备外部 skill 包。", readme)
+        self.assertIn("COROS 当前授权需要本机 Node.js 环境", readme)
+        self.assertIn("[请博主喝杯咖啡](assets/social/alipay-donate.jpg)", readme)
+        self.assertNotIn("![支付宝赞助二维码]", readme)
+        self.assertIn("Garmin 活动同步不依赖这一步", readme)
+        self.assertNotIn("Garmin 同步仍依赖 OpenClaw / QClaw skill、账号授权和存储规范", readme)
+        self.assertNotIn("当前版本支持通过 OpenClaw 同步活动", readme)
+        self.assertNotIn("Skill 下载：", readme)
+
+        self.assertIn("Garmin 和 COROS 同步能力随应用提供，普通用户不需要准备外部 skill 包。", self.help_doc)
+        self.assertIn("COROS 当前授权需要本机 Node.js 环境", self.help_doc)
+        self.assertIn("[请博主喝杯咖啡](../assets/social/alipay-donate.jpg)", self.help_doc)
+        self.assertIn("Garmin 活动同步不依赖这一步", self.help_doc)
+        self.assertNotIn("Garmin 同步仍依赖 OpenClaw / QClaw skill、账号授权和存储规范", self.help_doc)
+        self.assertNotIn("等待 OpenClaw 下载 FIT 文件", self.help_doc)
+        self.assertNotIn("当前版本支持通过 OpenClaw 同步活动", self.help_doc)
+        self.assertNotIn("Skill 下载：", self.help_doc)
+
+    def test_help_renderer_does_not_expose_skill_download_actions(self):
+        self.assertNotIn("function helpDownloadButtonHtml", self.html)
+        self.assertNotIn("saveSkillZip('garmin-stats')", self.html)
+        self.assertNotIn("saveSkillZip('coros-stats')", self.html)
+        self.assertNotIn("skills/garmin-stats.zip", self.html)
+        self.assertNotIn("skills/coros-stats.zip", self.html)
+
+    def test_backend_exposes_help_markdown_with_contract_response(self):
+        res = main.Api().get_help_markdown()
+
+        self.assertTrue(res["ok"])
+        self.assertEqual(res["code"], main.API_CODE_OK)
+        self.assertEqual(res["data"]["source"], "docs/脉图帮助说明.md")
+        self.assertIn("大模型连接配置说明", res["data"]["markdown"])
+
+    def test_packaging_includes_help_markdown(self):
+        self.assertIn('("docs/脉图帮助说明.md", "docs")', self.spec)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -2862,6 +2862,8 @@ class MetricsResolver:
     _CADENCE_BASELINE_SCORE: float = 100.0
     _CADENCE_STD_WEIGHT: float = 0.6      # std 部分权重
     _CADENCE_DECAY_WEIGHT: float = 0.4    # late_decay 部分权重
+    _CADENCE_STARTUP_SAMPLE_COUNT: int = 5
+    _CADENCE_STARTUP_OUTLIER_RATIO: float = 0.75
 
     # === V7.13 指标 9:Training Load(TRIMP 简化版) ===
     # 见 docs/physiology_reference.md §指标 9
@@ -3091,6 +3093,38 @@ class MetricsResolver:
         }
 
     @staticmethod
+    def _median(values: list[float]) -> float | None:
+        if not values:
+            return None
+        ordered = sorted(values)
+        mid = len(ordered) // 2
+        if len(ordered) % 2:
+            return float(ordered[mid])
+        return (float(ordered[mid - 1]) + float(ordered[mid])) / 2.0
+
+    @staticmethod
+    def _clean_running_cadence_stream_for_stability(valid: list) -> list:
+        """Drop startup-only cadence cut-in outliers for running stability."""
+        if len(valid) < 20:
+            return valid
+
+        warmup_count = min(
+            MetricsResolver._CADENCE_STARTUP_SAMPLE_COUNT,
+            len(valid),
+        )
+        baseline_values = valid[warmup_count:] or valid
+        baseline = MetricsResolver._median(baseline_values)
+        if baseline is None or baseline <= 0:
+            return valid
+
+        threshold = baseline * MetricsResolver._CADENCE_STARTUP_OUTLIER_RATIO
+        cleaned = [
+            value for idx, value in enumerate(valid)
+            if idx >= warmup_count or value >= threshold
+        ]
+        return cleaned if len(cleaned) >= 20 else valid
+
+    @staticmethod
     def _compute_cadence_stability(
         cadence_stream: list | None,
         duration_sec: float = 0.0,
@@ -3138,6 +3172,7 @@ class MetricsResolver:
 
         # 过滤 0 / 异常值(Garmin 静止时输出 0)
         valid = [c for c in cadence_stream if c and c > 30]  # 正常步频 > 30 spm
+        valid = MetricsResolver._clean_running_cadence_stream_for_stability(valid)
         if len(valid) < 20:
             return {
                 "score": None, "level": "unknown",

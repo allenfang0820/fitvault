@@ -86,6 +86,27 @@ class TestDuplicateCheck(unittest.TestCase):
         self.assertTrue(res["score"] >= 80.0)
         self.assertEqual(res["duplicate_record"]["filename"], "test1.fit")
 
+    def test_deleted_activity_does_not_count_as_duplicate(self):
+        conn = profile_backend._conn()
+        try:
+            conn.execute(
+                "UPDATE activities SET deleted_at = datetime('now') WHERE filename = ?",
+                ("test1.fit",),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        res = profile_backend.check_duplicate_activity(
+            start_time="2023-01-01T10:00:00Z",
+            dist_km=10.5,
+            duration_sec=3600,
+            points_json=self.points_test1
+        )
+
+        self.assertFalse(res["is_duplicate"])
+        self.assertIsNone(res["duplicate_record"])
+
     def test_activity_list_filtered_dedupes_semantic_duplicates_before_paging(self):
         profile_backend.save_activity({
             "filename": "test1_copy.fit",
@@ -147,6 +168,7 @@ class TestActivityDataLayerDedup(unittest.TestCase):
         start_time: str = "2023-01-01T10:00:00Z",
         dist_km: float = 10.5,
         duration_sec: int = 3600,
+        deleted_at=None,
     ) -> int:
         conn = profile_backend._conn()
         try:
@@ -155,8 +177,8 @@ class TestActivityDataLayerDedup(unittest.TestCase):
                 """
                 INSERT INTO activities
                     (filename, file_name, sport_type, sub_sport_type, dist_km, duration_sec,
-                     start_time, file_path, points_json, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     start_time, file_path, points_json, updated_at, deleted_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     filename,
@@ -169,6 +191,7 @@ class TestActivityDataLayerDedup(unittest.TestCase):
                     file_path,
                     "[]",
                     updated_at,
+                    deleted_at,
                 ),
             )
             conn.commit()
@@ -245,6 +268,52 @@ class TestActivityDataLayerDedup(unittest.TestCase):
         self.assertTrue(second["duplicate"])
         self.assertEqual(self._activity_count(), 1)
         self.assertFalse(self._activity_exists(placeholder_id))
+
+    def test_persist_sync_activity_ignores_soft_deleted_semantic_duplicate(self):
+        main._ACTIVITY_SYNC_SCHEMA_READY_FOR = None
+        main.ensure_activity_sync_schema()
+        deleted_path = profile_backend.TRACKS_DIR / "deleted.fit"
+        new_path = profile_backend.TRACKS_DIR / "resynced.fit"
+        deleted_path.write_text("deleted", encoding="utf-8")
+        new_path.write_text("resynced", encoding="utf-8")
+        self._insert_activity_row(
+            "deleted.fit",
+            str(deleted_path),
+            "2023-01-02T00:00:00",
+            start_time="2023-01-01T10:00:00Z",
+            dist_km=10.5,
+            duration_sec=3600,
+            deleted_at="2023-01-03T00:00:00",
+        )
+        activity = {
+            "file_name": "resynced.fit",
+            "filename": "resynced.fit",
+            "title": "resynced",
+            "title_source": "fit",
+            "sport_type": "running",
+            "sub_sport_type": "unknown",
+            "distance": 10.5,
+            "dist_km": 10.5,
+            "duration": 3600,
+            "duration_sec": 3600,
+            "start_time": "2023-01-01T10:00:00Z",
+            "file_path": str(new_path),
+            "points": [],
+            "points_json": "[]",
+            "track_json": "[]",
+        }
+
+        res = main._persist_sync_activity(activity)
+
+        self.assertEqual(res["op"], "inserted")
+        conn = profile_backend._conn()
+        try:
+            total = conn.execute("SELECT COUNT(*) FROM activities").fetchone()[0]
+            active = conn.execute("SELECT COUNT(*) FROM activities WHERE deleted_at IS NULL").fetchone()[0]
+        finally:
+            conn.close()
+        self.assertEqual(total, 2)
+        self.assertEqual(active, 1)
 
     def test_cleanup_duplicate_activities_dry_run_does_not_delete(self):
         keep_path = profile_backend.TRACKS_DIR / "keep.fit"
