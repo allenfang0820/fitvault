@@ -21,13 +21,15 @@ from pathlib import Path
 from typing import Any, Optional
 
 import llm_backend  # noqa: F401 -- PyInstaller bundles LLM 模块
+import garmin_sync  # noqa: F401 -- PyInstaller bundles Garmin sync provider
+import coros_sync  # noqa: F401 -- PyInstaller bundles COROS sync provider
 import track_backend  # noqa: F401 -- PyInstaller bundles track_backend
 import profile_backend  # noqa: F401 -- PyInstaller bundles profile 模块
 from fit_engine import FITCoreEngine
 from metrics_resolver import MetricsResolver, SemanticSportsEngine, build_training_effect, _build_environment_challenge_block  # V9.4.0 修复 NameError:build_training_effect 已在 metrics_resolver.py:2760 定义, 此处补 import;V_ENV.1.16:补 _build_environment_challenge_block
 
 DEBUG_MODE = False
-APP_VERSION = "V1.0.4"
+APP_VERSION = "V1.1.0"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -172,7 +174,7 @@ IRRELEVANT_LIST_METRICS: dict[str, frozenset[str]] = {
 # V9.4.5:圈速表列规则真理源(后端决定,前端只消费 detail.lap_columns)
 # V10.0 P1-1:骑行类活动圈表升级为 9 列,字段对齐自动切圈 P0-1 输出
 #   圈号 + 圈距离 + 圈用时 + 平均速度 + 平均心率 + 平均功率 + 最大功率 + NP + 累计爬升
-#   跑步/徒步/室内骑行/游泳等运动类型严禁变更(V10.0 §P1-1 约束)
+#   跑步圈表保持基础列,左右平衡按数据存在性在 detail 构建阶段追加。
 LAP_COLUMN_PRESETS: dict[str, list[str]] = {
     "running": ["avg_pace", "avg_hr", "cadence", "gct", "power"],
     "treadmill_running": ["avg_pace", "avg_hr", "cadence", "gct", "power"],
@@ -198,6 +200,21 @@ def resolve_lap_columns(sport_type: str) -> list[str]:
     """V9.4.5:详情页圈速表列真理源(后端计算,前端消费)。"""
     sport = (sport_type or "").lower()
     return list(LAP_COLUMN_PRESETS.get(sport, []))
+
+
+def resolve_detail_lap_columns(sport_type: str, laps: list[dict[str, Any]] | None = None) -> list[str]:
+    """Return visible detail lap columns; optional columns only appear when data exists."""
+    columns = resolve_lap_columns(sport_type)
+    sport = (sport_type or "").lower()
+    if sport in ("running", "treadmill_running"):
+        has_balance = any(
+            isinstance(lap, dict) and lap.get("stance_time_balance_pct") is not None
+            for lap in (laps or [])
+        )
+        if has_balance and "stance_balance" not in columns:
+            insert_at = columns.index("gct") + 1 if "gct" in columns else len(columns)
+            columns.insert(insert_at, "stance_balance")
+    return columns
 
 
 WATER_METRIC_DISPLAY_TYPES = {
@@ -274,6 +291,18 @@ def html_file() -> Path:
 
 def app_icon_file() -> Path:
     return app_base_dir() / APP_ICON_FILENAME
+
+
+def help_markdown_file() -> Path:
+    return app_base_dir() / "docs" / "脉图帮助说明.md"
+
+
+def load_help_markdown() -> str:
+    path = help_markdown_file()
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise FileNotFoundError(f"未找到帮助说明文档: {path}") from exc
 
 
 def set_runtime_app_icon() -> None:
@@ -4067,6 +4096,10 @@ def ensure_activity_sync_schema() -> None:
                    OR region_display IS NULL OR region_display = ''
                 """
             )
+            try:
+                profile_backend.backfill_auto_activity_titles(conn)
+            except Exception as exc:
+                logger.warning("自动活动标题回填失败，已跳过: %s", exc)
 
             dup_rows = conn.execute(
                 """
@@ -6968,6 +7001,100 @@ def _persist_sync_activity(
     return profile_backend.run_with_db_retry(_write)
 
 
+def _fit_file_size_kb(target: Path) -> float:
+    try:
+        return target.stat().st_size / 1024
+    except OSError:
+        return 0.0
+
+
+def _fit_health_skip_result(
+    target: Path,
+    *,
+    filter_reasons: list[str],
+    file_size_kb: float,
+    total_distance_m: float | None = None,
+    record_count: int | None = None,
+) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "ok": True,
+        "op": "skipped",
+        "reason": "filtered_as_health_data",
+        "filter_reasons": filter_reasons,
+        "file_size_kb": round(file_size_kb, 2),
+        "file_path": str(target),
+        "filename": target.name,
+        "activity_id": 0,
+    }
+    if total_distance_m is not None:
+        result["total_distance_m"] = round(total_distance_m, 1)
+    if record_count is not None:
+        result["record_count"] = record_count
+    return result
+
+
+def _filter_fit_file_before_parse(target: Path) -> dict[str, Any] | None:
+    """Fast health-data filter for tiny FIT files before expensive parsing."""
+    file_size_kb = _fit_file_size_kb(target)
+    if file_size_kb < MIN_FIT_FILE_SIZE_KB:
+        logger.info(
+            "[V10.1 filter] skip %s: file_size_kb=%.2f < %.2f (疑似健康监测数据)",
+            target.name, file_size_kb, MIN_FIT_FILE_SIZE_KB,
+        )
+        return _fit_health_skip_result(
+            target,
+            filter_reasons=["file_too_small"],
+            file_size_kb=file_size_kb,
+        )
+    return None
+
+
+def _fit_activity_record_count(activity: dict[str, Any]) -> int:
+    for key in ("points", "points_json", "track_json"):
+        raw = activity.get(key)
+        if not raw:
+            continue
+        try:
+            obj = json.loads(raw) if isinstance(raw, str) else raw
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+        if isinstance(obj, list):
+            return len(obj)
+    return 0
+
+
+def _filter_fit_activity_after_parse(activity: dict[str, Any], target: Path, file_size_kb: float | None = None) -> dict[str, Any] | None:
+    """Filter parsed FIT payloads that are health snapshots rather than workouts."""
+    filter_reasons: list[str] = []
+    try:
+        dist_km_val = _safe_float(activity.get("dist_km"))
+    except Exception:
+        dist_km_val = 0.0
+    total_distance_m = (dist_km_val or 0.0) * 1000.0
+    if total_distance_m < MIN_FIT_DISTANCE_M:
+        filter_reasons.append("distance_too_short")
+
+    record_count = _fit_activity_record_count(activity)
+    if record_count < MIN_FIT_RECORD_COUNT:
+        filter_reasons.append("record_count_too_low")
+
+    if not filter_reasons:
+        return None
+    if file_size_kb is None:
+        file_size_kb = _fit_file_size_kb(target)
+    logger.info(
+        "[V10.1 filter] skip %s: reasons=%s, file_size_kb=%.2f, total_distance_m=%.1f, record_count=%d",
+        target.name, filter_reasons, file_size_kb, total_distance_m, record_count,
+    )
+    return _fit_health_skip_result(
+        target,
+        filter_reasons=filter_reasons,
+        file_size_kb=file_size_kb,
+        total_distance_m=total_distance_m,
+        record_count=record_count,
+    )
+
+
 def _sync_single_fit_file(file_path: str | Path) -> dict[str, Any]:
     ensure_activity_sync_schema()
     target = Path(file_path).expanduser().resolve()
@@ -6978,59 +7105,16 @@ def _sync_single_fit_file(file_path: str | Path) -> dict[str, Any]:
 
     # V10.1 健康数据过滤(契约 §2.2 fit_sdk 严格语义)
     # 在解析前先做文件大小检查,避免对明显是健康监测的小文件做无谓解析
-    try:
-        file_size_kb = target.stat().st_size / 1024
-    except OSError:
-        file_size_kb = 0.0
-    if file_size_kb < MIN_FIT_FILE_SIZE_KB:
-        logger.info(
-            "[V10.1 filter] skip %s: file_size_kb=%.2f < %.2f (疑似健康监测数据)",
-            target.name, file_size_kb, MIN_FIT_FILE_SIZE_KB,
-        )
-        return {
-            "ok": True,
-            "op": "skipped",
-            "reason": "filtered_as_health_data",
-            "filter_reasons": ["file_too_small"],
-            "file_size_kb": round(file_size_kb, 2),
-            "file_path": str(target),
-            "filename": target.name,
-            "activity_id": 0,
-        }
+    pre_filter = _filter_fit_file_before_parse(target)
+    if pre_filter:
+        return pre_filter
 
     activity = _parse_fit_activity_for_sync(target)
 
     # V10.1 解析后过滤:距离和记录数(契约 §2.1 全链路可追溯:过滤逻辑在后端边界层)
-    filter_reasons: list[str] = []
-    try:
-        dist_km_val = _safe_float(activity.get("dist_km"))
-    except Exception:
-        dist_km_val = 0.0
-    total_distance_m = (dist_km_val or 0.0) * 1000.0
-    if total_distance_m < MIN_FIT_DISTANCE_M:
-        filter_reasons.append("distance_too_short")
-
-    record_count = len(activity.get("points") or [])
-    if record_count < MIN_FIT_RECORD_COUNT:
-        filter_reasons.append("record_count_too_low")
-
-    if filter_reasons:
-        logger.info(
-            "[V10.1 filter] skip %s: reasons=%s, file_size_kb=%.2f, total_distance_m=%.1f, record_count=%d",
-            target.name, filter_reasons, file_size_kb, total_distance_m, record_count,
-        )
-        return {
-            "ok": True,
-            "op": "skipped",
-            "reason": "filtered_as_health_data",
-            "filter_reasons": filter_reasons,
-            "file_size_kb": round(file_size_kb, 2),
-            "total_distance_m": round(total_distance_m, 1),
-            "record_count": record_count,
-            "file_path": str(target),
-            "filename": target.name,
-            "activity_id": 0,
-        }
+    post_filter = _filter_fit_activity_after_parse(activity, target)
+    if post_filter:
+        return post_filter
 
     write_res = _persist_sync_activity(activity)
     activity_id = int(write_res.get("id") or 0)
@@ -8101,6 +8185,15 @@ class Api:
             "version": APP_VERSION,
         })
 
+    def get_help_markdown(self) -> dict:
+        try:
+            return _api_success({
+                "markdown": load_help_markdown(),
+                "source": "docs/脉图帮助说明.md",
+            })
+        except FileNotFoundError as exc:
+            return _api_error(API_CODE_NOT_FOUND, str(exc))
+
     def set_ai_notified(self, value: bool) -> dict:
         """独立写入 ai_notified 标志，不触发网络测试。"""
         try:
@@ -8115,6 +8208,14 @@ class Api:
                 local_dir=current.get("local_dir", ""),
                 ai_notified=bool(value),
                 ai_notified_hash=str(current.get("ai_notified_hash", "")),
+                transport=current.get("transport", "http"),
+                cli_type=current.get("cli_type", ""),
+                cli_path=current.get("cli_path", ""),
+                cli_args=current.get("cli_args", ""),
+                cli_model=current.get("cli_model", ""),
+                cli_timeout_sec=current.get("cli_timeout_sec", 300),
+                garmin_region=current.get("garmin_region", ""),
+                coros_region=current.get("coros_region", ""),
             )
             return _api_success({"ai_notified": bool(value)})
         except Exception:
@@ -8135,11 +8236,187 @@ class Api:
                 local_dir=current.get("local_dir", ""),
                 ai_notified=bool(current.get("ai_notified", False)),
                 ai_notified_hash=str(current.get("ai_notified_hash", "")),
+                transport=current.get("transport", "http"),
+                cli_type=current.get("cli_type", ""),
+                cli_path=current.get("cli_path", ""),
+                cli_args=current.get("cli_args", ""),
+                cli_model=current.get("cli_model", ""),
+                cli_timeout_sec=current.get("cli_timeout_sec", 300),
+                garmin_region=current.get("garmin_region", ""),
+                coros_region=current.get("coros_region", ""),
             )
             return _api_success({"watch_brand": str(value or "")})
         except Exception:
             logger.exception("set_watch_brand failed")
             return _api_error(API_CODE_INTERNAL, "写入 watch_brand 失败")
+
+    def set_garmin_region(self, value: str = "") -> dict:
+        """Persist Garmin account region without testing LLM connectivity."""
+        try:
+            region = garmin_sync.resolve_garmin_region(value)
+            current = llm_backend.load_llm_config()
+            llm_backend.save_llm_config(
+                provider=current.get("provider", ""),
+                url=current.get("url", ""),
+                model=current.get("model", ""),
+                api_key=current.get("api_key", ""),
+                agent_id=current.get("agent_id", ""),
+                watch_brand=current.get("watch_brand", ""),
+                local_dir=current.get("local_dir", ""),
+                ai_notified=bool(current.get("ai_notified", False)),
+                ai_notified_hash=str(current.get("ai_notified_hash", "")),
+                transport=current.get("transport", "http"),
+                cli_type=current.get("cli_type", ""),
+                cli_path=current.get("cli_path", ""),
+                cli_args=current.get("cli_args", ""),
+                cli_model=current.get("cli_model", ""),
+                cli_timeout_sec=current.get("cli_timeout_sec", 300),
+                garmin_region=region,
+                coros_region=current.get("coros_region", ""),
+            )
+            return _api_success({"garmin_region": region})
+        except garmin_sync.GarminSyncError as exc:
+            return _api_error(API_CODE_VALIDATION, str(exc), {"garmin_region": str(value or "")})
+        except Exception:
+            logger.exception("set_garmin_region failed")
+            return _api_error(API_CODE_INTERNAL, "写入 Garmin 区域失败")
+
+    def set_coros_region(self, value: str = "") -> dict:
+        """Persist COROS account region without testing LLM connectivity."""
+        try:
+            region = coros_sync.resolve_coros_region(value)
+            current = llm_backend.load_llm_config()
+            llm_backend.save_llm_config(
+                provider=current.get("provider", ""),
+                url=current.get("url", ""),
+                model=current.get("model", ""),
+                api_key=current.get("api_key", ""),
+                agent_id=current.get("agent_id", ""),
+                watch_brand=current.get("watch_brand", ""),
+                local_dir=current.get("local_dir", ""),
+                ai_notified=bool(current.get("ai_notified", False)),
+                ai_notified_hash=str(current.get("ai_notified_hash", "")),
+                transport=current.get("transport", "http"),
+                cli_type=current.get("cli_type", ""),
+                cli_path=current.get("cli_path", ""),
+                cli_args=current.get("cli_args", ""),
+                cli_model=current.get("cli_model", ""),
+                cli_timeout_sec=current.get("cli_timeout_sec", 300),
+                garmin_region=current.get("garmin_region", ""),
+                coros_region=region,
+            )
+            return _api_success({"coros_region": region})
+        except coros_sync.CorosSyncError as exc:
+            return _api_error(API_CODE_VALIDATION, str(exc), {"coros_region": str(value or "")})
+        except Exception:
+            logger.exception("set_coros_region failed")
+            return _api_error(API_CODE_INTERNAL, "写入 COROS 区域失败")
+
+    @staticmethod
+    def _garmin_region_from_config(region: str = "") -> str:
+        explicit = str(region or "").strip()
+        if explicit:
+            return explicit
+        cfg = llm_backend.load_llm_config()
+        return str(cfg.get("garmin_region") or "").strip()
+
+    def check_garmin_auth_status(self, region: str = "") -> dict:
+        """Check local Garmin token presence without contacting Garmin."""
+        try:
+            resolved_region = self._garmin_region_from_config(region)
+            status = garmin_sync.check_auth_status(region=resolved_region or None)
+            payload = {
+                "region": status.region,
+                "status": status.status,
+                "token_path": status.token_path,
+                "message": status.message,
+                "login_command": status.login_command,
+                "authorized": bool(status.ok),
+            }
+            if status.ok:
+                return _api_success(payload, msg=status.message)
+            return _api_error(API_CODE_EXTERNAL_SERVICE, status.message, payload)
+        except Exception:
+            logger.exception("check_garmin_auth_status failed")
+            return _api_error(API_CODE_INTERNAL, "Garmin 授权状态检查失败")
+
+    def start_garmin_login(self, region: str = "") -> dict:
+        """Start the bundled Garmin login script; intended for explicit user action."""
+        try:
+            resolved_region = self._garmin_region_from_config(region)
+            result = garmin_sync.start_login(region=resolved_region or None)
+            payload = {
+                "region": result.region,
+                "status": result.status,
+                "message": result.message,
+                "command": result.command,
+                "stdout": result.stdout,
+                "stderr": result.stderr,
+            }
+            if result.ok:
+                return _api_success(payload, msg=result.message)
+            return _api_error(API_CODE_EXTERNAL_SERVICE, result.message, payload)
+        except Exception:
+            logger.exception("start_garmin_login failed")
+            return _api_error(API_CODE_INTERNAL, "Garmin 登录授权启动失败")
+
+    @staticmethod
+    def _coros_region_from_config(region: str = "") -> str:
+        explicit = str(region or "").strip()
+        if explicit:
+            return explicit
+        cfg = llm_backend.load_llm_config()
+        return str(cfg.get("coros_region") or "").strip()
+
+    def check_coros_auth_status(self, region: str = "") -> dict:
+        """Check local COROS MCP token presence without reading token contents."""
+        try:
+            resolved_region = self._coros_region_from_config(region)
+            status = coros_sync.check_auth_status(region=resolved_region or None)
+            payload = {
+                "region": status.region,
+                "status": status.status,
+                "token_path": status.token_path,
+                "message": status.message,
+                "login_command": status.login_command,
+                "authorized": bool(status.ok),
+                "mcp_authorized": bool(status.mcp_authorized),
+                "node_available": bool(status.node_available),
+                "skill_available": bool(status.skill_available),
+                "node_path": status.node_path,
+                "openclaw_node_binary": status.openclaw_node_binary,
+                "openclaw_mjs": status.openclaw_mjs,
+                "keepalive_region": status.keepalive_region,
+                "keepalive_mcp_url": status.keepalive_mcp_url,
+                "keepalive_token_path": status.keepalive_token_path,
+                "diagnostics": status.diagnostics or [],
+            }
+            if status.ok:
+                return _api_success(payload, msg=status.message)
+            return _api_error(API_CODE_EXTERNAL_SERVICE, status.message, payload)
+        except Exception:
+            logger.exception("check_coros_auth_status failed")
+            return _api_error(API_CODE_INTERNAL, "COROS 授权状态检查失败")
+
+    def start_coros_login(self, region: str = "") -> dict:
+        """Start the bundled COROS MCP login script; intended for explicit user action."""
+        try:
+            resolved_region = self._coros_region_from_config(region)
+            result = coros_sync.start_login(region=resolved_region or None)
+            payload = {
+                "region": result.region,
+                "status": result.status,
+                "message": result.message,
+                "command": result.command,
+                "stdout": result.stdout,
+                "stderr": result.stderr,
+            }
+            if result.ok:
+                return _api_success(payload, msg=result.message)
+            return _api_error(API_CODE_EXTERNAL_SERVICE, result.message, payload)
+        except Exception:
+            logger.exception("start_coros_login failed")
+            return _api_error(API_CODE_INTERNAL, "COROS 授权启动失败")
 
     def set_ai_notified_hash(self, value: str) -> dict:
         """持久化通知时的目录哈希，用于重启后路径变更检测。"""
@@ -8155,6 +8432,14 @@ class Api:
                 local_dir=current.get("local_dir", ""),
                 ai_notified=bool(current.get("ai_notified", False)),
                 ai_notified_hash=str(value or ""),
+                transport=current.get("transport", "http"),
+                cli_type=current.get("cli_type", ""),
+                cli_path=current.get("cli_path", ""),
+                cli_args=current.get("cli_args", ""),
+                cli_model=current.get("cli_model", ""),
+                cli_timeout_sec=current.get("cli_timeout_sec", 300),
+                garmin_region=current.get("garmin_region", ""),
+                coros_region=current.get("coros_region", ""),
             )
             return _api_success({"ai_notified_hash": str(value or "")})
         except Exception:
@@ -8180,7 +8465,24 @@ class Api:
             logger.exception("ping_llm_gateway failed")
             return _api_error(API_CODE_INTERNAL, "网关探测异常")
 
-    def save_llm_config(self, provider: str, url: str, model: str, api_key: str, agent_id: str = "", watch_brand: str = "", local_dir: str = "") -> dict:
+    def save_llm_config(
+        self,
+        provider: str,
+        url: str,
+        model: str,
+        api_key: str,
+        agent_id: str = "",
+        watch_brand: str = "",
+        local_dir: str = "",
+        transport: str = "http",
+        cli_type: str = "",
+        cli_path: str = "",
+        cli_args: str = "",
+        cli_model: str = "",
+        cli_timeout_sec: int = 300,
+        garmin_region: str = "",
+        coros_region: str = "",
+    ) -> dict:
         """【防御加锁】拒绝外部越权直调。核心持久化已全面收拢至 test_llm_config 网关中。"""
         print("[API 警告] 外部代码尝试越权直接保存配置，已被安全网关拦截并重定向。")
         return _api_error(API_CODE_AUTH_REQUIRED, "Deprecated: 前端保存已被废弃，请直接使用唯一验证测试通道 test_llm_config")
@@ -8221,31 +8523,72 @@ class Api:
             logger.exception("save_config failed")
             return _api_error(API_CODE_FILE_IO, "保存配置失败")
 
-    def test_llm_config(self, provider: str, url: str, model: str, api_key: str, agent_id: str = "", watch_brand: str = "") -> dict:
-        """【测试即保存网关-稳定性加固版】严格实行先测试、后持久化策略，保障状态机最终一致性。"""
+    def test_llm_config(
+        self,
+        provider: str,
+        url: str,
+        model: str,
+        api_key: str,
+        agent_id: str = "",
+        watch_brand: str = "",
+        transport: str = "http",
+        cli_type: str = "",
+        cli_path: str = "",
+        cli_args: str = "",
+        cli_model: str = "",
+        cli_timeout_sec: int = 300,
+        garmin_region: str = "",
+        coros_region: str = "",
+    ) -> dict:
+        """【测试即保存配置-稳定性加固版】严格实行先测试、后持久化策略，保障状态机最终一致性。"""
         try:
-            # CONTRACT §2.1 / §7.2: 显式校验必填参数 url / model，禁止静默用 DEFAULT_URL 走 localhost。
-            url_stripped = (url or "").strip()
-            model_stripped = (model or "").strip()
-            if not url_stripped or not model_stripped:
-                return _api_error(API_CODE_VALIDATION, "请先填写 API 接口地址和模型名，再点击测试连接")
-
-            # 当 api_key 为空时，复用已存储的密钥（前端不会持有明文 key，这是安全设计）
-            effective_key = api_key
-            if not effective_key:
-                stored = llm_backend.load_llm_config()
-                effective_key = (stored.get("api_key") or "").strip()
-            # 1. 先发起真实的接口网络活性探测（防污染核心）
-            text = llm_backend.test_llm_connection(
-                provider=provider,
-                url=url,
-                model=model,
-                api_key=effective_key,
-                agent_id=agent_id,
-            )
-
-            # 2. 只有网络探测 100% 成功通车，才执行无感持久化落盘，硬锁隐藏轨迹工作区
+            transport_mode = llm_backend._normalize_transport(transport)
             current = llm_backend.load_llm_config()
+            effective_key = api_key or (current.get("api_key") or "").strip()
+
+            if transport_mode == "cli":
+                cli_type_clean = llm_backend._normalize_cli_type(cli_type)
+                if not cli_type_clean:
+                    return _api_error(API_CODE_VALIDATION, "请选择 CLI 类型后再测试连接")
+                if cli_type_clean == "custom" and not str(cli_path or "").strip():
+                    return _api_error(API_CODE_VALIDATION, "请先填写自定义 CLI 路径")
+                text = llm_backend.generate_text(
+                    config={
+                        "transport": "cli",
+                        "provider": provider,
+                        "model": model,
+                        "agent_id": agent_id,
+                        "cli_type": cli_type_clean,
+                        "cli_path": cli_path,
+                        "cli_args": cli_args,
+                        "cli_model": cli_model,
+                        "cli_timeout_sec": cli_timeout_sec,
+                    },
+                    messages=[
+                        {"role": "system", "content": "你只需要用中文回复：连接成功。"},
+                        {"role": "user", "content": "请回复连接成功"},
+                    ],
+                    session_id=f"llm_config_test_{int(time.time() * 1000)}",
+                    timeout=30,
+                )
+            else:
+                # CONTRACT §2.1 / §7.2: 显式校验必填参数 url / model，禁止静默用 DEFAULT_URL 走 localhost。
+                url_stripped = (url or "").strip()
+                model_stripped = (model or "").strip()
+                if not url_stripped or not model_stripped:
+                    return _api_error(API_CODE_VALIDATION, "请先填写 API 接口地址和模型名，再点击测试连接")
+
+                # 当 api_key 为空时，复用已存储的密钥（前端不会持有明文 key，这是安全设计）
+                # 1. 先发起真实的接口网络活性探测（防污染核心）
+                text = llm_backend.test_llm_connection(
+                    provider=provider,
+                    url=url,
+                    model=model,
+                    api_key=effective_key,
+                    agent_id=agent_id,
+                )
+
+            # 2. 只有连接探测 100% 成功通车，才执行无感持久化落盘，硬锁隐藏轨迹工作区
             llm_backend.save_llm_config(
                 provider=provider,
                 url=url,
@@ -8256,6 +8599,14 @@ class Api:
                 local_dir=TRACKS_DIR,
                 ai_notified=bool(current.get("ai_notified", False)),
                 ai_notified_hash=str(current.get("ai_notified_hash", "")),
+                transport=transport_mode,
+                cli_type=cli_type,
+                cli_path=cli_path,
+                cli_args=cli_args,
+                cli_model=cli_model,
+                cli_timeout_sec=cli_timeout_sec,
+                garmin_region=garmin_region or current.get("garmin_region", ""),
+                coros_region=coros_region or current.get("coros_region", ""),
             )
             print(f"[Config 治理] 验证成功，大模型存储规范已安全固化对齐: {TRACKS_DIR}")
 
@@ -8268,7 +8619,7 @@ class Api:
 
             return _api_success({"message": text})
         except Exception as e:
-            # 连通失败：不破坏原有旧配置，但将当前网关可用状态即时标记为假（失效回滚）
+            # 连通失败：不破坏原有旧配置，但将当前大模型连接可用状态即时标记为假（失效回滚）
             try:
                 config = load_application_config()
                 config["last_gateway_ok"] = False
@@ -8276,12 +8627,126 @@ class Api:
             except Exception:
                 pass
             logger.warning("test_llm_config failed: %s", e)
+            if llm_backend._normalize_transport(transport) == "cli":
+                failure_detail = llm_backend._error_snippet(str(e))
+                detail = ""
+                if llm_backend._normalize_cli_type(cli_type) == "openclaw":
+                    try:
+                        detail = llm_backend.diagnose_openclaw_cli({
+                            "transport": "cli",
+                            "cli_type": cli_type,
+                            "cli_path": cli_path,
+                            "cli_args": cli_args,
+                            "cli_model": cli_model,
+                            "cli_timeout_sec": cli_timeout_sec,
+                            "agent_id": agent_id,
+                        })
+                    except Exception:
+                        detail = ""
+                msg = "大模型 CLI 连接测试失败"
+                if failure_detail:
+                    msg += "：" + failure_detail
+                if detail:
+                    if failure_detail:
+                        msg += "；" + detail
+                    else:
+                        msg += "：" + detail
+                return _api_error(API_CODE_EXTERNAL_SERVICE, msg)
             return _api_error(API_CODE_EXTERNAL_SERVICE, "大模型网关连通失败")
 
     @staticmethod
     def _is_garmin_watch_brand(value: Any) -> bool:
         brand = str(value or "").strip().lower()
         return brand in {"garmin", "佳明"}
+
+    def _garmin_sync_error_payload(
+        self,
+        *,
+        provider_error_code: str,
+        message: str,
+        start_date: str,
+        end_date: str,
+        download: dict[str, Any] | None = None,
+        import_result: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        action_hints = {
+            "invalid_garmin_region": "请检查 GARMIN_REGION 配置，仅支持 cn 或 global。",
+            "garmin_auth_required": "Garmin 授权不可用或已失效，请重新启动对应区域的 Garmin 授权后再同步。",
+            "garmin_skill_not_found": "未找到 Garmin skill 脚本，请确认 garmin-stats 已随应用正确安装。",
+            "garmin_script_failed": "请确认已完成 Garmin 授权、网络可用且 Garmin 服务未限流，然后重试。",
+            "garmin_json_parse_error": "Garmin 下载脚本返回格式异常，请更新 garmin-stats skill 后重试。",
+            "garmin_import_failed": "FIT 文件已下载到本地目录，但导入活动库失败，请稍后重试或使用本地导入。",
+            "unknown": "Garmin 同步出现未知异常，请稍后重试。",
+        }
+        return {
+            "provider": "garmin",
+            "provider_error_code": provider_error_code,
+            "action_hint": action_hints.get(provider_error_code, action_hints["unknown"]),
+            "message": str(message or ""),
+            "start_date": start_date,
+            "end_date": end_date,
+            "target_dir": TRACKS_DIR,
+            "download": download,
+            "import": import_result,
+        }
+
+    def _coros_sync_error_payload(
+        self,
+        *,
+        provider_error_code: str,
+        message: str,
+        start_date: str,
+        end_date: str,
+        download: dict[str, Any] | None = None,
+        import_result: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        action_hints = {
+            "invalid_coros_region": "请检查 COROS 区域配置，仅支持 cn、us 或 eu。",
+            "coros_auth_required": "COROS MCP 授权不可用或已失效，请回配置页完成 COROS 授权后再同步。",
+            "coros_skill_not_found": "未找到 COROS skill 脚本，请确认 coros-stats 已随应用正确安装。",
+            "coros_fit_download_failed": "COROS MCP FIT 下载失败，请确认网络可用、授权有效，并尝试缩小日期范围。",
+            "coros_fit_download_limit": "COROS MCP 单次最多下载 10 个 FIT 文件，请缩小日期范围后分批同步。",
+            "coros_sync_partial": "COROS FIT 部分下载或导入失败，请查看失败列表并分批重试。",
+            "coros_node_missing": "未检测到 Node.js 或 coros-mcp CLI，请先完成 COROS MCP 授权环境准备。",
+            "coros_import_failed": "FIT 文件已下载到本地目录，但导入活动库失败，请稍后重试或使用本地导入。",
+            "unknown": "COROS 同步出现未知异常，请稍后重试。",
+        }
+        return {
+            "provider": "coros",
+            "provider_error_code": provider_error_code,
+            "action_hint": action_hints.get(provider_error_code, action_hints["unknown"]),
+            "message": str(message or ""),
+            "start_date": start_date,
+            "end_date": end_date,
+            "target_dir": TRACKS_DIR,
+            "download": download,
+            "import": import_result,
+        }
+
+    @staticmethod
+    def _llm_config_ready_error(cfg: dict) -> str | None:
+        transport = llm_backend._normalize_transport((cfg or {}).get("transport"))
+        if transport == "cli":
+            cli_type = llm_backend._normalize_cli_type((cfg or {}).get("cli_type"))
+            if not cli_type:
+                return "CLI 类型未配置，请在系统配置页填写后重试"
+            if cli_type == "custom" and not str((cfg or {}).get("cli_path") or "").strip():
+                return "自定义 CLI 路径未配置，请在系统配置页填写后重试"
+            return None
+        if not str((cfg or {}).get("url") or "").strip():
+            return "API 接口地址未配置，请在系统配置页填写后重试"
+        if not str((cfg or {}).get("model") or "").strip():
+            return "模型名未配置，请在系统配置页填写后重试"
+        return None
+
+    @staticmethod
+    def _generate_llm_text(cfg: dict, messages: list[dict[str, str]], session_id: str, timeout: int = 300) -> str:
+        return llm_backend.generate_text(
+            config=cfg,
+            messages=messages,
+            session_id=session_id,
+            timeout=timeout,
+        )
 
     def call_llm(self, prompt: str, sport_type: str = "hiking") -> dict:
         """对话或路书。AI 数据边界:
@@ -8315,15 +8780,10 @@ class Api:
                     return _fr_empty("当前活动数据不足,无法生成洞察", fr_snapshot.get("sport_type"))
 
                 cfg = llm_backend.load_llm_config()
-                url = (cfg.get("url") or "").strip()
-                model = (cfg.get("model") or "").strip()
-                if not url:
-                    return _fr_empty("API 接口地址未配置，请在系统配置页填写后重试")
-                if not model:
-                    return _fr_empty("模型名未配置，请在系统配置页填写后重试")
+                cfg_error = self._llm_config_ready_error(cfg)
+                if cfg_error:
+                    return _fr_empty(cfg_error)
 
-                api_key = str(cfg.get("api_key") or "")
-                agent_id = str(cfg.get("agent_id") or "")
                 sid = self._session_id
                 authoritative_sport_type = str(fr_snapshot.get("sport_type") or sport_type or "running")
                 sport_cn = {
@@ -8333,13 +8793,10 @@ class Api:
                     "swimming": "游泳", "lap_swimming": "泳池游泳", "open_water": "公开水域游泳",
                 }.get(authoritative_sport_type, authoritative_sport_type or "该运动")
                 messages = llm_backend.build_fatigue_review_messages(fr_snapshot, authoritative_sport_type, sport_cn)
-                text = llm_backend.chat_completions(
-                    url=url,
-                    api_key=api_key,
-                    model=model,
+                text = self._generate_llm_text(
+                    cfg,
                     messages=messages,
                     session_id=sid,
-                    agent_id=agent_id,
                 )
                 return _api_success({
                     "fatigue_review_insight": llm_backend.normalize_fatigue_review_json(text),
@@ -8366,25 +8823,17 @@ class Api:
                 return _activity_advice_empty("请先加载活动轨迹")
 
             cfg = llm_backend.load_llm_config()
-            url = (cfg.get("url") or "").strip()
-            model = (cfg.get("model") or "").strip()
-            if not url:
-                return _activity_advice_empty("API 接口地址未配置，请在系统配置页填写后重试")
-            if not model:
-                return _activity_advice_empty("模型名未配置，请在系统配置页填写后重试")
+            cfg_error = self._llm_config_ready_error(cfg)
+            if cfg_error:
+                return _activity_advice_empty(cfg_error)
 
-            api_key = str(cfg.get("api_key") or "")
-            agent_id = str(cfg.get("agent_id") or "")
             sid = self._session_id
             messages = _build_activity_advice_messages(snapshot, planning_context)
             try:
-                text = llm_backend.chat_completions(
-                    url=url,
-                    api_key=api_key,
-                    model=model,
+                text = self._generate_llm_text(
+                    cfg,
                     messages=messages,
                     session_id=sid,
-                    agent_id=agent_id,
                 )
             except Exception as exc:
                 return _activity_advice_empty(f"LLM 调用失败: {exc}")
@@ -8394,16 +8843,10 @@ class Api:
             }
 
         cfg = llm_backend.load_llm_config()
-        url = (cfg.get("url") or "").strip()
-        # CONTRACT §2.1 / §7.2: 未配置时禁止静默 fallback 到 localhost，必须立刻阻塞。
-        if not url:
-            return {"ok": False, "error": "API 接口地址未配置，请在系统配置页填写后重试"}
-        model = (cfg.get("model") or "").strip()
-        if not model:
-            return {"ok": False, "error": "模型名未配置，请在系统配置页填写后重试"}
+        cfg_error = self._llm_config_ready_error(cfg)
+        if cfg_error:
+            return {"ok": False, "error": cfg_error}
         provider = str(cfg.get("provider") or "local_mcp")
-        api_key = str(cfg.get("api_key") or "")
-        agent_id = str(cfg.get("agent_id") or "")
         sid = self._session_id
 
         # AI 数据边界（契约总纲 §2.4）：
@@ -8431,13 +8874,10 @@ class Api:
                         "radar_insight": llm_backend.empty_radar_insight("当前运动类型暂无 90 天数据"),
                     }
                 messages = _build_radar_insight_messages(snapshot, sport_type)
-                text = llm_backend.chat_completions(
-                    url=url,
-                    api_key=api_key,
-                    model=model,
+                text = self._generate_llm_text(
+                    cfg,
                     messages=messages,
                     session_id=sid,
-                    agent_id=agent_id,
                 )
                 return {
                     "ok": True,
@@ -8460,16 +8900,13 @@ class Api:
                     "以后每次下载FIT文件都严格按照这个路径存放，不要擅自改变路径或跳过解压步骤。\n"
                     "确认后，仅回复OK"
                 )
-                text = llm_backend.chat_completions(
-                    url=url,
-                    api_key=api_key,
-                    model=model,
+                text = self._generate_llm_text(
+                    cfg,
                     messages=[
                         {"role": "system", "content": storage_rule},
                         {"role": "user", "content": "确认收到以上指令，仅回复OK。"},
                     ],
                     session_id=sid,
-                    agent_id=agent_id,
                 )
                 return {"ok": True, "content": text}
 
@@ -8488,13 +8925,10 @@ class Api:
                 self._chat_messages = [{"role": "system", "content": sys_c}]
             self._chat_messages.append({"role": "user", "content": user_text})
             try:
-                text = llm_backend.chat_completions(
-                    url=url,
-                    api_key=api_key,
-                    model=model,
+                text = self._generate_llm_text(
+                    cfg,
                     messages=list(self._chat_messages),
                     session_id=sid,
-                    agent_id=agent_id,
                 )
             except Exception:
                 if self._chat_messages and self._chat_messages[-1].get("role") == "user":
@@ -8507,7 +8941,7 @@ class Api:
             return {"ok": False, "error": str(e)}
 
     def sync_remote_fit_activities(self, start_date: str = "", end_date: str = "") -> dict:
-        """Request OpenClaw to download FIT files for a specific date range."""
+        """Download provider FIT files for a date range, then import local FIT data."""
         start_raw = str(start_date or "").strip()
         end_raw = str(end_date or "").strip()
         try:
@@ -8519,70 +8953,169 @@ class Api:
             return _api_error(API_CODE_VALIDATION, "开始日期不能晚于结束日期")
 
         cfg = llm_backend.load_llm_config()
-        if not self._is_garmin_watch_brand(cfg.get("watch_brand")):
+        brand = str(cfg.get("watch_brand") or "").strip().lower()
+        if brand not in {"garmin", "coros"}:
             return _api_error(
                 API_CODE_VALIDATION,
-                "当前手表品牌暂不支持按时间同步活动，请在配置页面选择佳明后重试，或使用导入本地 FIT 文件。",
+                "当前手表品牌暂不支持按时间同步活动，请在配置页面选择佳明或高驰后重试，或使用导入本地 FIT 文件。",
             )
-        url = str(cfg.get("url") or "").strip()
-        if not url:
-            return _api_error(API_CODE_VALIDATION, "API 接口地址为空，请在设置中配置")
 
-        provider = str(cfg.get("provider") or "local_mcp")
-        model = (cfg.get("model") or "").strip()
-        if not model:
-            return _api_error(API_CODE_VALIDATION, "模型名未配置，请在系统配置页填写后重试")
-        api_key = str(cfg.get("api_key") or "")
-        agent_id = str(cfg.get("agent_id") or "")
-        session_id = "fit_remote_sync_" + uuid.uuid4().hex[:16]
-        prompt = (
-            "请调用已经封装好的 Garmin / 活动下载 skill，同步指定时间范围内的活动 FIT 文件。\n\n"
-            f"时间范围：{start_day.isoformat()} 至 {end_day.isoformat()}（包含首尾日期）。\n"
-            f"FIT 文件保存目录：{TRACKS_DIR}\n\n"
-            "要求：\n"
-            "1. 只下载上述时间范围内的活动 FIT 文件。\n"
-            "2. 下载后的 ZIP 如需解压，请完成解压并把 FIT 文件放入上述目录。\n"
-            "3. 如目录不存在，请创建目录。\n"
-            "4. 已存在的同名或同活动 FIT 文件请跳过或安全去重，不要覆盖未知文件。\n"
-            "5. 完成后用中文简要回复下载结果，包含成功数量、跳过数量和错误信息。"
-        )
+        def _download_has_import_candidates(summary: dict[str, Any]) -> bool:
+            return int(summary.get("downloaded") or 0) > 0 or int(summary.get("skipped") or 0) > 0
+
+        def _remote_import_skipped_result(provider_label: str) -> dict[str, Any]:
+            return {
+                "ok": True,
+                "source_dir": str(TRACKS_DIR),
+                "scanned": 0,
+                "inserted": 0,
+                "updated": 0,
+                "skipped": 0,
+                "removed": 0,
+                "errors": [],
+                "elapsed_sec": 0,
+                "remote_import_skipped": True,
+                "message": f"{provider_label} 未返回可下载的 FIT 文件，已跳过本地全目录扫描。",
+            }
+
+        if brand == "coros":
+            try:
+                download_summary = coros_sync.download_fit_json(
+                    start_date=start_day.isoformat(),
+                    end_date=end_day.isoformat(),
+                    output_dir=TRACKS_DIR,
+                    region=cfg.get("coros_region") or None,
+                    limit=10,
+                )
+                logger.info(
+                    "COROS remote FIT sync completed range=%s..%s dir=%s downloaded=%s skipped=%s failed=%s",
+                    start_day.isoformat(),
+                    end_day.isoformat(),
+                    TRACKS_DIR,
+                    download_summary.get("downloaded"),
+                    download_summary.get("skipped"),
+                    download_summary.get("failed"),
+                )
+                if not download_summary.get("ok", True) and int(download_summary.get("searched") or 0) > 0:
+                    payload = self._coros_sync_error_payload(
+                        provider_error_code="coros_fit_download_failed",
+                        message="COROS 已找到活动记录，但 FIT 文件下载失败。",
+                        start_date=start_day.isoformat(),
+                        end_date=end_day.isoformat(),
+                        download=download_summary,
+                    )
+                    return _api_error(API_CODE_EXTERNAL_SERVICE, payload["message"], payload)
+                if not _download_has_import_candidates(download_summary):
+                    import_result = _remote_import_skipped_result("COROS")
+                    return _api_success({
+                        "download": download_summary,
+                        "import": import_result,
+                        "start_date": start_day.isoformat(),
+                        "end_date": end_day.isoformat(),
+                        "target_dir": TRACKS_DIR,
+                    })
+                import_result = self.sync_local_fit_files()
+                if not (isinstance(import_result, dict) and import_result.get("ok")):
+                    msg = str((import_result or {}).get("error") or (import_result or {}).get("msg") or "COROS FIT 已下载，但本地导入失败")
+                    payload = self._coros_sync_error_payload(
+                        provider_error_code="coros_import_failed",
+                        message=msg,
+                        start_date=start_day.isoformat(),
+                        end_date=end_day.isoformat(),
+                        download=download_summary,
+                        import_result=import_result if isinstance(import_result, dict) else {"ok": False, "error": msg},
+                    )
+                    logger.warning("COROS remote FIT sync import failed: %s", msg)
+                    return _api_error(API_CODE_EXTERNAL_SERVICE, "COROS FIT 已下载，但本地导入失败", payload)
+                return _api_success({
+                    "download": download_summary,
+                    "import": import_result,
+                    "start_date": start_day.isoformat(),
+                    "end_date": end_day.isoformat(),
+                    "target_dir": TRACKS_DIR,
+                })
+            except coros_sync.CorosSyncError as e:
+                payload = self._coros_sync_error_payload(
+                    provider_error_code=getattr(e, "code", "coros_sync_error") or "coros_sync_error",
+                    message=str(e),
+                    start_date=start_day.isoformat(),
+                    end_date=end_day.isoformat(),
+                )
+                logger.warning("sync_remote_fit_activities COROS provider failed: %s", e)
+                return _api_error(API_CODE_EXTERNAL_SERVICE, str(e), payload)
+            except Exception as e:
+                logger.warning("sync_remote_fit_activities COROS failed: %s", e)
+                payload = self._coros_sync_error_payload(
+                    provider_error_code="unknown",
+                    message=str(e),
+                    start_date=start_day.isoformat(),
+                    end_date=end_day.isoformat(),
+                )
+                return _api_error(API_CODE_EXTERNAL_SERVICE, str(e), payload)
+
         try:
-            text = llm_backend.chat_completions(
-                url=url,
-                api_key=api_key,
-                model=model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "你是本地运动数据同步助手。你可以调用 OpenClaw 已封装的技能下载活动 FIT 文件。"
-                            "必须严格遵守用户提供的日期范围和保存目录。"
-                        ),
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-                session_id=session_id,
-                agent_id=agent_id,
-                timeout=300,
+            download_summary = garmin_sync.download_fit_json(
+                start_date=start_day.isoformat(),
+                end_date=end_day.isoformat(),
+                output_dir=TRACKS_DIR,
+                region=cfg.get("garmin_region") or None,
             )
             logger.info(
-                "remote FIT sync requested provider=%s model=%s range=%s..%s dir=%s",
-                provider,
-                model,
+                "Garmin remote FIT sync completed range=%s..%s dir=%s downloaded=%s skipped=%s failed=%s",
                 start_day.isoformat(),
                 end_day.isoformat(),
                 TRACKS_DIR,
+                download_summary.get("downloaded"),
+                download_summary.get("skipped"),
+                download_summary.get("failed"),
             )
+            if not _download_has_import_candidates(download_summary):
+                import_result = _remote_import_skipped_result("Garmin")
+                return _api_success({
+                    "download": download_summary,
+                    "import": import_result,
+                    "start_date": start_day.isoformat(),
+                    "end_date": end_day.isoformat(),
+                    "target_dir": TRACKS_DIR,
+                })
+            import_result = self.sync_local_fit_files()
+            if not (isinstance(import_result, dict) and import_result.get("ok")):
+                msg = str((import_result or {}).get("error") or (import_result or {}).get("msg") or "Garmin FIT 已下载，但本地导入失败")
+                payload = self._garmin_sync_error_payload(
+                    provider_error_code="garmin_import_failed",
+                    message=msg,
+                    start_date=start_day.isoformat(),
+                    end_date=end_day.isoformat(),
+                    download=download_summary,
+                    import_result=import_result if isinstance(import_result, dict) else {"ok": False, "error": msg},
+                )
+                logger.warning("Garmin remote FIT sync import failed: %s", msg)
+                return _api_error(API_CODE_EXTERNAL_SERVICE, "Garmin FIT 已下载，但本地导入失败", payload)
             return _api_success({
-                "content": text,
-                "prompt": prompt,
+                "download": download_summary,
+                "import": import_result,
                 "start_date": start_day.isoformat(),
                 "end_date": end_day.isoformat(),
                 "target_dir": TRACKS_DIR,
             })
+        except garmin_sync.GarminSyncError as e:
+            payload = self._garmin_sync_error_payload(
+                provider_error_code=getattr(e, "code", "garmin_sync_error") or "garmin_sync_error",
+                message=str(e),
+                start_date=start_day.isoformat(),
+                end_date=end_day.isoformat(),
+            )
+            logger.warning("sync_remote_fit_activities Garmin provider failed: %s", e)
+            return _api_error(API_CODE_EXTERNAL_SERVICE, str(e), payload)
         except Exception as e:
             logger.warning("sync_remote_fit_activities failed: %s", e)
-            return _api_error(API_CODE_EXTERNAL_SERVICE, str(e))
+            payload = self._garmin_sync_error_payload(
+                provider_error_code="unknown",
+                message=str(e),
+                start_date=start_day.isoformat(),
+                end_date=end_day.isoformat(),
+            )
+            return _api_error(API_CODE_EXTERNAL_SERVICE, str(e), payload)
 
     def pick_and_import_fit_files(self) -> dict:
         """Open a local file picker and start a background FIT / ZIP import job."""
@@ -8812,6 +9345,13 @@ class Api:
                 "hrr_zones": zones,
                 **profile_backend.get_profile_sync_metadata(),
                 **profile_summary,
+                "profile_sync_summary": result.get("profile_sync_summary") or profile_summary,
+            }
+        if isinstance(result, dict):
+            profile_summary = profile_backend.build_profile_status_summary(platform)
+            return {
+                **result,
+                **profile_backend.get_profile_sync_metadata(),
                 "profile_sync_summary": result.get("profile_sync_summary") or profile_summary,
             }
         return result
@@ -9185,6 +9725,7 @@ class Api:
 
             for index, fit_path in enumerate(pending_files, start=1):
                 file_name = fit_path.name
+                resolved_fit = fit_path.expanduser().resolve()
                 _emit_sync_progress(
                     progress_callback,
                     stage="parsing",
@@ -9198,7 +9739,41 @@ class Api:
                     errors=errors[-5:],
                 )
                 try:
-                    activity = _parse_fit_activity_for_sync(fit_path)
+                    pre_filter = _filter_fit_file_before_parse(resolved_fit)
+                    if pre_filter:
+                        skipped += 1
+                        _emit_sync_progress(
+                            progress_callback,
+                            stage="running",
+                            current=index,
+                            total=len(pending_files),
+                            inserted=inserted,
+                            updated=updated,
+                            skipped=skipped + pre_skipped,
+                            current_file=file_name,
+                            message=f"已过滤健康数据 FIT {index}/{len(pending_files)}: {file_name}",
+                            errors=errors[-5:],
+                        )
+                        continue
+
+                    activity = _parse_fit_activity_for_sync(resolved_fit)
+                    post_filter = _filter_fit_activity_after_parse(activity, resolved_fit)
+                    if post_filter:
+                        skipped += 1
+                        _emit_sync_progress(
+                            progress_callback,
+                            stage="running",
+                            current=index,
+                            total=len(pending_files),
+                            inserted=inserted,
+                            updated=updated,
+                            skipped=skipped + pre_skipped,
+                            current_file=file_name,
+                            message=f"已过滤健康数据 FIT {index}/{len(pending_files)}: {file_name}",
+                            errors=errors[-5:],
+                        )
+                        continue
+
                     _emit_sync_progress(
                         progress_callback,
                         stage="writing",
@@ -9217,7 +9792,6 @@ class Api:
                     elif write_res.get("op") == "skipped":
                         if write_res.get("dedupe") == "strict_key":
                             try:
-                                resolved_fit = fit_path.expanduser().resolve()
                                 if resolved_fit.exists() and resolved_fit.is_file() and _is_path_under_dir(resolved_fit, Path(TRACKS_DIR).expanduser().resolve()):
                                     resolved_fit.unlink()
                             except OSError:
@@ -11881,14 +12455,16 @@ def _build_record_from_row(api_self, row: dict, idx: int) -> dict:
         "has_power": bool(row.get("avg_power") or row.get("normalized_power")),
     }
 
+    detail_laps = _build_detail_laps(api_self, row, display_type, dist_km, duration_sec, avg_hr, base_power)
+
     detail = {
         "display_metrics": SemanticSportsEngine.build_display_metrics(display_type, raw_for_engine),
         "layout": SemanticSportsEngine.get_layout(display_type),
         "capabilities": capabilities,
         "summary": raw_for_engine,
-        "laps": _build_detail_laps(api_self, row, display_type, dist_km, duration_sec, avg_hr, base_power),
-        # V9.4.4:圈速表列真理源(后端基于 sport_type 决定,前端不再硬编码 if/else)
-        "lap_columns": resolve_lap_columns(display_type),
+        "laps": detail_laps,
+        # V9.4.4:圈速表列真理源(后端决定,前端不再硬编码 if/else)
+        "lap_columns": resolve_detail_lap_columns(display_type, detail_laps),
         "thumbnail_points": api_self._sample_thumbnail_points(points),
         # V9.4.4:Training Effect 派生(契约 §2.2 路径 record.detail.training_effect)
         # 真理源:FIT session.total_training_effect / total_anaerobic_training_effect

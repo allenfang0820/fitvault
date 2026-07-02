@@ -1,14 +1,11 @@
 ---
 name: coros-stats
-description: 高驰/COROS 用户画像与运动健康数据查询 Skill。用于在 OpenClaw/QClaw 中安装或调用 COROS MCP，连接高驰账号，查询高驰用户画像，给脉图同步用户画像，返回用户画像 JSON 数组，或通过 https://t.coros.com/admin/views/dash-board 获取 Training Hub 仪表盘数据。触发词包括「高驰数据」「COROS MCP」「同步用户画像」「更新脉图用户画像」「查询我的跑步档案」「返回所有运动指标 JSON」。
+description: 高驰/COROS 用户画像与运动健康数据查询 Skill。用于在 OpenClaw/QClaw/Codex 中安装或调用 COROS MCP，连接高驰账号，查询高驰用户画像，给脉图同步用户画像，返回用户画像 JSON 数组，并支持通过 COROS MCP 下载活动 FIT 文件。触发词包括「高驰数据」「COROS MCP」「同步用户画像」「更新脉图用户画像」「查询我的跑步档案」「返回所有运动指标 JSON」。
 ---
 
 # coros-stats
 
-这个 Skill 用来获取高驰/COROS 用户画像 JSON 数组，主要服务于脉图用户画像更新。数据只来自两条通道：
-
-1. COROS Training Hub URL/API：通过 `https://t.coros.com/admin/views/dash-board` 获取全部历史 PB、阈值面板、心率区间、训练负荷等字段，优先级最高。
-2. COROS MCP：通过官方账号授权的 MCP 服务获取身份信息、身体基础数据、体能评估和近期运动记录，只在 Training Hub 没有覆盖该字段时兜底。
+这个 Skill 用来获取高驰/COROS 用户画像 JSON 数组，主要服务于脉图用户画像更新。数据只来自 COROS MCP，不依赖网页登录态、Chrome DevTools 或网页抓取。
 
 ## 首次安装
 
@@ -45,27 +42,9 @@ bash ~/.qclaw/skills/coros-stats/scripts/install_coros_mcp.sh --region cn
 bash ~/.qclaw/skills/coros-stats/scripts/install_coros_mcp.sh --issuer https://mcpcn.coros.com
 ```
 
-安装脚本会检查 Node/npm，执行 `npm install -g coros-mcp`，启动 COROS OAuth 登录，注册 MCP 到 OpenClaw，并重启 OpenClaw 网关。
+安装脚本会检查 Node/npm，执行 `npm install -g coros-mcp`，启动 COROS OAuth 登录，注册 MCP 到 OpenClaw，并重启 OpenClaw 网关。不要询问、保存或记录用户的 COROS 密码。
 
-## 仪表盘通道准备
-
-仪表盘通道需要一个开启 DevTools 端口的 Chrome，并且已经登录 COROS Training Hub。
-
-```bash
-bash ~/.qclaw/skills/coros-stats/scripts/start_chrome.sh
-```
-
-在打开的 Chrome 中登录并保持这个页面可访问：
-
-```text
-https://t.coros.com/admin/views/dash-board
-```
-
-不要询问、保存或记录用户的 COROS 密码。让用户在浏览器里用 COROS 支持的方式自行完成登录。
-
-## 主要命令
-
-### 脉图用户画像同步
+## 脉图用户画像同步
 
 当用户说「同步用户画像」或「更新脉图用户画像」时：
 
@@ -86,29 +65,20 @@ OpenClaw/QClaw 安装路径：
 python3 ~/.qclaw/skills/coros-stats/scripts/coros_runner_profile.py sync
 ```
 
-这个 JSON 数组用于给脉图的用户画像更新程序直接消费。
-
-普通查询模式：
+项目内路径：
 
 ```bash
-python3 ~/.qclaw/skills/coros-stats/scripts/coros_runner_profile.py
-```
-
-仅返回原始 JSON 数组：
-
-```bash
-python3 ~/.qclaw/skills/coros-stats/scripts/coros_runner_profile.py sync
+python3 skills/coros-stats/scripts/coros_runner_profile.py sync
 ```
 
 ## 数据合并规则
 
-字段优先级从高到低：
+字段优先级：
 
-1. Training Hub URL/API：`t.coros.com/admin/views/dash-board` 和同一登录态下的 Training Hub 接口。
-2. COROS MCP 工具。
-3. 获取不到时返回 `null`，并用 `note` 说明原因。
+1. COROS MCP 工具。
+2. 获取不到时返回 `null`，并用 `note` 说明「当前 MCP 工具未确认返回」或「需后续真实样本/FIT 样本验证」。
 
-不要读取本地手动覆盖文件，不要用公式估算字段值。PB 字段优先使用 Training Hub URL 的“全部/all-time”个人纪录；MCP 的 `querySportRecords` 只代表近期窗口，只能在 URL 没有覆盖到该字段时作为兜底，并必须在 `note` 中说明不是 all-time。
+不要读取本地手动覆盖文件，不要用公式估算字段值。PB、最长距离、总里程如果只能从 `querySportRecords` 当前窗口推导，必须在 `note` 中说明不是 all-time。全部历史 PB 和更完整活动指标留给 COROS MCP FIT 下载链路增强。
 
 ## 输出格式
 
@@ -118,7 +88,7 @@ python3 ~/.qclaw/skills/coros-stats/scripts/coros_runner_profile.py sync
 [
   {"metric": "username", "value": "用户昵称"},
   {"metric": "age", "value": 46},
-  {"metric": "vo2_max", "value": 45, "note": "COROS MCP"}
+  {"metric": "vo2_max", "value": 45, "note": "COROS MCP queryFitnessAssessmentOverview"}
 ]
 ```
 
@@ -130,12 +100,11 @@ python3 ~/.qclaw/skills/coros-stats/scripts/coros_runner_profile.py sync
 |---|---|
 | `username`, `age`, `gender`, `height_cm`, `weight_kg` | MCP `queryUserInfo` |
 | `vo2_max`, `lactate_threshold_pace`, 比赛预测 | MCP `queryFitnessAssessmentOverview` |
-| 近期运动合计 | MCP `querySportRecords` |
-| `resting_heart_rate`, `max_heart_rate`, `lactate_threshold_hr` | 仪表盘 |
-| `1km_pb`, `5km_pb`, `10km_pb`, `longest_run_km`, `longest_cycle_km` | 仪表盘全部历史纪录 |
-| 半马/全马 PB、体成分 | 当前 Training Hub URL/API 和 MCP 未覆盖时返回 `null` |
-
-`max_heart_rate` 是高驰比原佳明兼容字段多出的增强字段。只要可获取，就应保留在脉图用户画像 JSON 中。
+| `resting_heart_rate` | MCP `queryRestingHeartRate` |
+| `hrv` | MCP `querySleepHrv` |
+| `avg_sleep_hours`, `avg_bedtime` | MCP `querySleepData` |
+| 近期运动合计、窗口内 PB 兜底 | MCP `querySportRecords` |
+| `max_heart_rate`, `lactate_threshold_hr`, 体成分、FTP | 当前 MCP schema 未确认时返回 `null` 并标注需验证 |
 
 ## MCP 工具说明
 
@@ -144,51 +113,28 @@ python3 ~/.qclaw/skills/coros-stats/scripts/coros_runner_profile.py sync
 ```bash
 node ~/.qclaw/skills/coros-stats/scripts/coros-mcp-keepalive.js call queryUserInfo '{}'
 node ~/.qclaw/skills/coros-stats/scripts/coros-mcp-keepalive.js call queryFitnessAssessmentOverview '{}'
-node ~/.qclaw/skills/coros-stats/scripts/coros-mcp-keepalive.js call querySportRecords '{}'
+node ~/.qclaw/skills/coros-stats/scripts/coros-mcp-keepalive.js call queryRestingHeartRate '{"days":7,"timezone":"Asia/Shanghai"}'
+node ~/.qclaw/skills/coros-stats/scripts/coros-mcp-keepalive.js call querySleepHrv '{"days":7,"timezone":"Asia/Shanghai"}'
+node ~/.qclaw/skills/coros-stats/scripts/coros-mcp-keepalive.js call querySleepData '{"days":7,"timezone":"Asia/Shanghai"}'
+node ~/.qclaw/skills/coros-stats/scripts/coros-mcp-keepalive.js call querySportRecords '{"sportTypeCodes":[65535],"limit":20,"timezone":"Asia/Shanghai"}'
 ```
 
 直接调用 MCP 时优先使用 `coros-mcp-keepalive.js`。COROS MCP 会话可能绑定在当前连接上，朴素调用容易出现 `Session not found`。
 
-## 仪表盘通道说明
+新版 COROS MCP 已确认支持 FIT 文件能力：
 
-抓取仪表盘数据：
+- `downloadActivityFitFiles`
+- `queryActivityFitFileDownloadUrls`
 
-```bash
-node ~/.qclaw/skills/coros-stats/scripts/coros-url-fetch.js
-```
-
-脚本会连接 Chrome DevTools，找到或打开高驰仪表盘标签页，尽量切换全部历史纪录下拉框，读取页面文本并解析字段。
-
-如果失败，按顺序检查：
-
-- Chrome 是否已用 DevTools 端口 `9222` 启动。
-- 用户是否已登录 `https://t.coros.com/admin/views/dash-board`。
-- 是否需要重新运行 `start_chrome.sh`。
-- 如果高驰页面结构变化导致字段大面积为 `null`，除「同步用户画像」场景外，应在 `note` 里说明仪表盘解析异常，并退回 MCP 可用字段。
-
-## Training Hub Token
-
-少量 Training Hub 接口需要 `accessToken`。获取方式：
-
-```bash
-node ~/.qclaw/skills/coros-stats/scripts/coros_traininghub_login.js
-```
-
-脚本会等待浏览器中已登录的 dashboard cookie，并保存到：
-
-```bash
-~/.qclaw/coros-traininghub-token.json
-```
-
-Token 来自浏览器登录态，不要询问用户密码。
+脉图的活动同步 provider 会按日期范围调用这些工具，单次限制最大 10 个文件，并复用本地 FIT 导入链路。
 
 ## 不可获取字段
 
-部分字段可能返回 `null`，这是高驰当前 MCP 或仪表盘不暴露造成的：
+部分字段可能返回 `null`：
 
-- 体成分：`body_fat_percent`, `body_water_percent`, `bone_mass_kg`, `muscle_mass_kg`, `metabolic_age`, `visceral_fat`
-- 睡眠和 HRV：账号近期没有手表睡眠数据，或 MCP/仪表盘没有返回
-- FTP 和部分骑行/游泳 PB
-- 全部历史总里程：当高驰只暴露近期运动记录时无法直接获取
+- 体成分：当前 COROS MCP 工具目录未确认体脂、体水分、骨量、肌肉量、代谢年龄、内脏脂肪字段。
+- `max_heart_rate`、`lactate_threshold_hr`：当前 MCP schema 未直接确认，需后续真实样本验证。
+- FTP、骑行 40km/80km、游泳 100m PB：需后续通过 COROS FIT 下载和 FIT 解析验证。
+- 全部历史 PB/总里程：`querySportRecords` 是查询窗口数据，不应伪装为 all-time。
 
 这些字段返回 `null` 并带简短 `note`。本 Skill 不通过手动覆盖或估算补齐字段。

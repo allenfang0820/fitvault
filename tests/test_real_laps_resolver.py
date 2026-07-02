@@ -49,7 +49,8 @@ class TestLapOutputContract(unittest.TestCase):
         lap = r[0]
         expected_keys = {
             "lap_no", "distance_km", "pace_sec", "hr", "max_hr",
-            "cadence", "gct_ms", "power_w", "ascent_m", "descent_m",
+            "cadence", "cadence_spm", "gct_ms", "stance_time_balance_pct",
+            "power_w", "ascent_m", "descent_m",
             "calories", "swolf", "stroke_style", "stroke_distance_m",
             "length_distance_m", "source_type",
         }
@@ -66,7 +67,8 @@ class TestLapOutputContract(unittest.TestCase):
             {"laps_json": self._make_laps_json(laps_data)})
         allowed = {
             "lap_no", "distance_km", "pace_sec", "hr", "max_hr",
-            "cadence", "gct_ms", "power_w", "ascent_m", "descent_m",
+            "cadence", "cadence_spm", "gct_ms", "stance_time_balance_pct",
+            "power_w", "ascent_m", "descent_m",
             "calories", "swolf", "stroke_style", "stroke_distance_m",
             "length_distance_m", "source_type",
         }
@@ -484,6 +486,38 @@ class TestBuildRealLapsGctForwarding(unittest.TestCase):
             }])
         })
         self.assertIsNone(r[0]["gct_ms"], "stance_time_ms=0 → gct_ms=None")
+
+
+class TestRunningLapCadenceAndBalance(unittest.TestCase):
+    """跑步圈速展示字段语义:步频为双脚总步频,左右平衡按 FIT 透传"""
+
+    def test_normalize_laps_keeps_fractional_cadence_and_balance(self):
+        r = MetricsResolver._normalize_laps([
+            {
+                "total_distance": 1000.0,
+                "total_timer_time": 300.0,
+                "avg_cadence": 89,
+                "avg_fractional_cadence": 0.5,
+                "avg_stance_time_balance": 49.8,
+            }
+        ])
+        self.assertEqual(r[0]["avg_cadence"], 89)
+        self.assertEqual(r[0]["fractional_cadence"], 0.5)
+        self.assertEqual(r[0]["stance_time_balance_pct"], 49.8)
+
+    def test_build_real_laps_exposes_double_foot_cadence_and_balance(self):
+        r = MetricsResolver._build_real_laps_from_row({
+            "laps_json": json.dumps([{
+                "distance_m": 1000.0,
+                "elapsed_sec": 300.0,
+                "avg_cadence": 89,
+                "fractional_cadence": 0.5,
+                "stance_time_balance_pct": 49.8,
+            }])
+        })
+        self.assertEqual(r[0]["cadence"], 89)
+        self.assertEqual(r[0]["cadence_spm"], 179)
+        self.assertEqual(r[0]["stance_time_balance_pct"], 49.8)
 
 
 if __name__ == "__main__":

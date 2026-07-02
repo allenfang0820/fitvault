@@ -2339,21 +2339,47 @@
         }
         #panel-help .help-preface-layout {
             display: grid;
-            grid-template-columns: minmax(0, 1fr) 220px;
-            gap: 18px;
+            grid-template-columns: minmax(0, 1fr) 232px;
+            gap: 22px;
             align-items: start;
+        }
+        #panel-help .help-preface-copy {
+            min-width: 0;
         }
         #panel-help .help-preface-profile {
             position: sticky;
-            top: 0;
+            top: 12px;
+            display: flex;
+            flex-direction: column;
+            align-items: stretch;
+            gap: 10px;
         }
         #panel-help .help-preface-profile-img {
             display: block;
             width: 100%;
-            max-height: 300px;
+            max-height: 280px;
             object-fit: contain;
             background: #fff;
+            border: 1px solid rgba(212, 175, 55, 0.22);
+            border-radius: 10px;
+            box-shadow: 0 10px 26px rgba(0, 0, 0, 0.28);
             cursor: zoom-in;
+        }
+        #panel-help .help-donate-link {
+            display: block;
+            padding: 0;
+            border: 0;
+            background: transparent;
+            color: #93c5fd;
+            font-size: 0.78rem;
+            line-height: 1.6;
+            text-align: left;
+            text-decoration: underline;
+            text-underline-offset: 3px;
+            cursor: pointer;
+        }
+        #panel-help .help-donate-link:hover {
+            color: #bfdbfe;
         }
         #panel-help .help-photo-toggle {
             position: absolute;
@@ -2398,6 +2424,20 @@
             max-height: 92vh;
             object-fit: contain;
         }
+        #panel-help .help-photo-close {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background: rgba(15, 23, 42, 0.82);
+            color: #fff;
+            font-size: 20px;
+            line-height: 26px;
+            text-align: center;
+            cursor: pointer;
+        }
         #panel-help .help-donate-modal {
             padding: 18px;
         }
@@ -2417,6 +2457,7 @@
             #panel-help .help-preface-profile {
                 position: static;
                 max-width: 260px;
+                order: -1;
             }
         }
         #help-tab-preface:checked ~ .help-tab-controls label[for="help-tab-preface"],
@@ -2519,6 +2560,60 @@
             display: inline-block;
             line-height: 1.4;
             font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        }
+        #panel-help .help-rendered-content h1 {
+            display: none;
+        }
+        #panel-help .help-rendered-content h2 {
+            color: #f8fafc;
+            font-size: 0.95rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            padding-bottom: 8px;
+            margin: 0 0 12px 0;
+            border-bottom: 1px solid rgba(212, 175, 55, 0.22);
+        }
+        #panel-help .help-rendered-content h3 {
+            color: #fde68a;
+            font-size: 0.84rem;
+            font-weight: 700;
+            margin: 14px 0 8px 0;
+        }
+        #panel-help .help-rendered-content p {
+            margin: 0 0 10px 0;
+        }
+        #panel-help .help-rendered-content ul,
+        #panel-help .help-rendered-content ol {
+            margin: 0 0 12px 0;
+            padding-left: 22px;
+        }
+        #panel-help .help-rendered-content pre {
+            margin: 8px 0 12px 0;
+            padding: 10px 12px;
+            border-radius: 8px;
+            overflow-x: auto;
+            background: rgba(2, 6, 23, 0.55);
+            border: 1px solid rgba(148, 163, 184, 0.18);
+        }
+        #panel-help .help-rendered-content code {
+            padding: 1px 4px;
+            border-radius: 4px;
+            background: rgba(2, 6, 23, 0.45);
+            color: #bfdbfe;
+        }
+        #panel-help .help-rendered-content pre code {
+            padding: 0;
+            background: transparent;
+            color: #e2e8f0;
+        }
+        #panel-help .help-rendered-content a {
+            color: #93c5fd;
+        }
+        #panel-help .help-rendered-content img {
+            max-width: min(280px, 100%);
+            border-radius: 12px;
+            border: 1px solid rgba(212, 175, 55, 0.18);
+            background: #fff;
         }
         /* 滚动条加深,避免与内容混淆 */
         #panel-help::-webkit-scrollbar { width: 10px; }
@@ -5189,6 +5284,98 @@
             flex: 0 0 auto;
         }
 
+        .llm-cli-row {
+            display: none;
+        }
+
+        #panel-settings.llm-transport-cli .llm-http-row {
+            display: none !important;
+        }
+
+        #panel-settings.llm-transport-cli #llm-agent-id-row.llm-cli-openclaw-agent-row {
+            display: block !important;
+        }
+
+        #panel-settings.llm-transport-cli .llm-cli-row {
+            display: block !important;
+        }
+
+        #panel-settings.llm-transport-cli #llm-cli-args-row:not(.llm-cli-custom-row) {
+            display: none !important;
+        }
+
+        #panel-settings.llm-transport-cli #llm-agent-id-row:not(.llm-cli-openclaw-agent-row) {
+            display: none !important;
+        }
+
+        #panel-settings.llm-transport-http .llm-cli-row {
+            display: none !important;
+        }
+
+        .garmin-auth-card {
+            margin-top: 12px;
+            padding: 12px;
+            border: 1px solid rgba(148,163,184,0.18);
+            border-radius: 8px;
+            background: rgba(15,23,42,0.34);
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .garmin-auth-controls {
+            display: grid;
+            grid-template-columns: minmax(190px, 260px) auto auto;
+            gap: 10px;
+            align-items: end;
+        }
+
+        .garmin-auth-status-line {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            min-height: 22px;
+            font-size: 0.78rem;
+            color: #94a3b8;
+        }
+
+        .garmin-auth-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 999px;
+            background: #64748b;
+            box-shadow: 0 0 0 3px rgba(100,116,139,0.14);
+            flex: 0 0 auto;
+        }
+
+        .garmin-auth-dot.checking {
+            background: #facc15;
+            box-shadow: 0 0 0 3px rgba(250,204,21,0.14);
+        }
+
+        .garmin-auth-dot.launched {
+            background: #38bdf8;
+            box-shadow: 0 0 0 3px rgba(56,189,248,0.14);
+        }
+
+        .garmin-auth-dot.authorized {
+            background: #22c55e;
+            box-shadow: 0 0 0 3px rgba(34,197,94,0.14);
+        }
+
+        .garmin-auth-dot.missing,
+        .garmin-auth-dot.expired,
+        .garmin-auth-dot.failed {
+            background: #ef4444;
+            box-shadow: 0 0 0 3px rgba(239,68,68,0.14);
+        }
+
+        .garmin-auth-action-btn {
+            height: 36px;
+            padding: 0 14px;
+            white-space: nowrap;
+        }
+
         .settings-watch-brand-row {
             display: flex;
             gap: 16px;
@@ -5208,6 +5395,12 @@
             }
             #panel-settings .section-card:nth-of-type(2) .settings-form-grid {
                 grid-template-columns: 1fr;
+            }
+            .garmin-auth-controls {
+                grid-template-columns: 1fr;
+            }
+            .garmin-auth-action-btn {
+                width: 100%;
             }
         }
 
@@ -5270,7 +5463,7 @@
     <div class="boot-splash-panel" aria-live="polite">
         <div class="boot-splash-brand">
             <div class="boot-splash-title">脉图</div>
-            <div class="boot-splash-version">V1.0.4</div>
+            <div class="boot-splash-version">V1.1.0</div>
         </div>
         <div class="boot-splash-subtitle">正在唤醒本地运动数据、轨迹引擎与 AI 分析能力</div>
         <div class="boot-splash-progress" aria-hidden="true"></div>
@@ -5309,7 +5502,7 @@
             <span class="tab-icon">⚙️</span>
             <span class="tab-label">配置</span>
             <span class="tab-arrow">➜</span>
-            <span class="settings-badge" id="settings-badge" style="display:none;" title="网关未连通">⚠️</span>
+            <span class="settings-badge" id="settings-badge" style="display:none;" title="大模型连接未连通">⚠️</span>
         </button>
         <div class="bookmark-spacer"></div>
         <button class="bookmark-tab" data-panel="help" onclick="switchTab(this)">
@@ -5746,37 +5939,104 @@
                             </span>
                             <span class="watch-brand-text">
                                 <span class="watch-brand-title">我是高驰用户</span>
-                                <span class="watch-brand-subtitle">支持画像同步，活动通过本地 FIT 导入</span>
+                                <span class="watch-brand-subtitle">支持画像同步与 MCP 按日期同步活动</span>
                             </span>
                         </label>
                     </div>
                     <div id="watch-brand-error" style="display:none; color:#f87171; font-size:0.75rem; margin-top:6px;">⚠️ 请选择您的设备类型</div>
+                    <div class="garmin-auth-card" id="garmin-region-row" style="display:none;">
+                        <div class="garmin-auth-controls">
+                            <div>
+                                <label class="settings-label" for="garmin-region">Garmin 账号区域</label>
+                                <select id="garmin-region" class="modal-input" onchange="syncLLMConfigFromFields(); persistGarminRegionSelection();" style="background:rgba(15,23,42,0.8);cursor:pointer;">
+                                    <option value="cn">Garmin 中国区</option>
+                                    <option value="global">Garmin 国际区</option>
+                                </select>
+                            </div>
+                            <button type="button" class="secondary-btn compact-action-btn garmin-auth-action-btn" id="garmin-auth-check-btn" onclick="refreshGarminAuthStatus(true)">检查状态</button>
+                            <button type="button" class="primary-btn compact-action-btn garmin-auth-action-btn" id="garmin-auth-login-btn" onclick="startGarminAuthorizationFromSettings()">授权</button>
+                        </div>
+                        <div class="garmin-auth-status-line" id="garmin-auth-status-line">
+                            <span class="garmin-auth-dot" id="garmin-auth-dot"></span>
+                            <span id="garmin-auth-status-text">尚未检查 Garmin 授权状态</span>
+                        </div>
+                    </div>
+                    <div class="garmin-auth-card" id="coros-region-row" style="display:none;">
+                        <div class="garmin-auth-controls">
+                            <div>
+                                <label class="settings-label" for="coros-region">COROS 账号区域</label>
+                                <select id="coros-region" class="modal-input" onchange="syncLLMConfigFromFields(); persistCorosRegionSelection();" style="background:rgba(15,23,42,0.8);cursor:pointer;">
+                                    <option value="cn">COROS 中国区</option>
+                                    <option value="us">COROS 北美区</option>
+                                    <option value="eu">COROS 欧洲区</option>
+                                </select>
+                            </div>
+                            <button type="button" class="secondary-btn compact-action-btn garmin-auth-action-btn" id="coros-auth-check-btn" onclick="refreshCorosAuthStatus(true)">检查状态</button>
+                            <button type="button" class="primary-btn compact-action-btn garmin-auth-action-btn" id="coros-auth-login-btn" onclick="startCorosAuthorizationFromSettings()">授权</button>
+                        </div>
+                        <div class="garmin-auth-status-line" id="coros-auth-status-line">
+                            <span class="garmin-auth-dot" id="coros-auth-dot"></span>
+                            <span id="coros-auth-status-text">尚未检查 COROS 授权状态</span>
+                        </div>
+                    </div>
                 </div>
                 <div class="section-card">
                     <div class="section-title settings-section-title">🤖 大模型 API 配置</div>
                     <div class="settings-form-grid">
                         <div class="settings-form-row">
+                            <label class="settings-label">连接方式</label>
+                            <select id="llm-transport" class="modal-input" onchange="syncLLMConfigFromFields(); renderLLMConfigFields();" style="background:rgba(15,23,42,0.8);cursor:pointer;">
+                                <option value="http">HTTP 网关</option>
+                                <option value="cli">CLI</option>
+                            </select>
+                        </div>
+                        <div class="settings-form-row llm-http-row" id="llm-provider-row">
                             <label class="settings-label">服务商 (Provider)</label>
                             <select id="llm-provider" class="modal-input" onchange="updateLLMModels(); syncLLMConfigFromFields();" style="background:rgba(15,23,42,0.8);cursor:pointer;">
                                 <option value="local_mcp">本地 + MCP (OpenClaw / QClaw)</option>
                             </select>
                         </div>
-                        <div class="settings-form-row" id="llm-custom-url-container" style="display:block;">
+                        <div class="settings-form-row llm-http-row" id="llm-custom-url-container" style="display:block;">
                             <label class="settings-label">自定义 API 地址</label>
                             <input type="text" id="llm-custom-url" class="modal-input" placeholder="https://api.example.com/v1" autocomplete="off" oninput="syncLLMConfigFromFields(); _markUrlModified();" style="background:rgba(15,23,42,0.8);">
                         </div>
-                        <div class="settings-form-row">
+                        <div class="settings-form-row llm-http-row">
                             <label class="settings-label">模型 (Model)</label>
                             <input type="text" id="llm-model" class="modal-input" list="llm-model-options" value="openclaw" placeholder="openclaw 或自定义模型名" autocomplete="off" oninput="syncLLMConfigFromFields()" style="background:rgba(15,23,42,0.8);">
                             <datalist id="llm-model-options"></datalist>
                         </div>
-                        <div class="settings-form-row">
-                            <label class="settings-label">Agent ID（选填）</label>
+                        <div class="settings-form-row llm-http-row" id="llm-agent-id-row">
+                            <label class="settings-label" id="llm-agent-id-label">Agent ID（选填）</label>
                             <input type="text" id="llm-agent-id" class="modal-input" placeholder="网关分配的 ID" autocomplete="off" oninput="syncLLMConfigFromFields()" style="background:rgba(15,23,42,0.8);">
                         </div>
-                        <div class="settings-form-row">
+                        <div class="settings-form-row llm-http-row">
                             <label class="settings-label">Gateway Token</label>
                             <input type="password" id="llm-api-key" class="modal-input" placeholder="粘贴 Gateway Token..." autocomplete="off" oninput="syncLLMConfigFromFields()" style="background:rgba(15,23,42,0.8);">
+                        </div>
+                        <div class="settings-form-row llm-cli-row">
+                            <label class="settings-label">CLI 类型</label>
+                            <select id="llm-cli-type" class="modal-input" onchange="syncLLMConfigFromFields(); renderLLMConfigFields();" style="background:rgba(15,23,42,0.8);cursor:pointer;">
+                                <option value="openclaw">OpenClaw CLI</option>
+                                <option value="codex">Codex CLI</option>
+                                <option value="claude">Claude Code</option>
+                                <option value="custom">自定义 CLI</option>
+                            </select>
+                        </div>
+                        <div class="settings-form-row llm-cli-row">
+                            <label class="settings-label">CLI 路径（选填）</label>
+                            <input type="text" id="llm-cli-path" class="modal-input" placeholder="留空则使用系统 PATH 中的命令" autocomplete="off" oninput="syncLLMConfigFromFields()" style="background:rgba(15,23,42,0.8);">
+                        </div>
+                        <div class="settings-form-row llm-cli-row">
+                            <label class="settings-label">CLI 模型（选填）</label>
+                            <input type="text" id="llm-cli-model" class="modal-input" placeholder="由 CLI 默认配置决定" autocomplete="off" oninput="syncLLMConfigFromFields()" style="background:rgba(15,23,42,0.8);">
+                        </div>
+                        <div class="settings-form-row llm-cli-row">
+                            <label class="settings-label">CLI 超时（秒）</label>
+                            <input type="number" id="llm-cli-timeout" class="modal-input" min="5" max="1800" step="5" value="300" autocomplete="off" oninput="syncLLMConfigFromFields()" style="background:rgba(15,23,42,0.8);">
+                        </div>
+                        <div class="settings-form-row llm-cli-row" id="llm-cli-args-row">
+                            <label class="settings-label">CLI 参数模板</label>
+                            <input type="text" id="llm-cli-args" class="modal-input" placeholder="例如：--model {model} --prompt {prompt}" autocomplete="off" oninput="syncLLMConfigFromFields()" style="background:rgba(15,23,42,0.8);">
                         </div>
                     </div>
 
@@ -5807,7 +6067,7 @@
         <!-- ========== 【帮助说明】面板 ========== -->
         <div id="panel-help" class="tab-panel">
             <div class="panel-header">
-                <h2>脉图帮助说明 <span style="font-size:0.82rem; color:#93c5fd; margin-left:8px;">V1.0</span></h2>
+                <h2>脉图帮助说明 <span style="font-size:0.82rem; color:#93c5fd; margin-left:8px;">V1.1.0</span></h2>
                 <p>本地优先的 AI 运动数据分析工具，用 FIT 可信数据、轨迹可视化和 AI 解读帮助你整理、查看和复盘训练。</p>
             </div>
             <div class="panel-body" style="padding:18px 22px; overflow-y:auto;">
@@ -5818,240 +6078,18 @@
                     <label for="help-tab-usage" role="tab">使用说明</label>
                 </div>
 
-                <div class="help-tab-panel help-preface-panel">
+                <div class="help-tab-panel help-preface-panel" id="help-preface-content">
                     <div class="section-card">
                         <div class="section-title">前言</div>
-                        <div class="help-preface-layout">
-                            <div>
-                                <p style="margin:0 0 10px 0; color:#cbd5e1; font-size:0.82rem; line-height:1.8;">脉图（MaiTu）诞生于一个再普通不过的念头：能不能让运动数据变得更有价值？</p>
-                                <p style="margin:0 0 10px 0; color:#cbd5e1; font-size:0.82rem; line-height:1.8;">过去一个月里，大叔利用业余时间和各种碎片时间，消耗了大量 AI Token，从零开始独立完成了这个项目。作为一名运动手表爱好者，我一直在使用 Garmin、COROS 等设备记录跑步、徒步、骑行等户外活动，但越来越觉得，传统运动平台展示的数据虽然丰富，却很难真正帮助普通用户理解自己每一次运动背后的意义。</p>
-                                <p style="margin:0 0 10px 0; color:#cbd5e1; font-size:0.82rem; line-height:1.8;">恰逢 AI 技术高速发展，从大模型到智能体应用不断涌现，一个想法逐渐成形：如果能够将运动数据与 AI 结合，让 AI 不只是展示数据，而是真正理解数据、分析数据、解读数据，会不会带来一种全新的运动体验？</p>
-                                <p style="margin:0 0 10px 0; color:#f8fafc; font-size:0.86rem; line-height:1.8; font-weight:700;">于是，脉图诞生了。</p>
-                                <p style="margin:0 0 10px 0; color:#cbd5e1; font-size:0.82rem; line-height:1.8;">脉图是一款轻量级、本地优先的运动数据分析平台。它能够解析运动手表产生的 FIT 文件，深入挖掘个人运动数据和户外轨迹信息，并通过接入 AI 智能体，对训练表现、身体状态、运动趋势以及轨迹故事进行多维度洞察。</p>
-                                <p style="margin:0 0 8px 0; color:#cbd5e1; font-size:0.82rem; line-height:1.8;">与传统运动平台不同，脉图更关注“数据背后的故事”。它不仅告诉你跑了多远、爬升了多少，更希望帮助你理解：</p>
-                                <ul style="margin:0 0 10px 0; padding-left:20px; color:#cbd5e1; font-size:0.82rem; line-height:1.8;">
-                                    <li>为什么这次状态特别好？</li>
-                                    <li>哪个阶段出现了明显疲劳？</li>
-                                    <li>这条轨迹经历了怎样的环境变化？</li>
-                                    <li>长期训练趋势正在发生什么变化？</li>
-                                    <li>AI 能从这些数据中发现哪些你自己没有注意到的细节？</li>
-                                </ul>
-                                <p style="margin:0 0 10px 0; color:#cbd5e1; font-size:0.82rem; line-height:1.8;">这是一个由兴趣驱动的独立项目，也是一次关于运动数据与 AI 融合的探索实验。</p>
-                                <p style="margin:0 0 10px 0; color:#cbd5e1; font-size:0.82rem; line-height:1.8;">希望脉图能够让每一次运动记录，都不仅仅是一串数字，而成为值得回味和思考的个人故事。</p>
-                                <p style="margin:0; color:#cbd5e1; font-size:0.82rem; line-height:1.8;">如果你也喜欢运动科技、户外探索、智能穿戴设备，或者关注 AI 在个人场景中的创新应用，欢迎关注大叔的小红书，一起交流运动、装备、数据和 AI 的无限可能。</p>
-                            </div>
-                            <div class="help-preface-profile">
-                                <input class="help-photo-toggle" type="checkbox" id="help-xhs-photo-toggle">
-                                <div style="border-radius:12px; overflow:hidden; border:1px solid rgba(212,175,55,0.18); background:rgba(15,23,42,0.5); box-shadow:0 8px 18px rgba(0,0,0,0.28);">
-                                    <label for="help-xhs-photo-toggle" title="点击查看大图" style="display:block; cursor:zoom-in;">
-                                        <img class="help-preface-profile-img" src="assets/social/xiaohongshu-mrfang.jpg" alt="户外大叔 MrFang 小红书主页二维码">
-                                    </label>
-                                </div>
-                                <div style="color:#94a3b8; font-size:0.72rem; line-height:1.6; margin-top:6px;">点击图片查看大图扫码</div>
-                                <div style="color:#f8fafc; font-size:1rem; font-weight:800; line-height:1.5;">户外大叔 MrFang</div>
-                                <div style="color:#cbd5e1; font-size:0.82rem; line-height:1.75; margin-top:4px;">小红书号：106905165</div>
-                                <div style="color:#94a3b8; font-size:0.78rem; line-height:1.75; margin-top:8px;">欢迎扫码关注，一起交流运动、装备、户外轨迹、智能穿戴设备和 AI 在个人运动场景里的应用。</div>
-                                <input class="help-photo-toggle" type="checkbox" id="help-donate-toggle">
-                                <label for="help-donate-toggle" style="display:inline-block; margin-top:10px; color:#fde68a; font-size:0.76rem; line-height:1.7; cursor:pointer; text-decoration:underline; text-decoration-color:rgba(253,230,138,0.38); text-underline-offset:3px;">如果脉图对你有帮助，也可以随缘支持一下</label>
-                                <div class="help-photo-modal help-xhs-modal" role="dialog" aria-label="小红书主页二维码大图">
-                                    <label class="help-photo-backdrop" for="help-xhs-photo-toggle" title="关闭"></label>
-                                    <div class="help-photo-modal-card">
-                                        <img src="assets/social/xiaohongshu-mrfang.jpg" alt="户外大叔 MrFang 小红书主页二维码大图">
-                                    </div>
-                                </div>
-                                <div class="help-photo-modal help-donate-modal" role="dialog" aria-label="支付宝赞助二维码">
-                                    <label class="help-photo-backdrop" for="help-donate-toggle" title="关闭"></label>
-                                    <div class="help-photo-modal-card">
-                                        <img src="assets/social/alipay-donate.jpg" alt="支付宝赞助二维码">
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
+                        <p class="help-muted">帮助说明正在加载…</p>
                     </div>
                 </div>
 
-                <div class="help-tab-panel help-usage-panel">
-
-                <div class="section-card">
-                    <div class="section-title">一、软件简介</div>
-                    <p style="margin:0 0 8px 0; color:#cbd5e1; font-size:0.82rem; line-height:1.7;">脉图是一款运行在本地的 AI 运动数据助手。它以 FIT 文件为核心事实源，帮助你导入、整理和复盘跑步、骑行、徒步、越野等运动记录，并通过图表和 AI 解读把原始数据转化为可理解的训练反馈。</p>
-                    <p style="margin:0 0 8px 0; padding:8px 10px; border-radius:8px; background:rgba(34,197,94,0.07); border-left:2px solid rgba(34,197,94,0.55); color:#bbf7d0; font-size:0.78rem; line-height:1.7;">脉图是一款免费、本地运行的运动数据分析工具，不会上传任何运动数据到云端。</p>
-                    <p style="margin:0; color:#94a3b8; font-size:0.78rem; line-height:1.7;">脉图不是社交运动平台，也不是云端数据中台。它更适合用来保存可信运动档案、查看轨迹和指标、生成复盘洞察，并为 AI 助手提供稳定、可解释的运动上下文。</p>
-                </div>
-
-                <div class="section-card">
-                    <div class="section-title">二、主要功能</div>
-                    <table style="width:100%; border-collapse:collapse; font-size:0.78rem;">
-                        <thead>
-                            <tr style="background:rgba(212,175,55,0.08);">
-                                <th style="text-align:left; padding:8px 10px; border-bottom:1px solid rgba(212,175,55,0.25); color:#f8fafc;">功能</th>
-                                <th style="text-align:left; padding:8px 10px; border-bottom:1px solid rgba(212,175,55,0.25); color:#f8fafc;">内容</th>
-                            </tr>
-                        </thead>
-                        <tbody style="color:#cbd5e1;">
-                            <tr><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);"><b>个人运动数据</b></td><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);">查看运动画像、同步状态和历史活动；按运动类型或标题筛选；打开活动详情和复盘。</td></tr>
-                            <tr><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);"><b>FIT 导入与同步</b></td><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);">导入本地 FIT 文件或 ZIP；佳明用户可通过 OpenClaw 按日期同步活动 FIT 文件。</td></tr>
-                            <tr><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);"><b>活动详情</b></td><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);">查看单次运动的距离、时长、爬升、心率、圈数据、训练效果、轨迹缩略图等。</td></tr>
-                            <tr><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);"><b>运动复盘</b></td><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);">分析疲劳区段、效率下降、心率漂移、能量断档线索和外部影响因素。</td></tr>
-                            <tr><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);"><b>轨迹分析工具</b></td><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);">导入 GPX，查看 3D 轨迹、海拔剖面、路线统计，生成路线报告和活动建议。</td></tr>
-                            <tr><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);"><b>雷达图与滚动指标</b></td><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);">观察训练负荷、恢复、心率漂移、爬升能力、阈值心率和强度表现。</td></tr>
-                            <tr><td style="padding:6px 10px;"><b>AI 功能</b></td><td style="padding:6px 10px;">提供活动 AI 洞察、复盘 AI 解读、活动建议和全局 AI 助手。</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-
-                <div class="section-card">
-                    <div class="section-title">三、快速上手</div>
-                    <div style="margin:6px 0 12px 0; padding:10px 12px; border-radius:8px; background:rgba(212,175,55,0.06); border-left:2px solid rgba(212,175,55,0.6);">
-                        <div style="color:#fde68a; font-weight:600; font-size:0.82rem; margin-bottom:4px;">第一步：完成基础配置</div>
-                        <ol style="margin:4px 0 0 0; padding-left:18px; color:#cbd5e1; font-size:0.78rem; line-height:1.8;">
-                            <li>打开脉图，进入「配置」页。</li>
-                            <li>填写大模型 API 地址、模型和 Token。</li>
-                            <li>点击「测试连接」。测试成功后，脉图会保存网关配置。</li>
-                            <li>选择手表品牌。</li>
-                            <li>点击「告诉 AI 助手存储规范」完成初始化。</li>
-                        </ol>
+                <div class="help-tab-panel help-usage-panel" id="help-usage-content">
+                    <div class="section-card">
+                        <div class="section-title">使用说明</div>
+                        <p class="help-muted">帮助说明正在加载…</p>
                     </div>
-
-                    <div style="margin:10px 0 12px 0; padding:10px 12px; border-radius:8px; background:rgba(96,165,250,0.06); border-left:2px solid rgba(96,165,250,0.6);">
-                        <div style="color:#93c5fd; font-weight:600; font-size:0.82rem; margin-bottom:4px;">OpenClaw 配置说明</div>
-                        <p style="margin:0 0 8px 0; color:#cbd5e1; font-size:0.78rem; line-height:1.7;">OpenClaw 是脉图连接本地 AI 助手、MCP 技能和 Garmin 活动下载能力的本地网关。配置好 OpenClaw 后，脉图才能稳定使用 AI 洞察、活动建议、复盘解读，以及按日期同步佳明活动 FIT 文件。</p>
-                        <div style="margin:8px 0; padding:9px 10px; border-radius:8px; background:rgba(15,23,42,0.45); border:1px solid rgba(147,197,253,0.18); color:#cbd5e1; font-size:0.76rem; line-height:1.7;">
-                            <b style="color:#bfdbfe;">设备 Skill 要求</b><br>
-                            佳明用户需要在本地 OpenClaw 或 QClaw 中安装 <b>garmin-stats</b> skill；高驰用户需要安装 <b>coros-stats</b> skill。这两个 skill 用于从佳明/高驰账户获取用户画像数据；其中 <b>garmin-stats</b> 还支持佳明活动 FIT 文件同步。下载 zip 后，在 OpenClaw / QClaw 中使用 Skill 安装/导入功能选择该 zip，再按安装界面中的说明完成依赖安装和账号授权。
-                            <div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:8px;">
-                                <button type="button" onclick="saveSkillZip('garmin-stats')" style="display:inline-flex; align-items:center; gap:6px; padding:5px 9px; border-radius:6px; background:rgba(59,130,246,0.16); border:1px solid rgba(147,197,253,0.28); color:#bfdbfe; text-decoration:none; font-size:0.74rem; cursor:pointer;"><span style="display:inline-flex; align-items:center; gap:3px; padding:1px 5px; border-radius:4px; background:rgba(15,23,42,0.9); border:1px solid rgba(125,211,252,0.38); color:#e0f2fe; font-size:0.62rem; font-weight:800; letter-spacing:0.08em; line-height:1.2;"><span>GARMIN</span><span style="width:0; height:0; border-left:4px solid transparent; border-right:4px solid transparent; border-bottom:7px solid #38bdf8; transform:translateY(-1px);"></span></span>下载 garmin-stats.zip</button>
-                                <button type="button" onclick="saveSkillZip('coros-stats')" style="display:inline-flex; align-items:center; gap:6px; padding:5px 9px; border-radius:6px; background:rgba(59,130,246,0.16); border:1px solid rgba(147,197,253,0.28); color:#bfdbfe; text-decoration:none; font-size:0.74rem; cursor:pointer;"><span style="display:inline-flex; align-items:center; gap:3px; padding:1px 5px; border-radius:4px; background:rgba(15,23,42,0.9); border:1px solid rgba(74,222,128,0.38); color:#dcfce7; font-size:0.62rem; font-weight:800; letter-spacing:0.08em; line-height:1.2;"><span style="width:7px; height:7px; border-radius:50%; border:2px solid #4ade80; box-sizing:border-box;"></span><span>COROS</span></span>下载 coros-stats.zip</button>
-                            </div>
-                            <ul style="margin:8px 0 0 0; padding-left:18px; color:#cbd5e1; font-size:0.74rem; line-height:1.65;">
-                                <li>两个 skill 都需要在本机完成账号授权；脉图不会询问或保存佳明/高驰密码。</li>
-                                <li>Garmin 首次使用需要登录并保存 OAuth 授权；授权失效时需要重新登录。活动历史缓存超过 7 天会自动刷新。</li>
-                                <li>COROS 需要完成 MCP 授权；Training Hub 字段还需要在本机 Chrome 中登录高驰网页。</li>
-                                <li>COROS 可能会唤起或连接带 DevTools 端口的 Chrome；如果 Chrome 关闭或登录态过期，部分 Training Hub 字段可能暂时为空。</li>
-                                <li>安装或更新 skill 后，建议重启 OpenClaw / QClaw，让新 skill 重新加载。</li>
-                            </ul>
-                            <div style="margin-top:8px; padding:8px 9px; border-radius:7px; background:rgba(2,6,23,0.35); border:1px solid rgba(148,163,184,0.18); color:#cbd5e1; font-size:0.72rem; line-height:1.65;">
-                                脉图不是 Garmin 或 COROS 官方应用，也不代表获得其认可或支持。相关 skill 仅用于用户在本机、基于本人账号授权整理自己的运动数据；脉图不提供云端托管同步，不上传或转售用户运动数据。设备厂商接口或登录方式变化时，同步能力可能需要重新授权或更新 skill。
-                            </div>
-                        </div>
-                        <ul style="margin:4px 0 0 0; padding-left:18px; color:#cbd5e1; font-size:0.78rem; line-height:1.7;">
-                            <li><b>服务商</b>：选择「本地 + MCP（OpenClaw / QClaw）」。</li>
-                            <li><b>自定义 API 地址</b>：填写 OpenClaw 提供的网关地址。</li>
-                            <li><b>模型</b>：选择或填写 OpenClaw 网关可调用的模型名称。</li>
-                            <li><b>Agent ID</b>：如果 OpenClaw 分配了专用 Agent ID，就填入这里；没有则可留空。</li>
-                            <li><b>Gateway Token</b>：如果网关开启鉴权，就填写 Token；本地网关没有鉴权时可留空。</li>
-                        </ul>
-                        <div style="margin:8px 0 0 0; padding:8px 9px; border-radius:7px; background:rgba(15,23,42,0.45); border:1px solid rgba(147,197,253,0.16); color:#cbd5e1; font-size:0.74rem; line-height:1.65;">
-                            不知道怎么找这些信息时，可以直接在 OpenClaw 里问 AI 助手：<br>
-                            <span style="display:block; margin-top:4px; color:#bfdbfe;">“我需要让一个本地应用连接 OpenClaw 网关，请告诉我当前本地网关的 API 地址、可用模型名称、Agent ID 和 Gateway Token 应该分别填什么；没有启用的项目请告诉我可以留空。”</span>
-                            网关地址通常形如 <code>http://127.0.0.1:端口号</code> 或 <code>http://localhost:端口号</code>；没有开启鉴权时 Token 可以留空。
-                        </div>
-                        <p style="margin:8px 0 0 0; color:#bfdbfe; font-size:0.74rem; line-height:1.7;">「测试连接」只确认网关可用；「告诉 AI 助手存储规范」会告诉 OpenClaw FIT 文件应该下载、解压并保存到哪里。Garmin 同步依赖这两步都完成。</p>
-                    </div>
-
-                    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:10px;">
-                        <div style="padding:10px 12px; border-radius:8px; background:rgba(15,23,42,0.45); border:1px solid rgba(255,255,255,0.06);">
-                            <div style="color:#f8fafc; font-weight:600; font-size:0.8rem; margin-bottom:4px;">第二步：导入运动数据</div>
-                            <ul style="margin:0; padding-left:18px; color:#cbd5e1; font-size:0.76rem; line-height:1.7;">
-                                <li>本地 FIT：个人运动数据页 → 导入本地 FIT 文件。</li>
-                                <li>Garmin 同步：选择日期范围 → 同步活动。</li>
-                                <li>GPX 路线：轨迹分析工具 → 导入 GPX。</li>
-                            </ul>
-                        </div>
-                        <div style="padding:10px 12px; border-radius:8px; background:rgba(15,23,42,0.45); border:1px solid rgba(255,255,255,0.06);">
-                            <div style="color:#f8fafc; font-weight:600; font-size:0.8rem; margin-bottom:4px;">第三步：查看活动详情</div>
-                            <ul style="margin:0; padding-left:18px; color:#cbd5e1; font-size:0.76rem; line-height:1.7;">
-                                <li>在个人运动数据页点击活动记录。</li>
-                                <li>概览中查看核心指标和轨迹缩略图。</li>
-                                <li>点击缩略图可进入 3D 轨迹分析。</li>
-                            </ul>
-                        </div>
-                        <div style="padding:10px 12px; border-radius:8px; background:rgba(15,23,42,0.45); border:1px solid rgba(255,255,255,0.06);">
-                            <div style="color:#f8fafc; font-weight:600; font-size:0.8rem; margin-bottom:4px;">第四步：生成 AI 解读</div>
-                            <ul style="margin:0; padding-left:18px; color:#cbd5e1; font-size:0.76rem; line-height:1.7;">
-                                <li>确认配置页网关连接正常。</li>
-                                <li>打开活动详情、复盘页或轨迹报告。</li>
-                                <li>点击 AI 洞察、复盘 AI 解读或 AI 生成建议。</li>
-                            </ul>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="section-card">
-                    <div class="section-title">四、AI 功能</div>
-                    <table style="width:100%; border-collapse:collapse; font-size:0.78rem;">
-                        <thead>
-                            <tr style="background:rgba(212,175,55,0.08);">
-                                <th style="text-align:left; padding:8px 10px; border-bottom:1px solid rgba(212,175,55,0.25); color:#f8fafc; width:35%;">入口</th>
-                                <th style="text-align:left; padding:8px 10px; border-bottom:1px solid rgba(212,175,55,0.25); color:#f8fafc;">功能</th>
-                            </tr>
-                        </thead>
-                        <tbody style="color:#cbd5e1;">
-                            <tr><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);"><b>活动 AI 洞察</b></td><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);">针对单次活动生成结构化解读。</td></tr>
-                            <tr><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);"><b>复盘 AI 解读</b></td><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);">基于本次复盘快照总结疲劳、效率、事件和建议。</td></tr>
-                            <tr><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);"><b>活动建议</b></td><td style="padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05);">基于路线事实和用户填写的计划信息，生成补给、天气检查、装备和体力安排建议。</td></tr>
-                            <tr><td style="padding:6px 10px;"><b>全局 AI 助手</b></td><td style="padding:6px 10px;">根据当前运动画像和已导入数据回答训练相关问题。</td></tr>
-                        </tbody>
-                    </table>
-                    <p style="margin:10px 0 0 0; padding:8px 10px; border-radius:8px; background:rgba(248,113,113,0.06); border-left:2px solid rgba(248,113,113,0.5); color:#fecaca; font-size:0.72rem; line-height:1.7;">AI 生成内容仅供训练参考。AI 不会改写 FIT 文件、不会写入原始指标，也不会把 AI 判断当作数据库事实。</p>
-                </div>
-
-                <div class="section-card">
-                    <div class="section-title">五、数据与隐私</div>
-                    <ul style="margin:0; padding-left:18px; line-height:1.8; color:#cbd5e1; font-size:0.82rem;">
-                        <li>脉图免费使用，本体在本地运行，不内置云端运动数据上传服务。</li>
-                        <li>原始运动文件保存在本地。</li>
-                        <li>核心数据库使用本地 SQLite。</li>
-                        <li>FIT 文件是活动事实源。</li>
-                        <li>AI 只消费经过后端整理的快照，不直接修改数据库事实。</li>
-                        <li>AI 输出用于解释和参考，不等同于医疗建议、诊断结论或专业教练处方。</li>
-                        <li>训练负荷、疲劳、恢复、补给和装备建议需要结合个人身体感受、环境风险和专业意见判断。</li>
-                        <li>使用外部大模型网关时，AI 请求会发送必要摘要信息到你配置的接口；请根据自己的隐私要求选择可信的模型服务和网关。</li>
-                        <li>第三方平台账号授权由对应 skill 和平台处理；脉图不会要求你在应用内填写佳明或高驰账号密码。</li>
-                    </ul>
-                </div>
-
-                <div class="section-card">
-                    <div class="section-title">六、常见问题</div>
-
-                    <div style="margin:10px 0; padding:10px 12px; border-radius:8px; background:rgba(15,23,42,0.4); border:1px solid rgba(255,255,255,0.06);">
-                        <div style="color:#fde68a; font-weight:600; font-size:0.8rem; margin-bottom:4px;">AI 洞察一直加载或失败怎么办？</div>
-                        <p style="margin:0; color:#cbd5e1; font-size:0.76rem; line-height:1.6;">进入「配置」页，检查大模型网关是否为绿色连接状态。若连接失败，请重新填写 API 地址、模型和 Token 后点击「测试连接」。</p>
-                    </div>
-
-                    <div style="margin:10px 0; padding:10px 12px; border-radius:8px; background:rgba(15,23,42,0.4); border:1px solid rgba(255,255,255,0.06);">
-                        <div style="color:#fde68a; font-weight:600; font-size:0.8rem; margin-bottom:4px;">导入 GPX 后没有心率或功率？</div>
-                        <p style="margin:0; color:#cbd5e1; font-size:0.76rem; line-height:1.6;">GPX 主要保存路线点和轨迹信息，通常不包含完整的心率、功率、训练效果和跑步动态字段。需要完整运动数据时，请导入设备导出的 FIT 文件。</p>
-                    </div>
-
-                    <div style="margin:10px 0; padding:10px 12px; border-radius:8px; background:rgba(15,23,42,0.4); border:1px solid rgba(255,255,255,0.06);">
-                        <div style="color:#fde68a; font-weight:600; font-size:0.8rem; margin-bottom:4px;">如何批量下载 FIT 文件？</div>
-                        <p style="margin:0; color:#cbd5e1; font-size:0.76rem; line-height:1.7;">佳明大陆地区账户可进入 <a href="https://www.garmin.cn/zh-CN/account/datamanagement/" target="_blank" style="color:#93c5fd;">Garmin 中国数据管理</a>；佳明国际账户可进入 <a href="https://www.garmin.com/en-US/account/datamanagement/" target="_blank" style="color:#93c5fd;">Garmin 国际数据管理</a>；高驰用户可进入 <a href="https://t.coros.com/admin/views/activities" target="_blank" style="color:#93c5fd;">COROS 活动管理</a>。下载后将 FIT 文件或压缩包通过「导入本地 FIT 文件」导入脉图。</p>
-                    </div>
-
-                    <div style="margin:10px 0; padding:10px 12px; border-radius:8px; background:rgba(15,23,42,0.4); border:1px solid rgba(255,255,255,0.06);">
-                        <div style="color:#fde68a; font-weight:600; font-size:0.8rem; margin-bottom:4px;">Garmin 同步按钮不可用怎么办？</div>
-                        <p style="margin:0; color:#cbd5e1; font-size:0.76rem; line-height:1.6;">确认手表品牌已选择佳明、OpenClaw 网关连接正常、已完成「告诉 AI 助手存储规范」，并且已经选择有效的开始日期和结束日期。</p>
-                    </div>
-
-                    <div style="margin:10px 0; padding:10px 12px; border-radius:8px; background:rgba(15,23,42,0.4); border:1px solid rgba(255,255,255,0.06);">
-                        <div style="color:#fde68a; font-weight:600; font-size:0.8rem; margin-bottom:4px;">复盘页显示数据不足是什么意思？</div>
-                        <p style="margin:0; color:#cbd5e1; font-size:0.76rem; line-height:1.6;">部分复盘指标需要轨迹点、心率、距离、海拔、配速或功率等字段。如果活动缺少相关设备数据，复盘页会显示数据不足，而不是用前端或 AI 编造结果。</p>
-                    </div>
-                </div>
-
-                <div class="section-card">
-                    <div class="section-title">七、使用建议</div>
-                    <ul style="margin:0; padding-left:18px; line-height:1.8; color:#cbd5e1; font-size:0.82rem;">
-                        <li>想看完整运动指标，优先导入 FIT。</li>
-                        <li>想看路线和爬升，可以导入 GPX。</li>
-                        <li>每次同步或导入后，先在活动列表确认记录是否正确。</li>
-                        <li>做训练复盘时，优先查看后端指标和曲线，再阅读 AI 总结。</li>
-                        <li>使用活动建议前，最好手动填写活动类型和计划活动时间。</li>
-                        <li>若 AI 输出与页面事实不一致，以页面后端指标和原始 FIT 数据为准。</li>
-                    </ul>
-                </div>
-
                 </div>
 
             </div>
@@ -6060,35 +6098,30 @@
         <!-- ========== 【关于】面板 ========== -->
         <div id="panel-about" class="tab-panel">
             <div class="panel-header">
-                <h2>关于</h2>
-                <p>版本信息与近期更新说明</p>
+                <h2>更新日志</h2>
+                <p>本版本聚焦大模型连接方式与运动数据同步链路升级</p>
             </div>
             <div class="panel-body" style="padding:18px 22px; overflow-y:auto;">
                 <div class="section-card">
                     <div class="about-version-card">
                         <div>
                             <div class="about-app-name">脉图 FitVault</div>
-                            <p style="margin:0; color:#cbd5e1; font-size:0.82rem; line-height:1.7;">脉图是一款本地优先的 AI 运动数据分析工具，帮助你管理、查看和复盘自己的运动记录。</p>
+                            <p style="margin:0; color:#cbd5e1; font-size:0.82rem; line-height:1.7;">本次升级让 AI 能力接入更灵活，也让 Garmin / COROS 数据同步从外部提示词链路回到脉图自己的同步流程中。</p>
                         </div>
                         <div class="about-version-pill" id="about-version">版本 --</div>
                     </div>
                 </div>
 
                 <div class="section-card">
-                    <div class="section-title">近期更新</div>
+                    <div class="section-title">V1.1.0 重要更新</div>
                     <ul class="about-update-list">
-                        <li>FIT 文件导入更稳定，减少重复导入、漏导入和异常文件导致的问题。</li>
-                        <li>支持更好地识别活动地点，历史活动可以显示和筛选地区。</li>
-                        <li>优化运动详情页和复盘页面，图表、指标和 AI 解读更清晰。</li>
-                        <li>大幅增强骑行分析，新增功率、踏频、后程保持等骑行相关解读。</li>
-                        <li>活动建议会结合当前路线、距离、爬升、地区等信息生成。</li>
-                        <li>增强 Garmin 和 COROS 数据接入，支持同步更多运动画像和能力数据。</li>
-                        <li>优化启动速度和导入速度，减少等待时间。</li>
-                        <li>修复 Windows 版本窗口没有最小化、最大化、关闭按钮的问题。</li>
-                        <li>改进 Windows 中文压缩包和中文 FIT 文件名的兼容性。</li>
-                        <li>修复部分非运动 FIT 文件被误导入的问题。</li>
+                        <li><strong>大模型连接 CLI 化：</strong>配置页新增 HTTP 网关 / CLI 两种连接方式，支持 OpenClaw CLI、Codex CLI、Claude Code 和自定义 CLI。</li>
+                        <li><strong>AI 功能统一走新连接层：</strong>AI 私教、活动建议、雷达图洞察和疲劳复盘洞察会复用同一套大模型调用入口。</li>
+                        <li><strong>Garmin 同步能力内化：</strong>活动 FIT 下载和用户画像同步改为由脉图直接调用本地 Garmin provider，不再依赖大模型提示词中转。</li>
+                        <li><strong>COROS 同步能力内化：</strong>支持通过 COROS MCP provider 同步用户画像，并按日期范围同步活动 FIT 文件。</li>
+                        <li><strong>账号区域与授权状态可见：</strong>配置页新增 Garmin 中国区 / 国际区、COROS 中国区 / 北美区 / 欧洲区选择，并提供授权状态检查和授权入口。</li>
                     </ul>
-                    <p class="about-summary-line">最新版脉图更稳定、更懂骑行，也更适合日常管理和复盘自己的运动数据。</p>
+                    <p class="about-summary-line">这次更新的重点是两件事：大模型接入更自由，佳明 / 高驰数据同步更像脉图自己的内置能力。</p>
                 </div>
             </div>
         </div>
@@ -6520,7 +6553,32 @@
 
     const LLM_DEFAULT_URL = 'http://localhost:3000/v1/chat/completions';
     const PY_REPORT_ACTIVITY_ADVICE = '__REPORT_ACTIVITY_ADVICE__';
-    let currentLLMConfig = { provider: 'local_mcp', model: 'openclaw', url: LLM_DEFAULT_URL, apiKey: '', agentId: '' };
+    let currentLLMConfig = {
+        transport: 'http',
+        provider: 'local_mcp',
+        model: 'openclaw',
+        url: LLM_DEFAULT_URL,
+        apiKey: '',
+        agentId: '',
+        cliType: 'openclaw',
+        cliPath: '',
+        cliArgs: '',
+        cliModel: '',
+        cliTimeoutSec: 300,
+        watchBrand: '',
+        garminRegion: 'cn',
+        corosRegion: 'cn'
+    };
+    let garminAuthStatusState = {
+        status: 'idle',
+        region: 'cn',
+        message: ''
+    };
+    let corosAuthStatusState = {
+        status: 'idle',
+        region: 'cn',
+        message: ''
+    };
 
     let _currentRadarSportType = 'running';
 
@@ -6734,6 +6792,7 @@
         llmTestRequestId: 0,
         llmTestStateLock: false,
         llmTestTransitionTimer: null,
+        savedLLMConfigSignature: '',
         aiNotified: false,
         dirValidated: true,
         dirValidationRequestId: 0,
@@ -7505,6 +7564,26 @@
         if (eventName === 'profile_sync_complete' && payload && payload.ok && payload.profile) {
             await loadProfileCard();
             showToast('✅ 用户画像已后台自动更新');
+        } else if (eventName === 'profile_sync_complete' && payload && !payload.ok && isGarminWatchBrand()) {
+            const message = String(payload.error || payload.last_error || payload.message || '');
+            const authPayload = { data: { message: message, status: 'invalid_token' } };
+            if (isGarminAuthRequiredResponse(authPayload)) {
+                openGarminSettingsForAuthorization(authPayload, 'Garmin 画像同步需要重新授权，请到配置页完成授权。');
+            }
+        } else if (eventName === 'profile_sync_complete' && payload && !payload.ok && isCorosWatchBrand()) {
+            const message = String(payload.error || payload.last_error || payload.message || '');
+            const authPayload = {
+                data: {
+                    message: message,
+                    status: payload.provider_error_code || 'invalid_token',
+                    provider_error_code: payload.provider_error_code || '',
+                    action_hint: payload.action_hint || '',
+                    region: payload.region || (currentLLMConfig && currentLLMConfig.corosRegion)
+                }
+            };
+            if (isCorosAuthRequiredResponse(authPayload)) {
+                showCorosLoginPrompt(authPayload);
+            }
         }
     };
 
@@ -7696,7 +7775,12 @@
             addAICoachMessage('assistant', '当前 AI私教需要在桌面应用中使用。');
             return;
         }
-        if (!currentLLMConfig.url) { addAICoachMessage('assistant', 'API 接口地址为空，请先在配置中填写。'); return; }
+        if (!isLLMReadyForFrontendCall()) {
+            addAICoachMessage('assistant', isLLMTransportCLI()
+                ? 'CLI 尚未配置，请先在配置中选择 CLI 类型并测试连接。'
+                : 'API 接口地址为空，请先在配置中填写。');
+            return;
+        }
         const loadingId = 'ai-coach-loading-' + Date.now();
         const contentDiv = document.getElementById('ai-coach-messages');
         if (contentDiv) {
@@ -7754,7 +7838,7 @@
             });
         }
         if (activePanel === 'help') {
-            // 帮助说明面板为纯静态内容,无需加载后端数据
+            loadHelpContent();
         }
         if (activePanel === 'about') {
             loadAboutInfo();
@@ -7770,22 +7854,257 @@
         syncSportHubTitleFilterUI();
     }
 
+    let helpContentLoadPromise = null;
+
+    function normalizeHelpResourceUrl(url) {
+        const raw = String(url == null ? '' : url).trim().replace(/^['"]|['"]$/g, '');
+        if (!raw) return '';
+        if (/^(https?:|mailto:)/i.test(raw)) return raw;
+        if (raw.indexOf('../assets/') === 0) return raw.replace('../assets/', 'assets/');
+        if (raw.indexOf('assets/') === 0 || raw.charAt(0) === '#') return raw;
+        return '';
+    }
+
+    function renderHelpInline(text) {
+        let html = safeHtml(text);
+        html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, function(_, alt, url) {
+            const safeUrl = normalizeHelpResourceUrl(url);
+            if (!safeUrl || safeUrl.indexOf('assets/') !== 0) return safeHtml(alt || '');
+            return '<img src="' + safeHtml(safeUrl) + '" alt="' + safeHtml(alt || '') + '">';
+        });
+        html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function(_, label, url) {
+            const safeUrl = normalizeHelpResourceUrl(url);
+            if (!safeUrl) return safeHtml(label);
+            const target = /^(https?:)/i.test(safeUrl) ? ' target="_blank" rel="noopener noreferrer"' : '';
+            return '<a href="' + safeHtml(safeUrl) + '"' + target + '>' + safeHtml(label) + '</a>';
+        });
+        html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+        html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+        return html;
+    }
+
+    function renderHelpMarkdown(markdown) {
+        const lines = String(markdown || '').replace(/\r\n/g, '\n').split('\n');
+        const html = [];
+        let listType = '';
+        let inCode = false;
+        let codeLines = [];
+
+        function closeList() {
+            if (listType) {
+                html.push('</' + listType + '>');
+                listType = '';
+            }
+        }
+
+        function flushCode() {
+            html.push('<pre><code>' + safeHtml(codeLines.join('\n')) + '</code></pre>');
+            codeLines = [];
+        }
+
+        lines.forEach(function(line) {
+            if (/^\s*```/.test(line)) {
+                if (inCode) {
+                    flushCode();
+                    inCode = false;
+                } else {
+                    closeList();
+                    inCode = true;
+                    codeLines = [];
+                }
+                return;
+            }
+            if (inCode) {
+                codeLines.push(line);
+                return;
+            }
+
+            const trimmed = line.trim();
+            if (!trimmed) {
+                closeList();
+                return;
+            }
+
+            const heading = trimmed.match(/^(#{1,4})\s+(.+)$/);
+            if (heading) {
+                closeList();
+                const level = Math.min(heading[1].length, 3);
+                html.push('<h' + level + '>' + renderHelpInline(heading[2]) + '</h' + level + '>');
+                return;
+            }
+
+            const unordered = trimmed.match(/^[-*]\s+(.+)$/);
+            const ordered = trimmed.match(/^\d+\.\s+(.+)$/);
+            if (unordered || ordered) {
+                const nextType = unordered ? 'ul' : 'ol';
+                if (listType !== nextType) {
+                    closeList();
+                    html.push('<' + nextType + '>');
+                    listType = nextType;
+                }
+                html.push('<li>' + renderHelpInline((unordered || ordered)[1]) + '</li>');
+                return;
+            }
+
+            closeList();
+            html.push('<p>' + renderHelpInline(trimmed) + '</p>');
+        });
+
+        if (inCode) flushCode();
+        closeList();
+        return html.join('\n');
+    }
+
+    function extractHelpPrefaceMedia(markdown) {
+        const media = {
+            bodyLines: [],
+            xhsUrl: '',
+            xhsAlt: '户外大叔 MrFang 小红书主页二维码',
+            donateUrl: '',
+            donateText: '如果喜欢脉图，也可以请博主喝杯咖啡'
+        };
+        String(markdown || '').replace(/\r\n/g, '\n').split('\n').forEach(function(line) {
+            const trimmed = line.trim();
+            const image = trimmed.match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
+            if (image) {
+                const alt = image[1] || '';
+                const url = normalizeHelpResourceUrl(image[2]);
+                if (url && /xiaohongshu|小红书|MrFang/i.test(alt + ' ' + url)) {
+                    media.xhsAlt = alt || media.xhsAlt;
+                    media.xhsUrl = url;
+                    return;
+                }
+                if (url && /alipay-donate/i.test(url)) {
+                    media.donateUrl = url;
+                    return;
+                }
+            }
+
+            const donate = trimmed.match(/\[([^\]]+)\]\(([^)]*alipay-donate[^)]*)\)/i);
+            if (donate) {
+                const url = normalizeHelpResourceUrl(donate[2]);
+                if (url) {
+                    media.donateUrl = url;
+                    media.donateText = trimmed.replace(/\[([^\]]+)\]\([^)]+\)/, '$1').replace(/[。.!！]$/, '');
+                    return;
+                }
+            }
+
+            media.bodyLines.push(line);
+        });
+        return media;
+    }
+
+    function renderHelpPrefaceMarkdown(markdown) {
+        const media = extractHelpPrefaceMedia(markdown);
+        const bodyHtml = renderHelpMarkdown(media.bodyLines.join('\n'));
+        if (!media.xhsUrl && !media.donateUrl) return bodyHtml;
+
+        const xhsControl = media.xhsUrl
+            ? '<label for="help-xhs-photo-toggle" title="查看小红书主页二维码">' +
+                '<img class="help-preface-profile-img" src="' + safeHtml(media.xhsUrl) + '" alt="' + safeHtml(media.xhsAlt) + '">' +
+              '</label>'
+            : '';
+        const donateControl = media.donateUrl
+            ? '<label class="help-donate-link" for="help-donate-toggle" role="button" tabindex="0">' + safeHtml(media.donateText) + '</label>'
+            : '';
+        const xhsModal = media.xhsUrl
+            ? '<div class="help-photo-modal help-xhs-modal" role="dialog" aria-modal="true" aria-label="小红书主页二维码">' +
+                '<label class="help-photo-backdrop" for="help-xhs-photo-toggle"></label>' +
+                '<div class="help-photo-modal-card">' +
+                  '<img src="' + safeHtml(media.xhsUrl) + '" alt="' + safeHtml(media.xhsAlt) + '">' +
+                  '<label class="help-photo-close" for="help-xhs-photo-toggle" aria-label="关闭">×</label>' +
+                '</div>' +
+              '</div>'
+            : '';
+        const donateModal = media.donateUrl
+            ? '<div class="help-photo-modal help-donate-modal" role="dialog" aria-modal="true" aria-label="支付宝赞助二维码">' +
+                '<label class="help-photo-backdrop" for="help-donate-toggle"></label>' +
+                '<div class="help-photo-modal-card">' +
+                  '<img src="' + safeHtml(media.donateUrl) + '" alt="支付宝赞助二维码">' +
+                  '<label class="help-photo-close" for="help-donate-toggle" aria-label="关闭">×</label>' +
+                '</div>' +
+              '</div>'
+            : '';
+
+        return '<input class="help-photo-toggle" type="checkbox" id="help-xhs-photo-toggle">' +
+            '<input class="help-photo-toggle" type="checkbox" id="help-donate-toggle">' +
+            '<div class="section-card help-rendered-content help-preface-layout">' +
+              '<div class="help-preface-copy">' + bodyHtml + '</div>' +
+              '<aside class="help-preface-profile" aria-label="作者与支持">' + xhsControl + donateControl + '</aside>' +
+            '</div>' +
+            xhsModal +
+            donateModal;
+    }
+
+    function splitHelpMarkdown(markdown) {
+        const normalized = String(markdown || '').replace(/^\uFEFF/, '').replace(/\r\n/g, '\n');
+        const lines = normalized.split('\n');
+        const prefaceIdx = lines.findIndex(function(line) { return /^##\s+前言\s*$/.test(line.trim()); });
+        const usageIdx = lines.findIndex(function(line) { return /^##\s+一、软件简介\s*$/.test(line.trim()); });
+        if (prefaceIdx >= 0 && usageIdx > prefaceIdx) {
+            return {
+                preface: lines.slice(prefaceIdx, usageIdx).join('\n'),
+                usage: lines.slice(usageIdx).join('\n')
+            };
+        }
+        return {
+            preface: '## 前言\n\n帮助说明文档已加载，但未找到独立前言段落。',
+            usage: normalized
+        };
+    }
+
+    function setHelpContent(prefaceMarkdown, usageMarkdown) {
+        const prefaceEl = document.getElementById('help-preface-content');
+        const usageEl = document.getElementById('help-usage-content');
+        if (!prefaceEl || !usageEl) return;
+        prefaceEl.innerHTML = renderHelpPrefaceMarkdown(prefaceMarkdown);
+        usageEl.innerHTML = '<div class="section-card help-rendered-content">' + renderHelpMarkdown(usageMarkdown) + '</div>';
+    }
+
+    function setHelpFallback(message) {
+        const fallback = '## 帮助说明暂时不可用\n\n' + (message || '未能读取本地帮助说明文档。请确认应用目录中存在 docs/脉图帮助说明.md。');
+        setHelpContent(fallback, '## 使用说明暂时不可用\n\n帮助说明将从本地 Markdown 文档加载；当前无法读取该文档。');
+    }
+
+    async function loadHelpContent() {
+        if (helpContentLoadPromise) return helpContentLoadPromise;
+        helpContentLoadPromise = (async function() {
+            try {
+                if (!window.pywebview || !window.pywebview.api || typeof window.pywebview.api.get_help_markdown !== 'function') {
+                    throw new Error('当前环境无法读取本地帮助说明文档');
+                }
+                const res = await window.pywebview.api.get_help_markdown();
+                if (!res || !res.ok || !res.data || !res.data.markdown) {
+                    throw new Error((res && (res.msg || res.error)) || '帮助说明文档为空');
+                }
+                const parts = splitHelpMarkdown(res.data.markdown);
+                setHelpContent(parts.preface, parts.usage);
+            } catch (e) {
+                console.warn('loadHelpContent', e);
+                setHelpFallback(e && e.message ? e.message : String(e));
+                helpContentLoadPromise = null;
+            }
+        })();
+        return helpContentLoadPromise;
+    }
+
     async function loadAboutInfo() {
         const versionEl = document.getElementById('about-version');
         if (!versionEl || versionEl.dataset.loaded === '1') return;
         try {
             if (!window.pywebview || !window.pywebview.api || typeof window.pywebview.api.get_app_info !== 'function') {
-                versionEl.textContent = '版本 V1.0.4';
+                versionEl.textContent = '版本 V1.1.0';
                 return;
             }
             const res = await window.pywebview.api.get_app_info();
             const data = res && res.data ? res.data : res;
-            const version = data && data.version ? String(data.version) : 'V1.0.4';
+            const version = data && data.version ? String(data.version) : 'V1.1.0';
             versionEl.textContent = '版本 ' + version;
             versionEl.dataset.loaded = '1';
         } catch (e) {
             console.warn('loadAboutInfo failed', e);
-            versionEl.textContent = '版本 V1.0.4';
+            versionEl.textContent = '版本 V1.1.0';
         }
     }
 
@@ -8345,7 +8664,11 @@
         return String((currentLLMConfig && currentLLMConfig.watchBrand) || '').trim().toLowerCase() === 'garmin';
     }
 
-    // 佳明用户存储规范验证判定：非佳明直接放行；佳明用户须已完成「告诉AI助手存储规范」且路径未变
+    function isCorosWatchBrand() {
+        return String((currentLLMConfig && currentLLMConfig.watchBrand) || '').trim().toLowerCase() === 'coros';
+    }
+
+    // AI 助手存储规范验证判定：仅用于通用 AI 目录说明，不作为 Garmin 同步前置条件
     function _validate_storage_notification() {
         if (!isGarminWatchBrand()) return true;
         var currentHash = computeDirHash(getFitTracksDir());
@@ -8499,26 +8822,462 @@
         const endEl = document.getElementById('sport-sync-end-date');
         const importing = sportHubState.recordsSyncing;
         const busy = importing || sportHubState.recordsLoading || sportHubState.remoteSyncing || isMovementRecordsInitializing || isMovementRecordsRefreshing;
-        const garminReady = isGarminWatchBrand();
-        const storageValidated = _validate_storage_notification();
+        const providerReady = isGarminWatchBrand() || isCorosWatchBrand();
         if (btn) {
             btn.disabled = busy;
             btn.innerText = importing ? '导入中...' : '导入本地 FIT 文件';
             btn.title = '选择本地 FIT 文件或 ZIP 压缩包并导入规范目录';
         }
         if (remoteBtn) {
-            remoteBtn.disabled = busy || !garminReady || !storageValidated;
+            remoteBtn.disabled = busy || !providerReady;
             remoteBtn.innerText = sportHubState.remoteSyncing ? '同步活动中...' : '同步活动';
-            if (!garminReady) {
-                remoteBtn.title = '当前手表品牌暂不支持按时间同步活动，请在配置页面选择佳明，或使用导入本地 FIT 文件。';
-            } else if (!storageValidated) {
-                remoteBtn.title = '请先在「配置」页面完成「告诉AI助手存储规范」验证，确保 AI 助手了解您的存储规范后，方可使用同步功能。';
+            if (!providerReady) {
+                remoteBtn.title = '当前手表品牌暂不支持按时间同步活动，请在配置页面选择佳明或高驰，或使用导入本地 FIT 文件。';
+            } else if (isCorosWatchBrand()) {
+                remoteBtn.title = '按日期范围通过 COROS MCP 同步活动 FIT 文件';
             } else {
-                remoteBtn.title = '按日期范围通过 OpenClaw 同步佳明活动 FIT 文件';
+                remoteBtn.title = '按日期范围直接同步 Garmin 活动 FIT 文件';
             }
         }
-        if (startEl) startEl.disabled = busy || !garminReady;
-        if (endEl) endEl.disabled = busy || !garminReady;
+        if (startEl) startEl.disabled = busy || !providerReady;
+        if (endEl) endEl.disabled = busy || !providerReady;
+    }
+
+    function toSafeCount(value) {
+        const num = Number(value);
+        return Number.isFinite(num) ? num : 0;
+    }
+
+    function redactProviderText(text) {
+        return String(text || '')
+            .replace(/(password|passwd|token|api[_-]?key|authorization)\s*[:=]\s*[^\s]+/ig, '$1=***')
+            .trim();
+    }
+
+    function compactProviderText(text, maxLines = 4, maxChars = 360) {
+        const clean = redactProviderText(text);
+        if (!clean) return '';
+        const lines = clean.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+        const compact = lines.slice(-maxLines).join('\n');
+        return compact.length > maxChars ? compact.slice(0, maxChars) + '...' : compact;
+    }
+
+    function garminProviderMessage(res, fallback) {
+        const data = (res && res.data) || {};
+        const parts = [
+            data.message || (res && (res.msg || res.error)) || fallback,
+            compactProviderText(data.stdout || ''),
+            compactProviderText(data.stderr || '')
+        ].filter(Boolean);
+        return parts.join('\n');
+    }
+
+    function corosProviderMessage(res, fallback) {
+        const data = (res && res.data) || {};
+        const parts = [
+            data.message || (res && (res.msg || res.error)) || fallback,
+            compactProviderText(data.stdout || ''),
+            compactProviderText(data.stderr || '')
+        ].filter(Boolean);
+        return parts.join('\n');
+    }
+
+    function garminAuthRegionFromResponse(res) {
+        const data = (res && res.data) || {};
+        return normalizeGarminRegion(data.region || (currentLLMConfig && currentLLMConfig.garminRegion));
+    }
+
+    function garminAuthStatusMessage(status, region, fallback) {
+        const label = region === 'global' ? '国际区' : '中国区';
+        if (status === 'authorized') return `已检测到 Garmin ${label} 授权`;
+        if (status === 'checking') return `正在检查 Garmin ${label} 授权状态...`;
+        if (status === 'launched') return `已打开 Garmin ${label} 授权终端，完成后请点击检查状态`;
+        if (status === 'missing') return `未检测到 Garmin ${label} 授权，请点击授权`;
+        if (status === 'expired') return `Garmin ${label} 授权不可用或已失效，请重新授权`;
+        if (status === 'failed') return fallback || `Garmin ${label} 授权状态检查失败`;
+        return fallback || '尚未检查 Garmin 授权状态';
+    }
+
+    function corosAuthRegionLabel(region) {
+        const clean = normalizeCorosRegion(region);
+        if (clean === 'us') return '北美区';
+        if (clean === 'eu') return '欧洲区';
+        return '中国区';
+    }
+
+    function corosAuthStatusMessage(status, region, fallback) {
+        const label = corosAuthRegionLabel(region);
+        if (status === 'authorized') return `已检测到 COROS ${label} 授权`;
+        if (status === 'checking') return `正在检查 COROS ${label} 授权状态...`;
+        if (status === 'launched') return `已打开 COROS ${label} 授权终端，完成后请点击检查状态`;
+        if (status === 'missing') return `未检测到 COROS ${label} 授权，请点击授权`;
+        if (status === 'expired') return `COROS ${label} 授权不可用或已失效，请重新授权`;
+        if (status === 'failed') return fallback || `COROS ${label} 授权状态检查失败`;
+        return fallback || '尚未检查 COROS 授权状态';
+    }
+
+    function formatCorosAuthDiagnosticMessage(data, fallback) {
+        data = data || {};
+        const diagnostics = Array.isArray(data.diagnostics) ? data.diagnostics : [];
+        const diagnosticText = diagnostics
+            .filter(function(item) {
+                const status = String(item && item.status || '').toLowerCase();
+                return status === 'failed' || status === 'warning';
+            })
+            .map(function(item) { return item.message; })
+            .filter(Boolean)
+            .slice(0, 3)
+            .join('；');
+        if (data.node_available === false) return data.message || diagnosticText || '未检测到 Node.js，当前 COROS MCP 授权需要本机 Node.js 环境。';
+        if (data.status === 'skill_missing' || data.skill_available === false) return data.message || diagnosticText || '未找到 COROS skill 脚本，请确认应用安装完整。';
+        if (!data.mcp_authorized) return data.message || diagnosticText || '未检测到 COROS MCP 授权 token，请点击授权。';
+        return data.message || diagnosticText || fallback || 'COROS 授权状态检查完成';
+    }
+
+    function setGarminAuthStatusUI(status, message, region) {
+        const normalizedStatus = String(status || 'idle').trim().toLowerCase();
+        const selectedRegion = normalizeGarminRegion(region || (currentLLMConfig && currentLLMConfig.garminRegion));
+        garminAuthStatusState = {
+            status: normalizedStatus,
+            region: selectedRegion,
+            message: message || garminAuthStatusMessage(normalizedStatus, selectedRegion)
+        };
+        const dot = document.getElementById('garmin-auth-dot');
+        const text = document.getElementById('garmin-auth-status-text');
+        if (dot) {
+            dot.className = 'garmin-auth-dot';
+            if (normalizedStatus && normalizedStatus !== 'idle') dot.classList.add(normalizedStatus);
+        }
+        if (text) text.innerText = garminAuthStatusState.message;
+    }
+
+    function setCorosAuthStatusUI(status, message, region) {
+        const normalizedStatus = String(status || 'idle').trim().toLowerCase();
+        const selectedRegion = normalizeCorosRegion(region || (currentLLMConfig && currentLLMConfig.corosRegion));
+        corosAuthStatusState = {
+            status: normalizedStatus,
+            region: selectedRegion,
+            message: message || corosAuthStatusMessage(normalizedStatus, selectedRegion)
+        };
+        const dot = document.getElementById('coros-auth-dot');
+        const text = document.getElementById('coros-auth-status-text');
+        if (dot) {
+            dot.className = 'garmin-auth-dot';
+            if (normalizedStatus && normalizedStatus !== 'idle') dot.classList.add(normalizedStatus);
+        }
+        if (text) text.innerText = corosAuthStatusState.message;
+    }
+
+    async function refreshGarminAuthStatus(showToastOnDone = false) {
+        const region = normalizeGarminRegion(currentLLMConfig && currentLLMConfig.garminRegion);
+        if (!isGarminWatchBrand()) {
+            setGarminAuthStatusUI('idle', '请选择 Garmin 后检查授权状态', region);
+            return false;
+        }
+        if (!(window.pywebview && window.pywebview.api && typeof window.pywebview.api.check_garmin_auth_status === 'function')) {
+            setGarminAuthStatusUI('failed', '当前版本不支持 Garmin 授权状态检查', region);
+            if (showToastOnDone) showToast('当前版本不支持 Garmin 授权状态检查');
+            return false;
+        }
+        setGarminAuthStatusUI('checking', '', region);
+        try {
+            const authRes = await window.pywebview.api.check_garmin_auth_status(region);
+            const data = (authRes && authRes.data) || {};
+            const remoteStatus = String(data.status || '').trim().toLowerCase();
+            const authorized = !!(authRes && authRes.code === 0 && data.authorized);
+            const nextStatus = authorized ? 'authorized' : (remoteStatus === 'invalid_token' ? 'expired' : 'missing');
+            const msg = data.message || garminAuthStatusMessage(nextStatus, region);
+            setGarminAuthStatusUI(nextStatus, msg, data.region || region);
+            if (showToastOnDone) showToast(msg);
+            return authorized;
+        } catch (e) {
+            const msg = String((e && e.message) || e || 'Garmin 授权状态检查失败');
+            setGarminAuthStatusUI('failed', msg, region);
+            if (showToastOnDone) showToast(msg);
+            return false;
+        }
+    }
+
+    async function refreshCorosAuthStatus(showToastOnDone = false) {
+        const region = normalizeCorosRegion(currentLLMConfig && currentLLMConfig.corosRegion);
+        if (!isCorosWatchBrand()) {
+            setCorosAuthStatusUI('idle', '请选择 COROS 后检查授权状态', region);
+            return false;
+        }
+        if (!(window.pywebview && window.pywebview.api && typeof window.pywebview.api.check_coros_auth_status === 'function')) {
+            setCorosAuthStatusUI('failed', '当前版本不支持 COROS 授权状态检查', region);
+            if (showToastOnDone) showToast('当前版本不支持 COROS 授权状态检查');
+            return false;
+        }
+        setCorosAuthStatusUI('checking', '', region);
+        try {
+            const authRes = await window.pywebview.api.check_coros_auth_status(region);
+            const data = (authRes && authRes.data) || {};
+            const remoteStatus = String(data.status || '').trim().toLowerCase();
+            const authorized = !!(authRes && authRes.code === 0 && data.authorized);
+            const nextStatus = authorized ? 'authorized' : (remoteStatus === 'invalid_token' ? 'expired' : 'missing');
+            const msg = formatCorosAuthDiagnosticMessage(data, corosAuthStatusMessage(nextStatus, region));
+            setCorosAuthStatusUI(nextStatus, msg, data.region || region);
+            if (showToastOnDone) showToast(msg);
+            return authorized;
+        } catch (e) {
+            const msg = String((e && e.message) || e || 'COROS 授权状态检查失败');
+            setCorosAuthStatusUI('failed', msg, region);
+            if (showToastOnDone) showToast(msg);
+            return false;
+        }
+    }
+
+    function isGarminAuthRequiredResponse(res) {
+        const data = (res && res.data) || {};
+        const code = String(data.provider_error_code || data.status || '').trim();
+        const text = String(data.message || (res && (res.msg || res.error)) || '').toLowerCase();
+        return code === 'garmin_auth_required'
+            || code === 'missing_token'
+            || code === 'invalid_token'
+            || text.includes('请先运行 login.py')
+            || text.includes('garmin 认证失败')
+            || text.includes('未找到 garmin token');
+    }
+
+    function isCorosAuthRequiredResponse(res) {
+        const data = (res && res.data) || {};
+        const code = String(data.provider_error_code || data.status || '').trim();
+        const text = String(data.message || data.action_hint || (res && (res.msg || res.error)) || '').toLowerCase();
+        return code === 'coros_auth_required'
+            || code === 'coros_mcp_token_missing'
+            || code === 'missing_token'
+            || code === 'invalid_token'
+            || (text.includes('coros') && (text.includes('token') || text.includes('授权') || text.includes('登录')));
+    }
+
+    function openGarminSettingsForAuthorization(authRes, message) {
+        const region = garminAuthRegionFromResponse(authRes);
+        currentLLMConfig.garminRegion = region;
+        const regionInput = document.getElementById('garmin-region');
+        if (regionInput) regionInput.value = region;
+        const msg = message || garminProviderMessage(authRes, 'Garmin 授权不可用或已失效，请到配置页完成授权。');
+        setGarminAuthStatusUI(isGarminAuthRequiredResponse(authRes) ? 'expired' : 'missing', msg, region);
+        const settingsBtn = document.querySelector('.bookmark-tab[data-panel="settings"]');
+        if (settingsBtn && typeof switchTab === 'function') switchTab(settingsBtn);
+        setTimeout(function() {
+            const card = document.getElementById('garmin-region-row');
+            if (card && typeof card.scrollIntoView === 'function') card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            refreshGarminAuthStatus(false).catch(function(e) { console.warn('refreshGarminAuthStatus after prompt', e); });
+        }, 80);
+        showToast('请在配置页完成 Garmin 授权后再同步', 5500);
+    }
+
+    function formatGarminRemoteSyncSummary(data) {
+        const payload = data || {};
+        const download = payload.download || {};
+        const imported = payload.import || {};
+        const downloadText = [
+            `下载 ${toSafeCount(download.downloaded)}`,
+            `跳过 ${toSafeCount(download.skipped)}`,
+            `失败 ${toSafeCount(download.failed)}`
+        ];
+        if (download.searched != null) downloadText.unshift(`搜索 ${toSafeCount(download.searched)}`);
+        const importText = [
+            `新增 ${toSafeCount(imported.inserted)}`,
+            `更新 ${toSafeCount(imported.updated)}`,
+            `跳过 ${toSafeCount(imported.skipped)}`,
+            `删除 ${toSafeCount(imported.removed)}`,
+            `异常 ${Array.isArray(imported.errors) ? imported.errors.length : toSafeCount(imported.errors)}`
+        ];
+        return `Garmin 活动同步完成：${downloadText.join('，')}；本地导入：${importText.join('，')}`;
+    }
+
+    function formatProviderRemoteSyncSummary(data, providerLabel) {
+        const payload = data || {};
+        const download = payload.download || {};
+        const imported = payload.import || {};
+        const downloadedCount = toSafeCount(download.downloaded);
+        const downloadSkippedCount = toSafeCount(download.skipped);
+        const failedCount = toSafeCount(download.failed);
+        const insertedCount = toSafeCount(imported.inserted);
+        const updatedCount = toSafeCount(imported.updated);
+        const importSkippedCount = toSafeCount(imported.skipped);
+        const removedCount = toSafeCount(imported.removed);
+        const importErrorCount = Array.isArray(imported.errors) ? imported.errors.length : toSafeCount(imported.errors);
+        const downloadText = [
+            `下载 ${downloadedCount}`,
+            `跳过 ${downloadSkippedCount}`,
+            `失败 ${failedCount}`
+        ];
+        if (download.searched != null) downloadText.unshift(`搜索 ${toSafeCount(download.searched)}`);
+        if (download.limit != null) downloadText.push(`单次上限 ${toSafeCount(download.limit)}`);
+        const importText = [
+            `新增 ${insertedCount}`,
+            `更新 ${updatedCount}`,
+            `跳过 ${importSkippedCount}`,
+            `删除 ${removedCount}`,
+            `异常 ${importErrorCount}`
+        ];
+        const remoteSkippedHint = imported.remote_import_skipped
+            ? `；${imported.message || '未返回可导入 FIT，已跳过本地扫描'}`
+            : '';
+        const noNewHint = (downloadedCount + downloadSkippedCount > 0 && insertedCount === 0 && updatedCount === 0 && importErrorCount === 0)
+            ? '；无新增，下载到的活动可能已存在或被去重跳过'
+            : '';
+        return `${providerLabel} 活动同步完成：${downloadText.join('，')}；本地导入：${importText.join('，')}${remoteSkippedHint}${noNewHint}`;
+    }
+
+    function formatGarminRemoteSyncError(res) {
+        const data = (res && res.data) || {};
+        const parts = [];
+        const base = data.message || (res && (res.msg || res.error)) || 'Garmin 活动同步失败';
+        if (base) parts.push(base);
+        if (data.action_hint) parts.push(data.action_hint);
+        if (data.provider_error_code) parts.push(`错误码：${data.provider_error_code}`);
+        if (data.download || data.import) {
+            parts.push(formatGarminRemoteSyncSummary(data));
+        }
+        return parts.filter(Boolean).join(' ');
+    }
+
+    function formatProviderRemoteSyncError(res, providerLabel) {
+        const data = (res && res.data) || {};
+        const parts = [];
+        const base = data.message || (res && (res.msg || res.error)) || `${providerLabel} 活动同步失败`;
+        if (base) parts.push(base);
+        if (data.action_hint) parts.push(data.action_hint);
+        if (data.provider_error_code) parts.push(`错误码：${data.provider_error_code}`);
+        if (data.download || data.import) {
+            parts.push(formatProviderRemoteSyncSummary(data, providerLabel));
+        }
+        return parts.filter(Boolean).join(' ');
+    }
+
+    function showGarminLoginPrompt(authRes) {
+        openGarminSettingsForAuthorization(authRes);
+    }
+
+    function showCorosLoginPrompt(authRes) {
+        const data = (authRes && authRes.data) || {};
+        const region = normalizeCorosRegion(data.region || (currentLLMConfig && currentLLMConfig.corosRegion));
+        currentLLMConfig.corosRegion = region;
+        const regionInput = document.getElementById('coros-region');
+        if (regionInput) regionInput.value = region;
+        const msg = corosProviderMessage(
+            authRes,
+            'COROS MCP 授权不可用或已失效，请到配置页完成授权。'
+        );
+        setCorosAuthStatusUI(isCorosAuthRequiredResponse(authRes) ? 'expired' : 'missing', msg, region);
+        const settingsBtn = document.querySelector('.bookmark-tab[data-panel="settings"]');
+        if (settingsBtn && typeof switchTab === 'function') switchTab(settingsBtn);
+        setTimeout(function() {
+            const card = document.getElementById('coros-region-row');
+            if (card && typeof card.scrollIntoView === 'function') card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            refreshCorosAuthStatus(false).catch(function(e) { console.warn('refreshCorosAuthStatus after prompt', e); });
+        }, 80);
+        showToast('请在配置页完成 COROS 授权后再同步', 5500);
+    }
+
+    async function startGarminAuthorizationFromSettings() {
+        const regionInput = document.getElementById('garmin-region');
+        const region = normalizeGarminRegion(regionInput ? regionInput.value : (currentLLMConfig && currentLLMConfig.garminRegion));
+        const btn = document.getElementById('garmin-auth-login-btn');
+        currentLLMConfig.garminRegion = region;
+        if (regionInput) regionInput.value = region;
+        if (!(window.pywebview && window.pywebview.api && typeof window.pywebview.api.start_garmin_login === 'function')) {
+            setGarminAuthStatusUI('failed', '当前版本不支持 Garmin 登录授权', region);
+            showToast('当前版本不支持 Garmin 登录授权');
+            return;
+        }
+        if (btn) {
+            btn.disabled = true;
+            btn.innerText = '打开中...';
+        }
+        setGarminAuthStatusUI('checking', `正在打开 Garmin ${region === 'global' ? '国际区' : '中国区'}授权终端...`, region);
+        try {
+            if (window.pywebview.api.set_garmin_region) {
+                await window.pywebview.api.set_garmin_region(region);
+            }
+            const loginRes = await window.pywebview.api.start_garmin_login(region);
+            const data = (loginRes && loginRes.data) || {};
+            const msg = data.message || garminProviderMessage(loginRes, garminAuthStatusMessage('launched', region));
+            if (!loginRes || loginRes.code !== 0) throw new Error(msg || 'Garmin 登录授权启动失败');
+            setGarminAuthStatusUI('launched', msg || garminAuthStatusMessage('launched', region), region);
+            showToast(msg || garminAuthStatusMessage('launched', region), 5500);
+        } catch (e) {
+            const msg = String((e && e.message) || e || 'Garmin 登录授权启动失败');
+            setGarminAuthStatusUI('failed', msg, region);
+            showToast('Garmin 授权启动失败：' + msg, 6500);
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerText = '授权';
+            }
+        }
+    }
+
+    async function startCorosAuthorizationFromSettings() {
+        const regionInput = document.getElementById('coros-region');
+        const region = normalizeCorosRegion(regionInput ? regionInput.value : (currentLLMConfig && currentLLMConfig.corosRegion));
+        const btn = document.getElementById('coros-auth-login-btn');
+        currentLLMConfig.corosRegion = region;
+        if (regionInput) regionInput.value = region;
+        if (!(window.pywebview && window.pywebview.api && typeof window.pywebview.api.start_coros_login === 'function')) {
+            setCorosAuthStatusUI('failed', '当前版本不支持 COROS 授权', region);
+            showToast('当前版本不支持 COROS 授权');
+            return;
+        }
+        if (btn) {
+            btn.disabled = true;
+            btn.innerText = '打开中...';
+        }
+        setCorosAuthStatusUI('checking', `正在打开 COROS ${corosAuthRegionLabel(region)}授权终端...`, region);
+        try {
+            if (window.pywebview.api.set_coros_region) {
+                await window.pywebview.api.set_coros_region(region);
+            }
+            const loginRes = await window.pywebview.api.start_coros_login(region);
+            const data = (loginRes && loginRes.data) || {};
+            const msg = data.message || corosProviderMessage(loginRes, corosAuthStatusMessage('launched', region));
+            if (!loginRes || loginRes.code !== 0) throw new Error(msg || 'COROS 授权启动失败');
+            setCorosAuthStatusUI('launched', msg || corosAuthStatusMessage('launched', region), region);
+            showToast(msg || corosAuthStatusMessage('launched', region), 5500);
+        } catch (e) {
+            const msg = String((e && e.message) || e || 'COROS 授权启动失败');
+            setCorosAuthStatusUI('failed', msg, region);
+            showToast('COROS 授权启动失败：' + msg, 6500);
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerText = '授权';
+            }
+        }
+    }
+
+    async function ensureGarminAuthorizedForRemoteSync() {
+        if (!(window.pywebview && window.pywebview.api && typeof window.pywebview.api.check_garmin_auth_status === 'function')) {
+            showToast('当前版本不支持 Garmin 授权检查');
+            setGarminAuthStatusUI('failed', '当前版本不支持 Garmin 授权检查');
+            return false;
+        }
+        const authRes = await window.pywebview.api.check_garmin_auth_status(normalizeGarminRegion(currentLLMConfig && currentLLMConfig.garminRegion));
+        if (authRes && authRes.code === 0 && authRes.data && authRes.data.authorized) {
+            setGarminAuthStatusUI('authorized', authRes.data.message || '', authRes.data.region);
+            return true;
+        }
+        openGarminSettingsForAuthorization(authRes);
+        return false;
+    }
+
+    async function ensureCorosAuthorizedForRemoteSync() {
+        if (!(window.pywebview && window.pywebview.api && typeof window.pywebview.api.check_coros_auth_status === 'function')) {
+            showToast('当前版本不支持 COROS 授权检查');
+            setCorosAuthStatusUI('failed', '当前版本不支持 COROS 授权检查');
+            return false;
+        }
+        const authRes = await window.pywebview.api.check_coros_auth_status(normalizeCorosRegion(currentLLMConfig && currentLLMConfig.corosRegion));
+        if (authRes && authRes.code === 0 && authRes.data && authRes.data.authorized) {
+            setCorosAuthStatusUI('authorized', authRes.data.message || '', authRes.data.region);
+            return true;
+        }
+        showCorosLoginPrompt(authRes);
+        return false;
     }
 
     async function fetchSportHubActivityDetail(activityId) {
@@ -8612,7 +9371,7 @@
 	        if ((sportHubState.recordsSyncing || sportHubState.recordsLoading || sportHubState.remoteSyncing) && !pageItems.length) {
             let loadingText = '正在加载运动记录...';
             if (sportHubState.remoteSyncing) {
-                loadingText = sportHubState.syncMessage || '正在请求 OpenClaw 同步指定时间范围内的活动 FIT 文件...';
+                loadingText = sportHubState.syncMessage || '正在同步指定时间范围内的活动 FIT 文件...';
             } else if (sportHubState.recordsSyncing) {
                 const stats = sportHubState.syncStats || {};
                 const progressText = stats.total
@@ -8633,7 +9392,7 @@
                 loadingText = detailParts.join(' · ');
             }
             tbody.innerHTML = `<tr><td colspan="${totalCols}"><div class="hub-empty-state">${safeHtml(loadingText)}</div></td></tr>`;
-        } else if (sportHubState.recordsError) {
+        } else if (sportHubState.recordsError && !pageItems.length) {
             tbody.innerHTML = `<tr><td colspan="${totalCols}"><div class="hub-empty-state" style="color:#fca5a5;">${safeHtml(sportHubState.recordsError)}</div></td></tr>`;
         } else if (!pageItems.length) {
             tbody.innerHTML = `<tr><td colspan="${totalCols}"><div class="hub-empty-state">当前数据库中暂无可展示的运动记录</div></td></tr>`;
@@ -9055,6 +9814,7 @@
             max_hr: 'max_hr',
             cadence: 'cadence',
             gct: 'gct_ms',
+            stance_balance: 'stance_time_balance_pct',
             power: 'power_w',
             ascent: 'ascent_m',
             descent: 'descent_m',
@@ -9111,6 +9871,10 @@
                 // V10.0:自动切圈沿用 _normalize_laps 字段 avg_hr;旧展示圈保留 hr
                 if (c === 'avg_hr' && raw == null && lap.avg_hr != null) {
                     raw = lap.avg_hr;
+                }
+                // 跑步 FIT cadence 常为单脚轮转频率；详情圈速表优先显示双脚总步频。
+                if (c === 'cadence' && lap.cadence_spm != null) {
+                    raw = lap.cadence_spm;
                 }
                 // V10.0 P1-1: lap_no 列直接读 lap.lap_index(FIT/auto 用 0 开始)或 lap.lap_no(mock)
                 if (c === 'lap_no') {
@@ -9427,6 +10191,7 @@
         // V9.4.4:圈速表新增字段(同源映射,前端不写硬编码 label)
         'cadence': '步频',
         'gct': 'GCT',
+        'stance_balance': '左右平衡',
         'power': '功率',
         'ascent': '累计爬升',
         'descent': '累计下降',
@@ -9508,6 +10273,10 @@
                 return { value: Math.round(raw), unit: 'spm' };
             case 'gct':
                 return { value: Math.round(raw), unit: 'ms' };
+            case 'stance_balance':
+                var leftBalance = Number(raw);
+                if (!Number.isFinite(leftBalance) || leftBalance <= 0 || leftBalance >= 100) return { value: '--', unit: '' };
+                return { value: leftBalance.toFixed(1) + ' / ' + (100 - leftBalance).toFixed(1), unit: '%' };
             case 'power':
             case 'avg_power':
             case 'max_power':
@@ -10208,12 +10977,10 @@
 
     async function syncRemoteSportHubActivities() {
         initSportHubSyncDateRange();
-        if (!isGarminWatchBrand()) {
-            showToast('当前手表品牌为高驰或未配置，暂不支持按时间同步活动，请使用导入本地 FIT 文件。');
-            return;
-        }
-        if (!_validate_storage_notification()) {
-            showToast('请先在「配置」页面完成「告诉AI助手存储规范」验证，方可使用同步活动功能。');
+        const providerLabel = isCorosWatchBrand() ? 'COROS' : 'Garmin';
+        const isSupportedProvider = isGarminWatchBrand() || isCorosWatchBrand();
+        if (!isSupportedProvider) {
+            showToast('当前手表品牌未配置或暂不支持按时间同步活动，请使用导入本地 FIT 文件。');
             return;
         }
         const startEl = document.getElementById('sport-sync-start-date');
@@ -10229,21 +10996,39 @@
             return;
         }
         if (!(window.pywebview && window.pywebview.api && typeof window.pywebview.api.sync_remote_fit_activities === 'function')) {
-            showToast('当前版本不支持通过 OpenClaw 同步活动');
+            showToast(`当前版本不支持 ${providerLabel} 活动同步`);
             return;
         }
+        const authorized = isCorosWatchBrand()
+            ? await ensureCorosAuthorizedForRemoteSync()
+            : await ensureGarminAuthorizedForRemoteSync();
+        if (!authorized) return;
         sportHubState.remoteSyncing = true;
         sportHubState.recordsError = '';
-        sportHubState.syncMessage = `正在请求 OpenClaw 同步 ${startDate} 至 ${endDate} 的活动 FIT 文件...`;
+        sportHubState.syncMessage = `正在同步 ${startDate} 至 ${endDate} 的 ${providerLabel} 活动 FIT 文件...`;
         renderSportHubRecords();
         try {
             const res = await window.pywebview.api.sync_remote_fit_activities(startDate, endDate);
-            if (!res || res.code !== 0) throw new Error((res && res.msg) || 'OpenClaw 活动同步失败');
-            // §三 响应结构契约:res.data.content(任务 3 改造后)
-            const content = String((res.data && res.data.content) || '').trim();
-            sportHubState.syncMessage = content || 'OpenClaw 已完成活动下载请求，正在刷新本地 FIT 数据...';
-            showToast('OpenClaw 已返回同步结果，正在刷新本地记录');
-            await syncAndLoadSportHubRecords({ sync: true, resetPage: true });
+            if (!res || res.code !== 0) {
+                if (isGarminWatchBrand() && isGarminAuthRequiredResponse(res)) {
+                    sportHubState.recordsError = '';
+                    sportHubState.syncMessage = 'Garmin 授权不可用或已失效，请到配置页重新授权后再同步活动。';
+                    openGarminSettingsForAuthorization(res, sportHubState.syncMessage);
+                    return;
+                }
+                if (isCorosWatchBrand() && isCorosAuthRequiredResponse(res)) {
+                    sportHubState.recordsError = '';
+                    sportHubState.syncMessage = 'COROS 授权不可用或已失效，请到配置页重新授权后再同步活动。';
+                    showCorosLoginPrompt(res);
+                    return;
+                }
+                throw new Error(formatProviderRemoteSyncError(res, providerLabel));
+            }
+            const data = res.data || {};
+            sportHubState.lastSyncSummary = data.import || data.download || data;
+            sportHubState.syncMessage = formatProviderRemoteSyncSummary(data, providerLabel);
+            showToast(sportHubState.syncMessage);
+            await loadSportHubActivityList({ resetPage: true, refreshSnapshot: true });
         } catch (e) {
             console.error('syncRemoteSportHubActivities error:', e);
             sportHubState.recordsError = String((e && e.message) || e || '同步活动失败');
@@ -11175,6 +11960,107 @@
         return cleanModel || 'openclaw';
     }
 
+    function normalizeLLMTransport(value) {
+        return String(value || '').trim().toLowerCase() === 'cli' ? 'cli' : 'http';
+    }
+
+    function normalizeCLIType(value) {
+        const clean = String(value || '').trim().toLowerCase();
+        return ['openclaw', 'codex', 'claude', 'custom'].includes(clean) ? clean : 'openclaw';
+    }
+
+    function normalizeCLITimeout(value) {
+        const parsed = parseInt(value, 10);
+        if (!Number.isFinite(parsed)) return 300;
+        return Math.max(5, Math.min(parsed, 1800));
+    }
+
+    function normalizeGarminRegion(value) {
+        const clean = String(value || '').trim().toLowerCase();
+        return clean === 'global' ? 'global' : 'cn';
+    }
+
+    function normalizeCorosRegion(value) {
+        const clean = String(value || '').trim().toLowerCase();
+        return ['cn', 'us', 'eu'].includes(clean) ? clean : 'cn';
+    }
+
+    function isLLMTransportCLI() {
+        return normalizeLLMTransport(currentLLMConfig && currentLLMConfig.transport) === 'cli';
+    }
+
+    function isLLMReadyForFrontendCall() {
+        if (isLLMTransportCLI()) {
+            return !!normalizeCLIType(currentLLMConfig && currentLLMConfig.cliType);
+        }
+        return !!String((currentLLMConfig && currentLLMConfig.url) || '').trim();
+    }
+
+    function buildLLMConfigSignature(config) {
+        const cfg = config || {};
+        const transport = normalizeLLMTransport(cfg.transport);
+        const provider = String(cfg.provider || 'local_mcp').trim();
+        const agentId = String(cfg.agentId !== undefined ? cfg.agentId : (cfg.agent_id || '')).trim();
+        const watchBrand = String(cfg.watchBrand !== undefined ? cfg.watchBrand : (cfg.watch_brand || '')).trim();
+        const garminRegion = normalizeGarminRegion(cfg.garminRegion !== undefined ? cfg.garminRegion : cfg.garmin_region);
+        const corosRegion = normalizeCorosRegion(cfg.corosRegion !== undefined ? cfg.corosRegion : cfg.coros_region);
+        const base = {
+            transport: transport,
+            provider: provider,
+            agentId: agentId,
+            watchBrand: watchBrand,
+            garminRegion: garminRegion,
+            corosRegion: corosRegion
+        };
+        if (transport === 'cli') {
+            base.cliType = normalizeCLIType(cfg.cliType !== undefined ? cfg.cliType : cfg.cli_type);
+            base.cliPath = String(cfg.cliPath !== undefined ? cfg.cliPath : (cfg.cli_path || '')).trim();
+            base.cliArgs = String(cfg.cliArgs !== undefined ? cfg.cliArgs : (cfg.cli_args || '')).trim();
+            base.cliModel = String(cfg.cliModel !== undefined ? cfg.cliModel : (cfg.cli_model || '')).trim();
+            base.cliTimeoutSec = normalizeCLITimeout(cfg.cliTimeoutSec !== undefined ? cfg.cliTimeoutSec : cfg.cli_timeout_sec);
+        } else {
+            base.url = String(cfg.url || '').trim();
+            base.model = normalizeAgentModel(cfg.model || 'openclaw', agentId);
+            base.apiKeyState = String(cfg.apiKey || '').trim() ? 'typed' : (cfg.hasApiKey || cfg.has_api_key ? 'saved' : 'empty');
+        }
+        return JSON.stringify(base);
+    }
+
+    function markLLMConfigClean(config) {
+        onboardingState.savedLLMConfigSignature = buildLLMConfigSignature(config || currentLLMConfig);
+    }
+
+    function isCurrentLLMConfigDirty() {
+        if (!onboardingState.savedLLMConfigSignature) return false;
+        return buildLLMConfigSignature(currentLLMConfig) !== onboardingState.savedLLMConfigSignature;
+    }
+
+    function isBackendLLMConfigStillCurrent(data) {
+        if (!data) return false;
+        return buildLLMConfigSignature({
+            transport: data.transport,
+            provider: data.provider || 'local_mcp',
+            model: data.model || 'openclaw',
+            url: data.url || '',
+            has_api_key: !!data.has_api_key,
+            agent_id: data.agent_id || '',
+            watch_brand: data.watch_brand || '',
+            garmin_region: data.garmin_region || 'cn',
+            coros_region: data.coros_region || 'cn',
+            cli_type: data.cli_type || '',
+            cli_path: data.cli_path || '',
+            cli_args: data.cli_args || '',
+            cli_model: data.cli_model || '',
+            cli_timeout_sec: data.cli_timeout_sec || 300
+        }) === buildLLMConfigSignature(currentLLMConfig);
+    }
+
+    function markLLMConfigDirtyIfNeeded() {
+        if (!isCurrentLLMConfigDirty()) return;
+        if (onboardingState.llmTestState === 'loading') return;
+        setLLMTestStatus('配置已修改，需重新测试', false);
+    }
+
     async function initLLMConfig() {
         if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.get_llm_config === 'function') {
             try {
@@ -11186,6 +12072,7 @@
                     const storedProvider = c.provider || 'local_mcp';
                     const storedModel = normalizeLocalGatewayModel(storedProvider, c.model || 'openclaw');
                     currentLLMConfig = {
+                        transport: normalizeLLMTransport(c.transport),
                         provider: storedProvider,
                         model: storedModel,
                         url: (c.url && String(c.url).trim()) ? String(c.url).trim() : '',
@@ -11193,8 +12080,16 @@
                         hasApiKey: !!c.has_api_key,
                         apiKeyMasked: (c.api_key_masked !== undefined && c.api_key_masked !== null) ? String(c.api_key_masked) : '',
                         agentId: (c.agent_id !== undefined && c.agent_id !== null) ? String(c.agent_id) : '',
+                        cliType: normalizeCLIType(c.cli_type),
+                        cliPath: (c.cli_path !== undefined && c.cli_path !== null) ? String(c.cli_path) : '',
+                        cliArgs: (c.cli_args !== undefined && c.cli_args !== null) ? String(c.cli_args) : '',
+                        cliModel: (c.cli_model !== undefined && c.cli_model !== null) ? String(c.cli_model) : '',
+                        cliTimeoutSec: normalizeCLITimeout(c.cli_timeout_sec),
                         watchBrand: (c.watch_brand !== undefined && c.watch_brand !== null) ? String(c.watch_brand) : '',
+                        garminRegion: normalizeGarminRegion(c.garmin_region),
+                        corosRegion: normalizeCorosRegion(c.coros_region),
                     };
+                    markLLMConfigClean(currentLLMConfig);
                 }
             } catch (e) { console.warn('get_llm_config', e); }
             return;
@@ -11203,7 +12098,13 @@
             const saved = localStorage.getItem('llm_config_v2');
             if (saved) {
                 currentLLMConfig = { ...currentLLMConfig, ...JSON.parse(saved) };
+                currentLLMConfig.transport = normalizeLLMTransport(currentLLMConfig.transport);
+                currentLLMConfig.cliType = normalizeCLIType(currentLLMConfig.cliType || currentLLMConfig.cli_type);
+                currentLLMConfig.cliTimeoutSec = normalizeCLITimeout(currentLLMConfig.cliTimeoutSec || currentLLMConfig.cli_timeout_sec);
+                currentLLMConfig.garminRegion = normalizeGarminRegion(currentLLMConfig.garminRegion || currentLLMConfig.garmin_region);
+                currentLLMConfig.corosRegion = normalizeCorosRegion(currentLLMConfig.corosRegion || currentLLMConfig.coros_region);
                 currentLLMConfig.model = normalizeLocalGatewayModel(currentLLMConfig.provider, currentLLMConfig.model);
+                markLLMConfigClean(currentLLMConfig);
             }
         } catch (e) {}
     }
@@ -11220,36 +12121,77 @@
     }
 
     function syncLLMConfigFromFields() {
+        const transportInput = document.getElementById('llm-transport');
         const providerInput = document.getElementById('llm-provider');
         const modelInput = document.getElementById('llm-model');
         const urlInput = document.getElementById('llm-custom-url');
         const apiKeyInput = document.getElementById('llm-api-key');
         const agentIdInput = document.getElementById('llm-agent-id');
+        const agentIdRow = document.getElementById('llm-agent-id-row');
+        const agentIdLabel = document.getElementById('llm-agent-id-label');
+        const cliTypeInput = document.getElementById('llm-cli-type');
+        const cliPathInput = document.getElementById('llm-cli-path');
+        const cliArgsInput = document.getElementById('llm-cli-args');
+        const cliModelInput = document.getElementById('llm-cli-model');
+        const cliTimeoutInput = document.getElementById('llm-cli-timeout');
         const brandInput = document.querySelector('input[name="watch_brand"]:checked');
-        if (!providerInput || !modelInput || !urlInput || !apiKeyInput || !agentIdInput) return;
+        const garminRegionInput = document.getElementById('garmin-region');
+        const corosRegionInput = document.getElementById('coros-region');
+        if (!transportInput || !providerInput || !modelInput || !urlInput || !apiKeyInput || !agentIdInput) return;
+        const transport = normalizeLLMTransport(transportInput.value || currentLLMConfig.transport);
         const provider = providerInput.value || 'local_mcp';
         const agentId = agentIdInput.value.trim();
         const selectedModel = modelInput.value || currentLLMConfig.model || 'openclaw';
         const model = normalizeAgentModel(selectedModel, agentId);
         currentLLMConfig = {
+            ...currentLLMConfig,
+            transport: transport,
             provider: provider,
             model: String(model).trim() || 'openclaw',
             url: urlInput.value.trim() || currentLLMConfig.url || llmProviders[provider]?.url || LLM_DEFAULT_URL,
             apiKey: apiKeyInput.value,
             agentId: agentId,
-            watchBrand: brandInput ? brandInput.value : ''
+            cliType: normalizeCLIType(cliTypeInput ? cliTypeInput.value : currentLLMConfig.cliType),
+            cliPath: cliPathInput ? cliPathInput.value.trim() : (currentLLMConfig.cliPath || ''),
+            cliArgs: cliArgsInput ? cliArgsInput.value.trim() : (currentLLMConfig.cliArgs || ''),
+            cliModel: cliModelInput ? cliModelInput.value.trim() : (currentLLMConfig.cliModel || ''),
+            cliTimeoutSec: normalizeCLITimeout(cliTimeoutInput ? cliTimeoutInput.value : currentLLMConfig.cliTimeoutSec),
+            watchBrand: brandInput ? brandInput.value : '',
+            garminRegion: normalizeGarminRegion(garminRegionInput ? garminRegionInput.value : currentLLMConfig.garminRegion),
+            corosRegion: normalizeCorosRegion(corosRegionInput ? corosRegionInput.value : currentLLMConfig.corosRegion)
         };
         if (brandInput) selectUserType(brandInput.value);
+        markLLMConfigDirtyIfNeeded();
     }
 
     function renderLLMConfigFields() {
+        const transportInput = document.getElementById('llm-transport');
         const providerInput = document.getElementById('llm-provider');
         const modelInput = document.getElementById('llm-model');
         const modelOptions = document.getElementById('llm-model-options');
         const urlInput = document.getElementById('llm-custom-url');
         const apiKeyInput = document.getElementById('llm-api-key');
         const agentIdInput = document.getElementById('llm-agent-id');
-        if (!providerInput || !modelInput || !modelOptions || !urlInput || !apiKeyInput || !agentIdInput) return;
+        const agentIdRow = document.getElementById('llm-agent-id-row');
+        const agentIdLabel = document.getElementById('llm-agent-id-label');
+        const cliTypeInput = document.getElementById('llm-cli-type');
+        const cliPathInput = document.getElementById('llm-cli-path');
+        const cliArgsInput = document.getElementById('llm-cli-args');
+        const cliArgsRow = document.getElementById('llm-cli-args-row');
+        const cliModelInput = document.getElementById('llm-cli-model');
+        const cliTimeoutInput = document.getElementById('llm-cli-timeout');
+        const garminRegionInput = document.getElementById('garmin-region');
+        const garminRegionRow = document.getElementById('garmin-region-row');
+        const corosRegionInput = document.getElementById('coros-region');
+        const corosRegionRow = document.getElementById('coros-region-row');
+        const settingsPanel = document.getElementById('panel-settings');
+        if (!transportInput || !providerInput || !modelInput || !modelOptions || !urlInput || !apiKeyInput || !agentIdInput) return;
+        const transport = normalizeLLMTransport(currentLLMConfig.transport);
+        transportInput.value = transport;
+        if (settingsPanel) {
+            settingsPanel.classList.toggle('llm-transport-cli', transport === 'cli');
+            settingsPanel.classList.toggle('llm-transport-http', transport !== 'cli');
+        }
         const provider = currentLLMConfig.provider || 'local_mcp';
         providerInput.value = llmProviders[provider] ? provider : 'custom';
         const providerConfig = llmProviders[providerInput.value] || llmProviders.custom;
@@ -11260,6 +12202,20 @@
         const corosRadio = document.querySelector('input[name="watch_brand"][value="coros"]');
         if (garminRadio) garminRadio.checked = (watchBrand === 'garmin');
         if (corosRadio) corosRadio.checked = (watchBrand === 'coros');
+        if (garminRegionInput) garminRegionInput.value = normalizeGarminRegion(currentLLMConfig.garminRegion);
+        if (corosRegionInput) corosRegionInput.value = normalizeCorosRegion(currentLLMConfig.corosRegion);
+        if (garminRegionRow) garminRegionRow.style.display = watchBrand === 'garmin' ? 'flex' : 'none';
+        if (corosRegionRow) corosRegionRow.style.display = watchBrand === 'coros' ? 'flex' : 'none';
+        if (watchBrand === 'garmin') {
+            refreshGarminAuthStatus(false).catch(function(e) { console.warn('refreshGarminAuthStatus render', e); });
+        } else {
+            setGarminAuthStatusUI('idle', '请选择 Garmin 后检查授权状态', normalizeGarminRegion(currentLLMConfig.garminRegion));
+        }
+        if (watchBrand === 'coros') {
+            refreshCorosAuthStatus(false).catch(function(e) { console.warn('refreshCorosAuthStatus render', e); });
+        } else {
+            setCorosAuthStatusUI('idle', '请选择 COROS 后检查授权状态', normalizeCorosRegion(currentLLMConfig.corosRegion));
+        }
         if (watchBrand) selectUserType(watchBrand);
         // 任务：用户设备必选 — 启动时若未选则显示红色提示
         validateWatchBrandRequired();
@@ -11296,6 +12252,33 @@
             apiKeyInput.placeholder = currentLLMConfig.hasApiKey ? ('已保存：' + (currentLLMConfig.apiKeyMasked || '****') + '，如需更换请重新输入') : '如果您的网关没加密，留空即可';
         } else {
             apiKeyInput.placeholder = currentLLMConfig.hasApiKey ? ('已保存：' + (currentLLMConfig.apiKeyMasked || '****') + '，如需更换请重新输入') : 'sk-...';
+        }
+        if (cliTypeInput) cliTypeInput.value = normalizeCLIType(currentLLMConfig.cliType);
+        const normalizedCliType = normalizeCLIType(currentLLMConfig.cliType);
+        if (agentIdRow) {
+            agentIdRow.classList.toggle('llm-cli-openclaw-agent-row', transport === 'cli' && normalizedCliType === 'openclaw');
+        }
+        if (agentIdLabel) {
+            agentIdLabel.textContent = (transport === 'cli' && normalizedCliType === 'openclaw')
+                ? 'OpenClaw Agent ID（选填）'
+                : 'Agent ID（选填）';
+        }
+        if (agentIdInput) {
+            agentIdInput.placeholder = (transport === 'cli' && normalizedCliType === 'openclaw')
+                ? '留空则使用 main，例如 agent-8b65944a'
+                : '网关分配的 ID';
+        }
+        if (cliPathInput) {
+            cliPathInput.value = currentLLMConfig.cliPath || '';
+            cliPathInput.placeholder = normalizedCliType === 'custom'
+                ? '请输入自定义 CLI 可执行文件路径'
+                : '留空则使用系统 PATH 中的命令';
+        }
+        if (cliArgsInput) cliArgsInput.value = currentLLMConfig.cliArgs || '';
+        if (cliModelInput) cliModelInput.value = currentLLMConfig.cliModel || '';
+        if (cliTimeoutInput) cliTimeoutInput.value = String(normalizeCLITimeout(currentLLMConfig.cliTimeoutSec));
+        if (cliArgsRow) {
+            cliArgsRow.classList.toggle('llm-cli-custom-row', normalizedCliType === 'custom');
         }
     }
 
@@ -11344,12 +12327,20 @@
             try {
                 await window.pywebview.api.save_llm_config(
                     currentLLMConfig.provider || 'local_mcp',
-                    currentLLMConfig.url || LLM_DEFAULT_URL,
+                    normalizeLLMTransport(currentLLMConfig.transport) === 'cli' ? '' : (currentLLMConfig.url || LLM_DEFAULT_URL),
                     normalizeAgentModel(currentLLMConfig.model || 'openclaw', currentLLMConfig.agentId || ''),
                     currentLLMConfig.apiKey || '',
                     currentLLMConfig.agentId || '',
                     currentLLMConfig.watchBrand || '',
-                    normalizedDir
+                    normalizedDir,
+                    normalizeLLMTransport(currentLLMConfig.transport),
+                    normalizeCLIType(currentLLMConfig.cliType),
+                    currentLLMConfig.cliPath || '',
+                    currentLLMConfig.cliArgs || '',
+                    currentLLMConfig.cliModel || '',
+                    normalizeCLITimeout(currentLLMConfig.cliTimeoutSec),
+                    normalizeGarminRegion(currentLLMConfig.garminRegion),
+                    normalizeCorosRegion(currentLLMConfig.corosRegion)
                 );
                 return true;
             } catch (e) {
@@ -11362,12 +12353,35 @@
 
     async function testLLMConfig() {
         syncLLMConfigFromFields();
+        const transport = normalizeLLMTransport(currentLLMConfig.transport);
         const provider = currentLLMConfig.provider || 'local_mcp';
         const model = normalizeAgentModel(currentLLMConfig.model || 'openclaw', currentLLMConfig.agentId || '');
         const url = currentLLMConfig.url || llmProviders[provider]?.url || LLM_DEFAULT_URL;
         const apiKey = currentLLMConfig.apiKey || '';
         const agentId = currentLLMConfig.agentId || '';
-        if (!model || !url) { setLLMTestStatus('请先填写模型和接口地址', false); showToast('⚠️ 请先填写模型和接口地址'); return; }
+        const cliType = normalizeCLIType(currentLLMConfig.cliType);
+        const cliPath = currentLLMConfig.cliPath || '';
+        const cliArgs = currentLLMConfig.cliArgs || '';
+        const cliModel = currentLLMConfig.cliModel || '';
+        const cliTimeoutSec = normalizeCLITimeout(currentLLMConfig.cliTimeoutSec);
+        const garminRegion = normalizeGarminRegion(currentLLMConfig.garminRegion);
+        const corosRegion = normalizeCorosRegion(currentLLMConfig.corosRegion);
+        if (transport === 'cli') {
+            if (!cliType) {
+                setLLMTestStatus('请选择 CLI 类型', false);
+                showToast('⚠️ 请选择 CLI 类型');
+                return;
+            }
+            if (cliType === 'custom' && !cliPath) {
+                setLLMTestStatus('请先填写自定义 CLI 路径', false);
+                showToast('⚠️ 请先填写自定义 CLI 路径');
+                return;
+            }
+        } else if (!model || !url) {
+            setLLMTestStatus('请先填写模型和接口地址', false);
+            showToast('⚠️ 请先填写模型和接口地址');
+            return;
+        }
         const requestId = onboardingState.llmTestRequestId + 1;
         onboardingState.llmTestRequestId = requestId;
         showToast('🧪 正在测试连接...');
@@ -11376,8 +12390,24 @@
         if (testBtn) { testBtn.disabled = true; testBtn.style.opacity = '0.6'; }
         try {
             if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.test_llm_config === 'function') {
-                const res = await window.pywebview.api.test_llm_config(provider, url, model, apiKey, agentId, currentLLMConfig.watchBrand || '');
+                const res = await window.pywebview.api.test_llm_config(
+                    provider,
+                    transport === 'cli' ? '' : url,
+                    transport === 'cli' ? '' : model,
+                    transport === 'cli' ? '' : apiKey,
+                    agentId,
+                    currentLLMConfig.watchBrand || '',
+                    transport,
+                    cliType,
+                    cliPath,
+                    cliArgs,
+                    cliModel,
+                    cliTimeoutSec,
+                    garminRegion,
+                    corosRegion
+                );
                 if (res && res.ok) {
+                    markLLMConfigClean(currentLLMConfig);
                     if (!setLLMTestStatus('连接成功，可进行下一步', true, false, { requestId: requestId })) return;
                     showToast('✅ 连接成功');
                 } else {
@@ -11385,6 +12415,11 @@
                     showToast('❌ 连接失败：' + (res && res.error ? res.error : '未知错误'));
                 }
             } else {
+                if (transport === 'cli') {
+                    if (!setLLMTestStatus('CLI 测试需要桌面应用环境', false, false, { requestId: requestId })) return;
+                    showToast('⚠️ CLI 测试需要桌面应用环境');
+                    return;
+                }
                 const headers = { 'Content-Type': 'application/json' };
                 if (apiKey) headers.Authorization = 'Bearer ' + apiKey;
                 if (agentId) {
@@ -11420,6 +12455,7 @@
                 }
                 const data = await resp.json();
                 if (data && data.choices && data.choices.length) {
+                    markLLMConfigClean(currentLLMConfig);
                     if (!setLLMTestStatus('连接成功，可进行下一步', true, false, { requestId: requestId })) return;
                     showToast('✅ 连接成功');
                 } else {
@@ -12324,17 +13360,42 @@
         return pm + "'" + String(ps).padStart(2, '0') + "''" + unit;
     }
 
+    function isCyclingActivityType(sportType) {
+        var t = normalizeActivityToken(sportType);
+        return t === 'cycling' || t === 'road_cycling' || t === 'mountain_biking' ||
+            t === 'indoor_cycling' || t.includes('cycl') || t.includes('bik');
+    }
+
+    function formatSnapshotSpeed(activityMetrics) {
+        var m = activityMetrics || {};
+        if (m.avg_speed_display) return String(m.avg_speed_display);
+        var speedMps = null;
+        if (m.avg_speed != null && m.avg_speed !== '') speedMps = Number(m.avg_speed);
+        else if (m.avg_speed_mps != null && m.avg_speed_mps !== '') speedMps = Number(m.avg_speed_mps);
+        if (!Number.isFinite(speedMps) || speedMps <= 0) return '--';
+        return (speedMps * 3.6).toFixed(1) + ' km/h';
+    }
+
+    function buildSnapshotPaceOrSpeedCard(activityMetrics) {
+        var sportType = (activityMetrics && (activityMetrics.sport_type || activityMetrics.sub_sport_type)) || appState.sportType;
+        if (isCyclingActivityType(sportType)) {
+            return { icon: '💨', label: '均速', value: formatSnapshotSpeed(activityMetrics) };
+        }
+        return { icon: '🏃', label: '配速', value: formatSnapshotPace(activityMetrics && activityMetrics.avg_pace, sportType) };
+    }
+
     function buildActivitySnapshotHTML(activityMetrics) {
         if (!activityMetrics || typeof activityMetrics !== 'object') {
             return '<div class="ai-section"><h3>📸 运动数据快照</h3><div class="ai-empty">暂无运动数据快照</div></div>';
         }
         var m = activityMetrics;
+        var paceOrSpeedCard = buildSnapshotPaceOrSpeedCard(m);
         var html = '<div class="ai-section activity-snapshot-section"><h3>📸 运动数据快照</h3>';
         var cards = [
             { icon: '📏', label: '距离', value: formatSnapshotNumber(m.dist_km, 2, ' km') },
             { icon: '⏱️', label: '时间', value: formatSnapshotDuration(m.duration_sec) },
             { icon: '⬆️', label: '爬升', value: formatSnapshotNumber(m.gain_m, 0, ' m') },
-            { icon: '🏃', label: '配速', value: formatSnapshotPace(m.avg_pace, appState.sportType) },
+            paceOrSpeedCard,
             { icon: '🔥', label: '消耗', value: formatSnapshotNumber(m.calories, 0, ' kcal') },
             { icon: '📐', label: '坡度', value: (m.avg_grade_pct != null ? Number(m.avg_grade_pct).toFixed(1) + '%' : '--') }
         ];
@@ -12582,7 +13643,12 @@
             showToast('⚠️ AI 活动建议仅在桌面应用中可用');
             return;
         }
-        if (!currentLLMConfig.url) { showToast('⚠️ 请先在配置中填写 API 地址'); return; }
+        if (!isLLMReadyForFrontendCall()) {
+            showToast(isLLMTransportCLI()
+                ? '⚠️ CLI 尚未配置，请先在配置中选择 CLI 类型并测试连接'
+                : '⚠️ 请先在配置中填写 API 地址');
+            return;
+        }
 
         const resultEl = document.getElementById('activity-advice-result');
         const btn = document.querySelector('.activity-advice-section .ai-insight-btn');
@@ -13393,6 +14459,20 @@
         document.getElementById('type-garmin')?.classList.toggle('active', type === 'garmin');
         document.getElementById('type-coros')?.classList.toggle('active', type === 'coros');
         currentLLMConfig.watchBrand = type || '';
+        const garminRegionRow = document.getElementById('garmin-region-row');
+        const corosRegionRow = document.getElementById('coros-region-row');
+        if (garminRegionRow) garminRegionRow.style.display = type === 'garmin' ? 'flex' : 'none';
+        if (corosRegionRow) corosRegionRow.style.display = type === 'coros' ? 'flex' : 'none';
+        if (type === 'garmin') {
+            refreshGarminAuthStatus(false).catch(function(e) { console.warn('refreshGarminAuthStatus brand', e); });
+        } else {
+            setGarminAuthStatusUI('idle', '请选择 Garmin 后检查授权状态', normalizeGarminRegion(currentLLMConfig.garminRegion));
+        }
+        if (type === 'coros') {
+            refreshCorosAuthStatus(false).catch(function(e) { console.warn('refreshCorosAuthStatus brand', e); });
+        } else {
+            setCorosAuthStatusUI('idle', '请选择 COROS 后检查授权状态', normalizeCorosRegion(currentLLMConfig.corosRegion));
+        }
         // 选择即持久化，不依赖测试连接
         if (type && window.pywebview && window.pywebview.api && typeof window.pywebview.api.set_watch_brand === 'function') {
             window.pywebview.api.set_watch_brand(type).catch(function(e) {
@@ -13419,6 +14499,34 @@
         if (typeof updateMovementRecordsSyncButton === 'function') {
             updateMovementRecordsSyncButton();
         }
+    }
+
+    function persistGarminRegionSelection() {
+        const input = document.getElementById('garmin-region');
+        const region = normalizeGarminRegion(input ? input.value : currentLLMConfig.garminRegion);
+        currentLLMConfig.garminRegion = region;
+        if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.set_garmin_region === 'function') {
+            window.pywebview.api.set_garmin_region(region).catch(function(e) {
+                console.warn('set_garmin_region 持久化失败:', e);
+            });
+        }
+        setGarminAuthStatusUI('checking', '', region);
+        refreshGarminAuthStatus(false).catch(function(e) { console.warn('refreshGarminAuthStatus region', e); });
+        markLLMConfigDirtyIfNeeded();
+    }
+
+    function persistCorosRegionSelection() {
+        const input = document.getElementById('coros-region');
+        const region = normalizeCorosRegion(input ? input.value : currentLLMConfig.corosRegion);
+        currentLLMConfig.corosRegion = region;
+        if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.set_coros_region === 'function') {
+            window.pywebview.api.set_coros_region(region).catch(function(e) {
+                console.warn('set_coros_region 持久化失败:', e);
+            });
+        }
+        setCorosAuthStatusUI('checking', '', region);
+        refreshCorosAuthStatus(false).catch(function(e) { console.warn('refreshCorosAuthStatus region', e); });
+        markLLMConfigDirtyIfNeeded();
     }
 </script>
 
@@ -13802,7 +14910,6 @@ async function bootstrapApplication() {
                     }
                 } else {
                     // 首次使用 / 路径变更 / 从未确认 → 内存保持 false，按钮走 enabled 分支
-                    // 强制用户点击「告诉AI助手存储规范」完成一次性确认
                     onboardingState.aiNotified = false;
                     onboardingState.lastNotifiedDirHash = '';
                 }
@@ -13872,34 +14979,96 @@ function runSilentGatewayValidation() {
                 console.log('[FIT Vault] 2 秒后自动重试...');
                 setTimeout(tryOnce, 2000);
             } else {
-                if (typeof setLLMTestStatus === 'function') {
+                if (typeof setLLMTestStatus === 'function' && !isCurrentLLMConfigDirty()) {
                     setLLMTestStatus('静默验证超时（不影响主界面）', false, false);
                 }
             }
         }, 5000);
         // 任务 4：进入静默验证时点亮 silent 指示灯
-        if (typeof setLLMTestStatus === 'function') {
-            setLLMTestStatus('静默验证网关连接中…（' + attempt + '/' + maxAttempts + '）', false, true, { mode: 'silent' });
+        if (typeof setLLMTestStatus === 'function' && !isCurrentLLMConfigDirty()) {
+            setLLMTestStatus('静默验证大模型连接中…（' + attempt + '/' + maxAttempts + '）', false, true, { mode: 'silent' });
         }
         pywebview.api.get_llm_config().then(function (res) {
             if (timedOut) return;
             // §三 响应结构契约:res.code / res.data.has_api_key(任务 3 改造后)
             // 修复：get_llm_config 经 redact 后 api_key 永远为空字符串，必须用 has_api_key 判定
-            if (!res || res.code !== 0 || !res.data || !res.data.has_api_key) {
+            if (!res || res.code !== 0 || !res.data) {
                 clearTimeout(timer);
                 // 任务 4：未配置时回滚指示灯到 idle
-                if (typeof setLLMTestStatus === 'function') {
+                if (typeof setLLMTestStatus === 'function' && !isCurrentLLMConfigDirty()) {
+                    setLLMTestStatus('尚未配置大模型', false, false);
+                }
+                return;
+            }
+            var transport = normalizeLLMTransport(res.data.transport);
+            var backendConfigMatchesForm = isBackendLLMConfigStillCurrent(res.data);
+            if (transport === 'cli') {
+                clearTimeout(timer);
+                if (!res.data.cli_type) {
+                    if (typeof setLLMTestStatus === 'function' && backendConfigMatchesForm) {
+                        setLLMTestStatus('CLI 尚未配置', false, false);
+                    }
+                    return;
+                }
+                pywebview.api.test_llm_config(
+                    res.data.provider || 'local_mcp',
+                    '',
+                    '',
+                    '',
+                    res.data.agent_id || '',
+                    res.data.watch_brand || '',
+                    'cli',
+                    res.data.cli_type || '',
+                    res.data.cli_path || '',
+                    res.data.cli_args || '',
+                    res.data.cli_model || '',
+                    res.data.cli_timeout_sec || 300,
+                    res.data.garmin_region || 'cn',
+                    res.data.coros_region || 'cn'
+                ).then(function (testRes) {
+                    if (timedOut) return;
+                    if (!backendConfigMatchesForm) {
+                        stopLLMHeartbeat();
+                        return;
+                    }
+                    if (testRes.ok) {
+                        if (typeof setLLMTestStatus === 'function') {
+                            markLLMConfigClean(currentLLMConfig);
+                            setLLMTestStatus('静默验证：CLI 连接正常', true, false);
+                            onboardingState.llmTestPassed = true;
+                        }
+                    } else {
+                        if (typeof setLLMTestStatus === 'function') {
+                            setLLMTestStatus('静默验证：CLI 连接异常', false, false);
+                            onboardingState.llmTestPassed = false;
+                        }
+                    }
+                    stopLLMHeartbeat();
+                });
+                return;
+            }
+            if (typeof setLLMTestStatus === 'function' && backendConfigMatchesForm) {
+                setLLMTestStatus('静默验证网关连接中…（' + attempt + '/' + maxAttempts + '）', false, true, { mode: 'silent' });
+            }
+            if (!res.data.has_api_key && !res.data.url) {
+                clearTimeout(timer);
+                if (typeof setLLMTestStatus === 'function' && backendConfigMatchesForm) {
                     setLLMTestStatus('尚未配置网关', false, false);
                 }
                 return;
             }
-            pywebview.api.test_llm_config(res.data.provider, res.data.url, res.data.model, '', res.data.agent_id || '', res.data.watch_brand || '')
+            pywebview.api.test_llm_config(res.data.provider, res.data.url, res.data.model, '', res.data.agent_id || '', res.data.watch_brand || '', 'http', '', '', '', '', 300, res.data.garmin_region || 'cn', res.data.coros_region || 'cn')
             .then(function (testRes) {
                 clearTimeout(timer);
                 if (timedOut) return;
+                if (!backendConfigMatchesForm) {
+                    startLLMHeartbeat();
+                    return;
+                }
                 if (testRes.ok) {
                     console.log('[FIT Vault] 网关健康正常');
                     if (typeof setLLMTestStatus === 'function') {
+                        markLLMConfigClean(currentLLMConfig);
                         setLLMTestStatus('静默验证：网关连接正常', true, false);
                         onboardingState.llmTestPassed = true;
                     }
@@ -13917,7 +15086,7 @@ function runSilentGatewayValidation() {
             clearTimeout(timer);
             console.warn('[FIT Vault] 静默验证异常:', e);
             // 任务 4：catch 分支更新指示灯
-            if (typeof setLLMTestStatus === 'function') {
+            if (typeof setLLMTestStatus === 'function' && !isCurrentLLMConfigDirty()) {
                 setLLMTestStatus('静默验证异常：' + ((e && e.message) || e), false, false);
             }
         });
@@ -13940,9 +15109,14 @@ var _heartbeatLastOk = null;
 
 function startLLMHeartbeat() {
     stopLLMHeartbeat();
+    if (normalizeLLMTransport(currentLLMConfig && currentLLMConfig.transport) === 'cli') return;
     _heartbeatTimer = setInterval(function () {
         if (!window.pywebview || !window.pywebview.api
             || typeof window.pywebview.api.ping_llm_gateway !== 'function') return;
+        if (normalizeLLMTransport(currentLLMConfig && currentLLMConfig.transport) === 'cli') {
+            stopLLMHeartbeat();
+            return;
+        }
         window.pywebview.api.ping_llm_gateway().then(function (res) {
             // §三 响应结构契约:res.data.reachable(任务 3 改造后)
             var ok = !!(res && res.code === 0 && res.data && res.data.reachable);
@@ -14153,24 +15327,6 @@ function stopLLMHeartbeat() {
         }
         const blob = new Blob([content], { type: mimeType }), url = URL.createObjectURL(blob), a = document.createElement('a');
         a.href = url; a.download = safeName; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
-    }
-
-    function saveSkillZip(skillName) {
-        const fileName = skillName + '.zip';
-        if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.save_skill_zip === 'function') {
-            window.pywebview.api.save_skill_zip(skillName).then(function (res) {
-                if (res && res.ok) showToast('已保存：' + (res.path || fileName));
-                else if (res && res.cancelled) { /* 用户取消 */ }
-                else if (res && res.error) showToast('下载失败：' + res.error);
-            }).catch(function () { showToast('下载失败'); });
-            return;
-        }
-        const a = document.createElement('a');
-        a.href = 'skills/' + fileName;
-        a.download = fileName;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
     }
 
     /**
@@ -14563,7 +15719,7 @@ function stopLLMHeartbeat() {
 
         try {
             if (!window.pywebview || !window.pywebview.api || typeof window.pywebview.api.call_llm !== 'function') {
-                _renderFatigueReviewAiError('LLM 网关不可用');
+                _renderFatigueReviewAiError('LLM 连接不可用');
                 return;
             }
             var sportType = (

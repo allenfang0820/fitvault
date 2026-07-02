@@ -10,6 +10,86 @@ set -e
 ISSUER="https://mcpcn.coros.com"
 REGION="cn"
 LOGIN_DONE=0
+NODE_BIN=""
+NPM_BIN=""
+
+find_node_binary() {
+  if command -v node &>/dev/null; then
+    command -v node
+    return 0
+  fi
+
+  local candidate
+  for candidate in \
+    "$HOME"/.nvm/versions/node/*/bin/node \
+    "/opt/homebrew/bin/node" \
+    "/usr/local/bin/node" \
+    "$HOME/Library/Application Support/QClaw/openclaw/config/bin/node"
+  do
+    if [ -x "$candidate" ]; then
+      echo "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
+find_openclaw_mjs() {
+  if [ -n "${QCLAW_CLI_OPENCLAW_MJS:-}" ] && [ -f "$QCLAW_CLI_OPENCLAW_MJS" ]; then
+    echo "$QCLAW_CLI_OPENCLAW_MJS"
+    return 0
+  fi
+
+  local candidate
+  for candidate in \
+    "$HOME/Library/Application Support/QClaw/openclaw/node_modules/openclaw/openclaw.mjs" \
+    "$HOME/Library/Application Support/QClaw/openclaw/openclaw.mjs"
+  do
+    if [ -f "$candidate" ]; then
+      echo "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
+configure_node_runtime() {
+  NODE_BIN="$(find_node_binary || true)"
+  if [ -z "$NODE_BIN" ]; then
+    echo "[错误] 未检测到 Node.js，请先安装 Node.js (https://nodejs.org)"
+    exit 1
+  fi
+  export PATH="$(dirname "$NODE_BIN"):$PATH"
+
+  if ! NPM_BIN="$(command -v npm 2>/dev/null)"; then
+    echo "[错误] 未检测到 npm"
+    exit 1
+  fi
+}
+
+prepare_openclaw_runtime() {
+  if ! command -v openclaw &>/dev/null; then
+    echo "[提示] 未检测到 openclaw 命令，跳过 OpenClaw 注册。"
+    return 1
+  fi
+
+  if [ -z "${QCLAW_CLI_NODE_BINARY:-}" ]; then
+    export QCLAW_CLI_NODE_BINARY="$NODE_BIN"
+  fi
+  if [ -z "${QCLAW_CLI_OPENCLAW_MJS:-}" ]; then
+    local openclaw_mjs
+    openclaw_mjs="$(find_openclaw_mjs || true)"
+    if [ -n "$openclaw_mjs" ]; then
+      export QCLAW_CLI_OPENCLAW_MJS="$openclaw_mjs"
+    fi
+  fi
+
+  if [ -z "${QCLAW_CLI_OPENCLAW_MJS:-}" ]; then
+    echo "[提示] 未找到 OpenClaw 入口 openclaw.mjs，跳过 OpenClaw 注册。"
+    return 1
+  fi
+  return 0
+}
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -61,15 +141,8 @@ echo "MCP URL: $ISSUER/mcp"
 echo ""
 
 # 1. 检查 node/npm
-if ! command -v node &>/dev/null; then
-  echo "[错误] 未检测到 Node.js，请先安装 Node.js (https://nodejs.org)"
-  exit 1
-fi
-if ! command -v npm &>/dev/null; then
-  echo "[错误] 未检测到 npm"
-  exit 1
-fi
-echo "[1/5] Node.js $(node -v) / npm $(npm -v) ✓"
+configure_node_runtime
+echo "[1/5] Node.js $("$NODE_BIN" -v) / npm $("$NPM_BIN" -v) ✓"
 
 # 2. 安装 coros-mcp
 if command -v coros-mcp &>/dev/null; then
@@ -89,32 +162,38 @@ echo "授权完成后，回到此处继续。"
 echo "--------------------------------------------------"
 read -p "按 Enter 开始授权..." DUMMY
 
-coros-mcp --issuer "$ISSUER" login
-
-echo ""
-if [ $? -eq 0 ]; then
+if coros-mcp --issuer "$ISSUER" login; then
+  echo ""
   echo "[3/5] COROS 账号授权成功 ✓"
   LOGIN_DONE=1
 else
+  echo ""
   echo "[警告] 授权可能未完成，请检查浏览器。"
+  exit 1
 fi
 
 # 4. 注册到 OpenClaw
 echo ""
 echo "[4/5] 正在注册 COROS MCP 到 OpenClaw..."
-coros-mcp --issuer "$ISSUER" apply-openclaw
-
-if [ $? -eq 0 ]; then
+if prepare_openclaw_runtime && coros-mcp --issuer "$ISSUER" apply-openclaw; then
   echo "[4/5] OpenClaw 注册成功 ✓"
 else
-  echo "[错误] OpenClaw 注册失败"
-  exit 1
+  echo "[警告] COROS 账号授权已成功，但 OpenClaw 注册失败或被跳过。"
+  echo "       这不会影响脉图读取已授权的 COROS token；如需在 OpenClaw 中使用 COROS MCP，请检查 QCLAW_CLI_NODE_BINARY / QCLAW_CLI_OPENCLAW_MJS。"
+  if [ "$LOGIN_DONE" -eq 0 ]; then
+    exit 1
+  fi
+  exit 0
 fi
 
 # 5. 重启网关
 echo ""
 echo "[5/5] 重启 OpenClaw 网关..."
-openclaw gateway restart
+if openclaw gateway restart; then
+  echo "[5/5] OpenClaw 网关已重启 ✓"
+else
+  echo "[警告] OpenClaw 网关重启失败；COROS 账号授权已成功，可稍后手动重启 OpenClaw。"
+fi
 
 echo ""
 echo "=========================================="

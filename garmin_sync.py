@@ -1,0 +1,471 @@
+"""Garmin skill script provider.
+
+This module is intentionally limited to locating and running the bundled
+garmin-stats scripts. It does not call LLM backends or mutate application
+state; higher-level sync flows wire these primitives into profile/activity
+storage.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import shlex
+import subprocess
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+
+VALID_GARMIN_REGIONS = {"cn", "global"}
+DEFAULT_TIMEOUT_SEC = 300
+ERROR_SNIPPET_CHARS = 800
+
+
+class GarminSyncError(RuntimeError):
+    """Base error for Garmin provider failures."""
+
+    def __init__(self, message: str, *, code: str = "garmin_sync_error") -> None:
+        super().__init__(message)
+        self.code = code
+
+
+class GarminSkillNotFoundError(GarminSyncError):
+    def __init__(self, message: str) -> None:
+        super().__init__(message, code="garmin_skill_not_found")
+
+
+class GarminScriptFailed(GarminSyncError):
+    def __init__(self, message: str) -> None:
+        super().__init__(message, code="garmin_script_failed")
+
+
+class GarminAuthRequiredError(GarminSyncError):
+    def __init__(self, message: str) -> None:
+        super().__init__(message, code="garmin_auth_required")
+
+
+class GarminJsonParseError(GarminSyncError):
+    def __init__(self, message: str) -> None:
+        super().__init__(message, code="garmin_json_parse_error")
+
+
+@dataclass(frozen=True)
+class GarminSkillPaths:
+    skill_dir: Path
+    get_stats: Path
+    download_fit: Path
+    login: Path
+
+
+@dataclass(frozen=True)
+class GarminScriptResult:
+    command: list[str]
+    stdout: str
+    stderr: str
+    returncode: int
+
+
+@dataclass(frozen=True)
+class GarminAuthStatus:
+    ok: bool
+    region: str
+    status: str
+    token_path: str
+    message: str
+    login_command: list[str]
+
+
+@dataclass(frozen=True)
+class GarminLoginResult:
+    ok: bool
+    region: str
+    status: str
+    command: list[str]
+    stdout: str
+    stderr: str
+    message: str
+
+
+def app_base_dir() -> Path:
+    return Path(__file__).resolve().parent
+
+
+def resolve_garmin_region(region: str | None = None) -> str:
+    value = str(region or os.environ.get("GARMIN_REGION") or "cn").strip().lower()
+    if value not in VALID_GARMIN_REGIONS:
+        allowed = ", ".join(sorted(VALID_GARMIN_REGIONS))
+        raise GarminSyncError(f"不支持的 Garmin 区域: {value or '(empty)'}，仅支持 {allowed}", code="invalid_garmin_region")
+    return value
+
+
+def get_garmin_skill_paths(base_dir: Path | str | None = None) -> GarminSkillPaths:
+    root = Path(base_dir).expanduser().resolve() if base_dir is not None else app_base_dir()
+    skill_dir = root / "skills" / "garmin-stats"
+    scripts_dir = skill_dir / "scripts"
+    paths = GarminSkillPaths(
+        skill_dir=skill_dir,
+        get_stats=scripts_dir / "get_garmin_stats.py",
+        download_fit=scripts_dir / "download_fit.py",
+        login=scripts_dir / "login.py",
+    )
+    missing = [
+        str(path)
+        for path in (paths.get_stats, paths.download_fit, paths.login)
+        if not path.is_file()
+    ]
+    if missing:
+        raise GarminSkillNotFoundError("未找到 Garmin skill 脚本: " + "; ".join(missing))
+    return paths
+
+
+def _error_snippet(value: str) -> str:
+    text = str(value or "").strip()
+    if len(text) <= ERROR_SNIPPET_CHARS:
+        return text
+    head = ERROR_SNIPPET_CHARS // 2
+    tail = ERROR_SNIPPET_CHARS - head
+    return text[:head] + "\n...\n" + text[-tail:]
+
+
+def _looks_like_auth_required(text: str) -> bool:
+    clean = str(text or "").lower()
+    if not clean:
+        return False
+    auth_markers = (
+        "garmin 认证失败",
+        "未找到 garmin token",
+        "请先运行 login.py",
+        "please run login.py",
+        "auth_required",
+        "authentication failed",
+    )
+    return any(marker in clean for marker in auth_markers)
+
+
+def run_garmin_script(
+    script_path: Path | str,
+    args: list[str] | tuple[str, ...] | None = None,
+    *,
+    timeout: int = DEFAULT_TIMEOUT_SEC,
+    env: dict[str, str] | None = None,
+) -> GarminScriptResult:
+    script = Path(script_path).expanduser().resolve()
+    if not script.is_file():
+        raise GarminSkillNotFoundError(f"未找到 Garmin skill 脚本: {script}")
+
+    command = [sys.executable, str(script), *[str(arg) for arg in (args or [])]]
+    try:
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            shell=False,
+            env=env,
+            cwd=str(script.parent),
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise GarminScriptFailed(f"Garmin 脚本超时未返回 ({timeout}s): {script.name}") from exc
+    except OSError as exc:
+        raise GarminScriptFailed(f"Garmin 脚本启动失败: {exc}") from exc
+
+    result = GarminScriptResult(
+        command=command,
+        stdout=str(completed.stdout or ""),
+        stderr=str(completed.stderr or ""),
+        returncode=int(completed.returncode),
+    )
+    if result.returncode != 0:
+        detail = _error_snippet(result.stderr or result.stdout)
+        suffix = f": {detail}" if detail else ""
+        if _looks_like_auth_required(detail):
+            raise GarminAuthRequiredError(f"Garmin 授权不可用或已失效{suffix}")
+        raise GarminScriptFailed(f"Garmin 脚本执行失败 (exit {result.returncode}){suffix}")
+    return result
+
+
+def _parse_json_stdout(stdout: str) -> Any:
+    text = str(stdout or "").strip()
+    if not text:
+        raise GarminJsonParseError("Garmin 脚本未输出 JSON")
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise GarminJsonParseError(f"Garmin JSON 解析失败: {exc}") from exc
+
+
+def sync_profile_json(
+    *,
+    region: str | None = None,
+    refresh: bool = False,
+    timeout: int = DEFAULT_TIMEOUT_SEC,
+    base_dir: Path | str | None = None,
+) -> list[dict[str, Any]]:
+    resolved_region = resolve_garmin_region(region)
+    paths = get_garmin_skill_paths(base_dir)
+    args = ["sync", "--region", resolved_region]
+    if refresh:
+        args.append("--refresh")
+    result = run_garmin_script(paths.get_stats, args, timeout=timeout)
+    parsed = _parse_json_stdout(result.stdout)
+    if not isinstance(parsed, list):
+        raise GarminJsonParseError("Garmin 画像同步返回的不是 JSON 数组")
+    if not all(isinstance(item, dict) for item in parsed):
+        raise GarminJsonParseError("Garmin 画像同步 JSON 数组元素必须是对象")
+    return parsed
+
+
+def download_fit_json(
+    *,
+    start_date: str,
+    end_date: str,
+    output_dir: Path | str,
+    region: str | None = None,
+    timeout: int = DEFAULT_TIMEOUT_SEC,
+    base_dir: Path | str | None = None,
+) -> dict[str, Any]:
+    resolved_region = resolve_garmin_region(region)
+    paths = get_garmin_skill_paths(base_dir)
+    args = [
+        "--from",
+        str(start_date),
+        "--to",
+        str(end_date),
+        "--region",
+        resolved_region,
+        "--output-dir",
+        str(Path(output_dir).expanduser()),
+        "--json",
+    ]
+    result = run_garmin_script(paths.download_fit, args, timeout=timeout)
+    parsed = _parse_json_stdout(result.stdout)
+    if not isinstance(parsed, dict):
+        raise GarminJsonParseError("Garmin FIT 下载返回的不是 JSON 对象")
+    return parsed
+
+
+def login_command(*, region: str | None = None, base_dir: Path | str | None = None) -> list[str]:
+    resolved_region = resolve_garmin_region(region)
+    paths = get_garmin_skill_paths(base_dir)
+    return [sys.executable, str(paths.login), "--region", resolved_region]
+
+
+def default_tokenstore(
+    region: str | None = None,
+    workspace_dir: Path | str | None = None,
+) -> Path:
+    resolved_region = resolve_garmin_region(region)
+    root = (
+        Path(workspace_dir).expanduser()
+        if workspace_dir is not None
+        else Path(os.environ.get("QCLAW_WORKSPACE_DIR", str(Path.home() / ".qclaw" / "workspace"))).expanduser()
+    )
+    return root / f"garmin_auth_{resolved_region}"
+
+
+def check_auth_status(
+    *,
+    region: str | None = None,
+    base_dir: Path | str | None = None,
+    workspace_dir: Path | str | None = None,
+) -> GarminAuthStatus:
+    try:
+        resolved_region = resolve_garmin_region(region)
+    except GarminSyncError as exc:
+        return GarminAuthStatus(
+            ok=False,
+            region=str(region or os.environ.get("GARMIN_REGION") or "").strip().lower(),
+            status="invalid_region",
+            token_path="",
+            message=str(exc),
+            login_command=[],
+        )
+
+    token_path = default_tokenstore(resolved_region, workspace_dir)
+    try:
+        command = login_command(region=resolved_region, base_dir=base_dir)
+    except GarminSkillNotFoundError as exc:
+        return GarminAuthStatus(
+            ok=False,
+            region=resolved_region,
+            status="skill_missing",
+            token_path=str(token_path),
+            message=str(exc),
+            login_command=[],
+        )
+
+    if not token_path.exists():
+        return GarminAuthStatus(
+            ok=False,
+            region=resolved_region,
+            status="missing_token",
+            token_path=str(token_path),
+            message=f"请先登录 Garmin（{resolved_region}），未检测到授权 token。",
+            login_command=command,
+        )
+
+    if token_path.is_dir() and not (
+        (token_path / "oauth1_token.json").is_file()
+        and (token_path / "oauth2_token.json").is_file()
+    ):
+        return GarminAuthStatus(
+            ok=False,
+            region=resolved_region,
+            status="missing_token",
+            token_path=str(token_path),
+            message=f"请先登录 Garmin（{resolved_region}），授权 token 不完整。",
+            login_command=command,
+        )
+
+    if not (token_path.is_file() or token_path.is_dir()):
+        return GarminAuthStatus(
+            ok=False,
+            region=resolved_region,
+            status="unknown",
+            token_path=str(token_path),
+            message=f"Garmin 授权路径不可用: {token_path}",
+            login_command=command,
+        )
+
+    return GarminAuthStatus(
+        ok=True,
+        region=resolved_region,
+        status="authorized",
+        token_path=str(token_path),
+        message=f"已检测到 Garmin 授权（{resolved_region}）。",
+        login_command=command,
+    )
+
+
+def start_login(
+    *,
+    region: str | None = None,
+    base_dir: Path | str | None = None,
+    timeout: int | None = None,
+) -> GarminLoginResult:
+    try:
+        resolved_region = resolve_garmin_region(region)
+    except GarminSyncError as exc:
+        return GarminLoginResult(
+            ok=False,
+            region=str(region or os.environ.get("GARMIN_REGION") or "").strip().lower(),
+            status="invalid_region",
+            command=[],
+            stdout="",
+            stderr="",
+            message=str(exc),
+        )
+
+    try:
+        command = login_command(region=resolved_region, base_dir=base_dir)
+    except GarminSkillNotFoundError as exc:
+        return GarminLoginResult(
+            ok=False,
+            region=resolved_region,
+            status="skill_missing",
+            command=[],
+            stdout="",
+            stderr="",
+            message=str(exc),
+        )
+
+    if sys.platform == "darwin":
+        cwd = str(Path(command[1]).resolve().parent) if len(command) > 1 else str(Path.cwd())
+        shell_command = (
+            f"cd {shlex.quote(cwd)} && "
+            f"{' '.join(shlex.quote(part) for part in command)}; "
+            "echo; echo 'Garmin 授权流程结束后，请回到脉图重新点击同步活动。'; "
+            "printf '按回车关闭窗口...'; read _"
+        )
+        escaped = shell_command.replace("\\", "\\\\").replace('"', '\\"')
+        osa = [
+            "osascript",
+            "-e",
+            'tell application "Terminal"',
+            "-e",
+            "activate",
+            "-e",
+            f'do script "{escaped}"',
+            "-e",
+            "end tell",
+        ]
+        try:
+            subprocess.Popen(osa, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except OSError as exc:
+            return GarminLoginResult(
+                ok=False,
+                region=resolved_region,
+                status="launch_failed",
+                command=command,
+                stdout="",
+                stderr="",
+                message=f"Garmin 登录终端启动失败: {exc}",
+            )
+        return GarminLoginResult(
+            ok=True,
+            region=resolved_region,
+            status="launched",
+            command=command,
+            stdout="",
+            stderr="",
+            message=f"已打开终端窗口，请在终端完成 Garmin 登录授权（{resolved_region}）。",
+        )
+
+    try:
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            shell=False,
+            cwd=str(Path(command[1]).resolve().parent) if len(command) > 1 else None,
+        )
+    except subprocess.TimeoutExpired as exc:
+        stdout = str(exc.stdout or "")
+        stderr = str(exc.stderr or "")
+        return GarminLoginResult(
+            ok=False,
+            region=resolved_region,
+            status="timeout",
+            command=command,
+            stdout=stdout,
+            stderr=stderr,
+            message=f"Garmin 登录授权超时 ({timeout}s)",
+        )
+    except OSError as exc:
+        return GarminLoginResult(
+            ok=False,
+            region=resolved_region,
+            status="launch_failed",
+            command=command,
+            stdout="",
+            stderr="",
+            message=f"Garmin 登录脚本启动失败: {exc}",
+        )
+
+    stdout = str(completed.stdout or "")
+    stderr = str(completed.stderr or "")
+    if int(completed.returncode) != 0:
+        detail = _error_snippet(stderr or stdout)
+        suffix = f": {detail}" if detail else ""
+        return GarminLoginResult(
+            ok=False,
+            region=resolved_region,
+            status="failed",
+            command=command,
+            stdout=stdout,
+            stderr=stderr,
+            message=f"Garmin 登录授权失败 (exit {int(completed.returncode)}){suffix}",
+        )
+
+    return GarminLoginResult(
+        ok=True,
+        region=resolved_region,
+        status="completed",
+        command=command,
+        stdout=stdout,
+        stderr=stderr,
+        message=f"Garmin 登录授权已完成（{resolved_region}）。",
+    )

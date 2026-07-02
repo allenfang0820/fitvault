@@ -850,6 +850,10 @@ class MetricsResolver:
         max_hr = MetricsResolver._safe_int_zero(r.get("max_hr")) or None
         calories = MetricsResolver._safe_int_zero(r.get("calories")) or None
         avg_pace = MetricsResolver._safe_float_zero(r.get("avg_pace")) or None
+        avg_speed_mps = None
+        if dist_km and dist_km > 0 and duration_sec and duration_sec > 0:
+            avg_speed_mps = dist_km * 1000.0 / duration_sec
+        avg_speed_display = f"{avg_speed_mps * 3.6:.1f} km/h" if avg_speed_mps else "--"
 
         if dist_km and dist_km > 0:
             if dist_km < 0.1:
@@ -882,6 +886,8 @@ class MetricsResolver:
             "calories": calories,
             "avg_pace": avg_pace,
             "avg_pace_display": avg_pace_display,
+            "avg_speed_mps": round(avg_speed_mps, 3) if avg_speed_mps else None,
+            "avg_speed_display": avg_speed_display,
             "pace_unit": pace_unit,
             "start_time": str(r.get("start_time") or ""),
             "min_alt_m": MetricsResolver._safe_float_zero(r.get("min_alt_m")),
@@ -938,6 +944,7 @@ class MetricsResolver:
             lap_avg_hr = MetricsResolver._safe_int_zero(lap.get("avg_hr"))
             lap_max_hr = MetricsResolver._safe_int_zero(lap.get("max_hr"))
             lap_avg_cadence = MetricsResolver._safe_int_zero(lap.get("avg_cadence"))
+            lap_fractional_cadence = MetricsResolver._safe_float_zero(lap.get("fractional_cadence"))
             lap_avg_power = MetricsResolver._safe_int_zero(lap.get("avg_power"))
             lap_ascent = MetricsResolver._safe_int_zero(lap.get("total_ascent"))
             lap_descent = MetricsResolver._safe_int_zero(lap.get("total_descent"))
@@ -949,8 +956,12 @@ class MetricsResolver:
             # V9.x 修复:从 normalized lap dict 读 stance_time_ms(§2.1 全链路可追溯)
             # 原实现硬编码 None 切断追溯链,本次改为读真值
             lap_gct_ms = MetricsResolver._safe_int_zero(lap.get("stance_time_ms")) or None
+            lap_stance_balance_pct = MetricsResolver._safe_float_zero(lap.get("stance_time_balance_pct")) or None
             if dist_m <= 0 and elapsed <= 0:
                 continue
+            cadence_spm = None
+            if lap_avg_cadence:
+                cadence_spm = (float(lap_avg_cadence) + (lap_fractional_cadence if lap_fractional_cadence else 0.0)) * 2.0
             pace_sec = int(round(elapsed / (dist_m / 1000.0))) if dist_m > 0 and elapsed > 0 else 0
             rows.append({
                 "lap_no": idx + 1,
@@ -959,7 +970,9 @@ class MetricsResolver:
                 "hr": lap_avg_hr if lap_avg_hr else None,
                 "max_hr": lap_max_hr if lap_max_hr else None,
                 "cadence": lap_avg_cadence if lap_avg_cadence else None,
+                "cadence_spm": round(cadence_spm) if cadence_spm else None,
                 "gct_ms": lap_gct_ms,   # V9.x:从硬编码 None 改为透传 Resolver 解析值
+                "stance_time_balance_pct": round(lap_stance_balance_pct, 1) if lap_stance_balance_pct else None,
                 "power_w": lap_avg_power if lap_avg_power else None,
                 "ascent_m": lap_ascent if lap_ascent else None,
                 "descent_m": lap_descent if lap_descent else None,
@@ -2324,6 +2337,7 @@ class MetricsResolver:
             max_hr = MetricsResolver._num(lap.get("max_heart_rate"))
             avg_power = MetricsResolver._num(lap.get("avg_power"))
             avg_cadence = MetricsResolver._num(lap.get("avg_cadence"))
+            fractional_cadence = MetricsResolver._num(lap.get("avg_fractional_cadence"))
             total_ascent = MetricsResolver._num(lap.get("total_ascent"))
             total_descent = MetricsResolver._num(lap.get("total_descent"))
             total_calories = MetricsResolver._num(lap.get("total_calories"))
@@ -2349,6 +2363,7 @@ class MetricsResolver:
                 "max_hr": max_hr if max_hr else None,
                 "avg_power": avg_power if avg_power else None,
                 "avg_cadence": avg_cadence if avg_cadence else None,
+                "fractional_cadence": fractional_cadence if fractional_cadence else None,
                 "total_ascent": total_ascent if total_ascent else None,
                 "total_descent": total_descent if total_descent else None,
                 "total_calories": total_calories if total_calories else None,
@@ -2847,6 +2862,8 @@ class MetricsResolver:
     _CADENCE_BASELINE_SCORE: float = 100.0
     _CADENCE_STD_WEIGHT: float = 0.6      # std 部分权重
     _CADENCE_DECAY_WEIGHT: float = 0.4    # late_decay 部分权重
+    _CADENCE_STARTUP_SAMPLE_COUNT: int = 5
+    _CADENCE_STARTUP_OUTLIER_RATIO: float = 0.75
 
     # === V7.13 指标 9:Training Load(TRIMP 简化版) ===
     # 见 docs/physiology_reference.md §指标 9
@@ -3076,6 +3093,38 @@ class MetricsResolver:
         }
 
     @staticmethod
+    def _median(values: list[float]) -> float | None:
+        if not values:
+            return None
+        ordered = sorted(values)
+        mid = len(ordered) // 2
+        if len(ordered) % 2:
+            return float(ordered[mid])
+        return (float(ordered[mid - 1]) + float(ordered[mid])) / 2.0
+
+    @staticmethod
+    def _clean_running_cadence_stream_for_stability(valid: list) -> list:
+        """Drop startup-only cadence cut-in outliers for running stability."""
+        if len(valid) < 20:
+            return valid
+
+        warmup_count = min(
+            MetricsResolver._CADENCE_STARTUP_SAMPLE_COUNT,
+            len(valid),
+        )
+        baseline_values = valid[warmup_count:] or valid
+        baseline = MetricsResolver._median(baseline_values)
+        if baseline is None or baseline <= 0:
+            return valid
+
+        threshold = baseline * MetricsResolver._CADENCE_STARTUP_OUTLIER_RATIO
+        cleaned = [
+            value for idx, value in enumerate(valid)
+            if idx >= warmup_count or value >= threshold
+        ]
+        return cleaned if len(cleaned) >= 20 else valid
+
+    @staticmethod
     def _compute_cadence_stability(
         cadence_stream: list | None,
         duration_sec: float = 0.0,
@@ -3123,6 +3172,7 @@ class MetricsResolver:
 
         # 过滤 0 / 异常值(Garmin 静止时输出 0)
         valid = [c for c in cadence_stream if c and c > 30]  # 正常步频 > 30 spm
+        valid = MetricsResolver._clean_running_cadence_stream_for_stability(valid)
         if len(valid) < 20:
             return {
                 "score": None, "level": "unknown",

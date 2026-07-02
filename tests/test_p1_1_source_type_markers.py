@@ -83,10 +83,21 @@ class TestLapColumnPresetsContract(unittest.TestCase):
                          ["avg_pace", "avg_hr", "power"])
 
     def test_running_unchanged(self):
-        """跑步不应被 P1-1 影响"""
+        """跑步基础列保持不变;左右平衡由 detail laps 数据决定"""
         from main import LAP_COLUMN_PRESETS
         self.assertEqual(LAP_COLUMN_PRESETS["running"],
                          ["avg_pace", "avg_hr", "cadence", "gct", "power"])
+
+    def test_running_detail_columns_add_balance_only_when_present(self):
+        from main import resolve_detail_lap_columns
+        self.assertEqual(
+            resolve_detail_lap_columns("running", [{"stance_time_balance_pct": None}]),
+            ["avg_pace", "avg_hr", "cadence", "gct", "power"],
+        )
+        self.assertEqual(
+            resolve_detail_lap_columns("running", [{"stance_time_balance_pct": 49.8}]),
+            ["avg_pace", "avg_hr", "cadence", "gct", "stance_balance", "power"],
+        )
 
     def test_hiking_unchanged(self):
         """徒步不应被 P1-1 影响"""

@@ -22,6 +22,7 @@ _datas = [
     ("track.html", "."),
     ("lib", "lib"),
     ("assets", "assets"),
+    ("docs/脉图帮助说明.md", "docs"),
     ("skills/garmin-stats.zip", "skills"),
     ("skills/coros-stats.zip", "skills"),
 ]
@@ -80,7 +81,7 @@ app = BUNDLE(
     icon='assets/app_icon.icns',
     bundle_identifier='com.mrfang.maitu',
     info_plist={
-        'CFBundleShortVersionString': '1.0.4',
-        'CFBundleVersion': '1.0.4',
+        'CFBundleShortVersionString': '1.1.0',
+        'CFBundleVersion': '1.1.0',
     },
 )

@@ -12,6 +12,8 @@ from pathlib import Path
 from unittest import mock
 
 import main
+import coros_sync
+import garmin_sync
 import llm_backend
 import profile_backend
 import track_backend
@@ -98,6 +100,10 @@ class TestFitSync(unittest.TestCase):
 
     def _activity(self, file_name: str) -> dict:
         resolved = str((self.temp_dir / file_name).resolve())
+        points = [
+            {"time": f"2026-05-19T08:00:{idx:02d}Z", "distance": float(idx) * 10.0}
+            for idx in range(35)
+        ]
         return {
             "file_name": file_name,
             "filename": file_name,
@@ -115,8 +121,8 @@ class TestFitSync(unittest.TestCase):
             "avg_hr": 150,
             "max_hr": 170,
             "calories": 620,
-            "track_json": "[]",
-            "points_json": "[]",
+            "track_json": json.dumps(points),
+            "points_json": json.dumps(points),
             "file_path": resolved,
             "gain_m": 120.0,
             "max_alt_m": 60.0,
@@ -124,6 +130,10 @@ class TestFitSync(unittest.TestCase):
             "start_lon": 104.06,
             "region": "成都市",
         }
+
+    def _set_activity_start(self, activity: dict, start_time: str) -> None:
+        activity["start_time"] = start_time
+        activity["start_time_utc"] = start_time
 
     def _duplicate_points(self, start_minute: int = 0) -> list[dict]:
         return [
@@ -143,7 +153,7 @@ class TestFitSync(unittest.TestCase):
 
     def test_sync_local_fit_files_recovers_after_temporary_db_lock(self):
         fit_path = self.temp_dir / "locked.fit"
-        fit_path.write_bytes(b"fit")
+        fit_path.write_bytes(b"x" * 8192)
         main.ensure_activity_sync_schema()
 
         profile_backend.SQLITE_BUSY_TIMEOUT_MS = 100
@@ -183,12 +193,15 @@ class TestFitSync(unittest.TestCase):
         fit_files = []
         for name in ("batch_a.fit", "batch_b.fit", "batch_c.fit"):
             path = self.temp_dir / name
-            path.write_bytes(b"fit")
+            path.write_bytes(b"x" * 8192)
             fit_files.append(path)
 
         def parse_side_effect(path_obj):
             time.sleep(0.08)
-            return self._activity(Path(path_obj).name)
+            activity = self._activity(Path(path_obj).name)
+            minute = {"batch_a.fit": 0, "batch_b.fit": 10, "batch_c.fit": 20}[Path(path_obj).name]
+            self._set_activity_start(activity, f"2026-05-19T08:{minute:02d}:00Z")
+            return activity
 
         with mock.patch.object(main, "resolve_workspace_track_dir", return_value=self._workspace_config()), \
              mock.patch.object(main, "_walk_fit_files", return_value=fit_files), \
@@ -209,12 +222,15 @@ class TestFitSync(unittest.TestCase):
         fit_files = []
         for name in ("concurrent_a.fit", "concurrent_b.fit"):
             path = self.temp_dir / name
-            path.write_bytes(b"fit")
+            path.write_bytes(b"x" * 8192)
             fit_files.append(path)
 
         def parse_side_effect(path_obj):
             time.sleep(0.25)
-            return self._activity(Path(path_obj).name)
+            activity = self._activity(Path(path_obj).name)
+            minute = {"concurrent_a.fit": 0, "concurrent_b.fit": 10}[Path(path_obj).name]
+            self._set_activity_start(activity, f"2026-05-19T09:{minute:02d}:00Z")
+            return activity
 
         with mock.patch.object(main, "resolve_workspace_track_dir", return_value=self._workspace_config()), \
              mock.patch.object(main, "_walk_fit_files", return_value=fit_files), \
@@ -234,7 +250,7 @@ class TestFitSync(unittest.TestCase):
 
     def test_single_file_sync_finishes_quickly_with_mock_parser(self):
         fit_path = self.temp_dir / "single.fit"
-        fit_path.write_bytes(b"fit")
+        fit_path.write_bytes(b"x" * 8192)
 
         with mock.patch.object(main, "resolve_workspace_track_dir", return_value=self._workspace_config()), \
              mock.patch.object(main, "_walk_fit_files", return_value=[fit_path]), \
@@ -244,34 +260,247 @@ class TestFitSync(unittest.TestCase):
         self.assertTrue(result["ok"], result)
         self.assertLess(result.get("elapsed_sec", 99), 1.0)
 
-    def test_remote_fit_sync_sends_date_range_prompt_to_openclaw(self):
+    def test_local_fit_sync_filters_tiny_health_fit_before_parse(self):
+        fit_path = self.temp_dir / "health.fit"
+        fit_path.write_bytes(b"fit")
+
+        with mock.patch.object(main, "resolve_workspace_track_dir", return_value=self._workspace_config()), \
+             mock.patch.object(main, "_walk_fit_files", return_value=[fit_path]), \
+             mock.patch.object(main, "_parse_fit_activity_for_sync") as parse_mock, \
+             mock.patch.object(main, "_persist_sync_activity") as persist_mock:
+            result = self.api.sync_local_fit_files()
+
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["inserted"], 0)
+        self.assertEqual(result["skipped"], 1)
+        parse_mock.assert_not_called()
+        persist_mock.assert_not_called()
+
+    def test_local_fit_sync_filters_zero_activity_after_parse(self):
+        fit_path = self.temp_dir / "8618600673630.fit"
+        fit_path.write_bytes(b"x" * 8192)
+        activity = self._activity(fit_path.name)
+        activity.update({
+            "title": "8618600673630",
+            "sport_type": "unknown",
+            "distance": 0,
+            "dist_km": 0,
+            "duration": 0,
+            "duration_sec": 0,
+            "track_json": "[]",
+            "points_json": "[]",
+        })
+
+        with mock.patch.object(main, "resolve_workspace_track_dir", return_value=self._workspace_config()), \
+             mock.patch.object(main, "_walk_fit_files", return_value=[fit_path]), \
+             mock.patch.object(main, "_parse_fit_activity_for_sync", return_value=activity) as parse_mock, \
+             mock.patch.object(main, "_persist_sync_activity") as persist_mock:
+            result = self.api.sync_local_fit_files()
+
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["inserted"], 0)
+        self.assertEqual(result["skipped"], 1)
+        parse_mock.assert_called_once()
+        persist_mock.assert_not_called()
+
+    def test_remote_fit_sync_downloads_garmin_fit_and_imports_without_openclaw(self):
         api = object.__new__(main.Api)
+        download_summary = {
+            "ok": True,
+            "region": "cn",
+            "output_dir": main.TRACKS_DIR,
+            "mode": "date_range",
+            "start_date": "2026-05-01",
+            "end_date": "2026-05-31",
+            "searched": 2,
+            "downloaded": 1,
+            "skipped": 1,
+            "failed": 0,
+            "files": [{"activity_id": "100", "status": "downloaded"}],
+            "errors": [],
+        }
+        import_result = {"ok": True, "inserted": 1, "updated": 0, "skipped": 1, "errors": []}
         with mock.patch.object(llm_backend, "load_llm_config", return_value={
             "provider": "local_mcp",
-            "url": "http://localhost:3000/v1/chat/completions",
-            "model": "openclaw",
+            "url": "",
+            "model": "",
             "api_key": "",
             "agent_id": "",
             "watch_brand": "garmin",
-        }), mock.patch.object(llm_backend, "chat_completions", return_value="下载完成") as chat_mock:
+            "garmin_region": "global",
+        }), mock.patch.object(garmin_sync, "download_fit_json", return_value=download_summary) as download_mock, \
+             mock.patch.object(api, "sync_local_fit_files", return_value=import_result) as import_mock, \
+             mock.patch.object(llm_backend, "chat_completions", side_effect=AssertionError("Garmin activity sync must not call LLM")):
             result = api.sync_remote_fit_activities("2026-05-01", "2026-05-31")
 
         self.assertTrue(result["ok"], result)
-        kwargs = chat_mock.call_args.kwargs
-        self.assertEqual(kwargs["model"], "openclaw")
-        prompt_text = "\n".join(message["content"] for message in kwargs["messages"])
-        self.assertIn("2026-05-01 至 2026-05-31", prompt_text)
-        self.assertIn(main.TRACKS_DIR, prompt_text)
-        self.assertIn("FIT 文件", prompt_text)
+        download_mock.assert_called_once_with(
+            start_date="2026-05-01",
+            end_date="2026-05-31",
+            output_dir=main.TRACKS_DIR,
+            region="global",
+        )
+        import_mock.assert_called_once_with()
+        self.assertEqual(result["data"]["download"], download_summary)
+        self.assertEqual(result["data"]["import"], import_result)
+        self.assertEqual(result["data"]["start_date"], "2026-05-01")
+        self.assertEqual(result["data"]["end_date"], "2026-05-31")
+        self.assertEqual(result["data"]["target_dir"], main.TRACKS_DIR)
 
     def test_remote_fit_sync_rejects_invalid_date_range(self):
         api = object.__new__(main.Api)
-        result = api.sync_remote_fit_activities("2026-06-01", "2026-05-01")
+        with mock.patch.object(garmin_sync, "download_fit_json") as download_mock:
+            result = api.sync_remote_fit_activities("2026-06-01", "2026-05-01")
         self.assertFalse(result["ok"], result)
         self.assertIn("开始日期不能晚于结束日期", result["error"])
+        download_mock.assert_not_called()
 
-    def test_remote_fit_sync_rejects_coros_without_calling_openclaw(self):
+    def test_remote_fit_sync_returns_provider_failure_as_external_service(self):
         api = object.__new__(main.Api)
+        with mock.patch.object(llm_backend, "load_llm_config", return_value={
+            "provider": "local_mcp",
+            "url": "",
+            "model": "",
+            "api_key": "",
+            "agent_id": "",
+            "watch_brand": "garmin",
+        }), mock.patch.object(garmin_sync, "download_fit_json", side_effect=garmin_sync.GarminScriptFailed("下载失败")) as download_mock, \
+             mock.patch.object(api, "sync_local_fit_files") as import_mock, \
+             mock.patch.object(llm_backend, "chat_completions", side_effect=AssertionError("Garmin activity sync must not call LLM")):
+            result = api.sync_remote_fit_activities("2026-05-01", "2026-05-31")
+
+        self.assertFalse(result["ok"], result)
+        self.assertEqual(result["code"], main.API_CODE_EXTERNAL_SERVICE)
+        self.assertIn("下载失败", result["error"])
+        self.assertEqual(result["data"]["provider"], "garmin")
+        self.assertEqual(result["data"]["provider_error_code"], "garmin_script_failed")
+        self.assertIn("action_hint", result["data"])
+        download_mock.assert_called_once()
+        import_mock.assert_not_called()
+
+    def test_remote_fit_sync_returns_auth_required_code_and_action_hint(self):
+        api = object.__new__(main.Api)
+        with mock.patch.object(llm_backend, "load_llm_config", return_value={
+            "provider": "local_mcp",
+            "url": "",
+            "model": "",
+            "api_key": "",
+            "agent_id": "",
+            "watch_brand": "garmin",
+            "garmin_region": "global",
+        }), mock.patch.object(garmin_sync, "download_fit_json", side_effect=garmin_sync.GarminAuthRequiredError("Garmin 授权不可用或已失效")) as download_mock, \
+             mock.patch.object(api, "sync_local_fit_files") as import_mock:
+            result = api.sync_remote_fit_activities("2026-05-01", "2026-05-31")
+
+        self.assertFalse(result["ok"], result)
+        self.assertEqual(result["code"], main.API_CODE_EXTERNAL_SERVICE)
+        self.assertEqual(result["data"]["provider"], "garmin")
+        self.assertEqual(result["data"]["provider_error_code"], "garmin_auth_required")
+        self.assertIn("重新启动", result["data"]["action_hint"])
+        download_mock.assert_called_once()
+        import_mock.assert_not_called()
+
+    def test_remote_fit_sync_returns_skill_missing_code_and_action_hint(self):
+        api = object.__new__(main.Api)
+        with mock.patch.object(llm_backend, "load_llm_config", return_value={
+            "provider": "local_mcp",
+            "url": "",
+            "model": "",
+            "api_key": "",
+            "agent_id": "",
+            "watch_brand": "garmin",
+        }), mock.patch.object(garmin_sync, "download_fit_json", side_effect=garmin_sync.GarminSkillNotFoundError("未找到 Garmin skill 脚本")):
+            result = api.sync_remote_fit_activities("2026-05-01", "2026-05-31")
+
+        self.assertFalse(result["ok"], result)
+        self.assertEqual(result["code"], main.API_CODE_EXTERNAL_SERVICE)
+        self.assertEqual(result["data"]["provider"], "garmin")
+        self.assertEqual(result["data"]["provider_error_code"], "garmin_skill_not_found")
+        self.assertIn("garmin-stats", result["data"]["action_hint"])
+        self.assertEqual(result["data"]["start_date"], "2026-05-01")
+        self.assertEqual(result["data"]["end_date"], "2026-05-31")
+
+    def test_remote_fit_sync_returns_json_parse_code(self):
+        api = object.__new__(main.Api)
+        with mock.patch.object(llm_backend, "load_llm_config", return_value={
+            "provider": "local_mcp",
+            "url": "",
+            "model": "",
+            "api_key": "",
+            "agent_id": "",
+            "watch_brand": "garmin",
+        }), mock.patch.object(garmin_sync, "download_fit_json", side_effect=garmin_sync.GarminJsonParseError("Garmin JSON 解析失败")):
+            result = api.sync_remote_fit_activities("2026-05-01", "2026-05-31")
+
+        self.assertFalse(result["ok"], result)
+        self.assertEqual(result["data"]["provider_error_code"], "garmin_json_parse_error")
+        self.assertIn("返回格式异常", result["data"]["action_hint"])
+
+    def test_remote_fit_sync_fails_when_local_import_fails_but_preserves_download_summary(self):
+        api = object.__new__(main.Api)
+        download_summary = {
+            "ok": True,
+            "downloaded": 1,
+            "skipped": 0,
+            "failed": 0,
+            "files": [{"activity_id": "100", "status": "downloaded"}],
+            "errors": [],
+        }
+        import_result = {"ok": False, "error": "数据库写入失败", "inserted": 0, "errors": [{"file": "a.fit"}]}
+        with mock.patch.object(llm_backend, "load_llm_config", return_value={
+            "provider": "local_mcp",
+            "url": "",
+            "model": "",
+            "api_key": "",
+            "agent_id": "",
+            "watch_brand": "garmin",
+        }), mock.patch.object(garmin_sync, "download_fit_json", return_value=download_summary), \
+             mock.patch.object(api, "sync_local_fit_files", return_value=import_result):
+            result = api.sync_remote_fit_activities("2026-05-01", "2026-05-31")
+
+        self.assertFalse(result["ok"], result)
+        self.assertEqual(result["data"]["provider_error_code"], "garmin_import_failed")
+        self.assertEqual(result["data"]["download"], download_summary)
+        self.assertEqual(result["data"]["import"], import_result)
+        self.assertIn("下载", result["error"])
+        self.assertIn("导入", result["data"]["action_hint"])
+
+    def test_remote_fit_sync_unknown_exception_has_stable_provider_code(self):
+        api = object.__new__(main.Api)
+        with mock.patch.object(llm_backend, "load_llm_config", return_value={
+            "provider": "local_mcp",
+            "url": "",
+            "model": "",
+            "api_key": "",
+            "agent_id": "",
+            "watch_brand": "garmin",
+        }), mock.patch.object(garmin_sync, "download_fit_json", side_effect=RuntimeError("boom")):
+            result = api.sync_remote_fit_activities("2026-05-01", "2026-05-31")
+
+        self.assertFalse(result["ok"], result)
+        self.assertEqual(result["data"]["provider"], "garmin")
+        self.assertEqual(result["data"]["provider_error_code"], "unknown")
+        self.assertIn("未知异常", result["data"]["action_hint"])
+
+    def test_remote_fit_sync_downloads_coros_fit_and_imports_without_openclaw(self):
+        api = object.__new__(main.Api)
+        download_summary = {
+            "ok": True,
+            "provider": "coros",
+            "region": "cn",
+            "output_dir": main.TRACKS_DIR,
+            "mode": "date_range",
+            "start_date": "2026-05-01",
+            "end_date": "2026-05-31",
+            "searched": 1,
+            "downloaded": 1,
+            "skipped": 0,
+            "failed": 0,
+            "limit": 10,
+            "files": [{"file": "coros.fit", "status": "downloaded"}],
+            "errors": [],
+        }
+        import_result = {"ok": True, "inserted": 1, "updated": 0, "skipped": 0, "errors": []}
         with mock.patch.object(llm_backend, "load_llm_config", return_value={
             "provider": "local_mcp",
             "url": "http://localhost:3000/v1/chat/completions",
@@ -279,12 +508,102 @@ class TestFitSync(unittest.TestCase):
             "api_key": "",
             "agent_id": "",
             "watch_brand": "coros",
-        }), mock.patch.object(llm_backend, "chat_completions") as chat_mock:
+            "coros_region": "cn",
+        }), mock.patch.object(llm_backend, "chat_completions") as chat_mock, \
+             mock.patch.object(garmin_sync, "download_fit_json") as garmin_download_mock, \
+             mock.patch.object(coros_sync, "download_fit_json", return_value=download_summary) as coros_download_mock, \
+             mock.patch.object(api, "sync_local_fit_files", return_value=import_result) as import_mock:
             result = api.sync_remote_fit_activities("2026-05-01", "2026-05-31")
 
-        self.assertFalse(result["ok"], result)
-        self.assertIn("暂不支持按时间同步活动", result["error"])
+        self.assertTrue(result["ok"], result)
+        coros_download_mock.assert_called_once_with(
+            start_date="2026-05-01",
+            end_date="2026-05-31",
+            output_dir=main.TRACKS_DIR,
+            region="cn",
+            limit=10,
+        )
+        import_mock.assert_called_once_with()
         chat_mock.assert_not_called()
+        garmin_download_mock.assert_not_called()
+        self.assertEqual(result["data"]["download"], download_summary)
+        self.assertEqual(result["data"]["import"], import_result)
+
+    def test_remote_fit_sync_skips_local_scan_when_coros_returns_no_fit_files(self):
+        api = object.__new__(main.Api)
+        download_summary = {
+            "ok": True,
+            "provider": "coros",
+            "region": "cn",
+            "output_dir": main.TRACKS_DIR,
+            "mode": "date_range",
+            "start_date": "2026-06-25",
+            "end_date": "2026-06-25",
+            "searched": 0,
+            "downloaded": 0,
+            "skipped": 0,
+            "failed": 0,
+            "limit": 10,
+            "files": [],
+            "errors": [{"status": "failed", "error": "COROS MCP 未返回可下载的 FIT 文件或 URL"}],
+        }
+        with mock.patch.object(llm_backend, "load_llm_config", return_value={
+            "provider": "local_mcp",
+            "url": "http://localhost:3000/v1/chat/completions",
+            "model": "openclaw",
+            "api_key": "",
+            "agent_id": "",
+            "watch_brand": "coros",
+            "coros_region": "cn",
+        }), mock.patch.object(coros_sync, "download_fit_json", return_value=download_summary) as coros_download_mock, \
+             mock.patch.object(api, "sync_local_fit_files") as import_mock:
+            result = api.sync_remote_fit_activities("2026-06-25", "2026-06-25")
+
+        self.assertTrue(result["ok"], result)
+        coros_download_mock.assert_called_once()
+        import_mock.assert_not_called()
+        self.assertEqual(result["data"]["download"], download_summary)
+        self.assertTrue(result["data"]["import"]["remote_import_skipped"])
+        self.assertEqual(result["data"]["import"]["scanned"], 0)
+        self.assertIn("未返回可下载", result["data"]["import"]["message"])
+
+    def test_remote_fit_sync_returns_failure_when_coros_records_exist_but_fit_download_fails(self):
+        api = object.__new__(main.Api)
+        download_summary = {
+            "ok": False,
+            "provider": "coros",
+            "region": "cn",
+            "output_dir": main.TRACKS_DIR,
+            "mode": "date_range",
+            "strategy": "sport_records_url",
+            "start_date": "2026-06-22",
+            "end_date": "2026-07-02",
+            "searched": 1,
+            "downloaded": 0,
+            "skipped": 0,
+            "failed": 1,
+            "limit": 10,
+            "files": [],
+            "errors": [{"status": "failed", "labelId": "478587344962748420", "error": "未返回 FIT blob 或下载 URL"}],
+        }
+        with mock.patch.object(llm_backend, "load_llm_config", return_value={
+            "provider": "local_mcp",
+            "url": "http://localhost:3000/v1/chat/completions",
+            "model": "openclaw",
+            "api_key": "",
+            "agent_id": "",
+            "watch_brand": "coros",
+            "coros_region": "cn",
+        }), mock.patch.object(coros_sync, "download_fit_json", return_value=download_summary), \
+             mock.patch.object(api, "sync_local_fit_files") as import_mock:
+            result = api.sync_remote_fit_activities("2026-06-22", "2026-07-02")
+
+        self.assertFalse(result["ok"], result)
+        self.assertEqual(result["code"], main.API_CODE_EXTERNAL_SERVICE)
+        self.assertEqual(result["data"]["provider"], "coros")
+        self.assertEqual(result["data"]["provider_error_code"], "coros_fit_download_failed")
+        self.assertEqual(result["data"]["download"], download_summary)
+        import_mock.assert_not_called()
 
     def test_remote_fit_sync_rejects_empty_brand_without_calling_openclaw(self):
         api = object.__new__(main.Api)
@@ -295,28 +614,42 @@ class TestFitSync(unittest.TestCase):
             "api_key": "",
             "agent_id": "",
             "watch_brand": "",
-        }), mock.patch.object(llm_backend, "chat_completions") as chat_mock:
+        }), mock.patch.object(llm_backend, "chat_completions") as chat_mock, \
+             mock.patch.object(garmin_sync, "download_fit_json") as download_mock, \
+             mock.patch.object(coros_sync, "download_fit_json") as coros_download_mock:
             result = api.sync_remote_fit_activities("2026-05-01", "2026-05-31")
 
         self.assertFalse(result["ok"], result)
         self.assertIn("暂不支持按时间同步活动", result["error"])
         chat_mock.assert_not_called()
+        download_mock.assert_not_called()
+        coros_download_mock.assert_not_called()
 
     def _fetch_coros_persona_with_payload(self, payload):
         return self._fetch_persona_with_payload("coros", payload)
 
+    def _metric_array_from_dict(self, payload):
+        if isinstance(payload, list):
+            return payload
+        return [{"metric": key, "value": value} for key, value in payload.items()]
+
     def _fetch_persona_with_payload(self, platform, payload):
         profile_backend.write_sync_state({})
-        with mock.patch.object(llm_backend, "load_llm_config", return_value={
-            "provider": "local_mcp",
-            "url": "http://localhost:3000/v1/chat/completions",
-            "model": "openclaw",
-            "api_key": "",
-            "agent_id": "",
-            "watch_brand": platform,
-        }), mock.patch.object(llm_backend, "chat_completions", return_value=json.dumps(payload, ensure_ascii=False)), \
-             mock.patch.object(llm_backend, "test_llm_connection", return_value={"ok": True}):
-            return profile_backend.fetch_mcp_persona(platform)
+        if platform == "garmin":
+            with mock.patch.object(garmin_sync, "sync_profile_json", return_value=payload) as sync_mock, \
+                 mock.patch.object(llm_backend, "load_llm_config", return_value={"garmin_region": "global"}), \
+                 mock.patch.object(llm_backend, "chat_completions", side_effect=AssertionError("Garmin profile sync must not call LLM")):
+                result = profile_backend.fetch_mcp_persona(platform)
+            sync_mock.assert_called_once_with(region="global")
+            return result
+        payload_array = self._metric_array_from_dict(payload)
+        with mock.patch.object(coros_sync, "sync_profile_json", return_value=payload_array) as sync_mock, \
+             mock.patch.object(llm_backend, "load_llm_config", return_value={"coros_region": "eu"}), \
+             mock.patch.object(llm_backend, "chat_completions", side_effect=AssertionError("COROS profile sync must not call LLM")), \
+             mock.patch.object(llm_backend, "test_llm_connection", side_effect=AssertionError("COROS profile sync must not test LLM connection")):
+            result = profile_backend.fetch_mcp_persona(platform)
+        sync_mock.assert_called_once_with(region="eu")
+        return result
 
     def test_garmin_persona_maps_7d_recovery_fields(self):
         payload = [
@@ -336,6 +669,46 @@ class TestFitSync(unittest.TestCase):
         self.assertEqual(profile["resting_hr"], 52)
         self.assertEqual(profile["recent_resting_hr"], 52)
         self.assertEqual(profile["resting_hr_7d_avg"], 52)
+
+    def test_garmin_persona_provider_failure_marks_sync_failed(self):
+        profile_backend.write_sync_state({})
+        with mock.patch.object(garmin_sync, "sync_profile_json", side_effect=garmin_sync.GarminSyncError("请先登录 Garmin")), \
+             mock.patch.object(llm_backend, "load_llm_config", return_value={"garmin_region": "cn"}), \
+             mock.patch.object(llm_backend, "chat_completions", side_effect=AssertionError("Garmin profile sync must not call LLM")):
+            result = profile_backend.fetch_mcp_persona("garmin")
+
+        self.assertFalse(result["ok"], result)
+        self.assertIn("请先登录 Garmin", result["error"])
+        state = profile_backend.read_sync_state()
+        self.assertIn(state.get("last_attempt_status"), {"failed", "failed_retryable"})
+        self.assertIn("请先登录 Garmin", state.get("last_error") or "")
+
+    def test_coros_persona_provider_auth_failure_marks_sync_failed_without_llm(self):
+        profile_backend.write_sync_state({})
+        with mock.patch.object(coros_sync, "sync_profile_json", side_effect=coros_sync.CorosAuthRequiredError("missing_token")), \
+             mock.patch.object(llm_backend, "load_llm_config", return_value={"coros_region": "cn"}), \
+             mock.patch.object(llm_backend, "chat_completions", side_effect=AssertionError("COROS profile sync must not call LLM")):
+            result = profile_backend.fetch_mcp_persona("coros")
+
+        self.assertFalse(result["ok"], result)
+        self.assertIn("配置页完成授权", result["error"])
+        state = profile_backend.read_sync_state()
+        self.assertIn(state.get("last_attempt_status"), {"failed", "failed_retryable"})
+        self.assertIn("配置页完成授权", state.get("last_error") or "")
+        self.assertEqual(result["provider"], "coros")
+        self.assertEqual(result["provider_error_code"], "coros_auth_required")
+        self.assertIn("action_hint", result)
+
+    def test_api_fetch_coros_persona_failure_preserves_provider_code(self):
+        profile_backend.write_sync_state({})
+        with mock.patch.object(coros_sync, "sync_profile_json", side_effect=coros_sync.CorosAuthRequiredError("missing_token")), \
+             mock.patch.object(llm_backend, "load_llm_config", return_value={"coros_region": "eu"}):
+            result = self.api.fetch_mcp_persona("coros")
+
+        self.assertFalse(result["ok"], result)
+        self.assertEqual(result["provider"], "coros")
+        self.assertEqual(result["provider_error_code"], "coros_auth_required")
+        self.assertIn("profile_sync_summary", result)
 
     def test_persona_dict_maps_7d_recovery_fields(self):
         payload = {
@@ -464,6 +837,53 @@ class TestFitSync(unittest.TestCase):
         self.assertEqual(persona["total_run_km"], 33.92)
         self.assertEqual(persona["longest_cycle_km"], 29.98)
 
+    def test_coros_persona_maps_supported_alias_fields_to_canonical_profile(self):
+        payload = [
+            {"metric": "name", "value": "alias-user"},
+            {"metric": "nickname", "value": "ignored-when-name-present"},
+            {"metric": "gender", "value": "男"},
+            {"metric": "age", "value": 46},
+            {"metric": "height_cm", "value": 170},
+            {"metric": "weight", "value": 73.8},
+            {"metric": "resting_hr", "value": 52},
+            {"metric": "maximum_heart_rate", "value": 187},
+            {"metric": "vo2max", "value": 45},
+            {"metric": "lactate_threshold_hr", "value": 166},
+            {"metric": "body_fat_pct", "value": 18.5},
+            {"metric": "body_water_pct", "value": 55.0},
+            {"metric": "bone_mass", "value": 3.1},
+            {"metric": "muscle_mass", "value": 54.2},
+            {"metric": "pb_1km", "value": "00:04:18"},
+            {"metric": "pb_5km", "value": "00:27:18"},
+            {"metric": "pb_10km", "value": "01:04:00"},
+            {"metric": "pb_half_marathon", "value": "01:57:51"},
+            {"metric": "pb_full_marathon", "value": "04:10:05"},
+            {"metric": "ftp", "value": 230},
+        ]
+
+        result = self._fetch_coros_persona_with_payload(payload)
+
+        self.assertTrue(result["ok"], result)
+        persona = result["persona"]
+        self.assertEqual(persona["name"], "alias-user")
+        self.assertEqual(persona["weight"], 73.8)
+        self.assertEqual(persona["resting_hr"], 52)
+        self.assertEqual(persona["max_hr"], 187)
+        self.assertEqual(persona["vo2max"], 45)
+        self.assertEqual(persona["lactate_threshold_hr"], 166)
+        self.assertEqual(persona["body_fat_pct"], 18.5)
+        self.assertEqual(persona["body_water_pct"], 55.0)
+        self.assertEqual(persona["bone_mass"], 3.1)
+        self.assertEqual(persona["muscle_mass"], 54.2)
+        self.assertEqual(persona["pb_1km"], "00:04:18")
+        self.assertEqual(persona["pb_5km"], "🏆 00:27:18")
+        self.assertEqual(persona["pb_10km"], "🏆 01:04:00")
+        self.assertEqual(persona["pb_half_marathon"], "🏆 01:57:51")
+        self.assertEqual(persona["pb_full_marathon"], "🏆 04:10:05")
+        self.assertEqual(persona["ftp"], 230)
+        self.assertEqual(persona["ftp_watts"], 230)
+        self.assertEqual(result["profile_sync_summary"]["data_quality"], "complete_for_analysis")
+
     def test_coros_persona_preserves_existing_max_hr_when_missing(self):
         profile_backend.upsert_profile({
             "name": "old",
@@ -487,6 +907,39 @@ class TestFitSync(unittest.TestCase):
 
         self.assertTrue(result["ok"], result)
         self.assertEqual(result["persona"]["max_hr"], 191)
+        summary = result["profile_sync_summary"]
+        self.assertIn("max_hr", summary["preserved_fields"])
+        self.assertNotIn("max_hr", summary["updated_fields"])
+
+    def test_coros_persona_reports_synced_max_hr_as_updated_not_preserved(self):
+        profile_backend.upsert_profile({
+            "name": "old",
+            "gender": "男",
+            "age": 45,
+            "weight": 72.0,
+            "resting_hr": 55,
+            "max_hr": 191,
+            "vo2max": 44,
+            "lactate_threshold_hr": 165,
+        })
+        payload = {
+            "username": "new",
+            "age": 46,
+            "gender": "男",
+            "weight_kg": 73.8,
+            "resting_heart_rate": 52,
+            "max_heart_rate": 187,
+            "vo2_max": 45,
+            "lactate_threshold_hr": 166,
+        }
+
+        result = self._fetch_coros_persona_with_payload(payload)
+
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["persona"]["max_hr"], 187)
+        summary = result["profile_sync_summary"]
+        self.assertIn("max_hr", summary["updated_fields"])
+        self.assertNotIn("max_hr", summary["preserved_fields"])
 
     def test_coros_persona_does_not_null_supported_fields(self):
         payload = {
@@ -627,6 +1080,22 @@ class TestFitSync(unittest.TestCase):
 
         self.assertEqual(quality, "complete_for_analysis")
         self.assertEqual(missing, [])
+
+    def test_profile_data_quality_display_only_for_identity_payload(self):
+        quality, missing = profile_backend._profile_data_quality({
+            "name": "coros-display",
+            "age": 46,
+            "gender": "男",
+            "height_cm": 170,
+            "resting_hr": None,
+            "max_hr": None,
+            "weight": None,
+            "vo2max": None,
+            "lactate_threshold_hr": None,
+        })
+
+        self.assertEqual(quality, "display_only")
+        self.assertEqual(missing, ["resting_hr", "max_hr", "weight", "vo2max", "lactate_threshold_hr"])
 
     def test_profile_sync_summary_reports_updated_and_preserved_fields(self):
         profile_backend.upsert_profile({
@@ -789,25 +1258,29 @@ class TestFitSync(unittest.TestCase):
 
         self.assertEqual(AdvancedMetricsCalc.calculate_vam(records), 0.0)
 
-    def test_pick_and_import_fit_files_uses_batch_import_tracks(self):
+    def test_pick_and_import_fit_files_starts_background_import_job(self):
         selected = [str(self.temp_dir / "manual.fit")]
         fake_window = mock.Mock()
         fake_window.create_file_dialog.return_value = selected
         fake_file_dialog = types.SimpleNamespace(OPEN="open")
         fake_webview = types.SimpleNamespace(windows=[fake_window], FileDialog=fake_file_dialog)
+        start_result = {
+            "ok": True,
+            "job_id": "import-job-1",
+            "already_running": False,
+            "status": {"state": "running"},
+        }
 
         with mock.patch.dict("sys.modules", {
             "webview": fake_webview,
-        }), mock.patch.object(self.api, "batch_import_tracks", return_value={"ok": True, "imported": selected, "errors": None}) as import_mock, \
+        }), mock.patch.object(self.api, "start_import_fit_files", return_value=start_result) as import_mock, \
              mock.patch.object(llm_backend, "chat_completions") as chat_mock:
             result = self.api.pick_and_import_fit_files()
 
         self.assertTrue(result["ok"], result)
-        import_mock.assert_called_once()
-        args, kwargs = import_mock.call_args
-        self.assertEqual(args, (selected,))
-        self.assertIn("progress_callback", kwargs)
-        self.assertTrue(callable(kwargs["progress_callback"]))
+        import_mock.assert_called_once_with(selected)
+        self.assertEqual(result["data"]["job_id"], "import-job-1")
+        self.assertEqual(result["data"]["status"], {"state": "running"})
         chat_mock.assert_not_called()
 
     def test_parse_fit_activity_for_sync_defers_region_enrichment(self):
@@ -870,6 +1343,29 @@ class TestFitSync(unittest.TestCase):
         self.assertEqual(activity["region_status"], "none")
         self.assertEqual(activity["region_display"], "室内运动")
         self.assertEqual(activity["region"], "室内运动（无GPS）")
+
+    def test_parse_fit_activity_for_sync_replaces_coros_technical_filename_title(self):
+        fit_path = self.temp_dir / "coros___activity-fit-files_3a4c7694c39941c98ef78f4fe33feae2.fit"
+        fit_path.write_bytes(b"fit")
+        fake_core = {
+            "basic_info": {
+                "sport": "running",
+                "sub_sport": "generic",
+                "start_time": "2026-05-19T08:00:00+08:00",
+                "start_time_utc": "2026-05-19T00:00:00Z",
+                "total_distance_km": 5.5,
+                "total_timer_time": 2100,
+            },
+            "track_data": [
+                {"lat": 39.90, "lon": 116.40, "alt": 40.0, "time": "2026-05-19T00:00:00Z", "hr": 130},
+                {"lat": 39.91, "lon": 116.41, "alt": 42.0, "time": "2026-05-19T00:05:00Z", "hr": 135},
+            ],
+        }
+        with mock.patch.object(main.FITCoreEngine, "parse_fit_file", return_value=fake_core):
+            activity = main._parse_fit_activity_for_sync(fit_path)
+
+        self.assertEqual(activity["title"], "跑步")
+        self.assertEqual(activity["title_source"], "auto_sport")
 
     def test_parse_fit_activity_for_sync_persists_canonical_normalized_power(self):
         fit_path = self.temp_dir / "np.fit"
@@ -1465,6 +1961,103 @@ class TestFitSync(unittest.TestCase):
         self.assertEqual(row["region_status"], "success")
         self.assertIsNone(row["region_error"])
 
+    def test_region_enrichment_upgrades_auto_coros_title_after_cache_populated(self):
+        main.ensure_activity_sync_schema()
+        activity = self._activity("coros___activity-fit-files_3a4c7694c39941c98ef78f4fe33feae2.fit")
+        activity["title"] = "coros activity-fit-files 3a4c7694c39941c98ef78f4fe33feae2"
+        activity["title_source"] = "filename"
+        activity["sport_type"] = "running"
+        activity["sub_sport_type"] = "generic"
+        activity["region"] = ""
+        activity["region_status"] = "pending"
+        activity["start_lat"] = 39.90
+        activity["start_lon"] = 116.40
+        result = main._persist_sync_activity(activity)
+
+        display = "北京市/中国"
+        conn = profile_backend._conn()
+        try:
+            conn.execute(
+                "INSERT INTO geocode_cache (cache_key, lat_round, lon_round, city, country, display, provider, status, created_at, updated_at, last_used_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, 'nominatim', 'success', datetime('now'), datetime('now'), datetime('now'))",
+                ("39.90,116.40", 39.90, 116.40, "北京市", "中国", display),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        enrichment = profile_backend.run_region_enrichment_once(limit=5)
+        self.assertTrue(enrichment["ok"])
+        self.assertEqual(enrichment["success"], 1)
+
+        conn = profile_backend._conn()
+        try:
+            row = conn.execute(
+                "SELECT title, title_source, region, region_status FROM activities WHERE id = ?",
+                (result["id"],),
+            ).fetchone()
+        finally:
+            conn.close()
+
+        self.assertEqual(row["title"], "北京市 跑步")
+        self.assertEqual(row["title_source"], "auto_region_sport")
+        self.assertEqual(row["region"], display)
+        self.assertEqual(row["region_status"], "success")
+
+    def test_backfill_auto_activity_titles_updates_existing_coros_title(self):
+        main.ensure_activity_sync_schema()
+        activity = self._activity("coros___activity-fit-files_0794a4410dba433ba0b7e4c605f4fd8e.fit")
+        activity["title"] = "coros activity-fit-files 0794a4410dba433ba0b7e4c605f4fd8e"
+        activity["title_source"] = "filename"
+        activity["sport_type"] = "running"
+        activity["sub_sport_type"] = "generic"
+        activity["region"] = "北京市/中国"
+        activity["region_display"] = "北京市/中国"
+        activity["region_status"] = "success"
+        result = main._persist_sync_activity(activity)
+
+        updated = profile_backend.backfill_auto_activity_titles()
+        self.assertEqual(updated, 1)
+
+        conn = profile_backend._conn()
+        try:
+            row = conn.execute(
+                "SELECT title, title_source FROM activities WHERE id = ?",
+                (result["id"],),
+            ).fetchone()
+        finally:
+            conn.close()
+
+        self.assertEqual(row["title"], "北京市 跑步")
+        self.assertEqual(row["title_source"], "auto_region_sport")
+
+    def test_backfill_auto_activity_titles_preserves_normal_filename_title(self):
+        main.ensure_activity_sync_schema()
+        activity = self._activity("西城区 跑步_611997904.fit")
+        activity["title"] = "西城区 跑步_611997904"
+        activity["title_source"] = "filename"
+        activity["sport_type"] = "running"
+        activity["sub_sport_type"] = "generic"
+        activity["region"] = "北京市/中国"
+        activity["region_display"] = "北京市/中国"
+        activity["region_status"] = "success"
+        result = main._persist_sync_activity(activity)
+
+        updated = profile_backend.backfill_auto_activity_titles()
+        self.assertEqual(updated, 0)
+
+        conn = profile_backend._conn()
+        try:
+            row = conn.execute(
+                "SELECT title, title_source FROM activities WHERE id = ?",
+                (result["id"],),
+            ).fetchone()
+        finally:
+            conn.close()
+
+        self.assertEqual(row["title"], "西城区 跑步_611997904")
+        self.assertEqual(row["title_source"], "filename")
+
     def test_region_enrichment_marks_failure_and_increments_attempt_count(self):
         main.ensure_activity_sync_schema()
         activity = self._activity("nom_retry.fit")
@@ -1518,12 +2111,16 @@ class TestFitSync(unittest.TestCase):
         pool.update({
             "sport_type": "swimming",
             "sub_sport_type": "lap_swimming",
+            "start_time": "2026-05-19T08:00:00Z",
+            "start_time_utc": "2026-05-19T08:00:00Z",
             "swolf": 42,
         })
         open_water = self._activity("open_water.fit")
         open_water.update({
             "sport_type": "swimming",
             "sub_sport_type": "open_water",
+            "start_time": "2026-05-19T09:00:00Z",
+            "start_time_utc": "2026-05-19T09:00:00Z",
             "swolf": 2.1,
         })
         main._persist_sync_activity(pool)
@@ -1546,7 +2143,8 @@ class TestFitSync(unittest.TestCase):
             run.update({
                 "sport_type": "running",
                 "sub_sport_type": "generic",
-                "start_time": f"2026-05-19T10:{idx:02d}:00+08:00",
+                "start_time": f"2026-05-19T{10 + idx:02d}:00:00+08:00",
+                "start_time_utc": f"2026-05-19T{10 + idx:02d}:00:00+08:00",
                 "gain_m": 80,
                 "normalized_power": 230,
             })
@@ -1555,7 +2153,8 @@ class TestFitSync(unittest.TestCase):
         swim.update({
             "sport_type": "swimming",
             "sub_sport_type": "lap_swimming",
-            "start_time": "2026-05-19T09:00:00+08:00",
+            "start_time": "2026-05-19T08:00:00+08:00",
+            "start_time_utc": "2026-05-19T08:00:00+08:00",
             "swolf": 42,
         })
         main._persist_sync_activity(swim)
@@ -2159,7 +2758,7 @@ class TestFitSync(unittest.TestCase):
                 report = self.api.safe_extract_zip(zf, main.IMPORTS_DIR)
 
         self.assertEqual(report["extracted"], [])
-        self.assertEqual(report["errors"][0]["error"], "ZIP 成员数量超过上限")
+        self.assertEqual(report["errors"][0]["error"], "ZIP 成员数量超过单次上传上限")
 
     def test_safe_extract_zip_rejects_oversized_member(self):
         zip_path = self.temp_dir / "large.zip"

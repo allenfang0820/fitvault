@@ -769,6 +769,20 @@ class TestCadenceStability:
         assert result["confidence"] == "high"
         assert result["cv"] < 1.0  # 完美稳态 CV 接近 0
 
+    def test_running_startup_cadence_cut_in_outlier_ignored(self):
+        """起跑采样切入低点不应把稳定跑误判为 warn。"""
+        from metrics_resolver import MetricsResolver
+        stream = [49.0] + ([92.0, 91.0, 90.0, 91.0, 92.0, 93.0] * 35)
+        result = MetricsResolver._compute_cadence_stability(
+            cadence_stream=stream,
+            duration_sec=38 * 60,
+            sport_type="running",
+        )
+        assert result["score"] is not None
+        assert result["score"] >= 75.0
+        assert result["level"] in ("good", "excellent")
+        assert result["cv"] < 2.0
+
     def test_running_cadence_decay_score_dropped(self):
         """头 180 spm / 尾 170 spm(-5.5%)→ score 降低,decay_pct 接近 -5.5。"""
         from metrics_resolver import MetricsResolver
