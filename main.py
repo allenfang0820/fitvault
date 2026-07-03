@@ -8562,6 +8562,12 @@ class Api:
                     return _api_error(API_CODE_VALIDATION, "请选择 CLI 类型后再测试连接")
                 if cli_type_clean == "custom" and not str(cli_path or "").strip():
                     return _api_error(API_CODE_VALIDATION, "请先填写自定义 CLI 路径")
+                messages = [
+                    {"role": "system", "content": "你只需要用中文回复：连接成功。"},
+                    {"role": "user", "content": "请回复连接成功"},
+                ]
+                if cli_type_clean == "openclaw":
+                    messages = [{"role": "user", "content": "请只回复这四个字：连接成功"}]
                 text = llm_backend.generate_text(
                     config={
                         "transport": "cli",
@@ -8574,10 +8580,7 @@ class Api:
                         "cli_model": cli_model,
                         "cli_timeout_sec": cli_timeout_sec,
                     },
-                    messages=[
-                        {"role": "system", "content": "你只需要用中文回复：连接成功。"},
-                        {"role": "user", "content": "请回复连接成功"},
-                    ],
+                    messages=messages,
                     session_id=f"llm_config_test_{int(time.time() * 1000)}",
                     timeout=30,
                 )

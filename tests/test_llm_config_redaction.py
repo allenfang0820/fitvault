@@ -246,6 +246,10 @@ class TestLLMConfigRedaction(unittest.TestCase):
 
         self.assertTrue(res["ok"])
         self.assertEqual(generate_mock.call_args.kwargs["config"]["agent_id"], "agent-8b65944a")
+        self.assertEqual(
+            generate_mock.call_args.kwargs["messages"],
+            [{"role": "user", "content": "请只回复这四个字：连接成功"}],
+        )
         self.assertEqual(save_mock.call_args.kwargs["agent_id"], "agent-8b65944a")
 
     def test_test_llm_config_cli_failure_does_not_save(self):

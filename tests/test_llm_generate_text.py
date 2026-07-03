@@ -68,6 +68,8 @@ class TestLLMGenerateText(unittest.TestCase):
         run_mock.assert_called_once()
         kwargs = run_mock.call_args.kwargs
         self.assertFalse(kwargs["shell"])
+        self.assertEqual(kwargs["encoding"], "utf-8")
+        self.assertEqual(kwargs["errors"], "replace")
         self.assertEqual(kwargs["timeout"], 45)
         self.assertEqual(run_mock.call_args.args[0][0:2], ["codex", "exec"])
 
