@@ -265,6 +265,39 @@ def login_command(*, region: str | None = None, base_dir: Path | str | None = No
     return [sys.executable, str(paths.login), "--region", resolved_region]
 
 
+def _windows_command_line(command: list[str]) -> str:
+    return subprocess.list2cmdline([str(part) for part in command])
+
+
+def _windows_command_cwd(command: list[str], fallback: Path) -> str:
+    if command:
+        first = Path(command[0])
+        if first.name.lower() in {"python.exe", "pythonw.exe", "py.exe"} and len(command) > 1:
+            return str(Path(command[1]).resolve().parent)
+        if first.is_file() or first.suffix.lower() in {".exe", ".cmd", ".bat"}:
+            return str(first.resolve().parent)
+    return str(fallback)
+
+
+def _windows_console_launcher(command: list[str], cwd: str, title: str, done_message: str) -> list[str]:
+    shell_command = (
+        f"cd /d {subprocess.list2cmdline([cwd])} && "
+        f"{_windows_command_line(command)} & "
+        f"echo. & echo {done_message} & pause"
+    )
+    return [
+        "cmd.exe",
+        "/d",
+        "/c",
+        "start",
+        title,
+        "cmd.exe",
+        "/d",
+        "/k",
+        shell_command,
+    ]
+
+
 def default_tokenstore(
     region: str | None = None,
     workspace_dir: Path | str | None = None,
@@ -427,8 +460,44 @@ def start_login(
             message=f"已打开终端窗口，请在终端完成 Garmin 登录授权（{resolved_region}）。",
         )
 
+    paths = get_garmin_skill_paths(base_dir)
+
+    if sys.platform.startswith("win"):
+        cwd = _windows_command_cwd(command, paths.login.resolve().parent)
+        launcher = _windows_console_launcher(
+            command,
+            cwd,
+            "FitVault Garmin Login",
+            "Garmin 授权流程结束后，请回到脉图重新点击同步活动。",
+        )
+        try:
+            subprocess.Popen(
+                launcher,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                cwd=cwd,
+            )
+        except OSError as exc:
+            return GarminLoginResult(
+                ok=False,
+                region=resolved_region,
+                status="launch_failed",
+                command=command,
+                stdout="",
+                stderr="",
+                message=f"Garmin 登录终端启动失败: {exc}",
+            )
+        return GarminLoginResult(
+            ok=True,
+            region=resolved_region,
+            status="launched",
+            command=command,
+            stdout="",
+            stderr="",
+            message=f"已打开命令行窗口，请在窗口中完成 Garmin 登录授权（{resolved_region}）。",
+        )
+
     try:
-        paths = get_garmin_skill_paths(base_dir)
         completed = subprocess.run(
             command,
             capture_output=True,

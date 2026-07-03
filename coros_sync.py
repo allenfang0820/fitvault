@@ -274,6 +274,39 @@ def login_command(*, region: str | None = None, base_dir: Path | str | None = No
     return ["bash", str(paths.install_mcp), "--region", resolved_region]
 
 
+def _windows_command_line(command: list[str]) -> str:
+    return subprocess.list2cmdline([str(part) for part in command])
+
+
+def _windows_command_cwd(command: list[str], fallback: Path) -> str:
+    if command:
+        first = Path(command[0])
+        if first.name.lower() in {"python.exe", "pythonw.exe", "py.exe", "bash.exe"} and len(command) > 1:
+            return str(Path(command[1]).resolve().parent)
+        if first.is_file() or first.suffix.lower() in {".exe", ".cmd", ".bat"}:
+            return str(first.resolve().parent)
+    return str(fallback)
+
+
+def _windows_console_launcher(command: list[str], cwd: str, title: str, done_message: str) -> list[str]:
+    shell_command = (
+        f"cd /d {subprocess.list2cmdline([cwd])} && "
+        f"{_windows_command_line(command)} & "
+        f"echo. & echo {done_message} & pause"
+    )
+    return [
+        "cmd.exe",
+        "/d",
+        "/c",
+        "start",
+        title,
+        "cmd.exe",
+        "/d",
+        "/k",
+        shell_command,
+    ]
+
+
 def _diag(name: str, status: str, message: str) -> dict[str, str]:
     return {"name": name, "status": status, "message": message}
 
@@ -636,17 +669,14 @@ def start_login(
         )
 
     if sys.platform.startswith("win"):
-        cwd = str(Path(command[0]).resolve().parent) if command else str(Path.cwd())
-        shell_command = " ".join(subprocess.list2cmdline([part]) for part in command)
-        launcher = [
-            "cmd.exe",
-            "/c",
-            "start",
-            "脉图 COROS 授权",
-            "cmd.exe",
-            "/k",
-            f"cd /d {subprocess.list2cmdline([cwd])} && {shell_command} && echo. && echo COROS 授权流程结束后，请回到脉图点击检查状态。",
-        ]
+        paths = get_coros_skill_paths(base_dir)
+        cwd = _windows_command_cwd(command, paths.install_mcp.resolve().parent)
+        launcher = _windows_console_launcher(
+            command,
+            cwd,
+            "FitVault COROS Login",
+            "COROS 授权流程结束后，请回到脉图点击检查状态。",
+        )
         try:
             subprocess.Popen(
                 launcher,

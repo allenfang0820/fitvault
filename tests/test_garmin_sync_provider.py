@@ -416,6 +416,38 @@ class TestGarminSyncProvider(unittest.TestCase):
         self.assertNotIn("login.py", script)
         run_mock.assert_not_called()
 
+    def test_start_login_on_windows_opens_cmd_without_blocking(self):
+        with mock.patch.object(garmin_sync.sys, "platform", "win32"), \
+             mock.patch.object(garmin_sync.subprocess, "Popen") as popen_mock, \
+             mock.patch.object(garmin_sync.subprocess, "run") as run_mock:
+            result = garmin_sync.start_login(base_dir=self.base_dir, region="global")
+
+        self.assertTrue(result.ok)
+        self.assertEqual(result.status, "launched")
+        self.assertIn("命令行窗口", result.message)
+        popen_mock.assert_called_once()
+        run_mock.assert_not_called()
+        launcher = popen_mock.call_args.args[0]
+        self.assertEqual(launcher[:4], ["cmd.exe", "/d", "/c", "start"])
+        self.assertIn("cmd.exe", launcher)
+        self.assertIn("pause", launcher[-1])
+        self.assertIn("login.py", launcher[-1])
+
+    def test_start_login_on_windows_frozen_uses_internal_cli_in_cmd(self):
+        executable = str(self.base_dir / "FitVault.exe")
+        Path(executable).write_text("", encoding="utf-8")
+        with mock.patch.object(garmin_sync.sys, "platform", "win32"), \
+             mock.patch.object(garmin_sync.sys, "frozen", True, create=True), \
+             mock.patch.object(garmin_sync.sys, "executable", executable), \
+             mock.patch.object(garmin_sync.subprocess, "Popen") as popen_mock:
+            result = garmin_sync.start_login(base_dir=self.base_dir, region="cn")
+
+        self.assertTrue(result.ok)
+        self.assertEqual(result.command, [executable, "--garmin-login", "--region", "cn"])
+        launcher_script = popen_mock.call_args.args[0][-1]
+        self.assertIn("--garmin-login", launcher_script)
+        self.assertNotIn("login.py", launcher_script)
+
     def test_start_login_nonzero_returns_failed(self):
         with mock.patch.object(garmin_sync.sys, "platform", "linux"), \
              mock.patch.object(

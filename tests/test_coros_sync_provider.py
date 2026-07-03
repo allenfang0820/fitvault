@@ -381,7 +381,10 @@ class TestCorosSyncProvider(unittest.TestCase):
         self.assertIn("命令行", result.message)
         self.assertEqual(Path(result.command[0]).name, "install_coros_mcp.cmd")
         launcher = popen_mock.call_args.args[0]
-        self.assertEqual(launcher[:3], ["cmd.exe", "/c", "start"])
+        self.assertEqual(launcher[:4], ["cmd.exe", "/d", "/c", "start"])
+        self.assertIn("cmd.exe", launcher)
+        self.assertIn("pause", launcher[-1])
+        self.assertIn("install_coros_mcp.cmd", launcher[-1])
         run_mock.assert_not_called()
 
     def test_start_login_nonzero_returns_failed(self):
