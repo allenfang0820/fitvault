@@ -1,5 +1,8 @@
+import sys
+import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import main
 
@@ -87,6 +90,28 @@ class TestHelpSingleSource(unittest.TestCase):
 
     def test_packaging_includes_help_markdown(self):
         self.assertIn('("docs/脉图帮助说明.md", "docs")', self.spec)
+
+    def test_packaging_includes_unpacked_provider_skill_dirs(self):
+        self.assertIn('("skills/garmin-stats", "skills/garmin-stats")', self.spec)
+        self.assertIn('("skills/coros-stats", "skills/coros-stats")', self.spec)
+        self.assertIn('("skills/garmin-stats.zip", "skills")', self.spec)
+        self.assertIn('("skills/coros-stats.zip", "skills")', self.spec)
+
+    def test_app_base_dir_prefers_bundle_resources(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            bundle = Path(temp_dir) / "脉图.app" / "Contents"
+            frameworks = bundle / "Frameworks"
+            resources = bundle / "Resources"
+            resources.mkdir(parents=True)
+            (resources / "track.html").write_text("<html></html>", encoding="utf-8")
+            exe = bundle / "MacOS" / "MaiTu"
+            exe.parent.mkdir(parents=True)
+            exe.write_text("", encoding="utf-8")
+
+            with mock.patch.object(sys, "frozen", True, create=True), \
+                 mock.patch.object(sys, "_MEIPASS", str(frameworks), create=True), \
+                 mock.patch.object(sys, "executable", str(exe)):
+                self.assertEqual(main.app_base_dir(), resources)
 
 
 if __name__ == "__main__":

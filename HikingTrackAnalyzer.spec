@@ -24,6 +24,8 @@ _datas = [
     ("lib", "lib"),
     ("assets", "assets"),
     ("docs/脉图帮助说明.md", "docs"),
+    ("skills/garmin-stats", "skills/garmin-stats"),
+    ("skills/coros-stats", "skills/coros-stats"),
     ("skills/garmin-stats.zip", "skills"),
     ("skills/coros-stats.zip", "skills"),
 ]

@@ -54,6 +54,22 @@ class TestGarminSyncProvider(unittest.TestCase):
         self.assertEqual(paths.download_fit.name, "download_fit.py")
         self.assertEqual(paths.login.name, "login.py")
 
+    def test_app_base_dir_prefers_bundle_resources_for_packaged_skills(self):
+        bundle = self.base_dir / "脉图.app" / "Contents"
+        frameworks = bundle / "Frameworks"
+        resources = bundle / "Resources"
+        scripts = resources / "skills" / "garmin-stats" / "scripts"
+        scripts.mkdir(parents=True)
+        (scripts / "get_garmin_stats.py").write_text("# packaged\n", encoding="utf-8")
+        exe = bundle / "MacOS" / "MaiTu"
+        exe.parent.mkdir(parents=True)
+        exe.write_text("", encoding="utf-8")
+
+        with mock.patch.object(garmin_sync.sys, "frozen", True, create=True), \
+             mock.patch.object(garmin_sync.sys, "_MEIPASS", str(frameworks), create=True), \
+             mock.patch.object(garmin_sync.sys, "executable", str(exe)):
+            self.assertEqual(garmin_sync.app_base_dir(), resources)
+
     def test_missing_skill_script_raises(self):
         (self.scripts_dir / "download_fit.py").unlink()
 

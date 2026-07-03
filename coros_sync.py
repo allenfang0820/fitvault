@@ -113,7 +113,16 @@ class CorosLoginResult:
 
 def app_base_dir() -> Path:
     if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
-        return Path(sys._MEIPASS)
+        meipass = Path(sys._MEIPASS)
+        candidates = [
+            meipass.parent / "Resources",
+            Path(sys.executable).resolve().parent.parent / "Resources",
+            meipass,
+        ]
+        for candidate in candidates:
+            if (candidate / "skills" / "coros-stats" / "scripts" / "coros_runner_profile.py").is_file():
+                return candidate
+        return candidates[0]
     return Path(__file__).resolve().parent
 
 

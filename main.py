@@ -278,7 +278,16 @@ WEATHER_BACKFILL_MAX_ATTEMPTS = 5
 def app_base_dir() -> Path:
     """开发模式为脚本所在目录；PyInstaller 打包后为 _MEIPASS。"""
     if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
-        return Path(sys._MEIPASS)
+        meipass = Path(sys._MEIPASS)
+        candidates = [
+            meipass.parent / "Resources",
+            Path(sys.executable).resolve().parent.parent / "Resources",
+            meipass,
+        ]
+        for candidate in candidates:
+            if (candidate / HTML_FILENAME).is_file():
+                return candidate
+        return meipass
     return Path(__file__).resolve().parent
 
 
