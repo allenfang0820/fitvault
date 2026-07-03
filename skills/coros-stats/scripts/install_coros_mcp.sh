@@ -14,6 +14,29 @@ NODE_BIN=""
 NPM_BIN=""
 
 find_node_binary() {
+  if [ -n "${QCLAW_CLI_NODE_BINARY:-}" ] && [ -x "$QCLAW_CLI_NODE_BINARY" ]; then
+    echo "$QCLAW_CLI_NODE_BINARY"
+    return 0
+  fi
+  if [ -n "${MAITU_BUNDLED_NODE_DIR:-}" ] && [ -x "$MAITU_BUNDLED_NODE_DIR/bin/node" ]; then
+    echo "$MAITU_BUNDLED_NODE_DIR/bin/node"
+    return 0
+  fi
+
+  local script_dir
+  script_dir="$(cd "$(dirname "$0")" && pwd)"
+  local bundled_node
+  for bundled_node in \
+    "$script_dir/../../../node/bin/node" \
+    "$script_dir/../../../../node/bin/node" \
+    "$script_dir/../../../Resources/node/bin/node"
+  do
+    if [ -x "$bundled_node" ]; then
+      echo "$bundled_node"
+      return 0
+    fi
+  done
+
   if command -v node &>/dev/null; then
     command -v node
     return 0
@@ -56,13 +79,18 @@ find_openclaw_mjs() {
 configure_node_runtime() {
   NODE_BIN="$(find_node_binary || true)"
   if [ -z "$NODE_BIN" ]; then
-    echo "[错误] 未检测到 Node.js，请先安装 Node.js (https://nodejs.org)"
+    echo "[错误] 未检测到 Node.js。请确认脉图应用包完整，或手动安装 Node.js (https://nodejs.org)"
     exit 1
   fi
   export PATH="$(dirname "$NODE_BIN"):$PATH"
+  export QCLAW_CLI_NODE_BINARY="$NODE_BIN"
+  export MAITU_BUNDLED_NODE_DIR="$(cd "$(dirname "$NODE_BIN")/.." && pwd)"
+  export NPM_CONFIG_PREFIX="${NPM_CONFIG_PREFIX:-$HOME/.maitu/node-global}"
+  mkdir -p "$NPM_CONFIG_PREFIX/bin"
+  export PATH="$NPM_CONFIG_PREFIX/bin:$PATH"
 
   if ! NPM_BIN="$(command -v npm 2>/dev/null)"; then
-    echo "[错误] 未检测到 npm"
+    echo "[错误] 未检测到 npm。请使用包含完整 Node.js runtime 的脉图安装包，或手动安装 Node.js。"
     exit 1
   fi
 }

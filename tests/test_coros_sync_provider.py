@@ -95,6 +95,17 @@ class TestCorosSyncProvider(unittest.TestCase):
              mock.patch.dict(os.environ, {}, clear=True):
             self.assertEqual(coros_sync.discover_node_binary(home=self.base_dir), str(node_path))
 
+    def test_discover_node_binary_prefers_bundled_node_runtime(self):
+        node_path = self.base_dir / "node" / "bin" / "node"
+        node_path.parent.mkdir(parents=True)
+        node_path.write_text("#!/bin/sh\n", encoding="utf-8")
+        node_path.chmod(0o755)
+
+        with mock.patch.object(coros_sync, "app_base_dir", return_value=self.base_dir), \
+             mock.patch.object(coros_sync.shutil, "which", return_value=None), \
+             mock.patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(coros_sync.discover_node_binary(home=self.base_dir), str(node_path))
+
     def test_build_coros_runtime_env_injects_qclaw_runtime(self):
         with mock.patch.object(coros_sync, "discover_node_binary", return_value="/tmp/node/bin/node"), \
              mock.patch.object(coros_sync, "discover_openclaw_mjs", return_value="/tmp/openclaw.mjs"):
@@ -102,6 +113,7 @@ class TestCorosSyncProvider(unittest.TestCase):
 
         self.assertEqual(env["QCLAW_CLI_NODE_BINARY"], "/tmp/node/bin/node")
         self.assertEqual(env["QCLAW_CLI_OPENCLAW_MJS"], "/tmp/openclaw.mjs")
+        self.assertEqual(env["MAITU_BUNDLED_NODE_DIR"], "/tmp/node")
         self.assertTrue(env["PATH"].startswith("/tmp/node/bin:"))
 
     def test_check_auth_status_invalid_region_returns_status(self):

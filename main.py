@@ -29,7 +29,7 @@ from fit_engine import FITCoreEngine
 from metrics_resolver import MetricsResolver, SemanticSportsEngine, build_training_effect, _build_environment_challenge_block  # V9.4.0 修复 NameError:build_training_effect 已在 metrics_resolver.py:2760 定义, 此处补 import;V_ENV.1.16:补 _build_environment_challenge_block
 
 DEBUG_MODE = False
-APP_VERSION = "V1.1.0"
+APP_VERSION = "V1.2.0"
 
 logging.basicConfig(
     level=logging.INFO,

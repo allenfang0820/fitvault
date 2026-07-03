@@ -5463,7 +5463,7 @@
     <div class="boot-splash-panel" aria-live="polite">
         <div class="boot-splash-brand">
             <div class="boot-splash-title">脉图</div>
-            <div class="boot-splash-version">V1.1.0</div>
+            <div class="boot-splash-version">V1.2.0</div>
         </div>
         <div class="boot-splash-subtitle">正在唤醒本地运动数据、轨迹引擎与 AI 分析能力</div>
         <div class="boot-splash-progress" aria-hidden="true"></div>
@@ -6067,7 +6067,7 @@
         <!-- ========== 【帮助说明】面板 ========== -->
         <div id="panel-help" class="tab-panel">
             <div class="panel-header">
-                <h2>脉图帮助说明 <span style="font-size:0.82rem; color:#93c5fd; margin-left:8px;">V1.1.0</span></h2>
+                <h2>脉图帮助说明 <span style="font-size:0.82rem; color:#93c5fd; margin-left:8px;">V1.2.0</span></h2>
                 <p>本地优先的 AI 运动数据分析工具，用 FIT 可信数据、轨迹可视化和 AI 解读帮助你整理、查看和复盘训练。</p>
             </div>
             <div class="panel-body" style="padding:18px 22px; overflow-y:auto;">
@@ -6113,7 +6113,7 @@
                 </div>
 
                 <div class="section-card">
-                    <div class="section-title">V1.1.0 重要更新</div>
+                    <div class="section-title">V1.2.0 重要更新</div>
                     <ul class="about-update-list">
                         <li><strong>大模型连接 CLI 化：</strong>配置页新增 HTTP 网关 / CLI 两种连接方式，支持 OpenClaw CLI、Codex CLI、Claude Code 和自定义 CLI。</li>
                         <li><strong>AI 功能统一走新连接层：</strong>AI 私教、活动建议、雷达图洞察和疲劳复盘洞察会复用同一套大模型调用入口。</li>
@@ -8094,17 +8094,17 @@
         if (!versionEl || versionEl.dataset.loaded === '1') return;
         try {
             if (!window.pywebview || !window.pywebview.api || typeof window.pywebview.api.get_app_info !== 'function') {
-                versionEl.textContent = '版本 V1.1.0';
+                versionEl.textContent = '版本 V1.2.0';
                 return;
             }
             const res = await window.pywebview.api.get_app_info();
             const data = res && res.data ? res.data : res;
-            const version = data && data.version ? String(data.version) : 'V1.1.0';
+            const version = data && data.version ? String(data.version) : 'V1.2.0';
             versionEl.textContent = '版本 ' + version;
             versionEl.dataset.loaded = '1';
         } catch (e) {
             console.warn('loadAboutInfo failed', e);
-            versionEl.textContent = '版本 V1.1.0';
+            versionEl.textContent = '版本 V1.2.0';
         }
     }
 

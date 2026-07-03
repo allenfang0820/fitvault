@@ -77,6 +77,10 @@ class TestCorosSkillRegionScriptStatic(unittest.TestCase):
 
     def test_installer_injects_openclaw_runtime_and_keeps_login_success_nonfatal(self):
         self.assertIn("find_node_binary()", self.installer_source)
+        self.assertIn("MAITU_BUNDLED_NODE_DIR", self.installer_source)
+        self.assertIn("../../../node/bin/node", self.installer_source)
+        self.assertIn("NPM_CONFIG_PREFIX", self.installer_source)
+        self.assertIn("$HOME/.maitu/node-global", self.installer_source)
         self.assertIn("\"$HOME\"/.nvm/versions/node/*/bin/node", self.installer_source)
         self.assertIn("/opt/homebrew/bin/node", self.installer_source)
         self.assertIn("QCLAW_CLI_NODE_BINARY", self.installer_source)

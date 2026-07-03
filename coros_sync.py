@@ -110,6 +110,8 @@ class CorosLoginResult:
 
 
 def app_base_dir() -> Path:
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        return Path(sys._MEIPASS)
     return Path(__file__).resolve().parent
 
 
@@ -164,10 +166,30 @@ def _nvm_node_candidates(home: Path) -> list[Path]:
     return sorted(root.glob("*/bin/node"), reverse=True)
 
 
+def _bundled_node_candidates() -> list[Path]:
+    candidates: list[Path] = []
+    env_dir = str(os.environ.get("MAITU_BUNDLED_NODE_DIR") or "").strip()
+    if env_dir:
+        candidates.append(Path(env_dir).expanduser() / "bin" / "node")
+
+    base = app_base_dir()
+    candidates.extend([
+        base / "node" / "bin" / "node",
+        base / "Resources" / "node" / "bin" / "node",
+        Path(sys.executable).resolve().parent / "node" / "bin" / "node",
+        Path(sys.executable).resolve().parent.parent / "Resources" / "node" / "bin" / "node",
+    ])
+    return candidates
+
+
 def discover_node_binary(home: Path | str | None = None) -> str:
     env_node = str(os.environ.get("QCLAW_CLI_NODE_BINARY") or "").strip()
     if env_node and _is_executable_file(Path(env_node).expanduser()):
         return str(Path(env_node).expanduser())
+
+    for candidate in _bundled_node_candidates():
+        if _is_executable_file(candidate):
+            return str(candidate)
 
     path_node = shutil.which("node")
     if path_node:
@@ -209,6 +231,8 @@ def build_coros_runtime_env(env: dict[str, str] | None = None) -> dict[str, str]
         node_dir = str(Path(node_path).expanduser().parent)
         runtime_env["PATH"] = node_dir + os.pathsep + runtime_env.get("PATH", "")
         runtime_env.setdefault("QCLAW_CLI_NODE_BINARY", node_path)
+        node_root = str(Path(node_path).expanduser().parent.parent)
+        runtime_env.setdefault("MAITU_BUNDLED_NODE_DIR", node_root)
     openclaw_mjs = discover_openclaw_mjs()
     if openclaw_mjs:
         runtime_env.setdefault("QCLAW_CLI_OPENCLAW_MJS", openclaw_mjs)
@@ -532,8 +556,18 @@ def start_login(
 
     if sys.platform == "darwin":
         cwd = str(Path(command[1]).resolve().parent) if len(command) > 1 else str(Path.cwd())
+        runtime_env = build_coros_runtime_env()
+        env_prefix_parts = []
+        for key in ("PATH", "QCLAW_CLI_NODE_BINARY", "QCLAW_CLI_OPENCLAW_MJS", "MAITU_BUNDLED_NODE_DIR"):
+            value = str(runtime_env.get(key) or "").strip()
+            if value:
+                env_prefix_parts.append(f"export {key}={shlex.quote(value)}")
+        env_prefix = "; ".join(env_prefix_parts)
+        if env_prefix:
+            env_prefix += "; "
         shell_command = (
             f"cd {shlex.quote(cwd)} && "
+            f"{env_prefix}"
             f"{' '.join(shlex.quote(part) for part in command)}; "
             "echo; echo 'COROS 授权流程结束后，请回到脉图点击检查状态。'; "
             "printf '按回车关闭窗口...'; read _"
@@ -652,14 +686,15 @@ def _format_mcp_day(value: str | date) -> str:
 
 
 def _coros_mcp_command(region: str, tool_name: str, arguments: dict[str, Any]) -> list[str]:
+    paths = get_coros_skill_paths()
+    node_path = discover_node_binary()
     return [
-        "coros-mcp",
-        "--issuer",
-        _issuer_for_region(region),
-        "call-tool",
-        "--tool",
+        node_path or "node",
+        str(paths.skill_dir / "scripts" / "coros-mcp-keepalive.js"),
+        "--region",
+        resolve_coros_region(region),
+        "call",
         tool_name,
-        "--arguments-json",
         json.dumps(arguments, ensure_ascii=False, separators=(",", ":")),
     ]
 
@@ -685,7 +720,7 @@ def run_coros_mcp_tool(
     except subprocess.TimeoutExpired as exc:
         raise CorosFitDownloadError(f"COROS MCP 工具调用超时 ({timeout}s): {tool_name}") from exc
     except OSError as exc:
-        raise CorosFitDownloadError(f"COROS MCP CLI 启动失败: {exc}", code="coros_node_missing") from exc
+        raise CorosFitDownloadError(f"COROS MCP keepalive 启动失败: {exc}", code="coros_node_missing") from exc
 
     stdout = str(completed.stdout or "")
     stderr = str(completed.stderr or "")

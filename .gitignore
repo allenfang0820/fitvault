@@ -21,6 +21,7 @@ user_profile.db
 build/
 dist/
 .pyinstaller_cache/
+runtimes/
 *.spec
 !HikingTrackAnalyzer.spec
 *.dmg

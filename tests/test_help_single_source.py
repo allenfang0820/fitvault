@@ -50,6 +50,8 @@ class TestHelpSingleSource(unittest.TestCase):
         readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
         self.assertIn("Garmin 和 COROS 同步能力随应用提供，普通用户不需要准备外部 skill 包。", readme)
         self.assertIn("COROS 当前授权需要本机 Node.js 环境", readme)
+        self.assertIn("COROS MCP 的 FIT 下载单次最多返回 10 个活动", readme)
+        self.assertIn("每次最多下载 10 个 FIT 文件", readme)
         self.assertIn("[请博主喝杯咖啡](assets/social/alipay-donate.jpg)", readme)
         self.assertNotIn("![支付宝赞助二维码]", readme)
         self.assertIn("Garmin 活动同步不依赖这一步", readme)
@@ -59,6 +61,8 @@ class TestHelpSingleSource(unittest.TestCase):
 
         self.assertIn("Garmin 和 COROS 同步能力随应用提供，普通用户不需要准备外部 skill 包。", self.help_doc)
         self.assertIn("COROS 当前授权需要本机 Node.js 环境", self.help_doc)
+        self.assertIn("COROS MCP 的 FIT 下载单次最多返回 10 个活动", self.help_doc)
+        self.assertIn("每次最多下载 10 个 FIT 文件", self.help_doc)
         self.assertIn("[请博主喝杯咖啡](../assets/social/alipay-donate.jpg)", self.help_doc)
         self.assertIn("Garmin 活动同步不依赖这一步", self.help_doc)
         self.assertNotIn("Garmin 同步仍依赖 OpenClaw / QClaw skill、账号授权和存储规范", self.help_doc)

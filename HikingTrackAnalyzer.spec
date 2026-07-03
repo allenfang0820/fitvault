@@ -1,4 +1,5 @@
 import os
+import platform
 # Force pyinstaller to use local cache dir to avoid permission error
 os.environ["PYINSTALLER_CONFIG_DIR"] = os.path.join(os.getcwd(), ".pyinstaller_cache")
 os.environ["PYINSTALLER_STRICT_CACHE_DIR"] = os.path.join(os.getcwd(), ".pyinstaller_cache")
@@ -26,6 +27,36 @@ _datas = [
     ("skills/garmin-stats.zip", "skills"),
     ("skills/coros-stats.zip", "skills"),
 ]
+
+
+def _node_runtime_datas():
+    """Bundle a per-architecture Node.js runtime when available.
+
+    Preferred input:
+      MAITU_NODE_RUNTIME_DIR=/path/to/node-vXX-darwin-arm64
+
+    Fallback local layout:
+      runtimes/node-darwin-arm64
+      runtimes/node-darwin-x64
+
+    The runtime is copied to app resources as ./node so COROS MCP scripts can
+    run without requiring users to install Node.js separately.
+    """
+    runtime_dir = os.environ.get("MAITU_NODE_RUNTIME_DIR", "").strip()
+    if not runtime_dir:
+        machine = platform.machine().lower()
+        arch = "arm64" if machine in {"arm64", "aarch64"} else "x64"
+        runtime_dir = os.path.join(os.getcwd(), "runtimes", f"node-darwin-{arch}")
+    if runtime_dir and os.path.isdir(runtime_dir):
+        return [(runtime_dir, "node")]
+
+    node_binary = os.environ.get("MAITU_NODE_BINARY", "").strip()
+    if node_binary and os.path.isfile(node_binary):
+        return [(node_binary, "node/bin")]
+    return []
+
+
+_datas += _node_runtime_datas()
 
 a = Analysis(
     ['main.py'],
@@ -81,7 +112,7 @@ app = BUNDLE(
     icon='assets/app_icon.icns',
     bundle_identifier='com.mrfang.maitu',
     info_plist={
-        'CFBundleShortVersionString': '1.1.0',
-        'CFBundleVersion': '1.1.0',
+        'CFBundleShortVersionString': '1.2.0',
+        'CFBundleVersion': '1.2.0',
     },
 )
