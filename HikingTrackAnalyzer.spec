@@ -13,6 +13,8 @@ _hidden = (
     collect_submodules("gpxpy")
     + collect_submodules("fitparse")
     + collect_submodules("garmin_fit_sdk")
+    + collect_submodules("garminconnect")
+    + collect_submodules("garth")
     + collect_submodules("watchdog")
     + collect_submodules("webview")
     + ["llm_backend", "track_backend", "profile_backend",

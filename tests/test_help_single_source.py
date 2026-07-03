@@ -98,6 +98,13 @@ class TestHelpSingleSource(unittest.TestCase):
         self.assertNotIn("name='MaiTu'", self.spec)
         self.assertNotIn("com.mrfang.maitu", self.spec)
 
+    def test_packaging_includes_garmin_auth_dependencies(self):
+        requirements = (PROJECT_ROOT / "requirements.txt").read_text(encoding="utf-8")
+        self.assertIn('collect_submodules("garminconnect")', self.spec)
+        self.assertIn('collect_submodules("garth")', self.spec)
+        self.assertIn("garminconnect", requirements)
+        self.assertIn("garth", requirements)
+
     def test_packaging_includes_unpacked_provider_skill_dirs(self):
         self.assertIn('("skills/garmin-stats", "skills/garmin-stats")', self.spec)
         self.assertIn('("skills/coros-stats", "skills/coros-stats")', self.spec)
