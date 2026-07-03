@@ -91,15 +91,21 @@ class GarminLoginResult:
 def app_base_dir() -> Path:
     if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
         meipass = Path(sys._MEIPASS)
+        exe_dir = Path(sys.executable).resolve().parent
         candidates = [
             meipass.parent / "Resources",
-            Path(sys.executable).resolve().parent.parent / "Resources",
+            exe_dir.parent / "Resources",
             meipass,
+            meipass / "Resources",
+            exe_dir,
+            exe_dir / "Resources",
+            exe_dir / "_internal",
+            exe_dir / "_internal" / "Resources",
         ]
         for candidate in candidates:
             if (candidate / "skills" / "garmin-stats" / "scripts" / "get_garmin_stats.py").is_file():
                 return candidate
-        return candidates[0]
+        return meipass if (meipass / "skills").exists() else candidates[0]
     return Path(__file__).resolve().parent
 
 

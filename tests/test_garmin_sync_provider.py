@@ -70,6 +70,35 @@ class TestGarminSyncProvider(unittest.TestCase):
              mock.patch.object(garmin_sync.sys, "executable", str(exe)):
             self.assertEqual(garmin_sync.app_base_dir(), resources)
 
+    def test_app_base_dir_supports_windows_onefile_meipass_skills(self):
+        meipass = self.base_dir / "_MEI12345"
+        scripts = meipass / "skills" / "garmin-stats" / "scripts"
+        scripts.mkdir(parents=True)
+        (scripts / "get_garmin_stats.py").write_text("# packaged\n", encoding="utf-8")
+        exe = self.base_dir / "FitVault.exe"
+        exe.write_text("", encoding="utf-8")
+
+        with mock.patch.object(garmin_sync.sys, "frozen", True, create=True), \
+             mock.patch.object(garmin_sync.sys, "_MEIPASS", str(meipass), create=True), \
+             mock.patch.object(garmin_sync.sys, "executable", str(exe)):
+            self.assertEqual(garmin_sync.app_base_dir(), meipass)
+
+    def test_app_base_dir_supports_windows_onedir_internal_skills(self):
+        exe_dir = self.base_dir / "dist" / "FitVault"
+        internal = exe_dir / "_internal"
+        scripts = internal / "skills" / "garmin-stats" / "scripts"
+        scripts.mkdir(parents=True)
+        (scripts / "get_garmin_stats.py").write_text("# packaged\n", encoding="utf-8")
+        exe = exe_dir / "FitVault.exe"
+        exe.parent.mkdir(parents=True, exist_ok=True)
+        exe.write_text("", encoding="utf-8")
+        meipass = internal
+
+        with mock.patch.object(garmin_sync.sys, "frozen", True, create=True), \
+             mock.patch.object(garmin_sync.sys, "_MEIPASS", str(meipass), create=True), \
+             mock.patch.object(garmin_sync.sys, "executable", str(exe)):
+            self.assertEqual(garmin_sync.app_base_dir(), internal)
+
     def test_missing_skill_script_raises(self):
         (self.scripts_dir / "download_fit.py").unlink()
 
