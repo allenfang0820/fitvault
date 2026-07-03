@@ -27,6 +27,7 @@ DEFAULT_AUTH_DIRS = {
     "global": WORKSPACE_DIR / "garmin_auth_global",
 }
 LEGACY_AUTH_PATH = WORKSPACE_DIR / "garmin_auth.json"
+DEFAULT_HTTP_TIMEOUT_SEC = 30
 
 
 class GarminStatsAuthError(RuntimeError):
@@ -59,6 +60,32 @@ def tokenstore_has_tokens(path: Path) -> bool:
     )
 
 
+def garmin_http_timeout() -> int:
+    raw = os.environ.get("GARMIN_HTTP_TIMEOUT", "").strip()
+    if not raw:
+        return DEFAULT_HTTP_TIMEOUT_SEC
+    try:
+        return max(10, int(raw))
+    except ValueError:
+        return DEFAULT_HTTP_TIMEOUT_SEC
+
+
+def configure_client_timeout(client) -> None:
+    try:
+        client.garth.configure(timeout=garmin_http_timeout())
+    except Exception:
+        pass
+
+
+def client_has_oauth_tokens(client) -> bool:
+    garth_client = getattr(client, "garth", None)
+    return bool(
+        garth_client is not None
+        and getattr(garth_client, "oauth1_token", None)
+        and getattr(garth_client, "oauth2_token", None)
+    )
+
+
 def patch_garth_ssl_consumer() -> None:
     import garth
 
@@ -67,7 +94,7 @@ def patch_garth_ssl_consumer() -> None:
             "https://thegarth.s3.amazonaws.com/oauth_consumer.json",
             headers={"User-Agent": "garmin-stats/1.0"},
         )
-        with urllib.request.urlopen(request, timeout=10) as response:
+        with urllib.request.urlopen(request, timeout=garmin_http_timeout()) as response:
             payload = response.read().decode("utf-8").strip()
         if payload.startswith("{"):
             garth.sso.OAUTH_CONSUMER = json.loads(payload)
@@ -89,6 +116,7 @@ def auth_error_message(region: str, tokenstore: Path, exc: BaseException) -> str
     return (
         f"Garmin 认证失败（region={region}, tokenstore={tokenstore}）。"
         "请先运行 login.py 登录对应区域账号；国际区账号使用 --region global。"
+        f" 原始错误：{exc}"
     )
 
 
@@ -104,6 +132,7 @@ def build_client(region: str = "cn", tokenstore: Optional[Union[str, Path]] = No
 
     patch_garth_ssl_consumer()
     client = garminconnect.Garmin(is_cn=(region == "cn"))
+    configure_client_timeout(client)
     try:
         client.login(tokenstore=str(token_path))
     except Exception as exc:
@@ -125,9 +154,13 @@ def login_and_save(
 
     patch_garth_ssl_consumer()
     client = garminconnect.Garmin(email=email, password=password, is_cn=(region == "cn"))
+    configure_client_timeout(client)
     try:
         client.login()
-        client.garth.dump(str(token_path))
     except Exception as exc:
+        if client_has_oauth_tokens(client):
+            client.garth.dump(str(token_path))
+            return token_path
         raise GarminStatsAuthError(auth_error_message(region, token_path, exc)) from exc
+    client.garth.dump(str(token_path))
     return token_path
