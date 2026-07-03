@@ -254,6 +254,94 @@ class TestLLMGenerateText(unittest.TestCase):
         cmd = run_mock.call_args.args[0]
         self.assertEqual(cmd[0], "/Users/tester/Library/Application Support/QClaw/openclaw/config/bin/openclaw")
 
+    def test_openclaw_cli_path_accepts_qclaw_config_directory_on_windows(self):
+        completed = subprocess.CompletedProcess(args=["openclaw"], returncode=0, stdout="ok", stderr="")
+        config_dir = Path("C:/Program Files/QClaw/resources/openclaw/config")
+        wrapper = config_dir / "bin" / "openclaw.cmd"
+        node = Path("C:/Program Files/QClaw/resources/node/node.exe")
+        mjs = Path("C:/Program Files/QClaw/resources/openclaw/node_modules/openclaw/openclaw.mjs")
+
+        def fake_is_file(path):
+            return str(path) in {str(wrapper), str(node), str(mjs)}
+
+        def fake_is_dir(path):
+            return str(path) == str(config_dir)
+
+        with mock.patch.object(Path, "is_file", fake_is_file), \
+             mock.patch.object(Path, "is_dir", fake_is_dir), \
+             mock.patch.object(Path, "exists", lambda path: fake_is_file(path) or fake_is_dir(path)), \
+             mock.patch.object(llm_backend.subprocess, "run", return_value=completed) as run_mock:
+            text = llm_backend.generate_text(
+                config={
+                    "transport": "cli",
+                    "cli_type": "openclaw",
+                    "cli_path": str(config_dir),
+                },
+                messages=[{"role": "user", "content": "hello"}],
+                session_id="sid-1",
+            )
+
+        self.assertEqual(text, "ok")
+        cmd = run_mock.call_args.args[0]
+        self.assertEqual(cmd[0], str(wrapper))
+        env = run_mock.call_args.kwargs["env"]
+        self.assertEqual(env["QCLAW_CLI_NODE_BINARY"], str(node))
+        self.assertEqual(env["QCLAW_CLI_OPENCLAW_MJS"], str(mjs))
+
+    def test_openclaw_cli_empty_path_falls_back_to_windows_qclaw_wrapper(self):
+        completed = subprocess.CompletedProcess(args=["openclaw"], returncode=0, stdout="ok", stderr="")
+        wrapper = Path("C:/Program Files/QClaw/resources/openclaw/config/bin/openclaw.cmd")
+        node = Path("C:/Program Files/QClaw/resources/node/node.exe")
+
+        def fake_is_file(path):
+            return str(path) in {str(wrapper), str(node)}
+
+        with mock.patch.object(Path, "is_file", fake_is_file), \
+             mock.patch.object(llm_backend.subprocess, "run", return_value=completed) as run_mock:
+            llm_backend.generate_text(
+                config={"transport": "cli", "cli_type": "openclaw", "cli_path": ""},
+                messages=[{"role": "user", "content": "hello"}],
+                session_id="sid-1",
+            )
+
+        self.assertEqual(run_mock.call_args.args[0][0], str(wrapper))
+        self.assertEqual(run_mock.call_args.kwargs["env"]["QCLAW_CLI_NODE_BINARY"], str(node))
+
+    def test_openclaw_cli_finds_versioned_windows_qclaw_resources(self):
+        completed = subprocess.CompletedProcess(args=["openclaw"], returncode=0, stdout="ok", stderr="")
+        qclaw_root = Path("C:/Program Files/QClaw")
+        resources = qclaw_root / "v0.2.28.58" / "resources"
+        wrapper = resources / "openclaw" / "config" / "bin" / "openclaw.cmd"
+        node = resources / "node" / "node.exe"
+        mjs = resources / "openclaw" / "openclaw.mjs"
+
+        def fake_is_file(path):
+            return str(path) in {str(wrapper), str(node), str(mjs)}
+
+        def fake_is_dir(path):
+            return str(path) == str(resources)
+
+        def fake_glob(path, pattern):
+            if str(path) == str(qclaw_root) and pattern == "v*":
+                return [qclaw_root / "v0.2.28.58"]
+            return []
+
+        with mock.patch.object(Path, "home", return_value=Path("C:/Users/Allen")), \
+             mock.patch.object(Path, "is_file", fake_is_file), \
+             mock.patch.object(Path, "is_dir", fake_is_dir), \
+             mock.patch.object(Path, "glob", fake_glob), \
+             mock.patch.object(llm_backend.subprocess, "run", return_value=completed) as run_mock:
+            llm_backend.generate_text(
+                config={"transport": "cli", "cli_type": "openclaw", "cli_path": ""},
+                messages=[{"role": "user", "content": "hello"}],
+                session_id="sid-1",
+            )
+
+        self.assertEqual(run_mock.call_args.args[0][0], str(wrapper))
+        env = run_mock.call_args.kwargs["env"]
+        self.assertEqual(env["QCLAW_CLI_NODE_BINARY"], str(node))
+        self.assertEqual(env["QCLAW_CLI_OPENCLAW_MJS"], str(mjs))
+
     def test_codex_cli_empty_path_does_not_use_openclaw_wrapper(self):
         completed = subprocess.CompletedProcess(args=["codex"], returncode=0, stdout="ok", stderr="")
         with mock.patch.object(llm_backend, "_default_openclaw_cli_path", return_value="/qclaw/openclaw"):

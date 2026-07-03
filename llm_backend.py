@@ -556,6 +556,28 @@ def _validate_cli_executable_path(cli_path: str) -> str:
     return path
 
 
+def _resolve_openclaw_cli_path(cli_path: str) -> str:
+    path = _validate_cli_executable_path(cli_path)
+    if not path:
+        return _default_openclaw_cli_path()
+
+    raw = Path(path).expanduser()
+    candidates: list[Path] = []
+    if raw.is_dir() or str(path).lower().endswith(("config", "openclaw", "resources\\openclaw", "resources/openclaw")):
+        candidates.extend([
+            raw / "bin" / "openclaw.cmd",
+            raw / "bin" / "openclaw.exe",
+            raw / "bin" / "openclaw",
+            raw / "openclaw.cmd",
+            raw / "openclaw.exe",
+            raw / "openclaw",
+        ])
+    for candidate in candidates:
+        if candidate.is_file():
+            return str(candidate)
+    return path
+
+
 def _expand_cli_template(args: list[str], *, prompt: str, model: str) -> list[str]:
     return [
         str(part).replace("{prompt}", prompt).replace("{model}", model)
@@ -582,7 +604,7 @@ def _build_cli_command(config: dict[str, Any], prompt: str) -> list[str]:
         agent_id = str(config.get("agent_id") or "").strip() or "main"
         cli_timeout = str(_normalize_cli_timeout(config.get("cli_timeout_sec")))
         base = [
-            cli_path or _default_openclaw_cli_path() or "openclaw",
+            _resolve_openclaw_cli_path(cli_path) or "openclaw",
             "agent",
             "--agent",
             agent_id,
@@ -603,9 +625,23 @@ def _build_cli_command(config: dict[str, Any], prompt: str) -> list[str]:
 
 
 def _default_openclaw_cli_path() -> str:
-    qclaw_wrapper = Path.home() / "Library/Application Support/QClaw/openclaw/config/bin/openclaw"
-    if qclaw_wrapper.is_file():
-        return str(qclaw_wrapper)
+    candidates = [
+        Path.home() / "Library/Application Support/QClaw/openclaw/config/bin/openclaw",
+        Path.home() / "AppData/Local/Programs/QClaw/resources/openclaw/config/bin/openclaw.cmd",
+        Path.home() / "AppData/Local/Programs/QClaw/resources/openclaw/config/bin/openclaw.exe",
+        Path("C:/Program Files/QClaw/resources/openclaw/config/bin/openclaw.cmd"),
+        Path("C:/Program Files/QClaw/resources/openclaw/config/bin/openclaw.exe"),
+        Path("C:/Program Files (x86)/QClaw/resources/openclaw/config/bin/openclaw.cmd"),
+        Path("C:/Program Files (x86)/QClaw/resources/openclaw/config/bin/openclaw.exe"),
+    ]
+    for root in _qclaw_versioned_resource_roots():
+        candidates.extend([
+            root / "openclaw" / "config" / "bin" / "openclaw.cmd",
+            root / "openclaw" / "config" / "bin" / "openclaw.exe",
+        ])
+    for candidate in candidates:
+        if candidate.is_file():
+            return str(candidate)
     return ""
 
 
@@ -642,20 +678,18 @@ def _build_openclaw_cli_env(config: dict[str, Any], executable: str) -> dict[str
     env = os.environ.copy()
     changed = False
     if not env.get("QCLAW_CLI_NODE_BINARY"):
-        qclaw_node = Path("/Applications/QClaw.app/Contents/Resources/node/node")
-        codex_node = Path("/Applications/Codex.app/Contents/Resources/cua_node/bin/node")
-        if qclaw_node.is_file():
-            env["QCLAW_CLI_NODE_BINARY"] = str(qclaw_node)
-            changed = True
-        elif codex_node.is_file():
-            env["QCLAW_CLI_NODE_BINARY"] = str(codex_node)
-            changed = True
+        for candidate in _openclaw_node_candidates(executable):
+            if candidate.is_file():
+                env["QCLAW_CLI_NODE_BINARY"] = str(candidate)
+                changed = True
+                break
 
     if not env.get("QCLAW_CLI_OPENCLAW_MJS"):
-        openclaw_mjs = Path.home() / "Library/Application Support/QClaw/openclaw/node_modules/openclaw/openclaw.mjs"
-        if openclaw_mjs.is_file():
-            env["QCLAW_CLI_OPENCLAW_MJS"] = str(openclaw_mjs)
-            changed = True
+        for candidate in _openclaw_mjs_candidates(executable):
+            if candidate.is_file():
+                env["QCLAW_CLI_OPENCLAW_MJS"] = str(candidate)
+                changed = True
+                break
 
     for key, value in _read_qclaw_launchagent_env().items():
         if key in QCLAW_LAUNCHAGENT_ENV_KEYS and value and not env.get(key):
@@ -677,6 +711,89 @@ def _build_openclaw_cli_env(config: dict[str, Any], executable: str) -> dict[str
     if changed:
         return env
     return None
+
+
+def _openclaw_config_root_from_executable(executable: str) -> Path | None:
+    raw = str(executable or "").strip()
+    if not raw:
+        default_path = _default_openclaw_cli_path()
+        raw = default_path
+    if not raw:
+        return None
+    path = Path(raw).expanduser()
+    if path.name.lower() in {"openclaw", "openclaw.cmd", "openclaw.exe"} and path.parent.name.lower() == "bin":
+        return path.parent.parent
+    if path.name.lower() == "config":
+        return path
+    if path.is_dir():
+        if (path / "bin").exists() or str(path).lower().endswith("config"):
+            return path
+    return None
+
+
+def _openclaw_node_candidates(executable: str = "") -> list[Path]:
+    config_root = _openclaw_config_root_from_executable(executable)
+    roots = [
+        Path("/Applications/QClaw.app/Contents/Resources"),
+        Path("/Applications/Codex.app/Contents/Resources"),
+        Path.home() / "AppData/Local/Programs/QClaw/resources",
+        Path("C:/Program Files/QClaw/resources"),
+        Path("C:/Program Files (x86)/QClaw/resources"),
+    ]
+    roots.extend(_qclaw_versioned_resource_roots())
+    if config_root is not None:
+        roots.insert(0, config_root.parent.parent if config_root.parent.name.lower() == "openclaw" else config_root.parent)
+
+    candidates: list[Path] = []
+    for root in roots:
+        candidates.extend([
+            root / "node" / "node.exe",
+            root / "node" / "bin" / "node.exe",
+            root / "node" / "node",
+            root / "node" / "bin" / "node",
+            root / "cua_node" / "bin" / "node",
+            root / "cua_node" / "node.exe",
+        ])
+    return candidates
+
+
+def _openclaw_mjs_candidates(executable: str = "") -> list[Path]:
+    config_root = _openclaw_config_root_from_executable(executable)
+    versioned_roots = _qclaw_versioned_resource_roots()
+    candidates = [
+        Path.home() / "Library/Application Support/QClaw/openclaw/node_modules/openclaw/openclaw.mjs",
+        Path.home() / "Library/Application Support/QClaw/openclaw/openclaw.mjs",
+        Path.home() / "AppData/Local/Programs/QClaw/resources/openclaw/node_modules/openclaw/openclaw.mjs",
+        Path.home() / "AppData/Local/Programs/QClaw/resources/openclaw/openclaw.mjs",
+        Path("C:/Program Files/QClaw/resources/openclaw/node_modules/openclaw/openclaw.mjs"),
+        Path("C:/Program Files/QClaw/resources/openclaw/openclaw.mjs"),
+        Path("C:/Program Files (x86)/QClaw/resources/openclaw/node_modules/openclaw/openclaw.mjs"),
+        Path("C:/Program Files (x86)/QClaw/resources/openclaw/openclaw.mjs"),
+    ]
+    for root in versioned_roots:
+        candidates.extend([
+            root / "openclaw" / "node_modules" / "openclaw" / "openclaw.mjs",
+            root / "openclaw" / "openclaw.mjs",
+        ])
+    if config_root is not None:
+        openclaw_root = config_root.parent if config_root.name.lower() == "config" else config_root
+        candidates.insert(0, openclaw_root / "node_modules" / "openclaw" / "openclaw.mjs")
+        candidates.insert(1, openclaw_root / "openclaw.mjs")
+    return candidates
+
+
+def _qclaw_versioned_resource_roots() -> list[Path]:
+    roots: list[Path] = []
+    for parent in (
+        Path.home() / "AppData/Local/Programs/QClaw",
+        Path("C:/Program Files/QClaw"),
+        Path("C:/Program Files (x86)/QClaw"),
+    ):
+        try:
+            roots.extend(path / "resources" for path in parent.glob("v*") if (path / "resources").is_dir())
+        except OSError:
+            continue
+    return roots
 
 
 def _read_qclaw_launchagent_env() -> dict[str, str]:
@@ -736,7 +853,7 @@ def _extract_openclaw_agent_text(output: str) -> str:
 
 def _run_openclaw_readonly_json(config: dict[str, Any], args: list[str], timeout: int) -> tuple[dict[str, Any] | None, str]:
     cli_path = _validate_cli_executable_path(str(config.get("cli_path") or ""))
-    cmd = [cli_path or "openclaw"] + args
+    cmd = [_resolve_openclaw_cli_path(cli_path) or "openclaw"] + args
     cli_env = _build_openclaw_cli_env(config, cmd[0])
     try:
         result = subprocess.run(
