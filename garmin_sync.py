@@ -260,6 +260,8 @@ def download_fit_json(
 def login_command(*, region: str | None = None, base_dir: Path | str | None = None) -> list[str]:
     resolved_region = resolve_garmin_region(region)
     paths = get_garmin_skill_paths(base_dir)
+    if getattr(sys, "frozen", False):
+        return [sys.executable, "--garmin-login", "--region", resolved_region]
     return [sys.executable, str(paths.login), "--region", resolved_region]
 
 
@@ -383,7 +385,8 @@ def start_login(
         )
 
     if sys.platform == "darwin":
-        cwd = str(Path(command[1]).resolve().parent) if len(command) > 1 else str(Path.cwd())
+        paths = get_garmin_skill_paths(base_dir)
+        cwd = str(paths.login.resolve().parent)
         shell_command = (
             f"cd {shlex.quote(cwd)} && "
             f"{' '.join(shlex.quote(part) for part in command)}; "
@@ -425,13 +428,14 @@ def start_login(
         )
 
     try:
+        paths = get_garmin_skill_paths(base_dir)
         completed = subprocess.run(
             command,
             capture_output=True,
             text=True,
             timeout=timeout,
             shell=False,
-            cwd=str(Path(command[1]).resolve().parent) if len(command) > 1 else None,
+            cwd=str(paths.login.resolve().parent),
         )
     except subprocess.TimeoutExpired as exc:
         stdout = str(exc.stdout or "")

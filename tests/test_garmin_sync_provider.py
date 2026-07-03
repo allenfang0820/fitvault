@@ -228,6 +228,14 @@ class TestGarminSyncProvider(unittest.TestCase):
         self.assertEqual(command[2:], ["--region", "global"])
         run_mock.assert_not_called()
 
+    def test_login_command_uses_internal_cli_mode_when_frozen(self):
+        executable = str(self.base_dir / "脉图.app" / "Contents" / "MacOS" / "FitVault")
+        with mock.patch.object(garmin_sync.sys, "frozen", True, create=True), \
+             mock.patch.object(garmin_sync.sys, "executable", executable):
+            command = garmin_sync.login_command(base_dir=self.base_dir, region="cn")
+
+        self.assertEqual(command, [executable, "--garmin-login", "--region", "cn"])
+
     def test_default_tokenstore_uses_region_suffix(self):
         workspace = self.base_dir / "workspace"
 
@@ -390,6 +398,23 @@ class TestGarminSyncProvider(unittest.TestCase):
         run_mock.assert_not_called()
         osa_command = popen_mock.call_args.args[0]
         self.assertIn("osascript", osa_command[0])
+
+    def test_start_login_on_macos_frozen_uses_internal_cli_without_reopening_app_window(self):
+        executable = str(self.base_dir / "脉图.app" / "Contents" / "MacOS" / "FitVault")
+        with mock.patch.object(garmin_sync.sys, "platform", "darwin"), \
+             mock.patch.object(garmin_sync.sys, "frozen", True, create=True), \
+             mock.patch.object(garmin_sync.sys, "executable", executable), \
+             mock.patch.object(garmin_sync.subprocess, "Popen") as popen_mock, \
+             mock.patch.object(garmin_sync.subprocess, "run") as run_mock:
+            result = garmin_sync.start_login(base_dir=self.base_dir, region="global")
+
+        self.assertTrue(result.ok)
+        self.assertEqual(result.command, [executable, "--garmin-login", "--region", "global"])
+        osa_command = popen_mock.call_args.args[0]
+        script = " ".join(osa_command)
+        self.assertIn("--garmin-login", script)
+        self.assertNotIn("login.py", script)
+        run_mock.assert_not_called()
 
     def test_start_login_nonzero_returns_failed(self):
         with mock.patch.object(garmin_sync.sys, "platform", "linux"), \

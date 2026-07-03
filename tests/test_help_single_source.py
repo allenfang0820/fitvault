@@ -120,6 +120,22 @@ class TestHelpSingleSource(unittest.TestCase):
                  mock.patch.object(sys, "executable", str(exe)):
                 self.assertEqual(main.app_base_dir(), resources)
 
+    def test_garmin_login_cli_runs_login_script_without_starting_gui(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            login = root / "skills" / "garmin-stats" / "scripts" / "login.py"
+            login.parent.mkdir(parents=True)
+            login.write_text("# login\n", encoding="utf-8")
+            old_argv = sys.argv[:]
+
+            with mock.patch.object(main, "app_base_dir", return_value=root), \
+                 mock.patch.object(main.runpy, "run_path") as run_path:
+                code = main.run_garmin_login_cli(["--garmin-login", "--region", "cn"])
+
+            self.assertEqual(code, 0)
+            run_path.assert_called_once_with(str(login), run_name="__main__")
+            self.assertEqual(sys.argv, old_argv)
+
 
 if __name__ == "__main__":
     unittest.main()

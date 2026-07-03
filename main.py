@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import re
+import runpy
 import shutil
 import socket
 import sqlite3
@@ -13037,6 +13038,43 @@ def main() -> None:
         watch_service.stop()
 
 
+def run_garmin_login_cli(argv: list[str] | None = None) -> int:
+    args = list(sys.argv[1:] if argv is None else argv)
+    if not args or args[0] != "--garmin-login":
+        return 1
+    login_script = app_base_dir() / "skills" / "garmin-stats" / "scripts" / "login.py"
+    if not login_script.is_file():
+        print(f"未找到 Garmin 登录脚本: {login_script}", file=sys.stderr)
+        return 2
+    old_argv = sys.argv[:]
+    scripts_dir = str(login_script.parent)
+    inserted_path = False
+    try:
+        if scripts_dir not in sys.path:
+            sys.path.insert(0, scripts_dir)
+            inserted_path = True
+        sys.argv = [str(login_script), *args[1:]]
+        runpy.run_path(str(login_script), run_name="__main__")
+        return 0
+    except SystemExit as exc:
+        code = exc.code
+        if code is None:
+            return 0
+        if isinstance(code, int):
+            return code
+        print(str(code), file=sys.stderr)
+        return 1
+    finally:
+        sys.argv = old_argv
+        if inserted_path:
+            try:
+                sys.path.remove(scripts_dir)
+            except ValueError:
+                pass
+
+
 if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] == "--garmin-login":
+        raise SystemExit(run_garmin_login_cli(sys.argv[1:]))
     init_application_config()
     main()
