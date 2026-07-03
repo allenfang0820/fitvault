@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import base64
+import ntpath
 import os
 import re
 import shutil
@@ -68,6 +69,7 @@ class CorosSkillPaths:
     skill_dir: Path
     profile_runner: Path
     install_mcp: Path
+    install_mcp_cmd: Path
 
 
 @dataclass(frozen=True)
@@ -131,6 +133,7 @@ def get_coros_skill_paths(base_dir: Path | str | None = None) -> CorosSkillPaths
         skill_dir=skill_dir,
         profile_runner=scripts_dir / "coros_runner_profile.py",
         install_mcp=scripts_dir / "install_coros_mcp.sh",
+        install_mcp_cmd=scripts_dir / "install_coros_mcp.cmd",
     )
     missing = [
         str(path)
@@ -170,14 +173,22 @@ def _bundled_node_candidates() -> list[Path]:
     candidates: list[Path] = []
     env_dir = str(os.environ.get("MAITU_BUNDLED_NODE_DIR") or "").strip()
     if env_dir:
-        candidates.append(Path(env_dir).expanduser() / "bin" / "node")
+        env_root = Path(env_dir).expanduser()
+        candidates.extend([
+            env_root / "bin" / "node",
+            env_root / "node.exe",
+        ])
 
     base = app_base_dir()
     candidates.extend([
         base / "node" / "bin" / "node",
+        base / "node" / "node.exe",
         base / "Resources" / "node" / "bin" / "node",
+        base / "Resources" / "node" / "node.exe",
         Path(sys.executable).resolve().parent / "node" / "bin" / "node",
+        Path(sys.executable).resolve().parent / "node" / "node.exe",
         Path(sys.executable).resolve().parent.parent / "Resources" / "node" / "bin" / "node",
+        Path(sys.executable).resolve().parent.parent / "Resources" / "node" / "node.exe",
     ])
     return candidates
 
@@ -228,10 +239,17 @@ def build_coros_runtime_env(env: dict[str, str] | None = None) -> dict[str, str]
     runtime_env = dict(env or os.environ)
     node_path = discover_node_binary()
     if node_path:
-        node_dir = str(Path(node_path).expanduser().parent)
+        node_text = str(Path(node_path).expanduser())
+        if "\\" in node_text:
+            node_name = ntpath.basename(node_text).lower()
+            node_dir = ntpath.dirname(node_text)
+            node_root = node_dir if node_name == "node.exe" else ntpath.dirname(node_dir)
+        else:
+            node_file = Path(node_text)
+            node_dir = str(node_file.parent)
+            node_root = str(node_file.parent if node_file.name.lower() == "node.exe" else node_file.parent.parent)
         runtime_env["PATH"] = node_dir + os.pathsep + runtime_env.get("PATH", "")
         runtime_env.setdefault("QCLAW_CLI_NODE_BINARY", node_path)
-        node_root = str(Path(node_path).expanduser().parent.parent)
         runtime_env.setdefault("MAITU_BUNDLED_NODE_DIR", node_root)
     openclaw_mjs = discover_openclaw_mjs()
     if openclaw_mjs:
@@ -242,6 +260,8 @@ def build_coros_runtime_env(env: dict[str, str] | None = None) -> dict[str, str]
 def login_command(*, region: str | None = None, base_dir: Path | str | None = None) -> list[str]:
     resolved_region = resolve_coros_region(region)
     paths = get_coros_skill_paths(base_dir)
+    if sys.platform.startswith("win") and paths.install_mcp_cmd.is_file():
+        return [str(paths.install_mcp_cmd), "--region", resolved_region]
     return ["bash", str(paths.install_mcp), "--region", resolved_region]
 
 
@@ -604,6 +624,46 @@ def start_login(
             stdout="",
             stderr="",
             message=f"已打开终端窗口，请在终端完成 COROS 授权（{resolved_region}）。",
+        )
+
+    if sys.platform.startswith("win"):
+        cwd = str(Path(command[0]).resolve().parent) if command else str(Path.cwd())
+        shell_command = " ".join(subprocess.list2cmdline([part]) for part in command)
+        launcher = [
+            "cmd.exe",
+            "/c",
+            "start",
+            "脉图 COROS 授权",
+            "cmd.exe",
+            "/k",
+            f"cd /d {subprocess.list2cmdline([cwd])} && {shell_command} && echo. && echo COROS 授权流程结束后，请回到脉图点击检查状态。",
+        ]
+        try:
+            subprocess.Popen(
+                launcher,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                env=build_coros_runtime_env(),
+                cwd=cwd,
+            )
+        except OSError as exc:
+            return CorosLoginResult(
+                ok=False,
+                region=resolved_region,
+                status="launch_failed",
+                command=command,
+                stdout="",
+                stderr="",
+                message=f"COROS 授权终端启动失败: {exc}",
+            )
+        return CorosLoginResult(
+            ok=True,
+            region=resolved_region,
+            status="launched",
+            command=command,
+            stdout="",
+            stderr="",
+            message=f"已打开命令行窗口，请在窗口中完成 COROS 授权（{resolved_region}）。",
         )
 
     try:

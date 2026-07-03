@@ -49,7 +49,7 @@ class TestHelpSingleSource(unittest.TestCase):
     def test_readme_garmin_sync_no_longer_requires_openclaw_prompt(self):
         readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
         self.assertIn("Garmin 和 COROS 同步能力随应用提供，普通用户不需要准备外部 skill 包。", readme)
-        self.assertIn("COROS 当前授权需要本机 Node.js 环境", readme)
+        self.assertIn("正式安装包会随应用内置 COROS 授权所需的 Node.js 运行时", readme)
         self.assertIn("COROS MCP 的 FIT 下载单次最多返回 10 个活动", readme)
         self.assertIn("每次最多下载 10 个 FIT 文件", readme)
         self.assertIn("[请博主喝杯咖啡](assets/social/alipay-donate.jpg)", readme)
@@ -60,7 +60,7 @@ class TestHelpSingleSource(unittest.TestCase):
         self.assertNotIn("Skill 下载：", readme)
 
         self.assertIn("Garmin 和 COROS 同步能力随应用提供，普通用户不需要准备外部 skill 包。", self.help_doc)
-        self.assertIn("COROS 当前授权需要本机 Node.js 环境", self.help_doc)
+        self.assertIn("正式安装包会随应用内置 COROS 授权所需的 Node.js 运行时", self.help_doc)
         self.assertIn("COROS MCP 的 FIT 下载单次最多返回 10 个活动", self.help_doc)
         self.assertIn("每次最多下载 10 个 FIT 文件", self.help_doc)
         self.assertIn("[请博主喝杯咖啡](../assets/social/alipay-donate.jpg)", self.help_doc)

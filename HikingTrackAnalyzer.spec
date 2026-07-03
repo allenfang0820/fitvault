@@ -38,15 +38,21 @@ def _node_runtime_datas():
     Fallback local layout:
       runtimes/node-darwin-arm64
       runtimes/node-darwin-x64
+      runtimes/node-win-x64
 
     The runtime is copied to app resources as ./node so COROS MCP scripts can
     run without requiring users to install Node.js separately.
     """
     runtime_dir = os.environ.get("MAITU_NODE_RUNTIME_DIR", "").strip()
     if not runtime_dir:
+        system = platform.system().lower()
         machine = platform.machine().lower()
         arch = "arm64" if machine in {"arm64", "aarch64"} else "x64"
-        runtime_dir = os.path.join(os.getcwd(), "runtimes", f"node-darwin-{arch}")
+        if system == "windows":
+            runtime_name = "node-win-x64"
+        else:
+            runtime_name = f"node-darwin-{arch}"
+        runtime_dir = os.path.join(os.getcwd(), "runtimes", runtime_name)
     if runtime_dir and os.path.isdir(runtime_dir):
         return [(runtime_dir, "node")]
 

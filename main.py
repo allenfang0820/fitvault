@@ -9428,7 +9428,8 @@ class Api:
         swolf = water_metric_value
         swolf_subtitle = water_metric_label
         display_filename = str(row.get("filename") or row.get("file_name") or "")
-        title = _clean_fit_activity_title(row.get("file_name") or row.get("filename"), display_filename)
+        row_title = str(row.get("title") or "").strip()
+        title = row_title or _clean_fit_activity_title(row.get("file_name") or row.get("filename"), display_filename)
         region_status = str(row.get("region_status") or "").strip()
         region_raw = str(row.get("region_display") or row.get("region") or "").strip()
         if not region_raw:

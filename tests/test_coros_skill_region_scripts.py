@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 from unittest import mock
 
@@ -13,6 +14,8 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "skills" / "coros-stats" / "scripts" / "coros-mcp-keepalive.js"
 RUNNER = ROOT / "skills" / "coros-stats" / "scripts" / "coros_runner_profile.py"
 INSTALLER = ROOT / "skills" / "coros-stats" / "scripts" / "install_coros_mcp.sh"
+WINDOWS_INSTALLER = ROOT / "skills" / "coros-stats" / "scripts" / "install_coros_mcp.cmd"
+SKILL_ZIP = ROOT / "skills" / "coros-stats.zip"
 
 
 class TestCorosSkillRegionScriptStatic(unittest.TestCase):
@@ -21,6 +24,7 @@ class TestCorosSkillRegionScriptStatic(unittest.TestCase):
         cls.keepalive_source = SCRIPT.read_text(encoding="utf-8")
         cls.runner_source = RUNNER.read_text(encoding="utf-8")
         cls.installer_source = INSTALLER.read_text(encoding="utf-8")
+        cls.windows_installer_source = WINDOWS_INSTALLER.read_text(encoding="utf-8")
 
     def test_keepalive_declares_all_region_endpoints(self):
         self.assertIn("REGION_CONFIG", self.keepalive_source)
@@ -89,9 +93,34 @@ class TestCorosSkillRegionScriptStatic(unittest.TestCase):
         self.assertIn("COROS 账号授权已成功，但 OpenClaw 注册失败或被跳过", self.installer_source)
         self.assertIn("exit 0", self.installer_source)
 
+    def test_windows_installer_uses_bundled_node_and_user_writable_npm_prefix(self):
+        self.assertIn("install_coros_mcp.cmd", str(WINDOWS_INSTALLER))
+        self.assertIn("MAITU_BUNDLED_NODE_DIR", self.windows_installer_source)
+        self.assertIn("node.exe", self.windows_installer_source)
+        self.assertIn("npm.cmd", self.windows_installer_source)
+        self.assertIn("NPM_CONFIG_PREFIX", self.windows_installer_source)
+        self.assertIn("%USERPROFILE%\\.maitu\\node-global", self.windows_installer_source)
+        self.assertIn("coros-mcp.cmd --issuer", self.windows_installer_source)
+        self.assertIn("OpenClaw 注册失败或被跳过", self.windows_installer_source)
+
     def test_traininghub_helpers_are_not_part_of_coros_skill(self):
         for name in ("coros_traininghub_login.js", "coros-url-fetch.js", "start_chrome.sh"):
             self.assertFalse((ROOT / "skills" / "coros-stats" / "scripts" / name).exists())
+
+    def test_packaged_coros_skill_zip_matches_current_script_set(self):
+        with zipfile.ZipFile(SKILL_ZIP) as zf:
+            names = set(zf.namelist())
+
+        self.assertIn("coros-stats/scripts/install_coros_mcp.cmd", names)
+        self.assertIn("coros-stats/scripts/install_coros_mcp.sh", names)
+        self.assertIn("coros-stats/scripts/coros-mcp-keepalive.js", names)
+        self.assertIn("coros-stats/scripts/coros_runner_profile.py", names)
+        for name in (
+            "coros-stats/scripts/coros_traininghub_login.js",
+            "coros-stats/scripts/coros-url-fetch.js",
+            "coros-stats/scripts/start_chrome.sh",
+        ):
+            self.assertNotIn(name, names)
 
 
 @unittest.skipIf(shutil.which("node") is None, "node is required for COROS skill script checks")

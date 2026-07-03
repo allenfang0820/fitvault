@@ -18,6 +18,7 @@ class TestCorosSyncProvider(unittest.TestCase):
         for name in (
             "coros_runner_profile.py",
             "install_coros_mcp.sh",
+            "install_coros_mcp.cmd",
         ):
             path = self.scripts_dir / name
             path.write_text("# test script\n", encoding="utf-8")
@@ -85,6 +86,13 @@ class TestCorosSyncProvider(unittest.TestCase):
         self.assertEqual(command[2:], ["--region", "us"])
         run_mock.assert_not_called()
 
+    def test_login_command_uses_windows_cmd_installer_on_windows(self):
+        with mock.patch.object(coros_sync.sys, "platform", "win32"):
+            command = coros_sync.login_command(base_dir=self.base_dir, region="eu")
+
+        self.assertEqual(Path(command[0]).name, "install_coros_mcp.cmd")
+        self.assertEqual(command[1:], ["--region", "eu"])
+
     def test_discover_node_binary_uses_nvm_fallback(self):
         node_path = self.base_dir / ".nvm" / "versions" / "node" / "v24.18.0" / "bin" / "node"
         node_path.parent.mkdir(parents=True)
@@ -106,6 +114,17 @@ class TestCorosSyncProvider(unittest.TestCase):
              mock.patch.dict(os.environ, {}, clear=True):
             self.assertEqual(coros_sync.discover_node_binary(home=self.base_dir), str(node_path))
 
+    def test_discover_node_binary_supports_bundled_windows_runtime(self):
+        node_path = self.base_dir / "node" / "node.exe"
+        node_path.parent.mkdir(parents=True)
+        node_path.write_text("test exe\n", encoding="utf-8")
+        node_path.chmod(0o755)
+
+        with mock.patch.object(coros_sync, "app_base_dir", return_value=self.base_dir), \
+             mock.patch.object(coros_sync.shutil, "which", return_value=None), \
+             mock.patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(coros_sync.discover_node_binary(home=self.base_dir), str(node_path))
+
     def test_build_coros_runtime_env_injects_qclaw_runtime(self):
         with mock.patch.object(coros_sync, "discover_node_binary", return_value="/tmp/node/bin/node"), \
              mock.patch.object(coros_sync, "discover_openclaw_mjs", return_value="/tmp/openclaw.mjs"):
@@ -115,6 +134,15 @@ class TestCorosSyncProvider(unittest.TestCase):
         self.assertEqual(env["QCLAW_CLI_OPENCLAW_MJS"], "/tmp/openclaw.mjs")
         self.assertEqual(env["MAITU_BUNDLED_NODE_DIR"], "/tmp/node")
         self.assertTrue(env["PATH"].startswith("/tmp/node/bin:"))
+
+    def test_build_coros_runtime_env_handles_windows_node_root(self):
+        with mock.patch.object(coros_sync, "discover_node_binary", return_value="C:\\MaiTu\\node\\node.exe"), \
+             mock.patch.object(coros_sync, "discover_openclaw_mjs", return_value=""):
+            env = coros_sync.build_coros_runtime_env({"PATH": "C:\\Windows"})
+
+        self.assertEqual(env["QCLAW_CLI_NODE_BINARY"], "C:\\MaiTu\\node\\node.exe")
+        self.assertEqual(env["MAITU_BUNDLED_NODE_DIR"], "C:\\MaiTu\\node")
+        self.assertTrue(env["PATH"].startswith("C:\\MaiTu\\node"))
 
     def test_check_auth_status_invalid_region_returns_status(self):
         status = coros_sync.check_auth_status(
@@ -324,6 +352,20 @@ class TestCorosSyncProvider(unittest.TestCase):
         self.assertEqual(result.status, "launched")
         self.assertIn("终端", result.message)
         popen_mock.assert_called_once()
+        run_mock.assert_not_called()
+
+    def test_start_login_on_windows_opens_cmd_without_blocking(self):
+        with mock.patch.object(coros_sync.sys, "platform", "win32"), \
+             mock.patch.object(coros_sync.subprocess, "Popen") as popen_mock, \
+             mock.patch.object(coros_sync.subprocess, "run") as run_mock:
+            result = coros_sync.start_login(base_dir=self.base_dir, region="us")
+
+        self.assertTrue(result.ok)
+        self.assertEqual(result.status, "launched")
+        self.assertIn("命令行", result.message)
+        self.assertEqual(Path(result.command[0]).name, "install_coros_mcp.cmd")
+        launcher = popen_mock.call_args.args[0]
+        self.assertEqual(launcher[:3], ["cmd.exe", "/c", "start"])
         run_mock.assert_not_called()
 
     def test_start_login_nonzero_returns_failed(self):

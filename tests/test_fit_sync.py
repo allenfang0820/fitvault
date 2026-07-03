@@ -1617,6 +1617,65 @@ class TestFitSync(unittest.TestCase):
         self.assertIsNone(item["normalized_power"])
         self.assertEqual(item["normalized_power_display"], "/")
 
+    def test_activity_list_item_prefers_persisted_title_over_coros_technical_filename(self):
+        row = {
+            "id": 1,
+            "title": "跑步",
+            "title_source": "auto_sport",
+            "sport_type": "running",
+            "sub_sport_type": "generic",
+            "distance": 5550,
+            "dist_km": 5.55,
+            "duration": 2283,
+            "duration_sec": 2283,
+            "avg_pace": 411,
+            "avg_hr": 133,
+            "max_hr": 148,
+            "calories": 396,
+            "normalized_power": 260,
+            "file_path": str(self.temp_dir / "coros___activity-fit-files_3a4c7694c39941c98ef78f4fe33feae2.fit"),
+            "filename": "coros___activity-fit-files_3a4c7694c39941c98ef78f4fe33feae2.fit",
+            "file_name": "coros___activity-fit-files_3a4c7694c39941c98ef78f4fe33feae2.fit",
+            "start_time": "2026-07-01T07:55:06+08:00",
+            "region_status": "pending",
+        }
+
+        item = main.Api()._build_activity_list_item(row)
+
+        self.assertEqual(item["title"], "跑步")
+        self.assertEqual(item["title_source"], "auto_sport")
+        self.assertEqual(item["file_name"], "coros___activity-fit-files_3a4c7694c39941c98ef78f4fe33feae2.fit")
+        self.assertEqual(item["filename"], "coros___activity-fit-files_3a4c7694c39941c98ef78f4fe33feae2.fit")
+
+    def test_activity_list_item_falls_back_to_clean_filename_when_title_missing(self):
+        row = {
+            "id": 1,
+            "title": "",
+            "title_source": "filename",
+            "sport_type": "running",
+            "sub_sport_type": "generic",
+            "distance": 8490,
+            "dist_km": 8.49,
+            "duration": 3349,
+            "duration_sec": 3349,
+            "avg_pace": 394,
+            "avg_hr": 141,
+            "max_hr": 169,
+            "calories": 599,
+            "normalized_power": 283,
+            "file_path": str(self.temp_dir / "西城区 跑步_611638502.fit"),
+            "filename": "西城区 跑步_611638502.fit",
+            "file_name": "西城区 跑步_611638502.fit",
+            "start_time": "2026-06-30T08:00:00+08:00",
+            "region_status": "success",
+            "region_display": "北京市/中国",
+        }
+
+        item = main.Api()._build_activity_list_item(row)
+
+        self.assertEqual(item["title"], "西城区 跑步")
+        self.assertEqual(item["file_name"], "西城区 跑步_611638502.fit")
+
     def test_activity_detail_does_not_parse_fit_on_display_path(self):
         main.ensure_activity_sync_schema()
         activity = self._activity("detail_display.fit")
