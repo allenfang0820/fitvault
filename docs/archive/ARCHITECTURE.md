@@ -1,4 +1,4 @@
-# 脉图（MaiTu）架构总纲
+# 脉图（FitVault）架构总纲
 
 > Version: 2026-Q2 Canonical Architecture
 >

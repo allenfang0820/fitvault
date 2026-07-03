@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>脉图 - fit vault V1.0</title>
+    <title>脉图 - FitVault V1.2.0</title>
     <!-- 本地优先，减少首屏等待；若本地资源缺失再回退到 CDN -->
     <script src="lib/echarts/echarts.min.js" onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js';"></script>
     <script>
@@ -8127,7 +8127,7 @@
         localStorage.setItem('last_active_panel', panel);
     }
 
-    const MAITU_PREFACE_SEEN_KEY = 'maitu_preface_seen_v1';
+    const FITVAULT_PREFACE_SEEN_KEY = 'fitvault_preface_seen_v1';
 
     function selectHelpPrefaceTab() {
         const prefaceTab = document.getElementById('help-tab-preface');
@@ -8135,13 +8135,13 @@
     }
 
     function openStartupDefaultRoute(firstRunData) {
-        const shouldShowPreface = !!(firstRunData && firstRunData.is_first_run) && localStorage.getItem(MAITU_PREFACE_SEEN_KEY) !== '1';
+        const shouldShowPreface = !!(firstRunData && firstRunData.is_first_run) && localStorage.getItem(FITVAULT_PREFACE_SEEN_KEY) !== '1';
         const targetPanel = shouldShowPreface ? 'help' : 'profile';
         const btn = document.querySelector('.bookmark-tab[data-panel="' + targetPanel + '"]');
         if (btn) switchTab(btn);
         if (shouldShowPreface) {
             selectHelpPrefaceTab();
-            localStorage.setItem(MAITU_PREFACE_SEEN_KEY, '1');
+            localStorage.setItem(FITVAULT_PREFACE_SEEN_KEY, '1');
         }
     }
 

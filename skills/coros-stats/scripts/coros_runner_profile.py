@@ -6,7 +6,7 @@ Data source:
 1. COROS MCP tools only.
 
 Output: JSON array, each item is {"metric": "...", "value": ..., "note"?: "..."}.
-Sync mode prints only the JSON array for fit vault ingestion.
+Sync mode prints only the JSON array for FitVault ingestion.
 """
 import json
 import os

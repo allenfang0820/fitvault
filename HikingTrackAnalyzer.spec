@@ -93,7 +93,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='MaiTu',
+    name='FitVault',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -112,13 +112,13 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name='MaiTu',
+    name='FitVault',
 )
 app = BUNDLE(
     coll,
     name='脉图.app',
     icon='assets/app_icon.icns',
-    bundle_identifier='com.mrfang.maitu',
+    bundle_identifier='com.mrfang.fitvault',
     info_plist={
         'CFBundleShortVersionString': '1.2.0',
         'CFBundleVersion': '1.2.0',

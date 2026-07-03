@@ -1,8 +1,8 @@
 {
-  "$schema": "https://raw.githubusercontent.com/maitu/js-api-contract/v1/schema.json",
+  "$schema": "https://raw.githubusercontent.com/fitvault/js-api-contract/v1/schema.json",
   "contract_version": "V9.4.4",
   "generated_at": "2026-05-29",
-  "project": "脉图 (MaiTu) — Local AI Sports Copilot",
+  "project": "脉图 (FitVault) — Local AI Sports Copilot",
   "transport": "pywebview window.pywebview.api.*",
   "response_envelope": {
     "description": "统一响应结构 (过渡期同时兼容顶层 ok/error 字段)",

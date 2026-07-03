@@ -12340,7 +12340,7 @@ def _build_detail_laps(api_self, row: dict, display_type: str, dist_km: float, d
                 )
                 if synthetic and len(synthetic) >= 1:
                     import logging
-                    logging.getLogger("maitu.laps").info(
+                    logging.getLogger("fitvault.laps").info(
                         "[V10.0] auto-lap cycling %s: %.2fkm → %d segments (replaced 1 FIT lap)",
                         normalized_type, dist_km, len(synthetic),
                     )
@@ -12362,7 +12362,7 @@ def _build_detail_laps(api_self, row: dict, display_type: str, dist_km: float, d
             )
             if synthetic and len(synthetic) >= 1:
                 import logging
-                logging.getLogger("maitu.laps").info(
+                logging.getLogger("fitvault.laps").info(
                     "[V10.0] auto-lap cycling %s: %.2fkm → %d segments (no FIT lap)",
                     normalized_type, dist_km, len(synthetic),
                 )
@@ -13007,7 +13007,7 @@ def main() -> None:
     api = Api()
     _record_startup_event("api_created")
     window = webview.create_window(
-        f"脉图 - fit vault {APP_VERSION}",
+        f"脉图 - FitVault {APP_VERSION}",
         url=url,
         js_api=api,
         width=1280,

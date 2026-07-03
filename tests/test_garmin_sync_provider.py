@@ -61,7 +61,7 @@ class TestGarminSyncProvider(unittest.TestCase):
         scripts = resources / "skills" / "garmin-stats" / "scripts"
         scripts.mkdir(parents=True)
         (scripts / "get_garmin_stats.py").write_text("# packaged\n", encoding="utf-8")
-        exe = bundle / "MacOS" / "MaiTu"
+        exe = bundle / "MacOS" / "FitVault"
         exe.parent.mkdir(parents=True)
         exe.write_text("", encoding="utf-8")
 

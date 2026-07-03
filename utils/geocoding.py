@@ -17,7 +17,7 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-NOMINATIM_USER_AGENT = "MaiTuSports/1.0 (sports-tracker)"
+NOMINATIM_USER_AGENT = "FitVault/1.0 (sports-tracker)"
 NOMINATIM_BASE_URL = "https://nominatim.openstreetmap.org/reverse"
 NOMINATIM_RATE_LIMIT_MIN_SEC = 1.5
 NOMINATIM_RATE_LIMIT_MAX_SEC = 5.0

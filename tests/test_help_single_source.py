@@ -31,6 +31,7 @@ class TestHelpSingleSource(unittest.TestCase):
         self.assertIn("AI 洞察一直加载或失败怎么办？", self.help_doc)
 
     def test_track_html_loads_help_from_backend_instead_of_hardcoding_full_copy(self):
+        self.assertIn("<title>脉图 - FitVault V1.2.0</title>", self.html)
         for token in (
             'id="help-preface-content"',
             'id="help-usage-content"',
@@ -91,6 +92,12 @@ class TestHelpSingleSource(unittest.TestCase):
     def test_packaging_includes_help_markdown(self):
         self.assertIn('("docs/脉图帮助说明.md", "docs")', self.spec)
 
+    def test_packaging_uses_fitvault_english_name(self):
+        self.assertIn("name='FitVault'", self.spec)
+        self.assertIn("bundle_identifier='com.mrfang.fitvault'", self.spec)
+        self.assertNotIn("name='MaiTu'", self.spec)
+        self.assertNotIn("com.mrfang.maitu", self.spec)
+
     def test_packaging_includes_unpacked_provider_skill_dirs(self):
         self.assertIn('("skills/garmin-stats", "skills/garmin-stats")', self.spec)
         self.assertIn('("skills/coros-stats", "skills/coros-stats")', self.spec)
@@ -104,7 +111,7 @@ class TestHelpSingleSource(unittest.TestCase):
             resources = bundle / "Resources"
             resources.mkdir(parents=True)
             (resources / "track.html").write_text("<html></html>", encoding="utf-8")
-            exe = bundle / "MacOS" / "MaiTu"
+            exe = bundle / "MacOS" / "FitVault"
             exe.parent.mkdir(parents=True)
             exe.write_text("", encoding="utf-8")
 

@@ -63,7 +63,7 @@ class TestCorosSyncProvider(unittest.TestCase):
         scripts = resources / "skills" / "coros-stats" / "scripts"
         scripts.mkdir(parents=True)
         (scripts / "coros_runner_profile.py").write_text("# packaged\n", encoding="utf-8")
-        exe = bundle / "MacOS" / "MaiTu"
+        exe = bundle / "MacOS" / "FitVault"
         exe.parent.mkdir(parents=True)
         exe.write_text("", encoding="utf-8")
 
@@ -152,13 +152,13 @@ class TestCorosSyncProvider(unittest.TestCase):
         self.assertTrue(env["PATH"].startswith("/tmp/node/bin:"))
 
     def test_build_coros_runtime_env_handles_windows_node_root(self):
-        with mock.patch.object(coros_sync, "discover_node_binary", return_value="C:\\MaiTu\\node\\node.exe"), \
+        with mock.patch.object(coros_sync, "discover_node_binary", return_value="C:\\FitVault\\node\\node.exe"), \
              mock.patch.object(coros_sync, "discover_openclaw_mjs", return_value=""):
             env = coros_sync.build_coros_runtime_env({"PATH": "C:\\Windows"})
 
-        self.assertEqual(env["QCLAW_CLI_NODE_BINARY"], "C:\\MaiTu\\node\\node.exe")
-        self.assertEqual(env["MAITU_BUNDLED_NODE_DIR"], "C:\\MaiTu\\node")
-        self.assertTrue(env["PATH"].startswith("C:\\MaiTu\\node"))
+        self.assertEqual(env["QCLAW_CLI_NODE_BINARY"], "C:\\FitVault\\node\\node.exe")
+        self.assertEqual(env["MAITU_BUNDLED_NODE_DIR"], "C:\\FitVault\\node")
+        self.assertTrue(env["PATH"].startswith("C:\\FitVault\\node"))
 
     def test_check_auth_status_invalid_region_returns_status(self):
         status = coros_sync.check_auth_status(
