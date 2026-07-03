@@ -265,6 +265,18 @@ class TestGarminSyncProvider(unittest.TestCase):
 
         self.assertEqual(command, [executable, "--garmin-login", "--region", "cn"])
 
+    def test_login_command_uses_console_helper_when_windows_frozen(self):
+        executable = self.base_dir / "FitVault.exe"
+        cli_exe = self.base_dir / "FitVaultCLI.exe"
+        executable.write_text("", encoding="utf-8")
+        cli_exe.write_text("", encoding="utf-8")
+        with mock.patch.object(garmin_sync.sys, "platform", "win32"), \
+             mock.patch.object(garmin_sync.sys, "frozen", True, create=True), \
+             mock.patch.object(garmin_sync.sys, "executable", str(executable)):
+            command = garmin_sync.login_command(base_dir=self.base_dir, region="cn")
+
+        self.assertEqual(command, [str(cli_exe), "--garmin-login", "--region", "cn"])
+
     def test_default_tokenstore_uses_region_suffix(self):
         workspace = self.base_dir / "workspace"
 
@@ -464,7 +476,9 @@ class TestGarminSyncProvider(unittest.TestCase):
 
     def test_start_login_on_windows_frozen_uses_internal_cli_in_cmd(self):
         executable = str(self.base_dir / "FitVault.exe")
+        cli_exe = str(self.base_dir / "FitVaultCLI.exe")
         Path(executable).write_text("", encoding="utf-8")
+        Path(cli_exe).write_text("", encoding="utf-8")
         with mock.patch.object(garmin_sync.sys, "platform", "win32"), \
              mock.patch.object(garmin_sync.sys, "frozen", True, create=True), \
              mock.patch.object(garmin_sync.sys, "executable", executable), \
@@ -472,8 +486,9 @@ class TestGarminSyncProvider(unittest.TestCase):
             result = garmin_sync.start_login(base_dir=self.base_dir, region="cn")
 
         self.assertTrue(result.ok)
-        self.assertEqual(result.command, [executable, "--garmin-login", "--region", "cn"])
+        self.assertEqual(result.command, [cli_exe, "--garmin-login", "--region", "cn"])
         launcher_script = popen_mock.call_args.args[0][-1]
+        self.assertIn("FitVaultCLI.exe", launcher_script)
         self.assertIn("--garmin-login", launcher_script)
         self.assertNotIn("login.py", launcher_script)
 

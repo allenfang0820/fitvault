@@ -275,7 +275,9 @@ def build_coros_runtime_env(env: dict[str, str] | None = None) -> dict[str, str]
 def login_command(*, region: str | None = None, base_dir: Path | str | None = None) -> list[str]:
     resolved_region = resolve_coros_region(region)
     paths = get_coros_skill_paths(base_dir)
-    if sys.platform.startswith("win") and paths.install_mcp_cmd.is_file():
+    if sys.platform.startswith("win"):
+        if not paths.install_mcp_cmd.is_file():
+            raise CorosSkillNotFoundError(f"未找到 COROS Windows 授权脚本: {paths.install_mcp_cmd}")
         return [str(paths.install_mcp_cmd), "--region", resolved_region]
     return ["bash", str(paths.install_mcp), "--region", resolved_region]
 
@@ -676,7 +678,7 @@ def start_login(
 
     if sys.platform.startswith("win"):
         paths = get_coros_skill_paths(base_dir)
-        cwd = _windows_command_cwd(command, paths.install_mcp.resolve().parent)
+        cwd = _windows_command_cwd(command, paths.install_mcp_cmd.resolve().parent)
         launcher = _windows_console_launcher(
             command,
             cwd,

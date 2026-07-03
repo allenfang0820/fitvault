@@ -138,6 +138,15 @@ class TestCorosSyncProvider(unittest.TestCase):
         self.assertEqual(Path(command[0]).name, "install_coros_mcp.cmd")
         self.assertEqual(command[1:], ["--region", "eu"])
 
+    def test_login_command_on_windows_requires_cmd_installer(self):
+        (self.scripts_dir / "install_coros_mcp.cmd").unlink()
+        with mock.patch.object(coros_sync.sys, "platform", "win32"):
+            with self.assertRaises(coros_sync.CorosSkillNotFoundError) as ctx:
+                coros_sync.login_command(base_dir=self.base_dir, region="eu")
+
+        self.assertIn("install_coros_mcp.cmd", str(ctx.exception))
+        self.assertNotIn("install_coros_mcp.sh", str(ctx.exception))
+
     def test_discover_node_binary_uses_nvm_fallback(self):
         node_path = self.base_dir / ".nvm" / "versions" / "node" / "v24.18.0" / "bin" / "node"
         node_path.parent.mkdir(parents=True)

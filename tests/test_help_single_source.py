@@ -111,6 +111,10 @@ class TestHelpSingleSource(unittest.TestCase):
         self.assertIn('("skills/garmin-stats.zip", "skills")', self.spec)
         self.assertIn('("skills/coros-stats.zip", "skills")', self.spec)
 
+    def test_windows_packaging_includes_console_cli_helper(self):
+        self.assertIn("name='FitVaultCLI'", self.spec)
+        self.assertIn("console=True", self.spec)
+
     def test_app_base_dir_prefers_bundle_resources(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             bundle = Path(temp_dir) / "脉图.app" / "Contents"

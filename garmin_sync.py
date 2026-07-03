@@ -267,6 +267,11 @@ def login_command(*, region: str | None = None, base_dir: Path | str | None = No
     resolved_region = resolve_garmin_region(region)
     paths = get_garmin_skill_paths(base_dir)
     if getattr(sys, "frozen", False):
+        executable = Path(sys.executable)
+        if sys.platform.startswith("win"):
+            cli_exe = executable.with_name("FitVaultCLI.exe")
+            if cli_exe.is_file():
+                return [str(cli_exe), "--garmin-login", "--region", resolved_region]
         return [sys.executable, "--garmin-login", "--region", resolved_region]
     return [sys.executable, str(paths.login), "--region", resolved_region]
 

@@ -90,7 +90,7 @@ a = Analysis(
 )
 pyz = PYZ(a.pure)
 
-exe = EXE(
+gui_exe = EXE(
     pyz,
     a.scripts,
     [],
@@ -107,10 +107,30 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
 )
+cli_exe = None
+if platform.system().lower() == "windows":
+    cli_exe = EXE(
+        pyz,
+        a.scripts,
+        [],
+        exclude_binaries=True,
+        name='FitVaultCLI',
+        debug=False,
+        bootloader_ignore_signals=False,
+        strip=False,
+        upx=True,
+        console=True,
+        disable_windowed_traceback=False,
+        argv_emulation=False,
+        target_arch=None,
+        codesign_identity=None,
+        entitlements_file=None,
+    )
+_collect_items = [gui_exe, a.binaries, a.datas]
+if cli_exe is not None:
+    _collect_items.insert(1, cli_exe)
 coll = COLLECT(
-    exe,
-    a.binaries,
-    a.datas,
+    *_collect_items,
     strip=False,
     upx=True,
     upx_exclude=[],
