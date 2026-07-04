@@ -238,16 +238,28 @@ class TestCorosSyncProvider(unittest.TestCase):
         self.assertEqual(command, ["/tmp/node/bin/npm", "install", "-g", "coros-mcp"])
         self.assertFalse(run_mock.call_args.kwargs["shell"])
 
-    def test_start_coros_oauth_login_uses_popen_without_terminal_wrapper(self):
+    def test_start_coros_oauth_login_creates_browser_session_without_terminal_wrapper(self):
         with mock.patch.object(coros_sync, "discover_coros_mcp_binary", return_value="/tmp/coros-mcp"), \
-             mock.patch.object(coros_sync.subprocess, "Popen") as popen_mock:
-            coros_sync.start_coros_oauth_login(region="us")
+             mock.patch.object(coros_sync.subprocess, "run", return_value=self._completed(stdout="Open this link:\nhttps://mcpus.coros.com/cli/login/session\n")) as run_mock, \
+             mock.patch.object(coros_sync.webbrowser, "open") as open_mock:
+            result = coros_sync.start_coros_oauth_login(region="us")
 
-        command = popen_mock.call_args.args[0]
-        self.assertEqual(command, ["/tmp/coros-mcp", "--issuer", "https://mcpus.coros.com", "login"])
-        self.assertFalse(popen_mock.call_args.kwargs["shell"])
+        self.assertTrue(result.ok, result)
+        self.assertEqual(result.status, "waiting_callback")
+        command = run_mock.call_args.args[0]
+        self.assertEqual(command, ["/tmp/coros-mcp", "--issuer", "https://mcpus.coros.com", "login-start"])
+        self.assertFalse(run_mock.call_args.kwargs["shell"])
+        open_mock.assert_called_once_with("https://mcpus.coros.com/cli/login/session")
         self.assertNotIn("cmd.exe", command)
         self.assertNotIn("osascript", command)
+
+    def test_finish_coros_oauth_login_waits_when_cli_poll_times_out(self):
+        with mock.patch.object(coros_sync, "discover_coros_mcp_binary", return_value="/tmp/coros-mcp"), \
+             mock.patch.object(coros_sync.subprocess, "run", side_effect=subprocess.TimeoutExpired(["coros-mcp"], 1)):
+            result = coros_sync.finish_coros_oauth_login(region="cn", timeout=1)
+
+        self.assertTrue(result.ok)
+        self.assertEqual(result.status, "waiting_callback")
 
     def test_apply_coros_openclaw_optional_warning_does_not_raise(self):
         with mock.patch.object(coros_sync.shutil, "which", return_value=None), \
