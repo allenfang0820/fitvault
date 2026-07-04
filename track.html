@@ -5338,16 +5338,20 @@
 
         .garmin-auth-controls {
             display: grid;
-            grid-template-columns: minmax(190px, 260px) auto auto auto;
+            grid-template-columns: minmax(210px, 260px) minmax(220px, 1fr) auto auto auto;
             gap: 10px;
             align-items: end;
         }
 
         .account-connection-fields {
             display: grid;
-            grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) auto;
+            grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) max-content;
             gap: 10px;
             align-items: end;
+        }
+
+        #garmin-mfa-row {
+            grid-template-columns: minmax(260px, 1fr) max-content;
         }
 
         .account-connection-fields.is-hidden {
@@ -5361,6 +5365,15 @@
             min-height: 22px;
             font-size: 0.78rem;
             color: #94a3b8;
+            align-self: center;
+            min-width: 0;
+        }
+
+        .garmin-auth-status-line span:last-child {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
         .garmin-auth-dot {
@@ -5406,11 +5419,25 @@
             height: 36px;
             padding: 0 14px;
             white-space: nowrap;
+            width: auto;
+            min-width: 96px;
         }
 
         .account-connection-disconnect-btn {
             border-color: rgba(248,113,113,0.28);
             color: #fecaca;
+            min-width: 88px;
+        }
+
+        #garmin-auth-check-btn,
+        #coros-auth-check-btn {
+            min-width: 118px;
+        }
+
+        #garmin-auth-login-btn,
+        #garmin-mfa-submit-btn,
+        #coros-auth-login-btn {
+            min-width: 150px;
         }
 
         .settings-watch-brand-row {
@@ -5439,8 +5466,14 @@
             .account-connection-fields {
                 grid-template-columns: 1fr;
             }
+            #garmin-mfa-row {
+                grid-template-columns: 1fr;
+            }
             .garmin-auth-action-btn {
                 width: 100%;
+            }
+            .garmin-auth-status-line span:last-child {
+                white-space: normal;
             }
         }
 
@@ -5995,8 +6028,11 @@
                                     <option value="global">Garmin 国际区</option>
                                 </select>
                             </div>
+                            <div class="garmin-auth-status-line" id="garmin-auth-status-line">
+                                <span class="garmin-auth-dot" id="garmin-auth-dot"></span>
+                                <span id="garmin-auth-status-text">尚未检查 Garmin 授权状态</span>
+                            </div>
                             <button type="button" class="secondary-btn compact-action-btn garmin-auth-action-btn" id="garmin-auth-check-btn" onclick="refreshGarminAuthStatus(true)">检查状态</button>
-                            <button type="button" class="primary-btn compact-action-btn garmin-auth-action-btn" id="garmin-auth-login-btn" onclick="startGarminAuthorizationFromSettings()">连接</button>
                             <button type="button" class="secondary-btn compact-action-btn garmin-auth-action-btn account-connection-disconnect-btn" id="garmin-auth-disconnect-btn" onclick="disconnectGarminAccountFromSettings()">断开</button>
                         </div>
                         <div class="account-connection-fields" id="garmin-credentials-row">
@@ -6008,7 +6044,7 @@
                                 <label class="settings-label" for="garmin-account-password">Garmin 密码</label>
                                 <input id="garmin-account-password" class="modal-input" type="password" autocomplete="current-password" placeholder="输入后仅用于本次连接">
                             </div>
-                            <button type="button" class="primary-btn compact-action-btn garmin-auth-action-btn" id="garmin-credentials-submit-btn" onclick="startGarminAuthorizationFromSettings()">提交连接</button>
+                            <button type="button" class="primary-btn compact-action-btn garmin-auth-action-btn" id="garmin-auth-login-btn" onclick="startGarminAuthorizationFromSettings()">连接</button>
                         </div>
                         <div class="account-connection-fields is-hidden" id="garmin-mfa-row">
                             <div>
@@ -6016,10 +6052,6 @@
                                 <input id="garmin-account-mfa" class="modal-input" type="text" inputmode="numeric" autocomplete="one-time-code" placeholder="输入验证码">
                             </div>
                             <button type="button" class="primary-btn compact-action-btn garmin-auth-action-btn" id="garmin-mfa-submit-btn" onclick="continueGarminAuthorizationFromSettings()">继续连接</button>
-                        </div>
-                        <div class="garmin-auth-status-line" id="garmin-auth-status-line">
-                            <span class="garmin-auth-dot" id="garmin-auth-dot"></span>
-                            <span id="garmin-auth-status-text">尚未检查 Garmin 授权状态</span>
                         </div>
                     </div>
                     <div class="garmin-auth-card" id="coros-region-row" style="display:none;">
@@ -6032,13 +6064,13 @@
                                     <option value="eu">COROS 欧洲区</option>
                                 </select>
                             </div>
+                            <div class="garmin-auth-status-line" id="coros-auth-status-line">
+                                <span class="garmin-auth-dot" id="coros-auth-dot"></span>
+                                <span id="coros-auth-status-text">尚未检查 COROS 授权状态</span>
+                            </div>
                             <button type="button" class="secondary-btn compact-action-btn garmin-auth-action-btn" id="coros-auth-check-btn" onclick="refreshCorosAuthStatus(true)">检查状态</button>
                             <button type="button" class="primary-btn compact-action-btn garmin-auth-action-btn" id="coros-auth-login-btn" onclick="startCorosAuthorizationFromSettings()">连接</button>
                             <button type="button" class="secondary-btn compact-action-btn garmin-auth-action-btn account-connection-disconnect-btn" id="coros-auth-disconnect-btn" onclick="disconnectCorosAccountFromSettings()">断开</button>
-                        </div>
-                        <div class="garmin-auth-status-line" id="coros-auth-status-line">
-                            <span class="garmin-auth-dot" id="coros-auth-dot"></span>
-                            <span id="coros-auth-status-text">尚未检查 COROS 授权状态</span>
                         </div>
                     </div>
                 </div>
@@ -9068,7 +9100,7 @@
             if (normalizedStatus && normalizedStatus !== 'idle') dot.classList.add(normalizedStatus);
         }
         if (text) text.innerText = garminAuthStatusState.message;
-        if (credentialsRow) credentialsRow.classList.toggle('is-hidden', normalizedStatus === 'authorized' || normalizedStatus === 'checking' || normalizedStatus === 'needs_mfa');
+        if (credentialsRow) credentialsRow.classList.toggle('is-hidden', normalizedStatus === 'checking' || normalizedStatus === 'needs_mfa');
         if (mfaRow) mfaRow.classList.toggle('is-hidden', normalizedStatus !== 'needs_mfa');
         if (loginBtn) loginBtn.innerText = normalizedStatus === 'authorized' ? '重新连接' : '连接';
         if (disconnectBtn) disconnectBtn.disabled = normalizedStatus !== 'authorized';
