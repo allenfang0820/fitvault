@@ -18,7 +18,7 @@ _hidden = (
     + collect_submodules("watchdog")
     + collect_submodules("webview")
     + ["llm_backend", "track_backend", "profile_backend",
-       "requests", "urllib3", "certifi", "charset_normalizer", "idna"]
+       "requests", "urllib3", "certifi", "charset_normalizer", "idna", "pytz"]
 )
 
 _datas = [

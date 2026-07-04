@@ -3970,6 +3970,26 @@ def fetch_mcp_persona(platform: str, trigger_type: str = "manual") -> dict[str, 
         profile_data = _profile_data_from_metric_map(_profile_metric_array_to_map(parsed_json))
 
         incoming_profile_data = dict(profile_data)
+        valid_fields = [
+            key for key, value in incoming_profile_data.items()
+            if _is_meaningful_profile_value(value)
+        ]
+        if not valid_fields:
+            label = "Garmin" if platform == "garmin" else "COROS"
+            error = f"{label} 画像同步未解析到任何有效字段，请检查账号授权状态、网络连接或 provider 返回格式。"
+            logger.warning(
+                "%s profile sync returned no meaningful fields trigger=%s raw_count=%s",
+                platform,
+                trigger_type,
+                len(parsed_json) if isinstance(parsed_json, list) else "n/a",
+            )
+            mark_profile_sync_failed(error)
+            exc = (
+                garmin_sync.GarminJsonParseError(error)
+                if platform == "garmin" else
+                coros_sync.CorosJsonParseError(error)
+            )
+            return _provider_failure_payload(platform, exc, error)
         profile_data = merge_profile_with_existing(incoming_profile_data, existing_profile_data)
         field_summary = build_profile_sync_field_summary(
             platform,

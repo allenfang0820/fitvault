@@ -373,6 +373,22 @@
         .profile-summary-card {
             position: relative;
         }
+        .profile-section-title-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 4px;
+        }
+        .profile-section-title-row .compact-action-btn {
+            width: auto;
+            min-width: 88px;
+            height: 28px;
+            padding: 0 10px;
+            flex: 0 0 auto;
+            font-size: 0.68rem;
+            line-height: 1;
+        }
         .profile-summary-head {
             display: flex;
             gap: 8px;
@@ -5602,7 +5618,10 @@
                 <div class="profile-shell">
                     <div class="profile-top-fixed">
                         <div class="section-card profile-summary-card">
-                            <div class="section-title">🏃 运动画像</div>
+                            <div class="profile-section-title-row">
+                                <div class="section-title">🏃 运动画像</div>
+                                <button type="button" id="profile-force-sync-btn" class="secondary-btn compact-action-btn" onclick="forceSyncProfileFromUI()">同步画像</button>
+                            </div>
                             <div id="pf-loading" style="display:none; text-align:center; padding:16px 0; color:#64748b; font-size:0.75rem;">⏳ 加载运动画像...</div>
                             <div id="pf-empty" style="display:none; text-align:center; padding:16px 0; color:#64748b; font-size:0.75rem;">
                                 📋 暂无画像数据，连接成功后将自动同步 Garmin 用户画像
@@ -7652,6 +7671,44 @@
                 statusEl.innerHTML = text + '<span class="sync-dot d1"></span><span class="sync-dot d2"></span><span class="sync-dot d3"></span>';
             } else {
                 statusEl.innerText = text;
+            }
+        }
+    }
+
+    async function forceSyncProfileFromUI() {
+        const btn = document.getElementById('profile-force-sync-btn');
+        const originalText = btn ? btn.innerText : '';
+        if (!window.pywebview || !window.pywebview.api || typeof window.pywebview.api.force_sync_profile !== 'function') {
+            showToast('当前环境无法同步用户画像');
+            return;
+        }
+        if (btn) {
+            btn.disabled = true;
+            btn.innerText = '同步中...';
+        }
+        try {
+            const res = await window.pywebview.api.force_sync_profile();
+            const data = (res && res.data) || {};
+            if (res && res.code === 0) {
+                updateProfileSyncMeta(data.profile_sync_summary || data || res);
+                await loadProfileCard();
+                showToast('用户画像同步完成');
+                return;
+            }
+
+            const msg = (res && (res.msg || res.error)) || '未知错误';
+            showToast('用户画像同步失败：' + msg);
+            if (isGarminAuthRequiredResponse(res)) {
+                openGarminSettingsForAuthorization(res, msg);
+            } else if (isCorosAuthRequiredResponse(res)) {
+                showCorosLoginPrompt(res);
+            }
+        } catch (e) {
+            showToast('用户画像同步失败：' + String((e && e.message) || e));
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerText = originalText || '同步画像';
             }
         }
     }

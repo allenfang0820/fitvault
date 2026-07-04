@@ -207,15 +207,45 @@ def open_url_in_system_browser(url: str) -> bool:
         return False
     try:
         if sys.platform == "darwin":
-            completed = subprocess.run(["open", safe_url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10, shell=False)
+            completed = subprocess.run(
+                ["open", safe_url],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=10,
+                shell=False,
+                **_windows_subprocess_hidden_kwargs(),
+            )
             return int(completed.returncode) == 0
         if os.name == "nt":
             os.startfile(safe_url)  # type: ignore[attr-defined]
             return True
-        completed = subprocess.run(["xdg-open", safe_url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10, shell=False)
+        completed = subprocess.run(
+            ["xdg-open", safe_url],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=10,
+            shell=False,
+            **_windows_subprocess_hidden_kwargs(),
+        )
         return int(completed.returncode) == 0
     except Exception:
         return False
+
+
+def _windows_subprocess_hidden_kwargs() -> dict[str, Any]:
+    if os.name != "nt":
+        return {}
+    kwargs: dict[str, Any] = {}
+    creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    if creationflags:
+        kwargs["creationflags"] = creationflags
+    startupinfo_cls = getattr(subprocess, "STARTUPINFO", None)
+    if startupinfo_cls is not None:
+        startupinfo = startupinfo_cls()
+        startupinfo.dwFlags |= getattr(subprocess, "STARTF_USESHOWWINDOW", 1)
+        startupinfo.wShowWindow = 0
+        kwargs["startupinfo"] = startupinfo
+    return kwargs
 
 
 def _is_executable_file(path: Path) -> bool:
@@ -240,15 +270,26 @@ def _bundled_node_candidates() -> list[Path]:
         ])
 
     base = app_base_dir()
+    exe_dir = Path(sys.executable).resolve().parent
     candidates.extend([
         base / "node" / "bin" / "node",
+        base / "node" / "bin" / "node.exe",
         base / "node" / "node.exe",
         base / "Resources" / "node" / "bin" / "node",
+        base / "Resources" / "node" / "bin" / "node.exe",
         base / "Resources" / "node" / "node.exe",
-        Path(sys.executable).resolve().parent / "node" / "bin" / "node",
-        Path(sys.executable).resolve().parent / "node" / "node.exe",
-        Path(sys.executable).resolve().parent.parent / "Resources" / "node" / "bin" / "node",
-        Path(sys.executable).resolve().parent.parent / "Resources" / "node" / "node.exe",
+        exe_dir / "node" / "bin" / "node",
+        exe_dir / "node" / "bin" / "node.exe",
+        exe_dir / "node" / "node.exe",
+        exe_dir / "_internal" / "node" / "node.exe",
+        exe_dir / "_internal" / "node" / "bin" / "node.exe",
+        exe_dir / "_internal" / "node" / "bin" / "node",
+        exe_dir / "_internal" / "Resources" / "node" / "node.exe",
+        exe_dir / "_internal" / "Resources" / "node" / "bin" / "node.exe",
+        exe_dir / "_internal" / "Resources" / "node" / "bin" / "node",
+        exe_dir.parent / "Resources" / "node" / "bin" / "node",
+        exe_dir.parent / "Resources" / "node" / "bin" / "node.exe",
+        exe_dir.parent / "Resources" / "node" / "node.exe",
     ])
     return candidates
 
@@ -399,6 +440,7 @@ def prepare_coros_connection_runtime(
                 timeout=timeout,
                 shell=False,
                 env=runtime_env,
+                **_windows_subprocess_hidden_kwargs(),
             )
         except subprocess.TimeoutExpired:
             diagnostics.append(_diag("coros_mcp", "failed", "coros-mcp 安装超时"))
@@ -447,6 +489,7 @@ def start_coros_oauth_login(
             timeout=timeout,
             shell=False,
             env=runtime_env,
+            **_windows_subprocess_hidden_kwargs(),
         )
     except subprocess.TimeoutExpired:
         return CorosConnectionStepResult(False, "failed", "COROS OAuth 登录链接创建超时。", coros_mcp_path=binary, token_path=str(token_path))
@@ -514,6 +557,7 @@ def finish_coros_oauth_login(
             timeout=timeout,
             shell=False,
             env=runtime_env,
+            **_windows_subprocess_hidden_kwargs(),
         )
     except subprocess.TimeoutExpired:
         return CorosConnectionStepResult(True, "waiting_callback", "等待你在浏览器中完成 COROS OAuth 授权...", coros_mcp_path=binary, token_path=str(token_path))
@@ -551,6 +595,7 @@ def apply_coros_openclaw_optional(
             timeout=timeout,
             shell=False,
             env=runtime_env,
+            **_windows_subprocess_hidden_kwargs(),
         )
     except Exception as exc:
         return _diag("openclaw", "warning", f"OpenClaw 注册失败或被跳过: {exc}")
@@ -590,6 +635,7 @@ def _run_keepalive_print_config(
             shell=False,
             env=build_coros_runtime_env(),
             cwd=str((paths.skill_dir / "scripts").resolve()),
+            **_windows_subprocess_hidden_kwargs(),
         )
     except subprocess.TimeoutExpired:
         return "", "", "", _diag("keepalive_config", "failed", "COROS keepalive 区域配置检查超时")
@@ -796,6 +842,7 @@ def run_coros_script(
             shell=False,
             env=env,
             cwd=str(script.parent),
+            **_windows_subprocess_hidden_kwargs(),
         )
     except subprocess.TimeoutExpired as exc:
         raise CorosScriptFailed(f"COROS 脚本超时未返回 ({timeout}s): {script.name}") from exc
@@ -977,7 +1024,7 @@ def start_login(
             "end tell",
         ]
         try:
-            subprocess.Popen(osa, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.Popen(osa, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **_windows_subprocess_hidden_kwargs())
         except OSError as exc:
             return CorosLoginResult(
                 ok=False,
@@ -1018,6 +1065,7 @@ def start_login(
             shell=False,
             env=build_coros_runtime_env(),
             cwd=str(Path(command[1]).resolve().parent) if len(command) > 1 else None,
+            **_windows_subprocess_hidden_kwargs(),
         )
     except subprocess.TimeoutExpired as exc:
         return CorosLoginResult(
@@ -1091,9 +1139,17 @@ def _format_mcp_day(value: str | date) -> str:
 def _coros_mcp_command(region: str, tool_name: str, arguments: dict[str, Any]) -> list[str]:
     paths = get_coros_skill_paths()
     node_path = discover_node_binary()
+    if not node_path:
+        raise CorosFitDownloadError(
+            "未检测到 Node.js，无法调用 COROS MCP keepalive；请使用包含 bundled Node 的安装包。",
+            code="coros_node_missing",
+        )
+    keepalive = paths.skill_dir / "scripts" / "coros-mcp-keepalive.js"
+    if not keepalive.is_file():
+        raise CorosFitDownloadError(f"未找到 COROS keepalive 脚本: {keepalive}", code="coros_skill_not_found")
     return [
-        node_path or "node",
-        str(paths.skill_dir / "scripts" / "coros-mcp-keepalive.js"),
+        node_path,
+        str(keepalive),
         "--region",
         resolve_coros_region(region),
         "call",
@@ -1111,6 +1167,8 @@ def run_coros_mcp_tool(
 ) -> Any:
     resolved_region = resolve_coros_region(region)
     command = _coros_mcp_command(resolved_region, tool_name, arguments or {})
+    node_path = command[0]
+    keepalive_path = command[1]
     try:
         completed = subprocess.run(
             command,
@@ -1119,11 +1177,16 @@ def run_coros_mcp_tool(
             timeout=timeout,
             shell=False,
             env=build_coros_runtime_env(),
+            cwd=str(Path(keepalive_path).resolve().parent),
+            **_windows_subprocess_hidden_kwargs(),
         )
     except subprocess.TimeoutExpired as exc:
         raise CorosFitDownloadError(f"COROS MCP 工具调用超时 ({timeout}s): {tool_name}") from exc
     except OSError as exc:
-        raise CorosFitDownloadError(f"COROS MCP keepalive 启动失败: {exc}", code="coros_node_missing") from exc
+        raise CorosFitDownloadError(
+            f"COROS MCP keepalive 启动失败: {exc}; node={node_path}; keepalive={keepalive_path}",
+            code="coros_node_missing",
+        ) from exc
 
     stdout = str(completed.stdout or "")
     stderr = str(completed.stderr or "")
@@ -1132,7 +1195,10 @@ def run_coros_mcp_tool(
         suffix = f": {detail}" if detail else ""
         if _looks_like_auth_required(detail):
             raise CorosAuthRequiredError(f"COROS 授权不可用或已失效，请到配置页完成授权{suffix}")
-        raise CorosFitDownloadError(f"COROS MCP 工具调用失败 (exit {int(completed.returncode)}): {tool_name}{suffix}")
+        raise CorosFitDownloadError(
+            f"COROS MCP 工具调用失败 (exit {int(completed.returncode)}): {tool_name}; "
+            f"region={resolved_region}; node={node_path}; keepalive={keepalive_path}{suffix}"
+        )
     try:
         return _parse_json_stdout(stdout)
     except CorosJsonParseError:
@@ -1383,6 +1449,7 @@ def download_fit_json(
     safe_limit = max(1, min(int(limit or MAX_COROS_FIT_DOWNLOAD_LIMIT), MAX_COROS_FIT_DOWNLOAD_LIMIT))
     output_path = Path(output_dir).expanduser()
     args = {"startDate": start_day, "endDate": end_day, "limit": safe_limit}
+    errors: list[dict[str, Any]] = []
 
     try:
         binary_payload = run_coros_mcp_tool(
@@ -1394,8 +1461,9 @@ def download_fit_json(
         blobs = _extract_fit_blobs(binary_payload)
     except CorosAuthRequiredError:
         raise
-    except CorosFitDownloadError:
+    except CorosFitDownloadError as exc:
         blobs = []
+        errors.append({"status": "failed", "stage": "date_range_binary", "error": str(exc)})
     records: list[dict[str, Any]] = []
     for index, item in enumerate(blobs[:safe_limit], start=1):
         records.append(_write_fit_file(output_path, item["filename"], item["data"], index))
@@ -1412,7 +1480,6 @@ def download_fit_json(
             limit=safe_limit,
         )
 
-    errors: list[dict[str, Any]] = []
     try:
         url_payload = run_coros_mcp_tool(
             "queryActivityFitFileDownloadUrls",

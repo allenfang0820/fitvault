@@ -1,4 +1,4 @@
 garminconnect
 garth
-pytz
+pytz>=2023.3
 curl_cffi

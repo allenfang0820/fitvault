@@ -14,6 +14,7 @@ import sqlite3
 import sys
 import threading
 import time
+import traceback
 import uuid
 import zipfile
 from urllib.parse import urlparse
@@ -10004,6 +10005,40 @@ class Api:
             }
         return result
 
+    def force_sync_profile(self) -> dict:
+        cfg = llm_backend.load_llm_config()
+        brand = str(cfg.get("watch_brand") or "").strip().lower()
+        if brand not in {"garmin", "coros"}:
+            return _api_error(
+                API_CODE_VALIDATION,
+                "当前手表品牌暂不支持画像同步，请先在配置页选择 Garmin 或 COROS。",
+            )
+
+        result = profile_backend.fetch_mcp_persona(brand, trigger_type="manual")
+        profile_summary = profile_backend.build_profile_status_summary(brand)
+        if result.get("ok"):
+            prof = profile_backend.get_profile()
+            return _api_success(
+                {
+                    "profile": prof.to_dict() if prof else result.get("persona"),
+                    "persona": result.get("persona"),
+                    "profile_sync_summary": result.get("profile_sync_summary") or profile_summary,
+                },
+                msg="用户画像同步完成。",
+            )
+
+        message = result.get("error") or "用户画像同步失败"
+        return _api_error(
+            API_CODE_EXTERNAL_SERVICE,
+            message,
+            {
+                "provider": result.get("provider") or brand,
+                "provider_error_code": result.get("provider_error_code"),
+                "action_hint": result.get("action_hint"),
+                "profile_sync_summary": result.get("profile_sync_summary") or profile_summary,
+            },
+        )
+
     def get_activity_history(self) -> dict:
         """返回按时间倒序的历史运动记录列表。"""
         try:
@@ -13680,6 +13715,9 @@ def run_garmin_login_cli(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if not args or args[0] != "--garmin-login":
         return 1
+    if os.name == "nt" and getattr(sys, "frozen", False):
+        print("Windows 打包版不支持 Garmin 旧命令行登录，请在应用内账号连接中心完成授权。", file=sys.stderr)
+        return 64
     login_script = app_base_dir() / "skills" / "garmin-stats" / "scripts" / "login.py"
     if not login_script.is_file():
         print(f"未找到 Garmin 登录脚本: {login_script}", file=sys.stderr)
@@ -13711,8 +13749,55 @@ def run_garmin_login_cli(argv: list[str] | None = None) -> int:
                 pass
 
 
+def run_garmin_script_cli(argv: list[str] | None = None) -> int:
+    args = list(sys.argv[2:] if argv is None else argv)
+    if not args:
+        print("缺少 Garmin 脚本路径", file=sys.stderr)
+        return 64
+
+    script = Path(args[0]).expanduser().resolve()
+    allowed_names = {"get_garmin_stats.py", "download_fit.py", "login.py"}
+    if script.name not in allowed_names:
+        print(f"不支持的 Garmin 脚本: {script.name}", file=sys.stderr)
+        return 64
+    if not script.is_file():
+        print(f"未找到 Garmin 脚本: {script}", file=sys.stderr)
+        return 66
+
+    old_argv = sys.argv[:]
+    scripts_dir = str(script.parent)
+    inserted_path = False
+    try:
+        if scripts_dir not in sys.path:
+            sys.path.insert(0, scripts_dir)
+            inserted_path = True
+        sys.argv = [str(script), *[str(item) for item in args[1:]]]
+        runpy.run_path(str(script), run_name="__main__")
+        return 0
+    except SystemExit as exc:
+        code = exc.code
+        if code is None:
+            return 0
+        if isinstance(code, int):
+            return code
+        print(str(code), file=sys.stderr)
+        return 1
+    except Exception:
+        traceback.print_exc()
+        return 1
+    finally:
+        sys.argv = old_argv
+        if inserted_path:
+            try:
+                sys.path.remove(scripts_dir)
+            except ValueError:
+                pass
+
+
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "--garmin-login":
         raise SystemExit(run_garmin_login_cli(sys.argv[1:]))
+    if len(sys.argv) > 1 and sys.argv[1] == "--garmin-script":
+        raise SystemExit(run_garmin_script_cli(sys.argv[2:]))
     init_application_config()
     main()

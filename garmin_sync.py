@@ -208,6 +208,22 @@ def _looks_like_auth_required(text: str) -> bool:
     return any(marker in clean for marker in auth_markers)
 
 
+def _windows_subprocess_hidden_kwargs() -> dict[str, Any]:
+    if os.name != "nt":
+        return {}
+    kwargs: dict[str, Any] = {}
+    creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    if creationflags:
+        kwargs["creationflags"] = creationflags
+    startupinfo_cls = getattr(subprocess, "STARTUPINFO", None)
+    if startupinfo_cls is not None:
+        startupinfo = startupinfo_cls()
+        startupinfo.dwFlags |= getattr(subprocess, "STARTF_USESHOWWINDOW", 1)
+        startupinfo.wShowWindow = 0
+        kwargs["startupinfo"] = startupinfo
+    return kwargs
+
+
 def run_garmin_script(
     script_path: Path | str,
     args: list[str] | tuple[str, ...] | None = None,
@@ -219,7 +235,11 @@ def run_garmin_script(
     if not script.is_file():
         raise GarminSkillNotFoundError(f"未找到 Garmin skill 脚本: {script}")
 
-    command = [sys.executable, str(script), *[str(arg) for arg in (args or [])]]
+    script_args = [str(arg) for arg in (args or [])]
+    if os.name == "nt" and getattr(sys, "frozen", False):
+        command = [sys.executable, "--garmin-script", str(script), *script_args]
+    else:
+        command = [sys.executable, str(script), *script_args]
     try:
         completed = subprocess.run(
             command,
@@ -229,6 +249,7 @@ def run_garmin_script(
             shell=False,
             env=env,
             cwd=str(script.parent),
+            **_windows_subprocess_hidden_kwargs(),
         )
     except subprocess.TimeoutExpired as exc:
         raise GarminScriptFailed(f"Garmin 脚本超时未返回 ({timeout}s): {script.name}") from exc
@@ -519,7 +540,7 @@ def start_login(
             "end tell",
         ]
         try:
-            subprocess.Popen(osa, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.Popen(osa, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **_windows_subprocess_hidden_kwargs())
         except OSError as exc:
             return GarminLoginResult(
                 ok=False,
@@ -561,6 +582,7 @@ def start_login(
             timeout=timeout,
             shell=False,
             cwd=str(paths.login.resolve().parent),
+            **_windows_subprocess_hidden_kwargs(),
         )
     except subprocess.TimeoutExpired as exc:
         stdout = str(exc.stdout or "")
