@@ -310,7 +310,8 @@ class TestLLMGenerateText(unittest.TestCase):
 
         self.assertEqual(text, "ok")
         cmd = run_mock.call_args.args[0]
-        self.assertEqual(cmd[0], str(wrapper))
+        self.assertEqual(cmd[:2], [str(node), str(mjs)])
+        self.assertIn("agent", cmd)
         env = run_mock.call_args.kwargs["env"]
         self.assertEqual(env["QCLAW_CLI_NODE_BINARY"], str(node))
         self.assertEqual(env["QCLAW_CLI_OPENCLAW_MJS"], str(mjs))
@@ -364,7 +365,7 @@ class TestLLMGenerateText(unittest.TestCase):
                 session_id="sid-1",
             )
 
-        self.assertEqual(run_mock.call_args.args[0][0], str(wrapper))
+        self.assertEqual(run_mock.call_args.args[0][:2], [str(node), str(mjs)])
         env = run_mock.call_args.kwargs["env"]
         self.assertEqual(env["QCLAW_CLI_NODE_BINARY"], str(node))
         self.assertEqual(env["QCLAW_CLI_OPENCLAW_MJS"], str(mjs))

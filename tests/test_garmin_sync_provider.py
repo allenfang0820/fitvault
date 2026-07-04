@@ -514,8 +514,9 @@ class TestGarminSyncProvider(unittest.TestCase):
         launcher = popen_mock.call_args.args[0]
         self.assertEqual(launcher[:4], ["cmd.exe", "/d", "/c", "start"])
         self.assertIn("cmd.exe", launcher)
-        self.assertIn("pause", launcher[-1])
-        self.assertIn("login.py", launcher[-1])
+        launcher_script = Path(launcher[-1]).read_text(encoding="utf-8")
+        self.assertIn("pause", launcher_script)
+        self.assertIn("login.py", launcher_script)
 
     def test_start_login_on_windows_frozen_uses_internal_cli_in_cmd(self):
         executable = str(self.base_dir / "FitVault.exe")
@@ -530,7 +531,7 @@ class TestGarminSyncProvider(unittest.TestCase):
 
         self.assertTrue(result.ok)
         self.assertEqual(result.command, [cli_exe, "--garmin-login", "--region", "cn"])
-        launcher_script = popen_mock.call_args.args[0][-1]
+        launcher_script = Path(popen_mock.call_args.args[0][-1]).read_text(encoding="utf-8")
         self.assertIn("FitVaultCLI.exe", launcher_script)
         self.assertIn("--garmin-login", launcher_script)
         self.assertNotIn("login.py", launcher_script)

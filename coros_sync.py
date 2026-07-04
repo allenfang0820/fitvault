@@ -17,6 +17,7 @@ import shutil
 import shlex
 import subprocess
 import sys
+import tempfile
 import uuid
 import urllib.error
 import urllib.parse
@@ -303,11 +304,21 @@ def _windows_console_launcher(command: list[str], cwd: str, title: str, done_mes
     command_line = _windows_command_line(command)
     if command and Path(str(command[0])).suffix.lower() in {".cmd", ".bat"}:
         command_line = "call " + command_line
-    shell_command = (
-        f"cd /d {subprocess.list2cmdline([cwd])} && "
-        f"{command_line} & "
-        f"echo. & echo {done_message} & pause"
+    handle = tempfile.NamedTemporaryFile(
+        "w",
+        encoding="utf-8",
+        suffix=".cmd",
+        prefix="fitvault-coros-login-",
+        delete=False,
     )
+    with handle:
+        handle.write("@echo off\n")
+        handle.write("chcp 65001 >nul\n")
+        handle.write(f"cd /d {subprocess.list2cmdline([cwd])}\n")
+        handle.write(f"{command_line}\n")
+        handle.write("echo.\n")
+        handle.write(f"echo {done_message}\n")
+        handle.write("pause\n")
     return [
         "cmd.exe",
         "/d",
@@ -317,7 +328,7 @@ def _windows_console_launcher(command: list[str], cwd: str, title: str, done_mes
         "cmd.exe",
         "/d",
         "/k",
-        shell_command,
+        handle.name,
     ]
 
 

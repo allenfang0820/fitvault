@@ -590,6 +590,19 @@ def _resolve_openclaw_cli_path(cli_path: str) -> str:
     return path
 
 
+def _resolve_openclaw_cli_command(cli_path: str) -> list[str]:
+    executable = _resolve_openclaw_cli_path(cli_path)
+    if str(cli_path or "").strip() and _openclaw_config_root_from_executable(executable) is None:
+        return [executable or "openclaw"]
+    for node in _openclaw_node_candidates(executable):
+        if not node.is_file():
+            continue
+        for mjs in _openclaw_mjs_candidates(executable):
+            if mjs.is_file():
+                return [str(node), str(mjs)]
+    return [executable or "openclaw"]
+
+
 def _expand_cli_template(args: list[str], *, prompt: str, model: str) -> list[str]:
     return [
         str(part).replace("{prompt}", prompt).replace("{model}", model)
@@ -616,7 +629,7 @@ def _build_cli_command(config: dict[str, Any], prompt: str) -> list[str]:
         agent_id = str(config.get("agent_id") or "").strip() or "main"
         cli_timeout = str(_normalize_cli_timeout(config.get("cli_timeout_sec")))
         base = [
-            _resolve_openclaw_cli_path(cli_path) or "openclaw",
+            *_resolve_openclaw_cli_command(cli_path),
             "agent",
             "--agent",
             agent_id,
@@ -881,7 +894,7 @@ def _extract_openclaw_agent_text(output: str) -> str:
 
 def _run_openclaw_readonly_json(config: dict[str, Any], args: list[str], timeout: int) -> tuple[dict[str, Any] | None, str]:
     cli_path = _validate_cli_executable_path(str(config.get("cli_path") or ""))
-    cmd = [_resolve_openclaw_cli_path(cli_path) or "openclaw"] + args
+    cmd = _resolve_openclaw_cli_command(cli_path) + args
     cli_env = _build_openclaw_cli_env(config, cmd[0])
     try:
         result = subprocess.run(
