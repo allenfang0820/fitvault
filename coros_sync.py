@@ -1189,7 +1189,13 @@ def run_coros_mcp_tool(
         if _looks_like_auth_required(detail):
             raise CorosAuthRequiredError(f"COROS 授权不可用或已失效，请到配置页完成授权{suffix}")
         raise CorosFitDownloadError(f"COROS MCP 工具调用失败 (exit {int(completed.returncode)}): {tool_name}{suffix}")
-    return _parse_json_stdout(stdout)
+    try:
+        return _parse_json_stdout(stdout)
+    except CorosJsonParseError:
+        text = stdout.strip()
+        if not text:
+            raise
+        return {"content": [{"type": "text", "text": text}]}
 
 
 def _iter_dicts(value: Any):
@@ -1273,6 +1279,9 @@ def _extract_urls(payload: Any) -> list[str]:
 
 
 def _extract_text_payload(payload: Any) -> str:
+    if isinstance(payload, str):
+        return payload.strip()
+
     chunks: list[str] = []
     for item in _iter_dicts(payload):
         text = item.get("text")
