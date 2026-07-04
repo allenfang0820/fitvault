@@ -696,6 +696,26 @@ class TestCorosSyncProvider(unittest.TestCase):
 
         self.assertEqual(parsed, payload)
 
+    def test_run_coros_mcp_tool_returns_text_content_for_non_json_stdout(self):
+        with mock.patch.object(coros_sync, "discover_node_binary", return_value="node"), \
+             mock.patch.object(coros_sync, "build_coros_runtime_env", return_value={}), \
+             mock.patch.object(
+                 coros_sync.subprocess,
+                 "run",
+                 return_value=self._completed(
+                     stdout="Tool call anomalies detected. High risk of session context pollution.\n",
+                     returncode=0,
+                 ),
+             ):
+            result = coros_sync.run_coros_mcp_tool(
+                "downloadActivityFitFiles",
+                {"startDate": "20260622", "endDate": "20260702", "limit": 10},
+                region="cn",
+            )
+
+        self.assertEqual(result["content"][0]["type"], "text")
+        self.assertIn("Tool call anomalies", result["content"][0]["text"])
+
     def test_download_fit_json_limits_coros_range_download_to_ten(self):
         payload = {
             "content": [
@@ -797,6 +817,44 @@ class TestCorosSyncProvider(unittest.TestCase):
         self.assertEqual(result["searched"], 1)
         self.assertEqual(result["downloaded"], 1)
         self.assertEqual(result["files"][0]["labelId"], "478587344962748420")
+
+    def test_download_fit_json_tolerates_text_mcp_outputs(self):
+        sport_records_text = (
+            "Sport Records — 2026-06-22 to 2026-07-02 (1 records)\n"
+            "========================\n\n"
+            "1. Outdoor Run — 2026-07-01\n"
+            "   LabelId: 478587344962748420 | SportType: 100\n"
+        )
+        payloads = [
+            "Tool call anomalies detected. High risk of session context pollution.",
+            "Tool call anomalies detected. High risk of session context pollution.",
+            sport_records_text,
+            {
+                "content": [
+                    {
+                        "type": "resource",
+                        "resource": {
+                            "mimeType": "application/octet-stream",
+                            "name": "single.fit",
+                            "blob": "Zml0",
+                        },
+                    }
+                ]
+            },
+        ]
+        with mock.patch.object(coros_sync, "run_coros_mcp_tool", side_effect=payloads):
+            result = coros_sync.download_fit_json(
+                start_date="2026-06-22",
+                end_date="2026-07-02",
+                output_dir=self.base_dir / "tracks",
+                region="cn",
+                limit=10,
+            )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["strategy"], "sport_records_binary")
+        self.assertEqual(result["downloaded"], 1)
+        self.assertEqual(result["searched"], 1)
 
     def test_download_fit_json_reports_failure_when_sport_records_exist_but_no_fit(self):
         sport_records_text = json.dumps(

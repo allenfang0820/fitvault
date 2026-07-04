@@ -577,11 +577,11 @@ def _resolve_openclaw_cli_path(cli_path: str) -> str:
     candidates: list[Path] = []
     if raw.is_dir() or str(path).lower().endswith(("config", "openclaw", "resources\\openclaw", "resources/openclaw")):
         candidates.extend([
-            raw / "bin" / "openclaw.cmd",
             raw / "bin" / "openclaw.exe",
+            raw / "bin" / "openclaw.cmd",
             raw / "bin" / "openclaw",
-            raw / "openclaw.cmd",
             raw / "openclaw.exe",
+            raw / "openclaw.cmd",
             raw / "openclaw",
         ])
     for candidate in candidates:
@@ -652,17 +652,17 @@ def _build_cli_command(config: dict[str, Any], prompt: str) -> list[str]:
 def _default_openclaw_cli_path() -> str:
     candidates = [
         Path.home() / "Library/Application Support/QClaw/openclaw/config/bin/openclaw",
-        Path.home() / "AppData/Local/Programs/QClaw/resources/openclaw/config/bin/openclaw.cmd",
         Path.home() / "AppData/Local/Programs/QClaw/resources/openclaw/config/bin/openclaw.exe",
-        Path("C:/Program Files/QClaw/resources/openclaw/config/bin/openclaw.cmd"),
+        Path.home() / "AppData/Local/Programs/QClaw/resources/openclaw/config/bin/openclaw.cmd",
         Path("C:/Program Files/QClaw/resources/openclaw/config/bin/openclaw.exe"),
-        Path("C:/Program Files (x86)/QClaw/resources/openclaw/config/bin/openclaw.cmd"),
+        Path("C:/Program Files/QClaw/resources/openclaw/config/bin/openclaw.cmd"),
         Path("C:/Program Files (x86)/QClaw/resources/openclaw/config/bin/openclaw.exe"),
+        Path("C:/Program Files (x86)/QClaw/resources/openclaw/config/bin/openclaw.cmd"),
     ]
     for root in _qclaw_versioned_resource_roots():
         candidates.extend([
-            root / "openclaw" / "config" / "bin" / "openclaw.cmd",
             root / "openclaw" / "config" / "bin" / "openclaw.exe",
+            root / "openclaw" / "config" / "bin" / "openclaw.cmd",
         ])
     for candidate in candidates:
         if candidate.is_file():

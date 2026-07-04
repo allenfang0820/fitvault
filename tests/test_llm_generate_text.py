@@ -284,7 +284,7 @@ class TestLLMGenerateText(unittest.TestCase):
     def test_openclaw_cli_path_accepts_qclaw_config_directory_on_windows(self):
         completed = subprocess.CompletedProcess(args=["openclaw"], returncode=0, stdout="ok", stderr="")
         config_dir = Path("C:/Program Files/QClaw/resources/openclaw/config")
-        wrapper = config_dir / "bin" / "openclaw.cmd"
+        wrapper = config_dir / "bin" / "openclaw.exe"
         node = Path("C:/Program Files/QClaw/resources/node/node.exe")
         mjs = Path("C:/Program Files/QClaw/resources/openclaw/node_modules/openclaw/openclaw.mjs")
 
@@ -316,9 +316,37 @@ class TestLLMGenerateText(unittest.TestCase):
         self.assertEqual(env["QCLAW_CLI_NODE_BINARY"], str(node))
         self.assertEqual(env["QCLAW_CLI_OPENCLAW_MJS"], str(mjs))
 
+    def test_openclaw_cli_prefers_exe_over_cmd_on_windows(self):
+        completed = subprocess.CompletedProcess(args=["openclaw"], returncode=0, stdout="ok", stderr="")
+        config_dir = Path("C:/Program Files/QClaw/resources/openclaw/config")
+        cmd_wrapper = config_dir / "bin" / "openclaw.cmd"
+        exe_wrapper = config_dir / "bin" / "openclaw.exe"
+
+        def fake_is_file(path):
+            return str(path) in {str(cmd_wrapper), str(exe_wrapper)}
+
+        def fake_is_dir(path):
+            return str(path) == str(config_dir)
+
+        with mock.patch.object(Path, "is_file", fake_is_file), \
+             mock.patch.object(Path, "is_dir", fake_is_dir), \
+             mock.patch.object(Path, "exists", lambda path: fake_is_file(path) or fake_is_dir(path)), \
+             mock.patch.object(llm_backend.subprocess, "run", return_value=completed) as run_mock:
+            llm_backend.generate_text(
+                config={
+                    "transport": "cli",
+                    "cli_type": "openclaw",
+                    "cli_path": str(config_dir),
+                },
+                messages=[{"role": "user", "content": "hello"}],
+                session_id="sid-1",
+            )
+
+        self.assertEqual(run_mock.call_args.args[0][0], str(exe_wrapper))
+
     def test_openclaw_cli_empty_path_falls_back_to_windows_qclaw_wrapper(self):
         completed = subprocess.CompletedProcess(args=["openclaw"], returncode=0, stdout="ok", stderr="")
-        wrapper = Path("C:/Program Files/QClaw/resources/openclaw/config/bin/openclaw.cmd")
+        wrapper = Path("C:/Program Files/QClaw/resources/openclaw/config/bin/openclaw.exe")
         node = Path("C:/Program Files/QClaw/resources/node/node.exe")
 
         def fake_is_file(path):
@@ -339,7 +367,7 @@ class TestLLMGenerateText(unittest.TestCase):
         completed = subprocess.CompletedProcess(args=["openclaw"], returncode=0, stdout="ok", stderr="")
         qclaw_root = Path("C:/Program Files/QClaw")
         resources = qclaw_root / "v0.2.28.58" / "resources"
-        wrapper = resources / "openclaw" / "config" / "bin" / "openclaw.cmd"
+        wrapper = resources / "openclaw" / "config" / "bin" / "openclaw.exe"
         node = resources / "node" / "node.exe"
         mjs = resources / "openclaw" / "openclaw.mjs"
 
