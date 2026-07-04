@@ -116,6 +116,8 @@ class TestHelpSingleSource(unittest.TestCase):
         self.assertIn("_include_legacy_console_helper", self.spec)
         self.assertIn("name='FitVaultCLI'", self.spec)
         self.assertIn("console=True", self.spec)
+        self.assertIn("does not require FitVaultCLI.exe for normal Windows", self.spec)
+        self.assertIn("Do not enable this for standard packaging", self.spec)
         self.assertIn('platform.system().lower() == "windows" and _include_legacy_console_helper', self.spec)
         self.assertNotIn('platform.system().lower() == "windows":\n    cli_exe = EXE', self.spec)
 

@@ -68,8 +68,10 @@ def _node_runtime_datas():
 
 _datas += _node_runtime_datas()
 
-# Legacy only: the unified Account Connection Center performs Garmin login
-# inside the app and no longer requires a visible Windows console helper.
+# Legacy/debug only: the unified Account Connection Center performs Garmin
+# login inside the app and does not require FitVaultCLI.exe for normal Windows
+# releases. Do not enable this for standard packaging unless explicitly testing
+# the old console flow.
 _include_legacy_console_helper = (
     os.environ.get("FITVAULT_INCLUDE_LEGACY_CONSOLE_HELPER", "").strip().lower()
     in {"1", "true", "yes", "on"}

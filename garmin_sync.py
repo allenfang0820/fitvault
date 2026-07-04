@@ -15,7 +15,6 @@ import re
 import shlex
 import subprocess
 import sys
-import tempfile
 import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -375,70 +374,8 @@ def login_command(*, region: str | None = None, base_dir: Path | str | None = No
     resolved_region = resolve_garmin_region(region)
     paths = get_garmin_skill_paths(base_dir)
     if getattr(sys, "frozen", False):
-        executable = Path(sys.executable)
-        if sys.platform.startswith("win"):
-            candidates = [executable.with_name("FitVaultCLI.exe")]
-            meipass = Path(str(getattr(sys, "_MEIPASS", "")))
-            if str(meipass):
-                candidates.extend([
-                    meipass / "FitVaultCLI.exe",
-                    meipass.parent / "FitVaultCLI.exe",
-                ])
-            for cli_exe in candidates:
-                if cli_exe.is_file():
-                    return [str(cli_exe), "--garmin-login", "--region", resolved_region]
-            raise GarminSkillNotFoundError(
-                "未找到 Windows Garmin 授权辅助程序: "
-                + "; ".join(str(path) for path in candidates)
-            )
         return [sys.executable, "--garmin-login", "--region", resolved_region]
     return [sys.executable, str(paths.login), "--region", resolved_region]
-
-
-def _windows_command_line(command: list[str]) -> str:
-    return subprocess.list2cmdline([str(part) for part in command])
-
-
-def _windows_command_cwd(command: list[str], fallback: Path) -> str:
-    if command:
-        first = Path(command[0])
-        if first.name.lower() in {"python.exe", "pythonw.exe", "py.exe"} and len(command) > 1:
-            return str(Path(command[1]).resolve().parent)
-        if first.is_file() or first.suffix.lower() in {".exe", ".cmd", ".bat"}:
-            return str(first.resolve().parent)
-    return str(fallback)
-
-
-def _windows_console_launcher(command: list[str], cwd: str, title: str, done_message: str) -> list[str]:
-    command_line = _windows_command_line(command)
-    if command and Path(str(command[0])).suffix.lower() in {".cmd", ".bat"}:
-        command_line = "call " + command_line
-    handle = tempfile.NamedTemporaryFile(
-        "w",
-        encoding="utf-8",
-        suffix=".cmd",
-        prefix="fitvault-garmin-login-",
-        delete=False,
-    )
-    with handle:
-        handle.write("@echo off\n")
-        handle.write("chcp 65001 >nul\n")
-        handle.write(f"cd /d {subprocess.list2cmdline([cwd])}\n")
-        handle.write(f"{command_line}\n")
-        handle.write("echo.\n")
-        handle.write(f"echo {done_message}\n")
-        handle.write("pause\n")
-    return [
-        "cmd.exe",
-        "/d",
-        "/c",
-        "start",
-        title,
-        "cmd.exe",
-        "/d",
-        "/k",
-        handle.name,
-    ]
 
 
 def default_tokenstore(
@@ -606,38 +543,14 @@ def start_login(
     paths = get_garmin_skill_paths(base_dir)
 
     if sys.platform.startswith("win"):
-        cwd = _windows_command_cwd(command, paths.login.resolve().parent)
-        launcher = _windows_console_launcher(
-            command,
-            cwd,
-            "FitVault Garmin Login",
-            "Garmin 授权流程结束后，请回到脉图重新点击同步活动。",
-        )
-        try:
-            subprocess.Popen(
-                launcher,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                cwd=cwd,
-            )
-        except OSError as exc:
-            return GarminLoginResult(
-                ok=False,
-                region=resolved_region,
-                status="launch_failed",
-                command=command,
-                stdout="",
-                stderr="",
-                message=f"Garmin 登录终端启动失败: {exc}",
-            )
         return GarminLoginResult(
-            ok=True,
+            ok=False,
             region=resolved_region,
-            status="launched",
+            status="unsupported_legacy_login",
             command=command,
             stdout="",
             stderr="",
-            message=f"已打开命令行窗口，请在窗口中完成 Garmin 登录授权（{resolved_region}）。",
+            message="Windows 版 Garmin 授权请使用账号连接中心；旧登录入口已停用以避免打开命令行窗口。",
         )
 
     try:

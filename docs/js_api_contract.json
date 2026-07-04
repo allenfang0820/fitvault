@@ -935,7 +935,7 @@
       ],
       "returns": "{ ok, code, msg, data: {region, status, message, command, stdout, stderr}, traceId }",
       "high_risk": false,
-      "description": "legacy 兼容 API：按当前 Garmin 账号区域显式启动 Garmin skill 登录脚本。账号连接中心不再使用此接口作为设置页主授权入口；新入口必须使用 start_account_connection/continue_account_connection，避免暴露 Terminal/cmd/FitVaultCLI。"
+      "description": "legacy 兼容 API：非 Windows 环境按当前 Garmin 账号区域显式启动 Garmin skill 登录脚本；Windows 环境返回 unsupported_legacy_login 并引导使用账号连接中心，不再启动 cmd/FitVaultCLI。账号连接中心不使用此接口作为设置页主授权入口；新入口必须使用 start_account_connection/continue_account_connection。"
     },
     {
       "name": "start_coros_login",
@@ -952,7 +952,7 @@
       ],
       "returns": "{ ok, code, msg, data: {region, status, message, command, stdout, stderr}, traceId }",
       "high_risk": false,
-      "description": "legacy 兼容 API：按当前 COROS 账号区域显式启动 coros-stats MCP 授权脚本。账号连接中心不再使用此接口作为设置页主授权入口；新入口必须使用 start_account_connection/continue_account_connection，通过后台流程和系统浏览器 OAuth 完成授权，避免暴露 Terminal/cmd。"
+      "description": "legacy 兼容 API：非 Windows 环境按当前 COROS 账号区域显式启动 coros-stats MCP 授权脚本；Windows 环境返回 unsupported_legacy_login 并引导使用账号连接中心，不再启动 cmd。账号连接中心不使用此接口作为设置页主授权入口；新入口必须使用 start_account_connection/continue_account_connection，通过后台流程和系统浏览器 OAuth 完成授权。"
     },
     {
       "name": "set_ai_notified_hash",

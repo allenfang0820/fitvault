@@ -77,7 +77,8 @@ class TestAccountConnectionContract(unittest.TestCase):
         for name in ("start_garmin_login", "start_coros_login"):
             legacy = self.methods[name]
             self.assertIn("legacy 兼容 API", legacy["description"])
-            self.assertIn("账号连接中心不再使用此接口作为设置页主授权入口", legacy["description"])
+            self.assertIn("账号连接中心不使用此接口作为设置页主授权入口", legacy["description"])
+            self.assertIn("Windows 环境返回 unsupported_legacy_login", legacy["description"])
             self.assertIn("start_account_connection/continue_account_connection", legacy["description"])
 
 

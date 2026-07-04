@@ -282,7 +282,7 @@ class TestGarminSyncProvider(unittest.TestCase):
 
         self.assertEqual(command, [executable, "--garmin-login", "--region", "cn"])
 
-    def test_login_command_uses_console_helper_when_windows_frozen(self):
+    def test_login_command_windows_frozen_uses_current_executable_without_console_helper(self):
         executable = self.base_dir / "FitVault.exe"
         cli_exe = self.base_dir / "FitVaultCLI.exe"
         executable.write_text("", encoding="utf-8")
@@ -292,20 +292,19 @@ class TestGarminSyncProvider(unittest.TestCase):
              mock.patch.object(garmin_sync.sys, "executable", str(executable)):
             command = garmin_sync.login_command(base_dir=self.base_dir, region="cn")
 
-        self.assertEqual(command, [str(cli_exe), "--garmin-login", "--region", "cn"])
+        self.assertEqual(command, [str(executable), "--garmin-login", "--region", "cn"])
 
-    def test_login_command_windows_frozen_requires_console_helper(self):
+    def test_login_command_windows_frozen_does_not_require_console_helper(self):
         executable = self.base_dir / "FitVault.exe"
         executable.write_text("", encoding="utf-8")
         with mock.patch.object(garmin_sync.sys, "platform", "win32"), \
              mock.patch.object(garmin_sync.sys, "frozen", True, create=True), \
              mock.patch.object(garmin_sync.sys, "executable", str(executable)):
-            with self.assertRaises(garmin_sync.GarminSkillNotFoundError) as ctx:
-                garmin_sync.login_command(base_dir=self.base_dir, region="cn")
+            command = garmin_sync.login_command(base_dir=self.base_dir, region="cn")
 
-        self.assertIn("FitVaultCLI.exe", str(ctx.exception))
+        self.assertEqual(command, [str(executable), "--garmin-login", "--region", "cn"])
 
-    def test_login_command_windows_frozen_finds_meipass_console_helper(self):
+    def test_login_command_windows_frozen_ignores_meipass_console_helper(self):
         executable = self.base_dir / "FitVault.exe"
         meipass = self.base_dir / "_MEI12345"
         cli_exe = meipass / "FitVaultCLI.exe"
@@ -318,7 +317,7 @@ class TestGarminSyncProvider(unittest.TestCase):
              mock.patch.object(garmin_sync.sys, "executable", str(executable)):
             command = garmin_sync.login_command(base_dir=self.base_dir, region="cn")
 
-        self.assertEqual(command, [str(cli_exe), "--garmin-login", "--region", "cn"])
+        self.assertEqual(command, [str(executable), "--garmin-login", "--region", "cn"])
 
     def test_default_tokenstore_uses_region_suffix(self):
         workspace = self.base_dir / "workspace"
@@ -500,25 +499,19 @@ class TestGarminSyncProvider(unittest.TestCase):
         self.assertNotIn("login.py", script)
         run_mock.assert_not_called()
 
-    def test_start_login_on_windows_opens_cmd_without_blocking(self):
+    def test_start_login_on_windows_legacy_entry_is_disabled_without_console(self):
         with mock.patch.object(garmin_sync.sys, "platform", "win32"), \
              mock.patch.object(garmin_sync.subprocess, "Popen") as popen_mock, \
              mock.patch.object(garmin_sync.subprocess, "run") as run_mock:
             result = garmin_sync.start_login(base_dir=self.base_dir, region="global")
 
-        self.assertTrue(result.ok)
-        self.assertEqual(result.status, "launched")
-        self.assertIn("命令行窗口", result.message)
-        popen_mock.assert_called_once()
+        self.assertFalse(result.ok)
+        self.assertEqual(result.status, "unsupported_legacy_login")
+        self.assertIn("账号连接中心", result.message)
+        popen_mock.assert_not_called()
         run_mock.assert_not_called()
-        launcher = popen_mock.call_args.args[0]
-        self.assertEqual(launcher[:4], ["cmd.exe", "/d", "/c", "start"])
-        self.assertIn("cmd.exe", launcher)
-        launcher_script = Path(launcher[-1]).read_text(encoding="utf-8")
-        self.assertIn("pause", launcher_script)
-        self.assertIn("login.py", launcher_script)
 
-    def test_start_login_on_windows_frozen_uses_internal_cli_in_cmd(self):
+    def test_start_login_on_windows_frozen_legacy_entry_does_not_use_internal_cli(self):
         executable = str(self.base_dir / "FitVault.exe")
         cli_exe = str(self.base_dir / "FitVaultCLI.exe")
         Path(executable).write_text("", encoding="utf-8")
@@ -529,12 +522,10 @@ class TestGarminSyncProvider(unittest.TestCase):
              mock.patch.object(garmin_sync.subprocess, "Popen") as popen_mock:
             result = garmin_sync.start_login(base_dir=self.base_dir, region="cn")
 
-        self.assertTrue(result.ok)
-        self.assertEqual(result.command, [cli_exe, "--garmin-login", "--region", "cn"])
-        launcher_script = Path(popen_mock.call_args.args[0][-1]).read_text(encoding="utf-8")
-        self.assertIn("FitVaultCLI.exe", launcher_script)
-        self.assertIn("--garmin-login", launcher_script)
-        self.assertNotIn("login.py", launcher_script)
+        self.assertFalse(result.ok)
+        self.assertEqual(result.status, "unsupported_legacy_login")
+        self.assertEqual(result.command, [executable, "--garmin-login", "--region", "cn"])
+        popen_mock.assert_not_called()
 
     def test_start_login_nonzero_returns_failed(self):
         with mock.patch.object(garmin_sync.sys, "platform", "linux"), \

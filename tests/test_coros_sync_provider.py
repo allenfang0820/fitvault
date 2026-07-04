@@ -300,6 +300,7 @@ class TestCorosSyncProvider(unittest.TestCase):
 
     def test_finish_coros_oauth_login_waits_when_cli_poll_times_out(self):
         with mock.patch.object(coros_sync, "discover_coros_mcp_binary", return_value="/tmp/coros-mcp"), \
+             mock.patch.dict(os.environ, {"COROS_MCP_TOKEN_ROOT": str(self.base_dir / "tokens")}), \
              mock.patch.object(coros_sync.subprocess, "run", side_effect=subprocess.TimeoutExpired(["coros-mcp"], 1)):
             result = coros_sync.finish_coros_oauth_login(region="cn", timeout=1)
 
@@ -524,23 +525,17 @@ class TestCorosSyncProvider(unittest.TestCase):
         popen_mock.assert_called_once()
         run_mock.assert_not_called()
 
-    def test_start_login_on_windows_opens_cmd_without_blocking(self):
+    def test_start_login_on_windows_legacy_entry_is_disabled_without_console(self):
         with mock.patch.object(coros_sync.sys, "platform", "win32"), \
              mock.patch.object(coros_sync.subprocess, "Popen") as popen_mock, \
              mock.patch.object(coros_sync.subprocess, "run") as run_mock:
             result = coros_sync.start_login(base_dir=self.base_dir, region="us")
 
-        self.assertTrue(result.ok)
-        self.assertEqual(result.status, "launched")
-        self.assertIn("命令行", result.message)
+        self.assertFalse(result.ok)
+        self.assertEqual(result.status, "unsupported_legacy_login")
+        self.assertIn("账号连接中心", result.message)
         self.assertEqual(Path(result.command[0]).name, "install_coros_mcp.cmd")
-        launcher = popen_mock.call_args.args[0]
-        self.assertEqual(launcher[:4], ["cmd.exe", "/d", "/c", "start"])
-        self.assertIn("cmd.exe", launcher)
-        launcher_script = Path(launcher[-1]).read_text(encoding="utf-8")
-        self.assertIn("pause", launcher_script)
-        self.assertIn("install_coros_mcp.cmd", launcher_script)
-        self.assertIn("call ", launcher_script)
+        popen_mock.assert_not_called()
         run_mock.assert_not_called()
 
     def test_start_login_nonzero_returns_failed(self):
