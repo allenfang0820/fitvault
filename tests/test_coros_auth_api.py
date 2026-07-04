@@ -1,10 +1,13 @@
 import json
+import os
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
 import coros_sync
 import llm_backend
+import profile_backend
 from main import Api
 
 
@@ -13,6 +16,24 @@ CONTRACT_PATH = ROOT / "docs" / "js_api_contract.json"
 
 
 class TestCorosAuthApi(unittest.TestCase):
+    def _with_temp_sync_state(self):
+        temp_dir_obj = tempfile.TemporaryDirectory()
+        temp_dir = Path(temp_dir_obj.name)
+        original = (
+            profile_backend.SYNC_STATE_DIR,
+            profile_backend.SYNC_STATE_PATH,
+            profile_backend.PROFILE_CACHE_PATH,
+        )
+        profile_backend.SYNC_STATE_DIR = str(temp_dir / "sync_state")
+        profile_backend.SYNC_STATE_PATH = os.path.join(profile_backend.SYNC_STATE_DIR, "sync_state.json")
+        profile_backend.PROFILE_CACHE_PATH = os.path.join(profile_backend.SYNC_STATE_DIR, "user_profile_cache.json")
+        Path(profile_backend.SYNC_STATE_DIR).mkdir(parents=True, exist_ok=True)
+        return temp_dir_obj, original
+
+    def _restore_sync_state(self, temp_dir_obj, original):
+        profile_backend.SYNC_STATE_DIR, profile_backend.SYNC_STATE_PATH, profile_backend.PROFILE_CACHE_PATH = original
+        temp_dir_obj.cleanup()
+
     def test_set_coros_region_persists_without_dropping_garmin_region(self):
         current = {
             "provider": "local_mcp",
@@ -120,6 +141,38 @@ class TestCorosAuthApi(unittest.TestCase):
         self.assertEqual(res["data"]["keepalive_mcp_url"], "https://mcpcn.coros.com/mcp")
         self.assertEqual(res["data"]["diagnostics"][0]["name"], "keepalive_config")
 
+    def test_check_coros_auth_status_success_clears_blocked_state(self):
+        temp_dir_obj, original = self._with_temp_sync_state()
+        try:
+            profile_backend.write_sync_state({
+                "last_attempt_status": "blocked",
+                "last_error": "missing runtime",
+                "connection_status": "disconnected",
+            })
+            status = coros_sync.CorosAuthStatus(
+                ok=True,
+                region="cn",
+                status="authorized",
+                token_path="/tmp/coros/cn/token.json",
+                message="ok",
+                login_command=[],
+                mcp_authorized=True,
+                node_available=True,
+            )
+            with mock.patch.object(coros_sync, "check_auth_status", return_value=status):
+                res = Api().check_coros_auth_status("cn")
+
+            self.assertTrue(res["ok"])
+            state = profile_backend.read_sync_state()
+            self.assertEqual(state.get("last_attempt_status"), "idle")
+            self.assertEqual(state.get("connection_status"), "connected")
+            self.assertIsNone(state.get("last_error"))
+            self.assertEqual(state.get("last_profile_source_platform"), "coros")
+            self.assertNotIn("last_sync_date", state)
+            self.assertNotIn("synced_today", state)
+        finally:
+            self._restore_sync_state(temp_dir_obj, original)
+
     def test_check_coros_auth_status_wraps_provider_failure(self):
         status = coros_sync.CorosAuthStatus(
             ok=False,
@@ -142,6 +195,35 @@ class TestCorosAuthApi(unittest.TestCase):
         self.assertFalse(res["data"]["authorized"])
         self.assertFalse(res["data"]["mcp_authorized"])
         self.assertEqual(res["data"]["diagnostics"][0]["name"], "mcp_token")
+
+    def test_check_coros_auth_status_failure_preserves_blocked_state(self):
+        temp_dir_obj, original = self._with_temp_sync_state()
+        try:
+            profile_backend.write_sync_state({
+                "last_attempt_status": "blocked",
+                "last_error": "missing runtime",
+                "connection_status": "disconnected",
+            })
+            status = coros_sync.CorosAuthStatus(
+                ok=False,
+                region="cn",
+                status="missing_token",
+                token_path="/tmp/coros/cn/token.json",
+                message="missing",
+                login_command=[],
+                mcp_authorized=False,
+                node_available=True,
+            )
+            with mock.patch.object(coros_sync, "check_auth_status", return_value=status):
+                res = Api().check_coros_auth_status("cn")
+
+            self.assertFalse(res["ok"])
+            state = profile_backend.read_sync_state()
+            self.assertEqual(state.get("last_attempt_status"), "blocked")
+            self.assertEqual(state.get("last_error"), "missing runtime")
+            self.assertEqual(state.get("connection_status"), "disconnected")
+        finally:
+            self._restore_sync_state(temp_dir_obj, original)
 
     def test_start_coros_login_wraps_provider_success(self):
         result = coros_sync.CorosLoginResult(

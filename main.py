@@ -8344,6 +8344,7 @@ class Api:
                 "authorized": bool(status.ok),
             }
             if status.ok:
+                profile_backend.mark_profile_sync_auth_available("garmin")
                 return _api_success(payload, msg=status.message)
             return _api_error(API_CODE_EXTERNAL_SERVICE, status.message, payload)
         except Exception:
@@ -8402,6 +8403,7 @@ class Api:
                 "diagnostics": status.diagnostics or [],
             }
             if status.ok:
+                profile_backend.mark_profile_sync_auth_available("coros")
                 return _api_success(payload, msg=status.message)
             return _api_error(API_CODE_EXTERNAL_SERVICE, status.message, payload)
         except Exception:

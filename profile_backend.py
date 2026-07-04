@@ -707,6 +707,21 @@ def mark_profile_sync_auth_required(message: str) -> None:
     write_sync_state(state)
 
 
+def mark_profile_sync_auth_available(platform: str) -> None:
+    state = read_sync_state()
+    status = str(state.get("last_attempt_status") or "")
+    if status not in {"auth_required", "blocked"}:
+        return
+    state.update({
+        "connection_status": "connected",
+        "last_attempt_status": "idle",
+        "last_error": None,
+        "active_job_id": None,
+        "last_profile_source_platform": str(platform or "").strip().lower() or state.get("last_profile_source_platform"),
+    })
+    write_sync_state(state)
+
+
 def mark_profile_sync_failed(message: str) -> None:
     state = read_sync_state()
     state.update({
