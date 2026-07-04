@@ -180,23 +180,42 @@ class TestCorosSyncProvider(unittest.TestCase):
             self.assertEqual(coros_sync.discover_node_binary(home=self.base_dir), str(node_path))
 
     def test_build_coros_runtime_env_injects_qclaw_runtime(self):
-        with mock.patch.object(coros_sync, "discover_node_binary", return_value="/tmp/node/bin/node"), \
+        prefix = self.base_dir / "node-global"
+        with mock.patch.dict(os.environ, {"MAITU_NODE_GLOBAL_PREFIX": str(prefix)}), \
+             mock.patch.object(coros_sync, "discover_node_binary", return_value="/tmp/node/bin/node"), \
              mock.patch.object(coros_sync, "discover_openclaw_mjs", return_value="/tmp/openclaw.mjs"):
             env = coros_sync.build_coros_runtime_env({"PATH": "/usr/bin"})
 
         self.assertEqual(env["QCLAW_CLI_NODE_BINARY"], "/tmp/node/bin/node")
         self.assertEqual(env["QCLAW_CLI_OPENCLAW_MJS"], "/tmp/openclaw.mjs")
         self.assertEqual(env["MAITU_BUNDLED_NODE_DIR"], "/tmp/node")
-        self.assertTrue(env["PATH"].startswith("/tmp/node/bin:"))
+        self.assertEqual(env["NPM_CONFIG_PREFIX"], str(prefix))
+        self.assertTrue(env["PATH"].startswith(f"/tmp/node/bin:{prefix / 'bin'}:"))
 
     def test_build_coros_runtime_env_handles_windows_node_root(self):
-        with mock.patch.object(coros_sync, "discover_node_binary", return_value="C:\\FitVault\\node\\node.exe"), \
+        with mock.patch.dict(os.environ, {"MAITU_NODE_GLOBAL_PREFIX": "C:\\Users\\runner\\.maitu\\node-global"}), \
+             mock.patch.object(coros_sync, "discover_node_binary", return_value="C:\\FitVault\\node\\node.exe"), \
              mock.patch.object(coros_sync, "discover_openclaw_mjs", return_value=""):
             env = coros_sync.build_coros_runtime_env({"PATH": "C:\\Windows"})
 
         self.assertEqual(env["QCLAW_CLI_NODE_BINARY"], "C:\\FitVault\\node\\node.exe")
         self.assertEqual(env["MAITU_BUNDLED_NODE_DIR"], "C:\\FitVault\\node")
         self.assertTrue(env["PATH"].startswith("C:\\FitVault\\node"))
+        self.assertIn("C:\\Users\\runner\\.maitu\\node-global", env["PATH"])
+
+    def test_discover_coros_mcp_binary_checks_node_global_prefix(self):
+        prefix = self.base_dir / "node-global"
+        bin_dir = prefix / "bin"
+        bin_dir.mkdir(parents=True)
+        cli = bin_dir / "coros-mcp"
+        cli.write_text("#!/usr/bin/env node\n", encoding="utf-8")
+        cli.chmod(0o755)
+
+        with mock.patch.dict(os.environ, {"MAITU_NODE_GLOBAL_PREFIX": str(prefix)}), \
+             mock.patch.object(coros_sync, "discover_node_binary", return_value="/tmp/node/bin/node"):
+            found = coros_sync.discover_coros_mcp_binary({"PATH": "/usr/bin"})
+
+        self.assertEqual(found, str(cli))
 
     def test_coros_issuer_for_region(self):
         self.assertEqual(coros_sync.coros_issuer_for_region("cn"), "https://mcpcn.coros.com")
@@ -226,7 +245,9 @@ class TestCorosSyncProvider(unittest.TestCase):
 
     def test_prepare_coros_connection_runtime_installs_coros_mcp_when_missing(self):
         calls = ["", "/tmp/node/bin/coros-mcp"]
-        with mock.patch.object(coros_sync, "discover_node_binary", return_value="/tmp/node/bin/node"), \
+        prefix = self.base_dir / "node-global"
+        with mock.patch.dict(os.environ, {"MAITU_NODE_GLOBAL_PREFIX": str(prefix)}), \
+             mock.patch.object(coros_sync, "discover_node_binary", return_value="/tmp/node/bin/node"), \
              mock.patch.object(coros_sync, "discover_npm_binary", return_value="/tmp/node/bin/npm"), \
              mock.patch.object(coros_sync, "discover_coros_mcp_binary", side_effect=lambda env=None: calls.pop(0)), \
              mock.patch.object(coros_sync.subprocess, "run", return_value=self._completed(stdout="ok")) as run_mock:
@@ -234,9 +255,12 @@ class TestCorosSyncProvider(unittest.TestCase):
 
         self.assertTrue(result.ok)
         self.assertEqual(result.coros_mcp_path, "/tmp/node/bin/coros-mcp")
+        self.assertTrue((prefix / "bin").is_dir())
         command = run_mock.call_args.args[0]
         self.assertEqual(command, ["/tmp/node/bin/npm", "install", "-g", "coros-mcp"])
         self.assertFalse(run_mock.call_args.kwargs["shell"])
+        self.assertEqual(run_mock.call_args.kwargs["env"]["NPM_CONFIG_PREFIX"], str(prefix))
+        self.assertIn(str(prefix / "bin"), run_mock.call_args.kwargs["env"]["PATH"])
 
     def test_start_coros_oauth_login_creates_browser_session_without_terminal_wrapper(self):
         with mock.patch.object(coros_sync, "discover_coros_mcp_binary", return_value="/tmp/coros-mcp"), \

@@ -193,6 +193,15 @@ def default_mcp_pending_login_path(region: str | None = None, token_root: Path |
     return default_mcp_token_path(region, token_root).with_name("pending-login.json")
 
 
+def default_node_global_prefix() -> Path:
+    return Path(os.environ.get("MAITU_NODE_GLOBAL_PREFIX", str(Path.home() / ".maitu" / "node-global"))).expanduser()
+
+
+def default_node_global_bin_dir(prefix: Path | str | None = None) -> Path:
+    root = Path(prefix).expanduser() if prefix is not None else default_node_global_prefix()
+    return root if sys.platform.startswith("win") else root / "bin"
+
+
 def open_url_in_system_browser(url: str) -> bool:
     safe_url = str(url or "").strip()
     if not safe_url:
@@ -289,6 +298,8 @@ def discover_openclaw_mjs(home: Path | str | None = None) -> str:
 
 def build_coros_runtime_env(env: dict[str, str] | None = None) -> dict[str, str]:
     runtime_env = dict(env or os.environ)
+    node_global_prefix = Path(str(runtime_env.get("NPM_CONFIG_PREFIX") or default_node_global_prefix())).expanduser()
+    node_global_bin = default_node_global_bin_dir(node_global_prefix)
     node_path = discover_node_binary()
     if node_path:
         node_text = str(Path(node_path).expanduser())
@@ -300,9 +311,12 @@ def build_coros_runtime_env(env: dict[str, str] | None = None) -> dict[str, str]
             node_file = Path(node_text)
             node_dir = str(node_file.parent)
             node_root = str(node_file.parent if node_file.name.lower() == "node.exe" else node_file.parent.parent)
-        runtime_env["PATH"] = node_dir + os.pathsep + runtime_env.get("PATH", "")
+        runtime_env["PATH"] = node_dir + os.pathsep + str(node_global_bin) + os.pathsep + runtime_env.get("PATH", "")
         runtime_env.setdefault("QCLAW_CLI_NODE_BINARY", node_path)
         runtime_env.setdefault("MAITU_BUNDLED_NODE_DIR", node_root)
+    else:
+        runtime_env["PATH"] = str(node_global_bin) + os.pathsep + runtime_env.get("PATH", "")
+    runtime_env.setdefault("NPM_CONFIG_PREFIX", str(node_global_prefix))
     openclaw_mjs = discover_openclaw_mjs()
     if openclaw_mjs:
         runtime_env.setdefault("QCLAW_CLI_OPENCLAW_MJS", openclaw_mjs)
@@ -330,6 +344,9 @@ def discover_coros_mcp_binary(env: dict[str, str] | None = None) -> str:
         found = shutil.which(name, path=runtime_env.get("PATH", ""))
         if found:
             return found
+        candidate = default_node_global_bin_dir(runtime_env.get("NPM_CONFIG_PREFIX")) / name
+        if _is_executable_file(candidate):
+            return str(candidate)
     return ""
 
 
@@ -354,9 +371,9 @@ def prepare_coros_connection_runtime(
         )
     diagnostics.append(_diag("node", "ok", f"Node.js 可用: {node_path}"))
     runtime_env = build_coros_runtime_env(env)
-    runtime_env.setdefault("NPM_CONFIG_PREFIX", str(Path.home() / ".maitu" / "node-global"))
     try:
         Path(runtime_env["NPM_CONFIG_PREFIX"]).expanduser().mkdir(parents=True, exist_ok=True)
+        default_node_global_bin_dir(runtime_env["NPM_CONFIG_PREFIX"]).mkdir(parents=True, exist_ok=True)
     except Exception:
         pass
     npm_path = discover_npm_binary(runtime_env)
