@@ -176,6 +176,24 @@ def _redact_sensitive_text(value: str, *secrets: str) -> str:
     return text
 
 
+def _garmin_app_login_failure_message(region: str, detail: str) -> str:
+    clean = _redact_sensitive_text(_error_snippet(detail))
+    lower = clean.lower()
+    label = "国际区" if region == "global" else "中国区"
+    if "401" in lower or "unauthorized" in lower:
+        return (
+            f"Garmin {label} 授权失败：Garmin SSO 拒绝了本次登录。"
+            "请确认账号区域、账号密码是否匹配；如果刚刚多次重试，请稍后再试。"
+        )
+    if "429" in lower or "too many requests" in lower or "rate limit" in lower:
+        return "Garmin 登录请求过于频繁。请停止重试，等待一段时间后再连接。"
+    if clean:
+        clean = re.sub(r"请先运行\s+login\.py[^。；;]*[。；;]?", "", clean)
+        clean = re.sub(r"原始错误：.*", "", clean).strip()
+        clean = clean.replace("Garmin 认证失败", "Garmin 授权失败")
+    return clean or "Garmin 授权失败，请检查账号、密码、区域或稍后重试。"
+
+
 def _looks_like_auth_required(text: str) -> bool:
     clean = str(text or "").lower()
     if not clean:
@@ -728,7 +746,7 @@ def login_app(
                 token_path=str(default_tokenstore(resolved_region)),
                 message="Garmin 账号需要 MFA 验证码。",
             )
-        safe_detail = _redact_sensitive_text(detail)
+        safe_detail = _garmin_app_login_failure_message(resolved_region, detail)
         return GarminAppLoginResult(
             ok=False,
             region=resolved_region,

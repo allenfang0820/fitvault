@@ -247,6 +247,21 @@ class TestAccountConnectionApi(unittest.TestCase):
         self.assertNotIn("secret-password", serialized)
         self.assertNotIn("abc123", serialized)
 
+    def test_garmin_app_login_401_message_is_actionable_without_cli_hint(self):
+        message = garmin_sync._garmin_app_login_failure_message(
+            "cn",
+            "Garmin 认证失败（region=cn, tokenstore=/tmp/garmin_auth_cn）。"
+            "请先运行 login.py 登录对应区域账号；国际区账号使用 --region global。"
+            " 原始错误：Error in request: 401 Client Error: Unauthorized for url: "
+            "https://sso.garmin.cn/sso/signin?id=gauth-widget&embedWidget=true",
+        )
+
+        self.assertIn("Garmin 中国区 授权失败", message)
+        self.assertIn("账号区域", message)
+        self.assertNotIn("login.py", message)
+        self.assertNotIn("https://", message)
+        self.assertNotIn("tokenstore", message)
+
     def test_start_and_continue_coros_session_then_expire(self):
         api = Api()
         with mock.patch.object(llm_backend, "load_llm_config", return_value={"coros_region": "cn"}), \
