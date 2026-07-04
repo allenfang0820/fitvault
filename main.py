@@ -7928,6 +7928,18 @@ class Api:
     REPORT_ACTIVITY_ADVICE = "__REPORT_ACTIVITY_ADVICE__"
     RADAR_INSIGHT = "__RADAR_INSIGHT__"
     FATIGUE_REVIEW_INSIGHT = "__FATIGUE_REVIEW_INSIGHT__"
+    ACCOUNT_CONNECTION_SESSION_TTL_SEC = 600
+    ACCOUNT_CONNECTION_STATES = {
+        "idle",
+        "checking",
+        "needs_credentials",
+        "needs_mfa",
+        "opening_browser",
+        "waiting_callback",
+        "authorized",
+        "failed",
+        "expired",
+    }
 
     def __init__(self) -> None:
         self._track_points: list | None = None
@@ -7949,6 +7961,8 @@ class Api:
         self._region_enrichment_timer: threading.Timer | None = None
         self._region_enrichment_active = False
         self._window_shown = False
+        self._account_connection_sessions: dict[str, dict[str, Any]] = {}
+        self._account_connection_lock = threading.Lock()
 
     def on_loaded(self, *args) -> dict:
         """页面加载完成后显示窗口，解决原生窗口先白屏的问题。"""
@@ -8321,6 +8335,597 @@ class Api:
         except Exception:
             logger.exception("set_coros_region failed")
             return _api_error(API_CODE_INTERNAL, "写入 COROS 区域失败")
+
+    @staticmethod
+    def _account_region_options(provider: str) -> list[dict[str, str]]:
+        if provider == "garmin":
+            return [
+                {"value": "cn", "label": "中国区"},
+                {"value": "global", "label": "国际区"},
+            ]
+        if provider == "coros":
+            return [
+                {"value": "cn", "label": "中国区"},
+                {"value": "us", "label": "北美区"},
+                {"value": "eu", "label": "欧洲区"},
+            ]
+        return []
+
+    @staticmethod
+    def _account_brand(provider: str) -> str:
+        return "Garmin" if provider == "garmin" else "COROS"
+
+    @staticmethod
+    def _account_label(provider: str) -> str:
+        return "Garmin" if provider == "garmin" else "高驰 COROS"
+
+    @staticmethod
+    def _account_sanitize_text(value: Any) -> str:
+        text = str(value or "")
+        if not text:
+            return ""
+        text = re.sub(
+            r"(?i)(password|passwd|mfa|otp|token|access_token|refresh_token|authorization|api[_-]?key|secret)(\s*[:=]\s*)([^\s,;]+)",
+            r"\1\2***",
+            text,
+        )
+        text = re.sub(r"(?i)(bearer\s+)[A-Za-z0-9._~+/=-]+", r"\1***", text)
+        return text
+
+    @classmethod
+    def _account_sanitize_value(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            return cls._account_sanitize_text(value)
+        if isinstance(value, list):
+            return [cls._account_sanitize_value(item) for item in value]
+        if isinstance(value, dict):
+            clean: dict[str, Any] = {}
+            for key, item in value.items():
+                key_text = str(key)
+                if key_text.lower() in {"password", "passwd", "mfa", "mfa_code", "otp", "token", "access_token", "refresh_token", "authorization"}:
+                    continue
+                clean[key_text] = cls._account_sanitize_value(item)
+            return clean
+        return value
+
+    @classmethod
+    def _account_success(cls, data: dict[str, Any], msg: str = "ok") -> dict:
+        clean = cls._account_sanitize_value(data)
+        clean_msg = cls._account_sanitize_text(msg)
+        return _api_success(clean if isinstance(clean, dict) else {}, msg=clean_msg or "ok")
+
+    @classmethod
+    def _account_error(cls, code: int, msg: str, data: dict[str, Any] | None = None) -> dict:
+        clean = cls._account_sanitize_value(data or {})
+        clean_msg = cls._account_sanitize_text(msg)
+        return _api_error(code, clean_msg, clean if isinstance(clean, dict) else {})
+
+    @staticmethod
+    def _account_payload(payload: Any) -> dict[str, Any]:
+        if payload is None or payload == "":
+            return {}
+        if isinstance(payload, dict):
+            return dict(payload)
+        if isinstance(payload, str):
+            try:
+                parsed = json.loads(payload)
+            except json.JSONDecodeError:
+                return {}
+            return dict(parsed) if isinstance(parsed, dict) else {}
+        return {}
+
+    @staticmethod
+    def _normalize_account_provider(provider: str) -> str:
+        value = str(provider or "").strip().lower()
+        if value not in {"garmin", "coros"}:
+            raise ValueError("provider 仅支持 garmin 或 coros")
+        return value
+
+    def _resolve_account_region(self, provider: str, region: str = "") -> str:
+        explicit = str(region or "").strip()
+        if not explicit:
+            cfg = llm_backend.load_llm_config()
+            explicit = str(cfg.get("garmin_region" if provider == "garmin" else "coros_region") or "").strip()
+        if provider == "garmin":
+            return garmin_sync.resolve_garmin_region(explicit or None)
+        return coros_sync.resolve_coros_region(explicit or None)
+
+    @staticmethod
+    def _map_account_status(provider: str, provider_status: str, ok: bool) -> str:
+        if ok:
+            return "authorized"
+        status = str(provider_status or "").strip().lower()
+        if status in {"missing_token", "not_authorized"}:
+            return "idle"
+        if status in {"invalid_token", "auth_expired", "expired"}:
+            return "expired"
+        if status in {"checking", "needs_credentials", "needs_mfa", "opening_browser", "waiting_callback"}:
+            return status
+        return "failed" if status else "idle"
+
+    def _garmin_connection_from_status(self, status: garmin_sync.GarminAuthStatus) -> dict[str, Any]:
+        unified_status = self._map_account_status("garmin", status.status, bool(status.ok))
+        return {
+            "provider": "garmin",
+            "brand": self._account_brand("garmin"),
+            "label": self._account_label("garmin"),
+            "region": status.region,
+            "region_options": self._account_region_options("garmin"),
+            "status": unified_status,
+            "provider_status": status.status,
+            "authorized": bool(status.ok),
+            "message": status.message,
+            "auth_path": status.token_path,
+            "can_connect": True,
+            "can_disconnect": bool(status.ok),
+            "requires_credentials": True,
+            "supports_mfa": True,
+            "diagnostics": [],
+        }
+
+    def _coros_connection_from_status(self, status: coros_sync.CorosAuthStatus) -> dict[str, Any]:
+        unified_status = self._map_account_status("coros", status.status, bool(status.ok))
+        return {
+            "provider": "coros",
+            "brand": self._account_brand("coros"),
+            "label": self._account_label("coros"),
+            "region": status.region,
+            "region_options": self._account_region_options("coros"),
+            "status": unified_status,
+            "provider_status": status.status,
+            "authorized": bool(status.ok),
+            "message": status.message,
+            "auth_path": status.token_path,
+            "can_connect": True,
+            "can_disconnect": bool(status.ok),
+            "requires_credentials": False,
+            "supports_mfa": False,
+            "mcp_authorized": bool(status.mcp_authorized),
+            "node_available": bool(status.node_available),
+            "skill_available": bool(status.skill_available),
+            "node_path": status.node_path,
+            "openclaw_node_binary": status.openclaw_node_binary,
+            "openclaw_mjs": status.openclaw_mjs,
+            "keepalive_region": status.keepalive_region,
+            "keepalive_mcp_url": status.keepalive_mcp_url,
+            "diagnostics": status.diagnostics or [],
+        }
+
+    def _check_account_connection_data(self, provider: str, region: str = "") -> dict[str, Any]:
+        resolved_provider = self._normalize_account_provider(provider)
+        resolved_region = self._resolve_account_region(resolved_provider, region)
+        if resolved_provider == "garmin":
+            status = garmin_sync.check_auth_status(region=resolved_region)
+            data = self._garmin_connection_from_status(status)
+            if status.ok:
+                profile_backend.mark_profile_sync_auth_available("garmin")
+            return data
+        status = coros_sync.check_auth_status(region=resolved_region)
+        data = self._coros_connection_from_status(status)
+        if status.ok:
+            profile_backend.mark_profile_sync_auth_available("coros")
+        return data
+
+    def _prune_account_sessions_locked(self, now: float | None = None) -> None:
+        current = time.time() if now is None else now
+        for session_id, session in list(self._account_connection_sessions.items()):
+            if float(session.get("expires_at") or 0) <= current:
+                self._account_connection_sessions.pop(session_id, None)
+
+    def _create_account_session(
+        self,
+        *,
+        provider: str,
+        region: str,
+        status: str,
+        message: str,
+        progress: list[dict[str, Any]] | None = None,
+        secret_payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        now = time.time()
+        session_id = "account_conn_" + uuid.uuid4().hex[:16]
+        session = {
+            "session_id": session_id,
+            "provider": provider,
+            "region": region,
+            "status": status if status in self.ACCOUNT_CONNECTION_STATES else "checking",
+            "message": message,
+            "created_at": now,
+            "updated_at": now,
+            "expires_at": now + self.ACCOUNT_CONNECTION_SESSION_TTL_SEC,
+            "progress": list(progress or []),
+            "secret_payload": dict(secret_payload or {}),
+        }
+        with self._account_connection_lock:
+            self._prune_account_sessions_locked(now)
+            self._account_connection_sessions[session_id] = session
+        return self._public_account_session(session)
+
+    def _public_account_session(self, session: dict[str, Any]) -> dict[str, Any]:
+        provider = str(session.get("provider") or "")
+        payload = {
+            "session_id": str(session.get("session_id") or ""),
+            "provider": provider,
+            "brand": self._account_brand(provider) if provider in {"garmin", "coros"} else "",
+            "label": self._account_label(provider) if provider in {"garmin", "coros"} else "",
+            "region": str(session.get("region") or ""),
+            "status": str(session.get("status") or "checking"),
+            "authorized": str(session.get("status") or "") == "authorized",
+            "message": str(session.get("message") or ""),
+            "expires_at": float(session.get("expires_at") or 0),
+            "progress": session.get("progress") if isinstance(session.get("progress"), list) else [],
+        }
+        if isinstance(session.get("diagnostics"), list):
+            payload["diagnostics"] = session.get("diagnostics")
+        if provider == "coros":
+            payload["requires_credentials"] = False
+            payload["supports_mfa"] = False
+            payload["node_path"] = str(session.get("node_path") or "")
+            payload["mcp_authorized"] = str(session.get("status") or "") == "authorized"
+        return payload
+
+    def _clear_account_session_secret(self, session_id: str) -> None:
+        with self._account_connection_lock:
+            session = self._account_connection_sessions.get(str(session_id or ""))
+            if session is not None:
+                session["secret_payload"] = {}
+
+    def _remove_account_session(self, session_id: str) -> None:
+        with self._account_connection_lock:
+            self._account_connection_sessions.pop(str(session_id or ""), None)
+
+    def _update_account_session(
+        self,
+        session_id: str,
+        *,
+        status: str | None = None,
+        message: str | None = None,
+        append_progress: dict[str, Any] | None = None,
+        diagnostics: list[dict[str, Any]] | None = None,
+        extra: dict[str, Any] | None = None,
+    ) -> None:
+        with self._account_connection_lock:
+            session = self._account_connection_sessions.get(str(session_id or ""))
+            if session is None:
+                return
+            if status:
+                session["status"] = status if status in self.ACCOUNT_CONNECTION_STATES else "checking"
+            if message is not None:
+                session["message"] = str(message)
+            if append_progress is not None:
+                progress = session.get("progress") if isinstance(session.get("progress"), list) else []
+                progress.append(dict(append_progress))
+                session["progress"] = progress
+            if diagnostics is not None:
+                session["diagnostics"] = list(diagnostics)
+            if extra:
+                for key, value in extra.items():
+                    session[str(key)] = value
+            session["updated_at"] = time.time()
+
+    def _run_coros_connection_worker(self, session_id: str, region: str) -> None:
+        try:
+            self._update_account_session(
+                session_id,
+                status="checking",
+                message="正在检查 COROS MCP 运行环境...",
+                append_progress={"step": "runtime", "status": "checking", "message": "正在检查 Node/npm/coros-mcp"},
+            )
+            runtime = coros_sync.prepare_coros_connection_runtime(region=region)
+            self._update_account_session(
+                session_id,
+                diagnostics=runtime.diagnostics or [],
+                extra={
+                    "node_path": runtime.node_path,
+                    "coros_mcp_path": runtime.coros_mcp_path,
+                    "token_path": runtime.token_path,
+                },
+            )
+            if not runtime.ok:
+                self._update_account_session(
+                    session_id,
+                    status="failed",
+                    message=runtime.message,
+                    append_progress={"step": "runtime", "status": "failed", "message": runtime.message},
+                )
+                return
+            self._update_account_session(
+                session_id,
+                status="opening_browser",
+                message="正在打开系统浏览器，请完成 COROS OAuth 授权。",
+                append_progress={"step": "runtime", "status": "ok", "message": runtime.message},
+            )
+            coros_sync.start_coros_oauth_login(region=region, coros_mcp_path=runtime.coros_mcp_path)
+            self._update_account_session(
+                session_id,
+                status="waiting_callback",
+                message="等待 COROS OAuth 授权完成...",
+                append_progress={"step": "oauth", "status": "waiting", "message": "浏览器授权已启动"},
+            )
+        except Exception as exc:
+            self._update_account_session(
+                session_id,
+                status="failed",
+                message=f"COROS 连接向导启动失败: {exc}",
+                append_progress={"step": "oauth", "status": "failed", "message": "COROS 连接向导启动失败"},
+            )
+
+    def _refresh_coros_session_authorization(self, session_id: str, session: dict[str, Any]) -> dict[str, Any]:
+        region = str(session.get("region") or "")
+        current_status = str(session.get("status") or "")
+        if current_status not in {"opening_browser", "waiting_callback"}:
+            return self._public_account_session(session)
+        token_path = Path(str(session.get("token_path") or coros_sync.default_mcp_token_path(region))).expanduser()
+        if token_path.is_file() and current_status != "authorized":
+            diagnostics = session.get("diagnostics") if isinstance(session.get("diagnostics"), list) else []
+            openclaw_diag = coros_sync.apply_coros_openclaw_optional(
+                region=region,
+                coros_mcp_path=str(session.get("coros_mcp_path") or ""),
+            )
+            self._update_account_session(
+                session_id,
+                status="authorized",
+                message="COROS 授权成功。",
+                diagnostics=[*diagnostics, openclaw_diag],
+                append_progress={"step": "oauth", "status": "ok", "message": "已检测到 COROS MCP token"},
+            )
+            try:
+                profile_backend.mark_profile_sync_auth_available("coros")
+            except Exception:
+                pass
+        with self._account_connection_lock:
+            latest = self._account_connection_sessions.get(session_id, session)
+            return self._public_account_session(latest)
+
+    def _garmin_app_login_payload(
+        self,
+        result: garmin_sync.GarminAppLoginResult,
+        *,
+        session_id: str = "",
+    ) -> dict[str, Any]:
+        status = result.status if result.status in self.ACCOUNT_CONNECTION_STATES else ("authorized" if result.ok else "failed")
+        payload = {
+            "provider": "garmin",
+            "brand": self._account_brand("garmin"),
+            "label": self._account_label("garmin"),
+            "region": result.region,
+            "status": status,
+            "authorized": bool(result.ok),
+            "message": result.message,
+            "auth_path": result.token_path,
+            "requires_credentials": True,
+            "supports_mfa": True,
+        }
+        if session_id:
+            payload["session_id"] = session_id
+        return payload
+
+    def list_account_connections(self) -> dict:
+        """List Garmin/COROS account connection cards for the connection center."""
+        try:
+            connections = [
+                self._check_account_connection_data("garmin", ""),
+                self._check_account_connection_data("coros", ""),
+            ]
+            return self._account_success({"connections": connections})
+        except Exception:
+            logger.exception("list_account_connections failed")
+            return self._account_error(API_CODE_INTERNAL, "账号连接列表读取失败")
+
+    def check_account_connection(self, provider: str = "", region: str = "") -> dict:
+        """Check a provider account connection without starting authorization."""
+        try:
+            data = self._check_account_connection_data(provider, region)
+            return self._account_success(data, msg=str(data.get("message") or "ok"))
+        except (ValueError, garmin_sync.GarminSyncError, coros_sync.CorosSyncError) as exc:
+            return self._account_error(API_CODE_VALIDATION, str(exc), {"provider": str(provider or ""), "region": str(region or "")})
+        except Exception:
+            logger.exception("check_account_connection failed")
+            return self._account_error(API_CODE_INTERNAL, "账号连接状态检查失败")
+
+    def start_account_connection(self, provider: str = "", region: str = "", payload: Any = None) -> dict:
+        """Start a unified account connection flow without exposing terminal commands."""
+        try:
+            resolved_provider = self._normalize_account_provider(provider)
+            resolved_region = self._resolve_account_region(resolved_provider, region)
+            body = self._account_payload(payload)
+            if resolved_provider == "garmin":
+                email = str(body.get("email") or "").strip()
+                password = str(body.get("password") or "")
+                if not email or not password:
+                    return self._account_success({
+                        "provider": "garmin",
+                        "brand": self._account_brand("garmin"),
+                        "label": self._account_label("garmin"),
+                        "region": resolved_region,
+                        "status": "needs_credentials",
+                        "authorized": False,
+                        "message": "请输入 Garmin 账号和密码。",
+                        "requires_credentials": True,
+                        "supports_mfa": True,
+                    }, msg="请输入 Garmin 账号和密码。")
+                result = garmin_sync.login_app(email=email, password=password, region=resolved_region)
+                if result.ok:
+                    try:
+                        status_data = self._check_account_connection_data("garmin", result.region)
+                        status_data["message"] = result.message or status_data.get("message", "")
+                        return self._account_success(status_data, msg=status_data.get("message") or "Garmin 授权成功。")
+                    except Exception:
+                        payload_data = self._garmin_app_login_payload(result)
+                        return self._account_success(payload_data, msg=payload_data["message"])
+                if result.status == "needs_mfa":
+                    session = self._create_account_session(
+                        provider="garmin",
+                        region=resolved_region,
+                        status="needs_mfa",
+                        message=result.message or "请输入 Garmin MFA 验证码。",
+                        progress=[{"step": "credentials", "status": "ok", "message": "账号信息已提交"}],
+                        secret_payload={"email": email, "password": password},
+                    )
+                    session.update({"requires_credentials": True, "supports_mfa": True})
+                    return self._account_success(session, msg=session["message"])
+                payload_data = self._garmin_app_login_payload(result)
+                return self._account_error(API_CODE_EXTERNAL_SERVICE, payload_data["message"], payload_data)
+
+            session = self._create_account_session(
+                provider="coros",
+                region=resolved_region,
+                status="checking",
+                message="COROS OAuth 连接向导已创建，正在检查运行环境。",
+                progress=[{"step": "session", "status": "ok", "message": "连接向导已创建"}],
+            )
+            session.update({"requires_credentials": False, "supports_mfa": False})
+            worker = threading.Thread(
+                target=self._run_coros_connection_worker,
+                args=(session["session_id"], resolved_region),
+                daemon=True,
+            )
+            worker.start()
+            return self._account_success(session, msg=session["message"])
+        except (ValueError, garmin_sync.GarminSyncError, coros_sync.CorosSyncError) as exc:
+            return self._account_error(API_CODE_VALIDATION, str(exc), {"provider": str(provider or ""), "region": str(region or "")})
+        except Exception:
+            logger.exception("start_account_connection failed")
+            return self._account_error(API_CODE_INTERNAL, "账号连接启动失败")
+
+    def continue_account_connection(self, session_id: str = "", payload: Any = None) -> dict:
+        """Continue or poll an account connection session."""
+        try:
+            sid = str(session_id or "").strip()
+            if not sid:
+                return self._account_error(API_CODE_VALIDATION, "session_id 不能为空", {"status": "failed"})
+            now = time.time()
+            with self._account_connection_lock:
+                session = self._account_connection_sessions.get(sid)
+                if not session:
+                    return self._account_success({"session_id": sid, "status": "expired", "authorized": False, "message": "账号连接会话已过期。"}, msg="账号连接会话已过期。")
+                if float(session.get("expires_at") or 0) <= now:
+                    self._account_connection_sessions.pop(sid, None)
+                    return self._account_success({"session_id": sid, "status": "expired", "authorized": False, "message": "账号连接会话已过期。"}, msg="账号连接会话已过期。")
+                if str(session.get("provider") or "") == "garmin":
+                    secret_payload = dict(session.get("secret_payload") or {})
+                    provider = str(session.get("provider") or "")
+                    region = str(session.get("region") or "")
+                    session["updated_at"] = now
+                else:
+                    if str(session.get("provider") or "") == "coros":
+                        coros_session = dict(session)
+                        session["updated_at"] = now
+                        needs_coros_refresh = True
+                    else:
+                        needs_coros_refresh = False
+                    if needs_coros_refresh:
+                        pass
+                    else:
+                        session["updated_at"] = now
+                        public = self._public_account_session(session)
+                        return self._account_success(public, msg=public.get("message") or "ok")
+            if 'needs_coros_refresh' in locals() and needs_coros_refresh:
+                public = self._refresh_coros_session_authorization(sid, coros_session)
+                return self._account_success(public, msg=public.get("message") or "ok")
+
+            if provider == "garmin":
+                body = self._account_payload(payload)
+                mfa_code = str(body.get("mfa_code") or body.get("mfa") or body.get("otp") or "").strip()
+                if not mfa_code:
+                    return self._account_success({
+                        "session_id": sid,
+                        "provider": "garmin",
+                        "brand": self._account_brand("garmin"),
+                        "label": self._account_label("garmin"),
+                        "region": region,
+                        "status": "needs_mfa",
+                        "authorized": False,
+                        "message": "请输入 Garmin MFA 验证码。",
+                        "requires_credentials": True,
+                        "supports_mfa": True,
+                    }, msg="请输入 Garmin MFA 验证码。")
+                email = str(secret_payload.get("email") or "")
+                password = str(secret_payload.get("password") or "")
+                if not email or not password:
+                    self._remove_account_session(sid)
+                    return self._account_success({
+                        "session_id": sid,
+                        "provider": "garmin",
+                        "region": region,
+                        "status": "expired",
+                        "authorized": False,
+                        "message": "Garmin 授权会话已过期，请重新输入账号密码。",
+                    }, msg="Garmin 授权会话已过期，请重新输入账号密码。")
+                result = garmin_sync.login_app(email=email, password=password, region=region, mfa_code=mfa_code)
+                self._clear_account_session_secret(sid)
+                if result.ok:
+                    self._remove_account_session(sid)
+                    try:
+                        status_data = self._check_account_connection_data("garmin", result.region)
+                        status_data["message"] = result.message or status_data.get("message", "")
+                        status_data["session_id"] = sid
+                        return self._account_success(status_data, msg=status_data.get("message") or "Garmin 授权成功。")
+                    except Exception:
+                        payload_data = self._garmin_app_login_payload(result, session_id=sid)
+                        return self._account_success(payload_data, msg=payload_data["message"])
+                if result.status == "needs_mfa":
+                    with self._account_connection_lock:
+                        session = self._account_connection_sessions.get(sid)
+                        if session is not None:
+                            session["status"] = "needs_mfa"
+                            session["message"] = result.message or "Garmin MFA 验证码不正确或已失效，请重新输入。"
+                            session["secret_payload"] = {"email": email, "password": password}
+                    payload_data = self._garmin_app_login_payload(result, session_id=sid)
+                    return self._account_success(payload_data, msg=payload_data["message"])
+                self._remove_account_session(sid)
+                payload_data = self._garmin_app_login_payload(result, session_id=sid)
+                return self._account_error(API_CODE_EXTERNAL_SERVICE, payload_data["message"], payload_data)
+
+            with self._account_connection_lock:
+                session = self._account_connection_sessions.get(sid)
+                if not session:
+                    return self._account_success({"session_id": sid, "status": "expired", "authorized": False, "message": "账号连接会话已过期。"}, msg="账号连接会话已过期。")
+                session["updated_at"] = now
+                public = self._public_account_session(session)
+            return self._account_success(public, msg=public.get("message") or "ok")
+        except Exception:
+            logger.exception("continue_account_connection failed")
+            return self._account_error(API_CODE_INTERNAL, "账号连接会话读取失败")
+
+    def disconnect_account(self, provider: str = "", region: str = "") -> dict:
+        """Disconnect a provider account by removing only local auth material."""
+        try:
+            resolved_provider = self._normalize_account_provider(provider)
+            resolved_region = self._resolve_account_region(resolved_provider, region)
+            auth_path = (
+                garmin_sync.default_tokenstore(resolved_region)
+                if resolved_provider == "garmin"
+                else coros_sync.default_mcp_token_path(resolved_region)
+            )
+            path = Path(auth_path).expanduser()
+            if path.is_dir():
+                shutil.rmtree(path)
+            elif path.exists():
+                path.unlink()
+            data = {
+                "provider": resolved_provider,
+                "brand": self._account_brand(resolved_provider),
+                "label": self._account_label(resolved_provider),
+                "region": resolved_region,
+                "status": "idle",
+                "authorized": False,
+                "message": f"已断开 {self._account_label(resolved_provider)} 账号连接。",
+                "auth_path": str(path),
+            }
+            return self._account_success(data, msg=data["message"])
+        except (ValueError, garmin_sync.GarminSyncError, coros_sync.CorosSyncError) as exc:
+            return self._account_error(API_CODE_VALIDATION, str(exc), {"provider": str(provider or ""), "region": str(region or "")})
+        except Exception as exc:
+            logger.exception("disconnect_account failed")
+            provider_text = str(provider or "").strip().lower()
+            region_text = str(region or "").strip().lower()
+            return self._account_error(API_CODE_EXTERNAL_SERVICE, f"账号断开失败: {exc}", {
+                "provider": provider_text,
+                "region": region_text,
+                "status": "failed",
+                "authorized": False,
+            })
 
     @staticmethod
     def _garmin_region_from_config(region: str = "") -> str:

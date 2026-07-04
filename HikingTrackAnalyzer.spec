@@ -68,6 +68,13 @@ def _node_runtime_datas():
 
 _datas += _node_runtime_datas()
 
+# Legacy only: the unified Account Connection Center performs Garmin login
+# inside the app and no longer requires a visible Windows console helper.
+_include_legacy_console_helper = (
+    os.environ.get("FITVAULT_INCLUDE_LEGACY_CONSOLE_HELPER", "").strip().lower()
+    in {"1", "true", "yes", "on"}
+)
+
 a = Analysis(
     ['main.py'],
     pathex=[],
@@ -108,7 +115,7 @@ gui_exe = EXE(
     entitlements_file=None,
 )
 cli_exe = None
-if platform.system().lower() == "windows":
+if platform.system().lower() == "windows" and _include_legacy_console_helper:
     cli_exe = EXE(
         pyz,
         a.scripts,

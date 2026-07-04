@@ -813,6 +813,114 @@
       "description": "供配置页 COROS 授权状态灯使用：按当前 COROS 账号区域检查本机 coros-stats skill、Node 与 MCP token 是否存在，并通过 keepalive --print-config 只读验证区域 endpoint/token 路径；Node 会从 PATH、nvm、Homebrew、QClaw bundled runtime 中只读探测，OpenClaw wrapper 运行时会暴露 node_path/openclaw_* 诊断字段；不读取 token 内容，不联系 COROS，不触发登录"
     },
     {
+      "name": "list_account_connections",
+      "file": "main.py",
+      "line": 0,
+      "category": "account_connection",
+      "parameters": [],
+      "returns": "{ ok, code, msg, data: {connections: [{provider, brand, label, region, region_options, status, provider_status, authorized, message, auth_path, can_connect, can_disconnect, requires_credentials, supports_mfa, diagnostics}]}, traceId }",
+      "high_risk": false,
+      "description": "账号连接中心列表 API。返回 Garmin/COROS 连接卡片，不启动授权流程，不回显 password、mfa_code 或 token 内容。统一状态枚举: idle/checking/needs_credentials/needs_mfa/opening_browser/waiting_callback/authorized/failed/expired；Garmin region=cn/global，COROS region=cn/us/eu。"
+    },
+    {
+      "name": "check_account_connection",
+      "file": "main.py",
+      "line": 0,
+      "category": "account_connection",
+      "parameters": [
+        {
+          "name": "provider",
+          "type": "string",
+          "required": true,
+          "description": "账号提供方: garmin 或 coros"
+        },
+        {
+          "name": "region",
+          "type": "string",
+          "required": false,
+          "description": "Garmin: cn/global；COROS: cn/us/eu；为空时使用已保存配置"
+        }
+      ],
+      "returns": "{ ok, code, msg, data: {provider, brand, label, region, region_options, status, provider_status, authorized, message, auth_path, can_connect, can_disconnect, requires_credentials, supports_mfa, diagnostics}, traceId }",
+      "high_risk": false,
+      "description": "账号连接中心状态检查 API。只检查本地授权材料和必要运行环境，不启动登录，不返回命令行启动参数，不读取或回显 token 内容。"
+    },
+    {
+      "name": "start_account_connection",
+      "file": "main.py",
+      "line": 0,
+      "category": "account_connection",
+      "parameters": [
+        {
+          "name": "provider",
+          "type": "string",
+          "required": true,
+          "description": "账号提供方: garmin 或 coros"
+        },
+        {
+          "name": "region",
+          "type": "string",
+          "required": false,
+          "description": "Garmin: cn/global；COROS: cn/us/eu；为空时使用已保存配置"
+        },
+        {
+          "name": "payload",
+          "type": "dict",
+          "required": false,
+          "description": "Garmin 连接可提交 email/password 字段；COROS 连接传空对象。契约禁止 API 返回值回显 password、MFA 验证码或 token 内容。"
+        }
+      ],
+      "returns": "{ ok, code, msg, data: {provider, brand, label, region, status, authorized, message, session_id?, auth_path?, requires_credentials, supports_mfa, progress?, diagnostics?}, traceId }",
+      "high_risk": false,
+      "description": "账号连接中心启动 API。Garmin 在 App 内完成账号密码登录，缺少账号或密码返回 needs_credentials，可能直接 authorized 或返回 needs_mfa + session_id；COROS 保持官方 MCP/OAuth 方向，在后台检查/安装 coros-mcp 后打开系统浏览器，返回 checking/opening_browser/waiting_callback 过程状态并由前端轮询 continue_account_connection。"
+    },
+    {
+      "name": "continue_account_connection",
+      "file": "main.py",
+      "line": 0,
+      "category": "account_connection",
+      "parameters": [
+        {
+          "name": "session_id",
+          "type": "string",
+          "required": true,
+          "description": "start_account_connection 返回的连接会话 ID"
+        },
+        {
+          "name": "payload",
+          "type": "dict",
+          "required": false,
+          "description": "Garmin MFA 阶段提交 mfa_code；COROS 轮询传空对象。契约禁止返回值回显 MFA 验证码、password 或 token 内容。"
+        }
+      ],
+      "returns": "{ ok, code, msg, data: {session_id, provider, brand, label, region, status, authorized, message, expires_at?, progress?, diagnostics?}, traceId }",
+      "high_risk": false,
+      "description": "账号连接中心继续/轮询 API。Garmin needs_mfa 会话通过 mfa_code 继续，成功后返回 authorized 并清理服务端会话；COROS 轮询本地 MCP token 文件状态，在 checking/opening_browser/waiting_callback 间推进，授权成功后返回 authorized，超时返回 expired。"
+    },
+    {
+      "name": "disconnect_account",
+      "file": "main.py",
+      "line": 0,
+      "category": "account_connection",
+      "parameters": [
+        {
+          "name": "provider",
+          "type": "string",
+          "required": true,
+          "description": "账号提供方: garmin 或 coros"
+        },
+        {
+          "name": "region",
+          "type": "string",
+          "required": false,
+          "description": "Garmin: cn/global；COROS: cn/us/eu；为空时使用已保存配置"
+        }
+      ],
+      "returns": "{ ok, code, msg, data: {provider, brand, label, region, status: idle, authorized: false, message, auth_path}, traceId }",
+      "high_risk": false,
+      "description": "账号连接中心断开 API。仅移除本地授权材料，状态回到 idle；不删除活动记录、FIT 文件、用户画像或同步配置。"
+    },
+    {
       "name": "start_garmin_login",
       "file": "main.py",
       "line": 0,
@@ -827,7 +935,7 @@
       ],
       "returns": "{ ok, code, msg, data: {region, status, message, command, stdout, stderr}, traceId }",
       "high_risk": false,
-      "description": "按当前 Garmin 账号区域显式启动 Garmin skill 登录脚本；仅由配置页用户点击授权触发，不用于静默同步，不依赖 LLM/HTTP/CLI 模型。macOS 下打开外部终端并立即返回 launched，授权是否完成由配置页检查状态按钮确认。"
+      "description": "legacy 兼容 API：按当前 Garmin 账号区域显式启动 Garmin skill 登录脚本。账号连接中心不再使用此接口作为设置页主授权入口；新入口必须使用 start_account_connection/continue_account_connection，避免暴露 Terminal/cmd/FitVaultCLI。"
     },
     {
       "name": "start_coros_login",
@@ -844,7 +952,7 @@
       ],
       "returns": "{ ok, code, msg, data: {region, status, message, command, stdout, stderr}, traceId }",
       "high_risk": false,
-      "description": "按当前 COROS 账号区域显式启动 coros-stats MCP 授权脚本；仅由配置页用户点击授权触发，不用于静默同步，不依赖 LLM/HTTP/CLI 模型。macOS 下打开外部终端并立即返回 launched，授权是否完成由配置页检查状态按钮确认。"
+      "description": "legacy 兼容 API：按当前 COROS 账号区域显式启动 coros-stats MCP 授权脚本。账号连接中心不再使用此接口作为设置页主授权入口；新入口必须使用 start_account_connection/continue_account_connection，通过后台流程和系统浏览器 OAuth 完成授权，避免暴露 Terminal/cmd。"
     },
     {
       "name": "set_ai_notified_hash",

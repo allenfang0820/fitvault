@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import importlib.util
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -93,6 +94,15 @@ class GarminLoginResult:
     message: str
 
 
+@dataclass(frozen=True)
+class GarminAppLoginResult:
+    ok: bool
+    region: str
+    status: str
+    token_path: str
+    message: str
+
+
 def app_base_dir() -> Path:
     if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
         meipass = Path(sys._MEIPASS)
@@ -149,6 +159,21 @@ def _error_snippet(value: str) -> str:
     head = ERROR_SNIPPET_CHARS // 2
     tail = ERROR_SNIPPET_CHARS - head
     return text[:head] + "\n...\n" + text[-tail:]
+
+
+def _redact_sensitive_text(value: str, *secrets: str) -> str:
+    text = str(value or "")
+    for secret in secrets:
+        clean = str(secret or "")
+        if clean:
+            text = text.replace(clean, "***")
+    text = re.sub(
+        r"(?i)(password|passwd|mfa|otp|token|access_token|refresh_token|authorization|api[_-]?key|secret)(\s*[:=]\s*)([^\s,;]+)",
+        r"\1\2***",
+        text,
+    )
+    text = re.sub(r"(?i)(bearer\s+)[A-Za-z0-9._~+/=-]+", r"\1***", text)
+    return text
 
 
 def _looks_like_auth_required(text: str) -> bool:
@@ -653,3 +678,61 @@ def start_login(
         stderr=stderr,
         message=f"Garmin 登录授权已完成（{resolved_region}）。",
     )
+
+
+def login_app(
+    *,
+    email: str,
+    password: str,
+    region: str | None = None,
+    mfa_code: str | None = None,
+    base_dir: Path | str | None = None,
+) -> GarminAppLoginResult:
+    """Run Garmin login in-process for the account connection center."""
+    try:
+        resolved_region = resolve_garmin_region(region)
+    except GarminSyncError as exc:
+        return GarminAppLoginResult(False, str(region or "").strip().lower(), "failed", "", str(exc))
+
+    if not str(email or "").strip() or not str(password or ""):
+        return GarminAppLoginResult(False, resolved_region, "needs_credentials", "", "请输入 Garmin 账号和密码。")
+
+    try:
+        paths = get_garmin_skill_paths(base_dir)
+        auth_module = _load_skill_module(paths.skill_dir / "scripts" / "garmin_auth.py", "garmin_auth")
+        login_fn = getattr(auth_module, "login_and_save_app", None) or getattr(auth_module, "login_and_save", None)
+        if not callable(login_fn):
+            raise GarminScriptFailed("Garmin auth 模块缺少 login_and_save_app 入口")
+        token_path = login_fn(
+            email=str(email).strip(),
+            password=str(password),
+            region=resolved_region,
+            tokenstore=default_tokenstore(resolved_region),
+            mfa_code=str(mfa_code or "").strip() or None,
+        )
+        return GarminAppLoginResult(
+            ok=True,
+            region=resolved_region,
+            status="authorized",
+            token_path=str(token_path),
+            message=f"Garmin {resolved_region} 授权成功。",
+        )
+    except Exception as exc:
+        exc_name = exc.__class__.__name__
+        detail = _error_snippet(str(exc))
+        if exc_name == "GarminStatsMFARequired" or "mfa" in detail.lower() or "验证码" in detail:
+            return GarminAppLoginResult(
+                ok=False,
+                region=resolved_region,
+                status="needs_mfa",
+                token_path=str(default_tokenstore(resolved_region)),
+                message="Garmin 账号需要 MFA 验证码。",
+            )
+        safe_detail = _redact_sensitive_text(detail)
+        return GarminAppLoginResult(
+            ok=False,
+            region=resolved_region,
+            status="failed",
+            token_path=str(default_tokenstore(resolved_region)),
+            message=safe_detail or "Garmin 授权失败，请检查账号、密码、区域或稍后重试。",
+        )

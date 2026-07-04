@@ -52,6 +52,10 @@ class TestLLMCliFrontendConfig(unittest.TestCase):
             'id="garmin-auth-dot"',
             'id="garmin-auth-check-btn"',
             'id="garmin-auth-login-btn"',
+            'id="garmin-auth-disconnect-btn"',
+            'id="garmin-account-email"',
+            'id="garmin-account-password"',
+            'id="garmin-account-mfa"',
             'id="coros-region"',
             '<option value="cn">COROS 中国区</option>',
             '<option value="us">COROS 北美区</option>',
@@ -60,13 +64,25 @@ class TestLLMCliFrontendConfig(unittest.TestCase):
             'id="coros-auth-dot"',
             'id="coros-auth-check-btn"',
             'id="coros-auth-login-btn"',
+            'id="coros-auth-disconnect-btn"',
+            'id="account-connection-center-title"',
+            "账号连接中心",
             "startGarminAuthorizationFromSettings()",
             "refreshGarminAuthStatus(true)",
+            "continueGarminAuthorizationFromSettings()",
+            "disconnectGarminAccountFromSettings()",
             "startCorosAuthorizationFromSettings()",
             "refreshCorosAuthStatus(true)",
+            "disconnectCorosAccountFromSettings()",
+            "list_account_connections",
+            "check_account_connection",
+            "start_account_connection",
+            "continue_account_connection",
+            "disconnect_account",
         ):
             self.assertIn(token, self.source)
         self.assertNotIn("CLI 使用本机已登录的 AI 助手", self.source)
+        self.assertNotIn("授权终端", self.source)
 
     def test_sync_config_reads_cli_fields(self):
         body = extract_function_body(self.source, "function syncLLMConfigFromFields()")

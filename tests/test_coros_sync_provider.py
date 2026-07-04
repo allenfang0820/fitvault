@@ -198,6 +198,65 @@ class TestCorosSyncProvider(unittest.TestCase):
         self.assertEqual(env["MAITU_BUNDLED_NODE_DIR"], "C:\\FitVault\\node")
         self.assertTrue(env["PATH"].startswith("C:\\FitVault\\node"))
 
+    def test_coros_issuer_for_region(self):
+        self.assertEqual(coros_sync.coros_issuer_for_region("cn"), "https://mcpcn.coros.com")
+        self.assertEqual(coros_sync.coros_issuer_for_region("us"), "https://mcpus.coros.com")
+        self.assertEqual(coros_sync.coros_issuer_for_region("eu"), "https://mcpeu.coros.com")
+
+    def test_prepare_coros_connection_runtime_node_missing(self):
+        with mock.patch.object(coros_sync, "discover_node_binary", return_value=""):
+            result = coros_sync.prepare_coros_connection_runtime(region="cn")
+
+        self.assertFalse(result.ok)
+        self.assertEqual(result.status, "failed")
+        self.assertIn("Node", result.message)
+        self.assertEqual(result.diagnostics[-1]["name"], "node")
+
+    def test_prepare_coros_connection_runtime_uses_existing_coros_mcp(self):
+        with mock.patch.object(coros_sync, "discover_node_binary", return_value="/tmp/node/bin/node"), \
+             mock.patch.object(coros_sync, "discover_npm_binary", return_value="/tmp/node/bin/npm"), \
+             mock.patch.object(coros_sync, "discover_coros_mcp_binary", return_value="/tmp/node/bin/coros-mcp"), \
+             mock.patch.object(coros_sync.subprocess, "run") as run_mock:
+            result = coros_sync.prepare_coros_connection_runtime(region="eu")
+
+        self.assertTrue(result.ok)
+        self.assertEqual(result.coros_mcp_path, "/tmp/node/bin/coros-mcp")
+        self.assertTrue(result.token_path.endswith("/.coros-mcp-skill-gateway-ts/eu/token.json"))
+        run_mock.assert_not_called()
+
+    def test_prepare_coros_connection_runtime_installs_coros_mcp_when_missing(self):
+        calls = ["", "/tmp/node/bin/coros-mcp"]
+        with mock.patch.object(coros_sync, "discover_node_binary", return_value="/tmp/node/bin/node"), \
+             mock.patch.object(coros_sync, "discover_npm_binary", return_value="/tmp/node/bin/npm"), \
+             mock.patch.object(coros_sync, "discover_coros_mcp_binary", side_effect=lambda env=None: calls.pop(0)), \
+             mock.patch.object(coros_sync.subprocess, "run", return_value=self._completed(stdout="ok")) as run_mock:
+            result = coros_sync.prepare_coros_connection_runtime(region="cn")
+
+        self.assertTrue(result.ok)
+        self.assertEqual(result.coros_mcp_path, "/tmp/node/bin/coros-mcp")
+        command = run_mock.call_args.args[0]
+        self.assertEqual(command, ["/tmp/node/bin/npm", "install", "-g", "coros-mcp"])
+        self.assertFalse(run_mock.call_args.kwargs["shell"])
+
+    def test_start_coros_oauth_login_uses_popen_without_terminal_wrapper(self):
+        with mock.patch.object(coros_sync, "discover_coros_mcp_binary", return_value="/tmp/coros-mcp"), \
+             mock.patch.object(coros_sync.subprocess, "Popen") as popen_mock:
+            coros_sync.start_coros_oauth_login(region="us")
+
+        command = popen_mock.call_args.args[0]
+        self.assertEqual(command, ["/tmp/coros-mcp", "--issuer", "https://mcpus.coros.com", "login"])
+        self.assertFalse(popen_mock.call_args.kwargs["shell"])
+        self.assertNotIn("cmd.exe", command)
+        self.assertNotIn("osascript", command)
+
+    def test_apply_coros_openclaw_optional_warning_does_not_raise(self):
+        with mock.patch.object(coros_sync.shutil, "which", return_value=None), \
+             mock.patch.object(coros_sync.subprocess, "run") as run_mock:
+            diag = coros_sync.apply_coros_openclaw_optional(region="cn", coros_mcp_path="/tmp/coros-mcp")
+
+        self.assertEqual(diag["status"], "warning")
+        run_mock.assert_not_called()
+
     def test_check_auth_status_invalid_region_returns_status(self):
         status = coros_sync.check_auth_status(
             base_dir=self.base_dir,

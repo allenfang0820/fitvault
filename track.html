@@ -5323,11 +5323,35 @@
             gap: 10px;
         }
 
+        .account-connection-title {
+            margin-top: 14px;
+            color: #e2e8f0;
+            font-size: 0.86rem;
+            font-weight: 700;
+        }
+
+        .account-connection-summary {
+            color: #94a3b8;
+            font-size: 0.76rem;
+            line-height: 1.5;
+        }
+
         .garmin-auth-controls {
             display: grid;
-            grid-template-columns: minmax(190px, 260px) auto auto;
+            grid-template-columns: minmax(190px, 260px) auto auto auto;
             gap: 10px;
             align-items: end;
+        }
+
+        .account-connection-fields {
+            display: grid;
+            grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) auto;
+            gap: 10px;
+            align-items: end;
+        }
+
+        .account-connection-fields.is-hidden {
+            display: none;
         }
 
         .garmin-auth-status-line {
@@ -5353,9 +5377,17 @@
             box-shadow: 0 0 0 3px rgba(250,204,21,0.14);
         }
 
-        .garmin-auth-dot.launched {
+        .garmin-auth-dot.launched,
+        .garmin-auth-dot.opening_browser,
+        .garmin-auth-dot.waiting_callback {
             background: #38bdf8;
             box-shadow: 0 0 0 3px rgba(56,189,248,0.14);
+        }
+
+        .garmin-auth-dot.needs_credentials,
+        .garmin-auth-dot.needs_mfa {
+            background: #f97316;
+            box-shadow: 0 0 0 3px rgba(249,115,22,0.14);
         }
 
         .garmin-auth-dot.authorized {
@@ -5374,6 +5406,11 @@
             height: 36px;
             padding: 0 14px;
             white-space: nowrap;
+        }
+
+        .account-connection-disconnect-btn {
+            border-color: rgba(248,113,113,0.28);
+            color: #fecaca;
         }
 
         .settings-watch-brand-row {
@@ -5397,6 +5434,9 @@
                 grid-template-columns: 1fr;
             }
             .garmin-auth-controls {
+                grid-template-columns: 1fr;
+            }
+            .account-connection-fields {
                 grid-template-columns: 1fr;
             }
             .garmin-auth-action-btn {
@@ -5944,6 +5984,8 @@
                         </label>
                     </div>
                     <div id="watch-brand-error" style="display:none; color:#f87171; font-size:0.75rem; margin-top:6px;">⚠️ 请选择您的设备类型</div>
+                    <div class="account-connection-title" id="account-connection-center-title">账号连接中心</div>
+                    <div class="account-connection-summary">统一管理 Garmin / COROS 账号连接、区域、状态检查和断开操作。</div>
                     <div class="garmin-auth-card" id="garmin-region-row" style="display:none;">
                         <div class="garmin-auth-controls">
                             <div>
@@ -5954,7 +5996,26 @@
                                 </select>
                             </div>
                             <button type="button" class="secondary-btn compact-action-btn garmin-auth-action-btn" id="garmin-auth-check-btn" onclick="refreshGarminAuthStatus(true)">检查状态</button>
-                            <button type="button" class="primary-btn compact-action-btn garmin-auth-action-btn" id="garmin-auth-login-btn" onclick="startGarminAuthorizationFromSettings()">授权</button>
+                            <button type="button" class="primary-btn compact-action-btn garmin-auth-action-btn" id="garmin-auth-login-btn" onclick="startGarminAuthorizationFromSettings()">连接</button>
+                            <button type="button" class="secondary-btn compact-action-btn garmin-auth-action-btn account-connection-disconnect-btn" id="garmin-auth-disconnect-btn" onclick="disconnectGarminAccountFromSettings()">断开</button>
+                        </div>
+                        <div class="account-connection-fields" id="garmin-credentials-row">
+                            <div>
+                                <label class="settings-label" for="garmin-account-email">Garmin 账号</label>
+                                <input id="garmin-account-email" class="modal-input" type="text" autocomplete="username" placeholder="邮箱或手机号">
+                            </div>
+                            <div>
+                                <label class="settings-label" for="garmin-account-password">Garmin 密码</label>
+                                <input id="garmin-account-password" class="modal-input" type="password" autocomplete="current-password" placeholder="输入后仅用于本次连接">
+                            </div>
+                            <button type="button" class="primary-btn compact-action-btn garmin-auth-action-btn" id="garmin-credentials-submit-btn" onclick="startGarminAuthorizationFromSettings()">提交连接</button>
+                        </div>
+                        <div class="account-connection-fields is-hidden" id="garmin-mfa-row">
+                            <div>
+                                <label class="settings-label" for="garmin-account-mfa">Garmin MFA 验证码</label>
+                                <input id="garmin-account-mfa" class="modal-input" type="text" inputmode="numeric" autocomplete="one-time-code" placeholder="输入验证码">
+                            </div>
+                            <button type="button" class="primary-btn compact-action-btn garmin-auth-action-btn" id="garmin-mfa-submit-btn" onclick="continueGarminAuthorizationFromSettings()">继续连接</button>
                         </div>
                         <div class="garmin-auth-status-line" id="garmin-auth-status-line">
                             <span class="garmin-auth-dot" id="garmin-auth-dot"></span>
@@ -5972,7 +6033,8 @@
                                 </select>
                             </div>
                             <button type="button" class="secondary-btn compact-action-btn garmin-auth-action-btn" id="coros-auth-check-btn" onclick="refreshCorosAuthStatus(true)">检查状态</button>
-                            <button type="button" class="primary-btn compact-action-btn garmin-auth-action-btn" id="coros-auth-login-btn" onclick="startCorosAuthorizationFromSettings()">授权</button>
+                            <button type="button" class="primary-btn compact-action-btn garmin-auth-action-btn" id="coros-auth-login-btn" onclick="startCorosAuthorizationFromSettings()">连接</button>
+                            <button type="button" class="secondary-btn compact-action-btn garmin-auth-action-btn account-connection-disconnect-btn" id="coros-auth-disconnect-btn" onclick="disconnectCorosAccountFromSettings()">断开</button>
                         </div>
                         <div class="garmin-auth-status-line" id="coros-auth-status-line">
                             <span class="garmin-auth-dot" id="coros-auth-dot"></span>
@@ -6572,13 +6634,16 @@
     let garminAuthStatusState = {
         status: 'idle',
         region: 'cn',
-        message: ''
+        message: '',
+        sessionId: ''
     };
     let corosAuthStatusState = {
         status: 'idle',
         region: 'cn',
-        message: ''
+        message: '',
+        sessionId: ''
     };
+    let corosAccountConnectionPollTimer = null;
 
     let _currentRadarSportType = 'running';
 
@@ -8891,8 +8956,13 @@
         const label = region === 'global' ? '国际区' : '中国区';
         if (status === 'authorized') return `已检测到 Garmin ${label} 授权`;
         if (status === 'checking') return `正在检查 Garmin ${label} 授权状态...`;
-        if (status === 'launched') return `已打开 Garmin ${label} 授权终端，完成后请点击检查状态`;
-        if (status === 'missing') return `未检测到 Garmin ${label} 授权，请点击授权`;
+        if (status === 'needs_credentials') return `请输入 Garmin ${label} 账号和密码`;
+        if (status === 'needs_mfa') return `请输入 Garmin ${label} MFA 验证码`;
+        if (status === 'opening_browser') return `正在打开 Garmin ${label} 浏览器授权`;
+        if (status === 'waiting_callback') return `等待 Garmin ${label} 授权完成`;
+        if (status === 'launched') return `Garmin ${label} 连接流程已启动，请按页面提示完成`;
+        if (status === 'missing') return `未检测到 Garmin ${label} 授权，请点击连接`;
+        if (status === 'idle') return fallback || '尚未检查 Garmin 授权状态';
         if (status === 'expired') return `Garmin ${label} 授权不可用或已失效，请重新授权`;
         if (status === 'failed') return fallback || `Garmin ${label} 授权状态检查失败`;
         return fallback || '尚未检查 Garmin 授权状态';
@@ -8909,8 +8979,13 @@
         const label = corosAuthRegionLabel(region);
         if (status === 'authorized') return `已检测到 COROS ${label} 授权`;
         if (status === 'checking') return `正在检查 COROS ${label} 授权状态...`;
-        if (status === 'launched') return `已打开 COROS ${label} 授权终端，完成后请点击检查状态`;
-        if (status === 'missing') return `未检测到 COROS ${label} 授权，请点击授权`;
+        if (status === 'needs_credentials') return `COROS ${label} 无需在脉图输入账号密码`;
+        if (status === 'needs_mfa') return `COROS ${label} 需要继续完成授权验证`;
+        if (status === 'opening_browser') return `正在打开系统浏览器，请完成 COROS ${label} OAuth 授权`;
+        if (status === 'waiting_callback') return `等待 COROS ${label} OAuth 授权完成`;
+        if (status === 'launched') return `COROS ${label} 连接流程已启动，请按页面提示完成`;
+        if (status === 'missing') return `未检测到 COROS ${label} 授权，请点击连接`;
+        if (status === 'idle') return fallback || '尚未检查 COROS 授权状态';
         if (status === 'expired') return `COROS ${label} 授权不可用或已失效，请重新授权`;
         if (status === 'failed') return fallback || `COROS ${label} 授权状态检查失败`;
         return fallback || '尚未检查 COROS 授权状态';
@@ -8934,38 +9009,91 @@
         return data.message || diagnosticText || fallback || 'COROS 授权状态检查完成';
     }
 
-    function setGarminAuthStatusUI(status, message, region) {
+    function accountConnectionStatusFromData(data, fallbackStatus) {
+        const status = String((data && data.status) || fallbackStatus || 'idle').trim().toLowerCase();
+        if (status === 'missing_token') return 'missing';
+        if (status === 'invalid_token' || status === 'auth_expired') return 'expired';
+        if (status === 'ok') return 'authorized';
+        return status || 'idle';
+    }
+
+    function apiSupportsAccountConnection(methodName) {
+        return !!(window.pywebview && window.pywebview.api && typeof window.pywebview.api[methodName] === 'function');
+    }
+
+    function accountConnectionMessageFromResponse(res, fallback) {
+        const data = (res && res.data) || {};
+        return String(data.message || (res && (res.msg || res.error)) || fallback || '');
+    }
+
+    function setGarminControlsBusy(isBusy) {
+        ['garmin-auth-check-btn', 'garmin-auth-login-btn', 'garmin-credentials-submit-btn', 'garmin-mfa-submit-btn', 'garmin-auth-disconnect-btn'].forEach(function(id) {
+            const btn = document.getElementById(id);
+            if (btn) btn.disabled = !!isBusy;
+        });
+    }
+
+    function setCorosControlsBusy(isBusy) {
+        ['coros-auth-check-btn', 'coros-auth-login-btn', 'coros-auth-disconnect-btn'].forEach(function(id) {
+            const btn = document.getElementById(id);
+            if (btn) btn.disabled = !!isBusy;
+        });
+    }
+
+    function resetGarminSecretFields(options) {
+        const opts = options || {};
+        const passwordInput = document.getElementById('garmin-account-password');
+        const mfaInput = document.getElementById('garmin-account-mfa');
+        if (passwordInput) passwordInput.value = '';
+        if (mfaInput && opts.clearMfa !== false) mfaInput.value = '';
+    }
+
+    function setGarminAuthStatusUI(status, message, region, sessionId) {
         const normalizedStatus = String(status || 'idle').trim().toLowerCase();
         const selectedRegion = normalizeGarminRegion(region || (currentLLMConfig && currentLLMConfig.garminRegion));
         garminAuthStatusState = {
             status: normalizedStatus,
             region: selectedRegion,
-            message: message || garminAuthStatusMessage(normalizedStatus, selectedRegion)
+            message: message || garminAuthStatusMessage(normalizedStatus, selectedRegion),
+            sessionId: sessionId !== undefined ? String(sessionId || '') : (garminAuthStatusState && garminAuthStatusState.sessionId || '')
         };
         const dot = document.getElementById('garmin-auth-dot');
         const text = document.getElementById('garmin-auth-status-text');
+        const credentialsRow = document.getElementById('garmin-credentials-row');
+        const mfaRow = document.getElementById('garmin-mfa-row');
+        const loginBtn = document.getElementById('garmin-auth-login-btn');
+        const disconnectBtn = document.getElementById('garmin-auth-disconnect-btn');
         if (dot) {
             dot.className = 'garmin-auth-dot';
             if (normalizedStatus && normalizedStatus !== 'idle') dot.classList.add(normalizedStatus);
         }
         if (text) text.innerText = garminAuthStatusState.message;
+        if (credentialsRow) credentialsRow.classList.toggle('is-hidden', normalizedStatus === 'authorized' || normalizedStatus === 'checking' || normalizedStatus === 'needs_mfa');
+        if (mfaRow) mfaRow.classList.toggle('is-hidden', normalizedStatus !== 'needs_mfa');
+        if (loginBtn) loginBtn.innerText = normalizedStatus === 'authorized' ? '重新连接' : '连接';
+        if (disconnectBtn) disconnectBtn.disabled = normalizedStatus !== 'authorized';
     }
 
-    function setCorosAuthStatusUI(status, message, region) {
+    function setCorosAuthStatusUI(status, message, region, sessionId) {
         const normalizedStatus = String(status || 'idle').trim().toLowerCase();
         const selectedRegion = normalizeCorosRegion(region || (currentLLMConfig && currentLLMConfig.corosRegion));
         corosAuthStatusState = {
             status: normalizedStatus,
             region: selectedRegion,
-            message: message || corosAuthStatusMessage(normalizedStatus, selectedRegion)
+            message: message || corosAuthStatusMessage(normalizedStatus, selectedRegion),
+            sessionId: sessionId !== undefined ? String(sessionId || '') : (corosAuthStatusState && corosAuthStatusState.sessionId || '')
         };
         const dot = document.getElementById('coros-auth-dot');
         const text = document.getElementById('coros-auth-status-text');
+        const loginBtn = document.getElementById('coros-auth-login-btn');
+        const disconnectBtn = document.getElementById('coros-auth-disconnect-btn');
         if (dot) {
             dot.className = 'garmin-auth-dot';
             if (normalizedStatus && normalizedStatus !== 'idle') dot.classList.add(normalizedStatus);
         }
         if (text) text.innerText = corosAuthStatusState.message;
+        if (loginBtn) loginBtn.innerText = normalizedStatus === 'authorized' ? '重新连接' : '连接';
+        if (disconnectBtn) disconnectBtn.disabled = normalizedStatus !== 'authorized';
     }
 
     async function refreshGarminAuthStatus(showToastOnDone = false) {
@@ -8974,25 +9102,24 @@
             setGarminAuthStatusUI('idle', '请选择 Garmin 后检查授权状态', region);
             return false;
         }
-        if (!(window.pywebview && window.pywebview.api && typeof window.pywebview.api.check_garmin_auth_status === 'function')) {
+        if (!apiSupportsAccountConnection('check_account_connection')) {
             setGarminAuthStatusUI('failed', '当前版本不支持 Garmin 授权状态检查', region);
             if (showToastOnDone) showToast('当前版本不支持 Garmin 授权状态检查');
             return false;
         }
         setGarminAuthStatusUI('checking', '', region);
         try {
-            const authRes = await window.pywebview.api.check_garmin_auth_status(region);
+            const authRes = await window.pywebview.api.check_account_connection('garmin', region);
             const data = (authRes && authRes.data) || {};
-            const remoteStatus = String(data.status || '').trim().toLowerCase();
             const authorized = !!(authRes && authRes.code === 0 && data.authorized);
-            const nextStatus = authorized ? 'authorized' : (remoteStatus === 'invalid_token' ? 'expired' : 'missing');
+            const nextStatus = authorized ? 'authorized' : accountConnectionStatusFromData(data, 'missing');
             const msg = data.message || garminAuthStatusMessage(nextStatus, region);
-            setGarminAuthStatusUI(nextStatus, msg, data.region || region);
+            setGarminAuthStatusUI(nextStatus, msg, data.region || region, '');
             if (showToastOnDone) showToast(msg);
             return authorized;
         } catch (e) {
             const msg = String((e && e.message) || e || 'Garmin 授权状态检查失败');
-            setGarminAuthStatusUI('failed', msg, region);
+            setGarminAuthStatusUI('failed', msg, region, '');
             if (showToastOnDone) showToast(msg);
             return false;
         }
@@ -9004,26 +9131,49 @@
             setCorosAuthStatusUI('idle', '请选择 COROS 后检查授权状态', region);
             return false;
         }
-        if (!(window.pywebview && window.pywebview.api && typeof window.pywebview.api.check_coros_auth_status === 'function')) {
+        if (!apiSupportsAccountConnection('check_account_connection')) {
             setCorosAuthStatusUI('failed', '当前版本不支持 COROS 授权状态检查', region);
             if (showToastOnDone) showToast('当前版本不支持 COROS 授权状态检查');
             return false;
         }
         setCorosAuthStatusUI('checking', '', region);
         try {
-            const authRes = await window.pywebview.api.check_coros_auth_status(region);
+            const authRes = await window.pywebview.api.check_account_connection('coros', region);
             const data = (authRes && authRes.data) || {};
-            const remoteStatus = String(data.status || '').trim().toLowerCase();
             const authorized = !!(authRes && authRes.code === 0 && data.authorized);
-            const nextStatus = authorized ? 'authorized' : (remoteStatus === 'invalid_token' ? 'expired' : 'missing');
+            const nextStatus = authorized ? 'authorized' : accountConnectionStatusFromData(data, 'missing');
             const msg = formatCorosAuthDiagnosticMessage(data, corosAuthStatusMessage(nextStatus, region));
-            setCorosAuthStatusUI(nextStatus, msg, data.region || region);
+            setCorosAuthStatusUI(nextStatus, msg, data.region || region, '');
             if (showToastOnDone) showToast(msg);
             return authorized;
         } catch (e) {
             const msg = String((e && e.message) || e || 'COROS 授权状态检查失败');
-            setCorosAuthStatusUI('failed', msg, region);
+            setCorosAuthStatusUI('failed', msg, region, '');
             if (showToastOnDone) showToast(msg);
+            return false;
+        }
+    }
+
+    async function refreshAccountConnectionCenter(showToastOnDone = false) {
+        if (!apiSupportsAccountConnection('list_account_connections')) {
+            return false;
+        }
+        try {
+            const res = await window.pywebview.api.list_account_connections();
+            const connections = (res && res.data && Array.isArray(res.data.connections)) ? res.data.connections : [];
+            connections.forEach(function(item) {
+                const provider = String(item.provider || '').toLowerCase();
+                const status = accountConnectionStatusFromData(item, item.authorized ? 'authorized' : 'idle');
+                if (provider === 'garmin') {
+                    setGarminAuthStatusUI(status, item.message || '', item.region || 'cn', '');
+                } else if (provider === 'coros') {
+                    setCorosAuthStatusUI(status, formatCorosAuthDiagnosticMessage(item, item.message || ''), item.region || 'cn', '');
+                }
+            });
+            if (showToastOnDone) showToast('账号连接状态已更新');
+            return true;
+        } catch (e) {
+            if (showToastOnDone) showToast('账号连接列表读取失败');
             return false;
         }
     }
@@ -9178,37 +9328,95 @@
         const regionInput = document.getElementById('garmin-region');
         const region = normalizeGarminRegion(regionInput ? regionInput.value : (currentLLMConfig && currentLLMConfig.garminRegion));
         const btn = document.getElementById('garmin-auth-login-btn');
+        const emailInput = document.getElementById('garmin-account-email');
+        const passwordInput = document.getElementById('garmin-account-password');
+        const email = String(emailInput ? emailInput.value : '').trim();
+        const password = String(passwordInput ? passwordInput.value : '');
         currentLLMConfig.garminRegion = region;
         if (regionInput) regionInput.value = region;
-        if (!(window.pywebview && window.pywebview.api && typeof window.pywebview.api.start_garmin_login === 'function')) {
-            setGarminAuthStatusUI('failed', '当前版本不支持 Garmin 登录授权', region);
-            showToast('当前版本不支持 Garmin 登录授权');
+        if (!apiSupportsAccountConnection('start_account_connection')) {
+            setGarminAuthStatusUI('failed', '当前版本不支持 Garmin 账号连接', region, '');
+            showToast('当前版本不支持 Garmin 账号连接');
             return;
         }
-        if (btn) {
-            btn.disabled = true;
-            btn.innerText = '打开中...';
+        if (!email || !password) {
+            setGarminAuthStatusUI('needs_credentials', '请输入 Garmin 账号和密码。', region, '');
+            showToast('请输入 Garmin 账号和密码');
+            return;
         }
-        setGarminAuthStatusUI('checking', `正在打开 Garmin ${region === 'global' ? '国际区' : '中国区'}授权终端...`, region);
+        setGarminControlsBusy(true);
+        if (btn) btn.innerText = '连接中...';
+        setGarminAuthStatusUI('checking', `正在连接 Garmin ${region === 'global' ? '国际区' : '中国区'}账号...`, region, '');
         try {
             if (window.pywebview.api.set_garmin_region) {
                 await window.pywebview.api.set_garmin_region(region);
             }
-            const loginRes = await window.pywebview.api.start_garmin_login(region);
+            const loginRes = await window.pywebview.api.start_account_connection('garmin', region, { email: email, password: password });
+            resetGarminSecretFields({ clearMfa: true });
             const data = (loginRes && loginRes.data) || {};
-            const msg = data.message || garminProviderMessage(loginRes, garminAuthStatusMessage('launched', region));
-            if (!loginRes || loginRes.code !== 0) throw new Error(msg || 'Garmin 登录授权启动失败');
-            setGarminAuthStatusUI('launched', msg || garminAuthStatusMessage('launched', region), region);
-            showToast(msg || garminAuthStatusMessage('launched', region), 5500);
-        } catch (e) {
-            const msg = String((e && e.message) || e || 'Garmin 登录授权启动失败');
-            setGarminAuthStatusUI('failed', msg, region);
-            showToast('Garmin 授权启动失败：' + msg, 6500);
-        } finally {
-            if (btn) {
-                btn.disabled = false;
-                btn.innerText = '授权';
+            const nextStatus = accountConnectionStatusFromData(data, data.authorized ? 'authorized' : 'failed');
+            const msg = accountConnectionMessageFromResponse(loginRes, garminAuthStatusMessage(nextStatus, region));
+            if (!loginRes || loginRes.code !== 0) {
+                setGarminAuthStatusUI('failed', msg || 'Garmin 账号连接失败', data.region || region, '');
+                showToast('Garmin 账号连接失败：' + (msg || '请检查账号信息'), 6500);
+                return;
             }
+            setGarminAuthStatusUI(nextStatus, msg, data.region || region, data.session_id || '');
+            showToast(msg || garminAuthStatusMessage(nextStatus, region), 5500);
+        } catch (e) {
+            resetGarminSecretFields({ clearMfa: true });
+            const msg = String((e && e.message) || e || 'Garmin 账号连接失败');
+            setGarminAuthStatusUI('failed', msg, region, '');
+            showToast('Garmin 账号连接失败：' + msg, 6500);
+        } finally {
+            setGarminControlsBusy(false);
+            setGarminAuthStatusUI(garminAuthStatusState.status, garminAuthStatusState.message, garminAuthStatusState.region, garminAuthStatusState.sessionId);
+        }
+    }
+
+    async function continueGarminAuthorizationFromSettings() {
+        const regionInput = document.getElementById('garmin-region');
+        const region = normalizeGarminRegion(regionInput ? regionInput.value : (currentLLMConfig && currentLLMConfig.garminRegion));
+        const mfaInput = document.getElementById('garmin-account-mfa');
+        const mfaCode = String(mfaInput ? mfaInput.value : '').trim();
+        const sessionId = garminAuthStatusState && garminAuthStatusState.sessionId;
+        if (!apiSupportsAccountConnection('continue_account_connection')) {
+            setGarminAuthStatusUI('failed', '当前版本不支持 Garmin MFA 验证', region, '');
+            showToast('当前版本不支持 Garmin MFA 验证');
+            return;
+        }
+        if (!sessionId) {
+            setGarminAuthStatusUI('expired', 'Garmin 授权会话已过期，请重新输入账号密码。', region, '');
+            return;
+        }
+        if (!mfaCode) {
+            setGarminAuthStatusUI('needs_mfa', '请输入 Garmin MFA 验证码。', region, sessionId);
+            showToast('请输入 Garmin MFA 验证码');
+            return;
+        }
+        setGarminControlsBusy(true);
+        setGarminAuthStatusUI('checking', '正在验证 Garmin MFA 验证码...', region, sessionId);
+        try {
+            const res = await window.pywebview.api.continue_account_connection(sessionId, { mfa_code: mfaCode });
+            resetGarminSecretFields({ clearMfa: true });
+            const data = (res && res.data) || {};
+            const nextStatus = accountConnectionStatusFromData(data, data.authorized ? 'authorized' : 'failed');
+            const msg = accountConnectionMessageFromResponse(res, garminAuthStatusMessage(nextStatus, region));
+            if (!res || res.code !== 0) {
+                setGarminAuthStatusUI('failed', msg || 'Garmin MFA 验证失败', data.region || region, '');
+                showToast('Garmin MFA 验证失败：' + (msg || '请重新连接'), 6500);
+                return;
+            }
+            setGarminAuthStatusUI(nextStatus, msg, data.region || region, nextStatus === 'needs_mfa' ? sessionId : '');
+            showToast(msg || garminAuthStatusMessage(nextStatus, region), 5500);
+        } catch (e) {
+            resetGarminSecretFields({ clearMfa: true });
+            const msg = String((e && e.message) || e || 'Garmin MFA 验证失败');
+            setGarminAuthStatusUI('failed', msg, region, '');
+            showToast('Garmin MFA 验证失败：' + msg, 6500);
+        } finally {
+            setGarminControlsBusy(false);
+            setGarminAuthStatusUI(garminAuthStatusState.status, garminAuthStatusState.message, garminAuthStatusState.region, garminAuthStatusState.sessionId);
         }
     }
 
@@ -9218,35 +9426,115 @@
         const btn = document.getElementById('coros-auth-login-btn');
         currentLLMConfig.corosRegion = region;
         if (regionInput) regionInput.value = region;
-        if (!(window.pywebview && window.pywebview.api && typeof window.pywebview.api.start_coros_login === 'function')) {
-            setCorosAuthStatusUI('failed', '当前版本不支持 COROS 授权', region);
-            showToast('当前版本不支持 COROS 授权');
+        if (!apiSupportsAccountConnection('start_account_connection')) {
+            setCorosAuthStatusUI('failed', '当前版本不支持 COROS 账号连接', region, '');
+            showToast('当前版本不支持 COROS 账号连接');
             return;
         }
-        if (btn) {
-            btn.disabled = true;
-            btn.innerText = '打开中...';
-        }
-        setCorosAuthStatusUI('checking', `正在打开 COROS ${corosAuthRegionLabel(region)}授权终端...`, region);
+        setCorosControlsBusy(true);
+        if (btn) btn.innerText = '连接中...';
+        setCorosAuthStatusUI('checking', `正在准备 COROS ${corosAuthRegionLabel(region)} OAuth 连接...`, region, '');
         try {
             if (window.pywebview.api.set_coros_region) {
                 await window.pywebview.api.set_coros_region(region);
             }
-            const loginRes = await window.pywebview.api.start_coros_login(region);
+            const loginRes = await window.pywebview.api.start_account_connection('coros', region, {});
             const data = (loginRes && loginRes.data) || {};
-            const msg = data.message || corosProviderMessage(loginRes, corosAuthStatusMessage('launched', region));
+            const nextStatus = accountConnectionStatusFromData(data, 'checking');
+            const msg = data.message || corosProviderMessage(loginRes, corosAuthStatusMessage(nextStatus, region));
             if (!loginRes || loginRes.code !== 0) throw new Error(msg || 'COROS 授权启动失败');
-            setCorosAuthStatusUI('launched', msg || corosAuthStatusMessage('launched', region), region);
+            setCorosAuthStatusUI(nextStatus, msg || corosAuthStatusMessage(nextStatus, region), data.region || region, data.session_id || '');
+            if (data.session_id) pollCorosAccountConnection(data.session_id, data.region || region);
             showToast(msg || corosAuthStatusMessage('launched', region), 5500);
         } catch (e) {
             const msg = String((e && e.message) || e || 'COROS 授权启动失败');
-            setCorosAuthStatusUI('failed', msg, region);
-            showToast('COROS 授权启动失败：' + msg, 6500);
+            setCorosAuthStatusUI('failed', msg, region, '');
+            showToast('COROS 账号连接失败：' + msg, 6500);
         } finally {
-            if (btn) {
-                btn.disabled = false;
-                btn.innerText = '授权';
+            setCorosControlsBusy(false);
+            setCorosAuthStatusUI(corosAuthStatusState.status, corosAuthStatusState.message, corosAuthStatusState.region, corosAuthStatusState.sessionId);
+        }
+    }
+
+    function pollCorosAccountConnection(sessionId, region) {
+        if (corosAccountConnectionPollTimer) {
+            clearTimeout(corosAccountConnectionPollTimer);
+            corosAccountConnectionPollTimer = null;
+        }
+        if (!sessionId || !apiSupportsAccountConnection('continue_account_connection')) return;
+        const selectedRegion = normalizeCorosRegion(region || (currentLLMConfig && currentLLMConfig.corosRegion));
+        const pollOnce = async function() {
+            try {
+                const res = await window.pywebview.api.continue_account_connection(sessionId, {});
+                const data = (res && res.data) || {};
+                const nextStatus = accountConnectionStatusFromData(data, 'checking');
+                const msg = data.message || corosAuthStatusMessage(nextStatus, selectedRegion);
+                setCorosAuthStatusUI(nextStatus, msg, data.region || selectedRegion, data.session_id || sessionId);
+                if (['checking', 'opening_browser', 'waiting_callback'].indexOf(nextStatus) >= 0) {
+                    corosAccountConnectionPollTimer = setTimeout(pollOnce, 2500);
+                } else {
+                    corosAccountConnectionPollTimer = null;
+                    if (nextStatus === 'authorized') showToast(msg || 'COROS 授权成功');
+                }
+            } catch (e) {
+                const msg = String((e && e.message) || e || 'COROS 授权状态读取失败');
+                setCorosAuthStatusUI('failed', msg, selectedRegion, '');
+                corosAccountConnectionPollTimer = null;
             }
+        };
+        corosAccountConnectionPollTimer = setTimeout(pollOnce, 800);
+    }
+
+    async function disconnectGarminAccountFromSettings() {
+        const regionInput = document.getElementById('garmin-region');
+        const region = normalizeGarminRegion(regionInput ? regionInput.value : (currentLLMConfig && currentLLMConfig.garminRegion));
+        if (!apiSupportsAccountConnection('disconnect_account')) {
+            showToast('当前版本不支持 Garmin 断开连接');
+            return;
+        }
+        setGarminControlsBusy(true);
+        try {
+            const res = await window.pywebview.api.disconnect_account('garmin', region);
+            const data = (res && res.data) || {};
+            const msg = accountConnectionMessageFromResponse(res, '已断开 Garmin 账号连接。');
+            setGarminAuthStatusUI(accountConnectionStatusFromData(data, 'idle'), msg, data.region || region, '');
+            resetGarminSecretFields({ clearMfa: true });
+            showToast(msg);
+        } catch (e) {
+            const msg = String((e && e.message) || e || 'Garmin 断开连接失败');
+            setGarminAuthStatusUI('failed', msg, region, '');
+            showToast(msg);
+        } finally {
+            setGarminControlsBusy(false);
+            setGarminAuthStatusUI(garminAuthStatusState.status, garminAuthStatusState.message, garminAuthStatusState.region, garminAuthStatusState.sessionId);
+        }
+    }
+
+    async function disconnectCorosAccountFromSettings() {
+        const regionInput = document.getElementById('coros-region');
+        const region = normalizeCorosRegion(regionInput ? regionInput.value : (currentLLMConfig && currentLLMConfig.corosRegion));
+        if (!apiSupportsAccountConnection('disconnect_account')) {
+            showToast('当前版本不支持 COROS 断开连接');
+            return;
+        }
+        if (corosAccountConnectionPollTimer) {
+            clearTimeout(corosAccountConnectionPollTimer);
+            corosAccountConnectionPollTimer = null;
+        }
+        setCorosControlsBusy(true);
+        try {
+            const res = await window.pywebview.api.disconnect_account('coros', region);
+            const data = (res && res.data) || {};
+            const msg = accountConnectionMessageFromResponse(res, '已断开 COROS 账号连接。');
+            setCorosAuthStatusUI(accountConnectionStatusFromData(data, 'idle'), msg, data.region || region, '');
+            showToast(msg);
+        } catch (e) {
+            const msg = String((e && e.message) || e || 'COROS 断开连接失败');
+            setCorosAuthStatusUI('failed', msg, region, '');
+            showToast(msg);
+        } finally {
+            setCorosControlsBusy(false);
+            setCorosAuthStatusUI(corosAuthStatusState.status, corosAuthStatusState.message, corosAuthStatusState.region, corosAuthStatusState.sessionId);
         }
     }
 

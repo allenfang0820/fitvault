@@ -34,6 +34,10 @@ class GarminStatsAuthError(RuntimeError):
     """认证或区域配置错误。"""
 
 
+class GarminStatsMFARequired(GarminStatsAuthError):
+    """Garmin 登录需要 MFA 验证码。"""
+
+
 def normalize_region(region: Optional[str]) -> str:
     value = (region or os.environ.get("GARMIN_REGION") or "cn").strip().lower()
     if value not in {"cn", "global"}:
@@ -157,6 +161,46 @@ def login_and_save(
     configure_client_timeout(client)
     try:
         client.login()
+    except Exception as exc:
+        if client_has_oauth_tokens(client):
+            client.garth.dump(str(token_path))
+            return token_path
+        raise GarminStatsAuthError(auth_error_message(region, token_path, exc)) from exc
+    client.garth.dump(str(token_path))
+    return token_path
+
+
+def login_and_save_app(
+    email: str,
+    password: str,
+    region: str = "cn",
+    tokenstore: Optional[Union[str, Path]] = None,
+    mfa_code: Optional[str] = None,
+) -> Path:
+    """App 内 Garmin 登录入口。
+
+    与 CLI login.py 共用 tokenstore/region/consumer patch；区别是 MFA 通过
+    prompt_mfa 回调交给主程序表单收集，而不是在终端中阻塞读取。
+    """
+    import garminconnect
+
+    region = normalize_region(region)
+    token_path = Path(tokenstore).expanduser() if tokenstore else DEFAULT_AUTH_DIRS[region]
+    token_path.mkdir(parents=True, exist_ok=True)
+    clean_mfa = str(mfa_code or "").strip()
+
+    def prompt_mfa() -> str:
+        if not clean_mfa:
+            raise GarminStatsMFARequired("Garmin 账号需要 MFA 验证码")
+        return clean_mfa
+
+    patch_garth_ssl_consumer()
+    client = garminconnect.Garmin(email=email, password=password, is_cn=(region == "cn"))
+    configure_client_timeout(client)
+    try:
+        client.garth.login(email, password, prompt_mfa=prompt_mfa)
+    except GarminStatsMFARequired:
+        raise
     except Exception as exc:
         if client_has_oauth_tokens(client):
             client.garth.dump(str(token_path))

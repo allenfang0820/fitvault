@@ -2,7 +2,8 @@ import unittest
 from pathlib import Path
 
 
-TRACK_HTML_PATH = Path("/Users/fanglei/应用开发/AI track/track.html")
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+TRACK_HTML_PATH = PROJECT_ROOT / "track.html"
 
 
 def extract_function_body(source: str, signature: str) -> str:
@@ -131,9 +132,18 @@ class TestTrackHtmlSyncLogic(unittest.TestCase):
         login_body = extract_function_body(self.source, "function showGarminLoginPrompt(authRes)")
         self.assertIn("openGarminSettingsForAuthorization(authRes)", login_body)
         settings_login_body = extract_function_body(self.source, "async function startGarminAuthorizationFromSettings()")
-        self.assertIn("start_garmin_login", settings_login_body)
+        self.assertIn("start_account_connection('garmin'", settings_login_body)
+        self.assertIn("garmin-account-email", settings_login_body)
+        self.assertIn("garmin-account-password", settings_login_body)
+        self.assertIn("resetGarminSecretFields", settings_login_body)
+        self.assertNotIn("start_garmin_login", settings_login_body)
         self.assertIn("set_garmin_region", settings_login_body)
         self.assertIn("garmin-auth-login-btn", settings_login_body)
+        mfa_body = extract_function_body(self.source, "async function continueGarminAuthorizationFromSettings()")
+        self.assertIn("continue_account_connection", mfa_body)
+        self.assertIn("mfa_code", mfa_body)
+        disconnect_body = extract_function_body(self.source, "async function disconnectGarminAccountFromSettings()")
+        self.assertIn("disconnect_account('garmin'", disconnect_body)
         summary_body = extract_function_body(self.source, "function formatGarminRemoteSyncSummary(data)")
         self.assertIn("payload.download", summary_body)
         self.assertIn("payload.import", summary_body)
@@ -154,16 +164,19 @@ class TestTrackHtmlSyncLogic(unittest.TestCase):
             'id="coros-region"',
             'id="coros-auth-check-btn"',
             'id="coros-auth-login-btn"',
+            'id="coros-auth-disconnect-btn"',
             "function normalizeCorosRegion",
             "async function refreshCorosAuthStatus",
             "async function startCorosAuthorizationFromSettings",
+            "function pollCorosAccountConnection",
             "function persistCorosRegionSelection",
         ):
             self.assertIn(token, self.source)
         self.assertNotIn('id="coros-traininghub-login-btn"', self.source)
         self.assertNotIn("startCorosTrainingHubFromSettings", self.source)
         refresh_body = extract_function_body(self.source, "async function refreshCorosAuthStatus(showToastOnDone = false)")
-        self.assertIn("check_coros_auth_status", refresh_body)
+        self.assertIn("check_account_connection('coros'", refresh_body)
+        self.assertNotIn("check_coros_auth_status", refresh_body)
         self.assertIn("normalizeCorosRegion", refresh_body)
         self.assertIn("formatCorosAuthDiagnosticMessage", refresh_body)
         diag_body = extract_function_body(self.source, "function formatCorosAuthDiagnosticMessage(data, fallback)")
@@ -173,8 +186,15 @@ class TestTrackHtmlSyncLogic(unittest.TestCase):
         self.assertNotIn("traininghub", diag_body.lower())
         login_body = extract_function_body(self.source, "async function startCorosAuthorizationFromSettings()")
         self.assertIn("set_coros_region", login_body)
-        self.assertIn("start_coros_login", login_body)
+        self.assertIn("start_account_connection('coros'", login_body)
+        self.assertIn("pollCorosAccountConnection", login_body)
+        self.assertNotIn("start_coros_login", login_body)
         self.assertIn("coros-auth-login-btn", login_body)
+        poll_body = extract_function_body(self.source, "function pollCorosAccountConnection(sessionId, region)")
+        self.assertIn("continue_account_connection", poll_body)
+        self.assertIn("waiting_callback", poll_body)
+        disconnect_body = extract_function_body(self.source, "async function disconnectCorosAccountFromSettings()")
+        self.assertIn("disconnect_account('coros'", disconnect_body)
         select_body = extract_function_body(self.source, "function selectUserType(type)")
         self.assertIn("type === 'coros' ? 'flex' : 'none'", select_body)
         self.assertIn("refreshCorosAuthStatus(false)", select_body)
@@ -204,6 +224,32 @@ class TestTrackHtmlSyncLogic(unittest.TestCase):
         self.assertIn("refreshCorosAuthStatus(false)", prompt_body)
         self.assertNotIn("Training Hub", prompt_body)
         self.assertNotIn("start_coros_login", prompt_body)
+
+    def test_account_connection_center_uses_unified_frontend_contract(self):
+        for token in (
+            "账号连接中心",
+            "list_account_connections",
+            "check_account_connection",
+            "start_account_connection",
+            "continue_account_connection",
+            "disconnect_account",
+            'id="garmin-account-email"',
+            'id="garmin-account-password"',
+            'id="garmin-account-mfa"',
+            'id="garmin-auth-disconnect-btn"',
+            'id="coros-auth-disconnect-btn"',
+            "needs_credentials",
+            "needs_mfa",
+            "opening_browser",
+            "waiting_callback",
+            "authorized",
+            "expired",
+            "failed",
+        ):
+            self.assertIn(token, self.source)
+        self.assertNotIn("授权终端", self.source)
+        self.assertNotIn("start_garmin_login", self.source)
+        self.assertNotIn("start_coros_login", self.source)
 
     def test_coros_synced_max_hr_disables_manual_override_only_when_not_preserved(self):
         body = extract_function_body(self.source, "function updateProfilePanel(profile, syncMeta)")

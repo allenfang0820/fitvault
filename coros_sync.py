@@ -115,6 +115,18 @@ class CorosLoginResult:
     message: str
 
 
+@dataclass(frozen=True)
+class CorosConnectionStepResult:
+    ok: bool
+    status: str
+    message: str
+    node_path: str = ""
+    npm_path: str = ""
+    coros_mcp_path: str = ""
+    token_path: str = ""
+    diagnostics: list[dict[str, str]] | None = None
+
+
 def app_base_dir() -> Path:
     if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
         meipass = Path(sys._MEIPASS)
@@ -274,6 +286,155 @@ def build_coros_runtime_env(env: dict[str, str] | None = None) -> dict[str, str]
     if openclaw_mjs:
         runtime_env.setdefault("QCLAW_CLI_OPENCLAW_MJS", openclaw_mjs)
     return runtime_env
+
+
+def coros_issuer_for_region(region: str | None = None) -> str:
+    return {
+        "cn": "https://mcpcn.coros.com",
+        "us": "https://mcpus.coros.com",
+        "eu": "https://mcpeu.coros.com",
+    }[resolve_coros_region(region)]
+
+
+def discover_npm_binary(env: dict[str, str] | None = None) -> str:
+    runtime_env = build_coros_runtime_env(env)
+    npm_name = "npm.cmd" if sys.platform.startswith("win") else "npm"
+    return shutil.which(npm_name, path=runtime_env.get("PATH", ""))
+
+
+def discover_coros_mcp_binary(env: dict[str, str] | None = None) -> str:
+    runtime_env = build_coros_runtime_env(env)
+    names = ["coros-mcp.cmd", "coros-mcp"] if sys.platform.startswith("win") else ["coros-mcp"]
+    for name in names:
+        found = shutil.which(name, path=runtime_env.get("PATH", ""))
+        if found:
+            return found
+    return ""
+
+
+def prepare_coros_connection_runtime(
+    *,
+    region: str | None = None,
+    env: dict[str, str] | None = None,
+    timeout: int = 120,
+) -> CorosConnectionStepResult:
+    resolved_region = resolve_coros_region(region)
+    diagnostics = [_diag("region", "ok", f"COROS 区域有效: {resolved_region}")]
+    node_path = discover_node_binary()
+    if not node_path:
+        diagnostics.append(_diag("node", "failed", "未检测到 Node.js"))
+        return CorosConnectionStepResult(
+            ok=False,
+            status="failed",
+            message="未检测到 Node.js，无法启动 COROS OAuth 连接向导。",
+            node_path="",
+            token_path=str(default_mcp_token_path(resolved_region)),
+            diagnostics=diagnostics,
+        )
+    diagnostics.append(_diag("node", "ok", f"Node.js 可用: {node_path}"))
+    runtime_env = build_coros_runtime_env(env)
+    runtime_env.setdefault("NPM_CONFIG_PREFIX", str(Path.home() / ".maitu" / "node-global"))
+    try:
+        Path(runtime_env["NPM_CONFIG_PREFIX"]).expanduser().mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+    npm_path = discover_npm_binary(runtime_env)
+    if not npm_path:
+        diagnostics.append(_diag("npm", "failed", "未检测到 npm"))
+        return CorosConnectionStepResult(
+            ok=False,
+            status="failed",
+            message="未检测到 npm。请使用包含完整 Node.js runtime 的脉图安装包。",
+            node_path=node_path,
+            token_path=str(default_mcp_token_path(resolved_region)),
+            diagnostics=diagnostics,
+        )
+    diagnostics.append(_diag("npm", "ok", f"npm 可用: {npm_path}"))
+
+    coros_mcp_path = discover_coros_mcp_binary(runtime_env)
+    if not coros_mcp_path:
+        diagnostics.append(_diag("coros_mcp", "checking", "正在安装 coros-mcp"))
+        try:
+            completed = subprocess.run(
+                [npm_path, "install", "-g", "coros-mcp"],
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                shell=False,
+                env=runtime_env,
+            )
+        except subprocess.TimeoutExpired:
+            diagnostics.append(_diag("coros_mcp", "failed", "coros-mcp 安装超时"))
+            return CorosConnectionStepResult(False, "failed", "coros-mcp 安装超时。", node_path, npm_path, "", str(default_mcp_token_path(resolved_region)), diagnostics)
+        except OSError as exc:
+            diagnostics.append(_diag("coros_mcp", "failed", f"coros-mcp 安装启动失败: {exc}"))
+            return CorosConnectionStepResult(False, "failed", f"coros-mcp 安装启动失败: {exc}", node_path, npm_path, "", str(default_mcp_token_path(resolved_region)), diagnostics)
+        if int(completed.returncode) != 0:
+            detail = _error_snippet(str(completed.stderr or completed.stdout or ""))
+            diagnostics.append(_diag("coros_mcp", "failed", f"coros-mcp 安装失败: {detail}"))
+            return CorosConnectionStepResult(False, "failed", "coros-mcp 安装失败。", node_path, npm_path, "", str(default_mcp_token_path(resolved_region)), diagnostics)
+        coros_mcp_path = discover_coros_mcp_binary(runtime_env)
+    if not coros_mcp_path:
+        diagnostics.append(_diag("coros_mcp", "failed", "未找到 coros-mcp 命令"))
+        return CorosConnectionStepResult(False, "failed", "coros-mcp 安装后仍不可用。", node_path, npm_path, "", str(default_mcp_token_path(resolved_region)), diagnostics)
+    diagnostics.append(_diag("coros_mcp", "ok", f"coros-mcp 可用: {coros_mcp_path}"))
+    return CorosConnectionStepResult(
+        ok=True,
+        status="checking",
+        message="COROS MCP 运行环境已就绪。",
+        node_path=node_path,
+        npm_path=npm_path,
+        coros_mcp_path=coros_mcp_path,
+        token_path=str(default_mcp_token_path(resolved_region)),
+        diagnostics=diagnostics,
+    )
+
+
+def start_coros_oauth_login(
+    *,
+    region: str | None = None,
+    coros_mcp_path: str | None = None,
+    env: dict[str, str] | None = None,
+) -> subprocess.Popen:
+    resolved_region = resolve_coros_region(region)
+    runtime_env = build_coros_runtime_env(env)
+    binary = str(coros_mcp_path or discover_coros_mcp_binary(runtime_env) or "coros-mcp")
+    return subprocess.Popen(
+        [binary, "--issuer", coros_issuer_for_region(resolved_region), "login"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        stdin=subprocess.DEVNULL,
+        shell=False,
+        env=runtime_env,
+    )
+
+
+def apply_coros_openclaw_optional(
+    *,
+    region: str | None = None,
+    coros_mcp_path: str | None = None,
+    env: dict[str, str] | None = None,
+    timeout: int = 30,
+) -> dict[str, str]:
+    resolved_region = resolve_coros_region(region)
+    runtime_env = build_coros_runtime_env(env)
+    binary = str(coros_mcp_path or discover_coros_mcp_binary(runtime_env) or "coros-mcp")
+    if not shutil.which("openclaw", path=runtime_env.get("PATH", "")) and not shutil.which("openclaw.cmd", path=runtime_env.get("PATH", "")):
+        return _diag("openclaw", "warning", "未检测到 openclaw 命令，已跳过 OpenClaw 注册。")
+    try:
+        completed = subprocess.run(
+            [binary, "--issuer", coros_issuer_for_region(resolved_region), "apply-openclaw"],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            shell=False,
+            env=runtime_env,
+        )
+    except Exception as exc:
+        return _diag("openclaw", "warning", f"OpenClaw 注册失败或被跳过: {exc}")
+    if int(completed.returncode) != 0:
+        return _diag("openclaw", "warning", "OpenClaw 注册失败或被跳过；这不会影响脉图同步。")
+    return _diag("openclaw", "ok", "OpenClaw 注册成功。")
 
 
 def login_command(*, region: str | None = None, base_dir: Path | str | None = None) -> list[str]:

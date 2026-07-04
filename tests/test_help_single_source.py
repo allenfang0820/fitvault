@@ -111,9 +111,13 @@ class TestHelpSingleSource(unittest.TestCase):
         self.assertIn('("skills/garmin-stats.zip", "skills")', self.spec)
         self.assertIn('("skills/coros-stats.zip", "skills")', self.spec)
 
-    def test_windows_packaging_includes_console_cli_helper(self):
+    def test_windows_packaging_does_not_require_console_cli_helper_by_default(self):
+        self.assertIn("FITVAULT_INCLUDE_LEGACY_CONSOLE_HELPER", self.spec)
+        self.assertIn("_include_legacy_console_helper", self.spec)
         self.assertIn("name='FitVaultCLI'", self.spec)
         self.assertIn("console=True", self.spec)
+        self.assertIn('platform.system().lower() == "windows" and _include_legacy_console_helper', self.spec)
+        self.assertNotIn('platform.system().lower() == "windows":\n    cli_exe = EXE', self.spec)
 
     def test_app_base_dir_prefers_bundle_resources(self):
         with tempfile.TemporaryDirectory() as temp_dir:
