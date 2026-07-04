@@ -241,7 +241,7 @@ class TestCorosSyncProvider(unittest.TestCase):
     def test_start_coros_oauth_login_creates_browser_session_without_terminal_wrapper(self):
         with mock.patch.object(coros_sync, "discover_coros_mcp_binary", return_value="/tmp/coros-mcp"), \
              mock.patch.object(coros_sync.subprocess, "run", return_value=self._completed(stdout="Open this link:\nhttps://mcpus.coros.com/cli/login/session\n")) as run_mock, \
-             mock.patch.object(coros_sync.webbrowser, "open") as open_mock:
+             mock.patch.object(coros_sync, "open_url_in_system_browser", return_value=True) as open_mock:
             result = coros_sync.start_coros_oauth_login(region="us")
 
         self.assertTrue(result.ok, result)
@@ -252,6 +252,27 @@ class TestCorosSyncProvider(unittest.TestCase):
         open_mock.assert_called_once_with("https://mcpus.coros.com/cli/login/session")
         self.assertNotIn("cmd.exe", command)
         self.assertNotIn("osascript", command)
+
+    def test_start_coros_oauth_login_returns_fallback_link_when_browser_open_fails(self):
+        url = "https://mcpus.coros.com/cli/login/session"
+        with mock.patch.object(coros_sync, "discover_coros_mcp_binary", return_value="/tmp/coros-mcp"), \
+             mock.patch.object(coros_sync.subprocess, "run", return_value=self._completed(stdout=f"Open this link:\n{url}\n")), \
+             mock.patch.object(coros_sync, "open_url_in_system_browser", return_value=False):
+            result = coros_sync.start_coros_oauth_login(region="us")
+
+        self.assertTrue(result.ok, result)
+        self.assertEqual(result.status, "waiting_callback")
+        self.assertIn("未能自动打开浏览器", result.message)
+        self.assertIn(url, result.message)
+
+    def test_open_url_in_system_browser_uses_macos_open(self):
+        with mock.patch.object(coros_sync.sys, "platform", "darwin"), \
+             mock.patch.object(coros_sync.subprocess, "run", return_value=self._completed(stdout="")) as run_mock:
+            opened = coros_sync.open_url_in_system_browser("https://example.test/login")
+
+        self.assertTrue(opened)
+        self.assertEqual(run_mock.call_args.args[0], ["open", "https://example.test/login"])
+        self.assertFalse(run_mock.call_args.kwargs["shell"])
 
     def test_finish_coros_oauth_login_waits_when_cli_poll_times_out(self):
         with mock.patch.object(coros_sync, "discover_coros_mcp_binary", return_value="/tmp/coros-mcp"), \
