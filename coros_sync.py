@@ -19,6 +19,7 @@ import subprocess
 import sys
 import tempfile
 import uuid
+import webbrowser
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -187,6 +188,10 @@ def default_mcp_token_path(
         else Path(os.environ.get("COROS_MCP_TOKEN_ROOT", str(Path.home() / ".coros-mcp-skill-gateway-ts"))).expanduser()
     )
     return root / resolved_region / "token.json"
+
+
+def default_mcp_pending_login_path(region: str | None = None, token_root: Path | str | None = None) -> Path:
+    return default_mcp_token_path(region, token_root).with_name("pending-login.json")
 
 
 def _is_executable_file(path: Path) -> bool:
@@ -395,18 +400,101 @@ def start_coros_oauth_login(
     region: str | None = None,
     coros_mcp_path: str | None = None,
     env: dict[str, str] | None = None,
-) -> subprocess.Popen:
+    timeout: int = 30,
+) -> CorosConnectionStepResult:
     resolved_region = resolve_coros_region(region)
     runtime_env = build_coros_runtime_env(env)
     binary = str(coros_mcp_path or discover_coros_mcp_binary(runtime_env) or "coros-mcp")
-    return subprocess.Popen(
-        [binary, "--issuer", coros_issuer_for_region(resolved_region), "login"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        stdin=subprocess.DEVNULL,
-        shell=False,
-        env=runtime_env,
+    token_path = default_mcp_token_path(resolved_region)
+    pending_path = default_mcp_pending_login_path(resolved_region)
+    try:
+        completed = subprocess.run(
+            [binary, "--issuer", coros_issuer_for_region(resolved_region), "login-start"],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            shell=False,
+            env=runtime_env,
+        )
+    except subprocess.TimeoutExpired:
+        return CorosConnectionStepResult(False, "failed", "COROS OAuth 登录链接创建超时。", coros_mcp_path=binary, token_path=str(token_path))
+    except OSError as exc:
+        return CorosConnectionStepResult(False, "failed", f"COROS OAuth 登录启动失败: {exc}", coros_mcp_path=binary, token_path=str(token_path))
+
+    if int(completed.returncode) != 0:
+        detail = _error_snippet(str(completed.stderr or completed.stdout or ""))
+        return CorosConnectionStepResult(False, "failed", f"COROS OAuth 登录链接创建失败: {detail}", coros_mcp_path=binary, token_path=str(token_path))
+
+    output = str(completed.stdout or "")
+    login_url = ""
+    match = re.search(r"https?://\S+", output)
+    if match:
+        login_url = match.group(0).strip()
+    if not login_url and pending_path.is_file():
+        try:
+            pending = json.loads(pending_path.read_text(encoding="utf-8"))
+            login_url = str(pending.get("login_url") or pending.get("authorize_url") or "").strip()
+        except Exception:
+            login_url = ""
+    if login_url:
+        try:
+            webbrowser.open(login_url)
+        except Exception:
+            pass
+        return CorosConnectionStepResult(
+            True,
+            "waiting_callback",
+            "已打开系统浏览器，请在 COROS 页面完成 OAuth 授权。",
+            coros_mcp_path=binary,
+            token_path=str(token_path),
+            diagnostics=[_diag("oauth", "waiting", "COROS OAuth 登录链接已创建")],
+        )
+    return CorosConnectionStepResult(
+        True,
+        "waiting_callback",
+        "COROS OAuth 登录链接已创建；如果浏览器未打开，请稍后重试连接。",
+        coros_mcp_path=binary,
+        token_path=str(token_path),
+        diagnostics=[_diag("oauth", "warning", "未从 coros-mcp 输出中解析到登录链接")],
     )
+
+
+def finish_coros_oauth_login(
+    *,
+    region: str | None = None,
+    coros_mcp_path: str | None = None,
+    env: dict[str, str] | None = None,
+    timeout: int = 3,
+) -> CorosConnectionStepResult:
+    resolved_region = resolve_coros_region(region)
+    runtime_env = build_coros_runtime_env(env)
+    binary = str(coros_mcp_path or discover_coros_mcp_binary(runtime_env) or "coros-mcp")
+    token_path = default_mcp_token_path(resolved_region)
+    if token_path.is_file():
+        return CorosConnectionStepResult(True, "authorized", "COROS 授权成功。", coros_mcp_path=binary, token_path=str(token_path))
+    try:
+        completed = subprocess.run(
+            [binary, "--issuer", coros_issuer_for_region(resolved_region), "login-finish"],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            shell=False,
+            env=runtime_env,
+        )
+    except subprocess.TimeoutExpired:
+        return CorosConnectionStepResult(True, "waiting_callback", "等待你在浏览器中完成 COROS OAuth 授权...", coros_mcp_path=binary, token_path=str(token_path))
+    except OSError as exc:
+        return CorosConnectionStepResult(False, "failed", f"COROS OAuth 授权状态读取失败: {exc}", coros_mcp_path=binary, token_path=str(token_path))
+
+    if token_path.is_file():
+        return CorosConnectionStepResult(True, "authorized", "COROS 授权成功。", coros_mcp_path=binary, token_path=str(token_path))
+    output = _error_snippet(str(completed.stderr or completed.stdout or ""))
+    if int(completed.returncode) == 0:
+        return CorosConnectionStepResult(True, "waiting_callback", "等待你在浏览器中完成 COROS OAuth 授权...", coros_mcp_path=binary, token_path=str(token_path))
+    lower = output.lower()
+    if "pending" in lower or "not complete" in lower or "waiting" in lower or "timeout" in lower:
+        return CorosConnectionStepResult(True, "waiting_callback", "等待你在浏览器中完成 COROS OAuth 授权...", coros_mcp_path=binary, token_path=str(token_path))
+    return CorosConnectionStepResult(False, "failed", f"COROS OAuth 授权失败: {output or '未返回授权结果'}", coros_mcp_path=binary, token_path=str(token_path))
 
 
 def apply_coros_openclaw_optional(

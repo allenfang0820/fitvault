@@ -8635,11 +8635,21 @@ class Api:
                 message="正在打开系统浏览器，请完成 COROS OAuth 授权。",
                 append_progress={"step": "runtime", "status": "ok", "message": runtime.message},
             )
-            coros_sync.start_coros_oauth_login(region=region, coros_mcp_path=runtime.coros_mcp_path)
+            oauth = coros_sync.start_coros_oauth_login(region=region, coros_mcp_path=runtime.coros_mcp_path)
+            if not oauth.ok:
+                self._update_account_session(
+                    session_id,
+                    status="failed",
+                    message=oauth.message,
+                    diagnostics=[*(runtime.diagnostics or []), *(oauth.diagnostics or [])],
+                    append_progress={"step": "oauth", "status": "failed", "message": oauth.message},
+                )
+                return
             self._update_account_session(
                 session_id,
-                status="waiting_callback",
-                message="等待 COROS OAuth 授权完成...",
+                status=oauth.status if oauth.status in self.ACCOUNT_CONNECTION_STATES else "waiting_callback",
+                message=oauth.message or "等待 COROS OAuth 授权完成...",
+                diagnostics=[*(runtime.diagnostics or []), *(oauth.diagnostics or [])],
                 append_progress={"step": "oauth", "status": "waiting", "message": "浏览器授权已启动"},
             )
         except Exception as exc:
@@ -8656,6 +8666,24 @@ class Api:
         if current_status not in {"opening_browser", "waiting_callback"}:
             return self._public_account_session(session)
         token_path = Path(str(session.get("token_path") or coros_sync.default_mcp_token_path(region))).expanduser()
+        if not token_path.is_file():
+            finish = coros_sync.finish_coros_oauth_login(
+                region=region,
+                coros_mcp_path=str(session.get("coros_mcp_path") or ""),
+                timeout=1,
+            )
+            if not finish.ok and finish.status == "failed":
+                diagnostics = session.get("diagnostics") if isinstance(session.get("diagnostics"), list) else []
+                self._update_account_session(
+                    session_id,
+                    status="failed",
+                    message=finish.message,
+                    diagnostics=[*diagnostics, *(finish.diagnostics or [])],
+                    append_progress={"step": "oauth", "status": "failed", "message": finish.message},
+                )
+            elif finish.status == "waiting_callback":
+                self._update_account_session(session_id, status="waiting_callback", message=finish.message)
+            token_path = Path(str(session.get("token_path") or finish.token_path or coros_sync.default_mcp_token_path(region))).expanduser()
         if token_path.is_file() and current_status != "authorized":
             diagnostics = session.get("diagnostics") if isinstance(session.get("diagnostics"), list) else []
             openclaw_diag = coros_sync.apply_coros_openclaw_optional(

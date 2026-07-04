@@ -340,12 +340,28 @@ class TestAccountConnectionApi(unittest.TestCase):
             token_path="/tmp/coros/cn/token.json",
             diagnostics=[{"name": "node", "status": "ok", "message": "ok"}],
         )
+        oauth = coros_sync.CorosConnectionStepResult(
+            ok=True,
+            status="waiting_callback",
+            message="已打开系统浏览器，请在 COROS 页面完成 OAuth 授权。",
+            coros_mcp_path="/tmp/coros-mcp",
+            token_path="/tmp/coros/cn/token.json",
+            diagnostics=[{"name": "oauth", "status": "waiting", "message": "waiting"}],
+        )
+        waiting = coros_sync.CorosConnectionStepResult(
+            ok=True,
+            status="waiting_callback",
+            message="等待你在浏览器中完成 COROS OAuth 授权...",
+            coros_mcp_path="/tmp/coros-mcp",
+            token_path="/tmp/coros/cn/token.json",
+        )
         with mock.patch.object(coros_sync, "prepare_coros_connection_runtime", return_value=runtime), \
-             mock.patch.object(coros_sync, "start_coros_oauth_login") as oauth_mock:
+             mock.patch.object(coros_sync, "start_coros_oauth_login", return_value=oauth) as oauth_mock, \
+             mock.patch.object(coros_sync, "finish_coros_oauth_login", return_value=waiting):
             api._run_coros_connection_worker(session["session_id"], "cn")
+            polled = api.continue_account_connection(session["session_id"], {})
 
         oauth_mock.assert_called_once_with(region="cn", coros_mcp_path="/tmp/coros-mcp")
-        polled = api.continue_account_connection(session["session_id"], {})
         self.assertEqual(polled["data"]["status"], "waiting_callback")
         self.assertEqual(polled["data"]["node_path"], "/tmp/node")
 
