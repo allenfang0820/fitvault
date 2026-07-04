@@ -19,7 +19,6 @@ import subprocess
 import sys
 import tempfile
 import uuid
-import webbrowser
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -192,6 +191,23 @@ def default_mcp_token_path(
 
 def default_mcp_pending_login_path(region: str | None = None, token_root: Path | str | None = None) -> Path:
     return default_mcp_token_path(region, token_root).with_name("pending-login.json")
+
+
+def open_url_in_system_browser(url: str) -> bool:
+    safe_url = str(url or "").strip()
+    if not safe_url:
+        return False
+    try:
+        if sys.platform == "darwin":
+            completed = subprocess.run(["open", safe_url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10, shell=False)
+            return int(completed.returncode) == 0
+        if os.name == "nt":
+            os.startfile(safe_url)  # type: ignore[attr-defined]
+            return True
+        completed = subprocess.run(["xdg-open", safe_url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10, shell=False)
+        return int(completed.returncode) == 0
+    except Exception:
+        return False
 
 
 def _is_executable_file(path: Path) -> bool:
@@ -437,17 +453,19 @@ def start_coros_oauth_login(
         except Exception:
             login_url = ""
     if login_url:
-        try:
-            webbrowser.open(login_url)
-        except Exception:
-            pass
+        opened = open_url_in_system_browser(login_url)
+        message = (
+            "已打开系统浏览器，请在 COROS 页面完成 OAuth 授权。"
+            if opened else
+            f"COROS OAuth 登录链接已创建，但未能自动打开浏览器。请复制此链接完成授权：{login_url}"
+        )
         return CorosConnectionStepResult(
             True,
             "waiting_callback",
-            "已打开系统浏览器，请在 COROS 页面完成 OAuth 授权。",
+            message,
             coros_mcp_path=binary,
             token_path=str(token_path),
-            diagnostics=[_diag("oauth", "waiting", "COROS OAuth 登录链接已创建")],
+            diagnostics=[_diag("oauth", "waiting", f"COROS OAuth 登录链接已创建: {login_url}")],
         )
     return CorosConnectionStepResult(
         True,
