@@ -9,13 +9,17 @@ storage.
 from __future__ import annotations
 
 import json
+import importlib.util
 import os
 import shlex
 import subprocess
 import sys
+import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass
+from argparse import Namespace
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 
 VALID_GARMIN_REGIONS = {"cn", "global"}
@@ -213,6 +217,75 @@ def _parse_json_stdout(stdout: str) -> Any:
         raise GarminJsonParseError(f"Garmin JSON 解析失败: {exc}") from exc
 
 
+@contextmanager
+def _temporary_sys_path(path: Path) -> Iterator[None]:
+    text = str(path)
+    inserted = False
+    if text not in sys.path:
+        sys.path.insert(0, text)
+        inserted = True
+    try:
+        yield
+    finally:
+        if inserted:
+            try:
+                sys.path.remove(text)
+            except ValueError:
+                pass
+
+
+def _load_skill_module(script: Path, prefix: str) -> Any:
+    if not script.is_file():
+        raise GarminSkillNotFoundError(f"未找到 Garmin skill 脚本: {script}")
+    module_name = f"_fitvault_{prefix}_{uuid.uuid4().hex}"
+    spec = importlib.util.spec_from_file_location(module_name, script)
+    if spec is None or spec.loader is None:
+        raise GarminScriptFailed(f"Garmin skill 模块加载失败: {script}")
+    module = importlib.util.module_from_spec(spec)
+    with _temporary_sys_path(script.parent):
+        try:
+            spec.loader.exec_module(module)
+        except GarminSyncError:
+            raise
+        except Exception as exc:
+            detail = str(exc)
+            if _looks_like_auth_required(detail):
+                raise GarminAuthRequiredError(f"Garmin 授权不可用或已失效: {detail}") from exc
+            raise GarminScriptFailed(f"Garmin skill 模块执行失败: {detail}") from exc
+    return module
+
+
+def _sync_profile_in_process(paths: GarminSkillPaths, *, region: str, refresh: bool) -> list[dict[str, Any]]:
+    module = _load_skill_module(paths.get_stats, "garmin_profile")
+    build_profile = getattr(module, "build_profile", None)
+    if not callable(build_profile):
+        raise GarminScriptFailed("Garmin skill 缺少 build_profile 可调用入口")
+    args = Namespace(
+        mode="sync",
+        refresh=bool(refresh),
+        no_cache_refresh=False,
+        cache_ttl_days=getattr(module, "DEFAULT_CACHE_TTL_DAYS", 7),
+        region=region,
+        tokenstore=None,
+        auth_file=None,
+        debug=False,
+    )
+    try:
+        parsed = build_profile(args)
+    except GarminSyncError:
+        raise
+    except Exception as exc:
+        detail = str(exc)
+        if _looks_like_auth_required(detail):
+            raise GarminAuthRequiredError(f"Garmin 授权不可用或已失效: {detail}") from exc
+        raise GarminScriptFailed(f"Garmin 画像同步执行失败: {detail}") from exc
+    if not isinstance(parsed, list):
+        raise GarminJsonParseError("Garmin 画像同步返回的不是 JSON 数组")
+    if not all(isinstance(item, dict) for item in parsed):
+        raise GarminJsonParseError("Garmin 画像同步 JSON 数组元素必须是对象")
+    return parsed
+
+
 def sync_profile_json(
     *,
     region: str | None = None,
@@ -222,16 +295,7 @@ def sync_profile_json(
 ) -> list[dict[str, Any]]:
     resolved_region = resolve_garmin_region(region)
     paths = get_garmin_skill_paths(base_dir)
-    args = ["sync", "--region", resolved_region]
-    if refresh:
-        args.append("--refresh")
-    result = run_garmin_script(paths.get_stats, args, timeout=timeout)
-    parsed = _parse_json_stdout(result.stdout)
-    if not isinstance(parsed, list):
-        raise GarminJsonParseError("Garmin 画像同步返回的不是 JSON 数组")
-    if not all(isinstance(item, dict) for item in parsed):
-        raise GarminJsonParseError("Garmin 画像同步 JSON 数组元素必须是对象")
-    return parsed
+    return _sync_profile_in_process(paths, region=resolved_region, refresh=refresh)
 
 
 def download_fit_json(

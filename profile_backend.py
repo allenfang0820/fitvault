@@ -695,6 +695,18 @@ def mark_profile_sync_blocked(message: str) -> None:
     write_sync_state(state)
 
 
+def mark_profile_sync_auth_required(message: str) -> None:
+    state = read_sync_state()
+    state.update({
+        "connection_status": "disconnected",
+        "last_attempt_at": datetime.now().isoformat(),
+        "last_attempt_status": "auth_required",
+        "last_error": message,
+        "active_job_id": None,
+    })
+    write_sync_state(state)
+
+
 def mark_profile_sync_failed(message: str) -> None:
     state = read_sync_state()
     state.update({
@@ -704,6 +716,15 @@ def mark_profile_sync_failed(message: str) -> None:
         "active_job_id": None,
     })
     write_sync_state(state)
+
+
+def _profile_sync_blocked_code(code: str) -> bool:
+    return code in {
+        "garmin_skill_not_found",
+        "coros_skill_not_found",
+        "invalid_garmin_region",
+        "invalid_coros_region",
+    }
 
 
 # ─── 用户画像本地缓存文件（读/写/校验） ────────────────────────────────
@@ -3956,15 +3977,28 @@ def fetch_mcp_persona(platform: str, trigger_type: str = "manual") -> dict[str, 
         detail = str(e).strip()
         if detail and detail != error:
             error = f"{error} {detail}"
-        mark_profile_sync_failed(error)
+        mark_profile_sync_auth_required(error)
         return _provider_failure_payload(platform, e, error)
     except coros_sync.CorosSyncError as e:
         error = f"COROS 数据同步失败: {e}"
-        mark_profile_sync_failed(error)
+        if _profile_sync_blocked_code(str(getattr(e, "code", ""))):
+            mark_profile_sync_blocked(error)
+        else:
+            mark_profile_sync_failed(error)
+        return _provider_failure_payload(platform, e, error)
+    except garmin_sync.GarminAuthRequiredError as e:
+        error = "Garmin 授权不可用或已失效，请到配置页完成授权。"
+        detail = str(e).strip()
+        if detail and detail != error:
+            error = f"{error} {detail}"
+        mark_profile_sync_auth_required(error)
         return _provider_failure_payload(platform, e, error)
     except garmin_sync.GarminSyncError as e:
         error = f"Garmin 数据同步失败: {e}"
-        mark_profile_sync_failed(error)
+        if _profile_sync_blocked_code(str(getattr(e, "code", ""))):
+            mark_profile_sync_blocked(error)
+        else:
+            mark_profile_sync_failed(error)
         return _provider_failure_payload(platform, e, error)
     except Exception as e:
         error = f"MCP 同步失败: {e}"

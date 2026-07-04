@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import base64
+import importlib.util
 import ntpath
 import os
 import re
@@ -16,13 +17,15 @@ import shutil
 import shlex
 import subprocess
 import sys
+import uuid
 import urllib.error
 import urllib.parse
 import urllib.request
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 
 VALID_COROS_REGIONS = {"cn", "us", "eu"}
@@ -573,6 +576,82 @@ def _parse_json_stdout(stdout: str) -> Any:
         raise CorosJsonParseError(f"COROS JSON 解析失败: {exc}") from exc
 
 
+@contextmanager
+def _temporary_sys_path(path: Path) -> Iterator[None]:
+    text = str(path)
+    inserted = False
+    if text not in sys.path:
+        sys.path.insert(0, text)
+        inserted = True
+    try:
+        yield
+    finally:
+        if inserted:
+            try:
+                sys.path.remove(text)
+            except ValueError:
+                pass
+
+
+@contextmanager
+def _temporary_environ(values: dict[str, str]) -> Iterator[None]:
+    old: dict[str, str | None] = {key: os.environ.get(key) for key in values}
+    try:
+        os.environ.update({str(key): str(value) for key, value in values.items()})
+        yield
+    finally:
+        for key, value in old.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+
+def _load_skill_module(script: Path, prefix: str) -> Any:
+    if not script.is_file():
+        raise CorosSkillNotFoundError(f"未找到 COROS skill 脚本: {script}")
+    module_name = f"_fitvault_{prefix}_{uuid.uuid4().hex}"
+    spec = importlib.util.spec_from_file_location(module_name, script)
+    if spec is None or spec.loader is None:
+        raise CorosScriptFailed(f"COROS skill 模块加载失败: {script}")
+    module = importlib.util.module_from_spec(spec)
+    with _temporary_sys_path(script.parent):
+        try:
+            spec.loader.exec_module(module)
+        except CorosSyncError:
+            raise
+        except Exception as exc:
+            detail = str(exc)
+            if _looks_like_auth_required(detail):
+                raise CorosAuthRequiredError(f"COROS 授权不可用或已失效，请到配置页完成授权: {detail}") from exc
+            raise CorosScriptFailed(f"COROS skill 模块执行失败: {detail}") from exc
+    return module
+
+
+def _sync_profile_in_process(paths: CorosSkillPaths, *, region: str) -> list[dict[str, Any]]:
+    env = build_coros_runtime_env()
+    env["COROS_REGION"] = region
+    module = _load_skill_module(paths.profile_runner, "coros_profile")
+    build_profile = getattr(module, "build_profile", None)
+    if not callable(build_profile):
+        raise CorosScriptFailed("COROS skill 缺少 build_profile 可调用入口")
+    try:
+        with _temporary_environ(env):
+            parsed = build_profile()
+    except CorosSyncError:
+        raise
+    except Exception as exc:
+        detail = str(exc)
+        if _looks_like_auth_required(detail):
+            raise CorosAuthRequiredError(f"COROS 授权不可用或已失效，请到配置页完成授权: {detail}") from exc
+        raise CorosScriptFailed(f"COROS 画像同步执行失败: {detail}") from exc
+    if not isinstance(parsed, list):
+        raise CorosJsonParseError("COROS 画像同步返回的不是 JSON 数组")
+    if not all(isinstance(item, dict) for item in parsed):
+        raise CorosJsonParseError("COROS 画像同步 JSON 数组元素必须是对象")
+    return parsed
+
+
 def sync_profile_json(
     *,
     region: str | None = None,
@@ -581,15 +660,7 @@ def sync_profile_json(
 ) -> list[dict[str, Any]]:
     resolved_region = resolve_coros_region(region)
     paths = get_coros_skill_paths(base_dir)
-    env = build_coros_runtime_env()
-    env["COROS_REGION"] = resolved_region
-    result = run_coros_script(paths.profile_runner, ["sync"], timeout=timeout, env=env)
-    parsed = _parse_json_stdout(result.stdout)
-    if not isinstance(parsed, list):
-        raise CorosJsonParseError("COROS 画像同步返回的不是 JSON 数组")
-    if not all(isinstance(item, dict) for item in parsed):
-        raise CorosJsonParseError("COROS 画像同步 JSON 数组元素必须是对象")
-    return parsed
+    return _sync_profile_in_process(paths, region=resolved_region)
 
 
 def start_login(

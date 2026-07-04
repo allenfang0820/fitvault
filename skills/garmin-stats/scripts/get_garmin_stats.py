@@ -211,18 +211,14 @@ def distance_m(activity: dict) -> float:
         return 0.0
 
 
-def main() -> None:
-    args = parse_args()
+def build_profile(args: argparse.Namespace) -> List[Dict]:
     try:
         import pytz
     except ModuleNotFoundError:
-        raise SystemExit("缺少依赖 pytz。请先在 skill 目录运行: python -m pip install -r requirements.txt")
+        raise RuntimeError("缺少依赖 pytz。请先在 skill 目录运行: python -m pip install -r requirements.txt")
 
     tokenstore = args.tokenstore or args.auth_file or str(default_tokenstore(args.region))
-    try:
-        client, garth_client, token_path = build_client(args.region, tokenstore)
-    except GarminStatsAuthError as exc:
-        raise SystemExit(str(exc))
+    client, garth_client, token_path = build_client(args.region, tokenstore)
     debug(f"使用 Garmin token: {token_path}", args.debug)
     display_name = garth_client.profile["displayName"]
 
@@ -450,6 +446,17 @@ def main() -> None:
         {"metric": "visceral_fat", "value": body_composition.get("visceral_fat")},
     ]
 
+    return output
+
+
+def main() -> None:
+    args = parse_args()
+    try:
+        output = build_profile(args)
+    except GarminStatsAuthError as exc:
+        raise SystemExit(str(exc))
+    except RuntimeError as exc:
+        raise SystemExit(str(exc))
     print(json.dumps(output, ensure_ascii=False))
 
 

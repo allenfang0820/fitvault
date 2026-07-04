@@ -680,7 +680,7 @@ class TestFitSync(unittest.TestCase):
         self.assertFalse(result["ok"], result)
         self.assertIn("请先登录 Garmin", result["error"])
         state = profile_backend.read_sync_state()
-        self.assertIn(state.get("last_attempt_status"), {"failed", "failed_retryable"})
+        self.assertEqual(state.get("last_attempt_status"), "failed_retryable")
         self.assertIn("请先登录 Garmin", state.get("last_error") or "")
 
     def test_coros_persona_provider_auth_failure_marks_sync_failed_without_llm(self):
@@ -693,11 +693,32 @@ class TestFitSync(unittest.TestCase):
         self.assertFalse(result["ok"], result)
         self.assertIn("配置页完成授权", result["error"])
         state = profile_backend.read_sync_state()
-        self.assertIn(state.get("last_attempt_status"), {"failed", "failed_retryable"})
+        self.assertEqual(state.get("last_attempt_status"), "auth_required")
         self.assertIn("配置页完成授权", state.get("last_error") or "")
         self.assertEqual(result["provider"], "coros")
         self.assertEqual(result["provider_error_code"], "coros_auth_required")
         self.assertIn("action_hint", result)
+
+    def test_garmin_persona_provider_auth_failure_marks_auth_required(self):
+        profile_backend.write_sync_state({})
+        with mock.patch.object(garmin_sync, "sync_profile_json", side_effect=garmin_sync.GarminAuthRequiredError("missing_token")), \
+             mock.patch.object(llm_backend, "load_llm_config", return_value={"garmin_region": "cn"}):
+            result = profile_backend.fetch_mcp_persona("garmin")
+
+        self.assertFalse(result["ok"], result)
+        state = profile_backend.read_sync_state()
+        self.assertEqual(state.get("last_attempt_status"), "auth_required")
+        self.assertEqual(result["provider_error_code"], "garmin_auth_required")
+
+    def test_profile_sync_retryable_failure_retries_after_cooldown(self):
+        old_attempt = (datetime.now() - profile_backend.timedelta(seconds=profile_backend.PROFILE_SYNC_RETRY_COOLDOWN_SEC + 5)).isoformat()
+        profile_backend.write_sync_state({
+            "last_attempt_status": "failed_retryable",
+            "last_attempt_at": old_attempt,
+            "last_error": "temporary timeout",
+        })
+
+        self.assertFalse(profile_backend.should_skip_profile_sync_for_cooldown())
 
     def test_api_fetch_coros_persona_failure_preserves_provider_code(self):
         profile_backend.write_sync_state({})

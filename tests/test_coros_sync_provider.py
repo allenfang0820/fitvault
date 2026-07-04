@@ -514,57 +514,74 @@ class TestCorosSyncProvider(unittest.TestCase):
 
     def test_sync_profile_json_runs_profile_runner_with_region_env(self):
         payload = [{"metric": "username", "value": "coros-user"}]
-        with mock.patch.object(
-            coros_sync,
-            "run_coros_script",
-            return_value=coros_sync.CorosScriptResult(
-                command=[],
-                stdout=json.dumps(payload, ensure_ascii=False),
-                stderr="",
-                returncode=0,
-            ),
-        ) as run_mock:
+        script = self.scripts_dir / "coros_runner_profile.py"
+        script.write_text(
+            "import os\n"
+            "def build_profile():\n"
+            "    assert os.environ.get('COROS_REGION') == 'us'\n"
+            f"    return {payload!r}\n",
+            encoding="utf-8",
+        )
+        with mock.patch.object(coros_sync, "build_coros_runtime_env", return_value={}), \
+             mock.patch.object(coros_sync.subprocess, "run", side_effect=AssertionError("profile sync must not spawn script")):
             result = coros_sync.sync_profile_json(base_dir=self.base_dir, region="us", timeout=7)
 
         self.assertEqual(result, payload)
-        args, kwargs = run_mock.call_args
-        self.assertEqual(args[0], self.scripts_dir.resolve() / "coros_runner_profile.py")
-        self.assertEqual(args[1], ["sync"])
-        self.assertEqual(kwargs["timeout"], 7)
-        self.assertEqual(kwargs["env"]["COROS_REGION"], "us")
 
     def test_sync_profile_json_rejects_non_json_stdout(self):
-        with mock.patch.object(
-            coros_sync,
-            "run_coros_script",
-            return_value=coros_sync.CorosScriptResult(command=[], stdout="not json", stderr="", returncode=0),
-        ):
-            with self.assertRaises(coros_sync.CorosJsonParseError) as ctx:
-                coros_sync.sync_profile_json(base_dir=self.base_dir, region="cn")
+        script = self.scripts_dir / "coros_runner_profile.py"
+        script.write_text("def build_profile():\n    return 'not json'\n", encoding="utf-8")
+        with self.assertRaises(coros_sync.CorosJsonParseError) as ctx:
+            coros_sync.sync_profile_json(base_dir=self.base_dir, region="cn")
 
         self.assertEqual(ctx.exception.code, "coros_json_parse_error")
 
     def test_sync_profile_json_rejects_non_array_stdout(self):
-        with mock.patch.object(
-            coros_sync,
-            "run_coros_script",
-            return_value=coros_sync.CorosScriptResult(command=[], stdout='{"metric":"username"}', stderr="", returncode=0),
-        ):
-            with self.assertRaises(coros_sync.CorosJsonParseError) as ctx:
-                coros_sync.sync_profile_json(base_dir=self.base_dir, region="cn")
+        script = self.scripts_dir / "coros_runner_profile.py"
+        script.write_text("def build_profile():\n    return {'metric': 'username'}\n", encoding="utf-8")
+        with self.assertRaises(coros_sync.CorosJsonParseError) as ctx:
+            coros_sync.sync_profile_json(base_dir=self.base_dir, region="cn")
 
         self.assertIn("不是 JSON 数组", str(ctx.exception))
 
     def test_sync_profile_json_rejects_non_object_array_items(self):
-        with mock.patch.object(
-            coros_sync,
-            "run_coros_script",
-            return_value=coros_sync.CorosScriptResult(command=[], stdout='["bad"]', stderr="", returncode=0),
-        ):
-            with self.assertRaises(coros_sync.CorosJsonParseError) as ctx:
-                coros_sync.sync_profile_json(base_dir=self.base_dir, region="cn")
+        script = self.scripts_dir / "coros_runner_profile.py"
+        script.write_text("def build_profile():\n    return ['bad']\n", encoding="utf-8")
+        with self.assertRaises(coros_sync.CorosJsonParseError) as ctx:
+            coros_sync.sync_profile_json(base_dir=self.base_dir, region="cn")
 
         self.assertIn("数组元素必须是对象", str(ctx.exception))
+
+    def test_sync_profile_json_restores_environment_after_imported_runner(self):
+        script = self.scripts_dir / "coros_runner_profile.py"
+        script.write_text(
+            "import os\n"
+            "def build_profile():\n"
+            "    assert os.environ.get('COROS_REGION') == 'eu'\n"
+            "    assert os.environ.get('QCLAW_CLI_NODE_BINARY') == '/tmp/node'\n"
+            "    return []\n",
+            encoding="utf-8",
+        )
+        with mock.patch.object(coros_sync, "build_coros_runtime_env", return_value={"QCLAW_CLI_NODE_BINARY": "/tmp/node"}), \
+             mock.patch.dict(os.environ, {"COROS_REGION": "cn"}, clear=False):
+            coros_sync.sync_profile_json(base_dir=self.base_dir, region="eu")
+            self.assertEqual(os.environ.get("COROS_REGION"), "cn")
+            self.assertNotEqual(os.environ.get("QCLAW_CLI_NODE_BINARY"), "/tmp/node")
+
+    def test_sync_profile_json_frozen_windows_does_not_launch_app_executable(self):
+        payload = [{"metric": "username", "value": "coros-user"}]
+        script = self.scripts_dir / "coros_runner_profile.py"
+        script.write_text(f"def build_profile():\n    return {payload!r}\n", encoding="utf-8")
+        app_exe = self.base_dir / "FitVault.exe"
+        app_exe.write_text("", encoding="utf-8")
+
+        with mock.patch.object(coros_sync.sys, "frozen", True, create=True), \
+             mock.patch.object(coros_sync.sys, "executable", str(app_exe)), \
+             mock.patch.object(coros_sync, "build_coros_runtime_env", return_value={}), \
+             mock.patch.object(coros_sync.subprocess, "run", side_effect=AssertionError("profile sync must not launch sys.executable")):
+            parsed = coros_sync.sync_profile_json(base_dir=self.base_dir)
+
+        self.assertEqual(parsed, payload)
 
     def test_download_fit_json_limits_coros_range_download_to_ten(self):
         payload = {

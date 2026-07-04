@@ -129,48 +129,65 @@ class TestGarminSyncProvider(unittest.TestCase):
 
     def test_sync_profile_json_parses_array(self):
         payload = [{"metric": "username", "value": "runner"}]
-        with mock.patch.object(
-            garmin_sync.subprocess,
-            "run",
-            return_value=self._completed(stdout=json.dumps(payload)),
-        ) as run_mock:
+        script = self.scripts_dir / "get_garmin_stats.py"
+        script.write_text(
+            "def build_profile(args):\n"
+            f"    assert args.region == 'cn'\n"
+            f"    return {payload!r}\n",
+            encoding="utf-8",
+        )
+        with mock.patch.object(garmin_sync.subprocess, "run", side_effect=AssertionError("profile sync must not spawn script")):
             parsed = garmin_sync.sync_profile_json(base_dir=self.base_dir, region="cn")
 
         self.assertEqual(parsed, payload)
-        command = run_mock.call_args.args[0]
-        self.assertIn("get_garmin_stats.py", command[1])
-        self.assertEqual(command[2:], ["sync", "--region", "cn"])
 
     def test_sync_profile_json_adds_refresh_flag(self):
-        with mock.patch.object(
-            garmin_sync.subprocess,
-            "run",
-            return_value=self._completed(stdout="[]"),
-        ) as run_mock:
-            garmin_sync.sync_profile_json(base_dir=self.base_dir, region="global", refresh=True)
+        script = self.scripts_dir / "get_garmin_stats.py"
+        script.write_text(
+            "def build_profile(args):\n"
+            "    assert args.region == 'global'\n"
+            "    assert args.refresh is True\n"
+            "    return []\n",
+            encoding="utf-8",
+        )
 
-        self.assertEqual(run_mock.call_args.args[0][2:], ["sync", "--region", "global", "--refresh"])
+        garmin_sync.sync_profile_json(base_dir=self.base_dir, region="global", refresh=True)
 
     def test_sync_profile_json_rejects_non_json(self):
-        with mock.patch.object(
-            garmin_sync.subprocess,
-            "run",
-            return_value=self._completed(stdout="not json"),
-        ):
-            with self.assertRaises(garmin_sync.GarminJsonParseError) as ctx:
-                garmin_sync.sync_profile_json(base_dir=self.base_dir)
+        script = self.scripts_dir / "get_garmin_stats.py"
+        script.write_text("def build_profile(args):\n    return 'not json'\n", encoding="utf-8")
+        with self.assertRaises(garmin_sync.GarminJsonParseError) as ctx:
+            garmin_sync.sync_profile_json(base_dir=self.base_dir)
 
         self.assertEqual(ctx.exception.code, "garmin_json_parse_error")
-        self.assertIn("JSON 解析失败", str(ctx.exception))
+        self.assertIn("不是 JSON 数组", str(ctx.exception))
 
     def test_sync_profile_json_rejects_non_array(self):
-        with mock.patch.object(
-            garmin_sync.subprocess,
-            "run",
-            return_value=self._completed(stdout='{"ok": true}'),
-        ):
-            with self.assertRaisesRegex(garmin_sync.GarminJsonParseError, "不是 JSON 数组"):
-                garmin_sync.sync_profile_json(base_dir=self.base_dir)
+        script = self.scripts_dir / "get_garmin_stats.py"
+        script.write_text("def build_profile(args):\n    return {'ok': True}\n", encoding="utf-8")
+        with self.assertRaisesRegex(garmin_sync.GarminJsonParseError, "不是 JSON 数组"):
+            garmin_sync.sync_profile_json(base_dir=self.base_dir)
+
+    def test_sync_profile_json_rejects_non_object_array_items(self):
+        script = self.scripts_dir / "get_garmin_stats.py"
+        script.write_text("def build_profile(args):\n    return ['bad']\n", encoding="utf-8")
+        with self.assertRaisesRegex(garmin_sync.GarminJsonParseError, "数组元素必须是对象"):
+            garmin_sync.sync_profile_json(base_dir=self.base_dir)
+
+    def test_sync_profile_json_frozen_macos_does_not_launch_app_executable(self):
+        payload = [{"metric": "username", "value": "runner"}]
+        script = self.scripts_dir / "get_garmin_stats.py"
+        script.write_text(f"def build_profile(args):\n    return {payload!r}\n", encoding="utf-8")
+        app_exe = self.base_dir / "脉图.app" / "Contents" / "MacOS" / "FitVault"
+        app_exe.parent.mkdir(parents=True)
+        app_exe.write_text("", encoding="utf-8")
+
+        with mock.patch.object(garmin_sync.sys, "frozen", True, create=True), \
+             mock.patch.object(garmin_sync.sys, "executable", str(app_exe)), \
+             mock.patch.object(garmin_sync.subprocess, "run", side_effect=AssertionError("profile sync must not launch sys.executable")):
+            parsed = garmin_sync.sync_profile_json(base_dir=self.base_dir)
+
+        self.assertEqual(parsed, payload)
 
     def test_subprocess_nonzero_exit_raises_with_stderr_snippet(self):
         script = self.scripts_dir / "get_garmin_stats.py"
