@@ -622,7 +622,7 @@ def _build_cli_command(config: dict[str, Any], prompt: str) -> list[str]:
     cli_path = _validate_cli_executable_path(str(config.get("cli_path") or ""))
     model = str(config.get("cli_model") or config.get("model") or "").strip()
     if cli_type == "codex":
-        base = [cli_path or "codex", "exec", "{prompt}"]
+        base = [cli_path or "codex", "exec", "--skip-git-repo-check", "{prompt}"]
     elif cli_type == "claude":
         base = [cli_path or "claude", "-p", "{prompt}"]
     elif cli_type == "openclaw":

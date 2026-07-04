@@ -50,7 +50,7 @@ class TestLLMGenerateText(unittest.TestCase):
 
     def test_generate_text_cli_transport_uses_cli_runner(self):
         completed = subprocess.CompletedProcess(
-            args=["codex", "exec", "prompt"],
+            args=["codex", "exec", "--skip-git-repo-check", "prompt"],
             returncode=0,
             stdout="cli ok\n",
             stderr="",
@@ -71,7 +71,7 @@ class TestLLMGenerateText(unittest.TestCase):
         self.assertEqual(kwargs["encoding"], "utf-8")
         self.assertEqual(kwargs["errors"], "replace")
         self.assertEqual(kwargs["timeout"], 45)
-        self.assertEqual(run_mock.call_args.args[0][0:2], ["codex", "exec"])
+        self.assertEqual(run_mock.call_args.args[0][0:3], ["codex", "exec", "--skip-git-repo-check"])
 
     def test_chat_completions_remains_http_compatibility_wrapper(self):
         messages = [{"role": "user", "content": "hello"}]
