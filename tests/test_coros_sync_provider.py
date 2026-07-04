@@ -423,6 +423,7 @@ class TestCorosSyncProvider(unittest.TestCase):
         self.assertIn("cmd.exe", launcher)
         self.assertIn("pause", launcher[-1])
         self.assertIn("install_coros_mcp.cmd", launcher[-1])
+        self.assertIn("call ", launcher[-1])
         run_mock.assert_not_called()
 
     def test_start_login_nonzero_returns_failed(self):

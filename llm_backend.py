@@ -533,6 +533,18 @@ def serialize_messages_for_cli(messages: list[dict[str, str]]) -> str:
     return "\n\n".join(blocks).strip()
 
 
+def serialize_messages_for_openclaw_cli(messages: list[dict[str, str]]) -> str:
+    """Serialize OpenClaw messages without synthetic role markers."""
+    parts: list[str] = []
+    for msg in messages or []:
+        if not isinstance(msg, dict):
+            continue
+        content = str(msg.get("content") or "").strip()
+        if content:
+            parts.append(content)
+    return "\n\n".join(parts).strip()
+
+
 def _split_cli_args(args_text: str) -> list[str]:
     text = str(args_text or "").strip()
     if not text:
@@ -813,6 +825,22 @@ def _read_qclaw_launchagent_env() -> dict[str, str]:
     }
 
 
+def _windows_subprocess_hidden_kwargs() -> dict[str, Any]:
+    if not sys.platform.startswith("win"):
+        return {}
+    kwargs: dict[str, Any] = {}
+    creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    if creationflags:
+        kwargs["creationflags"] = creationflags
+    startupinfo_cls = getattr(subprocess, "STARTUPINFO", None)
+    if startupinfo_cls is not None:
+        startupinfo = startupinfo_cls()
+        startupinfo.dwFlags |= getattr(subprocess, "STARTF_USESHOWWINDOW", 1)
+        startupinfo.wShowWindow = 0
+        kwargs["startupinfo"] = startupinfo
+    return kwargs
+
+
 def _parse_last_json_object(text: str) -> dict[str, Any] | None:
     raw = str(text or "").strip()
     for idx, char in enumerate(raw):
@@ -865,6 +893,7 @@ def _run_openclaw_readonly_json(config: dict[str, Any], args: list[str], timeout
             timeout=_normalize_cli_timeout(timeout),
             shell=False,
             env=cli_env,
+            **_windows_subprocess_hidden_kwargs(),
         )
     except Exception as exc:
         return None, str(exc)
@@ -956,7 +985,12 @@ def _run_cli_completion(
     session_id: str,
     timeout: int = 300,
 ) -> str:
-    prompt = serialize_messages_for_cli(messages)
+    cli_type = _normalize_cli_type(config.get("cli_type"))
+    prompt = (
+        serialize_messages_for_openclaw_cli(messages)
+        if cli_type == "openclaw"
+        else serialize_messages_for_cli(messages)
+    )
     if not prompt:
         raise RuntimeError("CLI prompt 为空")
     cmd = _build_cli_command(config, prompt)
@@ -972,6 +1006,7 @@ def _run_cli_completion(
             timeout=effective_timeout,
             shell=False,
             env=cli_env,
+            **_windows_subprocess_hidden_kwargs(),
         )
     except subprocess.TimeoutExpired as exc:
         raise RuntimeError(f"CLI 已启动但模型未在超时时间内返回 ({effective_timeout}s)") from exc
@@ -984,13 +1019,13 @@ def _run_cli_completion(
     stderr = str(result.stderr or "").strip()
     if result.returncode != 0:
         detail = _error_snippet(stderr or stdout)
-        if _normalize_cli_type(config.get("cli_type")) == "openclaw" and _is_openclaw_agent_unusable_detail(detail):
+        if cli_type == "openclaw" and _is_openclaw_agent_unusable_detail(detail):
             raise RuntimeError("OpenClaw Agent 不存在或不可用，请检查 Agent ID")
         suffix = f": {detail}" if detail else ""
         raise RuntimeError(f"CLI 调用失败 (exit {result.returncode}){suffix}")
     if not stdout:
         raise RuntimeError("模型未返回内容")
-    if _normalize_cli_type(config.get("cli_type")) == "openclaw":
+    if cli_type == "openclaw":
         return _extract_openclaw_agent_text(stdout)
     return stdout
 

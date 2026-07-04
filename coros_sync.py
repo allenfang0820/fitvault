@@ -300,9 +300,12 @@ def _windows_command_cwd(command: list[str], fallback: Path) -> str:
 
 
 def _windows_console_launcher(command: list[str], cwd: str, title: str, done_message: str) -> list[str]:
+    command_line = _windows_command_line(command)
+    if command and Path(str(command[0])).suffix.lower() in {".cmd", ".bat"}:
+        command_line = "call " + command_line
     shell_command = (
         f"cd /d {subprocess.list2cmdline([cwd])} && "
-        f"{_windows_command_line(command)} & "
+        f"{command_line} & "
         f"echo. & echo {done_message} & pause"
     )
     return [

@@ -333,9 +333,20 @@ def login_command(*, region: str | None = None, base_dir: Path | str | None = No
     if getattr(sys, "frozen", False):
         executable = Path(sys.executable)
         if sys.platform.startswith("win"):
-            cli_exe = executable.with_name("FitVaultCLI.exe")
-            if cli_exe.is_file():
-                return [str(cli_exe), "--garmin-login", "--region", resolved_region]
+            candidates = [executable.with_name("FitVaultCLI.exe")]
+            meipass = Path(str(getattr(sys, "_MEIPASS", "")))
+            if str(meipass):
+                candidates.extend([
+                    meipass / "FitVaultCLI.exe",
+                    meipass.parent / "FitVaultCLI.exe",
+                ])
+            for cli_exe in candidates:
+                if cli_exe.is_file():
+                    return [str(cli_exe), "--garmin-login", "--region", resolved_region]
+            raise GarminSkillNotFoundError(
+                "未找到 Windows Garmin 授权辅助程序: "
+                + "; ".join(str(path) for path in candidates)
+            )
         return [sys.executable, "--garmin-login", "--region", resolved_region]
     return [sys.executable, str(paths.login), "--region", resolved_region]
 
@@ -355,9 +366,12 @@ def _windows_command_cwd(command: list[str], fallback: Path) -> str:
 
 
 def _windows_console_launcher(command: list[str], cwd: str, title: str, done_message: str) -> list[str]:
+    command_line = _windows_command_line(command)
+    if command and Path(str(command[0])).suffix.lower() in {".cmd", ".bat"}:
+        command_line = "call " + command_line
     shell_command = (
         f"cd /d {subprocess.list2cmdline([cwd])} && "
-        f"{_windows_command_line(command)} & "
+        f"{command_line} & "
         f"echo. & echo {done_message} & pause"
     )
     return [

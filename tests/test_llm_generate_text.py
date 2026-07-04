@@ -108,6 +108,16 @@ class TestLLMGenerateText(unittest.TestCase):
         self.assertIn("[USER]\nquestion", prompt)
         self.assertIn("[ASSISTANT]\nanswer", prompt)
 
+    def test_serialize_messages_for_openclaw_cli_omits_role_markers(self):
+        prompt = llm_backend.serialize_messages_for_openclaw_cli([
+            {"role": "system", "content": "只回复连接成功"},
+            {"role": "user", "content": "请回复连接成功"},
+        ])
+
+        self.assertEqual(prompt, "只回复连接成功\n\n请回复连接成功")
+        self.assertNotIn("[SYSTEM]", prompt)
+        self.assertNotIn("[USER]", prompt)
+
     def test_cli_nonzero_exit_raises_with_stderr_snippet(self):
         completed = subprocess.CompletedProcess(
             args=["claude"],
@@ -215,7 +225,8 @@ class TestLLMGenerateText(unittest.TestCase):
         self.assertEqual(cmd[0], windows_path)
         self.assertEqual(cmd[1:5], ["agent", "--agent", "main", "--timeout"])
         self.assertIn("--json", cmd)
-        self.assertIn("[USER]\nhello", cmd)
+        self.assertIn("hello", cmd)
+        self.assertNotIn("[USER]\nhello", cmd)
 
     def test_openclaw_cli_uses_configured_agent_id(self):
         completed = subprocess.CompletedProcess(args=["openclaw"], returncode=0, stdout="ok", stderr="")
@@ -237,6 +248,20 @@ class TestLLMGenerateText(unittest.TestCase):
         self.assertIn("--timeout", cmd)
         self.assertEqual(cmd[cmd.index("--timeout") + 1], "120")
         self.assertIn("--json", cmd)
+
+    def test_windows_cli_run_hides_console_window(self):
+        completed = subprocess.CompletedProcess(args=["openclaw"], returncode=0, stdout="ok", stderr="")
+        with mock.patch.object(llm_backend.sys, "platform", "win32"), \
+             mock.patch.object(llm_backend.subprocess, "CREATE_NO_WINDOW", 0x08000000, create=True), \
+             mock.patch.object(llm_backend.subprocess, "STARTUPINFO", None, create=True), \
+             mock.patch.object(llm_backend.subprocess, "run", return_value=completed) as run_mock:
+            llm_backend.generate_text(
+                config={"transport": "cli", "cli_type": "openclaw"},
+                messages=[{"role": "user", "content": "hello"}],
+                session_id="sid-1",
+            )
+
+        self.assertEqual(run_mock.call_args.kwargs["creationflags"], 0x08000000)
 
     def test_openclaw_cli_empty_path_falls_back_to_qclaw_wrapper(self):
         completed = subprocess.CompletedProcess(args=["openclaw"], returncode=0, stdout="ok", stderr="")

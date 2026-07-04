@@ -294,6 +294,32 @@ class TestGarminSyncProvider(unittest.TestCase):
 
         self.assertEqual(command, [str(cli_exe), "--garmin-login", "--region", "cn"])
 
+    def test_login_command_windows_frozen_requires_console_helper(self):
+        executable = self.base_dir / "FitVault.exe"
+        executable.write_text("", encoding="utf-8")
+        with mock.patch.object(garmin_sync.sys, "platform", "win32"), \
+             mock.patch.object(garmin_sync.sys, "frozen", True, create=True), \
+             mock.patch.object(garmin_sync.sys, "executable", str(executable)):
+            with self.assertRaises(garmin_sync.GarminSkillNotFoundError) as ctx:
+                garmin_sync.login_command(base_dir=self.base_dir, region="cn")
+
+        self.assertIn("FitVaultCLI.exe", str(ctx.exception))
+
+    def test_login_command_windows_frozen_finds_meipass_console_helper(self):
+        executable = self.base_dir / "FitVault.exe"
+        meipass = self.base_dir / "_MEI12345"
+        cli_exe = meipass / "FitVaultCLI.exe"
+        executable.write_text("", encoding="utf-8")
+        meipass.mkdir()
+        cli_exe.write_text("", encoding="utf-8")
+        with mock.patch.object(garmin_sync.sys, "platform", "win32"), \
+             mock.patch.object(garmin_sync.sys, "frozen", True, create=True), \
+             mock.patch.object(garmin_sync.sys, "_MEIPASS", str(meipass), create=True), \
+             mock.patch.object(garmin_sync.sys, "executable", str(executable)):
+            command = garmin_sync.login_command(base_dir=self.base_dir, region="cn")
+
+        self.assertEqual(command, [str(cli_exe), "--garmin-login", "--region", "cn"])
+
     def test_default_tokenstore_uses_region_suffix(self):
         workspace = self.base_dir / "workspace"
 
