@@ -1,5 +1,6 @@
 import os
 import platform
+import importlib
 # Force pyinstaller to use local cache dir to avoid permission error
 os.environ["PYINSTALLER_CONFIG_DIR"] = os.path.join(os.getcwd(), ".pyinstaller_cache")
 os.environ["PYINSTALLER_STRICT_CACHE_DIR"] = os.path.join(os.getcwd(), ".pyinstaller_cache")
@@ -8,6 +9,31 @@ os.environ["XDG_CONFIG_HOME"] = os.path.join(os.getcwd(), ".pyinstaller_cache")
 
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_submodules
+
+
+def _require_packaging_modules(*module_names):
+    """Fail packaging early when a release dependency is missing.
+
+    PyInstaller's collect_submodules can warn and continue for absent optional
+    packages, which may produce an app that starts but fails in bundled skill
+    subprocesses. Keep this check narrow to dependencies required by release
+    workflows.
+    """
+    missing = []
+    for module_name in module_names:
+        try:
+            importlib.import_module(module_name)
+        except Exception as exc:
+            missing.append(f"{module_name} ({type(exc).__name__}: {exc})")
+    if missing:
+        raise RuntimeError(
+            "Missing required packaging modules: "
+            + "; ".join(missing)
+            + ". Run python -m pip install -r requirements.txt in the packaging venv."
+        )
+
+
+_require_packaging_modules("garminconnect", "garth")
 
 _hidden = (
     collect_submodules("gpxpy")
