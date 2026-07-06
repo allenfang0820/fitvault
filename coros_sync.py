@@ -34,6 +34,11 @@ VALID_COROS_REGIONS = {"cn", "us", "eu"}
 DEFAULT_TIMEOUT_SEC = 300
 ERROR_SNIPPET_CHARS = 800
 MAX_COROS_FIT_DOWNLOAD_LIMIT = 10
+COROS_SUBPROCESS_TEXT_KWARGS = {
+    "text": True,
+    "encoding": "utf-8",
+    "errors": "replace",
+}
 
 
 class CorosSyncError(RuntimeError):
@@ -495,7 +500,7 @@ def prepare_coros_connection_runtime(
             completed = run_hidden(
                 [npm_path, "install", "-g", "coros-mcp"],
                 capture_output=True,
-                text=True,
+                **COROS_SUBPROCESS_TEXT_KWARGS,
                 timeout=timeout,
                 env=runtime_env,
             )
@@ -543,7 +548,7 @@ def start_coros_oauth_login(
         completed = run_hidden(
             [binary, "--issuer", coros_issuer_for_region(resolved_region), "login-start"],
             capture_output=True,
-            text=True,
+            **COROS_SUBPROCESS_TEXT_KWARGS,
             timeout=timeout,
             env=runtime_env,
         )
@@ -609,7 +614,7 @@ def finish_coros_oauth_login(
         completed = run_hidden(
             [binary, "--issuer", coros_issuer_for_region(resolved_region), "login-finish"],
             capture_output=True,
-            text=True,
+            **COROS_SUBPROCESS_TEXT_KWARGS,
             timeout=timeout,
             env=runtime_env,
         )
@@ -645,7 +650,7 @@ def apply_coros_openclaw_optional(
         completed = run_hidden(
             [binary, "--issuer", coros_issuer_for_region(resolved_region), "apply-openclaw"],
             capture_output=True,
-            text=True,
+            **COROS_SUBPROCESS_TEXT_KWARGS,
             timeout=timeout,
             env=runtime_env,
         )
@@ -736,7 +741,7 @@ def _run_keepalive_print_config(
         completed = run_hidden(
             command,
             capture_output=True,
-            text=True,
+            **COROS_SUBPROCESS_TEXT_KWARGS,
             timeout=timeout,
             env=build_coros_runtime_env(token_root=token_root),
             cwd=str((paths.skill_dir / "scripts").resolve()),
@@ -1011,7 +1016,23 @@ def normalize_mcp_tool_payload(payload: Any, *, tool_name: str = "") -> Any:
         )
 
     if payload.get("ok") is True:
+        anomaly_text = "\n".join(
+            str(payload.get(key) or "")
+            for key in ("text", "raw_summary", "message", "error")
+            if payload.get(key) not in (None, "")
+        )
+        if _looks_like_mcp_anomaly(anomaly_text):
+            raise CorosFitDownloadError(
+                f"COROS MCP 服务暂不可用: {tool_name or payload.get('tool') or 'unknown'}; {_error_snippet(anomaly_text)}",
+                code=_classify_mcp_anomaly(anomaly_text),
+            )
         if "data" in payload:
+            data_text = payload.get("data") if isinstance(payload.get("data"), str) else ""
+            if _looks_like_mcp_anomaly(data_text):
+                raise CorosFitDownloadError(
+                    f"COROS MCP 服务暂不可用: {tool_name or payload.get('tool') or 'unknown'}; {_error_snippet(data_text)}",
+                    code=_classify_mcp_anomaly(data_text),
+                )
             return payload.get("data")
         if "text" in payload:
             return {"content": [{"type": "text", "text": str(payload.get("text") or "")}]}
@@ -1024,6 +1045,12 @@ def normalize_mcp_tool_payload(payload: Any, *, tool_name: str = "") -> Any:
         for item in content:
             if isinstance(item, dict) and item.get("type") == "text" and isinstance(item.get("text"), str):
                 chunks.append(item["text"])
+        joined = "\n".join(chunks)
+        if _looks_like_mcp_anomaly(joined):
+            raise CorosFitDownloadError(
+                f"COROS MCP 服务暂不可用: {tool_name or payload.get('tool') or 'unknown'}; {_error_snippet(joined)}",
+                code=_classify_mcp_anomaly(joined),
+            )
         if chunks and len(chunks) == len(content) and len(chunks) > 1:
             return {"content": [{"type": "text", "text": "\n".join(chunks)}]}
     return payload
@@ -1089,6 +1116,35 @@ def _looks_like_daily_download_limit(text: str) -> bool:
     )
 
 
+def _looks_like_mcp_anomaly(text: str) -> bool:
+    clean = str(text or "").lower()
+    if not clean:
+        return False
+    markers = (
+        "tool call anomalies detected",
+        "high risk of session context pollution",
+        "context pollution",
+        "request exceeds the llm capability boundary",
+        "capability boundary",
+        "session not found",
+        "mcp session",
+        "stacktrace",
+    )
+    return any(marker in clean for marker in markers)
+
+
+def _classify_mcp_anomaly(text: str) -> str:
+    clean = str(text or "").lower()
+    if (
+        "session not found" in clean
+        or "context pollution" in clean
+        or "capability boundary" in clean
+        or "mcp session" in clean
+    ):
+        return "coros_mcp_unavailable"
+    return "coros_mcp_tool_failed"
+
+
 def extract_download_error_summary(download_summary: dict[str, Any] | None) -> dict[str, str]:
     summary = download_summary if isinstance(download_summary, dict) else {}
     errors = summary.get("errors")
@@ -1113,6 +1169,12 @@ def extract_download_error_summary(download_summary: dict[str, Any] | None) -> d
         return {
             "provider_error_code": "coros_fit_daily_download_limit",
             "provider_detail": limit_detail,
+        }
+    anomaly_detail = next((text for text in cleaned if _looks_like_mcp_anomaly(text)), "")
+    if anomaly_detail:
+        return {
+            "provider_error_code": _classify_mcp_anomaly(anomaly_detail),
+            "provider_detail": anomaly_detail,
         }
 
     detail = next(
@@ -1243,7 +1305,7 @@ def run_coros_script(
         completed = run_hidden(
             command,
             capture_output=True,
-            text=True,
+            **COROS_SUBPROCESS_TEXT_KWARGS,
             timeout=timeout,
             env=env,
             cwd=str(script.parent),
@@ -1462,7 +1524,7 @@ def start_login(
         completed = run_hidden(
             command,
             capture_output=True,
-            text=True,
+            **COROS_SUBPROCESS_TEXT_KWARGS,
             timeout=timeout,
             env=build_coros_runtime_env(),
             cwd=str(Path(command[1]).resolve().parent) if len(command) > 1 else None,
@@ -1573,7 +1635,7 @@ def run_coros_mcp_tool(
         completed = run_hidden(
             command,
             capture_output=True,
-            text=True,
+            **COROS_SUBPROCESS_TEXT_KWARGS,
             timeout=timeout,
             env=build_coros_runtime_env(),
             cwd=str(Path(keepalive_path).resolve().parent),
@@ -1594,10 +1656,10 @@ def run_coros_mcp_tool(
         if _looks_like_auth_required(detail):
             raise CorosAuthRequiredError(f"COROS 授权不可用或已失效，请到配置页完成授权{suffix}")
         lower_detail = detail.lower()
-        if "session not found" in lower_detail or "context pollution" in lower_detail:
+        if _looks_like_mcp_anomaly(lower_detail):
             raise CorosFitDownloadError(
                 f"COROS MCP 服务暂不可用 (exit {int(completed.returncode)}): {tool_name}{suffix}",
-                code="coros_mcp_unavailable",
+                code=_classify_mcp_anomaly(lower_detail),
             )
         raise CorosFitDownloadError(
             f"COROS MCP 工具调用失败 (exit {int(completed.returncode)}): {tool_name}; "
@@ -1610,6 +1672,11 @@ def run_coros_mcp_tool(
         text = stdout.strip()
         if not text:
             raise
+        if _looks_like_mcp_anomaly(text):
+            raise CorosFitDownloadError(
+                f"COROS MCP 服务暂不可用: {tool_name}; {_error_snippet(text)}",
+                code=_classify_mcp_anomaly(text),
+            )
         return {"content": [{"type": "text", "text": text}]}
 
 

@@ -830,7 +830,7 @@ class TestCorosSyncProvider(unittest.TestCase):
 
         self.assertEqual(parsed, payload)
 
-    def test_run_coros_mcp_tool_returns_text_content_for_non_json_stdout(self):
+    def test_run_coros_mcp_tool_rejects_anomaly_non_json_stdout(self):
         with mock.patch.object(coros_sync, "discover_node_binary", return_value="node"), \
              mock.patch.object(coros_sync, "build_coros_runtime_env", return_value={}), \
              mock.patch.object(
@@ -841,14 +841,41 @@ class TestCorosSyncProvider(unittest.TestCase):
                      returncode=0,
                  ),
              ):
-            result = coros_sync.run_coros_mcp_tool(
-                "downloadActivityFitFiles",
-                {"startDate": "20260622", "endDate": "20260702", "limit": 10},
-                region="cn",
-            )
+            with self.assertRaises(coros_sync.CorosFitDownloadError) as ctx:
+                coros_sync.run_coros_mcp_tool(
+                    "downloadActivityFitFiles",
+                    {"startDate": "20260622", "endDate": "20260702", "limit": 10},
+                    region="cn",
+                )
 
-        self.assertEqual(result["content"][0]["type"], "text")
-        self.assertIn("Tool call anomalies", result["content"][0]["text"])
+        self.assertEqual(ctx.exception.code, "coros_mcp_unavailable")
+        self.assertIn("Tool call anomalies", str(ctx.exception))
+
+    def test_run_coros_mcp_tool_rejects_anomaly_envelope_text(self):
+        stdout = json.dumps({
+            "ok": True,
+            "tool": "querySportRecords",
+            "content_type": "text",
+            "text": "Tool call anomalies detected. High risk of session context pollution.",
+            "raw_summary": "Tool call anomalies detected.",
+        })
+        with mock.patch.object(coros_sync, "discover_node_binary", return_value="node"), \
+             mock.patch.object(coros_sync, "build_coros_runtime_env", return_value={}), \
+             mock.patch.object(coros_sync.subprocess, "run", return_value=self._completed(stdout=stdout, returncode=0)):
+            with self.assertRaises(coros_sync.CorosFitDownloadError) as ctx:
+                coros_sync.run_coros_mcp_tool("querySportRecords", {}, region="cn")
+
+        self.assertEqual(ctx.exception.code, "coros_mcp_unavailable")
+
+    def test_run_coros_mcp_tool_uses_utf8_text_decoding(self):
+        with mock.patch.object(coros_sync, "discover_node_binary", return_value="node"), \
+             mock.patch.object(coros_sync, "build_coros_runtime_env", return_value={}), \
+             mock.patch.object(coros_sync.subprocess, "run", return_value=self._completed(stdout='{"ok":true}', returncode=0)) as run_mock:
+            coros_sync.run_coros_mcp_tool("queryUserInfo", {}, region="cn")
+
+        self.assertTrue(run_mock.call_args.kwargs["text"])
+        self.assertEqual(run_mock.call_args.kwargs["encoding"], "utf-8")
+        self.assertEqual(run_mock.call_args.kwargs["errors"], "replace")
 
     def test_parse_json_stdout_accepts_markdown_fence_and_trailing_logs(self):
         stdout = (
@@ -1049,6 +1076,23 @@ class TestCorosSyncProvider(unittest.TestCase):
         self.assertEqual(normalized["provider_error_code"], "coros_mcp_unavailable")
         self.assertNotIn("abc123", serialized)
         self.assertNotIn("def456", serialized)
+
+    def test_extract_download_error_summary_classifies_mcp_anomaly(self):
+        summary = {
+            "ok": False,
+            "searched": 2,
+            "downloaded": 0,
+            "errors": [{
+                "status": "failed",
+                "stage": "query_sport_records",
+                "error": "Tool call anomalies detected. High risk of session context pollution.",
+            }],
+        }
+
+        extracted = coros_sync.extract_download_error_summary(summary)
+
+        self.assertEqual(extracted["provider_error_code"], "coros_mcp_unavailable")
+        self.assertIn("Tool call anomalies", extracted["provider_detail"])
 
     def test_normalize_coros_error_redacts_nested_diagnostics_and_truncates(self):
         noisy = "Traceback\n" + ("stack line\n" * 200) + "cookie=session-secret password=pw123"

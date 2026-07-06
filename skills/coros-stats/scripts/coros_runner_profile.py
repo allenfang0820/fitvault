@@ -27,6 +27,14 @@ from subprocess_utils import run_hidden
 
 KEEPALIVE = SKILL_DIR / "coros-mcp-keepalive.js"
 
+
+def _safe_error_summary(value, limit=800):
+    text = str(value or "")
+    text = re.sub(r'("(?:access_token|refresh_token|id_token|authorization|api[_-]?key|password|passwd|mfa_code|mfa|otp|cookie|secret)"\s*:\s*")[^"]*(")', r'\1[redacted]\2', text, flags=re.I)
+    text = re.sub(r"(bearer\s+)[A-Za-z0-9._~+/=-]+", r"\1[redacted]", text, flags=re.I)
+    text = re.sub(r"\b(token|access_token|refresh_token|authorization|cookie|password|passwd|secret|mfa|otp|api[_-]?key)\s*[:=]\s*[^,\s;\"']+", r"\1=[redacted]", text, flags=re.I)
+    return text.strip()[:limit]
+
 FIELDS = [
     "username", "age", "gender", "height_cm", "weight_kg",
     "body_fat_percent", "body_water_percent", "bone_mass_kg", "muscle_mass_kg",
@@ -109,6 +117,8 @@ def call_keepalive(tool_name, args=None, retries=6):
                 cmd,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=30,
                 cwd=str(SKILL_DIR),
                 env=dict(os.environ),
@@ -118,8 +128,11 @@ def call_keepalive(tool_name, args=None, retries=6):
                     import time
                     time.sleep(1.0 + attempt * 0.5)
                     continue
+                detail = _safe_error_summary(result.stderr or result.stdout)
+                if detail:
+                    print(f"[warn] {tool_name}: COROS keepalive failed: {detail}", file=sys.stderr)
                 return None
-            out = result.stdout
+            out = result.stdout or ""
             if "stackTrace" in out and "Session not found" in out:
                 if attempt < retries - 1:
                     import time
@@ -128,7 +141,7 @@ def call_keepalive(tool_name, args=None, retries=6):
                 print(f"[warn] {tool_name}: COROS session 多次超时", file=sys.stderr)
                 return None
             return out
-        except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
+        except (subprocess.TimeoutExpired, FileNotFoundError, UnicodeDecodeError) as exc:
             if attempt < retries - 1:
                 import time
                 time.sleep(1.0 + attempt * 0.5)

@@ -274,6 +274,17 @@ class TestWindowsRegressionMatrix(unittest.TestCase):
         self.assertNotIn("USERPROFILE", env)
         self.assertEqual(env["QCLAW_CLI_NODE_BINARY"], "/opt/homebrew/bin/node")
 
+    def test_e_coros_mcp_subprocess_uses_utf8_decoding_on_windows(self):
+        with mock.patch.object(coros_sync.sys, "platform", "win32"), \
+             mock.patch.object(coros_sync, "discover_node_binary", return_value=r"C:\FitVault\node\node.exe"), \
+             mock.patch.object(coros_sync.subprocess, "run", return_value=self._completed(stdout='{"ok":true}', returncode=0)) as run_mock:
+            coros_sync.run_coros_mcp_tool("queryUserInfo", {}, region="cn")
+
+        kwargs = run_mock.call_args.kwargs
+        self.assertTrue(kwargs["text"])
+        self.assertEqual(kwargs["encoding"], "utf-8")
+        self.assertEqual(kwargs["errors"], "replace")
+
     def test_f_error_normalization_redacts_sensitive_fields(self):
         payload = coros_sync.normalize_coros_error(
             coros_sync.CorosFitDownloadError(

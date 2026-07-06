@@ -232,6 +232,8 @@ class TestCorosSkillRegionScripts(unittest.TestCase):
         self.assertEqual(Path(command[1]).name, "coros-mcp-keepalive.js")
         self.assertEqual(command[2:4], ["call", "queryUserInfo"])
         self.assertEqual(kwargs["env"]["COROS_REGION"], "eu")
+        self.assertEqual(kwargs["encoding"], "utf-8")
+        self.assertEqual(kwargs["errors"], "replace")
         self.assertFalse(kwargs["shell"])
 
     def test_runner_uses_qclaw_node_binary_with_spaces(self):
@@ -274,6 +276,16 @@ class TestCorosSkillRegionScripts(unittest.TestCase):
             module.call_keepalive("queryUserInfo", retries=1)
 
         self.assertEqual(run_mock.call_args.args[0][0], "/usr/local/bin/node")
+
+    def test_runner_handles_none_stdout_without_type_error(self):
+        module = self._load_runner_module()
+        completed = subprocess.CompletedProcess(args=[], returncode=0, stdout=None, stderr="")
+
+        with mock.patch.object(module.shutil, "which", return_value="node"), \
+             mock.patch.object(module.subprocess, "run", return_value=completed):
+            output = module.call_keepalive("queryUserInfo", retries=1)
+
+        self.assertEqual(output, "")
 
 
 if __name__ == "__main__":
