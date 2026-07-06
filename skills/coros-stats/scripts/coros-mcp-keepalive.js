@@ -18,6 +18,7 @@
  */
 const https = require('https');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { URL } = require('url');
 
@@ -71,7 +72,16 @@ try {
 }
 const COROS_REGION = runtime.region;
 const MCP_URL = REGION_CONFIG[COROS_REGION].mcpUrl;
-const TOKEN_PATH = path.join(process.env.HOME, '.coros-mcp-skill-gateway-ts', COROS_REGION, 'token.json');
+function resolveTokenRoot() {
+  const explicit = String(process.env.COROS_MCP_TOKEN_ROOT || '').trim();
+  if (explicit) return path.resolve(explicit);
+  const home = os.homedir();
+  if (home) return path.join(home, '.coros-mcp-skill-gateway-ts');
+  throw new Error('无法解析 COROS MCP token 目录，请重新连接账号。');
+}
+
+const TOKEN_ROOT = resolveTokenRoot();
+const TOKEN_PATH = path.join(TOKEN_ROOT, COROS_REGION, 'token.json');
 const URL_INFO = new URL(MCP_URL);
 
 let token;
@@ -163,22 +173,74 @@ async function initSession() {
   return resp;
 }
 
+function safeSummary(value) {
+  const raw = typeof value === 'string' ? value : JSON.stringify(value || '');
+  return String(raw || '')
+    .replace(/("(?:access_token|refresh_token|id_token|authorization|api[_-]?key|password|passwd|mfa_code|mfa|otp|cookie|secret)"\s*:\s*")[^"]*(")/ig, '$1[redacted]$2')
+    .replace(/(bearer\s+)[A-Za-z0-9._~+/=-]+/ig, '$1***')
+    .slice(0, 800);
+}
+
+function normalizeToolResult(toolName, resp) {
+  const envelope = {
+    ok: true,
+    tool: toolName,
+    content_type: 'json',
+    data: null,
+    text: '',
+    raw_summary: '',
+  };
+  const content = resp && resp.result && Array.isArray(resp.result.content) ? resp.result.content : null;
+  if (!content) {
+    envelope.data = resp;
+    envelope.raw_summary = safeSummary(resp);
+    return envelope;
+  }
+
+  const textChunks = [];
+  const otherChunks = [];
+  for (const item of content) {
+    if (item && item.type === 'text') {
+      const text = String(item.text || '');
+      textChunks.push(text);
+      try {
+        otherChunks.push(JSON.parse(text));
+      } catch {
+        // Keep text fallback below.
+      }
+    } else if (item) {
+      otherChunks.push(item);
+    }
+  }
+
+  if (otherChunks.length === 1 && textChunks.length === 1) {
+    envelope.data = otherChunks[0];
+    envelope.raw_summary = safeSummary(textChunks[0]);
+    return envelope;
+  }
+  if (otherChunks.length > 0 && otherChunks.length === content.length) {
+    envelope.data = otherChunks;
+    envelope.raw_summary = safeSummary(otherChunks);
+    return envelope;
+  }
+  envelope.content_type = 'text';
+  envelope.text = textChunks.join('\n');
+  envelope.raw_summary = safeSummary(envelope.text);
+  return envelope;
+}
+
 async function callTool(toolName, toolArgs = {}) {
   const resp = await mcpRequest('tools/call', { name: toolName, arguments: toolArgs });
-  if (resp.result && resp.result.content) {
-    for (const item of resp.result.content) {
-      if (item.type === 'text') {
-        try { console.log(JSON.stringify(JSON.parse(item.text), null, 0)); }
-        catch { console.log(item.text); }
-      } else {
-        console.log(JSON.stringify(item));
-      }
-    }
-  } else if (resp.error) {
-    console.error(JSON.stringify(resp.error, null, 2));
-  } else {
-    console.log(JSON.stringify(resp, null, 2));
+  if (resp.error) {
+    return {
+      ok: false,
+      tool: toolName,
+      content_type: 'error',
+      error: resp.error,
+      raw_summary: safeSummary(resp.error),
+    };
   }
+  return normalizeToolResult(toolName, resp);
 }
 
 async function main() {
@@ -186,6 +248,7 @@ async function main() {
     console.log(JSON.stringify({
       region: COROS_REGION,
       mcpUrl: MCP_URL,
+      tokenRoot: TOKEN_ROOT,
       tokenPath: TOKEN_PATH,
       host: URL_INFO.host,
     }, null, 2));
@@ -206,23 +269,24 @@ async function main() {
     if (args.length > 2) {
       try { toolArgs = JSON.parse(args.slice(2).join(' ')); } catch {}
     }
-    await callTool(toolName, toolArgs);
+    console.log(JSON.stringify(await callTool(toolName, toolArgs)));
   } else if (args[0] === 'batch') {
     // 批量调用模式：在单个 session 中顺序调用多个工具
     const tools = args.slice(1);
+    const results = [];
     for (const toolName of tools) {
-      console.log(`\n=== ${toolName} ===`);
       try {
-        await callTool(toolName, {});
+        results.push(await callTool(toolName, {}));
       } catch (err) {
-        console.error('Error:', err.message);
+        results.push({ ok: false, tool: toolName, content_type: 'error', error: { message: err.message }, raw_summary: safeSummary(err.message) });
       }
     }
+    console.log(JSON.stringify({ ok: true, tool: 'batch', content_type: 'json', data: results, raw_summary: `${results.length} tools` }));
   } else if (!args[0]) {
     // Default: user profile
-    await callTool('queryUserInfo', {});
+    console.log(JSON.stringify(await callTool('queryUserInfo', {})));
   } else {
-    await callTool(args[0], {});
+    console.log(JSON.stringify(await callTool(args[0], {})));
   }
 }
 

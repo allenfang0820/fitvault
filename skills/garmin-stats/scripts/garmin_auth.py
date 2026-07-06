@@ -1,19 +1,15 @@
-"""Garmin 认证与客户端构建工具。
+"""Garmin authentication and client construction for python-garminconnect 0.3.6.
 
-v1.0.3 重点：
-- 大陆区和国际区 token 分目录保存，避免区域混用。
-- 运行同步/下载时只加载已有 token，不自动账号密码重登。
-- 登录时支持 Garmin MFA 输入，并在成功后 dump token。
-- 使用 Python 标准库获取 OAuth consumer 配置，减少 Windows 对系统 curl 的依赖。
+The app-level contract intentionally targets the new native-auth stack in
+python-garminconnect 0.3.6. Do not reintroduce direct legacy session internals
+here; callers should interact through the Garmin object and its 0.3.x client.
 """
 from __future__ import annotations
 
-import json
 import os
 import sys
-import urllib.request
 from pathlib import Path
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 hermes_libs = os.path.expanduser("~/Library/Application Support/QClaw/hermes/libs")
 if hermes_libs in sys.path:
@@ -27,15 +23,33 @@ DEFAULT_AUTH_DIRS = {
     "global": WORKSPACE_DIR / "garmin_auth_global",
 }
 LEGACY_AUTH_PATH = WORKSPACE_DIR / "garmin_auth.json"
+TOKEN_FILE_NAME = "garmin_tokens.json"
 DEFAULT_HTTP_TIMEOUT_SEC = 30
+SUPPORTED_GARMINCONNECT_VERSION = "0.3.6"
 
 
 class GarminStatsAuthError(RuntimeError):
-    """认证或区域配置错误。"""
+    """Authentication or region configuration error."""
 
 
 class GarminStatsMFARequired(GarminStatsAuthError):
-    """Garmin 登录需要 MFA 验证码。"""
+    """Garmin login requires an MFA code."""
+
+    def __init__(self, message: str, client_state: Any = None) -> None:
+        super().__init__(message)
+        self.client_state = client_state
+
+
+class GarminStatsRateLimited(GarminStatsAuthError):
+    """Garmin rejected login due to rate limiting."""
+
+
+class GarminStatsNetworkOrWafError(GarminStatsAuthError):
+    """Network, Cloudflare, WAF, or transient Garmin SSO failure."""
+
+
+class GarminStatsProviderIncompatible(GarminStatsAuthError):
+    """Installed Garmin provider dependency does not match this adapter."""
 
 
 def normalize_region(region: Optional[str]) -> str:
@@ -55,13 +69,16 @@ def default_tokenstore(region: str) -> Path:
     return preferred
 
 
+def _token_file(path: Path) -> Path:
+    expanded = path.expanduser()
+    if expanded.is_dir() or not expanded.name.endswith(".json"):
+        return expanded / TOKEN_FILE_NAME
+    return expanded
+
+
 def tokenstore_has_tokens(path: Path) -> bool:
-    return (
-        path.exists()
-        and path.is_dir()
-        and (path / "oauth1_token.json").is_file()
-        and (path / "oauth2_token.json").is_file()
-    )
+    token_file = _token_file(path)
+    return token_file.is_file()
 
 
 def garmin_http_timeout() -> int:
@@ -74,53 +91,114 @@ def garmin_http_timeout() -> int:
         return DEFAULT_HTTP_TIMEOUT_SEC
 
 
-def configure_client_timeout(client) -> None:
+def _garminconnect_version() -> str:
     try:
-        client.garth.configure(timeout=garmin_http_timeout())
+        from importlib import metadata
+
+        return metadata.version("garminconnect")
     except Exception:
-        pass
+        return ""
 
 
-def client_has_oauth_tokens(client) -> bool:
-    garth_client = getattr(client, "garth", None)
-    return bool(
-        garth_client is not None
-        and getattr(garth_client, "oauth1_token", None)
-        and getattr(garth_client, "oauth2_token", None)
-    )
+def _assert_supported_provider(garminconnect_module: Any) -> None:
+    version = _garminconnect_version()
+    if version and version != SUPPORTED_GARMINCONNECT_VERSION:
+        raise GarminStatsProviderIncompatible(
+            f"Garmin provider 依赖版本不兼容：检测到 garminconnect {version}，"
+            f"当前应用要求 {SUPPORTED_GARMINCONNECT_VERSION}。请重新安装应用依赖。"
+        )
+    garmin_cls = getattr(garminconnect_module, "Garmin", None)
+    if garmin_cls is None:
+        raise GarminStatsProviderIncompatible("garminconnect 缺少 Garmin 类。")
 
 
-def patch_garth_ssl_consumer() -> None:
-    import garth
-
+def _new_garmin(
+    garminconnect_module: Any,
+    *,
+    email: str | None = None,
+    password: str | None = None,
+    region: str = "cn",
+    prompt_mfa: Any = None,
+    return_on_mfa: bool = False,
+) -> Any:
+    _assert_supported_provider(garminconnect_module)
     try:
-        request = urllib.request.Request(
-            "https://thegarth.s3.amazonaws.com/oauth_consumer.json",
-            headers={"User-Agent": "garmin-stats/1.0"},
+        return garminconnect_module.Garmin(
+            email=email,
+            password=password,
+            is_cn=(normalize_region(region) == "cn"),
+            prompt_mfa=prompt_mfa,
+            return_on_mfa=return_on_mfa,
         )
-        with urllib.request.urlopen(request, timeout=garmin_http_timeout()) as response:
-            payload = response.read().decode("utf-8").strip()
-        if payload.startswith("{"):
-            garth.sso.OAUTH_CONSUMER = json.loads(payload)
-    except Exception:
-        pass
+    except TypeError as exc:
+        raise GarminStatsProviderIncompatible(
+            "garminconnect Garmin 构造函数不兼容：当前代码需要 0.3.6 的 "
+            "prompt_mfa / return_on_mfa API。"
+        ) from exc
 
 
-def is_rate_limited_error(exc: BaseException) -> bool:
-    text = str(exc).lower()
-    return "429" in text or "too many requests" in text or "rate limit" in text
+def _client_dump(client: Any, token_path: Path) -> None:
+    api_client = getattr(client, "client", None)
+    dump_fn = getattr(api_client, "dump", None)
+    if callable(dump_fn):
+        dump_fn(str(token_path))
 
 
-def auth_error_message(region: str, tokenstore: Path, exc: BaseException) -> str:
-    if is_rate_limited_error(exc):
-        return (
-            "Garmin 返回 429/Too Many Requests。请停止重试，等待一段时间后再试；"
-            "国际区账号尤其不要频繁重新登录。"
+def _profile(client: Any) -> dict[str, Any]:
+    profile = getattr(client, "profile", None)
+    if isinstance(profile, dict):
+        return profile
+    display_name = getattr(client, "display_name", None)
+    full_name = getattr(client, "full_name", None)
+    return {
+        "displayName": display_name,
+        "fullName": full_name,
+    }
+
+
+def client_display_name(client: Any) -> str:
+    return str(getattr(client, "display_name", None) or _profile(client).get("displayName") or "")
+
+
+def client_full_name(client: Any) -> str:
+    return str(getattr(client, "full_name", None) or _profile(client).get("fullName") or "")
+
+
+def client_connectapi(client: Any, endpoint: str, **kwargs: Any) -> Any:
+    connectapi = getattr(client, "connectapi", None)
+    if callable(connectapi):
+        return connectapi(endpoint, **kwargs)
+    api_client = getattr(client, "client", None)
+    connectapi = getattr(api_client, "connectapi", None)
+    if callable(connectapi):
+        return connectapi(endpoint, **kwargs)
+    raise GarminStatsProviderIncompatible("Garmin client 缺少 connectapi 可调用入口。")
+
+
+def _classify_error(region: str, tokenstore: Path, exc: BaseException) -> GarminStatsAuthError:
+    text = str(exc or "")
+    lower = text.lower()
+    if "no attribute 'garth'" in lower or 'no attribute "garth"' in lower:
+        return GarminStatsProviderIncompatible(
+            "Garmin provider API 不兼容：当前代码不应访问旧版 session 属性。"
         )
-    return (
-        f"Garmin 认证失败（region={region}, tokenstore={tokenstore}）。"
-        "请先运行 login.py 登录对应区域账号；国际区账号使用 --region global。"
-        f" 原始错误：{exc}"
+    if "mfa" in lower or "one-time" in lower or "verification code" in lower or "验证码" in lower:
+        return GarminStatsMFARequired("Garmin 账号需要 MFA 验证码")
+    if "429" in lower or "too many" in lower or "rate limit" in lower:
+        return GarminStatsRateLimited(
+            "Garmin 返回 429/Too Many Requests。请停止重试，等待一段时间后再试。"
+        )
+    if "cloudflare" in lower or "captcha" in lower or "waf" in lower or "bot" in lower or "403" in lower:
+        return GarminStatsNetworkOrWafError(
+            f"Garmin 登录被网络/WAF 拦截或暂不可用（region={region}, tokenstore={tokenstore}）。原始错误：{text}"
+        )
+    if "401" in lower or "unauthorized" in lower or "invalid username" in lower or "incorrect" in lower:
+        return GarminStatsAuthError(
+            f"Garmin 认证失败（region={region}, tokenstore={tokenstore}）。"
+            f" 原始错误：{text}"
+        )
+    return GarminStatsNetworkOrWafError(
+        f"Garmin 登录失败（region={region}, tokenstore={tokenstore}）。原始错误：{text}"
     )
 
 
@@ -134,14 +212,12 @@ def build_client(region: str = "cn", tokenstore: Optional[Union[str, Path]] = No
             f"未找到 Garmin token: {token_path}。请先运行 login.py --region {region}"
         )
 
-    patch_garth_ssl_consumer()
-    client = garminconnect.Garmin(is_cn=(region == "cn"))
-    configure_client_timeout(client)
+    client = _new_garmin(garminconnect, region=region)
     try:
         client.login(tokenstore=str(token_path))
     except Exception as exc:
-        raise GarminStatsAuthError(auth_error_message(region, token_path, exc)) from exc
-    return client, client.garth, token_path
+        raise _classify_error(region, token_path, exc) from exc
+    return client, token_path
 
 
 def login_and_save(
@@ -150,24 +226,12 @@ def login_and_save(
     region: str = "cn",
     tokenstore: Optional[Union[str, Path]] = None,
 ) -> Path:
-    import garminconnect
-
-    region = normalize_region(region)
-    token_path = Path(tokenstore).expanduser() if tokenstore else DEFAULT_AUTH_DIRS[region]
-    token_path.mkdir(parents=True, exist_ok=True)
-
-    patch_garth_ssl_consumer()
-    client = garminconnect.Garmin(email=email, password=password, is_cn=(region == "cn"))
-    configure_client_timeout(client)
-    try:
-        client.login()
-    except Exception as exc:
-        if client_has_oauth_tokens(client):
-            client.garth.dump(str(token_path))
-            return token_path
-        raise GarminStatsAuthError(auth_error_message(region, token_path, exc)) from exc
-    client.garth.dump(str(token_path))
-    return token_path
+    return login_and_save_app(
+        email=email,
+        password=password,
+        region=region,
+        tokenstore=tokenstore,
+    )
 
 
 def login_and_save_app(
@@ -176,11 +240,11 @@ def login_and_save_app(
     region: str = "cn",
     tokenstore: Optional[Union[str, Path]] = None,
     mfa_code: Optional[str] = None,
+    mfa_state: Any = None,
 ) -> Path:
-    """App 内 Garmin 登录入口。
+    """App Garmin login entry point.
 
-    与 CLI login.py 共用 tokenstore/region/consumer patch；区别是 MFA 通过
-    prompt_mfa 回调交给主程序表单收集，而不是在终端中阻塞读取。
+    MFA is supplied by the desktop form. No terminal prompt is allowed here.
     """
     import garminconnect
 
@@ -189,22 +253,35 @@ def login_and_save_app(
     token_path.mkdir(parents=True, exist_ok=True)
     clean_mfa = str(mfa_code or "").strip()
 
+    if clean_mfa and mfa_state is not None:
+        client = _new_garmin(garminconnect, region=region)
+        try:
+            client.resume_login(mfa_state, clean_mfa)
+            _client_dump(client, token_path)
+        except Exception as exc:
+            raise _classify_error(region, token_path, exc) from exc
+        return token_path
+
     def prompt_mfa() -> str:
         if not clean_mfa:
             raise GarminStatsMFARequired("Garmin 账号需要 MFA 验证码")
         return clean_mfa
 
-    patch_garth_ssl_consumer()
-    client = garminconnect.Garmin(email=email, password=password, is_cn=(region == "cn"))
-    configure_client_timeout(client)
+    client = _new_garmin(
+        garminconnect,
+        email=email,
+        password=password,
+        region=region,
+        prompt_mfa=prompt_mfa,
+        return_on_mfa=not bool(clean_mfa),
+    )
     try:
-        client.garth.login(email, password, prompt_mfa=prompt_mfa)
+        status, client_state = client.login(tokenstore=str(token_path))
+        if status == "needs_mfa":
+            raise GarminStatsMFARequired("Garmin 账号需要 MFA 验证码", client_state=client_state)
+        _client_dump(client, token_path)
     except GarminStatsMFARequired:
         raise
     except Exception as exc:
-        if client_has_oauth_tokens(client):
-            client.garth.dump(str(token_path))
-            return token_path
-        raise GarminStatsAuthError(auth_error_message(region, token_path, exc)) from exc
-    client.garth.dump(str(token_path))
+        raise _classify_error(region, token_path, exc) from exc
     return token_path

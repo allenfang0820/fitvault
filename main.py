@@ -14,6 +14,7 @@ import sqlite3
 import sys
 import threading
 import time
+import traceback
 import uuid
 import zipfile
 from urllib.parse import urlparse
@@ -7963,6 +7964,8 @@ class Api:
         self._window_shown = False
         self._account_connection_sessions: dict[str, dict[str, Any]] = {}
         self._account_connection_lock = threading.Lock()
+        self._llm_cli_test_lock = threading.Lock()
+        self._llm_cli_tests_in_flight: set[str] = set()
 
     def on_loaded(self, *args) -> dict:
         """页面加载完成后显示窗口，解决原生窗口先白屏的问题。"""
@@ -8369,6 +8372,7 @@ class Api:
             r"\1\2***",
             text,
         )
+        text = re.sub(r"(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", "***", text)
         text = re.sub(r"(?i)(bearer\s+)[A-Za-z0-9._~+/=-]+", r"\1***", text)
         return text
 
@@ -8724,6 +8728,12 @@ class Api:
             "requires_credentials": True,
             "supports_mfa": True,
         }
+        if result.provider_error_code:
+            payload["provider_error_code"] = result.provider_error_code
+        if result.action_hint:
+            payload["action_hint"] = result.action_hint
+        if result.diagnostics:
+            payload["diagnostics"] = result.diagnostics
         if session_id:
             payload["session_id"] = session_id
         return payload
@@ -8788,7 +8798,7 @@ class Api:
                         status="needs_mfa",
                         message=result.message or "请输入 Garmin MFA 验证码。",
                         progress=[{"step": "credentials", "status": "ok", "message": "账号信息已提交"}],
-                        secret_payload={"email": email, "password": password},
+                        secret_payload={"email": email, "password": password, "mfa_state": result.mfa_state},
                     )
                     session.update({"requires_credentials": True, "supports_mfa": True})
                     return self._account_success(session, msg=session["message"])
@@ -8870,6 +8880,7 @@ class Api:
                     }, msg="请输入 Garmin MFA 验证码。")
                 email = str(secret_payload.get("email") or "")
                 password = str(secret_payload.get("password") or "")
+                mfa_state = secret_payload.get("mfa_state")
                 if not email or not password:
                     self._remove_account_session(sid)
                     return self._account_success({
@@ -8880,7 +8891,7 @@ class Api:
                         "authorized": False,
                         "message": "Garmin 授权会话已过期，请重新输入账号密码。",
                     }, msg="Garmin 授权会话已过期，请重新输入账号密码。")
-                result = garmin_sync.login_app(email=email, password=password, region=region, mfa_code=mfa_code)
+                result = garmin_sync.login_app(email=email, password=password, region=region, mfa_code=mfa_code, mfa_state=mfa_state)
                 self._clear_account_session_secret(sid)
                 if result.ok:
                     self._remove_account_session(sid)
@@ -8898,7 +8909,7 @@ class Api:
                         if session is not None:
                             session["status"] = "needs_mfa"
                             session["message"] = result.message or "Garmin MFA 验证码不正确或已失效，请重新输入。"
-                            session["secret_payload"] = {"email": email, "password": password}
+                            session["secret_payload"] = {"email": email, "password": password, "mfa_state": result.mfa_state or mfa_state}
                     payload_data = self._garmin_app_login_payload(result, session_id=sid)
                     return self._account_success(payload_data, msg=payload_data["message"])
                 self._remove_account_session(sid)
@@ -9186,6 +9197,8 @@ class Api:
         coros_region: str = "",
     ) -> dict:
         """【测试即保存配置-稳定性加固版】严格实行先测试、后持久化策略，保障状态机最终一致性。"""
+        cli_test_key = ""
+        cli_test_registered = False
         try:
             transport_mode = llm_backend._normalize_transport(transport)
             current = llm_backend.load_llm_config()
@@ -9197,6 +9210,24 @@ class Api:
                     return _api_error(API_CODE_VALIDATION, "请选择 CLI 类型后再测试连接")
                 if cli_type_clean == "custom" and not str(cli_path or "").strip():
                     return _api_error(API_CODE_VALIDATION, "请先填写自定义 CLI 路径")
+                cli_test_key = json.dumps({
+                    "transport": "cli",
+                    "provider": str(provider or ""),
+                    "model": str(model or ""),
+                    "agent_id": str(agent_id or ""),
+                    "cli_type": cli_type_clean,
+                    "cli_path": str(cli_path or ""),
+                    "cli_args": str(cli_args or ""),
+                    "cli_model": str(cli_model or ""),
+                    "cli_timeout_sec": llm_backend._normalize_cli_timeout(cli_timeout_sec),
+                    "garmin_region": str(garmin_region or ""),
+                    "coros_region": str(coros_region or ""),
+                }, sort_keys=True, ensure_ascii=False)
+                with self._llm_cli_test_lock:
+                    if cli_test_key in self._llm_cli_tests_in_flight:
+                        return _api_error(API_CODE_EXTERNAL_SERVICE, "大模型 CLI 连接测试正在进行中，请稍候")
+                    self._llm_cli_tests_in_flight.add(cli_test_key)
+                    cli_test_registered = True
                 messages = [
                     {"role": "system", "content": "你只需要用中文回复：连接成功。"},
                     {"role": "user", "content": "请回复连接成功"},
@@ -9299,8 +9330,14 @@ class Api:
                         msg += "；" + detail
                     else:
                         msg += "：" + detail
-                return _api_error(API_CODE_EXTERNAL_SERVICE, msg)
+                error_payload = llm_backend.cli_error_payload(e, cli_type=cli_type, cli_path=cli_path)
+                error_payload["message"] = msg
+                return _api_error(API_CODE_EXTERNAL_SERVICE, msg, error_payload)
             return _api_error(API_CODE_EXTERNAL_SERVICE, "大模型网关连通失败")
+        finally:
+            if cli_test_registered and cli_test_key:
+                with self._llm_cli_test_lock:
+                    self._llm_cli_tests_in_flight.discard(cli_test_key)
 
     @staticmethod
     def _is_garmin_watch_brand(value: Any) -> bool:
@@ -9347,28 +9384,39 @@ class Api:
         end_date: str,
         download: dict[str, Any] | None = None,
         import_result: dict[str, Any] | None = None,
+        exc: Exception | None = None,
+        diagnostics: dict[str, Any] | None = None,
+        provider_detail: str | None = None,
     ) -> dict[str, Any]:
-        action_hints = {
-            "invalid_coros_region": "请检查 COROS 区域配置，仅支持 cn、us 或 eu。",
-            "coros_auth_required": "COROS MCP 授权不可用或已失效，请回配置页完成 COROS 授权后再同步。",
-            "coros_skill_not_found": "未找到 COROS skill 脚本，请确认 coros-stats 已随应用正确安装。",
-            "coros_fit_download_failed": "COROS MCP FIT 下载失败，请确认网络可用、授权有效，并尝试缩小日期范围。",
-            "coros_fit_download_limit": "COROS MCP 单次最多下载 10 个 FIT 文件，请缩小日期范围后分批同步。",
-            "coros_sync_partial": "COROS FIT 部分下载或导入失败，请查看失败列表并分批重试。",
-            "coros_node_missing": "未检测到 Node.js 或 coros-mcp CLI，请先完成 COROS MCP 授权环境准备。",
-            "coros_import_failed": "FIT 文件已下载到本地目录，但导入活动库失败，请稍后重试或使用本地导入。",
-            "unknown": "COROS 同步出现未知异常，请稍后重试。",
-        }
+        normalized = coros_sync.normalize_coros_error(
+            exc or coros_sync.CorosSyncError(message, code=provider_error_code),
+            {
+                "operation": "sync_remote_fit_activities",
+                "region": (llm_backend.load_llm_config().get("coros_region") or ""),
+                **(diagnostics or {}),
+            },
+        )
+        code = provider_error_code or str(normalized.get("provider_error_code") or "unknown")
+        if provider_error_code in {"unknown", "coros_sync_error", ""}:
+            code = str(normalized.get("provider_error_code") or code)
+        clean_message = str(message or normalized.get("message") or "")
+        if exc is not None:
+            clean_message = str(normalized.get("message") or clean_message)
+        clean_detail = str(provider_detail or "").strip()
+        if clean_detail:
+            clean_detail = str(coros_sync.sanitize_coros_value(clean_detail))
         return {
             "provider": "coros",
-            "provider_error_code": provider_error_code,
-            "action_hint": action_hints.get(provider_error_code, action_hints["unknown"]),
-            "message": str(message or ""),
+            "provider_error_code": code,
+            "action_hint": str(normalized.get("action_hint") or coros_sync.COROS_ACTION_HINTS.get(code, coros_sync.COROS_ACTION_HINTS["unknown"])),
+            "message": coros_sync.sanitize_coros_value(clean_message),
+            "provider_detail": clean_detail,
             "start_date": start_date,
             "end_date": end_date,
             "target_dir": TRACKS_DIR,
-            "download": download,
-            "import": import_result,
+            "download": coros_sync.sanitize_coros_value(download),
+            "import": coros_sync.sanitize_coros_value(import_result),
+            "diagnostics": normalized.get("diagnostics") or {"provider": "coros"},
         }
 
     @staticmethod
@@ -9645,12 +9693,19 @@ class Api:
                     download_summary.get("failed"),
                 )
                 if not download_summary.get("ok", True) and int(download_summary.get("searched") or 0) > 0:
+                    error_summary = coros_sync.extract_download_error_summary(download_summary)
+                    detail = str(error_summary.get("provider_detail") or "").strip()
+                    error_code = str(error_summary.get("provider_error_code") or "coros_fit_download_failed")
+                    message = "COROS 已找到活动记录，但 FIT 文件下载失败。"
+                    if detail:
+                        message = f"COROS FIT 下载失败：{detail}"
                     payload = self._coros_sync_error_payload(
-                        provider_error_code="coros_fit_download_failed",
-                        message="COROS 已找到活动记录，但 FIT 文件下载失败。",
+                        provider_error_code=error_code,
+                        message=message,
                         start_date=start_day.isoformat(),
                         end_date=end_day.isoformat(),
                         download=download_summary,
+                        provider_detail=detail,
                     )
                     return _api_error(API_CODE_EXTERNAL_SERVICE, payload["message"], payload)
                 if not _download_has_import_candidates(download_summary):
@@ -9688,9 +9743,10 @@ class Api:
                     message=str(e),
                     start_date=start_day.isoformat(),
                     end_date=end_day.isoformat(),
+                    exc=e,
                 )
                 logger.warning("sync_remote_fit_activities COROS provider failed: %s", e)
-                return _api_error(API_CODE_EXTERNAL_SERVICE, str(e), payload)
+                return _api_error(API_CODE_EXTERNAL_SERVICE, payload["message"], payload)
             except Exception as e:
                 logger.warning("sync_remote_fit_activities COROS failed: %s", e)
                 payload = self._coros_sync_error_payload(
@@ -9698,8 +9754,9 @@ class Api:
                     message=str(e),
                     start_date=start_day.isoformat(),
                     end_date=end_day.isoformat(),
+                    exc=e,
                 )
-                return _api_error(API_CODE_EXTERNAL_SERVICE, str(e), payload)
+                return _api_error(API_CODE_EXTERNAL_SERVICE, payload["message"], payload)
 
         try:
             download_summary = garmin_sync.download_fit_json(
@@ -10003,6 +10060,40 @@ class Api:
                 "profile_sync_summary": result.get("profile_sync_summary") or profile_summary,
             }
         return result
+
+    def force_sync_profile(self) -> dict:
+        cfg = llm_backend.load_llm_config()
+        brand = str(cfg.get("watch_brand") or "").strip().lower()
+        if brand not in {"garmin", "coros"}:
+            return _api_error(
+                API_CODE_VALIDATION,
+                "当前手表品牌暂不支持画像同步，请先在配置页选择 Garmin 或 COROS。",
+            )
+
+        result = profile_backend.fetch_mcp_persona(brand, trigger_type="manual")
+        profile_summary = profile_backend.build_profile_status_summary(brand)
+        if result.get("ok"):
+            prof = profile_backend.get_profile()
+            return _api_success(
+                {
+                    "profile": prof.to_dict() if prof else result.get("persona"),
+                    "persona": result.get("persona"),
+                    "profile_sync_summary": result.get("profile_sync_summary") or profile_summary,
+                },
+                msg="用户画像同步完成。",
+            )
+
+        message = result.get("error") or "用户画像同步失败"
+        return _api_error(
+            API_CODE_EXTERNAL_SERVICE,
+            message,
+            {
+                "provider": result.get("provider") or brand,
+                "provider_error_code": result.get("provider_error_code"),
+                "action_hint": result.get("action_hint"),
+                "profile_sync_summary": result.get("profile_sync_summary") or profile_summary,
+            },
+        )
 
     def get_activity_history(self) -> dict:
         """返回按时间倒序的历史运动记录列表。"""
@@ -13680,6 +13771,9 @@ def run_garmin_login_cli(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if not args or args[0] != "--garmin-login":
         return 1
+    if os.name == "nt" and getattr(sys, "frozen", False):
+        print("Windows 打包版不支持 Garmin 旧命令行登录，请在应用内账号连接中心完成授权。", file=sys.stderr)
+        return 64
     login_script = app_base_dir() / "skills" / "garmin-stats" / "scripts" / "login.py"
     if not login_script.is_file():
         print(f"未找到 Garmin 登录脚本: {login_script}", file=sys.stderr)
@@ -13711,8 +13805,55 @@ def run_garmin_login_cli(argv: list[str] | None = None) -> int:
                 pass
 
 
+def run_garmin_script_cli(argv: list[str] | None = None) -> int:
+    args = list(sys.argv[2:] if argv is None else argv)
+    if not args:
+        print("缺少 Garmin 脚本路径", file=sys.stderr)
+        return 64
+
+    script = Path(args[0]).expanduser().resolve()
+    allowed_names = {"get_garmin_stats.py", "download_fit.py", "login.py"}
+    if script.name not in allowed_names:
+        print(f"不支持的 Garmin 脚本: {script.name}", file=sys.stderr)
+        return 64
+    if not script.is_file():
+        print(f"未找到 Garmin 脚本: {script}", file=sys.stderr)
+        return 66
+
+    old_argv = sys.argv[:]
+    scripts_dir = str(script.parent)
+    inserted_path = False
+    try:
+        if scripts_dir not in sys.path:
+            sys.path.insert(0, scripts_dir)
+            inserted_path = True
+        sys.argv = [str(script), *[str(item) for item in args[1:]]]
+        runpy.run_path(str(script), run_name="__main__")
+        return 0
+    except SystemExit as exc:
+        code = exc.code
+        if code is None:
+            return 0
+        if isinstance(code, int):
+            return code
+        print(str(code), file=sys.stderr)
+        return 1
+    except Exception:
+        traceback.print_exc()
+        return 1
+    finally:
+        sys.argv = old_argv
+        if inserted_path:
+            try:
+                sys.path.remove(scripts_dir)
+            except ValueError:
+                pass
+
+
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "--garmin-login":
         raise SystemExit(run_garmin_login_cli(sys.argv[1:]))
+    if len(sys.argv) > 1 and sys.argv[1] == "--garmin-script":
+        raise SystemExit(run_garmin_script_cli(sys.argv[2:]))
     init_application_config()
     main()

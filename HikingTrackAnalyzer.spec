@@ -8,17 +8,26 @@ os.environ["XDG_CONFIG_HOME"] = os.path.join(os.getcwd(), ".pyinstaller_cache")
 
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_submodules
+from packaging_diagnostics import (
+    MANIFEST_FILENAME,
+    check_packaging_prerequisites,
+    write_dependency_manifest,
+)
+
+
+check_packaging_prerequisites(os.getcwd())
+write_dependency_manifest(os.getcwd())
 
 _hidden = (
     collect_submodules("gpxpy")
     + collect_submodules("fitparse")
     + collect_submodules("garmin_fit_sdk")
     + collect_submodules("garminconnect")
-    + collect_submodules("garth")
+    + collect_submodules("curl_cffi")
     + collect_submodules("watchdog")
     + collect_submodules("webview")
     + ["llm_backend", "track_backend", "profile_backend",
-       "requests", "urllib3", "certifi", "charset_normalizer", "idna"]
+       "requests", "urllib3", "certifi", "charset_normalizer", "idna", "pytz"]
 )
 
 _datas = [
@@ -30,6 +39,7 @@ _datas = [
     ("skills/coros-stats", "skills/coros-stats"),
     ("skills/garmin-stats.zip", "skills"),
     ("skills/coros-stats.zip", "skills"),
+    (MANIFEST_FILENAME, "."),
 ]
 
 

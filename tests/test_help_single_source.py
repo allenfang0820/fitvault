@@ -101,9 +101,12 @@ class TestHelpSingleSource(unittest.TestCase):
     def test_packaging_includes_garmin_auth_dependencies(self):
         requirements = (PROJECT_ROOT / "requirements.txt").read_text(encoding="utf-8")
         self.assertIn('collect_submodules("garminconnect")', self.spec)
-        self.assertIn('collect_submodules("garth")', self.spec)
-        self.assertIn("garminconnect", requirements)
-        self.assertIn("garth", requirements)
+        self.assertNotIn('collect_submodules("garth")', self.spec)
+        self.assertIn("check_packaging_prerequisites(os.getcwd())", self.spec)
+        self.assertIn("write_dependency_manifest(os.getcwd())", self.spec)
+        self.assertIn("garminconnect==0.3.6", requirements)
+        self.assertIn("curl_cffi>=0.6", requirements)
+        self.assertNotIn("garth", requirements)
 
     def test_packaging_includes_unpacked_provider_skill_dirs(self):
         self.assertIn('("skills/garmin-stats", "skills/garmin-stats")', self.spec)

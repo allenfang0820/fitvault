@@ -10,11 +10,13 @@ import csv
 import errno
 import json
 import math
+import ntpath
 import os
 import plistlib
 import re
 import secrets
 import shlex
+import shutil
 import subprocess
 import sys
 import time
@@ -22,6 +24,8 @@ from pathlib import Path
 from typing import Any
 
 import requests
+
+from subprocess_utils import run_hidden
 
 DEFAULT_URL = "http://localhost:3000/v1/chat/completions"
 DEFAULT_MODEL = "openclaw"
@@ -34,6 +38,14 @@ VALID_CLI_TYPES = {"codex", "openclaw", "claude", "custom"}
 VALID_GARMIN_REGIONS = {"cn", "global"}
 VALID_COROS_REGIONS = {"cn", "us", "eu"}
 CLI_ERROR_SNIPPET_CHARS = 800
+CODEX_CLI_ACTION_HINTS = {
+    "codex_cli_permission_denied": "请不要填写 WindowsApps 物理路径；优先填写 codex、codex.cmd，或 %APPDATA%\\npm\\codex.cmd。",
+    "codex_cli_windowsapps_alias": "WindowsApps 是受保护的应用执行别名，GUI 程序不能直接启动该物理路径。请填写 codex 或 npm 的 codex.cmd shim。",
+    "codex_cli_not_found": "请确认 Codex CLI 已安装，并在终端执行 codex --version；必要时填写 %APPDATA%\\npm\\codex.cmd。",
+    "codex_cli_timeout": "Codex CLI 已启动但未及时返回，请确认 CLI 已登录且模型可用，或调大 CLI 超时时间。",
+    "codex_cli_unexpected_output": "Codex CLI 已启动但返回内容不符合预期，请在终端运行 codex exec 做一次验证。",
+    "codex_cli_failed": "请在系统终端运行同一 Codex CLI 命令，确认已登录且当前网络可访问模型服务。",
+}
 QCLAW_LAUNCHAGENT_ENV_KEYS = {
     "AUTH_GATEWAY_PORT",
     "NODE_EXTRA_CA_CERTS",
@@ -51,6 +63,19 @@ QCLAW_LAUNCHAGENT_ENV_KEYS = {
 }
 CONFIG_DIR_NAME = ".fitvault"
 CONFIG_FILE_NAME = "llm_config.json"
+
+
+class LLMCLIError(RuntimeError):
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        *,
+        diagnostics: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.diagnostics = dict(diagnostics or {})
 
 
 def _legacy_project_config_file() -> Path:
@@ -603,6 +628,145 @@ def _resolve_openclaw_cli_command(cli_path: str) -> list[str]:
     return [executable or "openclaw"]
 
 
+def _resolve_codex_cli_path(cli_path: str) -> str:
+    path = _validate_cli_executable_path(cli_path)
+    if path:
+        return path
+    if not sys.platform.startswith("win"):
+        return "codex"
+
+    for name in ("codex.cmd", "codex.exe", "codex"):
+        found = shutil.which(name)
+        if found and not _is_windowsapps_codex_alias(found):
+            return found
+
+    appdata = str(os.environ.get("APPDATA") or "").strip()
+    if appdata:
+        npm_dir = Path(appdata).expanduser() / "npm"
+        for name in ("codex.cmd", "codex.exe", "codex"):
+            candidate = npm_dir / name
+            if candidate.is_file():
+                return str(candidate)
+    return "codex"
+
+
+def _is_windows_cmd_script(path: str) -> bool:
+    return sys.platform.startswith("win") and str(path or "").strip().lower().endswith((".cmd", ".bat"))
+
+
+def _is_windowsapps_codex_alias(path: str) -> bool:
+    if not sys.platform.startswith("win"):
+        return False
+    normalized = str(path or "").replace("/", "\\").lower()
+    name = ntpath.basename(normalized)
+    return "\\windowsapps\\" in normalized and name in {"codex", "codex.exe", "codex.cmd", "codex.bat"}
+
+
+def _wrap_windows_cmd_script_command(cmd: list[str]) -> list[str]:
+    if not cmd:
+        return cmd
+    executable = str(cmd[0] or "")
+    if not _is_windows_cmd_script(executable):
+        return cmd
+    comspec = str(os.environ.get("ComSpec") or os.environ.get("COMSPEC") or "cmd.exe").strip() or "cmd.exe"
+    return [comspec, "/d", "/c", executable, *cmd[1:]]
+
+
+def _command_diagnostic_executable(cmd: list[str]) -> str:
+    if not cmd:
+        return ""
+    if (
+        sys.platform.startswith("win")
+        and len(cmd) >= 4
+        and ntpath.basename(str(cmd[0])).lower() == "cmd.exe"
+        and str(cmd[1]).lower() == "/d"
+        and str(cmd[2]).lower() == "/c"
+    ):
+        return str(cmd[3])
+    return str(cmd[0])
+
+
+def _redact_cli_diagnostic_text(value: Any) -> str:
+    text = _error_snippet(str(value or ""))
+    text = re.sub(
+        r"(?i)(api[_-]?key|token|access[_-]?token|refresh[_-]?token|authorization|bearer|password|secret)(\s*[:=]\s*)([^\s,;]+)",
+        r"\1\2***",
+        text,
+    )
+    text = re.sub(r"(?i)(bearer\s+)[A-Za-z0-9._~+/=-]+", r"\1***", text)
+    return text
+
+
+def _codex_cli_diagnostics(
+    *,
+    code: str,
+    executable: str,
+    strategy: str,
+    detail: Any = "",
+    returncode: int | None = None,
+) -> dict[str, Any]:
+    diagnostics: dict[str, Any] = {
+        "provider": "codex",
+        "provider_error_code": code,
+        "platform": sys.platform,
+        "executable": str(executable or ""),
+        "resolution_strategy": strategy,
+    }
+    if returncode is not None:
+        diagnostics["returncode"] = int(returncode)
+    clean_detail = _redact_cli_diagnostic_text(detail)
+    if clean_detail:
+        diagnostics["error_summary"] = clean_detail
+    return diagnostics
+
+
+def _raise_codex_cli_error(
+    code: str,
+    message: str,
+    *,
+    executable: str,
+    strategy: str,
+    detail: Any = "",
+    returncode: int | None = None,
+) -> None:
+    raise LLMCLIError(
+        code,
+        message,
+        diagnostics=_codex_cli_diagnostics(
+            code=code,
+            executable=executable,
+            strategy=strategy,
+            detail=detail,
+            returncode=returncode,
+        ),
+    )
+
+
+def cli_error_payload(exc: BaseException, *, cli_type: str = "", cli_path: str = "") -> dict[str, Any]:
+    if isinstance(exc, LLMCLIError):
+        code = exc.code
+        message = str(exc)
+        diagnostics = dict(exc.diagnostics or {})
+    else:
+        code = "codex_cli_failed" if _normalize_cli_type(cli_type) == "codex" else "cli_failed"
+        message = _redact_cli_diagnostic_text(str(exc))
+        diagnostics = {
+            "provider": _normalize_cli_type(cli_type) or "cli",
+            "provider_error_code": code,
+            "platform": sys.platform,
+            "executable": str(cli_path or ""),
+            "resolution_strategy": "exception",
+            "error_summary": message,
+        }
+    return {
+        "provider": _normalize_cli_type(cli_type) or "cli",
+        "provider_error_code": code,
+        "action_hint": CODEX_CLI_ACTION_HINTS.get(code, "请检查本机 CLI 安装、登录状态和路径配置。"),
+        "diagnostics": diagnostics,
+        "message": message,
+    }
+
+
 def _expand_cli_template(args: list[str], *, prompt: str, model: str) -> list[str]:
     return [
         str(part).replace("{prompt}", prompt).replace("{model}", model)
@@ -622,7 +786,16 @@ def _build_cli_command(config: dict[str, Any], prompt: str) -> list[str]:
     cli_path = _validate_cli_executable_path(str(config.get("cli_path") or ""))
     model = str(config.get("cli_model") or config.get("model") or "").strip()
     if cli_type == "codex":
-        base = [cli_path or "codex", "exec", "--skip-git-repo-check", "{prompt}"]
+        executable = _resolve_codex_cli_path(cli_path)
+        strategy = "configured_path" if cli_path else "auto_discovery"
+        if _is_windowsapps_codex_alias(executable):
+            _raise_codex_cli_error(
+                "codex_cli_windowsapps_alias",
+                "Codex CLI 路径指向 WindowsApps 受保护入口，无法由应用直接启动。",
+                executable=executable,
+                strategy=strategy,
+            )
+        base = _wrap_windows_cmd_script_command([executable, "exec", "--skip-git-repo-check", "{prompt}"])
     elif cli_type == "claude":
         base = [cli_path or "claude", "-p", "{prompt}"]
     elif cli_type == "openclaw":
@@ -838,22 +1011,6 @@ def _read_qclaw_launchagent_env() -> dict[str, str]:
     }
 
 
-def _windows_subprocess_hidden_kwargs() -> dict[str, Any]:
-    if not sys.platform.startswith("win"):
-        return {}
-    kwargs: dict[str, Any] = {}
-    creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-    if creationflags:
-        kwargs["creationflags"] = creationflags
-    startupinfo_cls = getattr(subprocess, "STARTUPINFO", None)
-    if startupinfo_cls is not None:
-        startupinfo = startupinfo_cls()
-        startupinfo.dwFlags |= getattr(subprocess, "STARTF_USESHOWWINDOW", 1)
-        startupinfo.wShowWindow = 0
-        kwargs["startupinfo"] = startupinfo
-    return kwargs
-
-
 def _parse_last_json_object(text: str) -> dict[str, Any] | None:
     raw = str(text or "").strip()
     for idx, char in enumerate(raw):
@@ -897,16 +1054,14 @@ def _run_openclaw_readonly_json(config: dict[str, Any], args: list[str], timeout
     cmd = _resolve_openclaw_cli_command(cli_path) + args
     cli_env = _build_openclaw_cli_env(config, cmd[0])
     try:
-        result = subprocess.run(
+        result = run_hidden(
             cmd,
             capture_output=True,
             text=True,
             encoding="utf-8",
             errors="replace",
             timeout=_normalize_cli_timeout(timeout),
-            shell=False,
             env=cli_env,
-            **_windows_subprocess_hidden_kwargs(),
         )
     except Exception as exc:
         return None, str(exc)
@@ -1009,21 +1164,54 @@ def _run_cli_completion(
     cmd = _build_cli_command(config, prompt)
     effective_timeout = _normalize_cli_timeout(config.get("cli_timeout_sec") or timeout)
     cli_env = _build_openclaw_cli_env(config, cmd[0] if cmd else "")
+    diagnostic_executable = _command_diagnostic_executable(cmd)
+    codex_strategy = "configured_path" if str(config.get("cli_path") or "").strip() else "auto_discovery"
     try:
-        result = subprocess.run(
+        result = run_hidden(
             cmd,
             capture_output=True,
             text=True,
             encoding="utf-8",
             errors="replace",
             timeout=effective_timeout,
-            shell=False,
             env=cli_env,
-            **_windows_subprocess_hidden_kwargs(),
         )
     except subprocess.TimeoutExpired as exc:
+        if cli_type == "codex":
+            _raise_codex_cli_error(
+                "codex_cli_timeout",
+                f"Codex CLI 已启动但模型未在超时时间内返回 ({effective_timeout}s)",
+                executable=diagnostic_executable,
+                strategy=codex_strategy,
+                detail=str(exc),
+            )
         raise RuntimeError(f"CLI 已启动但模型未在超时时间内返回 ({effective_timeout}s)") from exc
     except OSError as exc:
+        if cli_type == "codex":
+            if _is_windowsapps_codex_alias(diagnostic_executable):
+                _raise_codex_cli_error(
+                    "codex_cli_windowsapps_alias",
+                    "Codex CLI 路径指向 WindowsApps 受保护入口，无法由应用直接启动。",
+                    executable=diagnostic_executable,
+                    strategy=codex_strategy,
+                    detail=str(exc),
+                )
+            if isinstance(exc, PermissionError) or getattr(exc, "winerror", None) == 5:
+                _raise_codex_cli_error(
+                    "codex_cli_permission_denied",
+                    "Codex CLI 启动被系统拒绝访问。",
+                    executable=diagnostic_executable,
+                    strategy=codex_strategy,
+                    detail=str(exc),
+                )
+            if _is_cli_not_found_error(exc):
+                _raise_codex_cli_error(
+                    "codex_cli_not_found",
+                    _cli_not_found_message("codex"),
+                    executable=diagnostic_executable,
+                    strategy=codex_strategy,
+                    detail=str(exc),
+                )
         if _is_cli_not_found_error(exc):
             raise RuntimeError(_cli_not_found_message(str(config.get("cli_type") or ""))) from exc
         raise RuntimeError(f"CLI 启动失败: {exc}") from exc
@@ -1034,9 +1222,27 @@ def _run_cli_completion(
         detail = _error_snippet(stderr or stdout)
         if cli_type == "openclaw" and _is_openclaw_agent_unusable_detail(detail):
             raise RuntimeError("OpenClaw Agent 不存在或不可用，请检查 Agent ID")
+        if cli_type == "codex":
+            _raise_codex_cli_error(
+                "codex_cli_failed",
+                f"Codex CLI 调用失败 (exit {result.returncode})",
+                executable=diagnostic_executable,
+                strategy=codex_strategy,
+                detail=detail,
+                returncode=result.returncode,
+            )
         suffix = f": {detail}" if detail else ""
         raise RuntimeError(f"CLI 调用失败 (exit {result.returncode}){suffix}")
     if not stdout:
+        if cli_type == "codex":
+            _raise_codex_cli_error(
+                "codex_cli_unexpected_output",
+                "Codex CLI 已启动但模型未返回内容。",
+                executable=diagnostic_executable,
+                strategy=codex_strategy,
+                detail=stderr,
+                returncode=result.returncode,
+            )
         raise RuntimeError("模型未返回内容")
     if cli_type == "openclaw":
         return _extract_openclaw_agent_text(stdout)

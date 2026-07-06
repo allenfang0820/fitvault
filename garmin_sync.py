@@ -17,10 +17,12 @@ import subprocess
 import sys
 import uuid
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from argparse import Namespace
 from pathlib import Path
 from typing import Any, Iterator
+
+from subprocess_utils import popen_hidden, run_hidden
 
 
 VALID_GARMIN_REGIONS = {"cn", "global"}
@@ -100,6 +102,29 @@ class GarminAppLoginResult:
     status: str
     token_path: str
     message: str
+    provider_error_code: str = ""
+    action_hint: str = ""
+    diagnostics: dict[str, str] | None = None
+    mfa_state: Any = field(default=None, repr=False)
+
+
+GARMIN_AUTH_ACTION_HINTS = {
+    "garmin_auth_failed": "请回配置页重新连接 Garmin 账号。",
+    "garmin_mfa_failed": "请重新输入 Garmin MFA 验证码，或回配置页重新连接 Garmin 账号。",
+    "garmin_rate_limited": "请停止重试 Garmin 登录，等待一段时间后再连接。",
+    "garmin_network_or_waf": "请稍后重试；如多次失败，切换网络或等待 Garmin SSO 恢复后再连接。",
+    "garmin_provider_api_incompatible": "Garmin provider 依赖与应用不兼容，请重新安装或更新应用。",
+    "garmin_dependency_incompatible": "Garmin provider 依赖与应用不兼容，请重新安装或更新应用。",
+}
+
+GARMIN_AUTH_USER_MESSAGES = {
+    "garmin_auth_failed": "Garmin 授权失败，请重新输入账号密码或稍后重试。",
+    "garmin_mfa_failed": "Garmin MFA 验证失败，请重新输入验证码。",
+    "garmin_rate_limited": "Garmin 登录请求过于频繁。请停止重试，等待一段时间后再连接。",
+    "garmin_network_or_waf": "Garmin 登录被网络或安全风控拦截，请稍后重试。",
+    "garmin_provider_api_incompatible": "Garmin provider 依赖与应用不兼容，请更新应用后重试。",
+    "garmin_dependency_incompatible": "Garmin provider 依赖与应用不兼容，请更新应用后重试。",
+}
 
 
 def app_base_dir() -> Path:
@@ -171,6 +196,7 @@ def _redact_sensitive_text(value: str, *secrets: str) -> str:
         r"\1\2***",
         text,
     )
+    text = re.sub(r"(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", "***", text)
     text = re.sub(r"(?i)(bearer\s+)[A-Za-z0-9._~+/=-]+", r"\1***", text)
     return text
 
@@ -179,18 +205,85 @@ def _garmin_app_login_failure_message(region: str, detail: str) -> str:
     clean = _redact_sensitive_text(_error_snippet(detail))
     lower = clean.lower()
     label = "国际区" if region == "global" else "中国区"
+    if "could not get source code" in lower:
+        return GARMIN_AUTH_USER_MESSAGES["garmin_provider_api_incompatible"]
+    if "no attribute 'garth'" in lower or 'no attribute "garth"' in lower or ".garth" in lower or "不兼容" in clean:
+        return GARMIN_AUTH_USER_MESSAGES["garmin_provider_api_incompatible"]
     if "401" in lower or "unauthorized" in lower:
         return (
             f"Garmin {label} 授权失败：Garmin SSO 拒绝了本次登录。"
             "请确认账号区域、账号密码是否匹配；如果刚刚多次重试，请稍后再试。"
         )
     if "429" in lower or "too many requests" in lower or "rate limit" in lower:
-        return "Garmin 登录请求过于频繁。请停止重试，等待一段时间后再连接。"
+        return GARMIN_AUTH_USER_MESSAGES["garmin_rate_limited"]
+    if any(marker in lower for marker in ("cloudflare", "captcha", "waf", "bot", "403")):
+        return GARMIN_AUTH_USER_MESSAGES["garmin_network_or_waf"]
     if clean:
         clean = re.sub(r"请先运行\s+login\.py[^。；;]*[。；;]?", "", clean)
         clean = re.sub(r"原始错误：.*", "", clean).strip()
         clean = clean.replace("Garmin 认证失败", "Garmin 授权失败")
     return clean or "Garmin 授权失败，请检查账号、密码、区域或稍后重试。"
+
+
+def _garmin_app_auth_error_code(status: str, detail: str = "") -> str:
+    lower = str(detail or "").lower()
+    if str(status or "") == "needs_mfa":
+        return "garmin_mfa_failed"
+    if "mfa" in lower or "验证码" in lower:
+        return "garmin_mfa_failed"
+    if "429" in lower or "too many" in lower or "rate limit" in lower:
+        return "garmin_rate_limited"
+    if any(marker in lower for marker in ("cloudflare", "captcha", "waf", "bot", "403")):
+        return "garmin_network_or_waf"
+    if (
+        "no attribute 'garth'" in lower
+        or 'no attribute "garth"' in lower
+        or ".garth" in lower
+        or "provider api" in lower
+        or "依赖版本不兼容" in lower
+        or "不兼容" in lower
+        or "could not get source code" in lower
+    ):
+        return "garmin_provider_api_incompatible"
+    return "garmin_auth_failed"
+
+
+def _garmin_app_login_diagnostics(detail: str = "") -> dict[str, str]:
+    clean = _redact_sensitive_text(_error_snippet(detail))
+    diagnostics = {"provider": "garmin"}
+    if "could not get source code" in clean.lower():
+        diagnostics["cause"] = "packaged_callback_source_unavailable"
+    elif "no attribute 'garth'" in clean.lower() or ".garth" in clean.lower() or "不兼容" in clean:
+        diagnostics["cause"] = "provider_api_incompatible"
+    elif clean:
+        diagnostics["error_summary"] = clean
+    return diagnostics
+
+
+def _garmin_app_login_result(
+    *,
+    ok: bool,
+    region: str,
+    status: str,
+    token_path: str,
+    message: str,
+    detail: str = "",
+    provider_error_code: str = "",
+    mfa_state: Any = None,
+) -> GarminAppLoginResult:
+    interactive_statuses = {"needs_credentials", "needs_mfa"}
+    code = provider_error_code or ("" if ok or status in interactive_statuses else _garmin_app_auth_error_code(status, detail))
+    return GarminAppLoginResult(
+        ok=ok,
+        region=region,
+        status=status,
+        token_path=token_path,
+        message=_redact_sensitive_text(message),
+        provider_error_code=code,
+        action_hint=GARMIN_AUTH_ACTION_HINTS.get(code, ""),
+        diagnostics=None if ok or not code else _garmin_app_login_diagnostics(detail),
+        mfa_state=mfa_state,
+    )
 
 
 def _looks_like_auth_required(text: str) -> bool:
@@ -219,14 +312,17 @@ def run_garmin_script(
     if not script.is_file():
         raise GarminSkillNotFoundError(f"未找到 Garmin skill 脚本: {script}")
 
-    command = [sys.executable, str(script), *[str(arg) for arg in (args or [])]]
+    script_args = [str(arg) for arg in (args or [])]
+    if getattr(sys, "frozen", False):
+        command = [sys.executable, "--garmin-script", str(script), *script_args]
+    else:
+        command = [sys.executable, str(script), *script_args]
     try:
-        completed = subprocess.run(
+        completed = run_hidden(
             command,
             capture_output=True,
             text=True,
             timeout=timeout,
-            shell=False,
             env=env,
             cwd=str(script.parent),
         )
@@ -391,6 +487,20 @@ def default_tokenstore(
     return root / f"garmin_auth_{resolved_region}"
 
 
+def _garmin_tokenstore_has_tokens(token_path: Path) -> bool:
+    if token_path.is_file():
+        return True
+    if not token_path.is_dir():
+        return False
+    return (
+        (token_path / "garmin_tokens.json").is_file()
+        or (
+            (token_path / "oauth1_token.json").is_file()
+            and (token_path / "oauth2_token.json").is_file()
+        )
+    )
+
+
 def check_auth_status(
     *,
     region: str | None = None,
@@ -432,10 +542,7 @@ def check_auth_status(
             login_command=command,
         )
 
-    if token_path.is_dir() and not (
-        (token_path / "oauth1_token.json").is_file()
-        and (token_path / "oauth2_token.json").is_file()
-    ):
+    if token_path.is_dir() and not _garmin_tokenstore_has_tokens(token_path):
         return GarminAuthStatus(
             ok=False,
             region=resolved_region,
@@ -519,7 +626,7 @@ def start_login(
             "end tell",
         ]
         try:
-            subprocess.Popen(osa, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            popen_hidden(osa, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except OSError as exc:
             return GarminLoginResult(
                 ok=False,
@@ -554,12 +661,11 @@ def start_login(
         )
 
     try:
-        completed = subprocess.run(
+        completed = run_hidden(
             command,
             capture_output=True,
             text=True,
             timeout=timeout,
-            shell=False,
             cwd=str(paths.login.resolve().parent),
         )
     except subprocess.TimeoutExpired as exc:
@@ -617,16 +723,32 @@ def login_app(
     password: str,
     region: str | None = None,
     mfa_code: str | None = None,
+    mfa_state: Any = None,
     base_dir: Path | str | None = None,
 ) -> GarminAppLoginResult:
     """Run Garmin login in-process for the account connection center."""
     try:
         resolved_region = resolve_garmin_region(region)
     except GarminSyncError as exc:
-        return GarminAppLoginResult(False, str(region or "").strip().lower(), "failed", "", str(exc))
+        return _garmin_app_login_result(
+            ok=False,
+            region=str(region or "").strip().lower(),
+            status="failed",
+            token_path="",
+            message=str(exc),
+            detail=str(exc),
+            provider_error_code="garmin_auth_failed",
+        )
 
     if not str(email or "").strip() or not str(password or ""):
-        return GarminAppLoginResult(False, resolved_region, "needs_credentials", "", "请输入 Garmin 账号和密码。")
+        return _garmin_app_login_result(
+            ok=False,
+            region=resolved_region,
+            status="needs_credentials",
+            token_path="",
+            message="请输入 Garmin 账号和密码。",
+            provider_error_code="",
+        )
 
     try:
         paths = get_garmin_skill_paths(base_dir)
@@ -640,8 +762,9 @@ def login_app(
             region=resolved_region,
             tokenstore=default_tokenstore(resolved_region),
             mfa_code=str(mfa_code or "").strip() or None,
+            mfa_state=mfa_state,
         )
-        return GarminAppLoginResult(
+        return _garmin_app_login_result(
             ok=True,
             region=resolved_region,
             status="authorized",
@@ -652,18 +775,24 @@ def login_app(
         exc_name = exc.__class__.__name__
         detail = _error_snippet(str(exc))
         if exc_name == "GarminStatsMFARequired" or "mfa" in detail.lower() or "验证码" in detail:
-            return GarminAppLoginResult(
+            return _garmin_app_login_result(
                 ok=False,
                 region=resolved_region,
                 status="needs_mfa",
                 token_path=str(default_tokenstore(resolved_region)),
                 message="Garmin 账号需要 MFA 验证码。",
+                detail=detail,
+                provider_error_code="",
+                mfa_state=getattr(exc, "client_state", None),
             )
         safe_detail = _garmin_app_login_failure_message(resolved_region, detail)
-        return GarminAppLoginResult(
+        code = _garmin_app_auth_error_code("failed", detail)
+        return _garmin_app_login_result(
             ok=False,
             region=resolved_region,
             status="failed",
             token_path=str(default_tokenstore(resolved_region)),
-            message=safe_detail or "Garmin 授权失败，请检查账号、密码、区域或稍后重试。",
+            message=safe_detail or GARMIN_AUTH_USER_MESSAGES.get(code, GARMIN_AUTH_USER_MESSAGES["garmin_auth_failed"]),
+            detail=detail,
+            provider_error_code=code,
         )

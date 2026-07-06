@@ -11,6 +11,7 @@ Sync mode prints only the JSON array for FitVault ingestion.
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 from datetime import datetime
@@ -18,7 +19,21 @@ from pathlib import Path
 
 
 SKILL_DIR = Path(__file__).parent
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from subprocess_utils import run_hidden
+
 KEEPALIVE = SKILL_DIR / "coros-mcp-keepalive.js"
+
+
+def _safe_error_summary(value, limit=800):
+    text = str(value or "")
+    text = re.sub(r'("(?:access_token|refresh_token|id_token|authorization|api[_-]?key|password|passwd|mfa_code|mfa|otp|cookie|secret)"\s*:\s*")[^"]*(")', r'\1[redacted]\2', text, flags=re.I)
+    text = re.sub(r"(bearer\s+)[A-Za-z0-9._~+/=-]+", r"\1[redacted]", text, flags=re.I)
+    text = re.sub(r"\b(token|access_token|refresh_token|authorization|cookie|password|passwd|secret|mfa|otp|api[_-]?key)\s*[:=]\s*[^,\s;\"']+", r"\1=[redacted]", text, flags=re.I)
+    return text.strip()[:limit]
 
 FIELDS = [
     "username", "age", "gender", "height_cm", "weight_kg",
@@ -61,16 +76,49 @@ SPORT_CYCLE = {200, 201, 202, 203, 204, 205, 299}
 SPORT_SWIM = {300, 301}
 
 
+def _is_file(path):
+    try:
+        return Path(path).expanduser().is_file()
+    except (OSError, TypeError, ValueError):
+        return False
+
+
+def _bundled_node_candidates():
+    root = str(os.environ.get("MAITU_BUNDLED_NODE_DIR") or "").strip()
+    if not root:
+        return []
+    base = Path(root).expanduser()
+    return [
+        base / "node.exe",
+        base / "node",
+        base / "bin" / "node.exe",
+        base / "bin" / "node",
+    ]
+
+
+def resolve_node_binary():
+    env_node = str(os.environ.get("QCLAW_CLI_NODE_BINARY") or "").strip()
+    if env_node:
+        return env_node
+    for candidate in _bundled_node_candidates():
+        if _is_file(candidate):
+            return str(candidate)
+    return shutil.which("node") or "node"
+
+
 def call_keepalive(tool_name, args=None, retries=6):
     if args is None:
         args = {}
-    cmd = ["node", str(KEEPALIVE), "call", tool_name, json.dumps(args, ensure_ascii=False)]
+    node_binary = resolve_node_binary()
+    cmd = [node_binary, str(KEEPALIVE), "call", tool_name, json.dumps(args, ensure_ascii=False)]
     for attempt in range(retries):
         try:
-            result = subprocess.run(
+            result = run_hidden(
                 cmd,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=30,
                 cwd=str(SKILL_DIR),
                 env=dict(os.environ),
@@ -80,8 +128,11 @@ def call_keepalive(tool_name, args=None, retries=6):
                     import time
                     time.sleep(1.0 + attempt * 0.5)
                     continue
+                detail = _safe_error_summary(result.stderr or result.stdout)
+                if detail:
+                    print(f"[warn] {tool_name}: COROS keepalive failed: {detail}", file=sys.stderr)
                 return None
-            out = result.stdout
+            out = result.stdout or ""
             if "stackTrace" in out and "Session not found" in out:
                 if attempt < retries - 1:
                     import time
@@ -90,7 +141,7 @@ def call_keepalive(tool_name, args=None, retries=6):
                 print(f"[warn] {tool_name}: COROS session 多次超时", file=sys.stderr)
                 return None
             return out
-        except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
+        except (subprocess.TimeoutExpired, FileNotFoundError, UnicodeDecodeError) as exc:
             if attempt < retries - 1:
                 import time
                 time.sleep(1.0 + attempt * 0.5)
@@ -100,17 +151,147 @@ def call_keepalive(tool_name, args=None, retries=6):
     return None
 
 
-def _unescape(text):
-    if not text:
+def _decode_json_maybe(value):
+    if not isinstance(value, str):
+        return value
+    raw = value.strip()
+    if not raw:
         return ""
-    raw = str(text).strip()
     try:
-        parsed = json.loads(raw)
-        if isinstance(parsed, str):
-            return parsed
-        return json.dumps(parsed, ensure_ascii=False)
+        return json.loads(raw)
     except json.JSONDecodeError:
         return raw.replace("\\n", "\n").replace('\\"', '"').replace("\\t", "\t")
+
+
+def _unwrap_keepalive_envelope(payload):
+    payload = _decode_json_maybe(payload)
+    if not isinstance(payload, dict):
+        return payload
+    if payload.get("ok") is False:
+        return payload.get("error") or payload.get("message") or payload.get("raw_summary") or payload
+    if payload.get("ok") is True:
+        if "data" in payload:
+            return payload.get("data")
+        if "text" in payload:
+            return payload.get("text")
+        if "content" in payload:
+            return {"content": payload.get("content")}
+    return payload
+
+
+def _mcp_payload_to_text(payload):
+    payload = _unwrap_keepalive_envelope(payload)
+    if payload is None:
+        return ""
+    if isinstance(payload, str):
+        return payload
+    if isinstance(payload, dict):
+        content = payload.get("content")
+        if isinstance(content, list):
+            parts = []
+            for item in content:
+                if isinstance(item, dict) and item.get("text") is not None:
+                    parts.append(_mcp_payload_to_text(item.get("text")))
+                elif item is not None:
+                    parts.append(_mcp_payload_to_text(item))
+            return "\n".join(part for part in parts if part)
+        return json.dumps(payload, ensure_ascii=False)
+    if isinstance(payload, list):
+        return "\n".join(_mcp_payload_to_text(item) for item in payload if item is not None)
+    return str(payload)
+
+
+def _mcp_payload_to_dict(payload):
+    payload = _unwrap_keepalive_envelope(payload)
+    if isinstance(payload, dict):
+        content = payload.get("content")
+        if isinstance(content, list):
+            merged = {}
+            for item in content:
+                if isinstance(item, dict) and item.get("text") is not None:
+                    child = _mcp_payload_to_dict(item.get("text"))
+                    if child:
+                        merged.update(child)
+                else:
+                    child = _mcp_payload_to_dict(item)
+                    if child:
+                        merged.update(child)
+            if merged:
+                return merged
+        return payload
+    if isinstance(payload, list):
+        merged = {}
+        for item in payload:
+            child = _mcp_payload_to_dict(item)
+            if child:
+                merged.update(child)
+        return merged
+    return {}
+
+
+def _mcp_payload_to_records(payload):
+    payload = _unwrap_keepalive_envelope(payload)
+    if isinstance(payload, dict) and isinstance(payload.get("content"), list):
+        records = []
+        for item in payload.get("content") or []:
+            records.extend(_mcp_payload_to_records(item.get("text") if isinstance(item, dict) else item))
+        return records
+    if isinstance(payload, dict):
+        for key in ("records", "data", "activities", "items", "list"):
+            value = payload.get(key)
+            if isinstance(value, list):
+                return [item for item in value if isinstance(item, dict)]
+        return [payload]
+    if isinstance(payload, list):
+        return [item for item in payload if isinstance(item, dict)]
+    return []
+
+
+def _unescape(text):
+    return _mcp_payload_to_text(text)
+
+
+def _first_present(data, *keys):
+    if not isinstance(data, dict):
+        return None
+    lower_map = {str(k).lower(): v for k, v in data.items()}
+    for key in keys:
+        if key in data and data.get(key) is not None:
+            return data.get(key)
+        lowered = str(key).lower()
+        if lowered in lower_map and lower_map[lowered] is not None:
+            return lower_map[lowered]
+    return None
+
+
+def _number_value(value):
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    values = _numbers(value)
+    return values[0] if values else None
+
+
+def _normalize_gender(value):
+    clean = str(value or "").strip()
+    lower = clean.lower()
+    if lower in {"male", "m", "man", "男"}:
+        return "男"
+    if lower in {"female", "f", "woman", "女"}:
+        return "女"
+    return clean or None
+
+
+def _age_from_birthday(value):
+    if not value:
+        return None
+    try:
+        birthday = datetime.strptime(str(value)[:10], "%Y-%m-%d").date()
+        today = datetime.now().date()
+        return today.year - birthday.year - ((today.month, today.day) < (birthday.month, birthday.day))
+    except ValueError:
+        return None
 
 
 def _numbers(text):
@@ -155,6 +336,7 @@ def _parse_time_of_day(text):
 
 def parse_user_info(text):
     info = {}
+    data = _mcp_payload_to_dict(text)
     text = _unescape(text)
     m = re.search(r"Height:\s*([\d.]+)\s*cm", text, re.I)
     if m:
@@ -167,24 +349,42 @@ def parse_user_info(text):
         info["age"] = int(m.group(1))
     m = re.search(r"Birthday:\s*(\d{4}-\d{2}-\d{2})", text, re.I)
     if m and "age" not in info:
-        try:
-            birthday = datetime.strptime(m.group(1), "%Y-%m-%d").date()
-            today = datetime.now().date()
-            info["age"] = today.year - birthday.year - ((today.month, today.day) < (birthday.month, birthday.day))
-        except ValueError:
-            pass
+        age = _age_from_birthday(m.group(1))
+        if age is not None:
+            info["age"] = age
     m = re.search(r"Gender:\s*(\S+)", text, re.I)
     if m:
-        gender = m.group(1)
-        info["gender"] = "男" if gender.lower() == "male" else "女" if gender.lower() == "female" else gender
+        info["gender"] = _normalize_gender(m.group(1))
     m = re.search(r"Nickname:\s*(.+)", text, re.I)
     if m:
         info["username"] = m.group(1).strip()
+
+    height = _number_value(_first_present(data, "height_cm", "heightCm", "height", "stature"))
+    if height is not None:
+        info["height_cm"] = round(height * 100, 1) if 1.0 <= height <= 3.0 else height
+    weight = _number_value(_first_present(data, "weight_kg", "weightKg", "weight"))
+    if weight is not None:
+        info["weight_kg"] = weight
+    age = _number_value(_first_present(data, "age"))
+    if age is not None:
+        info["age"] = int(round(age))
+    elif "age" not in info:
+        birthday = _first_present(data, "birthday", "birthdate", "birth_date", "birthDate")
+        parsed_age = _age_from_birthday(birthday)
+        if parsed_age is not None:
+            info["age"] = parsed_age
+    gender = _first_present(data, "gender", "sex")
+    if gender is not None:
+        info["gender"] = _normalize_gender(gender)
+    username = _first_present(data, "username", "nickname", "name")
+    if username is not None:
+        info["username"] = str(username).strip()
     return info
 
 
 def parse_fitness_assessment(text):
     info = {}
+    data = _mcp_payload_to_dict(text)
     text = _unescape(text)
     m = re.search(r"VO2\s*max|VO2max", text, re.I)
     if m:
@@ -204,10 +404,32 @@ def parse_fitness_assessment(text):
         m = re.search(label, text, re.I)
         if m:
             info[key] = m.group(1)
+
+    vo2 = _number_value(_first_present(data, "vo2_max", "vo2max", "vdot"))
+    if vo2 is not None:
+        info["vo2_max"] = int(round(vo2))
+    threshold_pace = _first_present(data, "lactate_threshold_pace", "threshold_pace", "thresholdPace")
+    if threshold_pace is not None:
+        pace = str(threshold_pace).strip()
+        info["lactate_threshold_pace"] = pace if "/km" in pace else pace + " /km"
+    for key, candidates in {
+        "race_predict_5k": ("race_predict_5k", "predict_5k", "five_k_prediction", "fiveKPrediction"),
+        "race_predict_10k": ("race_predict_10k", "predict_10k", "ten_k_prediction", "tenKPrediction"),
+        "race_predict_half": ("race_predict_half", "predict_half", "half_marathon_prediction", "halfMarathonPrediction"),
+        "race_predict_full": ("race_predict_full", "predict_full", "marathon_prediction", "marathonPrediction"),
+    }.items():
+        value = _first_present(data, *candidates)
+        if value is not None:
+            info[key] = str(value).strip()
     return info
 
 
-def parse_single_metric(text, labels):
+def parse_single_metric(text, labels, json_keys=None):
+    data = _mcp_payload_to_dict(text)
+    for key in json_keys or []:
+        value = _number_value(_first_present(data, key))
+        if value is not None:
+            return value
     clean = _unescape(text)
     if re.search(r"\bno\s+data\b|no .* found|无数据|未找到", clean, re.I):
         return None
@@ -219,18 +441,49 @@ def parse_single_metric(text, labels):
 
 
 def parse_sleep(text):
+    data = _mcp_payload_to_dict(text)
     clean = _unescape(text)
     if re.search(r"\bno\s+sleep\s+data\b|no .* found|无睡眠|未找到", clean, re.I):
         return {"avg_sleep_hours": None, "avg_bedtime": None}
+    sleep_hours = _number_value(_first_present(data, "avg_sleep_hours", "sleep_hours", "total_sleep_hours", "sleepHours", "totalSleepHours"))
+    bedtime = _first_present(data, "avg_bedtime", "bedtime", "sleep_start", "sleepStart")
     return {
-        "avg_sleep_hours": _parse_duration_hours(clean),
-        "avg_bedtime": _parse_time_of_day(clean),
+        "avg_sleep_hours": round(sleep_hours, 2) if sleep_hours is not None else _parse_duration_hours(clean),
+        "avg_bedtime": str(bedtime).strip() if bedtime is not None else _parse_time_of_day(clean),
     }
 
 
+def _activity_from_record(record):
+    item = {"raw": record}
+    sport_type = _number_value(_first_present(record, "sport_type", "sportType", "sportTypeCode"))
+    if sport_type is not None:
+        item["sport_type"] = int(round(sport_type))
+    distance = _number_value(_first_present(record, "distance_km", "distanceKm", "distance", "totalDistance", "distanceMeters"))
+    if distance is not None:
+        item["distance_km"] = round(distance / 1000, 3) if distance > 1000 else distance
+    duration = _first_present(record, "duration", "duration_sec", "durationSeconds", "totalTime")
+    if duration is not None:
+        if isinstance(duration, (int, float)):
+            seconds = int(round(float(duration)))
+            item["duration"] = f"{seconds // 3600:02d}:{(seconds % 3600) // 60:02d}:{seconds % 60:02d}"
+        else:
+            item["duration"] = str(duration).strip()
+    pace = _first_present(record, "avg_pace", "average_pace", "avgPace", "pace")
+    if pace is not None:
+        item["avg_pace"] = str(pace).strip()
+    return item if "distance_km" in item else None
+
+
 def parse_sport_records(text):
-    clean = _unescape(text)
     activities = []
+    for record in _mcp_payload_to_records(text):
+        item = _activity_from_record(record)
+        if item:
+            activities.append(item)
+    if activities:
+        return activities
+
+    clean = _unescape(text)
     blocks = re.split(r"\n(?=\d+\.\s)", clean)
     for block in blocks:
         if not re.match(r"\d+\.\s", block):
@@ -305,7 +558,7 @@ def build_profile():
         r"resting heart rate",
         r"restingHeartRate",
         r"静息心率",
-    ])
+    ], json_keys=["resting_heart_rate", "restingHeartRate", "avg_resting_hr", "resting_hr"])
     if resting is not None:
         result["resting_heart_rate"]["value"] = int(round(resting))
         result["resting_heart_rate"]["note"] = "COROS MCP queryRestingHeartRate"
@@ -315,7 +568,7 @@ def build_profile():
         r"avgHrv",
         r"sleep HRV",
         r"HRV",
-    ])
+    ], json_keys=["hrv", "avgHrv", "average_hrv", "sleep_hrv"])
     if hrv is not None:
         result["hrv"]["value"] = round(hrv, 1)
         result["hrv"]["note"] = "COROS MCP querySleepHrv"

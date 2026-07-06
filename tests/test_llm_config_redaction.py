@@ -1,5 +1,6 @@
 import json
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -274,6 +275,79 @@ class TestLLMConfigRedaction(unittest.TestCase):
         self.assertIn("CLI 连接测试失败", res["msg"])
         self.assertIn("cli failed", res["msg"])
         self.assertNotIn("网关", res["msg"])
+
+    def test_test_llm_config_codex_permission_error_returns_stable_payload(self):
+        exc = llm_backend.LLMCLIError(
+            "codex_cli_permission_denied",
+            "Codex CLI 启动被系统拒绝访问。",
+            diagnostics={
+                "provider": "codex",
+                "provider_error_code": "codex_cli_permission_denied",
+                "platform": "win32",
+                "executable": r"C:\Users\Allen\AppData\Local\Microsoft\WindowsApps\codex.exe",
+                "resolution_strategy": "configured_path",
+                "error_summary": "[WinError 5] Access is denied password=***",
+            },
+        )
+        with mock.patch.object(llm_backend, "load_llm_config", return_value={}), \
+                mock.patch.object(llm_backend, "generate_text", side_effect=exc), \
+                mock.patch.object(llm_backend, "save_llm_config") as save_mock, \
+                mock.patch.object(main, "load_application_config", return_value={}), \
+                mock.patch.object(main, "persist_application_config", return_value={}):
+            res = Api().test_llm_config(
+                "cli_codex",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "cli",
+                "codex",
+                r"C:\Users\Allen\AppData\Local\Microsoft\WindowsApps\codex.exe",
+            )
+
+        self.assertFalse(res["ok"])
+        save_mock.assert_not_called()
+        self.assertEqual(res["data"]["provider_error_code"], "codex_cli_permission_denied")
+        self.assertIn("WindowsApps", res["data"]["action_hint"])
+        self.assertEqual(res["data"]["diagnostics"]["resolution_strategy"], "configured_path")
+        self.assertNotIn("password=secret", str(res))
+
+    def test_test_llm_config_cli_same_config_is_not_run_concurrently(self):
+        api = Api()
+        entered = threading.Event()
+        release = threading.Event()
+        results = {}
+
+        def slow_generate_text(**kwargs):
+            entered.set()
+            release.wait(timeout=5)
+            return "连接成功"
+
+        with mock.patch.object(llm_backend, "load_llm_config", return_value={}), \
+                mock.patch.object(llm_backend, "generate_text", side_effect=slow_generate_text) as generate_mock, \
+                mock.patch.object(llm_backend, "save_llm_config") as save_mock, \
+                mock.patch.object(main, "load_application_config", return_value={}), \
+                mock.patch.object(main, "persist_application_config", return_value={}):
+            thread = threading.Thread(
+                target=lambda: results.setdefault("first", api.test_llm_config(
+                    "cli_codex", "", "", "", "", "", "cli", "codex", "", "", "", 300,
+                ))
+            )
+            thread.start()
+            self.assertTrue(entered.wait(timeout=2))
+
+            second = api.test_llm_config(
+                "cli_codex", "", "", "", "", "", "cli", "codex", "", "", "", 300,
+            )
+            release.set()
+            thread.join(timeout=5)
+
+        self.assertFalse(second["ok"])
+        self.assertIn("正在进行中", second["msg"])
+        self.assertTrue(results["first"]["ok"])
+        generate_mock.assert_called_once()
+        save_mock.assert_called_once()
 
     def test_test_llm_config_openclaw_cli_failure_includes_diagnosis(self):
         with mock.patch.object(llm_backend, "load_llm_config", return_value={}), \

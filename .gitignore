@@ -1,5 +1,7 @@
 .venv/
 .venv-*/
+.venv*/
+build_dependency_manifest.json
 __pycache__/
 *.pyc
 *.pyo

@@ -605,6 +605,47 @@ class TestFitSync(unittest.TestCase):
         self.assertEqual(result["data"]["download"], download_summary)
         import_mock.assert_not_called()
 
+    def test_remote_fit_sync_surfaces_coros_daily_fit_download_limit(self):
+        api = object.__new__(main.Api)
+        download_summary = {
+            "ok": False,
+            "provider": "coros",
+            "region": "cn",
+            "output_dir": main.TRACKS_DIR,
+            "mode": "date_range",
+            "strategy": "sport_records_url",
+            "start_date": "2026-06-22",
+            "end_date": "2026-07-02",
+            "searched": 2,
+            "downloaded": 0,
+            "skipped": 0,
+            "failed": 2,
+            "limit": 10,
+            "files": [],
+            "errors": [{"status": "failed", "error": "Daily FIT download limit reached"}],
+        }
+        with mock.patch.object(llm_backend, "load_llm_config", return_value={
+            "provider": "local_mcp",
+            "url": "http://localhost:3000/v1/chat/completions",
+            "model": "openclaw",
+            "api_key": "",
+            "agent_id": "",
+            "watch_brand": "coros",
+            "coros_region": "cn",
+        }), mock.patch.object(coros_sync, "download_fit_json", return_value=download_summary), \
+             mock.patch.object(api, "sync_local_fit_files") as import_mock:
+            result = api.sync_remote_fit_activities("2026-06-22", "2026-07-02")
+
+        self.assertFalse(result["ok"], result)
+        self.assertEqual(result["code"], main.API_CODE_EXTERNAL_SERVICE)
+        self.assertEqual(result["data"]["provider"], "coros")
+        self.assertEqual(result["data"]["provider_error_code"], "coros_fit_daily_download_limit")
+        self.assertIn("Daily FIT download limit reached", result["data"]["provider_detail"])
+        self.assertIn("Daily FIT download limit reached", result["data"]["message"])
+        self.assertIn("Daily FIT download limit reached", result["msg"])
+        self.assertEqual(result["data"]["download"], download_summary)
+        import_mock.assert_not_called()
+
     def test_remote_fit_sync_rejects_empty_brand_without_calling_openclaw(self):
         api = object.__new__(main.Api)
         with mock.patch.object(llm_backend, "load_llm_config", return_value={

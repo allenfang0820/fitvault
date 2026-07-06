@@ -15,7 +15,13 @@ import getpass
 import os
 from pathlib import Path
 
-from garmin_auth import GarminStatsAuthError, DEFAULT_AUTH_DIRS, login_and_save, normalize_region
+from garmin_auth import (
+    GarminStatsAuthError,
+    GarminStatsMFARequired,
+    DEFAULT_AUTH_DIRS,
+    login_and_save_app,
+    normalize_region,
+)
 
 
 def main() -> None:
@@ -44,7 +50,22 @@ def main() -> None:
         raise SystemExit("账号或密码不能为空。")
 
     try:
-        token_path = login_and_save(email, password, region, Path(tokenstore).expanduser())
+        token_path = login_and_save_app(email, password, region, Path(tokenstore).expanduser())
+    except GarminStatsMFARequired as exc:
+        mfa_code = input("Garmin MFA/两步验证码: ").strip()
+        if not mfa_code:
+            raise SystemExit("MFA 验证码不能为空。")
+        try:
+            token_path = login_and_save_app(
+                email,
+                password,
+                region,
+                Path(tokenstore).expanduser(),
+                mfa_code=mfa_code,
+                mfa_state=getattr(exc, "client_state", None),
+            )
+        except GarminStatsAuthError as retry_exc:
+            raise SystemExit(str(retry_exc))
     except GarminStatsAuthError as exc:
         raise SystemExit(str(exc))
 

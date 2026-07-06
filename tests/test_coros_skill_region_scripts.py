@@ -35,7 +35,9 @@ class TestCorosSkillRegionScriptStatic(unittest.TestCase):
     def test_keepalive_token_path_uses_selected_region(self):
         self.assertIn("COROS_REGION", self.keepalive_source)
         self.assertIn("process.env.COROS_REGION", self.keepalive_source)
-        self.assertIn("'.coros-mcp-skill-gateway-ts', COROS_REGION, 'token.json'", self.keepalive_source)
+        self.assertIn("process.env.COROS_MCP_TOKEN_ROOT", self.keepalive_source)
+        self.assertIn("os.homedir()", self.keepalive_source)
+        self.assertIn("TOKEN_ROOT, COROS_REGION, 'token.json'", self.keepalive_source)
         self.assertNotIn("'.coros-mcp-skill-gateway-ts', 'cn', 'token.json'", self.keepalive_source)
 
     def test_keepalive_supports_cli_region_and_safe_config_print(self):
@@ -44,7 +46,9 @@ class TestCorosSkillRegionScriptStatic(unittest.TestCase):
         self.assertIn("不支持的 COROS 区域", self.keepalive_source)
 
     def test_runner_invokes_keepalive_without_hardcoded_region(self):
-        self.assertIn('"node", str(KEEPALIVE), "call"', self.runner_source)
+        self.assertIn("resolve_node_binary()", self.runner_source)
+        self.assertIn("QCLAW_CLI_NODE_BINARY", self.runner_source)
+        self.assertIn("MAITU_BUNDLED_NODE_DIR", self.runner_source)
         self.assertNotIn('"--region"', self.runner_source)
         self.assertNotIn("COROS_REGION = 'cn'", self.runner_source)
         for forbidden in ("coros-url-fetch", "coros_traininghub_login", "teamcnapi", "t.coros.com"):
@@ -125,6 +129,13 @@ class TestCorosSkillRegionScriptStatic(unittest.TestCase):
 
 @unittest.skipIf(shutil.which("node") is None, "node is required for COROS skill script checks")
 class TestCorosSkillRegionScripts(unittest.TestCase):
+    def _load_runner_module(self):
+        spec = importlib.util.spec_from_file_location("coros_runner_profile_under_test", RUNNER)
+        module = importlib.util.module_from_spec(spec)
+        assert spec.loader is not None
+        spec.loader.exec_module(module)
+        return module
+
     def _run_print_config(self, *args, env=None):
         with tempfile.TemporaryDirectory() as temp_home:
             cmd_env = dict(os.environ)
@@ -167,6 +178,21 @@ class TestCorosSkillRegionScripts(unittest.TestCase):
         self.assertEqual(data["mcpUrl"], "https://mcpus.coros.com/mcp")
         self.assertTrue(data["tokenPath"].endswith("/.coros-mcp-skill-gateway-ts/us/token.json"))
 
+    def test_keepalive_coros_token_root_overrides_home(self):
+        with tempfile.TemporaryDirectory() as token_root:
+            result = self._run_print_config(
+                "--region",
+                "eu",
+                env={"COROS_MCP_TOKEN_ROOT": token_root, "HOME": "/tmp/wrong-home"},
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            data = json.loads(result.stdout)
+            self.assertEqual(Path(data["tokenRoot"]).resolve(), Path(token_root).resolve())
+            self.assertEqual(Path(data["tokenPath"]).resolve(), Path(token_root).resolve() / "eu" / "token.json")
+            self.assertNotIn("access_token", result.stdout)
+            self.assertNotIn("refresh_token", result.stdout)
+
     def test_keepalive_rejects_invalid_region_without_reading_token(self):
         result = self._run_print_config(env={"COROS_REGION": "global"})
 
@@ -186,10 +212,7 @@ class TestCorosSkillRegionScripts(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_runner_invokes_keepalive_without_overriding_coros_region_env(self):
-        spec = importlib.util.spec_from_file_location("coros_runner_profile_under_test", RUNNER)
-        module = importlib.util.module_from_spec(spec)
-        assert spec.loader is not None
-        spec.loader.exec_module(module)
+        module = self._load_runner_module()
 
         completed = subprocess.CompletedProcess(
             args=[],
@@ -197,7 +220,8 @@ class TestCorosSkillRegionScripts(unittest.TestCase):
             stdout='"Nickname: runner-user"',
             stderr="",
         )
-        with mock.patch.dict(os.environ, {"COROS_REGION": "eu"}), \
+        with mock.patch.dict(os.environ, {"COROS_REGION": "eu"}, clear=False), \
+             mock.patch.object(module.shutil, "which", return_value="node"), \
              mock.patch.object(module.subprocess, "run", return_value=completed) as run_mock:
             output = module.call_keepalive("queryUserInfo", retries=1)
 
@@ -208,6 +232,60 @@ class TestCorosSkillRegionScripts(unittest.TestCase):
         self.assertEqual(Path(command[1]).name, "coros-mcp-keepalive.js")
         self.assertEqual(command[2:4], ["call", "queryUserInfo"])
         self.assertEqual(kwargs["env"]["COROS_REGION"], "eu")
+        self.assertEqual(kwargs["encoding"], "utf-8")
+        self.assertEqual(kwargs["errors"], "replace")
+        self.assertFalse(kwargs["shell"])
+
+    def test_runner_uses_qclaw_node_binary_with_spaces(self):
+        module = self._load_runner_module()
+        node_path = "C:\\Program Files\\FitVault Node\\node.exe"
+        completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="{}", stderr="")
+
+        with mock.patch.dict(os.environ, {"QCLAW_CLI_NODE_BINARY": node_path}, clear=False), \
+             mock.patch.object(module.subprocess, "run", return_value=completed) as run_mock:
+            module.call_keepalive("queryUserInfo", retries=1)
+
+        command = run_mock.call_args.args[0]
+        self.assertEqual(command[0], node_path)
+        self.assertEqual(command[2:4], ["call", "queryUserInfo"])
+        self.assertFalse(run_mock.call_args.kwargs["shell"])
+
+    def test_runner_resolves_bundled_node_dir_before_path(self):
+        module = self._load_runner_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            bundled = Path(tmp) / "FitVault Node"
+            node = bundled / "bin" / "node"
+            node.parent.mkdir(parents=True)
+            node.write_text("#!/bin/sh\n", encoding="utf-8")
+            completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="{}", stderr="")
+
+            with mock.patch.dict(os.environ, {"MAITU_BUNDLED_NODE_DIR": str(bundled)}, clear=False), \
+                 mock.patch.object(module.shutil, "which", return_value="/usr/bin/node"), \
+                 mock.patch.object(module.subprocess, "run", return_value=completed) as run_mock:
+                module.call_keepalive("queryUserInfo", retries=1)
+
+        self.assertEqual(run_mock.call_args.args[0][0], str(node))
+
+    def test_runner_falls_back_to_path_node(self):
+        module = self._load_runner_module()
+        completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="{}", stderr="")
+
+        with mock.patch.dict(os.environ, {"QCLAW_CLI_NODE_BINARY": "", "MAITU_BUNDLED_NODE_DIR": ""}, clear=False), \
+             mock.patch.object(module.shutil, "which", return_value="/usr/local/bin/node"), \
+             mock.patch.object(module.subprocess, "run", return_value=completed) as run_mock:
+            module.call_keepalive("queryUserInfo", retries=1)
+
+        self.assertEqual(run_mock.call_args.args[0][0], "/usr/local/bin/node")
+
+    def test_runner_handles_none_stdout_without_type_error(self):
+        module = self._load_runner_module()
+        completed = subprocess.CompletedProcess(args=[], returncode=0, stdout=None, stderr="")
+
+        with mock.patch.object(module.shutil, "which", return_value="node"), \
+             mock.patch.object(module.subprocess, "run", return_value=completed):
+            output = module.call_keepalive("queryUserInfo", retries=1)
+
+        self.assertEqual(output, "")
 
 
 if __name__ == "__main__":

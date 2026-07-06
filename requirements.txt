@@ -7,5 +7,6 @@ pandas>=2.0.0
 watchdog>=6.0.0
 numpy>=1.24.0
 scipy>=1.10.0
-garminconnect>=0.2.8
-garth>=0.4.47
+garminconnect==0.3.6
+curl_cffi>=0.6
+pytz>=2023.3

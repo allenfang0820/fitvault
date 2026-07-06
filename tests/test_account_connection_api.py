@@ -49,6 +49,36 @@ class TestAccountConnectionApi(unittest.TestCase):
         self.assertEqual(connections[1]["status"], "idle")
         self.assertNotIn("login_command", str(res["data"]))
 
+    def test_coros_sync_error_payload_is_stable_and_redacted(self):
+        with mock.patch.object(llm_backend, "load_llm_config", return_value={"coros_region": "cn"}):
+            payload = Api()._coros_sync_error_payload(
+                provider_error_code="coros_fit_download_failed",
+                message="raw access_token=abc123 password=secret",
+                start_date="2026-05-01",
+                end_date="2026-05-31",
+                exc=coros_sync.CorosFitDownloadError(
+                    "Session not found\nstackTrace refresh_token=def456 cookie=session-secret",
+                    code="coros_mcp_unavailable",
+                ),
+                download={
+                    "errors": [
+                        {
+                            "error": "access_token=abc123 refresh_token=def456 password=secret cookie=session-secret",
+                        }
+                    ]
+                },
+            )
+
+        serialized = str(payload)
+        self.assertEqual(payload["provider"], "coros")
+        self.assertEqual(payload["provider_error_code"], "coros_fit_download_failed")
+        self.assertIn("action_hint", payload)
+        self.assertIn("diagnostics", payload)
+        self.assertNotIn("abc123", serialized)
+        self.assertNotIn("def456", serialized)
+        self.assertNotIn("secret", serialized)
+        self.assertNotIn("session-secret", serialized)
+
     def test_check_account_connection_validates_provider_and_region(self):
         api = Api()
 
@@ -165,6 +195,7 @@ class TestAccountConnectionApi(unittest.TestCase):
             status="needs_mfa",
             token_path="/tmp/garmin_auth_cn",
             message="Garmin 账号需要 MFA 验证码。",
+            mfa_state={"mfa": "state"},
         )
         success = garmin_sync.GarminAppLoginResult(
             ok=True,
@@ -202,6 +233,7 @@ class TestAccountConnectionApi(unittest.TestCase):
             "password": "secret-password",
             "region": "cn",
             "mfa_code": "123456",
+            "mfa_state": {"mfa": "state"},
         })
         self.assertTrue(cont["ok"], cont)
         self.assertEqual(cont["data"]["status"], "authorized")
@@ -209,6 +241,7 @@ class TestAccountConnectionApi(unittest.TestCase):
         serialized = str(cont["data"])
         self.assertNotIn("secret-password", serialized)
         self.assertNotIn("123456", serialized)
+        self.assertNotIn("mfa_state", serialized)
 
     def test_continue_garmin_mfa_requires_code_without_dropping_session(self):
         api = Api()
@@ -237,15 +270,91 @@ class TestAccountConnectionApi(unittest.TestCase):
             status="failed",
             token_path="/tmp/garmin_auth_cn",
             message="bad password=secret-password token=abc123 email runner@example.com",
+            provider_error_code="garmin_auth_failed",
+            action_hint="请回配置页重新连接 Garmin 账号。",
+            diagnostics={"provider": "garmin", "error_summary": "bad password=*** token=***"},
         )
         with mock.patch.object(llm_backend, "load_llm_config", return_value={"garmin_region": "cn"}), \
              mock.patch.object(garmin_sync, "login_app", return_value=result):
             res = Api().start_account_connection("garmin", "", {"email": "runner@example.com", "password": "secret-password"})
 
         self.assertFalse(res["ok"])
+        self.assertEqual(res["data"]["provider_error_code"], "garmin_auth_failed")
+        self.assertIn("action_hint", res["data"])
+        self.assertIn("diagnostics", res["data"])
         serialized = str(res)
         self.assertNotIn("secret-password", serialized)
         self.assertNotIn("abc123", serialized)
+        self.assertNotIn("runner@example.com", serialized)
+
+    def test_start_account_connection_garmin_windows_source_error_is_stable(self):
+        result = garmin_sync.GarminAppLoginResult(
+            ok=False,
+            region="cn",
+            status="failed",
+            token_path="/tmp/garmin_auth_cn",
+            message="Garmin provider 依赖与应用不兼容，请更新应用后重试。",
+            provider_error_code="garmin_provider_api_incompatible",
+            action_hint="Garmin provider 依赖与应用不兼容，请重新安装或更新应用。",
+            diagnostics={"provider": "garmin", "cause": "packaged_callback_source_unavailable"},
+        )
+        with mock.patch.object(llm_backend, "load_llm_config", return_value={"garmin_region": "cn"}), \
+             mock.patch.object(garmin_sync.sys, "platform", "win32"), \
+             mock.patch.object(garmin_sync.sys, "frozen", True, create=True), \
+             mock.patch.object(garmin_sync, "login_app", return_value=result), \
+             mock.patch.object(garmin_sync, "start_login") as terminal_login:
+            res = Api().start_account_connection(
+                "garmin",
+                "cn",
+                {"email": "runner@example.com", "password": "secret-password"},
+            )
+
+        self.assertFalse(res["ok"])
+        self.assertEqual(res["data"]["status"], "failed")
+        self.assertEqual(res["data"]["provider_error_code"], "garmin_provider_api_incompatible")
+        self.assertEqual(res["data"]["diagnostics"]["cause"], "packaged_callback_source_unavailable")
+        terminal_login.assert_not_called()
+        serialized = str(res)
+        self.assertNotIn("could not get source code", serialized)
+        self.assertNotIn("secret-password", serialized)
+        self.assertNotIn("runner@example.com", serialized)
+        self.assertNotIn("FitVaultCLI.exe", serialized)
+
+    def test_continue_account_connection_garmin_mfa_failure_is_stable_and_redacted(self):
+        api = Api()
+        needs_mfa = garmin_sync.GarminAppLoginResult(
+            ok=False,
+            region="cn",
+            status="needs_mfa",
+            token_path="/tmp/garmin_auth_cn",
+            message="Garmin 账号需要 MFA 验证码。",
+        )
+        failed = garmin_sync.GarminAppLoginResult(
+            ok=False,
+            region="cn",
+            status="failed",
+            token_path="/tmp/garmin_auth_cn",
+            message="Garmin MFA 验证失败，请重新输入验证码。",
+            provider_error_code="garmin_mfa_failed",
+            action_hint="请重新输入 Garmin MFA 验证码，或回配置页重新连接 Garmin 账号。",
+            diagnostics={"provider": "garmin", "error_summary": "MFA failed"},
+        )
+        with mock.patch.object(llm_backend, "load_llm_config", return_value={"garmin_region": "cn"}), \
+             mock.patch.object(garmin_sync, "login_app", side_effect=[needs_mfa, failed]):
+            start = api.start_account_connection(
+                "garmin",
+                "",
+                {"email": "runner@example.com", "password": "secret-password"},
+            )
+            session_id = start["data"]["session_id"]
+            cont = api.continue_account_connection(session_id, {"mfa_code": "123456"})
+
+        self.assertFalse(cont["ok"])
+        self.assertEqual(cont["data"]["provider_error_code"], "garmin_mfa_failed")
+        serialized = str(cont)
+        self.assertNotIn("secret-password", serialized)
+        self.assertNotIn("123456", serialized)
+        self.assertNotIn("runner@example.com", serialized)
 
     def test_garmin_app_login_401_message_is_actionable_without_cli_hint(self):
         message = garmin_sync._garmin_app_login_failure_message(
@@ -413,7 +522,7 @@ class TestAccountConnectionApi(unittest.TestCase):
             root = Path(temp_dir)
             token_dir = root / "garmin_auth_cn"
             token_dir.mkdir()
-            (token_dir / "oauth1_token.json").write_text("{}", encoding="utf-8")
+            (token_dir / "garmin_tokens.json").write_text("{}", encoding="utf-8")
             keep_file = root / "activity.fit"
             keep_file.write_text("fit", encoding="utf-8")
 

@@ -373,6 +373,22 @@
         .profile-summary-card {
             position: relative;
         }
+        .profile-section-title-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 4px;
+        }
+        .profile-section-title-row .compact-action-btn {
+            width: auto;
+            min-width: 88px;
+            height: 28px;
+            padding: 0 10px;
+            flex: 0 0 auto;
+            font-size: 0.68rem;
+            line-height: 1;
+        }
         .profile-summary-head {
             display: flex;
             gap: 8px;
@@ -5602,7 +5618,10 @@
                 <div class="profile-shell">
                     <div class="profile-top-fixed">
                         <div class="section-card profile-summary-card">
-                            <div class="section-title">🏃 运动画像</div>
+                            <div class="profile-section-title-row">
+                                <div class="section-title">🏃 运动画像</div>
+                                <button type="button" id="profile-force-sync-btn" class="secondary-btn compact-action-btn" onclick="forceSyncProfileFromUI()">同步画像</button>
+                            </div>
                             <div id="pf-loading" style="display:none; text-align:center; padding:16px 0; color:#64748b; font-size:0.75rem;">⏳ 加载运动画像...</div>
                             <div id="pf-empty" style="display:none; text-align:center; padding:16px 0; color:#64748b; font-size:0.75rem;">
                                 📋 暂无画像数据，连接成功后将自动同步 Garmin 用户画像
@@ -6888,6 +6907,7 @@
         llmTestState: 'idle',
         llmTestRequestId: 0,
         llmTestStateLock: false,
+        llmTestInFlight: false,
         llmTestTransitionTimer: null,
         savedLLMConfigSignature: '',
         aiNotified: false,
@@ -7652,6 +7672,44 @@
                 statusEl.innerHTML = text + '<span class="sync-dot d1"></span><span class="sync-dot d2"></span><span class="sync-dot d3"></span>';
             } else {
                 statusEl.innerText = text;
+            }
+        }
+    }
+
+    async function forceSyncProfileFromUI() {
+        const btn = document.getElementById('profile-force-sync-btn');
+        const originalText = btn ? btn.innerText : '';
+        if (!window.pywebview || !window.pywebview.api || typeof window.pywebview.api.force_sync_profile !== 'function') {
+            showToast('当前环境无法同步用户画像');
+            return;
+        }
+        if (btn) {
+            btn.disabled = true;
+            btn.innerText = '同步中...';
+        }
+        try {
+            const res = await window.pywebview.api.force_sync_profile();
+            const data = (res && res.data) || {};
+            if (res && res.code === 0) {
+                updateProfileSyncMeta(data.profile_sync_summary || data || res);
+                await loadProfileCard();
+                showToast('用户画像同步完成');
+                return;
+            }
+
+            const msg = (res && (res.msg || res.error)) || '未知错误';
+            showToast('用户画像同步失败：' + msg);
+            if (isGarminAuthRequiredResponse(res)) {
+                openGarminSettingsForAuthorization(res, msg);
+            } else if (isCorosAuthRequiredResponse(res)) {
+                showCorosLoginPrompt(res);
+            }
+        } catch (e) {
+            showToast('用户画像同步失败：' + String((e && e.message) || e));
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerText = originalText || '同步画像';
             }
         }
     }
@@ -9305,6 +9363,31 @@
         return `${providerLabel} 活动同步完成：${downloadText.join('，')}；本地导入：${importText.join('，')}${remoteSkippedHint}${noNewHint}`;
     }
 
+    function sanitizeProviderErrorDetail(value) {
+        let text = '';
+        if (value == null) return '';
+        if (typeof value === 'string') text = value;
+        else {
+            try { text = JSON.stringify(value); }
+            catch (_) { text = String(value || ''); }
+        }
+        text = text
+            .replace(/(bearer\s+)[A-Za-z0-9._~+/=-]+/ig, '$1[redacted]')
+            .replace(/\b(token|access_token|refresh_token|authorization|cookie|password|passwd|secret|mfa|otp|api[_-]?key)\s*[:=]\s*[^,\s;"]+/ig, '$1=[redacted]')
+            .trim();
+        return text.length > 300 ? text.slice(0, 300) + '...' : text;
+    }
+
+    function firstProviderDownloadErrorDetail(download) {
+        const errors = download && Array.isArray(download.errors) ? download.errors : [];
+        for (const item of errors) {
+            if (!item) continue;
+            const detail = sanitizeProviderErrorDetail(item.error || item.message || item.raw_summary || (item.diagnostics && item.diagnostics.error_summary));
+            if (detail) return detail;
+        }
+        return '';
+    }
+
     function formatGarminRemoteSyncError(res) {
         const data = (res && res.data) || {};
         const parts = [];
@@ -9323,6 +9406,8 @@
         const parts = [];
         const base = data.message || (res && (res.msg || res.error)) || `${providerLabel} 活动同步失败`;
         if (base) parts.push(base);
+        const providerDetail = sanitizeProviderErrorDetail(data.provider_detail) || firstProviderDownloadErrorDetail(data.download);
+        if (providerDetail && String(base || '').indexOf(providerDetail) < 0) parts.push(providerDetail);
         if (data.action_hint) parts.push(data.action_hint);
         if (data.provider_error_code) parts.push(`错误码：${data.provider_error_code}`);
         if (data.download || data.import) {
@@ -12672,6 +12757,10 @@
     }
 
     async function testLLMConfig() {
+        if (onboardingState.llmTestInFlight) {
+            showToast('🧪 测试连接正在进行中，请稍候');
+            return;
+        }
         syncLLMConfigFromFields();
         const transport = normalizeLLMTransport(currentLLMConfig.transport);
         const provider = currentLLMConfig.provider || 'local_mcp';
@@ -12704,6 +12793,7 @@
         }
         const requestId = onboardingState.llmTestRequestId + 1;
         onboardingState.llmTestRequestId = requestId;
+        onboardingState.llmTestInFlight = true;
         showToast('🧪 正在测试连接...');
         setLLMTestStatus('正在测试连接...', false, true, { requestId: requestId });
         const testBtn = document.getElementById('btn-test-llm');
@@ -12788,6 +12878,9 @@
             if (!setLLMTestStatus('连接失败，请检查网络或接口配置', false, false, { requestId: requestId })) return;
             showToast('❌ 连接失败：' + msg);
         } finally {
+            if (requestId === onboardingState.llmTestRequestId) {
+                onboardingState.llmTestInFlight = false;
+            }
             if (requestId === onboardingState.llmTestRequestId && testBtn) {
                 testBtn.disabled = false;
                 testBtn.style.opacity = '1';
@@ -15330,41 +15423,12 @@ function runSilentGatewayValidation() {
                     }
                     return;
                 }
-                pywebview.api.test_llm_config(
-                    res.data.provider || 'local_mcp',
-                    '',
-                    '',
-                    '',
-                    res.data.agent_id || '',
-                    res.data.watch_brand || '',
-                    'cli',
-                    res.data.cli_type || '',
-                    res.data.cli_path || '',
-                    res.data.cli_args || '',
-                    res.data.cli_model || '',
-                    res.data.cli_timeout_sec || 300,
-                    res.data.garmin_region || 'cn',
-                    res.data.coros_region || 'cn'
-                ).then(function (testRes) {
-                    if (timedOut) return;
-                    if (!backendConfigMatchesForm) {
-                        stopLLMHeartbeat();
-                        return;
-                    }
-                    if (testRes.ok) {
-                        if (typeof setLLMTestStatus === 'function') {
-                            markLLMConfigClean(currentLLMConfig);
-                            setLLMTestStatus('静默验证：CLI 连接正常', true, false);
-                            onboardingState.llmTestPassed = true;
-                        }
-                    } else {
-                        if (typeof setLLMTestStatus === 'function') {
-                            setLLMTestStatus('静默验证：CLI 连接异常', false, false);
-                            onboardingState.llmTestPassed = false;
-                        }
-                    }
-                    stopLLMHeartbeat();
-                });
+                if (typeof setLLMTestStatus === 'function' && backendConfigMatchesForm && !isCurrentLLMConfigDirty()) {
+                    markLLMConfigClean(currentLLMConfig);
+                    setLLMTestStatus('CLI 已配置，点击测试连接可手动验证', true, false);
+                    onboardingState.llmTestPassed = true;
+                }
+                stopLLMHeartbeat();
                 return;
             }
             if (typeof setLLMTestStatus === 'function' && backendConfigMatchesForm) {
