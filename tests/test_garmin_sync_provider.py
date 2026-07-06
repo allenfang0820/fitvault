@@ -251,6 +251,36 @@ class TestGarminSyncProvider(unittest.TestCase):
             ],
         )
 
+    def test_download_fit_json_frozen_macos_uses_internal_script_runner(self):
+        payload = {"ok": True, "downloaded": 1, "files": ["a.fit"]}
+        output_dir = self.base_dir / "tracks"
+        app_exe = self.base_dir / "脉图.app" / "Contents" / "MacOS" / "FitVault"
+        app_exe.parent.mkdir(parents=True)
+        app_exe.write_text("", encoding="utf-8")
+        with mock.patch.object(garmin_sync.sys, "platform", "darwin"), \
+             mock.patch.object(garmin_sync.sys, "frozen", True, create=True), \
+             mock.patch.object(garmin_sync.sys, "executable", str(app_exe)), \
+             mock.patch.object(
+                 garmin_sync.subprocess,
+                 "run",
+                 return_value=self._completed(stdout=json.dumps(payload)),
+             ) as run_mock:
+            parsed = garmin_sync.download_fit_json(
+                base_dir=self.base_dir,
+                start_date="2026-05-01",
+                end_date="2026-05-31",
+                output_dir=output_dir,
+                region="cn",
+            )
+
+        self.assertEqual(parsed, payload)
+        command = run_mock.call_args.args[0]
+        self.assertEqual(command[0], str(app_exe))
+        self.assertEqual(command[1], "--garmin-script")
+        self.assertIn("download_fit.py", command[2])
+        self.assertEqual(command[3], "--from")
+        self.assertFalse(run_mock.call_args.kwargs["shell"])
+
     def test_download_fit_json_rejects_non_object(self):
         with mock.patch.object(
             garmin_sync.subprocess,

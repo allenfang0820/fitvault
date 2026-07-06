@@ -282,7 +282,7 @@ def run_garmin_script(
         raise GarminSkillNotFoundError(f"未找到 Garmin skill 脚本: {script}")
 
     script_args = [str(arg) for arg in (args or [])]
-    if os.name == "nt" and getattr(sys, "frozen", False):
+    if getattr(sys, "frozen", False):
         command = [sys.executable, "--garmin-script", str(script), *script_args]
     else:
         command = [sys.executable, str(script), *script_args]
