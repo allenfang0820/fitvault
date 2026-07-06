@@ -447,6 +447,84 @@ class TestGarminSyncProvider(unittest.TestCase):
         self.assertEqual(status.status, "missing_token")
         run_mock.assert_not_called()
 
+    def test_login_app_wraps_windows_packaged_source_error(self):
+        class AuthModule:
+            @staticmethod
+            def login_and_save_app(**kwargs):
+                raise RuntimeError("could not get source code password=secret-password token=abc123")
+
+        with mock.patch.object(garmin_sync.sys, "platform", "win32"), \
+             mock.patch.object(garmin_sync.sys, "frozen", True, create=True), \
+             mock.patch.object(garmin_sync, "_load_skill_module", return_value=AuthModule):
+            result = garmin_sync.login_app(
+                email="runner@example.com",
+                password="secret-password",
+                region="cn",
+                base_dir=self.base_dir,
+            )
+
+        self.assertFalse(result.ok)
+        self.assertEqual(result.status, "failed")
+        self.assertEqual(result.provider_error_code, "garmin_auth_failed")
+        self.assertEqual(result.action_hint, "请回配置页重新连接 Garmin 账号。")
+        self.assertEqual(result.message, "Garmin 授权失败，请重新输入账号密码或稍后重试。")
+        self.assertEqual(result.diagnostics, {"provider": "garmin", "cause": "packaged_callback_source_unavailable"})
+        serialized = str(result)
+        self.assertNotIn("could not get source code", serialized)
+        self.assertNotIn("secret-password", serialized)
+        self.assertNotIn("abc123", serialized)
+
+    def test_login_app_needs_mfa_is_not_a_failed_error(self):
+        class GarminStatsMFARequired(Exception):
+            pass
+
+        def login_and_save_app(**kwargs):
+            raise GarminStatsMFARequired("Garmin 账号需要 MFA 验证码")
+
+        AuthModule = type(
+            "AuthModule",
+            (),
+            {
+                "GarminStatsMFARequired": GarminStatsMFARequired,
+                "login_and_save_app": staticmethod(login_and_save_app),
+            },
+        )
+
+        with mock.patch.object(garmin_sync, "_load_skill_module", return_value=AuthModule):
+            result = garmin_sync.login_app(
+                email="runner@example.com",
+                password="secret-password",
+                region="cn",
+                base_dir=self.base_dir,
+            )
+
+        self.assertFalse(result.ok)
+        self.assertEqual(result.status, "needs_mfa")
+        self.assertEqual(result.provider_error_code, "")
+        self.assertEqual(result.action_hint, "")
+        self.assertIsNone(result.diagnostics)
+
+    def test_login_app_macos_success_path_remains_in_process(self):
+        class AuthModule:
+            @staticmethod
+            def login_and_save_app(**kwargs):
+                return kwargs["tokenstore"]
+
+        with mock.patch.object(garmin_sync.sys, "platform", "darwin"), \
+             mock.patch.object(garmin_sync, "_load_skill_module", return_value=AuthModule), \
+             mock.patch.object(garmin_sync, "start_login") as terminal_login:
+            result = garmin_sync.login_app(
+                email="runner@example.com",
+                password="secret-password",
+                region="global",
+                base_dir=self.base_dir,
+            )
+
+        self.assertTrue(result.ok)
+        self.assertEqual(result.status, "authorized")
+        self.assertEqual(result.region, "global")
+        terminal_login.assert_not_called()
+
     def test_start_login_uses_shell_false(self):
         with mock.patch.object(garmin_sync.sys, "platform", "linux"), \
              mock.patch.object(

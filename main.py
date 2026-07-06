@@ -7964,6 +7964,8 @@ class Api:
         self._window_shown = False
         self._account_connection_sessions: dict[str, dict[str, Any]] = {}
         self._account_connection_lock = threading.Lock()
+        self._llm_cli_test_lock = threading.Lock()
+        self._llm_cli_tests_in_flight: set[str] = set()
 
     def on_loaded(self, *args) -> dict:
         """页面加载完成后显示窗口，解决原生窗口先白屏的问题。"""
@@ -8370,6 +8372,7 @@ class Api:
             r"\1\2***",
             text,
         )
+        text = re.sub(r"(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", "***", text)
         text = re.sub(r"(?i)(bearer\s+)[A-Za-z0-9._~+/=-]+", r"\1***", text)
         return text
 
@@ -8725,6 +8728,12 @@ class Api:
             "requires_credentials": True,
             "supports_mfa": True,
         }
+        if result.provider_error_code:
+            payload["provider_error_code"] = result.provider_error_code
+        if result.action_hint:
+            payload["action_hint"] = result.action_hint
+        if result.diagnostics:
+            payload["diagnostics"] = result.diagnostics
         if session_id:
             payload["session_id"] = session_id
         return payload
@@ -9187,6 +9196,8 @@ class Api:
         coros_region: str = "",
     ) -> dict:
         """【测试即保存配置-稳定性加固版】严格实行先测试、后持久化策略，保障状态机最终一致性。"""
+        cli_test_key = ""
+        cli_test_registered = False
         try:
             transport_mode = llm_backend._normalize_transport(transport)
             current = llm_backend.load_llm_config()
@@ -9198,6 +9209,24 @@ class Api:
                     return _api_error(API_CODE_VALIDATION, "请选择 CLI 类型后再测试连接")
                 if cli_type_clean == "custom" and not str(cli_path or "").strip():
                     return _api_error(API_CODE_VALIDATION, "请先填写自定义 CLI 路径")
+                cli_test_key = json.dumps({
+                    "transport": "cli",
+                    "provider": str(provider or ""),
+                    "model": str(model or ""),
+                    "agent_id": str(agent_id or ""),
+                    "cli_type": cli_type_clean,
+                    "cli_path": str(cli_path or ""),
+                    "cli_args": str(cli_args or ""),
+                    "cli_model": str(cli_model or ""),
+                    "cli_timeout_sec": llm_backend._normalize_cli_timeout(cli_timeout_sec),
+                    "garmin_region": str(garmin_region or ""),
+                    "coros_region": str(coros_region or ""),
+                }, sort_keys=True, ensure_ascii=False)
+                with self._llm_cli_test_lock:
+                    if cli_test_key in self._llm_cli_tests_in_flight:
+                        return _api_error(API_CODE_EXTERNAL_SERVICE, "大模型 CLI 连接测试正在进行中，请稍候")
+                    self._llm_cli_tests_in_flight.add(cli_test_key)
+                    cli_test_registered = True
                 messages = [
                     {"role": "system", "content": "你只需要用中文回复：连接成功。"},
                     {"role": "user", "content": "请回复连接成功"},
@@ -9302,6 +9331,10 @@ class Api:
                         msg += "：" + detail
                 return _api_error(API_CODE_EXTERNAL_SERVICE, msg)
             return _api_error(API_CODE_EXTERNAL_SERVICE, "大模型网关连通失败")
+        finally:
+            if cli_test_registered and cli_test_key:
+                with self._llm_cli_test_lock:
+                    self._llm_cli_tests_in_flight.discard(cli_test_key)
 
     @staticmethod
     def _is_garmin_watch_brand(value: Any) -> bool:
@@ -9348,28 +9381,34 @@ class Api:
         end_date: str,
         download: dict[str, Any] | None = None,
         import_result: dict[str, Any] | None = None,
+        exc: Exception | None = None,
+        diagnostics: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        action_hints = {
-            "invalid_coros_region": "请检查 COROS 区域配置，仅支持 cn、us 或 eu。",
-            "coros_auth_required": "COROS MCP 授权不可用或已失效，请回配置页完成 COROS 授权后再同步。",
-            "coros_skill_not_found": "未找到 COROS skill 脚本，请确认 coros-stats 已随应用正确安装。",
-            "coros_fit_download_failed": "COROS MCP FIT 下载失败，请确认网络可用、授权有效，并尝试缩小日期范围。",
-            "coros_fit_download_limit": "COROS MCP 单次最多下载 10 个 FIT 文件，请缩小日期范围后分批同步。",
-            "coros_sync_partial": "COROS FIT 部分下载或导入失败，请查看失败列表并分批重试。",
-            "coros_node_missing": "未检测到 Node.js 或 coros-mcp CLI，请先完成 COROS MCP 授权环境准备。",
-            "coros_import_failed": "FIT 文件已下载到本地目录，但导入活动库失败，请稍后重试或使用本地导入。",
-            "unknown": "COROS 同步出现未知异常，请稍后重试。",
-        }
+        normalized = coros_sync.normalize_coros_error(
+            exc or coros_sync.CorosSyncError(message, code=provider_error_code),
+            {
+                "operation": "sync_remote_fit_activities",
+                "region": (llm_backend.load_llm_config().get("coros_region") or ""),
+                **(diagnostics or {}),
+            },
+        )
+        code = provider_error_code or str(normalized.get("provider_error_code") or "unknown")
+        if provider_error_code in {"unknown", "coros_sync_error", ""}:
+            code = str(normalized.get("provider_error_code") or code)
+        clean_message = str(message or normalized.get("message") or "")
+        if exc is not None:
+            clean_message = str(normalized.get("message") or clean_message)
         return {
             "provider": "coros",
-            "provider_error_code": provider_error_code,
-            "action_hint": action_hints.get(provider_error_code, action_hints["unknown"]),
-            "message": str(message or ""),
+            "provider_error_code": code,
+            "action_hint": str(normalized.get("action_hint") or coros_sync.COROS_ACTION_HINTS.get(code, coros_sync.COROS_ACTION_HINTS["unknown"])),
+            "message": coros_sync.sanitize_coros_value(clean_message),
             "start_date": start_date,
             "end_date": end_date,
             "target_dir": TRACKS_DIR,
-            "download": download,
-            "import": import_result,
+            "download": coros_sync.sanitize_coros_value(download),
+            "import": coros_sync.sanitize_coros_value(import_result),
+            "diagnostics": normalized.get("diagnostics") or {"provider": "coros"},
         }
 
     @staticmethod
@@ -9689,9 +9728,10 @@ class Api:
                     message=str(e),
                     start_date=start_day.isoformat(),
                     end_date=end_day.isoformat(),
+                    exc=e,
                 )
                 logger.warning("sync_remote_fit_activities COROS provider failed: %s", e)
-                return _api_error(API_CODE_EXTERNAL_SERVICE, str(e), payload)
+                return _api_error(API_CODE_EXTERNAL_SERVICE, payload["message"], payload)
             except Exception as e:
                 logger.warning("sync_remote_fit_activities COROS failed: %s", e)
                 payload = self._coros_sync_error_payload(
@@ -9699,8 +9739,9 @@ class Api:
                     message=str(e),
                     start_date=start_day.isoformat(),
                     end_date=end_day.isoformat(),
+                    exc=e,
                 )
-                return _api_error(API_CODE_EXTERNAL_SERVICE, str(e), payload)
+                return _api_error(API_CODE_EXTERNAL_SERVICE, payload["message"], payload)
 
         try:
             download_summary = garmin_sync.download_fit_json(

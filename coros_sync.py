@@ -27,6 +27,8 @@ from datetime import date
 from pathlib import Path
 from typing import Any, Iterator
 
+from subprocess_utils import popen_hidden, run_hidden
+
 
 VALID_COROS_REGIONS = {"cn", "us", "eu"}
 DEFAULT_TIMEOUT_SEC = 300
@@ -65,6 +67,56 @@ class CorosJsonParseError(CorosSyncError):
 class CorosFitDownloadError(CorosSyncError):
     def __init__(self, message: str, *, code: str = "coros_fit_download_failed") -> None:
         super().__init__(message, code=code)
+
+
+COROS_ACTION_HINTS = {
+    "invalid_coros_region": "请检查 COROS 区域配置，仅支持 cn、us 或 eu。",
+    "coros_auth_required": "请回配置页重新连接 COROS 账号。",
+    "coros_node_missing": "请安装包含 Node.js runtime 的脉图安装包，或回配置页重新检查账号连接。",
+    "coros_skill_not_found": "请确认 coros-stats skill 已随应用正确安装，然后重试。",
+    "coros_keepalive_invalid": "请回配置页检查 COROS 账号连接状态并重新连接。",
+    "coros_mcp_unavailable": "请稍后重试，或重新打开 COROS 授权页面完成登录。",
+    "coros_fit_download_failed": "请确认网络可用、授权有效，并尝试缩小日期范围后重试。",
+    "coros_fit_download_limit": "请缩小日期范围后分批同步。",
+    "coros_sync_partial": "请查看失败列表并分批重试。",
+    "coros_import_failed": "FIT 文件已下载，但导入活动库失败，请稍后重试或使用本地导入。",
+    "coros_profile_sync_failed": "请回配置页检查 COROS 授权状态，然后重试画像同步。",
+    "coros_json_parse_error": "COROS 返回格式异常，请更新 coros-stats skill 后重试。",
+    "unknown": "COROS 同步出现未知异常，请稍后重试。",
+}
+
+COROS_USER_MESSAGES = {
+    "invalid_coros_region": "COROS 区域配置无效。",
+    "coros_auth_required": "COROS 授权不可用或已失效，请到配置页完成授权。",
+    "coros_node_missing": "未检测到 COROS 同步所需的 Node.js runtime。",
+    "coros_skill_not_found": "未找到 COROS 同步所需的 coros-stats skill。",
+    "coros_keepalive_invalid": "COROS keepalive 配置不可用。",
+    "coros_mcp_unavailable": "COROS MCP 服务暂不可用。",
+    "coros_fit_download_failed": "COROS FIT 下载失败。",
+    "coros_fit_download_limit": "COROS 单次下载数量超过限制。",
+    "coros_sync_partial": "COROS 部分活动同步失败。",
+    "coros_import_failed": "COROS FIT 导入失败。",
+    "coros_profile_sync_failed": "COROS 画像同步失败。",
+    "coros_json_parse_error": "COROS 返回内容无法解析。",
+    "unknown": "COROS 同步出现未知异常。",
+}
+
+SENSITIVE_COROS_KEYS = {
+    "password",
+    "passwd",
+    "mfa",
+    "mfa_code",
+    "otp",
+    "cookie",
+    "set-cookie",
+    "authorization",
+    "access_token",
+    "refresh_token",
+    "id_token",
+    "api_key",
+    "apikey",
+    "secret",
+}
 
 
 @dataclass(frozen=True)
@@ -180,12 +232,17 @@ def default_mcp_token_path(
     token_root: Path | str | None = None,
 ) -> Path:
     resolved_region = resolve_coros_region(region)
-    root = (
-        Path(token_root).expanduser()
-        if token_root is not None
-        else Path(os.environ.get("COROS_MCP_TOKEN_ROOT", str(Path.home() / ".coros-mcp-skill-gateway-ts"))).expanduser()
-    )
+    root = default_mcp_token_root(token_root)
     return root / resolved_region / "token.json"
+
+
+def default_mcp_token_root(token_root: Path | str | None = None) -> Path:
+    if token_root is not None:
+        return Path(token_root).expanduser()
+    env_root = str(os.environ.get("COROS_MCP_TOKEN_ROOT") or "").strip()
+    if env_root:
+        return Path(env_root).expanduser()
+    return Path.home() / ".coros-mcp-skill-gateway-ts"
 
 
 def default_mcp_pending_login_path(region: str | None = None, token_root: Path | str | None = None) -> Path:
@@ -207,45 +264,25 @@ def open_url_in_system_browser(url: str) -> bool:
         return False
     try:
         if sys.platform == "darwin":
-            completed = subprocess.run(
+            completed = run_hidden(
                 ["open", safe_url],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 timeout=10,
-                shell=False,
-                **_windows_subprocess_hidden_kwargs(),
             )
             return int(completed.returncode) == 0
         if os.name == "nt":
             os.startfile(safe_url)  # type: ignore[attr-defined]
             return True
-        completed = subprocess.run(
+        completed = run_hidden(
             ["xdg-open", safe_url],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             timeout=10,
-            shell=False,
-            **_windows_subprocess_hidden_kwargs(),
         )
         return int(completed.returncode) == 0
     except Exception:
         return False
-
-
-def _windows_subprocess_hidden_kwargs() -> dict[str, Any]:
-    if os.name != "nt":
-        return {}
-    kwargs: dict[str, Any] = {}
-    creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-    if creationflags:
-        kwargs["creationflags"] = creationflags
-    startupinfo_cls = getattr(subprocess, "STARTUPINFO", None)
-    if startupinfo_cls is not None:
-        startupinfo = startupinfo_cls()
-        startupinfo.dwFlags |= getattr(subprocess, "STARTF_USESHOWWINDOW", 1)
-        startupinfo.wShowWindow = 0
-        kwargs["startupinfo"] = startupinfo
-    return kwargs
 
 
 def _is_executable_file(path: Path) -> bool:
@@ -281,6 +318,9 @@ def _bundled_node_candidates() -> list[Path]:
         exe_dir / "node" / "bin" / "node",
         exe_dir / "node" / "bin" / "node.exe",
         exe_dir / "node" / "node.exe",
+        exe_dir / "Resources" / "node" / "node.exe",
+        exe_dir / "Resources" / "node" / "bin" / "node.exe",
+        exe_dir / "Resources" / "node" / "bin" / "node",
         exe_dir / "_internal" / "node" / "node.exe",
         exe_dir / "_internal" / "node" / "bin" / "node.exe",
         exe_dir / "_internal" / "node" / "bin" / "node",
@@ -336,8 +376,18 @@ def discover_openclaw_mjs(home: Path | str | None = None) -> str:
     return ""
 
 
-def build_coros_runtime_env(env: dict[str, str] | None = None) -> dict[str, str]:
+def build_coros_runtime_env(
+    env: dict[str, str] | None = None,
+    *,
+    token_root: Path | str | None = None,
+) -> dict[str, str]:
     runtime_env = dict(env or os.environ)
+    resolved_token_root = default_mcp_token_root(token_root or runtime_env.get("COROS_MCP_TOKEN_ROOT")).resolve()
+    runtime_env["COROS_MCP_TOKEN_ROOT"] = str(resolved_token_root)
+    if os.name == "nt":
+        user_home = str(Path.home())
+        runtime_env.setdefault("USERPROFILE", user_home)
+        runtime_env.setdefault("HOME", runtime_env.get("USERPROFILE") or user_home)
     node_global_prefix = Path(str(runtime_env.get("NPM_CONFIG_PREFIX") or default_node_global_prefix())).expanduser()
     node_global_bin = default_node_global_bin_dir(node_global_prefix)
     node_path = discover_node_binary()
@@ -398,6 +448,8 @@ def prepare_coros_connection_runtime(
 ) -> CorosConnectionStepResult:
     resolved_region = resolve_coros_region(region)
     diagnostics = [_diag("region", "ok", f"COROS 区域有效: {resolved_region}")]
+    runtime_env = build_coros_runtime_env(env)
+    token_path = default_mcp_token_path(resolved_region, runtime_env.get("COROS_MCP_TOKEN_ROOT"))
     node_path = discover_node_binary()
     if not node_path:
         diagnostics.append(_diag("node", "failed", "未检测到 Node.js"))
@@ -406,11 +458,10 @@ def prepare_coros_connection_runtime(
             status="failed",
             message="未检测到 Node.js，无法启动 COROS OAuth 连接向导。",
             node_path="",
-            token_path=str(default_mcp_token_path(resolved_region)),
+            token_path=str(token_path),
             diagnostics=diagnostics,
         )
     diagnostics.append(_diag("node", "ok", f"Node.js 可用: {node_path}"))
-    runtime_env = build_coros_runtime_env(env)
     try:
         Path(runtime_env["NPM_CONFIG_PREFIX"]).expanduser().mkdir(parents=True, exist_ok=True)
         default_node_global_bin_dir(runtime_env["NPM_CONFIG_PREFIX"]).mkdir(parents=True, exist_ok=True)
@@ -424,7 +475,7 @@ def prepare_coros_connection_runtime(
             status="failed",
             message="未检测到 npm。请使用包含完整 Node.js runtime 的脉图安装包。",
             node_path=node_path,
-            token_path=str(default_mcp_token_path(resolved_region)),
+            token_path=str(token_path),
             diagnostics=diagnostics,
         )
     diagnostics.append(_diag("npm", "ok", f"npm 可用: {npm_path}"))
@@ -433,29 +484,27 @@ def prepare_coros_connection_runtime(
     if not coros_mcp_path:
         diagnostics.append(_diag("coros_mcp", "checking", "正在安装 coros-mcp"))
         try:
-            completed = subprocess.run(
+            completed = run_hidden(
                 [npm_path, "install", "-g", "coros-mcp"],
                 capture_output=True,
                 text=True,
                 timeout=timeout,
-                shell=False,
                 env=runtime_env,
-                **_windows_subprocess_hidden_kwargs(),
             )
         except subprocess.TimeoutExpired:
             diagnostics.append(_diag("coros_mcp", "failed", "coros-mcp 安装超时"))
-            return CorosConnectionStepResult(False, "failed", "coros-mcp 安装超时。", node_path, npm_path, "", str(default_mcp_token_path(resolved_region)), diagnostics)
+            return CorosConnectionStepResult(False, "failed", "coros-mcp 安装超时。", node_path, npm_path, "", str(token_path), diagnostics)
         except OSError as exc:
             diagnostics.append(_diag("coros_mcp", "failed", f"coros-mcp 安装启动失败: {exc}"))
-            return CorosConnectionStepResult(False, "failed", f"coros-mcp 安装启动失败: {exc}", node_path, npm_path, "", str(default_mcp_token_path(resolved_region)), diagnostics)
+            return CorosConnectionStepResult(False, "failed", f"coros-mcp 安装启动失败: {exc}", node_path, npm_path, "", str(token_path), diagnostics)
         if int(completed.returncode) != 0:
             detail = _error_snippet(str(completed.stderr or completed.stdout or ""))
             diagnostics.append(_diag("coros_mcp", "failed", f"coros-mcp 安装失败: {detail}"))
-            return CorosConnectionStepResult(False, "failed", "coros-mcp 安装失败。", node_path, npm_path, "", str(default_mcp_token_path(resolved_region)), diagnostics)
+            return CorosConnectionStepResult(False, "failed", "coros-mcp 安装失败。", node_path, npm_path, "", str(token_path), diagnostics)
         coros_mcp_path = discover_coros_mcp_binary(runtime_env)
     if not coros_mcp_path:
         diagnostics.append(_diag("coros_mcp", "failed", "未找到 coros-mcp 命令"))
-        return CorosConnectionStepResult(False, "failed", "coros-mcp 安装后仍不可用。", node_path, npm_path, "", str(default_mcp_token_path(resolved_region)), diagnostics)
+        return CorosConnectionStepResult(False, "failed", "coros-mcp 安装后仍不可用。", node_path, npm_path, "", str(token_path), diagnostics)
     diagnostics.append(_diag("coros_mcp", "ok", f"coros-mcp 可用: {coros_mcp_path}"))
     return CorosConnectionStepResult(
         ok=True,
@@ -464,7 +513,7 @@ def prepare_coros_connection_runtime(
         node_path=node_path,
         npm_path=npm_path,
         coros_mcp_path=coros_mcp_path,
-        token_path=str(default_mcp_token_path(resolved_region)),
+        token_path=str(token_path),
         diagnostics=diagnostics,
     )
 
@@ -479,17 +528,16 @@ def start_coros_oauth_login(
     resolved_region = resolve_coros_region(region)
     runtime_env = build_coros_runtime_env(env)
     binary = str(coros_mcp_path or discover_coros_mcp_binary(runtime_env) or "coros-mcp")
-    token_path = default_mcp_token_path(resolved_region)
-    pending_path = default_mcp_pending_login_path(resolved_region)
+    token_root = runtime_env.get("COROS_MCP_TOKEN_ROOT")
+    token_path = default_mcp_token_path(resolved_region, token_root)
+    pending_path = default_mcp_pending_login_path(resolved_region, token_root)
     try:
-        completed = subprocess.run(
+        completed = run_hidden(
             [binary, "--issuer", coros_issuer_for_region(resolved_region), "login-start"],
             capture_output=True,
             text=True,
             timeout=timeout,
-            shell=False,
             env=runtime_env,
-            **_windows_subprocess_hidden_kwargs(),
         )
     except subprocess.TimeoutExpired:
         return CorosConnectionStepResult(False, "failed", "COROS OAuth 登录链接创建超时。", coros_mcp_path=binary, token_path=str(token_path))
@@ -546,18 +594,16 @@ def finish_coros_oauth_login(
     resolved_region = resolve_coros_region(region)
     runtime_env = build_coros_runtime_env(env)
     binary = str(coros_mcp_path or discover_coros_mcp_binary(runtime_env) or "coros-mcp")
-    token_path = default_mcp_token_path(resolved_region)
+    token_path = default_mcp_token_path(resolved_region, runtime_env.get("COROS_MCP_TOKEN_ROOT"))
     if token_path.is_file():
         return CorosConnectionStepResult(True, "authorized", "COROS 授权成功。", coros_mcp_path=binary, token_path=str(token_path))
     try:
-        completed = subprocess.run(
+        completed = run_hidden(
             [binary, "--issuer", coros_issuer_for_region(resolved_region), "login-finish"],
             capture_output=True,
             text=True,
             timeout=timeout,
-            shell=False,
             env=runtime_env,
-            **_windows_subprocess_hidden_kwargs(),
         )
     except subprocess.TimeoutExpired:
         return CorosConnectionStepResult(True, "waiting_callback", "等待你在浏览器中完成 COROS OAuth 授权...", coros_mcp_path=binary, token_path=str(token_path))
@@ -588,14 +634,12 @@ def apply_coros_openclaw_optional(
     if not shutil.which("openclaw", path=runtime_env.get("PATH", "")) and not shutil.which("openclaw.cmd", path=runtime_env.get("PATH", "")):
         return _diag("openclaw", "warning", "未检测到 openclaw 命令，已跳过 OpenClaw 注册。")
     try:
-        completed = subprocess.run(
+        completed = run_hidden(
             [binary, "--issuer", coros_issuer_for_region(resolved_region), "apply-openclaw"],
             capture_output=True,
             text=True,
             timeout=timeout,
-            shell=False,
             env=runtime_env,
-            **_windows_subprocess_hidden_kwargs(),
         )
     except Exception as exc:
         return _diag("openclaw", "warning", f"OpenClaw 注册失败或被跳过: {exc}")
@@ -615,7 +659,55 @@ def login_command(*, region: str | None = None, base_dir: Path | str | None = No
 
 
 def _diag(name: str, status: str, message: str) -> dict[str, str]:
-    return {"name": name, "status": status, "message": message}
+    return {"name": name, "status": status, "message": _sanitize_coros_text(message)}
+
+
+def _sanitize_coros_text(value: Any, *, max_chars: int | None = None) -> str:
+    text = str(value or "")
+    if not text:
+        return ""
+    text = re.sub(
+        r"(?i)(access_token|refresh_token|id_token|authorization|api[_-]?key|password|passwd|mfa_code|mfa|otp|cookie|secret)(\s*[:=]\s*)([^\s,;\"'}]+)",
+        "[redacted]",
+        text,
+    )
+    text = re.sub(
+        r'(?i)("?(?:access_token|refresh_token|id_token|authorization|api[_-]?key|password|passwd|mfa_code|mfa|otp|cookie|secret)"?\s*:\s*")[^"]*(")',
+        '"[redacted]"',
+        text,
+    )
+    text = re.sub(r"(?i)(bearer\s+)[A-Za-z0-9._~+/=-]+", r"\1***", text)
+    text = re.sub(r"(?i)\b(traceback|stacktrace)\b", "[trace redacted]", text)
+    text = re.sub(
+        r"(?i)([?&])(?:access_token|refresh_token|id_token|authorization|api_key|password|mfa|otp|cookie|secret)=[^&\s]+",
+        r"\1[redacted]",
+        text,
+    )
+    if max_chars is not None and len(text) > max_chars:
+        head = max_chars // 2
+        tail = max_chars - head
+        text = text[:head] + "\n...\n" + text[-tail:]
+    return text
+
+
+def sanitize_coros_value(value: Any, *, max_text_chars: int | None = ERROR_SNIPPET_CHARS) -> Any:
+    if isinstance(value, str):
+        return _sanitize_coros_text(value, max_chars=max_text_chars)
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, list):
+        return [sanitize_coros_value(item, max_text_chars=max_text_chars) for item in value]
+    if isinstance(value, tuple):
+        return [sanitize_coros_value(item, max_text_chars=max_text_chars) for item in value]
+    if isinstance(value, dict):
+        clean: dict[str, Any] = {}
+        for key, item in value.items():
+            key_text = str(key)
+            if key_text.lower() in SENSITIVE_COROS_KEYS:
+                continue
+            clean[key_text] = sanitize_coros_value(item, max_text_chars=max_text_chars)
+        return clean
+    return value
 
 
 def _run_keepalive_print_config(
@@ -624,18 +716,17 @@ def _run_keepalive_print_config(
     timeout: int = 5,
     *,
     node_binary: str = "node",
+    token_root: Path | str | None = None,
 ) -> tuple[str, str, str, dict[str, str]]:
     command = [node_binary or "node", str(paths.skill_dir / "scripts" / "coros-mcp-keepalive.js"), "--region", region, "--print-config"]
     try:
-        completed = subprocess.run(
+        completed = run_hidden(
             command,
             capture_output=True,
             text=True,
             timeout=timeout,
-            shell=False,
-            env=build_coros_runtime_env(),
+            env=build_coros_runtime_env(token_root=token_root),
             cwd=str((paths.skill_dir / "scripts").resolve()),
-            **_windows_subprocess_hidden_kwargs(),
         )
     except subprocess.TimeoutExpired:
         return "", "", "", _diag("keepalive_config", "failed", "COROS keepalive 区域配置检查超时")
@@ -654,16 +745,23 @@ def _run_keepalive_print_config(
     keepalive_region = str(payload.get("region") or "")
     keepalive_mcp_url = str(payload.get("mcpUrl") or "")
     keepalive_token_path = str(payload.get("tokenPath") or "")
+    expected_token_path = str(default_mcp_token_path(region, token_root))
     if keepalive_region != region:
         return keepalive_region, keepalive_mcp_url, keepalive_token_path, _diag(
             "keepalive_config",
             "failed",
             f"COROS keepalive 区域不一致: 配置 {region}，脚本 {keepalive_region}",
         )
+    if keepalive_token_path and Path(keepalive_token_path).expanduser() != Path(expected_token_path).expanduser():
+        return keepalive_region, keepalive_mcp_url, keepalive_token_path, _diag(
+            "keepalive_config",
+            "failed",
+            f"COROS keepalive token 路径不一致: Python {expected_token_path}，Node {keepalive_token_path}",
+        )
     return keepalive_region, keepalive_mcp_url, keepalive_token_path, _diag(
         "keepalive_config",
         "ok",
-        f"COROS keepalive 已按 {region} 区域解析",
+        f"COROS keepalive 已按 {region} 区域解析 token 路径: {expected_token_path}",
     )
 
 
@@ -744,6 +842,7 @@ def check_auth_status(
         resolved_region,
         timeout=keepalive_timeout,
         node_binary=node_path,
+        token_root=token_root,
     )
     diagnostics.append(keepalive_diag)
     mcp_authorized = token_path.is_file()
@@ -752,6 +851,25 @@ def check_auth_status(
         "ok" if mcp_authorized else "failed",
         f"{'已检测到' if mcp_authorized else '未检测到'} COROS MCP token: {token_path}",
     ))
+    if keepalive_diag.get("status") != "ok":
+        return CorosAuthStatus(
+            ok=False,
+            region=resolved_region,
+            status="keepalive_invalid",
+            token_path=str(token_path),
+            message=str(keepalive_diag.get("message") or "COROS keepalive 配置不可用，请回配置页重新检查授权状态。"),
+            login_command=command,
+            mcp_authorized=mcp_authorized,
+            node_available=True,
+            skill_available=True,
+            node_path=node_path,
+            openclaw_node_binary=openclaw_node_binary,
+            openclaw_mjs=openclaw_mjs,
+            keepalive_region=keepalive_region,
+            keepalive_mcp_url=keepalive_mcp_url,
+            keepalive_token_path=keepalive_token_path,
+            diagnostics=diagnostics,
+        )
     if not mcp_authorized:
         return CorosAuthStatus(
             ok=False,
@@ -792,8 +910,32 @@ def check_auth_status(
     )
 
 
+def ensure_auth_available(
+    *,
+    region: str | None = None,
+    base_dir: Path | str | None = None,
+    token_root: Path | str | None = None,
+) -> CorosAuthStatus:
+    status = check_auth_status(region=region, base_dir=base_dir, token_root=token_root)
+    if status.ok:
+        return status
+    code_map = {
+        "missing_token": "coros_auth_required",
+        "node_missing": "coros_node_missing",
+        "skill_missing": "coros_skill_not_found",
+        "keepalive_invalid": "coros_keepalive_invalid",
+        "invalid_region": "invalid_coros_region",
+    }
+    code = code_map.get(status.status, "coros_auth_required")
+    if code == "coros_auth_required":
+        raise CorosAuthRequiredError(status.message)
+    if code == "coros_skill_not_found":
+        raise CorosSkillNotFoundError(status.message)
+    raise CorosSyncError(status.message, code=code)
+
+
 def _error_snippet(value: str) -> str:
-    text = str(value or "").strip()
+    text = _sanitize_coros_text(value).strip()
     if len(text) <= ERROR_SNIPPET_CHARS:
         return text
     head = ERROR_SNIPPET_CHARS // 2
@@ -821,6 +963,79 @@ def _looks_like_auth_required(text: str) -> bool:
     return any(marker in clean for marker in auth_markers)
 
 
+def _classify_coros_error(exc: Exception, context: dict[str, Any] | None = None) -> str:
+    context_text = str((context or {}).get("operation") or "").lower()
+    current = str(getattr(exc, "code", "") or "").strip()
+    if current and current != "coros_sync_error":
+        if current == "coros_script_failed" and "profile" in context_text:
+            return "coros_profile_sync_failed"
+        return current
+    if isinstance(exc, CorosAuthRequiredError):
+        return "coros_auth_required"
+    if isinstance(exc, CorosSkillNotFoundError):
+        return "coros_skill_not_found"
+    if isinstance(exc, CorosJsonParseError) or isinstance(exc, json.JSONDecodeError):
+        return "coros_json_parse_error"
+    if isinstance(exc, CorosFitDownloadError):
+        return str(getattr(exc, "code", "") or "coros_fit_download_failed")
+    if isinstance(exc, (FileNotFoundError, OSError)):
+        return "coros_node_missing"
+    text = str(exc or "").lower()
+    if _looks_like_auth_required(text):
+        return "coros_auth_required"
+    if "session not found" in text or "context pollution" in text or "mcp" in text and "unavailable" in text:
+        return "coros_mcp_unavailable"
+    if "json" in text or "decode" in text:
+        return "coros_json_parse_error"
+    if "keepalive" in text:
+        return "coros_keepalive_invalid"
+    if "profile" in context_text or "画像" in text:
+        return "coros_profile_sync_failed"
+    if "fit" in context_text or "download" in context_text:
+        return "coros_fit_download_failed"
+    return "unknown"
+
+
+def normalize_coros_error(exc: Exception, context: dict[str, Any] | None = None) -> dict[str, Any]:
+    context = dict(context or {})
+    code = _classify_coros_error(exc, context)
+    raw_detail = _error_snippet(str(exc or ""))
+    message = COROS_USER_MESSAGES.get(code, COROS_USER_MESSAGES["unknown"])
+    if raw_detail and code in {"invalid_coros_region"}:
+        message = raw_detail
+    diagnostics: dict[str, Any] = {
+        "provider": "coros",
+    }
+    for key in (
+        "region",
+        "node_available",
+        "node_path",
+        "skill_available",
+        "keepalive_path",
+        "keepalive_region",
+        "keepalive_mcp_url",
+        "keepalive_token_path",
+        "token_path",
+        "exit_code",
+        "failed_tool_name",
+        "operation",
+    ):
+        if key in context and context[key] not in (None, ""):
+            diagnostics[key] = context[key]
+    if raw_detail:
+        diagnostics["error_summary"] = raw_detail
+    if isinstance(exc, CorosSyncError):
+        diagnostics["source_code"] = str(getattr(exc, "code", "") or "")
+    payload = {
+        "provider": "coros",
+        "provider_error_code": code,
+        "message": message,
+        "action_hint": COROS_ACTION_HINTS.get(code, COROS_ACTION_HINTS["unknown"]),
+        "diagnostics": diagnostics,
+    }
+    return sanitize_coros_value(payload, max_text_chars=ERROR_SNIPPET_CHARS)
+
+
 def run_coros_script(
     script_path: Path | str,
     args: list[str] | tuple[str, ...] | None = None,
@@ -834,15 +1049,13 @@ def run_coros_script(
 
     command = [sys.executable, str(script), *[str(arg) for arg in (args or [])]]
     try:
-        completed = subprocess.run(
+        completed = run_hidden(
             command,
             capture_output=True,
             text=True,
             timeout=timeout,
-            shell=False,
             env=env,
             cwd=str(script.parent),
-            **_windows_subprocess_hidden_kwargs(),
         )
     except subprocess.TimeoutExpired as exc:
         raise CorosScriptFailed(f"COROS 脚本超时未返回 ({timeout}s): {script.name}") from exc
@@ -919,7 +1132,7 @@ def _load_skill_module(script: Path, prefix: str) -> Any:
         except CorosSyncError:
             raise
         except Exception as exc:
-            detail = str(exc)
+            detail = _error_snippet(str(exc))
             if _looks_like_auth_required(detail):
                 raise CorosAuthRequiredError(f"COROS 授权不可用或已失效，请到配置页完成授权: {detail}") from exc
             raise CorosScriptFailed(f"COROS skill 模块执行失败: {detail}") from exc
@@ -939,7 +1152,7 @@ def _sync_profile_in_process(paths: CorosSkillPaths, *, region: str) -> list[dic
     except CorosSyncError:
         raise
     except Exception as exc:
-        detail = str(exc)
+        detail = _error_snippet(str(exc))
         if _looks_like_auth_required(detail):
             raise CorosAuthRequiredError(f"COROS 授权不可用或已失效，请到配置页完成授权: {detail}") from exc
         raise CorosScriptFailed(f"COROS 画像同步执行失败: {detail}") from exc
@@ -957,6 +1170,7 @@ def sync_profile_json(
     base_dir: Path | str | None = None,
 ) -> list[dict[str, Any]]:
     resolved_region = resolve_coros_region(region)
+    ensure_auth_available(region=resolved_region, base_dir=base_dir)
     paths = get_coros_skill_paths(base_dir)
     return _sync_profile_in_process(paths, region=resolved_region)
 
@@ -1024,7 +1238,7 @@ def start_login(
             "end tell",
         ]
         try:
-            subprocess.Popen(osa, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **_windows_subprocess_hidden_kwargs())
+            popen_hidden(osa, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except OSError as exc:
             return CorosLoginResult(
                 ok=False,
@@ -1057,15 +1271,13 @@ def start_login(
         )
 
     try:
-        completed = subprocess.run(
+        completed = run_hidden(
             command,
             capture_output=True,
             text=True,
             timeout=timeout,
-            shell=False,
             env=build_coros_runtime_env(),
             cwd=str(Path(command[1]).resolve().parent) if len(command) > 1 else None,
-            **_windows_subprocess_hidden_kwargs(),
         )
     except subprocess.TimeoutExpired as exc:
         return CorosLoginResult(
@@ -1170,21 +1382,19 @@ def run_coros_mcp_tool(
     node_path = command[0]
     keepalive_path = command[1]
     try:
-        completed = subprocess.run(
+        completed = run_hidden(
             command,
             capture_output=True,
             text=True,
             timeout=timeout,
-            shell=False,
             env=build_coros_runtime_env(),
             cwd=str(Path(keepalive_path).resolve().parent),
-            **_windows_subprocess_hidden_kwargs(),
         )
     except subprocess.TimeoutExpired as exc:
         raise CorosFitDownloadError(f"COROS MCP 工具调用超时 ({timeout}s): {tool_name}") from exc
     except OSError as exc:
         raise CorosFitDownloadError(
-            f"COROS MCP keepalive 启动失败: {exc}; node={node_path}; keepalive={keepalive_path}",
+            f"COROS MCP keepalive 启动失败: {_error_snippet(str(exc))}; node={node_path}; keepalive={keepalive_path}",
             code="coros_node_missing",
         ) from exc
 
@@ -1195,6 +1405,12 @@ def run_coros_mcp_tool(
         suffix = f": {detail}" if detail else ""
         if _looks_like_auth_required(detail):
             raise CorosAuthRequiredError(f"COROS 授权不可用或已失效，请到配置页完成授权{suffix}")
+        lower_detail = detail.lower()
+        if "session not found" in lower_detail or "context pollution" in lower_detail:
+            raise CorosFitDownloadError(
+                f"COROS MCP 服务暂不可用 (exit {int(completed.returncode)}): {tool_name}{suffix}",
+                code="coros_mcp_unavailable",
+            )
         raise CorosFitDownloadError(
             f"COROS MCP 工具调用失败 (exit {int(completed.returncode)}): {tool_name}; "
             f"region={resolved_region}; node={node_path}; keepalive={keepalive_path}{suffix}"
@@ -1444,6 +1660,7 @@ def download_fit_json(
     timeout: int = DEFAULT_TIMEOUT_SEC,
 ) -> dict[str, Any]:
     resolved_region = resolve_coros_region(region)
+    ensure_auth_available(region=resolved_region)
     start_day = _format_mcp_day(start_date)
     end_day = _format_mcp_day(end_date)
     safe_limit = max(1, min(int(limit or MAX_COROS_FIT_DOWNLOAD_LIMIT), MAX_COROS_FIT_DOWNLOAD_LIMIT))

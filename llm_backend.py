@@ -15,6 +15,7 @@ import plistlib
 import re
 import secrets
 import shlex
+import shutil
 import subprocess
 import sys
 import time
@@ -22,6 +23,8 @@ from pathlib import Path
 from typing import Any
 
 import requests
+
+from subprocess_utils import run_hidden
 
 DEFAULT_URL = "http://localhost:3000/v1/chat/completions"
 DEFAULT_MODEL = "openclaw"
@@ -603,6 +606,28 @@ def _resolve_openclaw_cli_command(cli_path: str) -> list[str]:
     return [executable or "openclaw"]
 
 
+def _resolve_codex_cli_path(cli_path: str) -> str:
+    path = _validate_cli_executable_path(cli_path)
+    if path:
+        return path
+    if not sys.platform.startswith("win"):
+        return "codex"
+
+    for name in ("codex", "codex.exe", "codex.cmd"):
+        found = shutil.which(name)
+        if found:
+            return found
+
+    appdata = str(os.environ.get("APPDATA") or "").strip()
+    if appdata:
+        npm_dir = Path(appdata).expanduser() / "npm"
+        for name in ("codex.cmd", "codex.exe", "codex"):
+            candidate = npm_dir / name
+            if candidate.is_file():
+                return str(candidate)
+    return "codex"
+
+
 def _expand_cli_template(args: list[str], *, prompt: str, model: str) -> list[str]:
     return [
         str(part).replace("{prompt}", prompt).replace("{model}", model)
@@ -622,7 +647,7 @@ def _build_cli_command(config: dict[str, Any], prompt: str) -> list[str]:
     cli_path = _validate_cli_executable_path(str(config.get("cli_path") or ""))
     model = str(config.get("cli_model") or config.get("model") or "").strip()
     if cli_type == "codex":
-        base = [cli_path or "codex", "exec", "--skip-git-repo-check", "{prompt}"]
+        base = [_resolve_codex_cli_path(cli_path), "exec", "--skip-git-repo-check", "{prompt}"]
     elif cli_type == "claude":
         base = [cli_path or "claude", "-p", "{prompt}"]
     elif cli_type == "openclaw":
@@ -838,22 +863,6 @@ def _read_qclaw_launchagent_env() -> dict[str, str]:
     }
 
 
-def _windows_subprocess_hidden_kwargs() -> dict[str, Any]:
-    if not sys.platform.startswith("win"):
-        return {}
-    kwargs: dict[str, Any] = {}
-    creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-    if creationflags:
-        kwargs["creationflags"] = creationflags
-    startupinfo_cls = getattr(subprocess, "STARTUPINFO", None)
-    if startupinfo_cls is not None:
-        startupinfo = startupinfo_cls()
-        startupinfo.dwFlags |= getattr(subprocess, "STARTF_USESHOWWINDOW", 1)
-        startupinfo.wShowWindow = 0
-        kwargs["startupinfo"] = startupinfo
-    return kwargs
-
-
 def _parse_last_json_object(text: str) -> dict[str, Any] | None:
     raw = str(text or "").strip()
     for idx, char in enumerate(raw):
@@ -897,16 +906,14 @@ def _run_openclaw_readonly_json(config: dict[str, Any], args: list[str], timeout
     cmd = _resolve_openclaw_cli_command(cli_path) + args
     cli_env = _build_openclaw_cli_env(config, cmd[0])
     try:
-        result = subprocess.run(
+        result = run_hidden(
             cmd,
             capture_output=True,
             text=True,
             encoding="utf-8",
             errors="replace",
             timeout=_normalize_cli_timeout(timeout),
-            shell=False,
             env=cli_env,
-            **_windows_subprocess_hidden_kwargs(),
         )
     except Exception as exc:
         return None, str(exc)
@@ -1010,16 +1017,14 @@ def _run_cli_completion(
     effective_timeout = _normalize_cli_timeout(config.get("cli_timeout_sec") or timeout)
     cli_env = _build_openclaw_cli_env(config, cmd[0] if cmd else "")
     try:
-        result = subprocess.run(
+        result = run_hidden(
             cmd,
             capture_output=True,
             text=True,
             encoding="utf-8",
             errors="replace",
             timeout=effective_timeout,
-            shell=False,
             env=cli_env,
-            **_windows_subprocess_hidden_kwargs(),
         )
     except subprocess.TimeoutExpired as exc:
         raise RuntimeError(f"CLI 已启动但模型未在超时时间内返回 ({effective_timeout}s)") from exc

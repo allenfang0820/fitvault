@@ -870,9 +870,9 @@
           "description": "Garmin 连接可提交 email/password 字段；COROS 连接传空对象。契约禁止 API 返回值回显 password、MFA 验证码或 token 内容。"
         }
       ],
-      "returns": "{ ok, code, msg, data: {provider, brand, label, region, status, authorized, message, session_id?, auth_path?, requires_credentials, supports_mfa, progress?, diagnostics?}, traceId }",
+      "returns": "{ ok, code, msg, data: {provider, brand, label, region, status, authorized, message, session_id?, auth_path?, requires_credentials, supports_mfa, progress?, provider_error_code?, action_hint?, diagnostics?}, traceId }",
       "high_risk": false,
-      "description": "账号连接中心启动 API。Garmin 在 App 内完成账号密码登录，缺少账号或密码返回 needs_credentials，可能直接 authorized 或返回 needs_mfa + session_id；COROS 保持官方 MCP/OAuth 方向，在后台检查/安装 coros-mcp 后打开系统浏览器，返回 checking/opening_browser/waiting_callback 过程状态并由前端轮询 continue_account_connection。"
+      "description": "账号连接中心启动 API。Garmin 在 App 内完成账号密码登录，缺少账号或密码返回 needs_credentials，可能直接 authorized 或返回 needs_mfa + session_id；Garmin 授权失败时返回稳定 provider_error_code/action_hint，Windows 打包底层异常不得直接透传。COROS 保持官方 MCP/OAuth 方向，在后台检查/安装 coros-mcp 后打开系统浏览器，返回 checking/opening_browser/waiting_callback 过程状态并由前端轮询 continue_account_connection。"
     },
     {
       "name": "continue_account_connection",
@@ -893,9 +893,9 @@
           "description": "Garmin MFA 阶段提交 mfa_code；COROS 轮询传空对象。契约禁止返回值回显 MFA 验证码、password 或 token 内容。"
         }
       ],
-      "returns": "{ ok, code, msg, data: {session_id, provider, brand, label, region, status, authorized, message, expires_at?, progress?, diagnostics?}, traceId }",
+      "returns": "{ ok, code, msg, data: {session_id, provider, brand, label, region, status, authorized, message, expires_at?, progress?, provider_error_code?, action_hint?, diagnostics?}, traceId }",
       "high_risk": false,
-      "description": "账号连接中心继续/轮询 API。Garmin needs_mfa 会话通过 mfa_code 继续，成功后返回 authorized 并清理服务端会话；COROS 轮询本地 MCP token 文件状态，在 checking/opening_browser/waiting_callback 间推进，授权成功后返回 authorized，超时返回 expired。"
+      "description": "账号连接中心继续/轮询 API。Garmin needs_mfa 会话通过 mfa_code 继续，成功后返回 authorized 并清理服务端会话，失败时返回稳定 provider_error_code/action_hint 且不得回显 MFA 验证码、密码或 token；COROS 轮询本地 MCP token 文件状态，在 checking/opening_browser/waiting_callback 间推进，授权成功后返回 authorized，超时返回 expired。"
     },
     {
       "name": "disconnect_account",

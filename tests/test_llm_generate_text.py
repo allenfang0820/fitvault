@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest import mock
 
 import llm_backend
+import subprocess_utils
 
 
 class TestLLMGenerateText(unittest.TestCase):
@@ -72,6 +73,94 @@ class TestLLMGenerateText(unittest.TestCase):
         self.assertEqual(kwargs["errors"], "replace")
         self.assertEqual(kwargs["timeout"], 45)
         self.assertEqual(run_mock.call_args.args[0][0:3], ["codex", "exec", "--skip-git-repo-check"])
+
+    def test_codex_cli_windows_empty_path_uses_path_codex(self):
+        completed = subprocess.CompletedProcess(args=["codex"], returncode=0, stdout="ok", stderr="")
+        with mock.patch.object(llm_backend.sys, "platform", "win32"), \
+             mock.patch.object(llm_backend.shutil, "which", side_effect=lambda name: r"C:\Users\Allen\AppData\Roaming\npm\codex.cmd" if name == "codex" else None), \
+             mock.patch.object(llm_backend.subprocess, "run", return_value=completed) as run_mock:
+            llm_backend.generate_text(
+                config={"transport": "cli", "cli_type": "codex", "cli_path": ""},
+                messages=[{"role": "user", "content": "hello"}],
+                session_id="sid-1",
+            )
+
+        cmd = run_mock.call_args.args[0]
+        self.assertEqual(cmd[0], r"C:\Users\Allen\AppData\Roaming\npm\codex.cmd")
+        self.assertEqual(cmd[1:3], ["exec", "--skip-git-repo-check"])
+        self.assertFalse(run_mock.call_args.kwargs["shell"])
+
+    def test_codex_cli_windows_empty_path_falls_back_to_codex_cmd_on_path(self):
+        completed = subprocess.CompletedProcess(args=["codex"], returncode=0, stdout="ok", stderr="")
+
+        def fake_which(name):
+            return r"C:\Program Files\nodejs\codex.cmd" if name == "codex.cmd" else None
+
+        with mock.patch.object(llm_backend.sys, "platform", "win32"), \
+             mock.patch.object(llm_backend.shutil, "which", side_effect=fake_which), \
+             mock.patch.object(llm_backend.subprocess, "run", return_value=completed) as run_mock:
+            llm_backend.generate_text(
+                config={"transport": "cli", "cli_type": "codex"},
+                messages=[{"role": "user", "content": "hello"}],
+                session_id="sid-1",
+            )
+
+        self.assertEqual(run_mock.call_args.args[0][0], r"C:\Program Files\nodejs\codex.cmd")
+
+    def test_codex_cli_windows_empty_path_checks_appdata_npm(self):
+        completed = subprocess.CompletedProcess(args=["codex"], returncode=0, stdout="ok", stderr="")
+        appdata = r"C:\Users\Allen\AppData\Roaming"
+        codex_cmd = str(Path(appdata) / "npm" / "codex.cmd")
+
+        def fake_is_file(path):
+            return str(path) == codex_cmd
+
+        with mock.patch.object(llm_backend.sys, "platform", "win32"), \
+             mock.patch.object(llm_backend.shutil, "which", return_value=None), \
+             mock.patch.dict(llm_backend.os.environ, {"APPDATA": appdata}, clear=False), \
+             mock.patch.object(Path, "is_file", fake_is_file), \
+             mock.patch.object(llm_backend.subprocess, "run", return_value=completed) as run_mock:
+            llm_backend.generate_text(
+                config={"transport": "cli", "cli_type": "codex"},
+                messages=[{"role": "user", "content": "hello"}],
+                session_id="sid-1",
+            )
+
+        cmd = run_mock.call_args.args[0]
+        self.assertEqual(cmd[0], codex_cmd)
+        self.assertEqual(cmd[1], "exec")
+
+    def test_codex_cli_windows_configured_path_with_spaces_is_argv0(self):
+        completed = subprocess.CompletedProcess(args=["codex"], returncode=0, stdout="ok", stderr="")
+        codex_path = r"C:\Program Files\Codex CLI\codex.cmd"
+        with mock.patch.object(llm_backend.sys, "platform", "win32"), \
+             mock.patch.object(llm_backend.shutil, "which") as which_mock, \
+             mock.patch.object(llm_backend.subprocess, "run", return_value=completed) as run_mock:
+            llm_backend.generate_text(
+                config={"transport": "cli", "cli_type": "codex", "cli_path": codex_path},
+                messages=[{"role": "user", "content": "hello"}],
+                session_id="sid-1",
+            )
+
+        cmd = run_mock.call_args.args[0]
+        self.assertEqual(cmd[0], codex_path)
+        self.assertEqual(cmd[1:3], ["exec", "--skip-git-repo-check"])
+        which_mock.assert_not_called()
+
+    def test_codex_cli_darwin_empty_path_does_not_apply_windows_discovery(self):
+        completed = subprocess.CompletedProcess(args=["codex"], returncode=0, stdout="ok", stderr="")
+        with mock.patch.object(llm_backend.sys, "platform", "darwin"), \
+             mock.patch.object(llm_backend.shutil, "which") as which_mock, \
+             mock.patch.dict(llm_backend.os.environ, {"APPDATA": r"C:\Users\Allen\AppData\Roaming"}, clear=False), \
+             mock.patch.object(llm_backend.subprocess, "run", return_value=completed) as run_mock:
+            llm_backend.generate_text(
+                config={"transport": "cli", "cli_type": "codex", "cli_path": ""},
+                messages=[{"role": "user", "content": "hello"}],
+                session_id="sid-1",
+            )
+
+        self.assertEqual(run_mock.call_args.args[0][0], "codex")
+        which_mock.assert_not_called()
 
     def test_chat_completions_remains_http_compatibility_wrapper(self):
         messages = [{"role": "user", "content": "hello"}]
@@ -251,12 +340,12 @@ class TestLLMGenerateText(unittest.TestCase):
 
     def test_windows_cli_run_hides_console_window(self):
         completed = subprocess.CompletedProcess(args=["openclaw"], returncode=0, stdout="ok", stderr="")
-        with mock.patch.object(llm_backend.sys, "platform", "win32"), \
+        with mock.patch.object(subprocess_utils.os, "name", "nt"), \
              mock.patch.object(llm_backend.subprocess, "CREATE_NO_WINDOW", 0x08000000, create=True), \
              mock.patch.object(llm_backend.subprocess, "STARTUPINFO", None, create=True), \
              mock.patch.object(llm_backend.subprocess, "run", return_value=completed) as run_mock:
             llm_backend.generate_text(
-                config={"transport": "cli", "cli_type": "openclaw"},
+                config={"transport": "cli", "cli_type": "codex"},
                 messages=[{"role": "user", "content": "hello"}],
                 session_id="sid-1",
             )

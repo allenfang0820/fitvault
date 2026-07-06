@@ -3894,11 +3894,28 @@ def _profile_data_from_metric_map(data_map: dict[str, Any]) -> dict[str, Any]:
 
 def _provider_failure_payload(platform: str, exc: Exception, message: str | None = None) -> dict[str, Any]:
     provider = str(platform or "").strip().lower()
+    if provider == "coros":
+        normalized = coros_sync.normalize_coros_error(
+            exc,
+            {"operation": "fetch_mcp_persona", "region": _configured_coros_region() or ""},
+        )
+        code = str(normalized.get("provider_error_code") or "coros_profile_sync_failed")
+        return {
+            "ok": False,
+            "error": str(normalized.get("message") or message or "COROS 画像同步失败。"),
+            "provider": provider,
+            "provider_error_code": code,
+            "action_hint": str(normalized.get("action_hint") or coros_sync.COROS_ACTION_HINTS.get(code, coros_sync.COROS_ACTION_HINTS["unknown"])),
+            "diagnostics": normalized.get("diagnostics") or {"provider": "coros"},
+            "profile_sync_summary": build_profile_status_summary(provider),
+        }
     code = str(getattr(exc, "code", "") or f"{provider}_sync_error").strip()
     text = str(message if message is not None else exc)
     action_hints = {
         "coros_auth_required": "请到配置页选择正确 COROS 区域，点击检查状态并完成 MCP 授权。",
+        "coros_node_missing": "未检测到 COROS 同步所需 Node.js，请确认安装包完整或回配置页重新检查账号连接。",
         "coros_skill_not_found": "未找到 coros-stats skill 脚本，请确认应用内 COROS skill 安装完整。",
+        "coros_keepalive_invalid": "COROS keepalive 配置不可用，请回配置页检查账号连接状态并重新连接。",
         "coros_script_failed": "请确认 COROS 授权、Node.js 与 coros-stats skill 可用后重试。",
         "coros_json_parse_error": "COROS 画像脚本返回格式异常，请更新 coros-stats skill 后重试。",
         "invalid_coros_region": "请检查 COROS 区域配置，仅支持 cn / us / eu。",
@@ -4008,14 +4025,19 @@ def fetch_mcp_persona(platform: str, trigger_type: str = "manual") -> dict[str, 
         mark_profile_sync_failed(error)
         return {"ok": False, "error": error}
     except coros_sync.CorosAuthRequiredError as e:
-        error = "COROS 授权不可用或已失效，请到配置页完成授权。"
-        detail = str(e).strip()
-        if detail and detail != error:
-            error = f"{error} {detail}"
+        normalized = coros_sync.normalize_coros_error(
+            e,
+            {"operation": "fetch_mcp_persona", "region": _configured_coros_region() or ""},
+        )
+        error = str(normalized.get("message") or "COROS 授权不可用或已失效。")
         mark_profile_sync_auth_required(error)
         return _provider_failure_payload(platform, e, error)
     except coros_sync.CorosSyncError as e:
-        error = f"COROS 数据同步失败: {e}"
+        normalized = coros_sync.normalize_coros_error(
+            e,
+            {"operation": "fetch_mcp_persona", "region": _configured_coros_region() or ""},
+        )
+        error = str(normalized.get("message") or "COROS 数据同步失败。")
         if _profile_sync_blocked_code(str(getattr(e, "code", ""))):
             mark_profile_sync_blocked(error)
         else:

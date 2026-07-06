@@ -11,6 +11,7 @@ Sync mode prints only the JSON array for FitVault ingestion.
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 from datetime import datetime
@@ -18,6 +19,12 @@ from pathlib import Path
 
 
 SKILL_DIR = Path(__file__).parent
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from subprocess_utils import run_hidden
+
 KEEPALIVE = SKILL_DIR / "coros-mcp-keepalive.js"
 
 FIELDS = [
@@ -61,36 +68,50 @@ SPORT_CYCLE = {200, 201, 202, 203, 204, 205, 299}
 SPORT_SWIM = {300, 301}
 
 
-def _windows_subprocess_hidden_kwargs():
-    if os.name != "nt":
-        return {}
-    kwargs = {}
-    creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-    if creationflags:
-        kwargs["creationflags"] = creationflags
-    startupinfo_cls = getattr(subprocess, "STARTUPINFO", None)
-    if startupinfo_cls is not None:
-        startupinfo = startupinfo_cls()
-        startupinfo.dwFlags |= getattr(subprocess, "STARTF_USESHOWWINDOW", 1)
-        startupinfo.wShowWindow = 0
-        kwargs["startupinfo"] = startupinfo
-    return kwargs
+def _is_file(path):
+    try:
+        return Path(path).expanduser().is_file()
+    except (OSError, TypeError, ValueError):
+        return False
+
+
+def _bundled_node_candidates():
+    root = str(os.environ.get("MAITU_BUNDLED_NODE_DIR") or "").strip()
+    if not root:
+        return []
+    base = Path(root).expanduser()
+    return [
+        base / "node.exe",
+        base / "node",
+        base / "bin" / "node.exe",
+        base / "bin" / "node",
+    ]
+
+
+def resolve_node_binary():
+    env_node = str(os.environ.get("QCLAW_CLI_NODE_BINARY") or "").strip()
+    if env_node:
+        return env_node
+    for candidate in _bundled_node_candidates():
+        if _is_file(candidate):
+            return str(candidate)
+    return shutil.which("node") or "node"
 
 
 def call_keepalive(tool_name, args=None, retries=6):
     if args is None:
         args = {}
-    cmd = ["node", str(KEEPALIVE), "call", tool_name, json.dumps(args, ensure_ascii=False)]
+    node_binary = resolve_node_binary()
+    cmd = [node_binary, str(KEEPALIVE), "call", tool_name, json.dumps(args, ensure_ascii=False)]
     for attempt in range(retries):
         try:
-            result = subprocess.run(
+            result = run_hidden(
                 cmd,
                 capture_output=True,
                 text=True,
                 timeout=30,
                 cwd=str(SKILL_DIR),
                 env=dict(os.environ),
-                **_windows_subprocess_hidden_kwargs(),
             )
             if result.returncode != 0:
                 if attempt < retries - 1:

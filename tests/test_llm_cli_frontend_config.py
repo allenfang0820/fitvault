@@ -165,6 +165,10 @@ class TestLLMCliFrontendConfig(unittest.TestCase):
 
     def test_test_llm_config_passes_cli_contract_to_backend(self):
         body = extract_function_body(self.source, "async function testLLMConfig()")
+        self.assertIn("onboardingState.llmTestInFlight", body)
+        self.assertIn("测试连接正在进行中", body)
+        self.assertIn("onboardingState.llmTestInFlight = true", body)
+        self.assertIn("onboardingState.llmTestInFlight = false", body)
         self.assertIn("transport === 'cli'", body)
         self.assertIn("cliType === 'custom' && !cliPath", body)
         self.assertIn("window.pywebview.api.test_llm_config(", body)
@@ -195,14 +199,17 @@ class TestLLMCliFrontendConfig(unittest.TestCase):
         self.assertIn("!backendConfigMatchesForm", silent_body)
         self.assertIn("!isCurrentLLMConfigDirty()", silent_body)
         self.assertIn("stopLLMHeartbeat()", silent_body)
+        self.assertIn("CLI 已配置，点击测试连接可手动验证", silent_body)
         self.assertIn("normalizeLLMTransport(currentLLMConfig && currentLLMConfig.transport) === 'cli'", heartbeat_body)
         self.assertIn("stopLLMHeartbeat();", heartbeat_body)
 
         generic_status_idx = silent_body.find("静默验证大模型连接中")
         http_status_idx = silent_body.find("静默验证网关连接中")
         cli_branch_idx = silent_body.find("transport === 'cli'")
+        http_branch_idx = silent_body.find("pywebview.api.test_llm_config", cli_branch_idx)
         self.assertGreaterEqual(generic_status_idx, 0)
         self.assertGreater(http_status_idx, cli_branch_idx)
+        self.assertGreater(http_branch_idx, http_status_idx)
 
     def test_frontend_persists_garmin_region_selection(self):
         persist_body = extract_function_body(self.source, "function persistGarminRegionSelection()")

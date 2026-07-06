@@ -18,6 +18,7 @@
  */
 const https = require('https');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { URL } = require('url');
 
@@ -71,7 +72,16 @@ try {
 }
 const COROS_REGION = runtime.region;
 const MCP_URL = REGION_CONFIG[COROS_REGION].mcpUrl;
-const TOKEN_PATH = path.join(process.env.HOME, '.coros-mcp-skill-gateway-ts', COROS_REGION, 'token.json');
+function resolveTokenRoot() {
+  const explicit = String(process.env.COROS_MCP_TOKEN_ROOT || '').trim();
+  if (explicit) return path.resolve(explicit);
+  const home = os.homedir();
+  if (home) return path.join(home, '.coros-mcp-skill-gateway-ts');
+  throw new Error('无法解析 COROS MCP token 目录，请重新连接账号。');
+}
+
+const TOKEN_ROOT = resolveTokenRoot();
+const TOKEN_PATH = path.join(TOKEN_ROOT, COROS_REGION, 'token.json');
 const URL_INFO = new URL(MCP_URL);
 
 let token;
@@ -186,6 +196,7 @@ async function main() {
     console.log(JSON.stringify({
       region: COROS_REGION,
       mcpUrl: MCP_URL,
+      tokenRoot: TOKEN_ROOT,
       tokenPath: TOKEN_PATH,
       host: URL_INFO.host,
     }, null, 2));

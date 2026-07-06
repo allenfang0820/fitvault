@@ -22,6 +22,8 @@ from argparse import Namespace
 from pathlib import Path
 from typing import Any, Iterator
 
+from subprocess_utils import popen_hidden, run_hidden
+
 
 VALID_GARMIN_REGIONS = {"cn", "global"}
 DEFAULT_TIMEOUT_SEC = 300
@@ -100,6 +102,20 @@ class GarminAppLoginResult:
     status: str
     token_path: str
     message: str
+    provider_error_code: str = ""
+    action_hint: str = ""
+    diagnostics: dict[str, str] | None = None
+
+
+GARMIN_AUTH_ACTION_HINTS = {
+    "garmin_auth_failed": "请回配置页重新连接 Garmin 账号。",
+    "garmin_mfa_failed": "请重新输入 Garmin MFA 验证码，或回配置页重新连接 Garmin 账号。",
+}
+
+GARMIN_AUTH_USER_MESSAGES = {
+    "garmin_auth_failed": "Garmin 授权失败，请重新输入账号密码或稍后重试。",
+    "garmin_mfa_failed": "Garmin MFA 验证失败，请重新输入验证码。",
+}
 
 
 def app_base_dir() -> Path:
@@ -171,6 +187,7 @@ def _redact_sensitive_text(value: str, *secrets: str) -> str:
         r"\1\2***",
         text,
     )
+    text = re.sub(r"(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", "***", text)
     text = re.sub(r"(?i)(bearer\s+)[A-Za-z0-9._~+/=-]+", r"\1***", text)
     return text
 
@@ -179,6 +196,8 @@ def _garmin_app_login_failure_message(region: str, detail: str) -> str:
     clean = _redact_sensitive_text(_error_snippet(detail))
     lower = clean.lower()
     label = "国际区" if region == "global" else "中国区"
+    if "could not get source code" in lower:
+        return GARMIN_AUTH_USER_MESSAGES["garmin_auth_failed"]
     if "401" in lower or "unauthorized" in lower:
         return (
             f"Garmin {label} 授权失败：Garmin SSO 拒绝了本次登录。"
@@ -191,6 +210,49 @@ def _garmin_app_login_failure_message(region: str, detail: str) -> str:
         clean = re.sub(r"原始错误：.*", "", clean).strip()
         clean = clean.replace("Garmin 认证失败", "Garmin 授权失败")
     return clean or "Garmin 授权失败，请检查账号、密码、区域或稍后重试。"
+
+
+def _garmin_app_auth_error_code(status: str, detail: str = "") -> str:
+    lower = str(detail or "").lower()
+    if str(status or "") == "needs_mfa":
+        return "garmin_mfa_failed"
+    if "mfa" in lower or "验证码" in lower:
+        return "garmin_mfa_failed"
+    return "garmin_auth_failed"
+
+
+def _garmin_app_login_diagnostics(detail: str = "") -> dict[str, str]:
+    clean = _redact_sensitive_text(_error_snippet(detail))
+    diagnostics = {"provider": "garmin"}
+    if "could not get source code" in clean.lower():
+        diagnostics["cause"] = "packaged_callback_source_unavailable"
+    elif clean:
+        diagnostics["error_summary"] = clean
+    return diagnostics
+
+
+def _garmin_app_login_result(
+    *,
+    ok: bool,
+    region: str,
+    status: str,
+    token_path: str,
+    message: str,
+    detail: str = "",
+    provider_error_code: str = "",
+) -> GarminAppLoginResult:
+    interactive_statuses = {"needs_credentials", "needs_mfa"}
+    code = provider_error_code or ("" if ok or status in interactive_statuses else _garmin_app_auth_error_code(status, detail))
+    return GarminAppLoginResult(
+        ok=ok,
+        region=region,
+        status=status,
+        token_path=token_path,
+        message=_redact_sensitive_text(message),
+        provider_error_code=code,
+        action_hint=GARMIN_AUTH_ACTION_HINTS.get(code, ""),
+        diagnostics=None if ok or not code else _garmin_app_login_diagnostics(detail),
+    )
 
 
 def _looks_like_auth_required(text: str) -> bool:
@@ -206,22 +268,6 @@ def _looks_like_auth_required(text: str) -> bool:
         "authentication failed",
     )
     return any(marker in clean for marker in auth_markers)
-
-
-def _windows_subprocess_hidden_kwargs() -> dict[str, Any]:
-    if os.name != "nt":
-        return {}
-    kwargs: dict[str, Any] = {}
-    creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-    if creationflags:
-        kwargs["creationflags"] = creationflags
-    startupinfo_cls = getattr(subprocess, "STARTUPINFO", None)
-    if startupinfo_cls is not None:
-        startupinfo = startupinfo_cls()
-        startupinfo.dwFlags |= getattr(subprocess, "STARTF_USESHOWWINDOW", 1)
-        startupinfo.wShowWindow = 0
-        kwargs["startupinfo"] = startupinfo
-    return kwargs
 
 
 def run_garmin_script(
@@ -241,15 +287,13 @@ def run_garmin_script(
     else:
         command = [sys.executable, str(script), *script_args]
     try:
-        completed = subprocess.run(
+        completed = run_hidden(
             command,
             capture_output=True,
             text=True,
             timeout=timeout,
-            shell=False,
             env=env,
             cwd=str(script.parent),
-            **_windows_subprocess_hidden_kwargs(),
         )
     except subprocess.TimeoutExpired as exc:
         raise GarminScriptFailed(f"Garmin 脚本超时未返回 ({timeout}s): {script.name}") from exc
@@ -540,7 +584,7 @@ def start_login(
             "end tell",
         ]
         try:
-            subprocess.Popen(osa, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **_windows_subprocess_hidden_kwargs())
+            popen_hidden(osa, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except OSError as exc:
             return GarminLoginResult(
                 ok=False,
@@ -575,14 +619,12 @@ def start_login(
         )
 
     try:
-        completed = subprocess.run(
+        completed = run_hidden(
             command,
             capture_output=True,
             text=True,
             timeout=timeout,
-            shell=False,
             cwd=str(paths.login.resolve().parent),
-            **_windows_subprocess_hidden_kwargs(),
         )
     except subprocess.TimeoutExpired as exc:
         stdout = str(exc.stdout or "")
@@ -645,10 +687,25 @@ def login_app(
     try:
         resolved_region = resolve_garmin_region(region)
     except GarminSyncError as exc:
-        return GarminAppLoginResult(False, str(region or "").strip().lower(), "failed", "", str(exc))
+        return _garmin_app_login_result(
+            ok=False,
+            region=str(region or "").strip().lower(),
+            status="failed",
+            token_path="",
+            message=str(exc),
+            detail=str(exc),
+            provider_error_code="garmin_auth_failed",
+        )
 
     if not str(email or "").strip() or not str(password or ""):
-        return GarminAppLoginResult(False, resolved_region, "needs_credentials", "", "请输入 Garmin 账号和密码。")
+        return _garmin_app_login_result(
+            ok=False,
+            region=resolved_region,
+            status="needs_credentials",
+            token_path="",
+            message="请输入 Garmin 账号和密码。",
+            provider_error_code="",
+        )
 
     try:
         paths = get_garmin_skill_paths(base_dir)
@@ -663,7 +720,7 @@ def login_app(
             tokenstore=default_tokenstore(resolved_region),
             mfa_code=str(mfa_code or "").strip() or None,
         )
-        return GarminAppLoginResult(
+        return _garmin_app_login_result(
             ok=True,
             region=resolved_region,
             status="authorized",
@@ -674,18 +731,23 @@ def login_app(
         exc_name = exc.__class__.__name__
         detail = _error_snippet(str(exc))
         if exc_name == "GarminStatsMFARequired" or "mfa" in detail.lower() or "验证码" in detail:
-            return GarminAppLoginResult(
+            return _garmin_app_login_result(
                 ok=False,
                 region=resolved_region,
                 status="needs_mfa",
                 token_path=str(default_tokenstore(resolved_region)),
                 message="Garmin 账号需要 MFA 验证码。",
+                detail=detail,
+                provider_error_code="",
             )
         safe_detail = _garmin_app_login_failure_message(resolved_region, detail)
-        return GarminAppLoginResult(
+        code = _garmin_app_auth_error_code("failed", detail)
+        return _garmin_app_login_result(
             ok=False,
             region=resolved_region,
             status="failed",
             token_path=str(default_tokenstore(resolved_region)),
-            message=safe_detail or "Garmin 授权失败，请检查账号、密码、区域或稍后重试。",
+            message=safe_detail or GARMIN_AUTH_USER_MESSAGES.get(code, GARMIN_AUTH_USER_MESSAGES["garmin_auth_failed"]),
+            detail=detail,
+            provider_error_code=code,
         )

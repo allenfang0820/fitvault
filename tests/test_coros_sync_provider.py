@@ -34,6 +34,9 @@ class TestCorosSyncProvider(unittest.TestCase):
             stderr=stderr,
         )
 
+    def _auth_available_patch(self):
+        return mock.patch.object(coros_sync, "ensure_auth_available")
+
     def test_default_region_is_cn(self):
         with mock.patch.dict(os.environ, {}, clear=True):
             self.assertEqual(coros_sync.resolve_coros_region(), "cn")
@@ -122,6 +125,12 @@ class TestCorosSyncProvider(unittest.TestCase):
             root / "eu" / "token.json",
         )
 
+    def test_default_mcp_token_root_prefers_environment(self):
+        root = self.base_dir / "env-tokens"
+        with mock.patch.dict(os.environ, {"COROS_MCP_TOKEN_ROOT": str(root)}):
+            self.assertEqual(coros_sync.default_mcp_token_root(), root)
+            self.assertEqual(coros_sync.default_mcp_token_path("us"), root / "us" / "token.json")
+
     def test_login_command_returns_command_without_running(self):
         with mock.patch.object(coros_sync.subprocess, "run") as run_mock:
             command = coros_sync.login_command(base_dir=self.base_dir, region="us")
@@ -202,6 +211,18 @@ class TestCorosSyncProvider(unittest.TestCase):
         self.assertEqual(env["MAITU_BUNDLED_NODE_DIR"], "C:\\FitVault\\node")
         self.assertTrue(env["PATH"].startswith("C:\\FitVault\\node"))
         self.assertIn("C:\\Users\\runner\\.maitu\\node-global", env["PATH"])
+        self.assertEqual(env["COROS_MCP_TOKEN_ROOT"], str(coros_sync.default_mcp_token_root().resolve()))
+
+    def test_build_coros_runtime_env_preserves_explicit_token_root(self):
+        token_root = self.base_dir / "custom coros tokens"
+        with mock.patch.object(coros_sync, "discover_node_binary", return_value=""), \
+             mock.patch.object(coros_sync, "discover_openclaw_mjs", return_value=""):
+            env = coros_sync.build_coros_runtime_env({
+                "PATH": "/usr/bin",
+                "COROS_MCP_TOKEN_ROOT": str(token_root),
+            })
+
+        self.assertEqual(env["COROS_MCP_TOKEN_ROOT"], str(token_root.resolve()))
 
     def test_discover_coros_mcp_binary_checks_node_global_prefix(self):
         prefix = self.base_dir / "node-global"
@@ -378,17 +399,25 @@ class TestCorosSyncProvider(unittest.TestCase):
         self.assertIn("openclaw_runtime", [item["name"] for item in status.diagnostics])
 
     def test_check_auth_status_missing_token(self):
-        with mock.patch.object(coros_sync.shutil, "which", return_value="/usr/bin/node"):
+        token_root = self.base_dir / "tokens"
+        token_path = token_root / "cn" / "token.json"
+        stdout = json.dumps({
+            "region": "cn",
+            "mcpUrl": "https://mcpcn.coros.com/mcp",
+            "tokenPath": str(token_path),
+        })
+        with mock.patch.object(coros_sync.shutil, "which", return_value="/usr/bin/node"), \
+             mock.patch.object(coros_sync.subprocess, "run", return_value=self._completed(stdout=stdout)):
             status = coros_sync.check_auth_status(
                 base_dir=self.base_dir,
-                token_root=self.base_dir / "tokens",
+                token_root=token_root,
                 region="cn",
             )
 
         self.assertFalse(status.ok)
         self.assertEqual(status.region, "cn")
         self.assertEqual(status.status, "missing_token")
-        self.assertEqual(status.token_path, str(self.base_dir / "tokens" / "cn" / "token.json"))
+        self.assertEqual(status.token_path, str(token_path))
         self.assertIn("请先登录 COROS", status.message)
         self.assertEqual(status.login_command[0], "bash")
         self.assertTrue(status.skill_available)
@@ -399,7 +428,13 @@ class TestCorosSyncProvider(unittest.TestCase):
         token_path = token_root / "eu" / "token.json"
         token_path.parent.mkdir(parents=True)
         token_path.write_text("secret-token-content", encoding="utf-8")
+        stdout = json.dumps({
+            "region": "eu",
+            "mcpUrl": "https://mcpeu.coros.com/mcp",
+            "tokenPath": str(token_path),
+        })
         with mock.patch.object(coros_sync.shutil, "which", return_value="/usr/bin/node"), \
+             mock.patch.object(coros_sync.subprocess, "run", return_value=self._completed(stdout=stdout)), \
              mock.patch.object(Path, "read_text", side_effect=AssertionError("token content should not be read")):
             status = coros_sync.check_auth_status(
                 base_dir=self.base_dir,
@@ -418,9 +453,14 @@ class TestCorosSyncProvider(unittest.TestCase):
         token_path = token_root / "cn" / "token.json"
         token_path.parent.mkdir(parents=True)
         token_path.write_text("secret-token-content", encoding="utf-8")
+        stdout = json.dumps({
+            "region": "cn",
+            "mcpUrl": "https://mcpcn.coros.com/mcp",
+            "tokenPath": str(token_path),
+        })
 
         with mock.patch.object(coros_sync, "discover_node_binary", return_value="/tmp/node/bin/node"), \
-             mock.patch.object(coros_sync.subprocess, "run", return_value=self._completed(stdout='{"region":"cn","mcpUrl":"https://mcpcn.coros.com/mcp","tokenPath":"/tmp/cn/token.json"}')), \
+             mock.patch.object(coros_sync.subprocess, "run", return_value=self._completed(stdout=stdout)), \
              mock.patch.object(Path, "read_text", side_effect=AssertionError("token content should not be read")):
             status = coros_sync.check_auth_status(
                 base_dir=self.base_dir,
@@ -434,15 +474,22 @@ class TestCorosSyncProvider(unittest.TestCase):
         self.assertNotIn("traininghub_token", [item["name"] for item in status.diagnostics])
 
     def test_check_auth_status_does_not_execute_login_script(self):
+        token_root = self.base_dir / "tokens"
+        token_path = token_root / "cn" / "token.json"
+        stdout = json.dumps({
+            "region": "cn",
+            "mcpUrl": "https://mcpcn.coros.com/mcp",
+            "tokenPath": str(token_path),
+        })
         with mock.patch.object(coros_sync.shutil, "which", return_value="/usr/bin/node"), \
              mock.patch.object(
                  coros_sync.subprocess,
                  "run",
-                 return_value=self._completed(stdout='{"region":"cn","mcpUrl":"https://mcpcn.coros.com/mcp","tokenPath":"/tmp/cn/token.json"}'),
+                 return_value=self._completed(stdout=stdout),
              ) as run_mock:
             status = coros_sync.check_auth_status(
                 base_dir=self.base_dir,
-                token_root=self.base_dir / "tokens",
+                token_root=token_root,
                 region="cn",
             )
 
@@ -451,6 +498,7 @@ class TestCorosSyncProvider(unittest.TestCase):
         self.assertEqual(command[0], "/usr/bin/node")
         self.assertIn("--print-config", command)
         self.assertNotIn("install_coros_mcp.sh", " ".join(command))
+        self.assertEqual(run_mock.call_args.kwargs["env"]["COROS_MCP_TOKEN_ROOT"], str((self.base_dir / "tokens").resolve()))
 
     def test_check_auth_status_keepalive_config_success_is_reported(self):
         token_root = self.base_dir / "tokens"
@@ -478,6 +526,32 @@ class TestCorosSyncProvider(unittest.TestCase):
         self.assertEqual(status.keepalive_token_path, str(token_path))
         self.assertIn("keepalive_config", [item["name"] for item in status.diagnostics])
 
+    def test_check_auth_status_reports_keepalive_token_path_mismatch(self):
+        token_root = self.base_dir / "tokens"
+        token_path = token_root / "cn" / "token.json"
+        token_path.parent.mkdir(parents=True)
+        token_path.write_text("secret-token-content", encoding="utf-8")
+        wrong_token_path = self.base_dir / "other" / "cn" / "token.json"
+        stdout = json.dumps({
+            "region": "cn",
+            "mcpUrl": "https://mcpcn.coros.com/mcp",
+            "tokenPath": str(wrong_token_path),
+        })
+
+        with mock.patch.object(coros_sync.shutil, "which", return_value="/usr/bin/node"), \
+             mock.patch.object(coros_sync.subprocess, "run", return_value=self._completed(stdout=stdout)), \
+             mock.patch.object(Path, "read_text", side_effect=AssertionError("token content should not be read")):
+            status = coros_sync.check_auth_status(
+                base_dir=self.base_dir,
+                token_root=token_root,
+                region="cn",
+            )
+
+        keepalive = [item for item in status.diagnostics if item["name"] == "keepalive_config"][-1]
+        self.assertEqual(keepalive["status"], "failed")
+        self.assertIn("路径不一致", keepalive["message"])
+        self.assertEqual(status.keepalive_token_path, str(wrong_token_path))
+
     def test_check_auth_status_keepalive_non_json_is_diagnostic_not_crash(self):
         with mock.patch.object(coros_sync.shutil, "which", return_value="/usr/bin/node"), \
              mock.patch.object(coros_sync.subprocess, "run", return_value=self._completed(stdout="not json")):
@@ -488,9 +562,44 @@ class TestCorosSyncProvider(unittest.TestCase):
             )
 
         self.assertFalse(status.ok)
+        self.assertEqual(status.status, "keepalive_invalid")
         keepalive = [item for item in status.diagnostics if item["name"] == "keepalive_config"][0]
         self.assertEqual(keepalive["status"], "failed")
         self.assertIn("合法 JSON", keepalive["message"])
+
+    def test_ensure_auth_available_maps_missing_token_to_auth_required(self):
+        token_root = self.base_dir / "tokens"
+        token_path = token_root / "cn" / "token.json"
+        stdout = json.dumps({
+            "region": "cn",
+            "mcpUrl": "https://mcpcn.coros.com/mcp",
+            "tokenPath": str(token_path),
+        })
+        with mock.patch.object(coros_sync.shutil, "which", return_value="/usr/bin/node"), \
+             mock.patch.object(coros_sync.subprocess, "run", return_value=self._completed(stdout=stdout)):
+            with self.assertRaises(coros_sync.CorosAuthRequiredError) as ctx:
+                coros_sync.ensure_auth_available(base_dir=self.base_dir, token_root=token_root, region="cn")
+
+        self.assertEqual(ctx.exception.code, "coros_auth_required")
+
+    def test_ensure_auth_available_maps_node_missing(self):
+        with mock.patch.object(coros_sync, "discover_node_binary", return_value=""):
+            with self.assertRaises(coros_sync.CorosSyncError) as ctx:
+                coros_sync.ensure_auth_available(base_dir=self.base_dir, token_root=self.base_dir / "tokens", region="cn")
+
+        self.assertEqual(ctx.exception.code, "coros_node_missing")
+
+    def test_ensure_auth_available_maps_keepalive_invalid(self):
+        token_root = self.base_dir / "tokens"
+        token_path = token_root / "cn" / "token.json"
+        token_path.parent.mkdir(parents=True)
+        token_path.write_text("secret-token-content", encoding="utf-8")
+        with mock.patch.object(coros_sync.shutil, "which", return_value="/usr/bin/node"), \
+             mock.patch.object(coros_sync.subprocess, "run", return_value=self._completed(stdout="not json")):
+            with self.assertRaises(coros_sync.CorosSyncError) as ctx:
+                coros_sync.ensure_auth_available(base_dir=self.base_dir, token_root=token_root, region="cn")
+
+        self.assertEqual(ctx.exception.code, "coros_keepalive_invalid")
 
     def test_start_login_uses_shell_false(self):
         with mock.patch.object(coros_sync.sys, "platform", "linux"), \
@@ -635,16 +744,24 @@ class TestCorosSyncProvider(unittest.TestCase):
             f"    return {payload!r}\n",
             encoding="utf-8",
         )
-        with mock.patch.object(coros_sync, "build_coros_runtime_env", return_value={}), \
+        with self._auth_available_patch(), \
+             mock.patch.object(coros_sync, "build_coros_runtime_env", return_value={}), \
              mock.patch.object(coros_sync.subprocess, "run", side_effect=AssertionError("profile sync must not spawn script")):
             result = coros_sync.sync_profile_json(base_dir=self.base_dir, region="us", timeout=7)
 
         self.assertEqual(result, payload)
 
+    def test_sync_profile_json_stops_before_runner_when_auth_missing(self):
+        script = self.scripts_dir / "coros_runner_profile.py"
+        script.write_text("def build_profile():\n    raise AssertionError('runner should not execute')\n", encoding="utf-8")
+        with mock.patch.object(coros_sync, "ensure_auth_available", side_effect=coros_sync.CorosAuthRequiredError("missing")):
+            with self.assertRaises(coros_sync.CorosAuthRequiredError):
+                coros_sync.sync_profile_json(base_dir=self.base_dir, region="cn")
+
     def test_sync_profile_json_rejects_non_json_stdout(self):
         script = self.scripts_dir / "coros_runner_profile.py"
         script.write_text("def build_profile():\n    return 'not json'\n", encoding="utf-8")
-        with self.assertRaises(coros_sync.CorosJsonParseError) as ctx:
+        with self._auth_available_patch(), self.assertRaises(coros_sync.CorosJsonParseError) as ctx:
             coros_sync.sync_profile_json(base_dir=self.base_dir, region="cn")
 
         self.assertEqual(ctx.exception.code, "coros_json_parse_error")
@@ -652,7 +769,7 @@ class TestCorosSyncProvider(unittest.TestCase):
     def test_sync_profile_json_rejects_non_array_stdout(self):
         script = self.scripts_dir / "coros_runner_profile.py"
         script.write_text("def build_profile():\n    return {'metric': 'username'}\n", encoding="utf-8")
-        with self.assertRaises(coros_sync.CorosJsonParseError) as ctx:
+        with self._auth_available_patch(), self.assertRaises(coros_sync.CorosJsonParseError) as ctx:
             coros_sync.sync_profile_json(base_dir=self.base_dir, region="cn")
 
         self.assertIn("不是 JSON 数组", str(ctx.exception))
@@ -660,7 +777,7 @@ class TestCorosSyncProvider(unittest.TestCase):
     def test_sync_profile_json_rejects_non_object_array_items(self):
         script = self.scripts_dir / "coros_runner_profile.py"
         script.write_text("def build_profile():\n    return ['bad']\n", encoding="utf-8")
-        with self.assertRaises(coros_sync.CorosJsonParseError) as ctx:
+        with self._auth_available_patch(), self.assertRaises(coros_sync.CorosJsonParseError) as ctx:
             coros_sync.sync_profile_json(base_dir=self.base_dir, region="cn")
 
         self.assertIn("数组元素必须是对象", str(ctx.exception))
@@ -672,14 +789,17 @@ class TestCorosSyncProvider(unittest.TestCase):
             "def build_profile():\n"
             "    assert os.environ.get('COROS_REGION') == 'eu'\n"
             "    assert os.environ.get('QCLAW_CLI_NODE_BINARY') == '/tmp/node'\n"
+            "    assert os.environ.get('COROS_MCP_TOKEN_ROOT') == '/tmp/coros-tokens'\n"
             "    return []\n",
             encoding="utf-8",
         )
-        with mock.patch.object(coros_sync, "build_coros_runtime_env", return_value={"QCLAW_CLI_NODE_BINARY": "/tmp/node"}), \
+        with self._auth_available_patch(), \
+             mock.patch.object(coros_sync, "build_coros_runtime_env", return_value={"QCLAW_CLI_NODE_BINARY": "/tmp/node", "COROS_MCP_TOKEN_ROOT": "/tmp/coros-tokens"}), \
              mock.patch.dict(os.environ, {"COROS_REGION": "cn"}, clear=False):
             coros_sync.sync_profile_json(base_dir=self.base_dir, region="eu")
             self.assertEqual(os.environ.get("COROS_REGION"), "cn")
             self.assertNotEqual(os.environ.get("QCLAW_CLI_NODE_BINARY"), "/tmp/node")
+            self.assertNotEqual(os.environ.get("COROS_MCP_TOKEN_ROOT"), "/tmp/coros-tokens")
 
     def test_sync_profile_json_frozen_windows_does_not_launch_app_executable(self):
         payload = [{"metric": "username", "value": "coros-user"}]
@@ -688,7 +808,8 @@ class TestCorosSyncProvider(unittest.TestCase):
         app_exe = self.base_dir / "FitVault.exe"
         app_exe.write_text("", encoding="utf-8")
 
-        with mock.patch.object(coros_sync.sys, "frozen", True, create=True), \
+        with self._auth_available_patch(), \
+             mock.patch.object(coros_sync.sys, "frozen", True, create=True), \
              mock.patch.object(coros_sync.sys, "executable", str(app_exe)), \
              mock.patch.object(coros_sync, "build_coros_runtime_env", return_value={}), \
              mock.patch.object(coros_sync.subprocess, "run", side_effect=AssertionError("profile sync must not launch sys.executable")):
@@ -716,6 +837,71 @@ class TestCorosSyncProvider(unittest.TestCase):
         self.assertEqual(result["content"][0]["type"], "text")
         self.assertIn("Tool call anomalies", result["content"][0]["text"])
 
+    def test_run_coros_mcp_tool_passes_unified_token_env(self):
+        token_root = self.base_dir / "mcp-tokens"
+        with mock.patch.dict(os.environ, {"COROS_MCP_TOKEN_ROOT": str(token_root)}), \
+             mock.patch.object(coros_sync, "discover_node_binary", return_value="node"), \
+             mock.patch.object(
+                 coros_sync.subprocess,
+                 "run",
+                 return_value=self._completed(stdout='{"ok":true}', returncode=0),
+             ) as run_mock:
+            coros_sync.run_coros_mcp_tool("queryUserInfo", {}, region="eu")
+
+        self.assertEqual(run_mock.call_args.kwargs["env"]["COROS_MCP_TOKEN_ROOT"], str(token_root.resolve()))
+
+    def test_run_coros_mcp_tool_oserror_maps_to_node_missing_and_redacts(self):
+        command = ["/tmp/FitVault Node/node", str(self.scripts_dir / "coros-mcp-keepalive.js"), "call"]
+        with mock.patch.object(coros_sync, "_coros_mcp_command", return_value=command), \
+             mock.patch.object(coros_sync.subprocess, "run", side_effect=FileNotFoundError("node missing password=secret access_token=abc123")):
+            with self.assertRaises(coros_sync.CorosFitDownloadError) as ctx:
+                coros_sync.run_coros_mcp_tool("queryUserInfo", {}, region="cn")
+
+        self.assertEqual(ctx.exception.code, "coros_node_missing")
+        normalized = coros_sync.normalize_coros_error(ctx.exception, {"operation": "download_fit", "region": "cn"})
+        serialized = json.dumps(normalized, ensure_ascii=False)
+        self.assertEqual(normalized["provider_error_code"], "coros_node_missing")
+        self.assertIn("Node.js", normalized["message"])
+        self.assertNotIn("secret", serialized)
+        self.assertNotIn("abc123", serialized)
+
+    def test_run_coros_mcp_tool_session_not_found_maps_to_mcp_unavailable(self):
+        command = ["/tmp/node", str(self.scripts_dir / "coros-mcp-keepalive.js"), "call"]
+        stderr = "Session not found\nError: stackTrace access_token=abc123 refresh_token=def456"
+        with mock.patch.object(coros_sync, "_coros_mcp_command", return_value=command), \
+             mock.patch.object(coros_sync.subprocess, "run", return_value=self._completed(stderr=stderr, returncode=1)):
+            with self.assertRaises(coros_sync.CorosFitDownloadError) as ctx:
+                coros_sync.run_coros_mcp_tool("downloadActivityFitFiles", {}, region="cn")
+
+        self.assertEqual(ctx.exception.code, "coros_mcp_unavailable")
+        normalized = coros_sync.normalize_coros_error(ctx.exception, {"failed_tool_name": "downloadActivityFitFiles"})
+        serialized = json.dumps(normalized, ensure_ascii=False)
+        self.assertEqual(normalized["provider_error_code"], "coros_mcp_unavailable")
+        self.assertNotIn("abc123", serialized)
+        self.assertNotIn("def456", serialized)
+
+    def test_normalize_coros_error_redacts_nested_diagnostics_and_truncates(self):
+        noisy = "Traceback\n" + ("stack line\n" * 200) + "cookie=session-secret password=pw123"
+        exc = coros_sync.CorosSyncError(noisy, code="coros_keepalive_invalid")
+
+        normalized = coros_sync.normalize_coros_error(
+            exc,
+            {
+                "operation": "check_auth_status",
+                "region": "cn",
+                "token_path": str(self.base_dir / "tokens" / "cn" / "token.json"),
+                "access_token": "should-not-return",
+            },
+        )
+
+        serialized = json.dumps(normalized, ensure_ascii=False)
+        self.assertEqual(normalized["provider_error_code"], "coros_keepalive_invalid")
+        self.assertIn("token.json", serialized)
+        self.assertNotIn("session-secret", serialized)
+        self.assertNotIn("pw123", serialized)
+        self.assertNotIn("should-not-return", serialized)
+        self.assertLess(len(normalized["diagnostics"]["error_summary"]), 900)
+
     def test_download_fit_json_limits_coros_range_download_to_ten(self):
         payload = {
             "content": [
@@ -730,7 +916,8 @@ class TestCorosSyncProvider(unittest.TestCase):
                 for idx in range(12)
             ]
         }
-        with mock.patch.object(coros_sync, "run_coros_mcp_tool", return_value=payload) as tool_mock:
+        with self._auth_available_patch(), \
+             mock.patch.object(coros_sync, "run_coros_mcp_tool", return_value=payload) as tool_mock:
             result = coros_sync.download_fit_json(
                 start_date="2026-05-01",
                 end_date="2026-05-31",
@@ -749,12 +936,24 @@ class TestCorosSyncProvider(unittest.TestCase):
         self.assertEqual(result["downloaded"], 10)
         self.assertEqual(result["limit"], 10)
 
+    def test_download_fit_json_stops_before_mcp_when_auth_missing(self):
+        with mock.patch.object(coros_sync, "ensure_auth_available", side_effect=coros_sync.CorosAuthRequiredError("missing")), \
+             mock.patch.object(coros_sync, "run_coros_mcp_tool", side_effect=AssertionError("MCP tool should not run")):
+            with self.assertRaises(coros_sync.CorosAuthRequiredError):
+                coros_sync.download_fit_json(
+                    start_date="2026-05-01",
+                    end_date="2026-05-31",
+                    output_dir=self.base_dir / "tracks",
+                    region="cn",
+                )
+
     def test_download_fit_json_falls_back_to_url_tool_when_binary_has_no_files(self):
         payloads = [
             {"content": [{"type": "text", "text": "no binary resources"}]},
             {"content": [{"type": "text", "text": json.dumps({"urls": ["https://example.com/a.fit"]})}]},
         ]
-        with mock.patch.object(coros_sync, "run_coros_mcp_tool", side_effect=payloads) as tool_mock, \
+        with self._auth_available_patch(), \
+             mock.patch.object(coros_sync, "run_coros_mcp_tool", side_effect=payloads) as tool_mock, \
              mock.patch.object(coros_sync, "_download_url_to_fit", return_value={"file": "/tmp/a.fit", "status": "downloaded", "bytes": 3, "url": "https://example.com/a.fit"}) as url_mock:
             result = coros_sync.download_fit_json(
                 start_date="2026-05-01",
@@ -793,7 +992,8 @@ class TestCorosSyncProvider(unittest.TestCase):
                 ]
             },
         ]
-        with mock.patch.object(coros_sync, "run_coros_mcp_tool", side_effect=payloads) as tool_mock:
+        with self._auth_available_patch(), \
+             mock.patch.object(coros_sync, "run_coros_mcp_tool", side_effect=payloads) as tool_mock:
             result = coros_sync.download_fit_json(
                 start_date="2026-06-22",
                 end_date="2026-07-02",
@@ -842,7 +1042,8 @@ class TestCorosSyncProvider(unittest.TestCase):
                 ]
             },
         ]
-        with mock.patch.object(coros_sync, "run_coros_mcp_tool", side_effect=payloads):
+        with self._auth_available_patch(), \
+             mock.patch.object(coros_sync, "run_coros_mcp_tool", side_effect=payloads):
             result = coros_sync.download_fit_json(
                 start_date="2026-06-22",
                 end_date="2026-07-02",
@@ -870,7 +1071,8 @@ class TestCorosSyncProvider(unittest.TestCase):
             {"content": [{"type": "text", "text": "no binary for activity"}]},
             {"content": [{"type": "text", "text": "no url for activity"}]},
         ]
-        with mock.patch.object(coros_sync, "run_coros_mcp_tool", side_effect=payloads):
+        with self._auth_available_patch(), \
+             mock.patch.object(coros_sync, "run_coros_mcp_tool", side_effect=payloads):
             result = coros_sync.download_fit_json(
                 start_date="2026-06-22",
                 end_date="2026-07-02",
