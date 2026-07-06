@@ -129,7 +129,7 @@ def create_runtime_context(args: argparse.Namespace) -> RuntimeContext:
 
     try:
         tokenstore = args.tokenstore or args.auth_file or str(default_tokenstore(args.region))
-        client, _garth_client, _token_path = build_client(args.region, tokenstore)
+        client, _token_path = build_client(args.region, tokenstore)
     except GarminStatsAuthError as exc:
         raise SystemExit(str(exc)) from exc
 

@@ -98,7 +98,7 @@ class TestWindowsRegressionMatrix(unittest.TestCase):
                 session_id="sid",
             )
         cmd = run_mock.call_args.args[0]
-        self.assertEqual(cmd[:3], [r"C:\Tools\codex.cmd", "exec", "--skip-git-repo-check"])
+        self.assertEqual(cmd[:6], ["cmd.exe", "/d", "/c", r"C:\Tools\codex.cmd", "exec", "--skip-git-repo-check"])
         self.assertFalse(run_mock.call_args.kwargs["shell"])
 
         with tempfile.TemporaryDirectory() as appdata, \
@@ -114,7 +114,7 @@ class TestWindowsRegressionMatrix(unittest.TestCase):
                 messages=[{"role": "user", "content": "hi"}],
                 session_id="sid",
             )
-        self.assertEqual(run_mock.call_args.args[0][0], str(Path(appdata) / "npm" / "codex.cmd"))
+        self.assertEqual(run_mock.call_args.args[0][:4], ["cmd.exe", "/d", "/c", str(Path(appdata) / "npm" / "codex.cmd")])
 
         with mock.patch.object(llm_backend.sys, "platform", "darwin"), \
              mock.patch.object(llm_backend.shutil, "which") as which_mock, \
@@ -172,7 +172,7 @@ class TestWindowsRegressionMatrix(unittest.TestCase):
         save_mock.assert_called_once()
         self.assertTrue(results["first"]["ok"], results["first"])
 
-    def test_d_garmin_windows_source_error_is_wrapped_and_redacted(self):
+    def test_d_garmin_windows_source_error_is_incompatible_and_redacted(self):
         class AuthModule:
             @staticmethod
             def login_and_save_app(**kwargs):
@@ -193,7 +193,7 @@ class TestWindowsRegressionMatrix(unittest.TestCase):
             )
 
         self.assertFalse(result.ok)
-        self.assertEqual(result.provider_error_code, "garmin_auth_failed")
+        self.assertEqual(result.provider_error_code, "garmin_provider_api_incompatible")
         self.assertEqual(result.diagnostics, {"provider": "garmin", "cause": "packaged_callback_source_unavailable"})
         terminal_login.assert_not_called()
         serialized = str(result)

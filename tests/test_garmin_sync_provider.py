@@ -404,12 +404,11 @@ class TestGarminSyncProvider(unittest.TestCase):
         self.assertIn("已检测到 Garmin 授权", status.message)
         self.assertEqual(status.token_path, str(token))
 
-    def test_check_auth_status_authorized_when_token_directory_exists(self):
+    def test_check_auth_status_authorized_when_036_token_directory_exists(self):
         workspace = self.base_dir / "workspace"
         token_dir = workspace / "garmin_auth_global"
         token_dir.mkdir(parents=True)
-        (token_dir / "oauth1_token.json").write_text("{}", encoding="utf-8")
-        (token_dir / "oauth2_token.json").write_text("{}", encoding="utf-8")
+        (token_dir / "garmin_tokens.json").write_text("{}", encoding="utf-8")
 
         status = garmin_sync.check_auth_status(
             base_dir=self.base_dir,
@@ -477,7 +476,7 @@ class TestGarminSyncProvider(unittest.TestCase):
         self.assertEqual(status.status, "missing_token")
         run_mock.assert_not_called()
 
-    def test_login_app_wraps_windows_packaged_source_error(self):
+    def test_login_app_wraps_windows_packaged_source_error_as_incompatible(self):
         class AuthModule:
             @staticmethod
             def login_and_save_app(**kwargs):
@@ -495,18 +494,38 @@ class TestGarminSyncProvider(unittest.TestCase):
 
         self.assertFalse(result.ok)
         self.assertEqual(result.status, "failed")
-        self.assertEqual(result.provider_error_code, "garmin_auth_failed")
-        self.assertEqual(result.action_hint, "请回配置页重新连接 Garmin 账号。")
-        self.assertEqual(result.message, "Garmin 授权失败，请重新输入账号密码或稍后重试。")
+        self.assertEqual(result.provider_error_code, "garmin_provider_api_incompatible")
+        self.assertEqual(result.action_hint, "Garmin provider 依赖与应用不兼容，请重新安装或更新应用。")
+        self.assertEqual(result.message, "Garmin provider 依赖与应用不兼容，请更新应用后重试。")
         self.assertEqual(result.diagnostics, {"provider": "garmin", "cause": "packaged_callback_source_unavailable"})
         serialized = str(result)
         self.assertNotIn("could not get source code", serialized)
         self.assertNotIn("secret-password", serialized)
         self.assertNotIn("abc123", serialized)
 
+    def test_login_app_garth_attribute_error_is_provider_incompatible(self):
+        class AuthModule:
+            @staticmethod
+            def login_and_save_app(**kwargs):
+                raise AttributeError("'Garmin' object has no attribute 'garth'")
+
+        with mock.patch.object(garmin_sync, "_load_skill_module", return_value=AuthModule):
+            result = garmin_sync.login_app(
+                email="runner@example.com",
+                password="secret-password",
+                region="cn",
+                base_dir=self.base_dir,
+            )
+
+        self.assertFalse(result.ok)
+        self.assertEqual(result.provider_error_code, "garmin_provider_api_incompatible")
+        self.assertEqual(result.diagnostics, {"provider": "garmin", "cause": "provider_api_incompatible"})
+
     def test_login_app_needs_mfa_is_not_a_failed_error(self):
         class GarminStatsMFARequired(Exception):
-            pass
+            def __init__(self, message):
+                super().__init__(message)
+                self.client_state = {"mfa": "state"}
 
         def login_and_save_app(**kwargs):
             raise GarminStatsMFARequired("Garmin 账号需要 MFA 验证码")
@@ -533,6 +552,7 @@ class TestGarminSyncProvider(unittest.TestCase):
         self.assertEqual(result.provider_error_code, "")
         self.assertEqual(result.action_hint, "")
         self.assertIsNone(result.diagnostics)
+        self.assertEqual(result.mfa_state, {"mfa": "state"})
 
     def test_login_app_macos_success_path_remains_in_process(self):
         class AuthModule:

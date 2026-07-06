@@ -9363,6 +9363,31 @@
         return `${providerLabel} 活动同步完成：${downloadText.join('，')}；本地导入：${importText.join('，')}${remoteSkippedHint}${noNewHint}`;
     }
 
+    function sanitizeProviderErrorDetail(value) {
+        let text = '';
+        if (value == null) return '';
+        if (typeof value === 'string') text = value;
+        else {
+            try { text = JSON.stringify(value); }
+            catch (_) { text = String(value || ''); }
+        }
+        text = text
+            .replace(/(bearer\s+)[A-Za-z0-9._~+/=-]+/ig, '$1[redacted]')
+            .replace(/\b(token|access_token|refresh_token|authorization|cookie|password|passwd|secret|mfa|otp|api[_-]?key)\s*[:=]\s*[^,\s;"]+/ig, '$1=[redacted]')
+            .trim();
+        return text.length > 300 ? text.slice(0, 300) + '...' : text;
+    }
+
+    function firstProviderDownloadErrorDetail(download) {
+        const errors = download && Array.isArray(download.errors) ? download.errors : [];
+        for (const item of errors) {
+            if (!item) continue;
+            const detail = sanitizeProviderErrorDetail(item.error || item.message || item.raw_summary || (item.diagnostics && item.diagnostics.error_summary));
+            if (detail) return detail;
+        }
+        return '';
+    }
+
     function formatGarminRemoteSyncError(res) {
         const data = (res && res.data) || {};
         const parts = [];
@@ -9381,6 +9406,8 @@
         const parts = [];
         const base = data.message || (res && (res.msg || res.error)) || `${providerLabel} 活动同步失败`;
         if (base) parts.push(base);
+        const providerDetail = sanitizeProviderErrorDetail(data.provider_detail) || firstProviderDownloadErrorDetail(data.download);
+        if (providerDetail && String(base || '').indexOf(providerDetail) < 0) parts.push(providerDetail);
         if (data.action_hint) parts.push(data.action_hint);
         if (data.provider_error_code) parts.push(`错误码：${data.provider_error_code}`);
         if (data.download || data.import) {

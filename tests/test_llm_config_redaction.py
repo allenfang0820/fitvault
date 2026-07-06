@@ -276,6 +276,43 @@ class TestLLMConfigRedaction(unittest.TestCase):
         self.assertIn("cli failed", res["msg"])
         self.assertNotIn("网关", res["msg"])
 
+    def test_test_llm_config_codex_permission_error_returns_stable_payload(self):
+        exc = llm_backend.LLMCLIError(
+            "codex_cli_permission_denied",
+            "Codex CLI 启动被系统拒绝访问。",
+            diagnostics={
+                "provider": "codex",
+                "provider_error_code": "codex_cli_permission_denied",
+                "platform": "win32",
+                "executable": r"C:\Users\Allen\AppData\Local\Microsoft\WindowsApps\codex.exe",
+                "resolution_strategy": "configured_path",
+                "error_summary": "[WinError 5] Access is denied password=***",
+            },
+        )
+        with mock.patch.object(llm_backend, "load_llm_config", return_value={}), \
+                mock.patch.object(llm_backend, "generate_text", side_effect=exc), \
+                mock.patch.object(llm_backend, "save_llm_config") as save_mock, \
+                mock.patch.object(main, "load_application_config", return_value={}), \
+                mock.patch.object(main, "persist_application_config", return_value={}):
+            res = Api().test_llm_config(
+                "cli_codex",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "cli",
+                "codex",
+                r"C:\Users\Allen\AppData\Local\Microsoft\WindowsApps\codex.exe",
+            )
+
+        self.assertFalse(res["ok"])
+        save_mock.assert_not_called()
+        self.assertEqual(res["data"]["provider_error_code"], "codex_cli_permission_denied")
+        self.assertIn("WindowsApps", res["data"]["action_hint"])
+        self.assertEqual(res["data"]["diagnostics"]["resolution_strategy"], "configured_path")
+        self.assertNotIn("password=secret", str(res))
+
     def test_test_llm_config_cli_same_config_is_not_run_concurrently(self):
         api = Api()
         entered = threading.Event()

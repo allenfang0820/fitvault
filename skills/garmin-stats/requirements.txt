@@ -1,4 +1,3 @@
-garminconnect
-garth
+garminconnect==0.3.6
+curl_cffi>=0.6
 pytz>=2023.3
-curl_cffi

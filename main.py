@@ -8798,7 +8798,7 @@ class Api:
                         status="needs_mfa",
                         message=result.message or "请输入 Garmin MFA 验证码。",
                         progress=[{"step": "credentials", "status": "ok", "message": "账号信息已提交"}],
-                        secret_payload={"email": email, "password": password},
+                        secret_payload={"email": email, "password": password, "mfa_state": result.mfa_state},
                     )
                     session.update({"requires_credentials": True, "supports_mfa": True})
                     return self._account_success(session, msg=session["message"])
@@ -8880,6 +8880,7 @@ class Api:
                     }, msg="请输入 Garmin MFA 验证码。")
                 email = str(secret_payload.get("email") or "")
                 password = str(secret_payload.get("password") or "")
+                mfa_state = secret_payload.get("mfa_state")
                 if not email or not password:
                     self._remove_account_session(sid)
                     return self._account_success({
@@ -8890,7 +8891,7 @@ class Api:
                         "authorized": False,
                         "message": "Garmin 授权会话已过期，请重新输入账号密码。",
                     }, msg="Garmin 授权会话已过期，请重新输入账号密码。")
-                result = garmin_sync.login_app(email=email, password=password, region=region, mfa_code=mfa_code)
+                result = garmin_sync.login_app(email=email, password=password, region=region, mfa_code=mfa_code, mfa_state=mfa_state)
                 self._clear_account_session_secret(sid)
                 if result.ok:
                     self._remove_account_session(sid)
@@ -8908,7 +8909,7 @@ class Api:
                         if session is not None:
                             session["status"] = "needs_mfa"
                             session["message"] = result.message or "Garmin MFA 验证码不正确或已失效，请重新输入。"
-                            session["secret_payload"] = {"email": email, "password": password}
+                            session["secret_payload"] = {"email": email, "password": password, "mfa_state": result.mfa_state or mfa_state}
                     payload_data = self._garmin_app_login_payload(result, session_id=sid)
                     return self._account_success(payload_data, msg=payload_data["message"])
                 self._remove_account_session(sid)
@@ -9329,7 +9330,9 @@ class Api:
                         msg += "；" + detail
                     else:
                         msg += "：" + detail
-                return _api_error(API_CODE_EXTERNAL_SERVICE, msg)
+                error_payload = llm_backend.cli_error_payload(e, cli_type=cli_type, cli_path=cli_path)
+                error_payload["message"] = msg
+                return _api_error(API_CODE_EXTERNAL_SERVICE, msg, error_payload)
             return _api_error(API_CODE_EXTERNAL_SERVICE, "大模型网关连通失败")
         finally:
             if cli_test_registered and cli_test_key:
@@ -9383,6 +9386,7 @@ class Api:
         import_result: dict[str, Any] | None = None,
         exc: Exception | None = None,
         diagnostics: dict[str, Any] | None = None,
+        provider_detail: str | None = None,
     ) -> dict[str, Any]:
         normalized = coros_sync.normalize_coros_error(
             exc or coros_sync.CorosSyncError(message, code=provider_error_code),
@@ -9398,11 +9402,15 @@ class Api:
         clean_message = str(message or normalized.get("message") or "")
         if exc is not None:
             clean_message = str(normalized.get("message") or clean_message)
+        clean_detail = str(provider_detail or "").strip()
+        if clean_detail:
+            clean_detail = str(coros_sync.sanitize_coros_value(clean_detail))
         return {
             "provider": "coros",
             "provider_error_code": code,
             "action_hint": str(normalized.get("action_hint") or coros_sync.COROS_ACTION_HINTS.get(code, coros_sync.COROS_ACTION_HINTS["unknown"])),
             "message": coros_sync.sanitize_coros_value(clean_message),
+            "provider_detail": clean_detail,
             "start_date": start_date,
             "end_date": end_date,
             "target_dir": TRACKS_DIR,
@@ -9685,12 +9693,19 @@ class Api:
                     download_summary.get("failed"),
                 )
                 if not download_summary.get("ok", True) and int(download_summary.get("searched") or 0) > 0:
+                    error_summary = coros_sync.extract_download_error_summary(download_summary)
+                    detail = str(error_summary.get("provider_detail") or "").strip()
+                    error_code = str(error_summary.get("provider_error_code") or "coros_fit_download_failed")
+                    message = "COROS 已找到活动记录，但 FIT 文件下载失败。"
+                    if detail:
+                        message = f"COROS FIT 下载失败：{detail}"
                     payload = self._coros_sync_error_payload(
-                        provider_error_code="coros_fit_download_failed",
-                        message="COROS 已找到活动记录，但 FIT 文件下载失败。",
+                        provider_error_code=error_code,
+                        message=message,
                         start_date=start_day.isoformat(),
                         end_date=end_day.isoformat(),
                         download=download_summary,
+                        provider_detail=detail,
                     )
                     return _api_error(API_CODE_EXTERNAL_SERVICE, payload["message"], payload)
                 if not _download_has_import_candidates(download_summary):

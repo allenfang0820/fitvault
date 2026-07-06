@@ -1,5 +1,6 @@
 import json
 import os
+import importlib.util
 import subprocess
 import tempfile
 import unittest
@@ -7,6 +8,18 @@ from pathlib import Path
 from unittest import mock
 
 import coros_sync
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+COROS_PROFILE_RUNNER = PROJECT_ROOT / "skills" / "coros-stats" / "scripts" / "coros_runner_profile.py"
+
+
+def load_coros_profile_runner():
+    spec = importlib.util.spec_from_file_location("_test_coros_runner_profile", COROS_PROFILE_RUNNER)
+    module = importlib.util.module_from_spec(spec)
+    assert spec and spec.loader
+    spec.loader.exec_module(module)
+    return module
 
 
 class TestCorosSyncProvider(unittest.TestCase):
@@ -837,6 +850,163 @@ class TestCorosSyncProvider(unittest.TestCase):
         self.assertEqual(result["content"][0]["type"], "text")
         self.assertIn("Tool call anomalies", result["content"][0]["text"])
 
+    def test_parse_json_stdout_accepts_markdown_fence_and_trailing_logs(self):
+        stdout = (
+            "[debug] keepalive connected\n"
+            "```json\n"
+            "{\"ok\":true,\"data\":[{\"metric\":\"username\",\"value\":\"runner\"}]}\n"
+            "```\n"
+            "[debug] done\n"
+        )
+
+        parsed = coros_sync._parse_json_stdout(stdout)
+
+        self.assertEqual(parsed["ok"], True)
+        self.assertEqual(parsed["data"][0]["metric"], "username")
+
+    def test_coros_profile_runner_unwraps_keepalive_envelope_user_info(self):
+        runner = load_coros_profile_runner()
+        stdout = json.dumps({
+            "ok": True,
+            "tool": "queryUserInfo",
+            "content_type": "text",
+            "text": (
+                "User Profile Information\n"
+                "========================\n"
+                "Height: 170.0 cm\n"
+                "Weight: 73.8 kg\n"
+                "Birthday: 1979-08-20 (Age: 46)\n"
+                "Gender: Male\n"
+                "Nickname: 户外大叔MrFang"
+            ),
+            "raw_summary": "Nickname: 户外大叔MrFang",
+        }, ensure_ascii=False)
+
+        parsed = runner.parse_user_info(stdout)
+
+        self.assertEqual(parsed["username"], "户外大叔MrFang")
+        self.assertEqual(parsed["gender"], "男")
+        self.assertEqual(parsed["age"], 46)
+        self.assertEqual(parsed["height_cm"], 170.0)
+        self.assertEqual(parsed["weight_kg"], 73.8)
+        self.assertNotIn("raw_summary", parsed["username"])
+
+    def test_coros_profile_runner_unwraps_keepalive_envelope_json_data(self):
+        runner = load_coros_profile_runner()
+        stdout = json.dumps({
+            "ok": True,
+            "tool": "queryUserInfo",
+            "content_type": "json",
+            "data": {
+                "nickname": "runner",
+                "height": 1.71,
+                "weight": 70.5,
+                "gender": "male",
+                "birthday": "1980-01-02",
+            },
+            "raw_summary": "{\"nickname\":\"runner\"}",
+        }, ensure_ascii=False)
+
+        parsed = runner.parse_user_info(stdout)
+
+        self.assertEqual(parsed["username"], "runner")
+        self.assertEqual(parsed["height_cm"], 171.0)
+        self.assertEqual(parsed["weight_kg"], 70.5)
+        self.assertEqual(parsed["gender"], "男")
+
+    def test_run_coros_mcp_tool_unwraps_keepalive_envelope_data(self):
+        stdout = json.dumps({
+            "ok": True,
+            "tool": "queryUserInfo",
+            "content_type": "json",
+            "data": {"nickname": "runner"},
+            "raw_summary": "{\"nickname\":\"runner\"}",
+        })
+        with mock.patch.object(coros_sync, "discover_node_binary", return_value="node"), \
+             mock.patch.object(coros_sync, "build_coros_runtime_env", return_value={}), \
+             mock.patch.object(coros_sync.subprocess, "run", return_value=self._completed(stdout=stdout, returncode=0)):
+            result = coros_sync.run_coros_mcp_tool("queryUserInfo", {}, region="cn")
+
+        self.assertEqual(result, {"nickname": "runner"})
+
+    def test_run_coros_mcp_tool_error_envelope_raises_stable_error(self):
+        stdout = json.dumps({
+            "ok": False,
+            "tool": "queryUserInfo",
+            "error": {"message": "tool failed authorization Bearer abc123"},
+            "raw_summary": "authorization Bearer abc123",
+        })
+        with mock.patch.object(coros_sync, "discover_node_binary", return_value="node"), \
+             mock.patch.object(coros_sync, "build_coros_runtime_env", return_value={}), \
+             mock.patch.object(coros_sync.subprocess, "run", return_value=self._completed(stdout=stdout, returncode=0)):
+            with self.assertRaises(coros_sync.CorosFitDownloadError) as ctx:
+                coros_sync.run_coros_mcp_tool("queryUserInfo", {}, region="cn")
+
+        self.assertEqual(ctx.exception.code, "coros_mcp_tool_failed")
+        normalized = coros_sync.normalize_coros_error(ctx.exception, {"operation": "download_fit", "failed_tool_name": "queryUserInfo"})
+        self.assertEqual(normalized["provider_error_code"], "coros_mcp_tool_failed")
+        self.assertNotIn("abc123", json.dumps(normalized, ensure_ascii=False))
+
+    def test_extract_download_error_summary_detects_daily_limit_and_redacts(self):
+        summary = {
+            "errors": [
+                {
+                    "status": "failed",
+                    "error": "Daily FIT download limit reached Authorization: Bearer abc123 access_token=secret",
+                }
+            ]
+        }
+
+        extracted = coros_sync.extract_download_error_summary(summary)
+
+        serialized = json.dumps(extracted, ensure_ascii=False)
+        self.assertEqual(extracted["provider_error_code"], "coros_fit_daily_download_limit")
+        self.assertIn("Daily FIT download limit reached", extracted["provider_detail"])
+        self.assertNotIn("abc123", serialized)
+        self.assertNotIn("secret", serialized)
+
+    def test_extract_download_error_summary_detects_chinese_limit_and_nested_envelope(self):
+        envelope = json.dumps({
+            "ok": False,
+            "error": {"message": "今日 FIT 下载次数已达上限，请明日再试"},
+            "raw_summary": "fallback",
+        }, ensure_ascii=False)
+
+        extracted = coros_sync.extract_download_error_summary({"errors": [{"error": envelope}]})
+
+        self.assertEqual(extracted["provider_error_code"], "coros_fit_daily_download_limit")
+        self.assertIn("今日 FIT 下载次数已达上限", extracted["provider_detail"])
+
+    def test_extract_download_error_summary_keeps_generic_fit_failure(self):
+        extracted = coros_sync.extract_download_error_summary({
+            "errors": [{"status": "failed", "error": "未返回 FIT blob 或下载 URL"}]
+        })
+
+        self.assertEqual(extracted["provider_error_code"], "coros_fit_download_failed")
+        self.assertIn("未返回 FIT blob", extracted["provider_detail"])
+
+    def test_extract_sport_records_accepts_markdown_chinese_and_snake_case(self):
+        payload = {
+            "content": [
+                {
+                    "type": "text",
+                    "text": (
+                        "- 户外跑步 - 2026-07-01\n"
+                        "  label_id：478587344962748420\n"
+                        "  sport_type：100\n"
+                        "- Ride - 2026-07-02 labelId: abc-2 SportType: 200\n"
+                    ),
+                }
+            ]
+        }
+
+        records = coros_sync._extract_sport_records(payload, limit=10)
+
+        self.assertEqual(records[0]["labelId"], "478587344962748420")
+        self.assertEqual(records[0]["sportType"], 100)
+        self.assertEqual(records[1]["labelId"], "abc-2")
+        self.assertEqual(records[1]["sportType"], 200)
+
     def test_run_coros_mcp_tool_passes_unified_token_env(self):
         token_root = self.base_dir / "mcp-tokens"
         with mock.patch.dict(os.environ, {"COROS_MCP_TOKEN_ROOT": str(token_root)}), \
@@ -901,6 +1071,35 @@ class TestCorosSyncProvider(unittest.TestCase):
         self.assertNotIn("pw123", serialized)
         self.assertNotIn("should-not-return", serialized)
         self.assertLess(len(normalized["diagnostics"]["error_summary"]), 900)
+
+    def test_normalize_coros_profile_plain_exception_is_not_unknown(self):
+        exc = RuntimeError("ordinary parser crash access_token=abc123")
+
+        normalized = coros_sync.normalize_coros_error(
+            exc,
+            {"operation": "fetch_mcp_persona", "region": "cn", "raw_stdout_summary": "password=secret"},
+        )
+
+        serialized = json.dumps(normalized, ensure_ascii=False)
+        self.assertEqual(normalized["provider_error_code"], "coros_profile_sync_failed")
+        self.assertEqual(normalized["diagnostics"]["raw_stdout_summary"], "[redacted]")
+        self.assertNotIn("abc123", serialized)
+        self.assertNotIn("secret", serialized)
+
+    def test_profile_backend_coros_plain_exception_payload_is_normalized(self):
+        import profile_backend
+
+        payload = profile_backend._provider_failure_payload(
+            "coros",
+            RuntimeError("plain crash access_token=abc123"),
+            "COROS 画像同步失败。",
+        )
+
+        serialized = json.dumps(payload, ensure_ascii=False)
+        self.assertFalse(payload["ok"])
+        self.assertEqual(payload["provider_error_code"], "coros_profile_sync_failed")
+        self.assertIn("diagnostics", payload)
+        self.assertNotIn("abc123", serialized)
 
     def test_download_fit_json_limits_coros_range_download_to_ten(self):
         payload = {

@@ -195,6 +195,7 @@ class TestAccountConnectionApi(unittest.TestCase):
             status="needs_mfa",
             token_path="/tmp/garmin_auth_cn",
             message="Garmin 账号需要 MFA 验证码。",
+            mfa_state={"mfa": "state"},
         )
         success = garmin_sync.GarminAppLoginResult(
             ok=True,
@@ -232,6 +233,7 @@ class TestAccountConnectionApi(unittest.TestCase):
             "password": "secret-password",
             "region": "cn",
             "mfa_code": "123456",
+            "mfa_state": {"mfa": "state"},
         })
         self.assertTrue(cont["ok"], cont)
         self.assertEqual(cont["data"]["status"], "authorized")
@@ -239,6 +241,7 @@ class TestAccountConnectionApi(unittest.TestCase):
         serialized = str(cont["data"])
         self.assertNotIn("secret-password", serialized)
         self.assertNotIn("123456", serialized)
+        self.assertNotIn("mfa_state", serialized)
 
     def test_continue_garmin_mfa_requires_code_without_dropping_session(self):
         api = Api()
@@ -290,9 +293,9 @@ class TestAccountConnectionApi(unittest.TestCase):
             region="cn",
             status="failed",
             token_path="/tmp/garmin_auth_cn",
-            message="Garmin 授权失败，请重新输入账号密码或稍后重试。",
-            provider_error_code="garmin_auth_failed",
-            action_hint="请回配置页重新连接 Garmin 账号。",
+            message="Garmin provider 依赖与应用不兼容，请更新应用后重试。",
+            provider_error_code="garmin_provider_api_incompatible",
+            action_hint="Garmin provider 依赖与应用不兼容，请重新安装或更新应用。",
             diagnostics={"provider": "garmin", "cause": "packaged_callback_source_unavailable"},
         )
         with mock.patch.object(llm_backend, "load_llm_config", return_value={"garmin_region": "cn"}), \
@@ -308,7 +311,7 @@ class TestAccountConnectionApi(unittest.TestCase):
 
         self.assertFalse(res["ok"])
         self.assertEqual(res["data"]["status"], "failed")
-        self.assertEqual(res["data"]["provider_error_code"], "garmin_auth_failed")
+        self.assertEqual(res["data"]["provider_error_code"], "garmin_provider_api_incompatible")
         self.assertEqual(res["data"]["diagnostics"]["cause"], "packaged_callback_source_unavailable")
         terminal_login.assert_not_called()
         serialized = str(res)
@@ -519,7 +522,7 @@ class TestAccountConnectionApi(unittest.TestCase):
             root = Path(temp_dir)
             token_dir = root / "garmin_auth_cn"
             token_dir.mkdir()
-            (token_dir / "oauth1_token.json").write_text("{}", encoding="utf-8")
+            (token_dir / "garmin_tokens.json").write_text("{}", encoding="utf-8")
             keep_file = root / "activity.fit"
             keep_file.write_text("fit", encoding="utf-8")
 

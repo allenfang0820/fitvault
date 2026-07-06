@@ -150,8 +150,24 @@ def _decode_json_maybe(value):
         return raw.replace("\\n", "\n").replace('\\"', '"').replace("\\t", "\t")
 
 
-def _mcp_payload_to_text(payload):
+def _unwrap_keepalive_envelope(payload):
     payload = _decode_json_maybe(payload)
+    if not isinstance(payload, dict):
+        return payload
+    if payload.get("ok") is False:
+        return payload.get("error") or payload.get("message") or payload.get("raw_summary") or payload
+    if payload.get("ok") is True:
+        if "data" in payload:
+            return payload.get("data")
+        if "text" in payload:
+            return payload.get("text")
+        if "content" in payload:
+            return {"content": payload.get("content")}
+    return payload
+
+
+def _mcp_payload_to_text(payload):
+    payload = _unwrap_keepalive_envelope(payload)
     if payload is None:
         return ""
     if isinstance(payload, str):
@@ -173,7 +189,7 @@ def _mcp_payload_to_text(payload):
 
 
 def _mcp_payload_to_dict(payload):
-    payload = _decode_json_maybe(payload)
+    payload = _unwrap_keepalive_envelope(payload)
     if isinstance(payload, dict):
         content = payload.get("content")
         if isinstance(content, list):
@@ -201,7 +217,7 @@ def _mcp_payload_to_dict(payload):
 
 
 def _mcp_payload_to_records(payload):
-    payload = _decode_json_maybe(payload)
+    payload = _unwrap_keepalive_envelope(payload)
     if isinstance(payload, dict) and isinstance(payload.get("content"), list):
         records = []
         for item in payload.get("content") or []:

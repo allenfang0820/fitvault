@@ -28,7 +28,14 @@ CACHE_FILE = CACHE_DIR / "all_activities.json"
 CACHE_META_FILE = CACHE_DIR / "all_activities.meta.json"
 DEFAULT_CACHE_TTL_DAYS = 7
 
-from garmin_auth import GarminStatsAuthError, build_client, default_tokenstore
+from garmin_auth import (
+    GarminStatsAuthError,
+    build_client,
+    client_connectapi,
+    client_display_name,
+    client_full_name,
+    default_tokenstore,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -63,7 +70,7 @@ def format_time(seconds):
 
 def safe_get(client, endpoint: str, debug_enabled: bool = False):
     try:
-        return client.garth.connectapi(endpoint)
+        return client_connectapi(client, endpoint)
     except Exception as exc:
         debug(f"API 失败 {endpoint}: {exc}", debug_enabled)
         return None
@@ -218,9 +225,9 @@ def build_profile(args: argparse.Namespace) -> List[Dict]:
         raise RuntimeError("缺少依赖 pytz。请先在 skill 目录运行: python -m pip install -r requirements.txt")
 
     tokenstore = args.tokenstore or args.auth_file or str(default_tokenstore(args.region))
-    client, garth_client, token_path = build_client(args.region, tokenstore)
+    client, token_path = build_client(args.region, tokenstore)
     debug(f"使用 Garmin token: {token_path}", args.debug)
-    display_name = garth_client.profile["displayName"]
+    display_name = client_display_name(client)
 
     today = date.today()
 
@@ -242,7 +249,7 @@ def build_profile(args: argparse.Namespace) -> List[Dict]:
         username = (
             personal_data.get("userInfo", {}).get("fullName")
             or personal_data.get("fullName")
-            or garth_client.profile.get("fullName")
+            or client_full_name(client)
         )
         age = personal_data.get("userInfo", {}).get("age") or personal_data.get("age")
         gender = personal_data.get("userInfo", {}).get("genderType") or personal_data.get("gender")

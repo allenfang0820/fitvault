@@ -4058,6 +4058,14 @@ def fetch_mcp_persona(platform: str, trigger_type: str = "manual") -> dict[str, 
             mark_profile_sync_failed(error)
         return _provider_failure_payload(platform, e, error)
     except Exception as e:
+        if platform == "coros":
+            normalized = coros_sync.normalize_coros_error(
+                e,
+                {"operation": "fetch_mcp_persona", "region": _configured_coros_region() or ""},
+            )
+            error = str(normalized.get("message") or "COROS 画像同步失败。")
+            mark_profile_sync_failed(error)
+            return _provider_failure_payload(platform, e, error)
         error = f"MCP 同步失败: {e}"
         mark_profile_sync_failed(error)
         return {"ok": False, "error": error}

@@ -78,10 +78,14 @@ COROS_ACTION_HINTS = {
     "coros_mcp_unavailable": "请稍后重试，或重新打开 COROS 授权页面完成登录。",
     "coros_fit_download_failed": "请确认网络可用、授权有效，并尝试缩小日期范围后重试。",
     "coros_fit_download_limit": "请缩小日期范围后分批同步。",
+    "coros_fit_daily_download_limit": "请明日再试，或缩小日期范围后分批同步。",
     "coros_sync_partial": "请查看失败列表并分批重试。",
     "coros_import_failed": "FIT 文件已下载，但导入活动库失败，请稍后重试或使用本地导入。",
     "coros_profile_sync_failed": "请回配置页检查 COROS 授权状态，然后重试画像同步。",
     "coros_json_parse_error": "COROS 返回格式异常，请更新 coros-stats skill 后重试。",
+    "coros_mcp_output_parse_failed": "COROS MCP 返回格式异常，请更新 coros-stats skill 后重试。",
+    "coros_mcp_unexpected_output": "COROS MCP 返回内容不符合预期，请稍后重试。",
+    "coros_mcp_tool_failed": "COROS MCP 工具调用失败，请稍后重试或重新连接账号。",
     "unknown": "COROS 同步出现未知异常，请稍后重试。",
 }
 
@@ -94,10 +98,14 @@ COROS_USER_MESSAGES = {
     "coros_mcp_unavailable": "COROS MCP 服务暂不可用。",
     "coros_fit_download_failed": "COROS FIT 下载失败。",
     "coros_fit_download_limit": "COROS 单次下载数量超过限制。",
+    "coros_fit_daily_download_limit": "COROS FIT 今日下载次数已达上限。",
     "coros_sync_partial": "COROS 部分活动同步失败。",
     "coros_import_failed": "COROS FIT 导入失败。",
     "coros_profile_sync_failed": "COROS 画像同步失败。",
     "coros_json_parse_error": "COROS 返回内容无法解析。",
+    "coros_mcp_output_parse_failed": "COROS MCP 返回内容无法解析。",
+    "coros_mcp_unexpected_output": "COROS MCP 返回内容异常。",
+    "coros_mcp_tool_failed": "COROS MCP 工具调用失败。",
     "unknown": "COROS 同步出现未知异常。",
 }
 
@@ -667,6 +675,11 @@ def _sanitize_coros_text(value: Any, *, max_chars: int | None = None) -> str:
     if not text:
         return ""
     text = re.sub(
+        r"(?i)(authorization\s*[:=]\s*bearer\s+)[A-Za-z0-9._~+/=-]+",
+        r"\1[redacted]",
+        text,
+    )
+    text = re.sub(
         r"(?i)(access_token|refresh_token|id_token|authorization|api[_-]?key|password|passwd|mfa_code|mfa|otp|cookie|secret)(\s*[:=]\s*)([^\s,;\"'}]+)",
         "[redacted]",
         text,
@@ -943,6 +956,176 @@ def _error_snippet(value: str) -> str:
     return text[:head] + "\n...\n" + text[-tail:]
 
 
+def _raw_output_summary(value: Any) -> str:
+    return _sanitize_coros_text(value, max_chars=ERROR_SNIPPET_CHARS)
+
+
+def _json_candidates_from_text(text: str) -> list[str]:
+    raw = str(text or "").strip()
+    candidates: list[str] = []
+    if not raw:
+        return candidates
+    candidates.append(raw)
+    for match in re.finditer(r"```(?:json)?\s*(.*?)```", raw, flags=re.I | re.S):
+        fenced = match.group(1).strip()
+        if fenced:
+            candidates.append(fenced)
+
+    decoder = json.JSONDecoder()
+    for idx, char in enumerate(raw):
+        if char not in "[{":
+            continue
+        try:
+            parsed, end = decoder.raw_decode(raw[idx:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, (dict, list)):
+            candidates.append(raw[idx: idx + end])
+    return candidates
+
+
+def _parse_json_from_mixed_stdout(stdout: str) -> Any:
+    last_error: json.JSONDecodeError | None = None
+    parsed_values: list[tuple[int, Any]] = []
+    for candidate in _json_candidates_from_text(stdout):
+        try:
+            parsed_values.append((len(candidate), json.loads(candidate)))
+        except json.JSONDecodeError as exc:
+            last_error = exc
+    if parsed_values:
+        return max(parsed_values, key=lambda item: item[0])[1]
+    if last_error is not None:
+        raise CorosJsonParseError(f"COROS JSON 解析失败: {last_error}") from last_error
+    raise CorosJsonParseError("COROS 脚本未输出 JSON")
+
+
+def normalize_mcp_tool_payload(payload: Any, *, tool_name: str = "") -> Any:
+    if not isinstance(payload, dict):
+        return payload
+
+    if payload.get("ok") is False:
+        detail = payload.get("error") or payload.get("message") or payload.get("raw_summary") or payload
+        raise CorosFitDownloadError(
+            f"COROS MCP 工具返回失败: {tool_name or payload.get('tool') or 'unknown'}; {json.dumps(sanitize_coros_value(detail), ensure_ascii=False)}",
+            code="coros_mcp_tool_failed",
+        )
+
+    if payload.get("ok") is True:
+        if "data" in payload:
+            return payload.get("data")
+        if "text" in payload:
+            return {"content": [{"type": "text", "text": str(payload.get("text") or "")}]}
+        if "content" in payload:
+            return {"content": payload.get("content")}
+
+    content = payload.get("content")
+    if isinstance(content, list):
+        chunks: list[str] = []
+        for item in content:
+            if isinstance(item, dict) and item.get("type") == "text" and isinstance(item.get("text"), str):
+                chunks.append(item["text"])
+        if chunks and len(chunks) == len(content) and len(chunks) > 1:
+            return {"content": [{"type": "text", "text": "\n".join(chunks)}]}
+    return payload
+
+
+def _download_error_text_candidates(value: Any) -> list[str]:
+    candidates: list[str] = []
+    if value is None:
+        return candidates
+    if isinstance(value, str):
+        text = value.strip()
+        if text:
+            candidates.append(text)
+            try:
+                parsed = _parse_json_from_mixed_stdout(text)
+            except CorosJsonParseError:
+                parsed = None
+            if parsed is not None and parsed is not value:
+                candidates.extend(_download_error_text_candidates(parsed))
+        return candidates
+    if isinstance(value, dict):
+        for key in ("error", "message", "raw_summary", "error_summary", "detail", "description", "reason"):
+            if value.get(key) not in (None, ""):
+                candidates.extend(_download_error_text_candidates(value.get(key)))
+        diagnostics = value.get("diagnostics")
+        if isinstance(diagnostics, dict):
+            candidates.extend(_download_error_text_candidates(diagnostics))
+        content = value.get("content")
+        if isinstance(content, list):
+            candidates.extend(_download_error_text_candidates(content))
+        if value.get("ok") is False:
+            candidates.append(json.dumps(sanitize_coros_value(value), ensure_ascii=False))
+        return candidates
+    if isinstance(value, list):
+        for item in value:
+            candidates.extend(_download_error_text_candidates(item))
+        return candidates
+    candidates.append(str(value))
+    return candidates
+
+
+def _looks_like_daily_download_limit(text: str) -> bool:
+    clean = str(text or "").lower()
+    if not clean:
+        return False
+    english_markers = (
+        "daily limit",
+        "download limit",
+        "quota",
+        "rate limit",
+        "too many requests",
+        "429",
+    )
+    chinese_marker_groups = (
+        ("单日", "上限"),
+        ("今日", "上限"),
+        ("次数", "上限"),
+        ("下载", "限额"),
+        ("频率", "限制"),
+    )
+    return any(marker in clean for marker in english_markers) or any(
+        all(marker in clean for marker in group) for group in chinese_marker_groups
+    )
+
+
+def extract_download_error_summary(download_summary: dict[str, Any] | None) -> dict[str, str]:
+    summary = download_summary if isinstance(download_summary, dict) else {}
+    errors = summary.get("errors")
+    items = errors if isinstance(errors, list) else []
+    candidates: list[str] = []
+    for item in items:
+        candidates.extend(_download_error_text_candidates(item))
+    if not candidates:
+        candidates.extend(_download_error_text_candidates(summary.get("error") or summary.get("message")))
+
+    cleaned: list[str] = []
+    for candidate in candidates:
+        text = _sanitize_coros_text(candidate, max_chars=ERROR_SNIPPET_CHARS).strip()
+        if text and text not in cleaned:
+            cleaned.append(text)
+
+    if not cleaned:
+        return {"provider_error_code": "coros_fit_download_failed", "provider_detail": ""}
+
+    limit_detail = next((text for text in cleaned if _looks_like_daily_download_limit(text)), "")
+    if limit_detail:
+        return {
+            "provider_error_code": "coros_fit_daily_download_limit",
+            "provider_detail": limit_detail,
+        }
+
+    detail = next(
+        (
+            text for text in cleaned
+            if "未返回 fit blob" not in text.lower() and "未返回可下载" not in text.lower()
+        ),
+        cleaned[0],
+    )
+    code = "coros_mcp_tool_failed" if "工具返回失败" in detail or "tool" in detail.lower() and "failed" in detail.lower() else "coros_fit_download_failed"
+    return {"provider_error_code": code, "provider_detail": detail}
+
+
 def _looks_like_auth_required(text: str) -> bool:
     clean = str(text or "").lower()
     if not clean:
@@ -975,7 +1158,7 @@ def _classify_coros_error(exc: Exception, context: dict[str, Any] | None = None)
     if isinstance(exc, CorosSkillNotFoundError):
         return "coros_skill_not_found"
     if isinstance(exc, CorosJsonParseError) or isinstance(exc, json.JSONDecodeError):
-        return "coros_json_parse_error"
+        return "coros_mcp_output_parse_failed" if "mcp" in context_text or "download" in context_text else "coros_json_parse_error"
     if isinstance(exc, CorosFitDownloadError):
         return str(getattr(exc, "code", "") or "coros_fit_download_failed")
     if isinstance(exc, (FileNotFoundError, OSError)):
@@ -985,14 +1168,18 @@ def _classify_coros_error(exc: Exception, context: dict[str, Any] | None = None)
         return "coros_auth_required"
     if "session not found" in text or "context pollution" in text or "mcp" in text and "unavailable" in text:
         return "coros_mcp_unavailable"
-    if "json" in text or "decode" in text:
-        return "coros_json_parse_error"
     if "keepalive" in text:
         return "coros_keepalive_invalid"
-    if "profile" in context_text or "画像" in text:
+    if "profile" in context_text or "persona" in context_text or "画像" in text:
         return "coros_profile_sync_failed"
     if "fit" in context_text or "download" in context_text:
         return "coros_fit_download_failed"
+    if "tool failed" in text or "工具返回失败" in text:
+        return "coros_mcp_tool_failed"
+    if "unexpected output" in text or "返回内容异常" in text:
+        return "coros_mcp_unexpected_output"
+    if "json" in text or "decode" in text or "parse" in text or "解析" in text:
+        return "coros_mcp_output_parse_failed" if "mcp" in context_text or "download" in context_text else "coros_json_parse_error"
     return "unknown"
 
 
@@ -1019,6 +1206,10 @@ def normalize_coros_error(exc: Exception, context: dict[str, Any] | None = None)
         "exit_code",
         "failed_tool_name",
         "operation",
+        "raw_stdout_summary",
+        "raw_stderr_summary",
+        "tool",
+        "coros_mcp_path",
     ):
         if key in context and context[key] not in (None, ""):
             diagnostics[key] = context[key]
@@ -1081,10 +1272,7 @@ def _parse_json_stdout(stdout: str) -> Any:
     text = str(stdout or "").strip()
     if not text:
         raise CorosJsonParseError("COROS 脚本未输出 JSON")
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise CorosJsonParseError(f"COROS JSON 解析失败: {exc}") from exc
+    return _parse_json_from_mixed_stdout(text)
 
 
 @contextmanager
@@ -1413,10 +1601,11 @@ def run_coros_mcp_tool(
             )
         raise CorosFitDownloadError(
             f"COROS MCP 工具调用失败 (exit {int(completed.returncode)}): {tool_name}; "
-            f"region={resolved_region}; node={node_path}; keepalive={keepalive_path}{suffix}"
+            f"region={resolved_region}; node={node_path}; keepalive={keepalive_path}; "
+            f"raw_stdout_summary={_raw_output_summary(stdout)}; raw_stderr_summary={_raw_output_summary(stderr)}{suffix}"
         )
     try:
-        return _parse_json_stdout(stdout)
+        return normalize_mcp_tool_payload(_parse_json_stdout(stdout), tool_name=tool_name)
     except CorosJsonParseError:
         text = stdout.strip()
         if not text:
@@ -1545,8 +1734,8 @@ def _extract_sport_records(payload: Any, limit: int = MAX_COROS_FIT_DOWNLOAD_LIM
     if text:
         pattern = re.compile(
             r"(?:^|\n)\s*(\d+)\.\s*(.*?)\s+[—-]\s+(\d{4}-\d{2}-\d{2}).*?"
-            r"LabelId:\s*([A-Za-z0-9_-]+).*?SportType:\s*(\d+)",
-            re.S,
+            r"LabelId\s*[:：]\s*([A-Za-z0-9_-]+).*?SportType\s*[:：]\s*(\d+)",
+            re.I | re.S,
         )
         for match in pattern.finditer(text):
             record = {
@@ -1558,6 +1747,23 @@ def _extract_sport_records(payload: Any, limit: int = MAX_COROS_FIT_DOWNLOAD_LIM
             }
             if not any(item["labelId"] == record["labelId"] and item["sportType"] == record["sportType"] for item in records):
                 records.append(record)
+
+        loose_pattern = re.compile(
+            r"(?P<label_key>label[_\s-]?id|labelId)\s*[:：]\s*(?P<label>[A-Za-z0-9_-]+)"
+            r"|(?P<sport_key>sport[_\s-]?type|sportType)\s*[:：]\s*(?P<sport>\d+)",
+            re.I,
+        )
+        pending: dict[str, Any] = {}
+        for match in loose_pattern.finditer(text):
+            if match.group("label"):
+                pending["labelId"] = match.group("label")
+            if match.group("sport"):
+                pending["sportType"] = int(match.group("sport"))
+            if pending.get("labelId") is not None and pending.get("sportType") is not None:
+                record = {"labelId": str(pending["labelId"]), "sportType": int(pending["sportType"])}
+                if not any(item["labelId"] == record["labelId"] and item["sportType"] == record["sportType"] for item in records):
+                    records.append(record)
+                pending = {}
 
     return records[: max(1, min(int(limit or MAX_COROS_FIT_DOWNLOAD_LIMIT), MAX_COROS_FIT_DOWNLOAD_LIMIT))]
 

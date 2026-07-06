@@ -58,6 +58,10 @@ class TestWindowsPackagedContract(unittest.TestCase):
         self.assertIn("_include_legacy_console_helper", spec)
         self.assertIn('name="FitVaultCLI"', spec.replace("'", '"'))
         self.assertIn('if platform.system().lower() == "windows" and _include_legacy_console_helper', spec)
+        self.assertIn("check_packaging_prerequisites(os.getcwd())", spec)
+        self.assertIn("write_dependency_manifest(os.getcwd())", spec)
+        self.assertIn("(MANIFEST_FILENAME, \".\")", spec)
+        self.assertNotIn('collect_submodules("garth")', spec)
 
     def test_b_windows_frozen_meipass_and_internal_skill_paths(self):
         meipass = self.base_dir / "Program Files" / "FitVault" / "_MEI12345"
@@ -176,7 +180,7 @@ class TestWindowsPackagedContract(unittest.TestCase):
             )
 
         command = run_mock.call_args.args[0]
-        self.assertEqual(command[:3], [str(codex), "exec", "--skip-git-repo-check"])
+        self.assertEqual(command[:6], ["cmd.exe", "/d", "/c", str(codex), "exec", "--skip-git-repo-check"])
         self.assertFalse(run_mock.call_args.kwargs["shell"])
         self.assertNotIn("openclaw", " ".join(command).lower())
         self.assertIsNone(run_mock.call_args.kwargs.get("env"))

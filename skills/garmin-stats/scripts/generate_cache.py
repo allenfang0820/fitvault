@@ -25,14 +25,15 @@ CACHE_DIR = Path(
 CACHE_FILE = CACHE_DIR / "all_activities.json"
 CACHE_META_FILE = CACHE_DIR / "all_activities.meta.json"
 
-from garmin_auth import GarminStatsAuthError, build_client, default_tokenstore
+from garmin_auth import GarminStatsAuthError, build_client, client_connectapi, client_display_name, default_tokenstore
 
 
 def fetch_all_activities(client, limit: int, verbose: bool = True) -> List[Dict]:
     activities = []
     start = 0
     while True:
-        batch = client.garth.connectapi(
+        batch = client_connectapi(
+            client,
             f"/activitylist-service/activities/search/activities"
             f"?start={start}&limit={limit}"
         )
@@ -72,10 +73,10 @@ def main() -> None:
     print("正在连接佳明账户...")
     tokenstore = args.tokenstore or args.auth_file or str(default_tokenstore(args.region))
     try:
-        client, garth_client, token_path = build_client(args.region, tokenstore)
+        client, token_path = build_client(args.region, tokenstore)
     except GarminStatsAuthError as exc:
         raise SystemExit(str(exc))
-    display_name = garth_client.profile.get("displayName")
+    display_name = client_display_name(client)
     print(f"使用 token: {token_path}")
 
     print("正在获取活动列表（活动多时可能需要几分钟）...")

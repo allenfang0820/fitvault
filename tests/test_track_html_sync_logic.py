@@ -120,6 +120,24 @@ class TestTrackHtmlSyncLogic(unittest.TestCase):
         self.assertNotIn("OpenClaw", body)
         self.assertIn("导入本地 FIT 文件", body)
 
+    def test_provider_remote_sync_error_surfaces_download_error_detail(self):
+        error_body = extract_function_body(self.source, "function formatProviderRemoteSyncError(res, providerLabel)")
+        self.assertIn("data.provider_detail", error_body)
+        self.assertIn("firstProviderDownloadErrorDetail(data.download)", error_body)
+        self.assertIn("data.action_hint", error_body)
+        self.assertIn("data.provider_error_code", error_body)
+        self.assertIn("formatProviderRemoteSyncSummary(data, providerLabel)", error_body)
+
+        detail_body = extract_function_body(self.source, "function firstProviderDownloadErrorDetail(download)")
+        self.assertIn("download.errors", detail_body)
+        self.assertIn("item.error", detail_body)
+        self.assertIn("item.raw_summary", detail_body)
+
+        sanitize_body = extract_function_body(self.source, "function sanitizeProviderErrorDetail(value)")
+        self.assertIn("bearer", sanitize_body.lower())
+        self.assertIn("access_token", sanitize_body)
+        self.assertIn("300", sanitize_body)
+
     def test_garmin_remote_sync_checks_auth_and_routes_to_settings(self):
         auth_body = extract_function_body(self.source, "async function ensureGarminAuthorizedForRemoteSync()")
         self.assertIn("check_garmin_auth_status", auth_body)

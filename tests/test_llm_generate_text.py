@@ -86,8 +86,8 @@ class TestLLMGenerateText(unittest.TestCase):
             )
 
         cmd = run_mock.call_args.args[0]
-        self.assertEqual(cmd[0], r"C:\Users\Allen\AppData\Roaming\npm\codex.cmd")
-        self.assertEqual(cmd[1:3], ["exec", "--skip-git-repo-check"])
+        self.assertEqual(cmd[:4], ["cmd.exe", "/d", "/c", r"C:\Users\Allen\AppData\Roaming\npm\codex.cmd"])
+        self.assertEqual(cmd[4:6], ["exec", "--skip-git-repo-check"])
         self.assertFalse(run_mock.call_args.kwargs["shell"])
 
     def test_codex_cli_windows_empty_path_falls_back_to_codex_cmd_on_path(self):
@@ -105,7 +105,7 @@ class TestLLMGenerateText(unittest.TestCase):
                 session_id="sid-1",
             )
 
-        self.assertEqual(run_mock.call_args.args[0][0], r"C:\Program Files\nodejs\codex.cmd")
+        self.assertEqual(run_mock.call_args.args[0][:4], ["cmd.exe", "/d", "/c", r"C:\Program Files\nodejs\codex.cmd"])
 
     def test_codex_cli_windows_empty_path_checks_appdata_npm(self):
         completed = subprocess.CompletedProcess(args=["codex"], returncode=0, stdout="ok", stderr="")
@@ -127,8 +127,34 @@ class TestLLMGenerateText(unittest.TestCase):
             )
 
         cmd = run_mock.call_args.args[0]
-        self.assertEqual(cmd[0], codex_cmd)
-        self.assertEqual(cmd[1], "exec")
+        self.assertEqual(cmd[:4], ["cmd.exe", "/d", "/c", codex_cmd])
+        self.assertEqual(cmd[4], "exec")
+
+    def test_codex_cli_windows_auto_discovery_skips_windowsapps_alias(self):
+        completed = subprocess.CompletedProcess(args=["codex"], returncode=0, stdout="ok", stderr="")
+        appdata = r"C:\Users\Allen\AppData\Roaming"
+        codex_cmd = str(Path(appdata) / "npm" / "codex.cmd")
+
+        def fake_which(name):
+            if name in {"codex.exe", "codex"}:
+                return rf"C:\Users\Allen\AppData\Local\Microsoft\WindowsApps\{name}"
+            return None
+
+        def fake_is_file(path):
+            return str(path) == codex_cmd
+
+        with mock.patch.object(llm_backend.sys, "platform", "win32"), \
+             mock.patch.object(llm_backend.shutil, "which", side_effect=fake_which), \
+             mock.patch.dict(llm_backend.os.environ, {"APPDATA": appdata}, clear=False), \
+             mock.patch.object(Path, "is_file", fake_is_file), \
+             mock.patch.object(llm_backend.subprocess, "run", return_value=completed) as run_mock:
+            llm_backend.generate_text(
+                config={"transport": "cli", "cli_type": "codex"},
+                messages=[{"role": "user", "content": "hello"}],
+                session_id="sid-1",
+            )
+
+        self.assertEqual(run_mock.call_args.args[0][:4], ["cmd.exe", "/d", "/c", codex_cmd])
 
     def test_codex_cli_windows_configured_path_with_spaces_is_argv0(self):
         completed = subprocess.CompletedProcess(args=["codex"], returncode=0, stdout="ok", stderr="")
@@ -143,9 +169,69 @@ class TestLLMGenerateText(unittest.TestCase):
             )
 
         cmd = run_mock.call_args.args[0]
+        self.assertEqual(cmd[:4], ["cmd.exe", "/d", "/c", codex_path])
+        self.assertEqual(cmd[4:6], ["exec", "--skip-git-repo-check"])
+        which_mock.assert_not_called()
+
+    def test_codex_cli_windows_configured_exe_path_with_spaces_runs_directly(self):
+        completed = subprocess.CompletedProcess(args=["codex"], returncode=0, stdout="ok", stderr="")
+        codex_path = r"C:\Program Files\Codex CLI\codex.exe"
+        with mock.patch.object(llm_backend.sys, "platform", "win32"), \
+             mock.patch.object(llm_backend.subprocess, "run", return_value=completed) as run_mock:
+            llm_backend.generate_text(
+                config={"transport": "cli", "cli_type": "codex", "cli_path": codex_path},
+                messages=[{"role": "user", "content": "hello"}],
+                session_id="sid-1",
+            )
+
+        cmd = run_mock.call_args.args[0]
         self.assertEqual(cmd[0], codex_path)
         self.assertEqual(cmd[1:3], ["exec", "--skip-git-repo-check"])
-        which_mock.assert_not_called()
+
+    def test_codex_cli_windows_configured_windowsapps_path_is_stable_error(self):
+        codex_path = r"C:\Users\Allen\AppData\Local\Microsoft\WindowsApps\codex.exe"
+        with mock.patch.object(llm_backend.sys, "platform", "win32"):
+            with self.assertRaises(llm_backend.LLMCLIError) as ctx:
+                llm_backend.generate_text(
+                    config={"transport": "cli", "cli_type": "codex", "cli_path": codex_path},
+                    messages=[{"role": "user", "content": "hello"}],
+                    session_id="sid-1",
+                )
+
+        self.assertEqual(ctx.exception.code, "codex_cli_windowsapps_alias")
+        self.assertEqual(ctx.exception.diagnostics["executable"], codex_path)
+        self.assertEqual(ctx.exception.diagnostics["resolution_strategy"], "configured_path")
+
+    def test_codex_cli_windows_permission_error_is_stable_error(self):
+        codex_path = r"C:\Program Files\Codex CLI\codex.exe"
+        permission = PermissionError(5, "Access is denied", codex_path)
+        permission.winerror = 5
+
+        with mock.patch.object(llm_backend.sys, "platform", "win32"), \
+             mock.patch.object(llm_backend.subprocess, "run", side_effect=permission):
+            with self.assertRaises(llm_backend.LLMCLIError) as ctx:
+                llm_backend.generate_text(
+                    config={"transport": "cli", "cli_type": "codex", "cli_path": codex_path},
+                    messages=[{"role": "user", "content": "hello"}],
+                    session_id="sid-1",
+                )
+
+        self.assertEqual(ctx.exception.code, "codex_cli_permission_denied")
+        self.assertEqual(ctx.exception.diagnostics["executable"], codex_path)
+
+    def test_codex_cli_windows_not_found_is_stable_error(self):
+        with mock.patch.object(llm_backend.sys, "platform", "win32"), \
+             mock.patch.object(llm_backend.shutil, "which", return_value=None), \
+             mock.patch.object(llm_backend.subprocess, "run", side_effect=FileNotFoundError("missing")):
+            with self.assertRaises(llm_backend.LLMCLIError) as ctx:
+                llm_backend.generate_text(
+                    config={"transport": "cli", "cli_type": "codex", "cli_path": ""},
+                    messages=[{"role": "user", "content": "hello"}],
+                    session_id="sid-1",
+                )
+
+        self.assertEqual(ctx.exception.code, "codex_cli_not_found")
+        self.assertEqual(ctx.exception.diagnostics["executable"], "codex")
 
     def test_codex_cli_darwin_empty_path_does_not_apply_windows_discovery(self):
         completed = subprocess.CompletedProcess(args=["codex"], returncode=0, stdout="ok", stderr="")
