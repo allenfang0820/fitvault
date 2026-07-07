@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product Id="*" Name="脉图" Language="2052" Version="1.2.0" Manufacturer="FitVault" UpgradeCode="8F9F13C8-88E3-42E7-A669-3A4C2E6D4F43">
+    <Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine" Platform="x64" />
+    <MajorUpgrade DowngradeErrorMessage="已安装更新版本的脉图。" />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Icon Id="MaituIcon.ico" SourceFile="installer\maitu.ico" />
+    <Property Id="ARPPRODUCTICON" Value="MaituIcon.ico" />
+
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="INSTALLFOLDER" Name="脉图">
+          <Component Id="ApplicationShortcutStartMenu" Guid="{6F87CFF6-AE24-4AF4-85D6-FA2872528C6F}">
+            <Shortcut
+              Id="StartMenuShortcut"
+              Directory="ProgramMenuDir"
+              Name="脉图"
+              Description="启动脉图"
+              Target="[INSTALLFOLDER]FitVault.exe"
+              WorkingDirectory="INSTALLFOLDER"
+              Icon="MaituIcon.ico" />
+            <RemoveFolder Id="RemoveProgramMenuDir" Directory="ProgramMenuDir" On="uninstall" />
+            <RegistryValue Root="HKCU" Key="Software\FitVault\脉图" Name="StartMenuShortcut" Type="integer" Value="1" KeyPath="yes" />
+          </Component>
+          <Component Id="ApplicationShortcutDesktop" Guid="{C5C22E39-7E75-4C24-AAD9-23D64BC52501}">
+            <Shortcut
+              Id="DesktopShortcut"
+              Directory="DesktopFolder"
+              Name="脉图"
+              Description="启动脉图"
+              Target="[INSTALLFOLDER]FitVault.exe"
+              WorkingDirectory="INSTALLFOLDER"
+              Icon="MaituIcon.ico" />
+            <RegistryValue Root="HKCU" Key="Software\FitVault\脉图" Name="DesktopShortcut" Type="integer" Value="1" KeyPath="yes" />
+          </Component>
+        </Directory>
+      </Directory>
+      <Directory Id="ProgramMenuFolder">
+        <Directory Id="ProgramMenuDir" Name="脉图" />
+      </Directory>
+      <Directory Id="DesktopFolder" />
+    </Directory>
+
+    <Feature Id="MainFeature" Title="脉图" Level="1">
+      <ComponentGroupRef Id="ProductComponents" />
+      <ComponentRef Id="ApplicationShortcutStartMenu" />
+      <ComponentRef Id="ApplicationShortcutDesktop" />
+    </Feature>
+  </Product>
+
+  <Fragment>
+    <ComponentGroup Id="ProductComponents">
+      <ComponentGroupRef Id="PublishedFiles" />
+    </ComponentGroup>
+  </Fragment>
+</Wix>

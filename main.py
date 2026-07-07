@@ -80,6 +80,7 @@ APP_CONFIG_AUDIT_LOG = os.path.expanduser("~/.trackapp_config.audit.log")
 _PROCESS_START_PERF = time.perf_counter()
 _STARTUP_TIMELINE_LOCK = threading.Lock()
 _STARTUP_TIMELINE: list[dict[str, Any]] = []
+_WINDOWS_STARTUP_LOG_LOCK = threading.Lock()
 SPORT_HUB_TYPE_ORDER = {
     "running": 1,
     "trail_running": 2,
@@ -794,11 +795,42 @@ def _record_startup_event(name: str, **fields: Any) -> None:
         _STARTUP_TIMELINE.append(event)
         if len(_STARTUP_TIMELINE) > 200:
             del _STARTUP_TIMELINE[:-200]
+    _write_windows_startup_log(name, **fields)
 
 
 def _startup_timeline_snapshot() -> list[dict[str, Any]]:
     with _STARTUP_TIMELINE_LOCK:
         return [dict(item) for item in _STARTUP_TIMELINE]
+
+
+def _windows_packaged_startup_log_enabled() -> bool:
+    return os.name == "nt" and bool(getattr(sys, "frozen", False))
+
+
+def _windows_startup_log_path() -> Path:
+    user_root = os.environ.get("USERPROFILE") or str(Path.home())
+    return Path(user_root).expanduser() / ".fitvault" / "logs" / "startup.log"
+
+
+def _write_windows_startup_log(name: str, **fields: Any) -> None:
+    if not _windows_packaged_startup_log_enabled():
+        return
+    payload = {
+        "name": str(name),
+        "elapsed_ms": _startup_elapsed_ms(),
+        "ts": datetime.now(timezone.utc).isoformat(),
+    }
+    if fields:
+        payload.update(fields)
+    try:
+        path = _windows_startup_log_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        line = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+        with _WINDOWS_STARTUP_LOG_LOCK:
+            with path.open("a", encoding="utf-8") as fh:
+                fh.write(line + "\n")
+    except Exception:
+        logger.debug("写入 Windows 启动日志失败", exc_info=True)
 
 
 def _api_success(data: dict[str, Any] | None = None, msg: str = "ok", **legacy_fields: Any) -> dict[str, Any]:
@@ -13733,9 +13765,12 @@ def main() -> None:
         force_rebuild_all_records()
     else:
         logger.info("Schema 版本一致 (v=%s)，跳过数据清洗", local_version)
-    url = str(html_file().resolve())
+    html_path = html_file().resolve()
+    url = str(html_path)
+    _record_startup_event("html_file_resolved", path=url)
     api = Api()
     _record_startup_event("api_created")
+    hidden_on_startup = sys.platform == "darwin"
     window = webview.create_window(
         f"脉图 - FitVault {APP_VERSION}",
         url=url,
@@ -13743,14 +13778,17 @@ def main() -> None:
         width=1280,
         height=800,
         min_size=(800, 600),
-        hidden=True,
+        hidden=hidden_on_startup,
         frameless=(sys.platform == "darwin"),
         easy_drag=False,
         draggable=True,
         background_color='#061626',  # 匹配启动图主背景色，降低原生窗口预绘制闪烁
     )
-    _record_startup_event("window_created")
+    _record_startup_event("window_created", hidden=hidden_on_startup)
     api.bind_window(window)
+    if not hidden_on_startup:
+        api._window_shown = True
+        _record_startup_event("window_show", mode="visible_on_create")
     try:
         window.events.loaded += api.on_loaded
     except Exception as exc:
@@ -13851,9 +13889,15 @@ def run_garmin_script_cli(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] == "--garmin-login":
-        raise SystemExit(run_garmin_login_cli(sys.argv[1:]))
-    if len(sys.argv) > 1 and sys.argv[1] == "--garmin-script":
-        raise SystemExit(run_garmin_script_cli(sys.argv[2:]))
-    init_application_config()
-    main()
+    try:
+        if len(sys.argv) > 1 and sys.argv[1] == "--garmin-login":
+            raise SystemExit(run_garmin_login_cli(sys.argv[1:]))
+        if len(sys.argv) > 1 and sys.argv[1] == "--garmin-script":
+            raise SystemExit(run_garmin_script_cli(sys.argv[2:]))
+        init_application_config()
+        main()
+    except SystemExit:
+        raise
+    except Exception as exc:
+        _record_startup_event("startup_exception", error=str(exc), traceback=traceback.format_exc())
+        raise

@@ -86,6 +86,7 @@ _include_legacy_console_helper = (
     os.environ.get("FITVAULT_INCLUDE_LEGACY_CONSOLE_HELPER", "").strip().lower()
     in {"1", "true", "yes", "on"}
 )
+_windows_icon = "installer/maitu.ico" if platform.system().lower() == "windows" else None
 
 a = Analysis(
     ['main.py'],
@@ -125,6 +126,7 @@ gui_exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=_windows_icon,
 )
 cli_exe = None
 if platform.system().lower() == "windows" and _include_legacy_console_helper:
@@ -144,6 +146,7 @@ if platform.system().lower() == "windows" and _include_legacy_console_helper:
         target_arch=None,
         codesign_identity=None,
         entitlements_file=None,
+        icon=_windows_icon,
     )
 _collect_items = [gui_exe, a.binaries, a.datas]
 if cli_exe is not None:

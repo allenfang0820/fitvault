@@ -11,6 +11,8 @@ import llm_backend
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SPEC_PATH = PROJECT_ROOT / "HikingTrackAnalyzer.spec"
+WIX_PATH = PROJECT_ROOT / "installer" / "FitVault.wxs"
+WINDOWS_ICON_PATH = PROJECT_ROOT / "installer" / "maitu.ico"
 
 
 class TestWindowsPackagedContract(unittest.TestCase):
@@ -61,7 +63,23 @@ class TestWindowsPackagedContract(unittest.TestCase):
         self.assertIn("check_packaging_prerequisites(os.getcwd())", spec)
         self.assertIn("write_dependency_manifest(os.getcwd())", spec)
         self.assertIn("(MANIFEST_FILENAME, \".\")", spec)
+        self.assertIn('_windows_icon = "installer/maitu.ico" if platform.system().lower() == "windows" else None', spec)
+        self.assertIn("icon=_windows_icon", spec)
         self.assertNotIn('collect_submodules("garth")', spec)
+
+    def test_a_windows_installer_has_desktop_and_start_menu_shortcuts(self):
+        wix = WIX_PATH.read_text(encoding="utf-8")
+
+        self.assertTrue(WINDOWS_ICON_PATH.is_file())
+        self.assertIn('<?xml version="1.0" encoding="UTF-8"?>', wix)
+        self.assertIn('Name="脉图"', wix)
+        self.assertIn('Icon Id="MaituIcon.ico"', wix)
+        self.assertIn('Property Id="ARPPRODUCTICON" Value="MaituIcon.ico"', wix)
+        self.assertIn('Directory="ProgramMenuDir"', wix)
+        self.assertIn('Directory="DesktopFolder"', wix)
+        self.assertIn('Target="[INSTALLFOLDER]FitVault.exe"', wix)
+        self.assertIn('ComponentRef Id="ApplicationShortcutStartMenu"', wix)
+        self.assertIn('ComponentRef Id="ApplicationShortcutDesktop"', wix)
 
     def test_b_windows_frozen_meipass_and_internal_skill_paths(self):
         meipass = self.base_dir / "Program Files" / "FitVault" / "_MEI12345"
