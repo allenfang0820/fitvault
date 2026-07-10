@@ -309,6 +309,8 @@ class TestV9_3_4TitleCleaning(unittest.TestCase):
         self.assertIn("$", body, "V9.3.4 FAIL: _cleanDisplayTitle 缺尾部锚点")
         # 必须有 _ 数字 处理(FIT 文件名)
         self.assertIn("_", body, "V9.3.4 FAIL: _cleanDisplayTitle 缺 _ 分隔符处理")
+        self.assertIn(r"(?:[-_]\d+)*", body,
+                      "V9.3.4 FAIL: _cleanDisplayTitle 未覆盖 -1-1 文件冲突后缀")
 
     def test_resolve_title_uses_cleaner(self):  # 15
         """V9.3.4:_resolveDisplayTitle 必须经过 _cleanDisplayTitle 处理"""

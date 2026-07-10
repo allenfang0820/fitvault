@@ -1,14 +1,33 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
+import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-FIT_PARSE_LOG_PATH = Path(__file__).resolve().with_name("fit_parse.log")
 SEMICIRCLE_SCALE = 180.0 / (1 << 31)
 _FITPARSE_DEPS: tuple[Any, type[Exception]] | None = None
+
+
+def fitvault_log_dir() -> Path:
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    if sys.platform.startswith("win") and local_app_data:
+        return Path(local_app_data).expanduser() / "FitVault" / "logs"
+    return Path.home() / ".fitvault" / "logs"
+
+
+def fitvault_log_path(filename: str) -> Path:
+    return fitvault_log_dir() / filename
+
+
+def fit_parse_log_path() -> Path:
+    return fitvault_log_path("fit_parse.log")
+
+
+FIT_PARSE_LOG_PATH = fit_parse_log_path()
 
 SPORT_TYPE_ALIASES = {
     "run": "running",
@@ -211,6 +230,7 @@ class FITCoreEngine:
                 "title_source": title_source,
                 "sport": FITCoreEngine._token(sport_raw, "unknown"),
                 "sub_sport": FITCoreEngine._token(sub_sport_raw, "unknown"),
+                "sport_event": session_info.get("sport_event"),
                 "activity_type": activity_type,
                 "start_time": start_time,
                 "start_time_utc": start_time_utc,
@@ -250,11 +270,17 @@ class FITCoreEngine:
         logger = logging.getLogger("fit_engine.core")
         if logger.handlers:
             return logger
-        handler = logging.FileHandler(FIT_PARSE_LOG_PATH, encoding="utf-8")
-        handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
-        logger.addHandler(handler)
         logger.setLevel(logging.INFO)
         logger.propagate = False
+        try:
+            log_path = fit_parse_log_path()
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            handler = logging.FileHandler(log_path, encoding="utf-8")
+        except Exception:
+            logger.addHandler(logging.NullHandler())
+            return logger
+        handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
+        logger.addHandler(handler)
         return logger
 
     @staticmethod
@@ -341,6 +367,7 @@ class FITCoreEngine:
             info = {
                 "sport": msg.get_value("sport"),
                 "sub_sport": msg.get_value("sub_sport"),
+                "sport_event": msg.get_value("sport_event"),
                 "start_time": msg.get_value("start_time") or msg.get_value("timestamp"),
                 "avg_heart_rate": msg.get_value("avg_heart_rate"),
                 "max_heart_rate": msg.get_value("max_heart_rate"),

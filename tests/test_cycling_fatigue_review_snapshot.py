@@ -96,6 +96,48 @@ class TestCyclingFatigueReviewSnapshot(unittest.TestCase):
         self.assertEqual(summary["power_data_quality"], "invalid_values")
         self.assertEqual(summary["cadence_data_quality"], "invalid_values")
 
+    def test_summary_treats_zero_power_as_coasting_not_invalid(self):
+        import main
+
+        positive_count = 1437
+        zero_count = 404
+        total = positive_count + zero_count
+        curves = {
+            "distance": [i / 100 for i in range(total)],
+            "power": [0] * zero_count + [120 + (i % 80) for i in range(positive_count)],
+            "cadence": [0] * 200 + [75 + (i % 10) for i in range(total - 200)],
+        }
+        row = {
+            "avg_power": 104,
+            "max_power": 277,
+            "normalized_power": 131,
+            "duration_sec": 1849,
+        }
+
+        summary = main._build_fatigue_review_summary(row, {}, curves)
+
+        self.assertTrue(summary["power_available"])
+        self.assertEqual(summary["power_data_quality"], "available")
+        self.assertEqual(summary["power_points_count"], positive_count)
+        self.assertEqual(summary["power_zero_points_count"], zero_count)
+        self.assertEqual(summary["power_invalid_points_count"], 0)
+        self.assertAlmostEqual(summary["zero_power_ratio"], zero_count / total, places=4)
+
+    def test_summary_still_marks_dropout_or_abnormal_power_invalid(self):
+        import main
+
+        curves = {
+            "distance": [i for i in range(100)],
+            "power": ([None] * 12) + ([3000] * 12) + [180] * 76,
+            "cadence": [82] * 100,
+        }
+        summary = main._build_fatigue_review_summary({}, {}, curves)
+
+        self.assertFalse(summary["power_available"])
+        self.assertEqual(summary["power_points_count"], 76)
+        self.assertEqual(summary["power_invalid_points_count"], 24)
+        self.assertEqual(summary["power_data_quality"], "invalid_values")
+
     def test_summary_marks_length_mismatch(self):
         import main
 

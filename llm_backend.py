@@ -931,9 +931,41 @@ def _openclaw_config_root_from_executable(executable: str) -> Path | None:
 
 def _openclaw_node_candidates(executable: str = "") -> list[Path]:
     config_root = _openclaw_config_root_from_executable(executable)
+    direct_candidates: list[Path] = []
+    bundled_node_dir = str(os.environ.get("MAITU_BUNDLED_NODE_DIR") or "").strip()
+    if bundled_node_dir:
+        bundled_root = Path(bundled_node_dir).expanduser()
+        direct_candidates.extend([
+            bundled_root / "bin" / "node",
+            bundled_root / "bin" / "node.exe",
+            bundled_root / "node",
+            bundled_root / "node.exe",
+        ])
+
+    exe_dir = Path(sys.executable).resolve().parent
+    packaged_roots = [
+        exe_dir.parent / "Resources",
+        exe_dir,
+        exe_dir / "Resources",
+        exe_dir / "_internal",
+        exe_dir / "_internal" / "Resources",
+        Path(__file__).resolve().parent,
+    ]
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        meipass = Path(sys._MEIPASS)
+        packaged_roots = [
+            meipass.parent / "Resources",
+            meipass,
+            meipass / "Resources",
+            *packaged_roots,
+        ]
+
     roots = [
         Path("/Applications/QClaw.app/Contents/Resources"),
+        Path.home() / "Applications/QClaw.app/Contents/Resources",
         Path("/Applications/Codex.app/Contents/Resources"),
+        Path.home() / "Applications/Codex.app/Contents/Resources",
+        *packaged_roots,
         Path.home() / "AppData/Local/Programs/QClaw/resources",
         Path("C:/Program Files/QClaw/resources"),
         Path("C:/Program Files (x86)/QClaw/resources"),
@@ -942,7 +974,7 @@ def _openclaw_node_candidates(executable: str = "") -> list[Path]:
     if config_root is not None:
         roots.insert(0, config_root.parent.parent if config_root.parent.name.lower() == "openclaw" else config_root.parent)
 
-    candidates: list[Path] = []
+    candidates = direct_candidates
     for root in roots:
         candidates.extend([
             root / "node" / "node.exe",
@@ -952,7 +984,23 @@ def _openclaw_node_candidates(executable: str = "") -> list[Path]:
             root / "cua_node" / "bin" / "node",
             root / "cua_node" / "node.exe",
         ])
-    return candidates
+
+    path_node = shutil.which("node")
+    if path_node:
+        candidates.append(Path(path_node))
+    candidates.extend([
+        Path("/opt/homebrew/bin/node"),
+        Path("/usr/local/bin/node"),
+    ])
+
+    unique: list[Path] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        key = os.path.normcase(str(candidate))
+        if key not in seen:
+            seen.add(key)
+            unique.append(candidate)
+    return unique
 
 
 def _openclaw_mjs_candidates(executable: str = "") -> list[Path]:

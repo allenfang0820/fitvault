@@ -12,13 +12,18 @@ from __future__ import annotations
 
 import ast
 import os
+import sqlite3
 import sys
+import tempfile
 import unittest
+from pathlib import Path
 
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
+import main
+import profile_backend
 from metrics_resolver import MetricsResolver
 
 
@@ -340,6 +345,53 @@ class TestMainPyPassthrough(unittest.TestCase):
             # conn.execute SELECT 必须保留
             self.assertIn("conn.execute", func_src,
                         "SQL 查询必须保留在 main.py")
+
+    def test_build_ai_snapshot_reads_profile_backend_db_path(self):
+        """_build_ai_snapshot 应读取 profile_backend.DB_PATH 指向的 SQLite。"""
+        original_db_path = profile_backend.DB_PATH
+        with tempfile.TemporaryDirectory() as tmpdir:
+            try:
+                profile_backend.DB_PATH = Path(tmpdir) / "user_profile.db"
+                conn = sqlite3.connect(str(profile_backend.DB_PATH))
+                try:
+                    profile_backend._init_schema(conn)
+                    cur = conn.execute(
+                        """
+                        INSERT INTO activities (
+                            sport_type, sub_sport_type, dist_km, duration_sec,
+                            avg_hr, max_hr, gain_m, max_alt_m, avg_pace,
+                            calories, start_time, region
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            "running", "generic", 10.0, 3600,
+                            150, 172, 80.0, 120.0, 360.0,
+                            600, "2026-07-07T08:00:00", "成都",
+                        ),
+                    )
+                    activity_id = int(cur.lastrowid)
+                    conn.commit()
+                finally:
+                    conn.close()
+
+                snapshot = main._build_ai_snapshot(activity_id)
+
+                self.assertIsNotNone(snapshot)
+                self.assertEqual(snapshot["sport_type"], "running")
+                self.assertEqual(snapshot["distance_km"], 10.0)
+                self.assertEqual(snapshot["duration_sec"], 3600)
+                self.assertEqual(snapshot["source"], "DB Canonical / Resolver Truth")
+                MetricsResolver._validate_ai_snapshot(snapshot)
+                for forbidden in (
+                    "points", "points_json", "track_json", "raw_records",
+                    "fit_records", "file_path", "shadow_diff", "shadow_diff_json",
+                ):
+                    self.assertNotIn(forbidden, snapshot)
+
+                self.assertIsNone(main._build_ai_snapshot(activity_id + 999999))
+            finally:
+                profile_backend.DB_PATH = original_db_path
 
 
 if __name__ == "__main__":

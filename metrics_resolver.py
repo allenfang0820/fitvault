@@ -1342,6 +1342,10 @@ class MetricsResolver:
 
         if garmin_product:
             product_code = str(garmin_product).strip()
+            if product_code.replace(".", "", 1).isdigit():
+                pid_int = int(float(product_code))
+                display = _DEVICE_DISPLAY_OVERLAY.get(pid_int)
+                product_code = display or _garmin_device_name_dict().get(pid_int, f"Garmin Product {pid_int}")
         elif product is not None:
             pid_int = int(float(product)) if product else 0
             display = _DEVICE_DISPLAY_OVERLAY.get(pid_int)

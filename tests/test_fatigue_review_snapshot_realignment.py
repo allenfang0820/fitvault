@@ -318,6 +318,66 @@ class TestFatigueReviewP2SnapshotRealignment(unittest.TestCase):
 
         self.assertEqual(cadence_mock.call_args.kwargs["cadence_stream"], [84, 85, 86, 87])
 
+    def test_cadence_stability_falls_back_to_track_json_when_db_curve_missing(self):
+        api = self._api()
+        row = self._row(point_count=80)
+        points = json.loads(row["track_json"])
+        for idx, point in enumerate(points):
+            point["distance"] = float(idx * 100)
+            point["cadence"] = 88 + (idx % 4)
+        row["track_json"] = json.dumps(points)
+        row["points_json"] = json.dumps(points)
+        row["cadence_curve"] = ""
+        resolved = {
+            "distance_curve": [float(i * 100) for i in range(80)],
+            "time_curve": [i * 20 for i in range(80)],
+            "altitude_curve": [100 + i for i in range(80)],
+            "gap_curve": [3.0] * 80,
+            "grade_curve": [0.0] * 80,
+            "efficiency_curve": [10.0] * 80,
+            "insight_events": [],
+            "fatigue_zones": [],
+            "context_tags": {},
+        }
+
+        with patch("main._build_resolved_payload_v81", return_value=resolved), \
+             patch("main.MetricsResolver._compute_cadence_stability", return_value={"score": 95, "level": "excellent"}) as cadence_mock:
+            api._build_fatigue_review_snapshot(row)
+
+        cadence_stream = cadence_mock.call_args.kwargs["cadence_stream"]
+        self.assertGreaterEqual(len(cadence_stream), 20)
+        self.assertEqual(cadence_stream[:4], [91, 88, 89, 90])
+
+    def test_cadence_stability_prefers_db_curve_over_track_json_fallback(self):
+        api = self._api()
+        row = self._row(point_count=80)
+        points = json.loads(row["track_json"])
+        for idx, point in enumerate(points):
+            point["distance"] = float(idx * 100)
+            point["cadence"] = 88 + (idx % 4)
+        row["track_json"] = json.dumps(points)
+        row["points_json"] = json.dumps(points)
+        row["cadence_curve"] = json.dumps([170 + (idx % 3) for idx in range(80)])
+        resolved = {
+            "distance_curve": [float(i * 100) for i in range(80)],
+            "time_curve": [i * 20 for i in range(80)],
+            "altitude_curve": [100 + i for i in range(80)],
+            "gap_curve": [3.0] * 80,
+            "grade_curve": [0.0] * 80,
+            "efficiency_curve": [10.0] * 80,
+            "insight_events": [],
+            "fatigue_zones": [],
+            "context_tags": {},
+        }
+
+        with patch("main._build_resolved_payload_v81", return_value=resolved), \
+             patch("main.MetricsResolver._compute_cadence_stability", return_value={"score": 95, "level": "excellent"}) as cadence_mock:
+            api._build_fatigue_review_snapshot(row)
+
+        cadence_stream = cadence_mock.call_args.kwargs["cadence_stream"]
+        self.assertGreaterEqual(len(cadence_stream), 20)
+        self.assertEqual(cadence_stream[:4], [170, 171, 172, 170])
+
     def test_review_hr_drift_records_use_real_speed_after_startup(self):
         from main import _build_review_hr_drift_records
 

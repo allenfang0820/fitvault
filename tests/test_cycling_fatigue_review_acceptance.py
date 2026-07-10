@@ -216,6 +216,23 @@ class TestCyclingFatigueReviewAcceptanceFrontend(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, render_body)
 
+    def test_cycling_status_uses_backend_signal_and_translates_surging(self):
+        render_body = _extract_js_function(self.html, "_renderFatigueReviewMetrics")
+        aerobic_status = _extract_js_function(self.html, "_fatigueReviewCyclingAerobicStatus")
+        aerobic_tone = _extract_js_function(self.html, "_fatigueReviewCyclingAerobicTone")
+        variability_headline = _extract_js_function(self.html, "_fatigueReviewPowerVariabilityHeadline")
+
+        self.assertIn("surging:'波动很高'", render_body)
+        self.assertIn("_fatigueReviewCyclingAerobicStatus(aerobicSignal", render_body)
+        self.assertIn("_fatigueReviewCyclingAerobicTone(aerobicSignal", render_body)
+        self.assertNotIn("_fatigueReviewCyclingSignalStatus(aerobicSignal", render_body)
+        self.assertIn("state !== 'available'", aerobic_status)
+        self.assertIn("significant_drift", aerobic_status)
+        self.assertIn("漂移明显", aerobic_status)
+        self.assertIn("significant_drift", aerobic_tone)
+        self.assertIn("return 'bad'", aerobic_tone)
+        self.assertIn("surging", variability_headline)
+
     def test_running_cards_keep_general_semantics(self):
         card_defs = _extract_js_function(self.html, "_fatigueReviewMetricCardDefs")
         running_start = card_defs.find("\n        return [")

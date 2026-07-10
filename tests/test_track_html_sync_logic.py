@@ -27,6 +27,16 @@ def extract_function_body(source: str, signature: str) -> str:
     return source[brace_start + 1:index - 1]
 
 
+def extract_between(source: str, start_marker: str, end_marker: str) -> str:
+    start = source.find(start_marker)
+    if start < 0:
+        raise AssertionError(f"未找到起始标记: {start_marker}")
+    end = source.find(end_marker, start + len(start_marker))
+    if end < 0:
+        raise AssertionError(f"未找到结束标记: {end_marker}")
+    return source[start:end]
+
+
 class TestTrackHtmlSyncLogic(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -97,6 +107,81 @@ class TestTrackHtmlSyncLogic(unittest.TestCase):
         self.assertIn("function toggleSportHubRecordSelection", self.source)
         self.assertIn("function deleteSelectedSportHubRecords", self.source)
         self.assertIn("delete_activities", self.source)
+
+    def test_acs_career_has_first_level_navigation_and_shell(self):
+        self.assertIn('class="bookmark-tab" data-panel="career"', self.source)
+        self.assertIn('<span class="tab-label">运动生涯</span>', self.source)
+        self.assertIn('id="panel-career" class="tab-panel"', self.source)
+        self.assertIn('data-acs-shell="phase0"', self.source)
+
+        switch_body = extract_function_body(self.source, "function switchTab(tabBtn)")
+        self.assertIn("['profile', 'career', 'trace', 'settings', 'help', 'about']", switch_body)
+
+        career_panel = extract_between(
+            self.source,
+            '<div id="panel-career" class="tab-panel">',
+            '<!-- ========== 【轨迹分析工具】面板 ========== -->',
+        )
+        self.assertIn('data-career-section="overview"', career_panel)
+        self.assertIn('data-career-section="timeline"', career_panel)
+        self.assertIn('data-career-section="archives"', career_panel)
+        self.assertIn('每个节点都必须携带 activity_id', career_panel)
+        for forbidden in ("window.pywebview.api", "points", "track_json", "raw FIT", "get_career_"):
+            self.assertNotIn(forbidden, career_panel)
+
+    def test_legacy_honor_wall_is_career_entry_not_acs_primary_surface(self):
+        self.assertIn('data-hub-tab="honors" onclick="switchSportHubTab(\'honors\')">运动生涯入口</button>', self.source)
+        self.assertIn('data-legacy-honor-entry="career-link"', self.source)
+        self.assertIn('function switchToCareerFromHonorWall()', self.source)
+        self.assertNotIn('id="sport-honor-wall"', self.source)
+
+        honors_body = extract_function_body(self.source, "async function onSwitchToHonors()")
+        self.assertIn("isHonorsInitialized = true;", honors_body)
+        self.assertNotIn("loadPersonSportHubData", honors_body)
+        self.assertNotIn("renderSportHubHonors", honors_body)
+
+        render_tab_body = extract_function_body(self.source, "function renderCurrentSportHubTab()")
+        self.assertIn("new Set(['results', 'reserved'])", render_tab_body)
+        self.assertNotIn("['results', 'honors', 'reserved']", render_tab_body)
+
+    def test_career_tab_refreshes_derived_events_before_loading_modules(self):
+        switch_body = extract_function_body(self.source, "function switchTab(tabBtn)")
+        load_body = extract_function_body(self.source, "async function loadCareerData()")
+
+        self.assertIn("loadCareerData().catch", switch_body)
+        self.assertIn("refresh_career_derived_events", load_body)
+        self.assertLess(load_body.find("refresh_career_derived_events"), load_body.find("loadCareerOverview()"))
+        for token in (
+            "loadCareerOverview().catch",
+            "loadCareerSeasons().catch",
+            "loadCareerTimeline().catch",
+            "loadCareerArchives().catch",
+        ):
+            self.assertIn(token, load_body)
+
+    def test_activity_list_has_medal_race_flag_column(self):
+        title_body = extract_function_body(self.source, "function renderSportHubTitleCell(item)")
+        race_body = extract_function_body(self.source, "function renderSportHubRaceMedalButton(item)")
+        render_body = extract_function_body(self.source, "function renderSportHubRecords()")
+        toggle_body = extract_function_body(self.source, "async function toggleSportHubRaceFlag(event, activityId)")
+
+        self.assertNotIn("renderSportHubRaceMedalButton(item)", title_body)
+        self.assertIn("hub-race-medal-cell", self.source)
+        self.assertIn("hub-race-medal-toggle", race_body)
+        self.assertIn("is-race", race_body)
+        self.assertIn("is-not-race", race_body)
+        self.assertIn("🏅", race_body)
+        self.assertIn("aria-hidden=\"true\"", race_body)
+        self.assertIn("toggleSportHubRaceFlag(event", race_body)
+        self.assertNotIn("hub-race-flag-trigger", self.source)
+        self.assertNotIn("标为赛事", race_body)
+        self.assertLess(render_body.find("<th>时间</th>"), render_body.find("<th>赛事</th>"))
+        self.assertLess(render_body.find("<th>赛事</th>"), render_body.find("<th>标题</th>"))
+        self.assertLess(render_body.find("${safeHtml(item.date_label || '--')}"), render_body.find("renderSportHubRaceMedalButton(item)"))
+        self.assertLess(render_body.find("renderSportHubRaceMedalButton(item)"), render_body.find("renderSportHubTitleCell(item)"))
+        self.assertIn("set_activity_race_flag", toggle_body)
+        self.assertIn("loadCareerData().catch", toggle_body)
+        self.assertNotIn("modal", toggle_body.lower())
 
     def test_activity_records_support_remote_date_range_sync(self):
         self.assertIn('id="sport-sync-start-date"', self.source)
@@ -296,8 +381,20 @@ class TestTrackHtmlSyncLogic(unittest.TestCase):
         button_body = extract_function_body(self.source, "function updateMovementRecordsSyncButton()")
         self.assertNotIn("_validate_storage_notification", body)
         self.assertNotIn("_validate_storage_notification", button_body)
-        self.assertNotIn("告诉AI助手存储规范", body)
-        self.assertNotIn("告诉 AI 助手存储规范", body)
+        for token in (
+            "_validate_storage_notification",
+            "notifyAIAssistant",
+            "setAIStorageNotifyButtonState",
+            "setNotifyIndicator",
+            "BTN_AI_TEXT_IDLE",
+            "btn-notify-ai",
+            "btn-notify-indicator",
+            "告诉AI助手存储规范",
+            "告诉 AI 助手存储规范",
+            "存储规范同步中",
+            "已成功告知 AI 助手存储规范",
+        ):
+            self.assertNotIn(token, self.source)
 
     def test_activity_records_import_local_fit_files_uses_local_import_api(self):
         self.assertIn("导入本地 FIT 文件", self.source)

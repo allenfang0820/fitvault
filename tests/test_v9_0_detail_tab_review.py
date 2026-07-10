@@ -1117,7 +1117,7 @@ class TestV9AiInsightModalHtml(unittest.TestCase):
             "lane.tooltip",
             "tooltip: def.tooltip || ''",
             "把上坡和下坡影响折算进去后的配速",
-            "用速度和心率的关系观察推进效率",
+            "由坡度修正速度与心率关系换算",
             "显示路线所处高度变化",
             "显示当前路段的上坡或下坡程度",
             "把坡度、速度和持续时间合成的地形压力参考",

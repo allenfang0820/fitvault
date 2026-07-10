@@ -636,6 +636,38 @@ class TestLLMGenerateText(unittest.TestCase):
         )
         self.assertFalse(run_mock.call_args.kwargs["shell"])
 
+    def test_openclaw_cli_uses_fitvault_bundled_node_when_qclaw_app_is_not_in_applications(self):
+        completed = subprocess.CompletedProcess(args=["openclaw"], returncode=0, stdout="ok", stderr="")
+        wrapper = "/Users/tester/Library/Application Support/QClaw/openclaw/config/bin/openclaw"
+        bundled_node = "/Applications/脉图.app/Contents/Resources/node/bin/node"
+        openclaw_mjs = "/Users/tester/Library/Application Support/QClaw/openclaw/node_modules/openclaw/openclaw.mjs"
+
+        def fake_is_file(path):
+            return str(path) in {wrapper, bundled_node, openclaw_mjs}
+
+        with mock.patch.object(llm_backend.Path, "home", return_value=Path("/Users/tester")), \
+             mock.patch.object(llm_backend.sys, "frozen", True, create=True), \
+             mock.patch.object(llm_backend.sys, "_MEIPASS", "/Applications/脉图.app/Contents/Frameworks", create=True), \
+             mock.patch.object(llm_backend.sys, "executable", "/Applications/脉图.app/Contents/MacOS/FitVault"), \
+             mock.patch.object(llm_backend.shutil, "which", return_value=None), \
+             mock.patch.object(Path, "is_file", fake_is_file), \
+             mock.patch.object(llm_backend.subprocess, "run", return_value=completed) as run_mock:
+            text = llm_backend.generate_text(
+                config={
+                    "transport": "cli",
+                    "cli_type": "openclaw",
+                    "cli_path": wrapper,
+                },
+                messages=[{"role": "user", "content": "hello"}],
+                session_id="sid-1",
+            )
+
+        self.assertEqual(text, "ok")
+        self.assertEqual(run_mock.call_args.args[0][:2], [bundled_node, openclaw_mjs])
+        env = run_mock.call_args.kwargs["env"]
+        self.assertEqual(env["QCLAW_CLI_NODE_BINARY"], bundled_node)
+        self.assertEqual(env["QCLAW_CLI_OPENCLAW_MJS"], openclaw_mjs)
+
     def test_openclaw_cli_injects_qclaw_launchagent_runtime_env(self):
         completed = subprocess.CompletedProcess(args=["openclaw"], returncode=0, stdout="ok", stderr="")
         qclaw_env = {

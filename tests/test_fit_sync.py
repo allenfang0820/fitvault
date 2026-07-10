@@ -20,6 +20,10 @@ import track_backend
 from utils.weather_api import fetch_historical_weather
 
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+CONTRACT_PATH = PROJECT_ROOT / "docs" / "js_api_contract.json"
+
+
 class TestFitSync(unittest.TestCase):
     def setUp(self):
         self.temp_dir_obj = tempfile.TemporaryDirectory()
@@ -302,6 +306,62 @@ class TestFitSync(unittest.TestCase):
         self.assertEqual(result["skipped"], 1)
         parse_mock.assert_called_once()
         persist_mock.assert_not_called()
+
+    def test_single_fit_sync_refreshes_career_derived_events_after_write(self):
+        fit_path = self.temp_dir / "career-refresh.fit"
+        fit_path.write_bytes(b"x" * 8192)
+
+        with mock.patch.object(main, "_parse_fit_activity_for_sync", return_value=self._activity("career-refresh.fit")), \
+             mock.patch.object(main.career_backend, "refresh_career_derived_events", return_value={"ok": True}) as refresh_mock:
+            result = main._sync_single_fit_file(fit_path)
+
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["op"], "inserted")
+        self.assertEqual(result["career_refresh"]["ok"], True)
+        refresh_mock.assert_called_once_with()
+
+    def test_single_fit_sync_keeps_import_success_when_career_refresh_fails(self):
+        fit_path = self.temp_dir / "career-refresh-warning.fit"
+        fit_path.write_bytes(b"x" * 8192)
+
+        with mock.patch.object(main, "_parse_fit_activity_for_sync", return_value=self._activity("career-refresh-warning.fit")), \
+             mock.patch.object(main.career_backend, "refresh_career_derived_events", side_effect=RuntimeError("acs boom")):
+            result = main._sync_single_fit_file(fit_path)
+
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["op"], "inserted")
+        self.assertFalse(result["career_refresh"]["ok"])
+        self.assertIn("活动导入已保留", result["career_refresh"]["message"])
+
+    def test_batch_import_tracks_refreshes_career_once_after_imports(self):
+        fit_path = self.temp_dir / "manual-import.fit"
+        fit_path.write_bytes(b"x" * 8192)
+
+        with mock.patch.object(main, "_sync_single_fit_file", return_value={"ok": True, "op": "inserted", "activity_id": 88}) as sync_mock, \
+             mock.patch.object(main, "_refresh_career_derived_events_safe", return_value={"ok": True, "reason": "batch_import_tracks"}) as refresh_mock:
+            result = self.api.batch_import_tracks([str(fit_path)])
+
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(len(result["data"]["imported"]), 1)
+        sync_mock.assert_called_once()
+        self.assertEqual(sync_mock.call_args.kwargs.get("refresh_career"), False)
+        refresh_mock.assert_called_once_with("batch_import_tracks")
+        self.assertEqual(result["data"]["career_refresh"]["ok"], True)
+
+    def test_local_fit_sync_refreshes_career_once_after_activity_changes(self):
+        fit_path = self.temp_dir / "local-career-refresh.fit"
+        fit_path.write_bytes(b"x" * 8192)
+
+        with mock.patch.object(main, "resolve_workspace_track_dir", return_value=self._workspace_config()), \
+             mock.patch.object(main, "_walk_fit_files", return_value=[fit_path]), \
+             mock.patch.object(main, "_parse_fit_activity_for_sync", return_value=self._activity("local-career-refresh.fit")), \
+             mock.patch.object(main, "_refresh_career_derived_events_safe", return_value={"ok": True, "reason": "local_fit_sync"}) as refresh_mock:
+            result = self.api.sync_local_fit_files()
+
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["inserted"], 1)
+        refresh_mock.assert_called_once_with("local_fit_sync")
+        self.assertEqual(result["career_refresh"]["ok"], True)
 
     def test_remote_fit_sync_downloads_garmin_fit_and_imports_without_openclaw(self):
         api = object.__new__(main.Api)
@@ -1709,6 +1769,54 @@ class TestFitSync(unittest.TestCase):
         self.assertEqual(item["file_name"], "coros___activity-fit-files_3a4c7694c39941c98ef78f4fe33feae2.fit")
         self.assertEqual(item["filename"], "coros___activity-fit-files_3a4c7694c39941c98ef78f4fe33feae2.fit")
 
+    def test_update_activity_title_marks_user_source_and_updates_detail(self):
+        activity = self._activity("2026_chengdu_half_candidate.fit")
+        activity["title"] = "成都市 跑步"
+        activity["title_source"] = "auto_region_sport"
+        persisted = main._persist_sync_activity(activity)
+
+        res = self.api.update_activity_title(persisted["id"], "2026 成都半程马拉松")
+
+        self.assertEqual(res["code"], 0, res)
+        record = res["data"]["record"]
+        self.assertEqual(record["title"], "2026 成都半程马拉松")
+        self.assertEqual(record["title_source"], "user")
+
+        detail = self.api.get_activity_detail(persisted["id"])
+        self.assertEqual(detail["code"], 0, detail)
+        self.assertEqual(detail["data"]["record"]["title"], "2026 成都半程马拉松")
+        self.assertEqual(detail["data"]["record"]["title_source"], "user")
+
+    def test_activity_list_and_detail_include_race_flag_fields(self):
+        activity = self._activity("race_flag_visible.fit")
+        activity["is_race"] = 1
+        persisted = main._persist_sync_activity(activity)
+
+        list_res = self.api.get_activity_list(page=1, page_size=10, sport_filter="all")
+        detail = self.api.get_activity_detail(persisted["id"])
+
+        self.assertEqual(list_res["code"], 0, list_res)
+        record = next(item for item in list_res["data"]["records"] if item["id"] == persisted["id"])
+        self.assertTrue(record["is_race"])
+        self.assertEqual(record["race_source"], "fit_sport_event")
+        self.assertEqual(record["race_confidence"], "high")
+        self.assertEqual(detail["code"], 0, detail)
+        self.assertTrue(detail["data"]["record"]["is_race"])
+
+    def test_js_api_contract_registers_refresh_activity_region(self):
+        contract = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
+        methods = {item["name"]: item for item in contract["methods"]}
+
+        self.assertIn("refresh_activity_region", methods)
+        method = methods["refresh_activity_region"]
+        self.assertEqual(method["category"], "activity")
+        self.assertFalse(method["high_risk"])
+        self.assertEqual(method["parameters"], [
+            {"name": "activity_id", "type": "int", "required": True},
+        ])
+        for forbidden_surface in ("raw FIT", "points", "track_json", "file_path", "SQLite schema"):
+            self.assertIn(forbidden_surface, method["description"])
+
     def test_activity_list_item_falls_back_to_clean_filename_when_title_missing(self):
         row = {
             "id": 1,
@@ -2152,15 +2260,50 @@ class TestFitSync(unittest.TestCase):
         self.assertEqual(row["title"], "北京市 跑步")
         self.assertEqual(row["title_source"], "auto_region_sport")
 
-    def test_backfill_auto_activity_titles_preserves_normal_filename_title(self):
+    def test_backfill_auto_activity_titles_strips_provider_id_and_collision_suffix(self):
         main.ensure_activity_sync_schema()
-        activity = self._activity("西城区 跑步_611997904.fit")
-        activity["title"] = "西城区 跑步_611997904"
+        activity = self._activity("雅安市 骑行_23535321841-1-1.fit")
+        activity["title"] = "雅安市 骑行_23535321841-1-1"
+        activity["title_source"] = "filename"
+        activity["sport_type"] = "cycling"
+        activity["sub_sport_type"] = "generic"
+        activity["region"] = "雅安市/中国"
+        activity["region_display"] = "雅安市/中国"
+        activity["region_status"] = "success"
+        result = main._persist_sync_activity(activity)
+
+        updated = profile_backend.backfill_auto_activity_titles()
+        self.assertEqual(updated, 1)
+
+        conn = profile_backend._conn()
+        try:
+            row = conn.execute(
+                "SELECT title, title_source FROM activities WHERE id = ?",
+                (result["id"],),
+            ).fetchone()
+        finally:
+            conn.close()
+
+        self.assertEqual(row["title"], "雅安市 骑行")
+        self.assertEqual(row["title_source"], "filename")
+
+    def test_filename_title_cleaner_preserves_real_numbers_outside_provider_suffix(self):
+        self.assertEqual(
+            profile_backend.clean_activity_filename_title("雅安市 骑行_23535321841-1-1.fit"),
+            "雅安市 骑行",
+        )
+        self.assertEqual(profile_backend.clean_activity_filename_title("2026都江堰半程马拉松.fit"), "2026都江堰半程马拉松")
+        self.assertEqual(profile_backend.clean_activity_filename_title("环法第21赛段.fit"), "环法第21赛段")
+
+    def test_backfill_auto_activity_titles_preserves_garmin_event_filename_title(self):
+        main.ensure_activity_sync_schema()
+        activity = self._activity("都江堰半程马拉松.fit")
+        activity["title"] = "都江堰半程马拉松"
         activity["title_source"] = "filename"
         activity["sport_type"] = "running"
         activity["sub_sport_type"] = "generic"
-        activity["region"] = "北京市/中国"
-        activity["region_display"] = "北京市/中国"
+        activity["region"] = "成都市/中国"
+        activity["region_display"] = "成都市/中国"
         activity["region_status"] = "success"
         result = main._persist_sync_activity(activity)
 
@@ -2176,7 +2319,7 @@ class TestFitSync(unittest.TestCase):
         finally:
             conn.close()
 
-        self.assertEqual(row["title"], "西城区 跑步_611997904")
+        self.assertEqual(row["title"], "都江堰半程马拉松")
         self.assertEqual(row["title_source"], "filename")
 
     def test_region_enrichment_marks_failure_and_increments_attempt_count(self):

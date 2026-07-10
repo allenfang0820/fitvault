@@ -17,6 +17,7 @@ import time
 import traceback
 import uuid
 import zipfile
+import hashlib
 from urllib.parse import urlparse
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -27,6 +28,7 @@ import garmin_sync  # noqa: F401 -- PyInstaller bundles Garmin sync provider
 import coros_sync  # noqa: F401 -- PyInstaller bundles COROS sync provider
 import track_backend  # noqa: F401 -- PyInstaller bundles track_backend
 import profile_backend  # noqa: F401 -- PyInstaller bundles profile 模块
+import career_backend  # noqa: F401 -- PyInstaller bundles ACS career backend
 from fit_engine import FITCoreEngine
 from metrics_resolver import MetricsResolver, SemanticSportsEngine, build_training_effect, _build_environment_challenge_block  # V9.4.0 修复 NameError:build_training_effect 已在 metrics_resolver.py:2760 定义, 此处补 import;V_ENV.1.16:补 _build_environment_challenge_block
 
@@ -68,6 +70,17 @@ CURRENT_METRICS_VERSION = 6  # v6: P1-P4 雷达解释字段与评分上下文升
 WORKSPACE_ROOT = os.path.abspath(os.path.expanduser("~/.fitvault/workspace/"))
 TRACKS_DIR = os.path.abspath(os.path.expanduser("~/.fitvault/workspace/tracks/"))
 IMPORTS_DIR = os.path.abspath(os.path.expanduser("~/.fitvault/workspace/imports/"))
+CAREER_MEDIA_DIR = os.path.abspath(os.path.expanduser("~/.fitvault/workspace/career_media/"))
+CAREER_RACE_BANNER_DIRNAME = "race_banner"
+CAREER_MEMORY_PHOTO_DIRNAME = "memory_photo"
+CAREER_ACTIVITY_RACE_PHOTO_DIRNAME = "activity_race_photo"
+CAREER_ACTIVITY_RACE_PHOTO_PREVIEW_DIRNAME = "activity_race_photo_preview"
+CAREER_ACTIVITY_RACE_PHOTO_THUMB_DIRNAME = "activity_race_photo_thumb"
+CAREER_RACE_PHOTO_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
+CAREER_RACE_PHOTO_MAX_BYTES = 15 * 1024 * 1024
+CAREER_RACE_PHOTO_PREVIEW_MAX_SIDE = 1920
+CAREER_RACE_PHOTO_THUMB_MAX_SIDE = 640
+CAREER_RACE_PHOTO_DERIVATIVE_QUALITY = 86
 
 APP_CONFIG_PATH = os.path.expanduser("~/.trackapp_config.json")
 DEFAULT_APP_CONFIG = {
@@ -458,6 +471,7 @@ def init_application_config() -> dict:
     """初始化 Managed Workspace 目录结构，确保物理目录存在。"""
     os.makedirs(TRACKS_DIR, exist_ok=True)
     os.makedirs(IMPORTS_DIR, exist_ok=True)
+    os.makedirs(CAREER_MEDIA_DIR, exist_ok=True)
     logger.info("工作区已初始化: TRACKS_DIR=%s, IMPORTS_DIR=%s", TRACKS_DIR, IMPORTS_DIR)
     try:
         file_exists = os.path.exists(APP_CONFIG_PATH)
@@ -539,12 +553,7 @@ def _clean_fit_activity_title(file_name: Any, fallback: str = "") -> str:
     name = str(file_name or fallback or "").strip()
     if not name:
         return fallback or ""
-    if name.lower().endswith(".fit"):
-        name = name[:-4]
-    base, _, tail = name.rpartition("_")
-    if tail.isdigit() and base.strip():
-        return base.strip()
-    return name.strip()
+    return profile_backend.clean_activity_filename_title(name)
 
 
 def _resolve_display_sport_type(sport_type: Any, sub_sport_type: Any) -> str:
@@ -663,6 +672,35 @@ def _safe_int(value: Any, default: int = 0) -> int:
         return default
 
 
+def _is_fit_sport_event_race(value: Any) -> bool:
+    """FIT sport_event race marker: enum value 4 or token 'race'."""
+    if value is None:
+        return False
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return int(value) == 4
+    text = str(value).strip().lower()
+    if not text:
+        return False
+    if text.replace(".", "", 1).isdigit():
+        return int(float(text)) == 4
+    token = text.split(".")[-1].split(":")[-1]
+    return token == "race"
+
+
+def _parse_boolish_flag(value: Any) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int) and value in (0, 1):
+        return bool(value)
+    if isinstance(value, str):
+        text = value.strip().lower()
+        if text in {"1", "true", "yes", "y", "on"}:
+            return True
+        if text in {"0", "false", "no", "n", "off"}:
+            return False
+    return None
+
+
 def _safe_optional_float(value: Any) -> float | None:
     if value is None or value == "":
         return None
@@ -759,6 +797,10 @@ DETAIL_API_REQUIRED_COLUMNS: tuple[str, ...] = (
     "aerobic_training_effect",
     "anaerobic_training_effect",
     "is_race",
+    "race_source",
+    "race_confirmed_at",
+    "race_confidence",
+    "race_override",
     "is_event",
     "is_intermittent",
     "processing_status",
@@ -874,6 +916,153 @@ def _is_path_under_dir(path: Path, base_dir: Path) -> bool:
         return True
     except ValueError:
         return False
+
+
+def _safe_career_media_filename(source: Path, activity_id: int) -> str:
+    suffix = source.suffix.lower()
+    if suffix == ".jpeg":
+        suffix = ".jpg"
+    digest_seed = f"{activity_id}|{source.name}|{time.time_ns()}|{uuid.uuid4().hex}"
+    digest = hashlib.sha1(digest_seed.encode("utf-8")).hexdigest()[:16]
+    return f"activity-{int(activity_id)}-{digest}{suffix}"
+
+
+def _copy_career_photo_to_controlled_media(source_path: Any, activity_id: int, dirname: str, label: str) -> str:
+    source = Path(str(source_path or "")).expanduser().resolve()
+    if not source.exists() or not source.is_file():
+        raise ValueError("请选择有效的图片文件")
+    suffix = source.suffix.lower()
+    if suffix not in CAREER_RACE_PHOTO_EXTENSIONS:
+        raise ValueError(f"{label}仅支持 jpg、png 或 webp")
+    size = source.stat().st_size
+    if size <= 0:
+        raise ValueError(f"{label}文件为空")
+    if size > CAREER_RACE_PHOTO_MAX_BYTES:
+        raise ValueError(f"{label}不能超过 15MB")
+    safe_dirname = str(dirname or "").strip().replace("\\", "/")
+    if not safe_dirname or "/" in safe_dirname or safe_dirname in {".", ".."}:
+        raise ValueError(f"{label}目标路径不安全")
+    media_root = Path(CAREER_MEDIA_DIR).expanduser().resolve()
+    target_root = (media_root / safe_dirname).resolve()
+    if not _is_path_under_dir(target_root, media_root):
+        raise ValueError(f"{label}目标路径不安全")
+    target_root.mkdir(parents=True, exist_ok=True)
+    target_path = (target_root / _safe_career_media_filename(source, activity_id)).resolve()
+    if not _is_path_under_dir(target_path, target_root):
+        raise ValueError(f"{label}目标路径不安全")
+    shutil.copy2(source, target_path)
+    return f"memory/photo/{safe_dirname}/{target_path.name}"
+
+
+def _controlled_career_media_path_from_ref(media_ref: Any) -> Path | None:
+    ref = str(media_ref or "").strip().replace("\\", "/")
+    if not ref.startswith("memory/photo/"):
+        return None
+    relative = ref[len("memory/photo/"):]
+    if not relative or relative.startswith("/") or ".." in Path(relative).parts:
+        return None
+    media_root = Path(CAREER_MEDIA_DIR).expanduser().resolve()
+    target = (media_root / relative).resolve()
+    if not _is_path_under_dir(target, media_root):
+        return None
+    return target
+
+
+def _create_career_photo_derivative(
+    source_ref: str,
+    target_dirname: str,
+    max_side: int,
+    label: str,
+) -> str:
+    source_path = _controlled_career_media_path_from_ref(source_ref)
+    if source_path is None or not source_path.exists() or not source_path.is_file():
+        return ""
+    safe_dirname = str(target_dirname or "").strip().replace("\\", "/")
+    if not safe_dirname or "/" in safe_dirname or safe_dirname in {".", ".."}:
+        return ""
+    try:
+        from PIL import Image, ImageOps
+    except Exception:
+        logger.info("%s衍生图跳过：Pillow 不可用", label)
+        return ""
+    try:
+        media_root = Path(CAREER_MEDIA_DIR).expanduser().resolve()
+        target_root = (media_root / safe_dirname).resolve()
+        if not _is_path_under_dir(target_root, media_root):
+            return ""
+        target_root.mkdir(parents=True, exist_ok=True)
+        target_path = (target_root / f"{source_path.stem}-{int(max_side)}.jpg").resolve()
+        if not _is_path_under_dir(target_path, target_root):
+            return ""
+        with Image.open(source_path) as image:
+            image = ImageOps.exif_transpose(image)
+            resampling = getattr(getattr(Image, "Resampling", Image), "LANCZOS", 1)
+            image.thumbnail((int(max_side), int(max_side)), resampling)
+            if image.mode in {"RGBA", "LA"} or (image.mode == "P" and "transparency" in image.info):
+                background = Image.new("RGB", image.size, (255, 255, 255))
+                background.paste(image.convert("RGBA"), mask=image.convert("RGBA").split()[-1])
+                image = background
+            elif image.mode != "RGB":
+                image = image.convert("RGB")
+            image.save(
+                target_path,
+                format="JPEG",
+                quality=CAREER_RACE_PHOTO_DERIVATIVE_QUALITY,
+                optimize=True,
+                progressive=True,
+            )
+        return f"memory/photo/{safe_dirname}/{target_path.name}"
+    except Exception:
+        logger.exception("%s衍生图生成失败", label)
+        return ""
+
+
+def _copy_career_race_photo_to_controlled_media(source_path: Any, activity_id: int) -> str:
+    return _copy_career_photo_to_controlled_media(
+        source_path,
+        activity_id,
+        CAREER_RACE_BANNER_DIRNAME,
+        "赛事照片",
+    )
+
+
+def _copy_career_memory_photo_to_controlled_media(source_path: Any, activity_id: int) -> str:
+    return _copy_career_photo_to_controlled_media(
+        source_path,
+        activity_id,
+        CAREER_MEMORY_PHOTO_DIRNAME,
+        "记忆照片",
+    )
+
+
+def _copy_activity_race_photo_to_controlled_media(source_path: Any, activity_id: int) -> str:
+    return _copy_career_photo_to_controlled_media(
+        source_path,
+        activity_id,
+        CAREER_ACTIVITY_RACE_PHOTO_DIRNAME,
+        "赛事照片",
+    )
+
+
+def _copy_activity_race_photo_bundle_to_controlled_media(source_path: Any, activity_id: int) -> dict[str, str]:
+    media_ref = _copy_activity_race_photo_to_controlled_media(source_path, activity_id)
+    preview_ref = _create_career_photo_derivative(
+        media_ref,
+        CAREER_ACTIVITY_RACE_PHOTO_PREVIEW_DIRNAME,
+        CAREER_RACE_PHOTO_PREVIEW_MAX_SIDE,
+        "赛事照片预览图",
+    )
+    thumbnail_ref = _create_career_photo_derivative(
+        media_ref,
+        CAREER_ACTIVITY_RACE_PHOTO_THUMB_DIRNAME,
+        CAREER_RACE_PHOTO_THUMB_MAX_SIDE,
+        "赛事照片缩略图",
+    )
+    return {
+        "media_ref": media_ref,
+        "preview_ref": preview_ref,
+        "thumbnail_ref": thumbnail_ref,
+    }
 
 
 def _decode_weather_json(value: Any) -> dict[str, Any] | None:
@@ -1847,6 +2036,47 @@ def _trim_review_series_after_startup(
     return _trim_review_series_by_window(series, window, distance_curve_km)
 
 
+def _review_cadence_valid_points(series: Any) -> int:
+    if not isinstance(series, list):
+        return 0
+    return sum(
+        1
+        for value in series
+        if _safe_float(value, None) is not None and float(value) > 30
+    )
+
+
+def _build_review_cadence_curve(
+    row: dict[str, Any],
+    curves_snapshot: dict[str, Any],
+    bundle: dict[str, Any],
+    review_input_window: dict[str, Any],
+    distance_curve_km: list,
+) -> list:
+    """Choose the cadence stream used by cadence stability.
+
+    cadence_curve is the preferred persisted derivative. Older rows often
+    missed that derivative while track_json still contains per-point cadence.
+    Fall back only to real point streams, never to avg_cadence.
+    """
+    candidates = [
+        _safe_json_list(row.get("cadence_curve")) or [],
+        curves_snapshot.get("cadence") if isinstance(curves_snapshot, dict) else [],
+        bundle.get("cadence_curve") if isinstance(bundle, dict) else [],
+    ]
+    for candidate in candidates:
+        if not isinstance(candidate, list) or not candidate:
+            continue
+        trimmed = _trim_review_series_by_window(
+            candidate,
+            review_input_window,
+            distance_curve_km,
+        )
+        if trimmed:
+            return trimmed
+    return []
+
+
 def _build_review_hr_drift_records(
     hr_curve: Any,
     speed_curve: Any,
@@ -2162,6 +2392,73 @@ def _fatigue_review_data_quality(
     return True, count, "available"
 
 
+def _fatigue_review_power_data_quality(
+    values: Any,
+    min_points: int = 20,
+    axis_len: int | None = None,
+    valid_max: float = 2500.0,
+    invalid_ratio_threshold: float = 0.2,
+) -> dict[str, Any]:
+    """Cycling power quality: 0W is coasting/stopped, not corruption."""
+    result = {
+        "available": False,
+        "points_count": 0,
+        "quality": "missing",
+        "zero_points_count": 0,
+        "invalid_points_count": 0,
+        "observed_points_count": 0,
+        "zero_power_ratio": 0.0,
+        "invalid_power_ratio": 0.0,
+    }
+    if not isinstance(values, list) or not values:
+        return result
+    if axis_len is not None and axis_len > 0 and len(values) != axis_len:
+        result["quality"] = "length_mismatch"
+        return result
+
+    positive_count = 0
+    zero_count = 0
+    invalid_count = 0
+    observed_count = 0
+    for value in values:
+        num = _safe_float(value, None)
+        if num is None:
+            invalid_count += 1
+            continue
+        observed_count += 1
+        if num == 0:
+            zero_count += 1
+        elif 0 < num <= valid_max:
+            positive_count += 1
+        else:
+            invalid_count += 1
+
+    denominator = max(len(values), 1)
+    invalid_ratio = invalid_count / denominator
+    zero_ratio = zero_count / denominator
+    result.update({
+        "points_count": positive_count,
+        "zero_points_count": zero_count,
+        "invalid_points_count": invalid_count,
+        "observed_points_count": observed_count,
+        "zero_power_ratio": round(zero_ratio, 4),
+        "invalid_power_ratio": round(invalid_ratio, 4),
+    })
+    if invalid_count and invalid_ratio > invalid_ratio_threshold:
+        result["quality"] = "invalid_values"
+        return result
+    if positive_count <= 0:
+        result["quality"] = "missing"
+        return result
+    if positive_count < min_points:
+        result["quality"] = "insufficient_points"
+        return result
+
+    result["available"] = True
+    result["quality"] = "available"
+    return result
+
+
 def _build_fatigue_review_summary(
     row: dict[str, Any],
     bundle: dict[str, Any],
@@ -2171,10 +2468,9 @@ def _build_fatigue_review_summary(
     power_curve = curves_snapshot.get("power") or bundle.get("power_curve") or []
     cadence_curve = curves_snapshot.get("cadence") or bundle.get("cadence_curve") or []
     axis_len = len(curves_snapshot.get("distance") or [])
-    power_available, power_count, power_quality = _fatigue_review_data_quality(
+    power_quality_result = _fatigue_review_power_data_quality(
         power_curve,
         axis_len=axis_len,
-        valid_min=0.0,
         valid_max=2500.0,
     )
     cadence_available, cadence_count, cadence_quality = _fatigue_review_data_quality(
@@ -2190,12 +2486,17 @@ def _build_fatigue_review_summary(
         "normalized_power": _safe_float(row.get("normalized_power"), None),
         "avg_cadence": _safe_float(row.get("avg_cadence"), None),
         "duration_sec": _safe_int(row.get("duration_sec") or row.get("duration") or bundle.get("duration_sec") or 0),
-        "power_available": power_available,
+        "power_available": bool(power_quality_result.get("available")),
         "cadence_available": cadence_available,
-        "power_points_count": power_count,
+        "power_points_count": _safe_int(power_quality_result.get("points_count") or 0),
         "cadence_points_count": cadence_count,
-        "power_data_quality": power_quality,
+        "power_data_quality": str(power_quality_result.get("quality") or "missing"),
         "cadence_data_quality": cadence_quality,
+        "power_zero_points_count": _safe_int(power_quality_result.get("zero_points_count") or 0),
+        "power_invalid_points_count": _safe_int(power_quality_result.get("invalid_points_count") or 0),
+        "power_observed_points_count": _safe_int(power_quality_result.get("observed_points_count") or 0),
+        "zero_power_ratio": _safe_float(power_quality_result.get("zero_power_ratio"), 0.0),
+        "invalid_power_ratio": _safe_float(power_quality_result.get("invalid_power_ratio"), 0.0),
     }
 
 
@@ -2868,6 +3169,7 @@ def _build_cycling_aerobic_drift_signal(
     power_quality = str(summary.get("power_data_quality") or "missing")
     has_power = bool(summary.get("power_available"))
     power_points_count = _safe_int(summary.get("power_points_count") or 0)
+    duration_sec = _safe_int(summary.get("duration_sec") or 0)
     hr_curve = curves_snapshot.get("hr") if isinstance(curves_snapshot.get("hr"), list) else []
     power_curve = curves_snapshot.get("power") if isinstance(curves_snapshot.get("power"), list) else []
     has_hr = bool(hr_curve)
@@ -2879,6 +3181,7 @@ def _build_cycling_aerobic_drift_signal(
         "power_available": has_power,
         "power_data_quality": power_quality,
         "power_points_count": power_points_count,
+        "duration_sec": duration_sec,
     }]
 
     hr_drift = metrics.get("hr_drift") if isinstance(metrics.get("hr_drift"), dict) else {}
@@ -2907,6 +3210,14 @@ def _build_cycling_aerobic_drift_signal(
             "unavailable",
             "缺少可用功率数据，暂不判断本次骑行有氧漂移。",
             [f"power_data_unavailable:{power_quality}"],
+            evidence,
+        )
+
+    if duration_sec > 0 and duration_sec < 45 * 60:
+        return _cycling_explanation_signal(
+            "unavailable",
+            "活动时长不足 45 分钟，暂不单独判断本次骑行有氧漂移。",
+            ["duration<45min"],
             evidence,
         )
 
@@ -4171,6 +4482,10 @@ def ensure_activity_sync_schema() -> None:
                 ("weather_updated_at", "TEXT"),
                 ("weather_attempt_count", "INTEGER DEFAULT 0"),
                 ("weather_error", "TEXT"),
+                ("race_source", "TEXT"),
+                ("race_confirmed_at", "TEXT"),
+                ("race_confidence", "TEXT"),
+                ("race_override", "INTEGER DEFAULT 0"),
             ]:
                 try:
                     conn.execute(f"ALTER TABLE activities ADD COLUMN {col} {dtype}")
@@ -6043,6 +6358,8 @@ def _parse_fit_activity_for_sync(file_path: Path) -> dict[str, Any]:
     # 规范化 lap 数据:复用 MetricsResolver._normalize_laps 保持字段语义一致
     normalized_laps = MetricsResolver._normalize_laps(raw_laps) if raw_laps else []
     laps_json = json.dumps(normalized_laps, ensure_ascii=False) if normalized_laps else None
+    sport_event = basic.get("sport_event")
+    is_race = 1 if _is_fit_sport_event_race(sport_event) else 0
     result = {
         "points": track_data,
         "file_name": file_path.name,
@@ -6053,6 +6370,8 @@ def _parse_fit_activity_for_sync(file_path: Path) -> dict[str, Any]:
         "start_time_utc": payload.get("start_time_utc"),
         "sport_type": payload.get("sport_type") or "unknown",
         "sub_sport_type": payload.get("sub_sport_type") or "unknown",
+        "sport_event": sport_event,
+        "is_race": is_race,
         "distance": distance_km,
         "dist_km": distance_km,
         "duration": duration_sec,
@@ -6117,7 +6436,18 @@ def _parse_fit_activity_for_sync(file_path: Path) -> dict[str, Any]:
         raw_for_device = {"file_id_mesgs": list(fit_msgs.get("file_id_mesgs", []))}
         device_name = MetricsResolver._resolve_device_name(raw_for_device, {})
     except Exception:
-        device_name = ""
+        try:
+            from fitparse import FitFile
+
+            fit = FitFile(str(resolved_path))
+            file_id_mesgs = []
+            for msg in fit.get_messages("file_id"):
+                file_id_mesgs.append({field.name: field.value for field in msg})
+                break
+            raw_for_device = {"file_id_mesgs": file_id_mesgs}
+            device_name = MetricsResolver._resolve_device_name(raw_for_device, {})
+        except Exception:
+            device_name = ""
     result["device_name"] = device_name
 
     # ── MetricsResolver Shadow Layer (对比验证用，不参与生产决策) ───
@@ -6241,6 +6571,48 @@ def _parse_fit_activity_for_sync(file_path: Path) -> dict[str, Any]:
     return result
 
 
+def _apply_fit_race_marker(conn: sqlite3.Connection, activity_id: int, activity: dict[str, Any]) -> None:
+    existing = conn.execute(
+        "SELECT race_source, race_override FROM activities WHERE id = ?",
+        (activity_id,),
+    ).fetchone()
+    if existing:
+        existing_row = dict(existing)
+        source = str(existing_row.get("race_source") or "").strip().lower()
+        if source == "user" or _safe_int(existing_row.get("race_override")) == 1:
+            return
+
+    if activity.get("is_race"):
+        conn.execute(
+            """
+            UPDATE activities
+            SET is_race = 1,
+                race_source = 'fit_sport_event',
+                race_confidence = 'high',
+                race_confirmed_at = COALESCE(race_confirmed_at, datetime('now')),
+                race_override = 0
+            WHERE id = ?
+            """,
+            (activity_id,),
+        )
+        return
+
+    conn.execute(
+        """
+        UPDATE activities
+        SET is_race = 0,
+            race_source = NULL,
+            race_confidence = NULL,
+            race_confirmed_at = NULL,
+            race_override = 0
+        WHERE id = ?
+          AND COALESCE(race_override, 0) = 0
+          AND COALESCE(race_source, '') != 'user'
+        """,
+        (activity_id,),
+    )
+
+
 def _insert_activity_sync_row(conn: sqlite3.Connection, activity: dict[str, Any]) -> int:
     try:
         cur = conn.execute(
@@ -6332,7 +6704,9 @@ def _insert_activity_sync_row(conn: sqlite3.Connection, activity: dict[str, Any]
                 activity.get("processing_error"),
             ),
         )
-        return int(cur.lastrowid)
+        activity_id = int(cur.lastrowid)
+        _apply_fit_race_marker(conn, activity_id, activity)
+        return activity_id
     except sqlite3.IntegrityError:
         file_name = activity.get("file_name") or ""
         file_path = activity.get("file_path") or ""
@@ -6433,6 +6807,7 @@ def _update_activity_sync_row(conn: sqlite3.Connection, activity_id: int, activi
             activity_id,
         ),
     )
+    _apply_fit_race_marker(conn, activity_id, activity)
 
 
 def _upsert_processing_activity_placeholder(dst: Path, source_name: str | None = None) -> int:
@@ -7076,6 +7451,23 @@ def _fit_health_skip_result(
     return result
 
 
+def _refresh_career_derived_events_safe(reason: str = "") -> dict[str, Any]:
+    """Best-effort ACS refresh after Activity writes; never blocks import success."""
+    try:
+        result = career_backend.refresh_career_derived_events()
+        if reason:
+            result["reason"] = reason
+        return result
+    except Exception as exc:
+        logger.exception("ACS derived event refresh failed after %s", reason or "activity write")
+        return {
+            "ok": False,
+            "reason": reason or "activity_write",
+            "message": "运动生涯派生事件刷新失败，活动导入已保留",
+            "error_code": "career_refresh_failed",
+        }
+
+
 def _filter_fit_file_before_parse(target: Path) -> dict[str, Any] | None:
     """Fast health-data filter for tiny FIT files before expensive parsing."""
     file_size_kb = _fit_file_size_kb(target)
@@ -7138,7 +7530,7 @@ def _filter_fit_activity_after_parse(activity: dict[str, Any], target: Path, fil
     )
 
 
-def _sync_single_fit_file(file_path: str | Path) -> dict[str, Any]:
+def _sync_single_fit_file(file_path: str | Path, refresh_career: bool = True) -> dict[str, Any]:
     ensure_activity_sync_schema()
     target = Path(file_path).expanduser().resolve()
     if not target.is_file():
@@ -7182,7 +7574,7 @@ def _sync_single_fit_file(file_path: str | Path) -> dict[str, Any]:
     finally:
         conn.close()
 
-    return {
+    result = {
         "ok": True,
         "activity_id": activity_id or int((row or {}).get("id") or 0),
         "file_path": str(target),
@@ -7196,6 +7588,9 @@ def _sync_single_fit_file(file_path: str | Path) -> dict[str, Any]:
         # T-IMPORT-FIT-DEDUP: 暴露 points 给 80 分查重用 (不污染契约 §三 响应结构,仅扩展)
         "points": activity.get("points") or [],
     }
+    if refresh_career and result["activity_id"] and write_res.get("op") in {"inserted", "updated"}:
+        result["career_refresh"] = _refresh_career_derived_events_safe("single_fit_sync")
+    return result
 
 
 class FITFolderHandler(FileSystemEventHandler):
@@ -7701,7 +8096,7 @@ def _build_ai_snapshot(activity_id: int) -> dict[str, Any] | None:
     if not activity_id:
         return None
     try:
-        conn = sqlite3.connect(profile_backend._DB_PATH)
+        conn = sqlite3.connect(str(profile_backend.DB_PATH))
         conn.row_factory = sqlite3.Row
         row = conn.execute(
             "SELECT sport_type, sub_sport_type, dist_km, duration_sec, avg_hr, max_hr,"
@@ -10200,6 +10595,8 @@ class Api:
         swolf_subtitle = water_metric_label
         display_filename = str(row.get("filename") or row.get("file_name") or "")
         row_title = str(row.get("title") or "").strip()
+        if row_title and str(row.get("title_source") or "").strip() == "filename":
+            row_title = profile_backend.clean_activity_filename_title(row_title)
         title = row_title or _clean_fit_activity_title(row.get("file_name") or row.get("filename"), display_filename)
         region_status = str(row.get("region_status") or "").strip()
         region_raw = str(row.get("region_display") or row.get("region") or "").strip()
@@ -10281,6 +10678,7 @@ class Api:
             "region": region_raw,
             "region_display": region_raw,
             "region_status": region_status,
+            "region_error": str(row.get("region_error") or "").strip(),
             "device_name": str(row.get("device_name") or "").strip(),
             "start_lat": _safe_float(row.get("start_lat")) or None,
             "start_lon": _safe_float(row.get("start_lon")) or None,
@@ -10293,6 +10691,11 @@ class Api:
             "has_local_file": bool(str(row.get("file_path") or "").strip() and os.path.exists(str(row.get("file_path") or "").strip())),
             "processing_status": str(row.get("processing_status") or "ready"),
             "processing_error": str(row.get("processing_error") or ""),
+            "is_race": bool(_safe_int(row.get("is_race"))),
+            "race_source": str(row.get("race_source") or ""),
+            "race_confirmed_at": str(row.get("race_confirmed_at") or ""),
+            "race_confidence": str(row.get("race_confidence") or ""),
+            "race_override": _safe_int(row.get("race_override")),
         }
 
     def _fetch_activity_row(self, activity_id: int) -> dict | None:
@@ -10596,6 +10999,9 @@ class Api:
 
             elapsed_sec = round(time.perf_counter() - started_at, 2)
             removed = self._mark_missing_activity_files_deleted(str(base), disk_paths)
+            career_refresh = None
+            if inserted or updated or removed:
+                career_refresh = _refresh_career_derived_events_safe("local_fit_sync")
             result = {
                 "ok": True,
                 "source_dir": str(base),
@@ -10607,6 +11013,7 @@ class Api:
                 "skipped": skipped + pre_skipped,
                 "removed": removed,
                 "errors": errors,
+                "career_refresh": career_refresh,
                 "elapsed_sec": elapsed_sec,
                 "message": f"同步完成：扫描 {total} 个 FIT 文件（跳过 {pre_skipped} 个未变更），新增 {inserted} 条，更新 {updated} 条，跳过 {skipped} 条，标记删除 {removed} 条，用时 {elapsed_sec:.2f} 秒。",
             }
@@ -10946,7 +11353,7 @@ class Api:
                         shutil.copy2(str(src), str(dst))
                         emit_progress(f"正在解析 {min(current + 1, total)}/{total}：{src.name}", src.name)
                         # 手动调用单入口同步解析
-                        res = _sync_single_fit_file(dst)
+                        res = _sync_single_fit_file(dst, refresh_career=False)
                         if res.get("ok"):
                             if res.get("op") == "skipped":
                                 # V10.1 健康数据过滤跳过(契约 §2.2)
@@ -11009,7 +11416,7 @@ class Api:
                             current_dst = dst
                             shutil.move(str(fit), str(dst))
                             emit_progress(f"正在解析 {min(current + 1, total)}/{total}：{fit.name}", fit.name)
-                            res = _sync_single_fit_file(dst)
+                            res = _sync_single_fit_file(dst, refresh_career=False)
                             if res.get("ok"):
                                 if res.get("op") == "skipped":
                                     # V10.1 健康数据过滤跳过(契约 §2.2)
@@ -11058,12 +11465,17 @@ class Api:
                     current += 1
                     emit_progress(f"导入异常：{Path(fp).name}", Path(fp).name)
 
+            career_refresh = None
+            if imported:
+                career_refresh = _refresh_career_derived_events_safe("batch_import_tracks")
+
             return _api_success({
                 "imported": imported,
                 "skipped": skipped,
                 # V10.1 健康数据过滤累计(契约 §2.2)
                 "health_filtered": health_filtered,
                 "errors": errors if errors else None,
+                "career_refresh": career_refresh,
             }, msg=f"导入完成：新增 {len(imported)} 条，跳过 {len(skipped)} 条，异常 {len(errors)} 条")
 
         finally:
@@ -11087,8 +11499,8 @@ class Api:
             _conn = profile_backend._conn()
             try:
                 _conn.execute(
-                    "UPDATE activities SET title = ? WHERE id = ?",
-                    (dst.stem, new_id),
+                    "UPDATE activities SET title = ?, title_source = 'filename' WHERE id = ?",
+                    (_clean_fit_activity_title(dst.name, dst.stem), new_id),
                 )
                 _conn.commit()
             finally:
@@ -11228,6 +11640,382 @@ class Api:
     def get_import_fit_files_status(self, job_id: str = "") -> dict:
         return FIT_IMPORT_JOB_MANAGER.get_status(job_id)
 
+    def refresh_career_derived_events(self) -> dict:
+        """Refresh ACS Activity-backed derived indexes on demand."""
+        try:
+            ensure_activity_sync_schema()
+            return _api_success(career_backend.refresh_career_derived_events())
+        except Exception:
+            logger.exception("refresh_career_derived_events failed")
+            return _api_error(API_CODE_DB, "运动生涯派生事件刷新失败")
+
+    def get_career_overview(self) -> dict:
+        """Return ACS overview skeleton without deriving career facts in main.py."""
+        try:
+            return _api_success(career_backend.get_career_overview())
+        except Exception:
+            logger.exception("get_career_overview failed")
+            return _api_error(API_CODE_DB, "运动生涯总览查询失败")
+
+    def get_career_timeline(self, filters: dict | None = None) -> dict:
+        """Return ACS timeline skeleton; Resolver-owned facts are not generated here."""
+        try:
+            clean_filters = filters if isinstance(filters, dict) else None
+            return _api_success(career_backend.get_career_timeline(clean_filters))
+        except Exception:
+            logger.exception("get_career_timeline failed")
+            return _api_error(API_CODE_DB, "运动生涯时间轴查询失败")
+
+    def get_career_seasons(self, filters: dict | None = None) -> dict:
+        """Return ACS annual Season summaries without deriving semantic facts in main.py."""
+        try:
+            clean_filters = filters if isinstance(filters, dict) else None
+            return _api_success(career_backend.get_career_seasons(clean_filters))
+        except Exception:
+            logger.exception("get_career_seasons failed")
+            return _api_error(API_CODE_DB, "运动生涯年度结构查询失败")
+
+    def get_career_races(self, filters: dict | None = None) -> dict:
+        """Return ACS race archive entries generated by the backend Race Resolver."""
+        try:
+            clean_filters = filters if isinstance(filters, dict) else None
+            return _api_success(career_backend.get_career_races(clean_filters))
+        except Exception:
+            logger.exception("get_career_races failed")
+            return _api_error(API_CODE_DB, "运动生涯赛事档案查询失败")
+
+    def get_career_race_map(self, filters: dict | None = None) -> dict:
+        """Return ACS Race Map points from Activity safe start coordinates."""
+        try:
+            clean_filters = filters if isinstance(filters, dict) else None
+            return _api_success(career_backend.get_career_race_map(clean_filters))
+        except Exception:
+            logger.exception("get_career_race_map failed")
+            return _api_error(API_CODE_DB, "运动生涯赛事足迹查询失败")
+
+    def get_career_pb(self, filters: dict | None = None) -> dict:
+        """Return ACS PB records generated by the backend PB Resolver."""
+        try:
+            clean_filters = filters if isinstance(filters, dict) else None
+            return _api_success(career_backend.get_career_pb(clean_filters))
+        except Exception:
+            logger.exception("get_career_pb failed")
+            return _api_error(API_CODE_DB, "运动生涯PB记录查询失败")
+
+    def get_career_achievements(self, filters: dict | None = None) -> dict:
+        """Return ACS achievements generated by the backend Achievement Resolver."""
+        try:
+            clean_filters = filters if isinstance(filters, dict) else None
+            return _api_success(career_backend.get_career_achievements(clean_filters))
+        except Exception:
+            logger.exception("get_career_achievements failed")
+            return _api_error(API_CODE_DB, "运动生涯成就档案查询失败")
+
+    def get_career_event_candidates(self, filters: dict | None = None) -> dict:
+        """Return ACS low-confidence candidates without promoting them."""
+        try:
+            clean_filters = filters if isinstance(filters, dict) else None
+            return _api_success(career_backend.get_career_event_candidates(clean_filters))
+        except Exception:
+            logger.exception("get_career_event_candidates failed")
+            return _api_error(API_CODE_DB, "运动生涯候选事件查询失败")
+
+    def resolve_career_event_candidate(self, payload: dict | None = None) -> dict:
+        """Confirm or dismiss an ACS low-confidence candidate."""
+        try:
+            ensure_activity_sync_schema()
+            clean_payload = payload if isinstance(payload, dict) else {}
+            return _api_success(career_backend.resolve_career_event_candidate(clean_payload))
+        except ValueError as exc:
+            return _api_error(API_CODE_VALIDATION, str(exc))
+        except Exception:
+            logger.exception("resolve_career_event_candidate failed")
+            return _api_error(API_CODE_DB, "运动生涯候选事件处理失败")
+
+    def get_career_memory(self, filters: dict | None = None) -> dict:
+        """Return lightweight ACS memory items without exposing local storage references."""
+        try:
+            clean_filters = filters if isinstance(filters, dict) else None
+            return _api_success(career_backend.get_career_memory(clean_filters))
+        except Exception:
+            logger.exception("get_career_memory failed")
+            return _api_error(API_CODE_DB, "运动生涯记忆查询失败")
+
+    def get_latest_career_snapshot(self) -> dict:
+        """Return the latest persisted ACS Career Snapshot without generating or invoking AI."""
+        try:
+            return _api_success(career_backend.get_latest_career_snapshot())
+        except Exception:
+            logger.exception("get_latest_career_snapshot failed")
+            return _api_error(API_CODE_DB, "运动生涯快照查询失败")
+
+    def generate_career_insight(self, payload: dict | None = None) -> dict:
+        """Return a fallback ACS Career Insight from the white-listed Career Snapshot."""
+        try:
+            clean_payload = payload if isinstance(payload, dict) else {}
+            return _api_success(career_backend.generate_career_insight(clean_payload))
+        except ValueError as exc:
+            return _api_error(API_CODE_VALIDATION, str(exc))
+        except Exception:
+            logger.exception("generate_career_insight failed")
+            return _api_error(API_CODE_DB, "运动生涯洞察生成失败")
+
+    def save_career_memory_story(self, payload: dict | None = None) -> dict:
+        """Create or update a user-written ACS story memory item."""
+        try:
+            clean_payload = payload if isinstance(payload, dict) else {}
+            return _api_success(career_backend.save_career_memory_story(clean_payload))
+        except ValueError as exc:
+            return _api_error(API_CODE_VALIDATION, str(exc))
+        except Exception:
+            logger.exception("save_career_memory_story failed")
+            return _api_error(API_CODE_DB, "运动生涯记忆故事保存失败")
+
+    def save_career_memory_media(self, payload: dict | None = None) -> dict:
+        """Create or update an ACS photo/track memory item with a safe media reference."""
+        try:
+            clean_payload = payload if isinstance(payload, dict) else {}
+            return _api_success(career_backend.save_career_memory_media(clean_payload))
+        except ValueError as exc:
+            return _api_error(API_CODE_VALIDATION, str(exc))
+        except Exception:
+            logger.exception("save_career_memory_media failed")
+            return _api_error(API_CODE_DB, "运动生涯记忆媒体保存失败")
+
+    def pick_and_save_career_memory_photo(self, payload: dict | None = None) -> dict:
+        """Pick a local image, copy it to the controlled media dir, and save a photo memory."""
+        clean_payload = payload if isinstance(payload, dict) else {}
+        try:
+            clean_activity_id = int(clean_payload.get("activity_id"))
+            if clean_activity_id <= 0:
+                return _api_error(API_CODE_VALIDATION, "activity_id 无效")
+        except (TypeError, ValueError):
+            return _api_error(API_CODE_VALIDATION, "activity_id 无效")
+
+        title = " ".join(str(clean_payload.get("title") or "照片记忆").split()) or "照片记忆"
+        race_id = str(clean_payload.get("race_id") or "").strip()
+        try:
+            import webview
+            from webview import FileDialog
+
+            if not webview.windows:
+                return _api_error(API_CODE_INTERNAL, "窗口未就绪")
+            try:
+                paths = webview.windows[0].create_file_dialog(
+                    FileDialog.OPEN,
+                    allow_multiple=False,
+                    file_types=("Image files (*.jpg;*.jpeg;*.png;*.webp)",),
+                )
+            except TypeError:
+                paths = webview.windows[0].create_file_dialog(
+                    FileDialog.OPEN,
+                    file_types=("Image files (*.jpg;*.jpeg;*.png;*.webp)",),
+                )
+            if not paths:
+                return _api_success({"cancelled": True})
+            selected = paths[0] if isinstance(paths, (list, tuple)) else paths
+            media_ref = _copy_career_memory_photo_to_controlled_media(selected, clean_activity_id)
+            data = career_backend.save_career_memory_media({
+                "activity_id": str(clean_activity_id),
+                "race_id": race_id,
+                "memory_type": "photo",
+                "title": title,
+                "media_ref": media_ref,
+            })
+            data["cancelled"] = False
+            return _api_success(data)
+        except ValueError as exc:
+            return _api_error(API_CODE_VALIDATION, str(exc))
+        except Exception:
+            logger.exception("pick_and_save_career_memory_photo failed")
+            return _api_error(API_CODE_DB, "运动生涯记忆照片保存失败")
+
+    def get_activity_race_photos(self, activity_id: Any) -> dict:
+        """Return safe race photos for the current Activity Detail context."""
+        try:
+            clean_activity_id = int(activity_id)
+            if clean_activity_id <= 0:
+                return _api_error(API_CODE_VALIDATION, "activity_id 无效")
+            return _api_success(career_backend.get_activity_race_photos(str(clean_activity_id)))
+        except ValueError as exc:
+            return _api_error(API_CODE_VALIDATION, str(exc))
+        except Exception:
+            logger.exception("get_activity_race_photos failed")
+            return _api_error(API_CODE_DB, "赛事照片查询失败")
+
+    def pick_and_add_activity_race_photos(self, payload: dict | None = None) -> dict:
+        """Pick local images for the current race Activity Detail and save safe refs."""
+        clean_payload = payload if isinstance(payload, dict) else {}
+        try:
+            clean_activity_id = int(clean_payload.get("activity_id"))
+            if clean_activity_id <= 0:
+                return _api_error(API_CODE_VALIDATION, "activity_id 无效")
+        except (TypeError, ValueError):
+            return _api_error(API_CODE_VALIDATION, "activity_id 无效")
+
+        try:
+            current = career_backend.get_activity_race_photos(str(clean_activity_id))
+            summary = current.get("summary") if isinstance(current, dict) else {}
+            if not bool((summary or {}).get("can_manage")):
+                return _api_error(API_CODE_VALIDATION, "赛事照片只能绑定已确认赛事活动")
+            remaining = int((summary or {}).get("remaining") or 0)
+            if remaining <= 0:
+                return _api_error(API_CODE_VALIDATION, "每个赛事活动最多保存 5 张照片")
+
+            import webview
+            from webview import FileDialog
+
+            if not webview.windows:
+                return _api_error(API_CODE_INTERNAL, "窗口未就绪")
+            try:
+                paths = webview.windows[0].create_file_dialog(
+                    FileDialog.OPEN,
+                    allow_multiple=True,
+                    file_types=("Image files (*.jpg;*.jpeg;*.png;*.webp)",),
+                )
+            except TypeError:
+                paths = webview.windows[0].create_file_dialog(
+                    FileDialog.OPEN,
+                    file_types=("Image files (*.jpg;*.jpeg;*.png;*.webp)",),
+                )
+            if not paths:
+                return _api_success({"cancelled": True})
+            selected_paths = list(paths) if isinstance(paths, (list, tuple)) else [paths]
+            if len(selected_paths) > remaining:
+                return _api_error(API_CODE_VALIDATION, f"本次最多还能添加 {remaining} 张照片")
+            media_items = [
+                _copy_activity_race_photo_bundle_to_controlled_media(selected, clean_activity_id)
+                for selected in selected_paths
+            ]
+            data = career_backend.add_activity_race_photos({
+                "activity_id": str(clean_activity_id),
+                "media_items": media_items,
+                "title": "赛事照片",
+            })
+            data["cancelled"] = False
+            return _api_success(data)
+        except ValueError as exc:
+            return _api_error(API_CODE_VALIDATION, str(exc))
+        except Exception:
+            logger.exception("pick_and_add_activity_race_photos failed")
+            return _api_error(API_CODE_DB, "赛事照片保存失败")
+
+    def reorder_activity_race_photos(self, payload: dict | None = None) -> dict:
+        """Persist race photo order for the current Activity Detail."""
+        try:
+            clean_payload = payload if isinstance(payload, dict) else {}
+            return _api_success(career_backend.reorder_activity_race_photos(clean_payload))
+        except ValueError as exc:
+            return _api_error(API_CODE_VALIDATION, str(exc))
+        except Exception:
+            logger.exception("reorder_activity_race_photos failed")
+            return _api_error(API_CODE_DB, "赛事照片排序失败")
+
+    def deactivate_activity_race_photo(self, payload: dict | None = None) -> dict:
+        """Soft-delete one race photo for the current Activity Detail."""
+        try:
+            clean_payload = payload if isinstance(payload, dict) else {}
+            return _api_success(career_backend.deactivate_activity_race_photo(clean_payload))
+        except ValueError as exc:
+            return _api_error(API_CODE_VALIDATION, str(exc))
+        except Exception:
+            logger.exception("deactivate_activity_race_photo failed")
+            return _api_error(API_CODE_DB, "赛事照片删除失败")
+
+    def save_career_race_photo(self, payload: dict | None = None) -> dict:
+        """Bind a safe ACS photo reference as the Overview Banner for a race activity."""
+        try:
+            clean_payload = payload if isinstance(payload, dict) else {}
+            return _api_success(career_backend.save_career_race_photo(clean_payload))
+        except ValueError as exc:
+            return _api_error(API_CODE_VALIDATION, str(exc))
+        except Exception:
+            logger.exception("save_career_race_photo failed")
+            return _api_error(API_CODE_DB, "赛事照片保存失败")
+
+    def pick_and_save_career_race_photo(self, activity_id: Any) -> dict:
+        """Pick a local image, copy it to the controlled media dir, and bind it to a race Banner."""
+        try:
+            clean_activity_id = int(activity_id)
+            if clean_activity_id <= 0:
+                return _api_error(API_CODE_VALIDATION, "activity_id 无效")
+        except (TypeError, ValueError):
+            return _api_error(API_CODE_VALIDATION, "activity_id 无效")
+        try:
+            import webview
+            from webview import FileDialog
+
+            if not webview.windows:
+                return _api_error(API_CODE_INTERNAL, "窗口未就绪")
+            paths = webview.windows[0].create_file_dialog(
+                FileDialog.OPEN,
+                allow_multiple=False,
+                file_types=("Image files (*.jpg;*.jpeg;*.png;*.webp)",),
+            )
+            if not paths:
+                return _api_success({"cancelled": True})
+            selected = paths[0] if isinstance(paths, (list, tuple)) else paths
+            media_ref = _copy_career_race_photo_to_controlled_media(selected, clean_activity_id)
+            data = career_backend.save_career_race_photo({
+                "activity_id": str(clean_activity_id),
+                "media_ref": media_ref,
+                "title": "赛事 Banner 照片",
+            })
+            data["cancelled"] = False
+            return _api_success(data)
+        except TypeError:
+            try:
+                import webview
+                from webview import FileDialog
+
+                paths = webview.windows[0].create_file_dialog(
+                    FileDialog.OPEN,
+                    file_types=("Image files (*.jpg;*.jpeg;*.png;*.webp)",),
+                )
+                if not paths:
+                    return _api_success({"cancelled": True})
+                selected = paths[0] if isinstance(paths, (list, tuple)) else paths
+                media_ref = _copy_career_race_photo_to_controlled_media(selected, clean_activity_id)
+                data = career_backend.save_career_race_photo({
+                    "activity_id": str(clean_activity_id),
+                    "media_ref": media_ref,
+                    "title": "赛事 Banner 照片",
+                })
+                data["cancelled"] = False
+                return _api_success(data)
+            except ValueError as exc:
+                return _api_error(API_CODE_VALIDATION, str(exc))
+            except Exception:
+                logger.exception("pick_and_save_career_race_photo fallback failed")
+                return _api_error(API_CODE_DB, "赛事照片保存失败")
+        except ValueError as exc:
+            return _api_error(API_CODE_VALIDATION, str(exc))
+        except Exception:
+            logger.exception("pick_and_save_career_race_photo failed")
+            return _api_error(API_CODE_DB, "赛事照片保存失败")
+
+    def update_career_memory_story(self, payload: dict | None = None) -> dict:
+        """Update a user-written ACS story memory item."""
+        try:
+            clean_payload = payload if isinstance(payload, dict) else {}
+            return _api_success(career_backend.update_career_memory_story(clean_payload))
+        except ValueError as exc:
+            return _api_error(API_CODE_VALIDATION, str(exc))
+        except Exception:
+            logger.exception("update_career_memory_story failed")
+            return _api_error(API_CODE_DB, "运动生涯记忆故事更新失败")
+
+    def deactivate_career_memory_item(self, payload: dict | None = None) -> dict:
+        """Deactivate an ACS memory item without physical deletion."""
+        try:
+            clean_payload = payload if isinstance(payload, dict) else {}
+            return _api_success(career_backend.deactivate_career_memory_item(clean_payload))
+        except ValueError as exc:
+            return _api_error(API_CODE_VALIDATION, str(exc))
+        except Exception:
+            logger.exception("deactivate_career_memory_item failed")
+            return _api_error(API_CODE_DB, "运动生涯记忆停用失败")
+
     def _query_activity_list_records(self, sport_filter: str = "all", title_keyword: str = "") -> tuple[str, list[dict[str, Any]], list[str]]:
         try:
             ensure_activity_sync_schema()
@@ -11291,6 +12079,11 @@ class Api:
                            region_attempt_count,
                            weather_json,
                            updated_at,
+                           is_race,
+                           race_source,
+                           race_confirmed_at,
+                           race_confidence,
+                           race_override,
                            COALESCE(NULLIF(processing_status, ''), 'ready') AS processing_status,
                            processing_error,
                            CASE
@@ -11504,6 +12297,117 @@ class Api:
         except Exception:
             logger.exception("get_activity_detail failed activity_id=%s", activity_id)
             return _api_error(API_CODE_DB, "活动详情查询失败")
+
+    def update_activity_title(self, activity_id: int, title: str) -> dict:
+        """Update the user-facing activity title without touching FIT-derived facts."""
+        aid = _safe_int(activity_id)
+        clean_title = re.sub(r"\s+", " ", str(title or "")).strip()
+        if not aid:
+            return _api_error(API_CODE_VALIDATION, "activity_id 无效")
+        if not clean_title:
+            return _api_error(API_CODE_VALIDATION, "活动标题不能为空")
+        if len(clean_title) > 80:
+            return _api_error(API_CODE_VALIDATION, "活动标题不能超过 80 个字符")
+
+        try:
+            ensure_activity_sync_schema()
+            conn = profile_backend._conn()
+            try:
+                exists = conn.execute(
+                    "SELECT id FROM activities WHERE id = ? AND deleted_at IS NULL",
+                    (aid,),
+                ).fetchone()
+                if not exists:
+                    return _api_error(API_CODE_NOT_FOUND, "未找到该活动记录")
+                conn.execute(
+                    """
+                    UPDATE activities
+                    SET title = ?, title_source = 'user', updated_at = datetime('now')
+                    WHERE id = ? AND deleted_at IS NULL
+                    """,
+                    (clean_title, aid),
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+            finally:
+                conn.close()
+
+            row = self._fetch_activity_row(aid)
+            record = _build_record_from_row(self, row, 0) if row else None
+            return _api_success({"record": record}, msg="活动标题已更新")
+        except Exception:
+            logger.exception("update_activity_title failed activity_id=%s", activity_id)
+            return _api_error(API_CODE_DB, "活动标题更新失败")
+
+    def set_activity_race_flag(self, activity_id: int, is_race: Any, source: str = "user") -> dict:
+        """Manually mark or unmark an activity as a race."""
+        aid = _safe_int(activity_id)
+        race_flag = _parse_boolish_flag(is_race)
+        source_text = "user" if source is None else str(source).strip().lower()
+        if aid <= 0:
+            return _api_error(API_CODE_VALIDATION, "activity_id 无效")
+        if race_flag is None:
+            return _api_error(API_CODE_VALIDATION, "is_race 必须是布尔值")
+        if source_text != "user":
+            return _api_error(API_CODE_VALIDATION, "仅允许用户手动设置赛事标记")
+
+        try:
+            ensure_activity_sync_schema()
+            conn = profile_backend._conn()
+            try:
+                exists = conn.execute(
+                    "SELECT id FROM activities WHERE id = ? AND deleted_at IS NULL",
+                    (aid,),
+                ).fetchone()
+                if not exists:
+                    return _api_error(API_CODE_NOT_FOUND, "未找到该活动记录")
+                conn.execute(
+                    """
+                    UPDATE activities
+                    SET is_race = ?,
+                        race_source = 'user',
+                        race_confirmed_at = datetime('now'),
+                        race_confidence = 'high',
+                        race_override = 1,
+                        updated_at = datetime('now')
+                    WHERE id = ? AND deleted_at IS NULL
+                    """,
+                    (1 if race_flag else 0, aid),
+                )
+                row = conn.execute(
+                    """
+                    SELECT id, is_race, race_source, race_confirmed_at, race_confidence, race_override
+                    FROM activities
+                    WHERE id = ? AND deleted_at IS NULL
+                    """,
+                    (aid,),
+                ).fetchone()
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+            finally:
+                conn.close()
+
+            data_row = dict(row) if row else {}
+            career_refresh = _refresh_career_derived_events_safe("manual_race_flag")
+            return _api_success(
+                {
+                    "activity_id": aid,
+                    "is_race": bool(_safe_int(data_row.get("is_race"))),
+                    "race_source": str(data_row.get("race_source") or "user"),
+                    "race_confidence": str(data_row.get("race_confidence") or "high"),
+                    "race_override": _safe_int(data_row.get("race_override")),
+                    "race_confirmed_at": data_row.get("race_confirmed_at"),
+                    "career_refresh": career_refresh,
+                },
+                msg="赛事标记已更新",
+            )
+        except Exception:
+            logger.exception("set_activity_race_flag failed activity_id=%s", activity_id)
+            return _api_error(API_CODE_DB, "赛事标记更新失败")
 
     def backfill_activity_weather(self, activity_id: int) -> dict:
         """仅为当前活动补全一次天气快照。"""
@@ -12355,8 +13259,10 @@ class Api:
                 review_input_window,
                 distance_curve_km,
             )
-            review_cadence_curve = _trim_review_series_by_window(
-                _safe_json_list(row.get("cadence_curve")) or [],
+            review_cadence_curve = _build_review_cadence_curve(
+                row,
+                curves_snapshot,
+                bundle,
                 review_input_window,
                 distance_curve_km,
             )
@@ -12610,7 +13516,7 @@ class Api:
                         "cadence_stability",
                         duration_sec=_duration_v712,
                         sport_type=sport_type,
-                        cadence_points=len(review_cadence_curve),
+                        cadence_points=_review_cadence_valid_points(review_cadence_curve),
                     ) if _cadence_result.get("confidence") == "unavailable" else [],
                 }
                 # V8.5:21d 中位数 cadence CV baseline trend
@@ -12990,6 +13896,16 @@ class Api:
             logger.exception("get_trace_activity_history failed")
             return _api_error(API_CODE_DB, str(e))
 
+    def refresh_activity_region(self, activity_id: int) -> dict:
+        try:
+            result = profile_backend.refresh_activity_region(_safe_int(activity_id, 0))
+            if result.get("ok"):
+                return _api_success(result)
+            return _api_error(API_CODE_EXTERNAL_SERVICE, str(result.get("error") or "地区查询失败"), result)
+        except Exception as e:
+            logger.warning("refresh_activity_region failed: %s", e)
+            return _api_error(API_CODE_EXTERNAL_SERVICE, str(e))
+
     def check_activity_data_integrity(self) -> dict:
         try:
             return check_activity_data_integrity()
@@ -13319,6 +14235,11 @@ def _build_record_from_row(api_self, row: dict, idx: int) -> dict:
         "has_local_file": bool(str(row.get("file_path") or "").strip() and os.path.isfile(str(row.get("file_path") or "").strip())),
         "processing_status": str(row.get("processing_status") or "ready"),
         "processing_error": str(row.get("processing_error") or ""),
+        "is_race": bool(_safe_int(row.get("is_race"))),
+        "race_source": str(row.get("race_source") or ""),
+        "race_confirmed_at": str(row.get("race_confirmed_at") or ""),
+        "race_confidence": str(row.get("race_confidence") or ""),
+        "race_override": _safe_int(row.get("race_override")),
         "shadow_diff": _decode_weather_json(row.get("shadow_diff_json")) if row.get("shadow_diff_json") else {},
         "thumbnail_points": detail["thumbnail_points"],
         "detail": detail,

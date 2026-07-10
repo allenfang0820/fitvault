@@ -285,6 +285,39 @@ class TestCyclingExplanationSignalsContract(unittest.TestCase):
         for forbidden in ("points", "records", "raw_records", "curves"):
             self.assertNotIn(f'"{forbidden}"', encoded)
 
+    def test_p9_aerobic_drift_keeps_short_duration_unavailable(self):
+        import main
+
+        power = [0] * 40 + [180] * 160
+        hr = [135] * 100 + [140] * 100
+        signals = main._build_cycling_explanation_signals(
+            "cycling",
+            summary={
+                "avg_power": 150,
+                "normalized_power": 170,
+                "duration_sec": 1849,
+                "power_available": True,
+                "cadence_available": True,
+                "power_points_count": 160,
+                "cadence_points_count": 200,
+                "power_data_quality": "available",
+                "cadence_data_quality": "available",
+                "zero_power_ratio": 0.2,
+            },
+            curves_snapshot={
+                "hr": hr,
+                "power": power,
+                "cadence": [80] * 200,
+                "speed": [7] * 200,
+                "time": list(range(200)),
+            },
+            profile_ftp_watts=250,
+        )
+
+        drift = signals["aerobic_drift_signal"]
+        self.assertEqual(drift["status"], "unavailable")
+        self.assertIn("duration<45min", drift["reasons"])
+
     def test_p9_aerobic_drift_classifies_significant_drift(self):
         import main
 

@@ -14,6 +14,7 @@ if _PROJECT_ROOT not in sys.path:
 
 TRACK_HTML = os.path.join(_PROJECT_ROOT, "track.html")
 MAIN_PY = os.path.join(_PROJECT_ROOT, "main.py")
+GAP_CALCULATOR_PY = os.path.join(_PROJECT_ROOT, "gap_calculator.py")
 LLM_BACKEND_PY = os.path.join(_PROJECT_ROOT, "llm_backend.py")
 PLAN_MD = os.path.join(_PROJECT_ROOT, "docs", "fatigue_review_realignment_plan_v1.md")
 P7_IA_MD = os.path.join(_PROJECT_ROOT, "docs", "p7_fatigue_review_analysis_cockpit_information_architecture.md")
@@ -666,7 +667,7 @@ class TestP5P4UiStructureGate(unittest.TestCase):
             ".fr-capacity-metrics-strip .metric-card:first-child .fr-metric-info::after",
             "transform: translateX(0) translateY(0)",
             "把上坡和下坡影响折算进去后的配速",
-            "用速度和心率的关系观察推进效率",
+            "由坡度修正速度与心率关系换算",
             "显示路线所处高度变化",
             "显示当前路段的上坡或下坡程度",
             "把坡度、速度和持续时间合成的地形压力参考",
@@ -1148,9 +1149,12 @@ class TestP5P4UiStructureGate(unittest.TestCase):
             "key: 'efficiency_curve'",
             "displayAsPace: true",
             "name: '坡度修正配速（GAP）'",
-            "unit: 'Speed/HR'",
+            "name: '效率指数'",
+            "unit: '×1000'",
+            "displayScale: 1000",
         ):
             self.assertIn(text, running_block)
+        self.assertNotIn("unit: 'Speed/HR'", running_block)
 
     def test_p7_18d_lane_order_labels_and_tooltip_format_are_preserved(self):
         fn_idx = self.html.find("function _renderFatigueReviewLayeredEcharts")
@@ -1164,7 +1168,7 @@ class TestP5P4UiStructureGate(unittest.TestCase):
             "name: '心率'",
             "name: '配速'",
             "name: '坡度修正配速（GAP）'",
-            "name: '效率'",
+            "name: '效率指数'",
             "name: '海拔'",
             "name: '坡度'",
             "name: '地形负荷'",
@@ -1180,6 +1184,7 @@ class TestP5P4UiStructureGate(unittest.TestCase):
             "function _frFormatPaceAxisSecPerKm(value)",
             "function _frFormatPaceTooltip(value, capped, capLabel)",
             "function _frPairDistanceDisplayCurve(distanceCurve, displayCurve)",
+            "function _frScalePairedDisplayCurve(points, scale)",
             "Math.round(num * 10) / 10",
             "rounded.toFixed(1)",
             "\"''/km\"",
@@ -1194,8 +1199,9 @@ class TestP5P4UiStructureGate(unittest.TestCase):
             "var formatValue = lanes[l].valueFormatter || _frFormatTooltipNumber",
             "tooltipValue = _frFormatPaceTooltip(rawValue, isCapped, lanes[l].capLabel)",
             "displayAsPace: true",
-            "valueFormatter: def.displayAsPace ? _frFormatPaceSecPerKm : _frFormatTooltipNumber",
-            "axisValueFormatter: def.displayAsPace ? _frFormatPaceAxisSecPerKm : _frFormatTooltipNumber",
+            "pairedData = _frScalePairedDisplayCurve(pairedData, def.displayScale)",
+            "valueFormatter: def.valueFormatter || (def.displayAsPace ? _frFormatPaceSecPerKm : _frFormatTooltipNumber)",
+            "axisValueFormatter: def.axisValueFormatter || (def.displayAsPace ? _frFormatPaceAxisSecPerKm : _frFormatTooltipNumber)",
             "inverseAxis: !!def.displayAsPace",
             "inverse: !!lane.inverseAxis",
             "formatter: lane.axisValueFormatter || _frFormatTooltipNumber",
@@ -1231,9 +1237,12 @@ class TestP5P4UiStructureGate(unittest.TestCase):
             "name: '坡度修正配速（GAP）'",
             "displayAsPace: true",
             "_frPairDistanceDisplayCurve(distanceCurve, curve)",
+            "_frScalePairedDisplayCurve(pairedData, def.displayScale)",
             "terrain_load_curve",
             "activityData && activityData.terrain_load_curve",
-            "unit: 'Speed/HR'",
+            "name: '效率指数'",
+            "unit: '×1000'",
+            "displayScale: 1000",
             "unit: 'grade×speed×s'",
         ):
             self.assertIn(text, fn_body + lane_defs)
@@ -1246,6 +1255,22 @@ class TestP5P4UiStructureGate(unittest.TestCase):
             "speedMps",
         ):
             self.assertNotIn(forbidden, fn_body)
+
+    def test_running_efficiency_index_is_display_scaled_only(self):
+        fn_idx = self.html.find("function _renderFatigueReviewLayeredEcharts")
+        self.assertGreater(fn_idx, 0)
+        fn_body = self.html[fn_idx:self.html.find("\n    function clearProfileAnalysisChart", fn_idx)]
+        lane_defs = _extract_js_function(self.html, "_fatigueReviewChartLaneDefs")
+        gap_src = _read(GAP_CALCULATOR_PY)
+        main_src = _read(MAIN_PY)
+
+        self.assertIn("ei = gap_spd / hr", gap_src)
+        self.assertIn("displayScale: 1000", lane_defs)
+        self.assertIn("pairedData = _frScalePairedDisplayCurve(pairedData, def.displayScale)", fn_body)
+        self.assertIn("return [point[0], value == null ? null : value * factor]", self.html)
+        self.assertNotIn("activityData[def.key] =", fn_body)
+        self.assertNotIn("curves_snapshot[\"efficiency\"] * 1000", main_src)
+        self.assertNotIn("resolved.get(\"efficiency_curve\") * 1000", main_src)
 
     def test_p7_18e_fatigue_review_chart_auto_resize_is_bound_and_cleaned(self):
         for text in (
@@ -1461,7 +1486,7 @@ class TestP5P4UiStructureGate(unittest.TestCase):
         render_body = _extract_js_function(self.html, "_renderFatigueReviewMetrics")
 
         self.assertIn(
-            "_renderFatigueReviewMetrics(data.metrics || {}, data.sport_type, data.cycling_explanation_signals || {})",
+            "_renderFatigueReviewMetrics(data.metrics || {}, data.sport_type, data.cycling_explanation_signals || {}, data.summary || {})",
             open_body,
         )
         for text in (
@@ -1503,6 +1528,12 @@ class TestP5P4UiStructureGate(unittest.TestCase):
             "if (!_fatigueReviewCyclingSignalCanOwnHeadline(signal))",
             "依据：",
             "缺少个人 FTP",
+            "getFatigueReviewPowerQualityNote(summary, signals, key)",
+            "summary.zero_power_ratio",
+            "summary.invalid_power_ratio",
+            "power_invalid_points_count",
+            "0W / 停踩",
+            "活动时长不足 45 分钟",
             "当前只作为辅助依据",
             "可参考",
             "_fatigueReviewCyclingCardHeadlinePolicy",
@@ -1531,7 +1562,6 @@ class TestP5P4UiStructureGate(unittest.TestCase):
             "innerText",
             "chartPayload",
             "curves.",
-            "summary.avg_power",
             "metrics.",
             "powerVar.vi",
             "hrDrift.pct",

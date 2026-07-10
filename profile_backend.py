@@ -36,6 +36,39 @@ DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 logger = logging.getLogger(__name__)
 
+
+def _fitvault_log_dir() -> Path:
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    if sys.platform.startswith("win") and local_app_data:
+        return Path(local_app_data).expanduser() / "FitVault" / "logs"
+    return Path.home() / ".fitvault" / "logs"
+
+
+def _fitvault_log_path(filename: str) -> Path:
+    return _fitvault_log_dir() / filename
+
+
+def _safe_file_logger(name: str, filename: str) -> logging.Logger:
+    log = logging.getLogger(name)
+    if log.handlers:
+        return log
+    log.setLevel(logging.INFO)
+    log.propagate = False
+    try:
+        log_path = _fitvault_log_path(filename)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        fh = logging.FileHandler(log_path, encoding="utf-8")
+    except Exception:
+        log.addHandler(logging.NullHandler())
+        return log
+    fh.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+    log.addHandler(fh)
+    return log
+
+
+def _duplicate_check_logger() -> logging.Logger:
+    return _safe_file_logger("duplicate_check", "duplicate_check.log")
+
 SQLITE_POOL_SIZE = 6
 SQLITE_POOL_ACQUIRE_TIMEOUT_SEC = 10.0
 SQLITE_BUSY_TIMEOUT_MS = 15000
@@ -1039,6 +1072,7 @@ def _init_schema(conn: sqlite3.Connection) -> None:
         "hr_decoupling","tss",         "points_json", "updated_at",
         "sport_type",   "sub_sport_type",
         "processing_status", "processing_error",
+        "race_source",  "race_confirmed_at", "race_confidence", "race_override",
     )
     activity_dtypes = (
         "TEXT", "REAL", "INTEGER", "INTEGER",
@@ -1058,6 +1092,7 @@ def _init_schema(conn: sqlite3.Connection) -> None:
         "REAL", "REAL", "TEXT", "TEXT DEFAULT (datetime('now'))",
         "TEXT", "TEXT DEFAULT 'unknown'",
         "TEXT DEFAULT 'ready'", "TEXT",
+        "TEXT", "TEXT", "TEXT", "INTEGER DEFAULT 0",
     )
     assert len(activity_columns) == len(activity_dtypes), "activity_columns/dtypes mismatch"
     for col, dtype in zip(activity_columns, activity_dtypes):
@@ -1164,6 +1199,10 @@ def _init_schema(conn: sqlite3.Connection) -> None:
         ("cadence_curve", "TEXT"),
         ("hr_zone_distribution", "TEXT"),
         ("is_race", "INTEGER DEFAULT 0"),
+        ("race_source", "TEXT"),
+        ("race_confirmed_at", "TEXT"),
+        ("race_confidence", "TEXT"),
+        ("race_override", "INTEGER DEFAULT 0"),
         ("is_event", "INTEGER DEFAULT 0"),
         ("is_intermittent", "INTEGER DEFAULT 0"),
         ("laps_json", "TEXT"),  # 真实圈速数据 (FIT lap_mesgs 归一化)
@@ -1706,6 +1745,21 @@ _TECHNICAL_ACTIVITY_TITLE_RE = re.compile(
     r"^(?:coros[\s_-]*)?(?:activity[\s_-]*fit[\s_-]*files?|activity)(?:[\s_-]+[0-9a-f]{8,})?$",
     re.IGNORECASE,
 )
+_ACTIVITY_FILE_ID_SUFFIX_RE = re.compile(r"^(?P<title>.+?)[_\s]+\d{6,}(?:[-_]\d+)*$")
+
+
+def clean_activity_filename_title(value: Any) -> str:
+    """Remove provider activity ids and local collision suffixes from filename titles."""
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    stem = Path(text).stem if text.lower().endswith(".fit") else text
+    match = _ACTIVITY_FILE_ID_SUFFIX_RE.fullmatch(stem.strip())
+    if match:
+        cleaned = str(match.group("title") or "").strip(" _-")
+        if cleaned:
+            return cleaned
+    return stem.strip()
 
 
 def _is_technical_activity_title(title: Any) -> bool:
@@ -1743,6 +1797,11 @@ def build_activity_display_title(
     """Build a user-facing activity title without exposing provider temp filenames."""
     source = str(title_source or "").strip()
     title = str(current_title or "").strip()
+    if title and source == "filename":
+        cleaned_filename_title = clean_activity_filename_title(title)
+        if cleaned_filename_title != title and not _is_technical_activity_title(cleaned_filename_title):
+            return cleaned_filename_title, source
+        title = cleaned_filename_title
     should_replace = not title or source in _AUTO_ACTIVITY_TITLE_SOURCES or _is_technical_activity_title(title)
     if not should_replace:
         return title, source or "fit"
@@ -1768,8 +1827,20 @@ def backfill_auto_activity_titles(conn: sqlite3.Connection | None = None, limit:
             FROM activities
             WHERE COALESCE(deleted_at, '') = ''
               AND (
-                COALESCE(title_source, '') IN ('filename', 'auto_sport', 'auto_region_sport')
+                COALESCE(title_source, '') IN ('auto_sport', 'auto_region_sport')
+                OR TRIM(COALESCE(title, '')) = ''
+                OR (
+                  COALESCE(title_source, '') = 'filename'
+                  AND (
+                    COALESCE(title, '') GLOB '*_[0-9][0-9][0-9][0-9][0-9][0-9]*'
+                    OR COALESCE(title, '') GLOB '* [0-9][0-9][0-9][0-9][0-9][0-9]*'
+                  )
+                )
                 OR lower(COALESCE(title, '')) LIKE '%activity-fit-files%'
+                OR (
+                  length(TRIM(COALESCE(title, ''))) >= 16
+                  AND lower(TRIM(COALESCE(title, ''))) NOT GLOB '*[^0-9a-f]*'
+                )
                 OR lower(COALESCE(filename, '')) LIKE 'coros___activity-fit-files%'
                 OR lower(COALESCE(file_name, '')) LIKE 'coros___activity-fit-files%'
               )
@@ -1926,6 +1997,11 @@ def get_activity_list_filtered(
         "weather_json, "
         "source_type, "
         "is_mock, "
+        "is_race, "
+        "race_source, "
+        "race_confirmed_at, "
+        "race_confidence, "
+        "race_override, "
         "updated_at, "
         "CASE WHEN TRIM(COALESCE(NULLIF(track_json, ''), NULLIF(points_json, ''), '')) NOT IN ('', '[]', '{}') THEN 1 ELSE 0 END AS has_track"
     )
@@ -2094,7 +2170,14 @@ def build_activity_payload(filename: str, data: dict[str, Any], src_path: str | 
     hr_values = [int(p["hr"]) for p in points if p.get("hr") is not None]
     alt_values = [float(p.get("alt") or 0.0) for p in points if p.get("alt") is not None]
     raw_title = str(data.get("title") or data.get("fit_title") or filename).strip()
-    raw_title_source = str(data.get("title_source") or ("fit_title" if data.get("title") or data.get("fit_title") else "filename")).strip()
+    explicit_title_source = str(data.get("title_source") or "").strip()
+    filename_stem = Path(str(filename or "")).stem.strip()
+    if explicit_title_source:
+        raw_title_source = explicit_title_source
+    elif raw_title in {str(filename or "").strip(), filename_stem}:
+        raw_title_source = "filename"
+    else:
+        raw_title_source = "fit_title" if data.get("title") or data.get("fit_title") else "filename"
     avg_hr = data.get("avg_hr")
     max_hr = data.get("max_hr")
     start_lat, start_lon = _extract_start_coordinates(points)
@@ -2597,6 +2680,171 @@ def run_region_enrichment_once(limit: int = REGION_ENRICH_LIMIT, max_requests: i
         _REGION_ENRICH_LOCK.release()
 
 
+def refresh_activity_region(activity_id: int) -> dict[str, Any]:
+    """Manually re-run reverse geocoding for one activity."""
+    aid = int(activity_id or 0)
+    if aid <= 0:
+        return {"ok": False, "error": "无效活动 ID"}
+
+    conn = _conn()
+    try:
+        row = conn.execute(
+            """
+            SELECT id, start_lat, start_lon, title, title_source, sport_type, sub_sport_type
+            FROM activities
+            WHERE id = ? AND COALESCE(deleted_at, '') = ''
+            LIMIT 1
+            """,
+            (aid,),
+        ).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return {"ok": False, "error": "未找到活动记录"}
+
+    cache_info = _region_cache_key(row["start_lat"], row["start_lon"])
+    if cache_info is None:
+        title, title_source = build_activity_display_title(
+            current_title=row["title"],
+            title_source=row["title_source"],
+            sport_type=row["sport_type"],
+            sub_sport_type=row["sub_sport_type"],
+            region_display="室内运动",
+        )
+        conn = _conn()
+        try:
+            conn.execute(
+                """
+                UPDATE activities
+                SET title = ?, title_source = ?,
+                    region_status = 'none',
+                    region_display = '室内运动',
+                    region = '室内运动（无GPS）',
+                    region_error = NULL,
+                    region_updated_at = ?,
+                    updated_at = updated_at
+                WHERE id = ?
+                """,
+                (title, title_source, datetime.now().isoformat(), aid),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        return {
+            "ok": True,
+            "region": "室内运动（无GPS）",
+            "region_display": "室内运动",
+            "region_status": "none",
+        }
+
+    cache_key, lat_round, lon_round = cache_info
+    now = datetime.now().isoformat()
+
+    conn = _conn()
+    try:
+        cached = conn.execute(
+            "SELECT city, country, display FROM geocode_cache WHERE cache_key = ? AND status = 'success' LIMIT 1",
+            (cache_key,),
+        ).fetchone()
+        if cached and str(cached["display"] or "").strip():
+            display = str(cached["display"] or "").strip()
+            title, title_source = build_activity_display_title(
+                current_title=row["title"],
+                title_source=row["title_source"],
+                sport_type=row["sport_type"],
+                sub_sport_type=row["sub_sport_type"],
+                region_display=display,
+            )
+            conn.execute(
+                """
+                UPDATE activities
+                SET title = ?, title_source = ?,
+                    region_city = ?, region_country = ?, region_display = ?, region = ?,
+                    region_status = 'success', region_error = NULL, region_updated_at = ?,
+                    updated_at = updated_at
+                WHERE id = ?
+                """,
+                (title, title_source, cached["city"], cached["country"], display, display, now, aid),
+            )
+            conn.execute("UPDATE geocode_cache SET last_used_at = ? WHERE cache_key = ?", (now, cache_key))
+            conn.commit()
+            with _REGION_CACHE_LOCK:
+                _REGION_CACHE[(lat_round, lon_round)] = display
+            return {
+                "ok": True,
+                "region": display,
+                "region_city": cached["city"],
+                "region_country": cached["country"],
+                "region_display": display,
+                "region_status": "success",
+                "cache_hit": True,
+            }
+    finally:
+        conn.close()
+
+    try:
+        geo = reverse_geocode(lat_round, lon_round)
+        city, country, display = _extract_city_country(geo)
+        if not display:
+            raise RuntimeError("未返回城市/国家")
+        title, title_source = build_activity_display_title(
+            current_title=row["title"],
+            title_source=row["title_source"],
+            sport_type=row["sport_type"],
+            sub_sport_type=row["sub_sport_type"],
+            region_display=display,
+        )
+        conn = _conn()
+        try:
+            _write_geocode_cache(conn, cache_key, lat_round, lon_round, city, country, display, "success", None)
+            conn.execute(
+                """
+                UPDATE activities
+                SET title = ?, title_source = ?,
+                    region_city = ?, region_country = ?, region_display = ?, region = ?,
+                    region_status = 'success', region_error = NULL, region_updated_at = ?,
+                    updated_at = updated_at
+                WHERE id = ?
+                """,
+                (title, title_source, city, country, display, display, datetime.now().isoformat(), aid),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        with _REGION_CACHE_LOCK:
+            _REGION_CACHE[(lat_round, lon_round)] = display
+        return {
+            "ok": True,
+            "region": display,
+            "region_city": city,
+            "region_country": country,
+            "region_display": display,
+            "region_status": "success",
+            "cache_hit": False,
+        }
+    except Exception as exc:
+        message = str(exc)
+        conn = _conn()
+        try:
+            _write_geocode_cache(conn, cache_key, lat_round, lon_round, None, None, "", "failed", message)
+            conn.execute(
+                """
+                UPDATE activities
+                SET region_status = 'failed',
+                    region_error = ?,
+                    region_attempt_count = COALESCE(region_attempt_count, 0) + 1,
+                    region_updated_at = ?,
+                    updated_at = updated_at
+                WHERE id = ?
+                """,
+                (message, datetime.now().isoformat(), aid),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        return {"ok": False, "error": message, "region_status": "failed"}
+
+
 def start_region_enrichment_background(limit: int = REGION_ENRICH_LIMIT, on_complete = None) -> None:
     def _run():
         result = run_region_enrichment_once(limit=limit)
@@ -2615,9 +2863,8 @@ def ingest_activity_file(
     new_filename: str | None = None,
 ) -> dict[str, Any]:
     import track_backend
-    import logging
 
-    logger = logging.getLogger("duplicate_check")
+    logger = _duplicate_check_logger()
     p = Path(src_path).expanduser().resolve()
     if not p.is_file():
         return {"ok": False, "error": f"文件不存在: {src_path}"}
@@ -3194,18 +3441,10 @@ def check_duplicate_activity(
     3. 核心运动数据匹配：距离差异 < 10%。
     """
     import track_backend
-    import logging
     import json
     from datetime import datetime
-    import os
 
-    # 设置独立的查重日志记录
-    logger = logging.getLogger("duplicate_check")
-    if not logger.handlers:
-        logger.setLevel(logging.INFO)
-        fh = logging.FileHandler("duplicate_check.log", encoding="utf-8")
-        fh.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-        logger.addHandler(fh)
+    logger = _duplicate_check_logger()
 
     deleted_clause = "" if include_deleted else "WHERE deleted_at IS NULL"
     conn = _conn()

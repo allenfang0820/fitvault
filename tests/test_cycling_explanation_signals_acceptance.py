@@ -435,7 +435,7 @@ class TestP7CyclingReviewFrontendAndAiAcceptance(unittest.TestCase):
 
     def test_ui_minimal_entry_uses_backend_signals_without_signal_reconstruction(self):
         self.assertIn(
-            "_renderFatigueReviewMetrics(data.metrics || {}, data.sport_type, data.cycling_explanation_signals || {})",
+            "_renderFatigueReviewMetrics(data.metrics || {}, data.sport_type, data.cycling_explanation_signals || {}, data.summary || {})",
             self.track_html,
         )
         start = self.track_html.index("function _fatigueReviewCyclingSignal(")

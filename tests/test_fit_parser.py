@@ -1,3 +1,4 @@
+import logging
 import tempfile
 import unittest
 from datetime import datetime
@@ -21,6 +22,13 @@ def _first_existing(paths: list[str]) -> Optional[Path]:
 
 def _write_minimal_fit_header(path: str) -> None:
     Path(path).write_bytes(bytes([14]) + b"\x00" * 7 + b".FIT" + b"\x00" * 2)
+
+
+def _reset_logger(name: str) -> None:
+    logger = logging.getLogger(name)
+    for handler in list(logger.handlers):
+        logger.removeHandler(handler)
+        handler.close()
 
 
 class FakeField:
@@ -258,7 +266,7 @@ class TestFitParser(unittest.TestCase):
         class FakeFitParseError(Exception):
             pass
 
-        with tempfile.NamedTemporaryFile(suffix=".fit") as temp_fit:
+        with tempfile.NamedTemporaryFile(suffix=".fit") as temp_fit, tempfile.TemporaryDirectory() as temp_home:
             _write_minimal_fit_header(temp_fit.name)
 
             def _raise_fit_error(*_args, **_kwargs):
@@ -266,15 +274,45 @@ class TestFitParser(unittest.TestCase):
 
             old_deps = fit_engine._FITPARSE_DEPS
             fit_engine._FITPARSE_DEPS = (_raise_fit_error, FakeFitParseError)
+            _reset_logger("fit_engine.core")
             try:
-                with self.assertRaisesRegex(ValueError, "FIT 文件损坏或已截断"):
-                    track_backend.parse_track_file(temp_fit.name)
+                with mock.patch.object(fit_engine.Path, "home", return_value=Path(temp_home)):
+                    with self.assertRaisesRegex(ValueError, "FIT 文件损坏或已截断"):
+                        track_backend.parse_track_file(temp_fit.name)
+                    log_path = fit_engine.fit_parse_log_path()
+                    self.assertEqual(log_path, Path(temp_home) / ".fitvault" / "logs" / "fit_parse.log")
+                    self.assertTrue(log_path.exists())
+                    log_text = log_path.read_text(encoding="utf-8")
             finally:
                 fit_engine._FITPARSE_DEPS = old_deps
+                _reset_logger("fit_engine.core")
 
-        self.assertTrue(fit_engine.FIT_PARSE_LOG_PATH.exists())
-        log_text = fit_engine.FIT_PARSE_LOG_PATH.read_text(encoding="utf-8")
         self.assertIn("FIT 文件初始化失败", log_text)
+
+    def test_fit_parse_log_prefers_localappdata_on_windows(self):
+        with tempfile.TemporaryDirectory() as temp_local_app_data:
+            with mock.patch.object(fit_engine.sys, "platform", "win32"), \
+                 mock.patch.dict(fit_engine.os.environ, {"LOCALAPPDATA": temp_local_app_data}, clear=False):
+                self.assertEqual(
+                    fit_engine.fit_parse_log_path(),
+                    Path(temp_local_app_data) / "FitVault" / "logs" / "fit_parse.log",
+                )
+
+    def test_fit_parse_continues_when_log_file_handler_fails(self):
+        old_deps = fit_engine._FITPARSE_DEPS
+        fit_engine._FITPARSE_DEPS = (FakeFitFile, Exception)
+        _reset_logger("fit_engine.core")
+        try:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                temp_fit = Path(temp_dir) / "normal.fit"
+                _write_minimal_fit_header(str(temp_fit))
+                with mock.patch.object(fit_engine.logging, "FileHandler", side_effect=PermissionError("denied")):
+                    result = fit_engine.FITCoreEngine.parse_fit_file(temp_fit)
+        finally:
+            fit_engine._FITPARSE_DEPS = old_deps
+            _reset_logger("fit_engine.core")
+
+        self.assertEqual(result["basic_info"].get("activity_type"), "swimming")
 
     def test_metrics_resolver_supports_flat_record_curves(self):
         resolver = MetricsResolver()

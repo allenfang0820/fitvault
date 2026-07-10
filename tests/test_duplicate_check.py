@@ -1,20 +1,32 @@
 import unittest
 import os
+import logging
 import sqlite3
 from pathlib import Path
 import profile_backend
 import tempfile
 import json
 import main
+from unittest import mock
+
+
+def _reset_logger(name: str) -> None:
+    logger = logging.getLogger(name)
+    for handler in list(logger.handlers):
+        logger.removeHandler(handler)
+        handler.close()
 
 class TestDuplicateCheck(unittest.TestCase):
     def setUp(self):
         # Setup a temporary database for testing
         self.temp_db_path = "temp_test_db.sqlite"
+        for suffix in ("", "-wal", "-shm"):
+            Path(f"{self.temp_db_path}{suffix}").unlink(missing_ok=True)
         profile_backend.DB_PATH = Path(self.temp_db_path)
         
         # Initialize schema
         conn = profile_backend._conn()
+        conn.close()
         
         # Mock some points for spatial matching tests
         self.points_test1 = [
@@ -48,6 +60,7 @@ class TestDuplicateCheck(unittest.TestCase):
         })
         
     def tearDown(self):
+        _reset_logger("duplicate_check")
         # Clean up temporary database
         if os.path.exists(self.temp_db_path):
             os.unlink(self.temp_db_path)
@@ -85,6 +98,28 @@ class TestDuplicateCheck(unittest.TestCase):
         self.assertTrue(res["is_duplicate"])
         self.assertTrue(res["score"] >= 80.0)
         self.assertEqual(res["duplicate_record"]["filename"], "test1.fit")
+
+    def test_duplicate_check_continues_when_log_file_handler_fails(self):
+        _reset_logger("duplicate_check")
+        with mock.patch.object(profile_backend.logging, "FileHandler", side_effect=PermissionError("denied")):
+            res = profile_backend.check_duplicate_activity(
+                start_time="2023-01-01T10:00:00Z",
+                dist_km=10.5,
+                duration_sec=3600,
+                points_json=[],
+            )
+
+        self.assertTrue(res["is_duplicate"])
+        self.assertEqual(res["duplicate_record"]["filename"], "test1.fit")
+
+    def test_duplicate_check_log_prefers_localappdata_on_windows(self):
+        with tempfile.TemporaryDirectory() as temp_local_app_data:
+            with mock.patch.object(profile_backend.sys, "platform", "win32"), \
+                 mock.patch.dict(profile_backend.os.environ, {"LOCALAPPDATA": temp_local_app_data}, clear=False):
+                self.assertEqual(
+                    profile_backend._fitvault_log_path("duplicate_check.log"),
+                    Path(temp_local_app_data) / "FitVault" / "logs" / "duplicate_check.log",
+                )
 
     def test_deleted_activity_does_not_count_as_duplicate(self):
         conn = profile_backend._conn()
