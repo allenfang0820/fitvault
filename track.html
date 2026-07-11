@@ -1222,15 +1222,14 @@
             margin-top: 10px;
         }
         .career-season-pill {
-            --career-season-pill-color: #7dd3fc;
-            --career-season-pill-rgb: 125, 211, 252;
+            --career-season-pill-border: rgba(148, 163, 184, 0.46);
             display: inline-flex;
             align-items: baseline;
             gap: 4px;
             max-width: 100%;
-            border: 1px solid rgba(var(--career-season-pill-rgb), 0.24);
+            border: 1px solid var(--career-season-pill-border);
             border-radius: 999px;
-            background: rgba(var(--career-season-pill-rgb), 0.12);
+            background: rgba(15, 23, 42, 0.82);
             padding: 4px 8px;
             box-sizing: border-box;
             font-size: 0.6rem;
@@ -1239,41 +1238,41 @@
             overflow-wrap: anywhere;
         }
         .career-season-pill-label {
-            color: rgba(226, 232, 240, 0.74);
+            color: #94a3b8;
             font-weight: 720;
         }
         .career-season-pill-value {
-            color: var(--career-season-pill-color);
+            color: #e2e8f0;
             font-weight: 880;
             font-variant-numeric: tabular-nums;
         }
+        .career-season-pill.is-zero {
+            border-color: rgba(100, 116, 139, 0.34);
+        }
+        .career-season-pill.is-zero .career-season-pill-label,
+        .career-season-pill.is-zero .career-season-pill-value {
+            color: #64748b;
+        }
         .career-season-pill[data-career-season-pill="activities"] {
-            --career-season-pill-color: #7dd3fc;
-            --career-season-pill-rgb: 125, 211, 252;
+            --career-season-pill-border: rgba(125, 211, 252, 0.48);
         }
         .career-season-pill[data-career-season-pill="distance"] {
-            --career-season-pill-color: #4fd1a1;
-            --career-season-pill-rgb: 79, 209, 161;
+            --career-season-pill-border: rgba(74, 222, 128, 0.48);
         }
         .career-season-pill[data-career-season-pill="races"] {
-            --career-season-pill-color: #f5a36c;
-            --career-season-pill-rgb: 245, 163, 108;
+            --career-season-pill-border: rgba(148, 163, 184, 0.56);
         }
         .career-season-pill[data-career-season-pill="pbs"] {
-            --career-season-pill-color: #b9a4f4;
-            --career-season-pill-rgb: 185, 164, 244;
+            --career-season-pill-border: rgba(203, 213, 225, 0.58);
         }
         .career-season-pill[data-career-season-pill="achievements"] {
-            --career-season-pill-color: #f28da1;
-            --career-season-pill-rgb: 242, 141, 161;
+            --career-season-pill-border: rgba(244, 114, 182, 0.5);
         }
         .career-season-pill[data-career-season-pill="memories"] {
-            --career-season-pill-color: #e9bd66;
-            --career-season-pill-rgb: 233, 189, 102;
+            --career-season-pill-border: rgba(250, 204, 21, 0.48);
         }
         .career-season-pill[data-career-season-pill="cities"] {
-            --career-season-pill-color: #58d2c7;
-            --career-season-pill-rgb: 88, 210, 199;
+            --career-season-pill-border: rgba(34, 211, 238, 0.48);
         }
         .career-season-empty {
             grid-column: 1 / -1;
@@ -11487,7 +11486,9 @@
     }
 
     function careerSeasonPillHtml(type, label, value) {
-        return '<span class="career-season-pill" data-career-season-pill="' + safeHtml(type) + '">'
+        const numericValue = parseFloat(String(value == null ? '' : value));
+        const isZero = Number.isFinite(numericValue) && numericValue === 0;
+        return '<span class="career-season-pill' + (isZero ? ' is-zero' : '') + '" data-career-season-pill="' + safeHtml(type) + '">'
             + '<span class="career-season-pill-label">' + safeHtml(label) + '</span>'
             + '<span class="career-season-pill-value">' + safeHtml(value) + '</span>'
             + '</span>';

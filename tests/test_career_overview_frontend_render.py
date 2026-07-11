@@ -131,8 +131,10 @@ class TestCareerOverviewFrontendRender(unittest.TestCase):
         card_css = extract_between(self.source, ".career-season-card {", ".career-season-head {")
 
         self.assertIn("Math.round(count)", count_body)
-        self.assertIn('class="career-season-pill"', pill_body)
+        self.assertIn('class="career-season-pill', pill_body)
         self.assertIn('data-career-season-pill', pill_body)
+        self.assertIn("parseFloat", pill_body)
+        self.assertIn("is-zero", pill_body)
         self.assertNotIn("const yearSuffix", card_body)
         self.assertIn('class="career-season-year-number"', card_body)
         self.assertNotIn('class="career-season-year-suffix"', card_body)
@@ -170,6 +172,27 @@ class TestCareerOverviewFrontendRender(unittest.TestCase):
         self.assertIn(".career-season-pill[data-career-season-pill=\"races\"]", self.source)
         self.assertIn(".career-season-pill[data-career-season-pill=\"pbs\"]", self.source)
         self.assertIn(".career-season-pill[data-career-season-pill=\"achievements\"]", self.source)
+        pill_css = extract_between(self.source, ".career-season-pill {", ".career-season-pill-label {")
+        label_css = extract_between(self.source, ".career-season-pill-label {", ".career-season-pill-value {")
+        value_css = extract_between(self.source, ".career-season-pill-value {", ".career-season-pill.is-zero {")
+        race_css = extract_between(
+            self.source,
+            '.career-season-pill[data-career-season-pill="races"] {',
+            '.career-season-pill[data-career-season-pill="pbs"] {',
+        )
+        pb_css = extract_between(
+            self.source,
+            '.career-season-pill[data-career-season-pill="pbs"] {',
+            '.career-season-pill[data-career-season-pill="achievements"] {',
+        )
+        self.assertIn("background: rgba(15, 23, 42, 0.82)", pill_css)
+        self.assertIn("border: 1px solid var(--career-season-pill-border)", pill_css)
+        self.assertNotIn("rgba(var(--career-season-pill-rgb)", pill_css)
+        self.assertIn("color: #94a3b8", label_css)
+        self.assertIn("color: #e2e8f0", value_css)
+        self.assertIn("148, 163, 184", race_css)
+        self.assertIn("203, 213, 225", pb_css)
+        self.assertNotIn("background:", race_css + pb_css)
         self.assertNotIn(".career-season-highlight:not(:first-child)::before", self.source)
 
     def test_memory_banner_replaces_three_question_cards(self):
