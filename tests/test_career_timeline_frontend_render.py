@@ -183,10 +183,11 @@ class TestCareerTimelineFrontendRender(unittest.TestCase):
         self.assertNotIn("careerTimelineSeasonSummaryHtml(year)", year_body)
         self.assertIn("career-timeline-year-title", year_body)
         self.assertIn("career-timeline-month-axis", month_body)
+        self.assertIn("careerTimelineDayTicksHtml(month)", month_body)
         self.assertIn("careerTimelineTrackHtml(month, 'race', yearValue)", month_body)
         self.assertIn("careerTimelineTrackHtml(month, 'milestone', yearValue)", month_body)
         self.assertIn("data-career-timeline-track", track_body)
-        self.assertIn("(day - 1) / Math.max(daysInMonth - 1, 1) * 100", position_body)
+        self.assertIn("careerTimelineNodeLeftPercent(node, month)", position_body)
         for token in FORBIDDEN_FACT_TOKENS:
             self.assertNotIn(token, year_body + month_body + track_body + position_body)
 

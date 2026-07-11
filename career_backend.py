@@ -3371,6 +3371,17 @@ def _build_timeline_race_node(
     sport = str(race.get("sport") or "")
     activity_id = str(race.get("activity_id") or "")
     pb_badge_scope = (pb_scope_by_activity or {}).get(activity_id, "none")
+    card_metrics = race.get("card_metrics") if isinstance(race.get("card_metrics"), list) else []
+    result_value = next(
+        (
+            str(metric.get("value") or "")
+            for metric in card_metrics
+            if isinstance(metric, dict)
+            and str(metric.get("label") or "") in {"成绩", "时间"}
+            and str(metric.get("value") or "")
+        ),
+        "",
+    )
     return {
         "id": race["id"],
         "type": "race",
@@ -3378,7 +3389,7 @@ def _build_timeline_race_node(
         "activity_id": activity_id,
         "title": race["name"],
         "badge": event_type,
-        "value": "",
+        "value": result_value,
         "meta": " · ".join(part for part in (city, _career_sport_label(sport)) if part),
         "event_type": event_type,
         "sport": sport,

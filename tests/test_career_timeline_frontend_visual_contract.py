@@ -180,6 +180,8 @@ class TestCareerTimelineFrontendVisualContract(unittest.TestCase):
         self.assertIn("grid-template-columns: 1fr", mobile_css)
         self.assertIn(".career-timeline-track-lane .career-timeline-node", mobile_css)
         self.assertIn("position: relative", mobile_css)
+        self.assertIn("top: auto !important", mobile_css)
+        self.assertIn("left: auto !important", mobile_css)
 
     def test_year_label_and_month_connector_match_timeline_reference(self):
         year_css = css_block(self.source, ".career-timeline-year-title")
@@ -208,7 +210,7 @@ class TestCareerTimelineFrontendVisualContract(unittest.TestCase):
 
         self.assertIn("min-height: 32px", node_css)
         self.assertIn("padding: 5px 8px", node_css)
-        self.assertIn("width: min(156px, 24%)", node_css)
+        self.assertIn("width: clamp(112px, 18%, 156px)", node_css)
         self.assertIn("display: block", node_css)
         self.assertIn("tone-race", self.source)
         self.assertIn("tone-first", self.source)
@@ -218,9 +220,73 @@ class TestCareerTimelineFrontendVisualContract(unittest.TestCase):
         self.assertIn("badge.indexOf('首次')", tone_body)
         self.assertIn("badge.indexOf('累计')", tone_body)
         self.assertIn("badge.indexOf('年度')", tone_body)
-        self.assertIn("Math.min(94, Math.max(6, leftPercent))", position_body)
-        self.assertIn("lane * 36", position_body)
+        self.assertIn("careerTimelineNodeLeftPercent(node, month)", position_body)
+        self.assertIn("lane * CAREER_TIMELINE_LANE_HEIGHT", position_body)
         self.assertIn("careerTimelineNodeAriaLabel(node)", node_body)
+
+    def test_timeline_day_axis_lights_event_dates(self):
+        month_body = extract_function_body(self.source, "function careerTimelineMonthHtml(month)")
+        ticks_body = extract_function_body(self.source, "function careerTimelineDayTicksHtml(month)")
+        tick_css = css_block(self.source, ".career-timeline-day-tick")
+        active_css = css_block(self.source, ".career-timeline-day-tick.is-active")
+        active_dot_css = css_block(self.source, ".career-timeline-day-tick.is-active::after")
+
+        self.assertIn("careerTimelineDayTicksHtml(month)", month_body)
+        self.assertIn("day <= daysInMonth", ticks_body)
+        self.assertIn("activeDays.has(day)", ticks_body)
+        self.assertIn("day % 5 === 0", ticks_body)
+        self.assertIn("is-major", ticks_body)
+        self.assertIn("data-career-timeline-day", ticks_body)
+        self.assertIn("日有事件", ticks_body)
+        self.assertIn("position: absolute", tick_css)
+        self.assertIn("color: #d1fae5", active_css)
+        self.assertIn("background: #4ade80", active_dot_css)
+        self.assertIn("box-shadow", active_dot_css)
+        mobile_css = extract_between(
+            self.source,
+            "@media (max-width: 980px)",
+            "/* V1.0:三个预留 tab",
+        )
+        self.assertIn(".career-timeline-day-tick.is-major", mobile_css)
+        self.assertIn("color: transparent", mobile_css)
+
+    def test_nearby_timeline_nodes_use_collision_aware_lanes(self):
+        layout_body = extract_function_body(self.source, "function careerTimelineLayoutTrackNodes(nodes, month)")
+        track_body = extract_function_body(self.source, "function careerTimelineTrackHtml(month, track)")
+        lane_css = css_block(self.source, ".career-timeline-track-lane")
+
+        self.assertIn("CAREER_TIMELINE_NODE_MIN_GAP_PERCENT", layout_body)
+        self.assertIn("Math.abs(existing - center)", layout_body)
+        self.assertIn("laneCenters[lane]", layout_body)
+        self.assertNotIn("% CAREER_TIMELINE_TRACK_LANES", layout_body)
+        self.assertIn("careerTimelineLayoutTrackNodes(visibleNodes, month)", track_body)
+        self.assertIn("--career-timeline-lane-count", track_body)
+        self.assertIn("--career-timeline-lane-count", lane_css)
+
+    def test_milestone_tones_share_fill_and_use_distinct_borders(self):
+        node_css = css_block(self.source, ".career-timeline-node")
+        for selector in (
+            ".career-timeline-node.tone-first",
+            ".career-timeline-node.tone-cumulative",
+            ".career-timeline-node.tone-annual",
+            ".career-timeline-node.tone-achievement",
+            ".career-timeline-node.tone-milestone",
+        ):
+            tone_css = css_block(self.source, selector)
+            self.assertIn("border-color", tone_css)
+            self.assertNotIn("background:", tone_css)
+        self.assertIn("background: rgba(15, 23, 42, 0.88)", node_css)
+
+    def test_race_node_shows_result_without_rank_fields(self):
+        node_body = extract_function_body(self.source, "function careerTimelineNodeHtml(node)")
+        aria_body = extract_function_body(self.source, "function careerTimelineNodeAriaLabel(node)")
+        result_css = css_block(self.source, ".career-timeline-node-result")
+        self.assertIn("formatCareerTimelineNodeValue(node)", node_body)
+        self.assertIn("career-timeline-node-result", node_body)
+        self.assertIn("formatCareerTimelineNodeValue(node)", aria_body)
+        self.assertIn("font-weight: 900", result_css)
+        for token in ("rank", "placement", "名次", "排名"):
+            self.assertNotIn(token, node_body.lower())
 
     def test_filter_active_state_and_accessibility_are_clear(self):
         panel = extract_between(

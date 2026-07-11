@@ -151,6 +151,27 @@ class TestCareerOverviewTimelineRaces(unittest.TestCase):
         finally:
             conn.close()
 
+    def test_timeline_race_node_exposes_finish_result_without_rank(self):
+        conn = sqlite3.connect(":memory:")
+        try:
+            career_backend.ensure_career_schema(conn)
+            _insert_race(
+                conn,
+                performance_summary_json=json.dumps(
+                    {"result_text": "01:28:45", "rank_text": "第 12 名"},
+                    ensure_ascii=False,
+                ),
+            )
+
+            result = career_backend.get_career_timeline({"type": "race"}, conn)
+
+            node = result["years"][0]["months"][0]["nodes"][0]
+            self.assertEqual(node["value"], "01:28:45")
+            self.assertNotIn("rank", node)
+            self.assertNotIn("placement", node)
+        finally:
+            conn.close()
+
     def test_timeline_sport_filter_is_ignored_in_06b_view_model(self):
         conn = sqlite3.connect(":memory:")
         try:

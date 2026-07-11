@@ -79,7 +79,8 @@ class TestCareerTimelineFrontendLargeRender(unittest.TestCase):
 
     def test_month_level_progressive_rendering_contract_exists(self):
         self.assertIn("const CAREER_TIMELINE_TRACK_INITIAL_LIMIT = 3", self.source)
-        self.assertIn("const CAREER_TIMELINE_TRACK_LANES = 3", self.source)
+        self.assertIn("const CAREER_TIMELINE_NODE_MIN_GAP_PERCENT = 19", self.source)
+        self.assertIn("const CAREER_TIMELINE_LANE_HEIGHT = 54", self.source)
         self.assertIn("timelineExpandedMonths", self.source)
         self.assertIn("function careerTimelineMonthKey(yearValue, monthValue)", self.source)
         self.assertIn("function careerTimelineTrackKey(yearValue, monthValue, track)", self.source)
@@ -92,7 +93,8 @@ class TestCareerTimelineFrontendLargeRender(unittest.TestCase):
         hidden_body = extract_function_body(self.source, "function careerTimelineTrackHiddenNodes(nodes, expanded)")
         self.assertIn("sorted.slice(0, CAREER_TIMELINE_TRACK_INITIAL_LIMIT)", visible_body)
         self.assertIn("slice(CAREER_TIMELINE_TRACK_INITIAL_LIMIT)", hidden_body)
-        self.assertIn("visibleNodes.map", track_body)
+        self.assertIn("careerTimelineLayoutTrackNodes(visibleNodes, month)", track_body)
+        self.assertIn("layout.map", track_body)
         self.assertIn("hiddenNodes.length", track_body)
         self.assertIn("更多", track_body)
         self.assertIn("career-timeline-track-more", track_body)
@@ -137,14 +139,17 @@ class TestCareerTimelineFrontendLargeRender(unittest.TestCase):
         self.assertIn("overflow", button_css + focus_css)
         self.assertIn("outline: none", focus_css)
 
-    def test_track_positioning_uses_lane_offsets(self):
+    def test_track_positioning_uses_collision_aware_lane_offsets(self):
         position_body = extract_function_body(self.source, "function careerTimelineNodePositionStyle(node, month)")
-        lane_body = extract_function_body(self.source, "function careerTimelineNodeLane(node, index)")
+        layout_body = extract_function_body(self.source, "function careerTimelineLayoutTrackNodes(nodes, month)")
         track_body = extract_function_body(self.source, "function careerTimelineTrackHtml(month, track)")
-        self.assertIn("CAREER_TIMELINE_TRACK_LANES", position_body + lane_body)
+        self.assertIn("CAREER_TIMELINE_NODE_MIN_GAP_PERCENT", layout_body)
+        self.assertIn("Math.abs(existing - center)", layout_body)
+        self.assertIn("CAREER_TIMELINE_LANE_HEIGHT", position_body)
         self.assertIn("topOffset", position_body)
         self.assertIn("data-career-timeline-lane", position_body)
-        self.assertIn("careerTimelineNodeLane(node, index)", track_body)
+        self.assertIn("careerTimelineLayoutTrackNodes(visibleNodes, month)", track_body)
+        self.assertIn("--career-timeline-lane-count", track_body)
 
     def test_large_render_functions_keep_data_boundary(self):
         relevant = "\n".join(
@@ -157,7 +162,8 @@ class TestCareerTimelineFrontendLargeRender(unittest.TestCase):
                 "function careerTimelineSortTrackNodes(nodes)",
                 "function careerTimelineTrackVisibleNodes(nodes, expanded)",
                 "function careerTimelineTrackHiddenNodes(nodes, expanded)",
-                "function careerTimelineNodeLane(node, index)",
+                "function careerTimelineNodeLeftPercent(node, month)",
+                "function careerTimelineLayoutTrackNodes(nodes, month)",
                 "function careerTimelineNodePositionStyle(node, month)",
                 "function careerTimelineTrackHtml(month, track)",
                 "function careerTimelineMonthHtml(month)",

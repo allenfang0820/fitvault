@@ -1479,7 +1479,6 @@
         .career-timeline-axis-line {
             position: relative;
             height: 1px;
-            margin: 2px 0 8px;
             background: linear-gradient(90deg, rgba(125, 211, 252, 0.08), rgba(125, 211, 252, 0.34), rgba(250, 204, 21, 0.18));
         }
         .career-timeline-axis-line::before,
@@ -1498,6 +1497,56 @@
         .career-timeline-axis-line::after {
             right: 0;
             background: rgba(250, 204, 21, 0.5);
+        }
+        .career-timeline-date-axis {
+            display: grid;
+            grid-template-columns: 52px minmax(0, 1fr);
+            gap: 8px;
+            min-width: 0;
+            margin-bottom: 8px;
+        }
+        .career-timeline-date-ticks {
+            position: relative;
+            height: 24px;
+            min-width: 0;
+        }
+        .career-timeline-date-ticks .career-timeline-axis-line {
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 4px;
+        }
+        .career-timeline-day-tick {
+            position: absolute;
+            top: 0;
+            width: 20px;
+            height: 24px;
+            transform: translateX(-50%);
+            color: #64748b;
+            font-family: "DIN Next", "DIN NEXT", "DIN Alternate", "Avenir Next Condensed", "Arial Narrow", sans-serif;
+            font-size: 0.48rem;
+            line-height: 1;
+            text-align: center;
+            pointer-events: none;
+        }
+        .career-timeline-day-tick::after {
+            content: "";
+            position: absolute;
+            left: 50%;
+            bottom: 1px;
+            width: 5px;
+            height: 5px;
+            border-radius: 999px;
+            background: #475569;
+            transform: translateX(-50%);
+        }
+        .career-timeline-day-tick.is-active {
+            color: #d1fae5;
+            font-weight: 900;
+        }
+        .career-timeline-day-tick.is-active::after {
+            background: #4ade80;
+            box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.12), 0 0 10px rgba(74, 222, 128, 0.78);
         }
         .career-timeline-track {
             display: grid;
@@ -1525,7 +1574,7 @@
         }
         .career-timeline-track-lane {
             position: relative;
-            min-height: 92px;
+            min-height: calc(var(--career-timeline-lane-count, 1) * 54px + 8px);
             min-width: 0;
             border-radius: 8px;
             background: rgba(15, 23, 42, 0.22);
@@ -1564,12 +1613,11 @@
         }
         .career-timeline-node {
             position: relative;
-            width: min(156px, 24%);
-            min-width: 106px;
-            max-width: 164px;
+            width: clamp(112px, 18%, 156px);
             border-radius: 8px;
-            border: 1px solid rgba(125, 211, 252, 0.18);
-            background: rgba(8, 47, 73, 0.2);
+            border: 1px solid rgba(148, 163, 184, 0.24);
+            border-left-width: 3px;
+            background: rgba(15, 23, 42, 0.88);
             padding: 5px 8px;
             cursor: pointer;
             display: block;
@@ -1584,34 +1632,34 @@
         .career-timeline-node:hover,
         .career-timeline-node:focus {
             border-color: rgba(125, 211, 252, 0.32);
-            background: rgba(15, 23, 42, 0.58);
+            background: rgba(15, 23, 42, 0.96);
             box-shadow: 0 14px 28px rgba(2, 6, 23, 0.32);
             outline: none;
             z-index: 5;
         }
         .career-timeline-node.tone-race {
-            border-color: rgba(125, 211, 252, 0.24);
-            background: rgba(8, 47, 73, 0.34);
+            border-color: rgba(56, 189, 248, 0.82);
+            box-shadow: inset 3px 0 0 rgba(56, 189, 248, 0.18), 0 8px 18px rgba(2, 6, 23, 0.16);
         }
         .career-timeline-node.tone-first {
-            border-color: rgba(52, 211, 153, 0.3);
-            background: rgba(6, 78, 59, 0.28);
+            border-color: rgba(59, 130, 246, 0.82);
+            box-shadow: inset 3px 0 0 rgba(59, 130, 246, 0.18), 0 8px 18px rgba(2, 6, 23, 0.16);
         }
         .career-timeline-node.tone-cumulative {
-            border-color: rgba(250, 204, 21, 0.3);
-            background: rgba(113, 63, 18, 0.26);
+            border-color: rgba(34, 211, 238, 0.82);
+            box-shadow: inset 3px 0 0 rgba(34, 211, 238, 0.18), 0 8px 18px rgba(2, 6, 23, 0.16);
         }
         .career-timeline-node.tone-annual {
-            border-color: rgba(196, 181, 253, 0.32);
-            background: rgba(76, 29, 149, 0.24);
+            border-color: rgba(250, 204, 21, 0.82);
+            box-shadow: inset 3px 0 0 rgba(250, 204, 21, 0.16), 0 8px 18px rgba(2, 6, 23, 0.16);
         }
         .career-timeline-node.tone-achievement {
-            border-color: rgba(251, 146, 60, 0.3);
-            background: rgba(124, 45, 18, 0.24);
+            border-color: rgba(244, 114, 182, 0.8);
+            box-shadow: inset 3px 0 0 rgba(244, 114, 182, 0.16), 0 8px 18px rgba(2, 6, 23, 0.16);
         }
         .career-timeline-node.tone-milestone {
-            border-color: rgba(148, 163, 184, 0.22);
-            background: rgba(30, 41, 59, 0.3);
+            border-color: rgba(148, 163, 184, 0.72);
+            box-shadow: inset 3px 0 0 rgba(148, 163, 184, 0.14), 0 8px 18px rgba(2, 6, 23, 0.16);
         }
         .career-timeline-pb-crown {
             position: absolute;
@@ -1660,6 +1708,15 @@
             -webkit-line-clamp: 1;
             -webkit-box-orient: vertical;
             overflow: hidden;
+        }
+        .career-timeline-node-result {
+            margin-top: 3px;
+            color: #f8fafc;
+            font-family: "DIN Next", "DIN NEXT", "DIN Alternate", "Avenir Next Condensed", "Arial Narrow", sans-serif;
+            font-size: 0.68rem;
+            font-weight: 900;
+            line-height: 1.05;
+            overflow-wrap: anywhere;
         }
         .career-timeline-node:hover .career-timeline-node-title,
         .career-timeline-node:focus .career-timeline-node-title {
@@ -2665,6 +2722,21 @@
                 grid-template-columns: 1fr;
                 min-height: 0;
             }
+            .career-timeline-date-axis {
+                grid-template-columns: 1fr;
+            }
+            .career-timeline-date-axis-spacer {
+                display: none;
+            }
+            .career-timeline-day-tick {
+                color: transparent;
+            }
+            .career-timeline-day-tick.is-major {
+                color: #64748b;
+            }
+            .career-timeline-day-tick.is-active {
+                color: #d1fae5;
+            }
             .career-timeline-track-label {
                 text-align: left;
                 padding-top: 0;
@@ -2680,7 +2752,7 @@
             }
             .career-timeline-track-lane .career-timeline-node {
                 position: relative;
-                top: auto;
+                top: auto !important;
                 left: auto !important;
                 transform: none;
                 width: 100%;
@@ -12507,8 +12579,9 @@
     function careerTimelineNodeAriaLabel(node) {
         const title = node && node.title ? String(node.title) : '未命名节点';
         const meta = careerTimelineNodeMeta(node);
+        const result = node && node.type === 'race' ? formatCareerTimelineNodeValue(node) : '';
         const description = node && node.description ? String(node.description) : '';
-        return [careerTimelineTypeLabel(node && node.type), title, meta, description].filter(Boolean).join('，');
+        return [careerTimelineTypeLabel(node && node.type), title, meta, result, description].filter(Boolean).join('，');
     }
 
     function careerTimelineNodeTone(node) {
@@ -12532,17 +12605,20 @@
         const tone = careerTimelineNodeTone(node);
         const nodeLabel = careerTimelineNodeAriaLabel(node);
         const positionStyle = careerTimelineNodePositionStyle(node, month, laneIndex);
+        const raceResult = type === 'race' ? formatCareerTimelineNodeValue(node) : '';
         return '<div class="career-timeline-node ' + safeHtml(type) + ' tone-' + safeHtml(tone) + '" role="button" tabindex="0" aria-label="' + safeHtml(nodeLabel) + '" title="' + safeHtml(nodeLabel) + '" onclick="openCareerActivityDetailFromElement(this)" onkeydown="onCareerActivityDetailKeydown(event, this)" data-activity-id="' + safeHtml(activityId) + '" data-career-source="' + safeHtml(source) + '" data-career-timeline-type="' + safeHtml(type) + '" data-career-timeline-tone="' + safeHtml(tone) + '"' + positionStyle + '>'
             + careerTimelinePbCrownHtml(node)
             + '<div class="career-timeline-node-body">'
                 + '<div class="career-timeline-node-title">' + safeHtml((node && node.title) || '未命名节点') + '</div>'
                 + '<div class="career-timeline-node-meta">' + safeHtml(careerTimelineNodeDateLabel(node)) + '</div>'
+                + (raceResult ? '<div class="career-timeline-node-result">' + safeHtml(raceResult) + '</div>' : '')
             + '</div>'
             + '</div>';
     }
 
     const CAREER_TIMELINE_TRACK_INITIAL_LIMIT = 3;
-    const CAREER_TIMELINE_TRACK_LANES = 3;
+    const CAREER_TIMELINE_NODE_MIN_GAP_PERCENT = 19;
+    const CAREER_TIMELINE_LANE_HEIGHT = 54;
     const CAREER_TIMELINE_MONTH_LABELS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 
     function careerTimelineMonthKey(yearValue, monthValue) {
@@ -12599,19 +12675,52 @@
         return careerTimelineSortTrackNodes(nodes).slice(CAREER_TIMELINE_TRACK_INITIAL_LIMIT);
     }
 
-    function careerTimelineNodeLane(node, index) {
-        return Math.max(0, Number(index || 0)) % CAREER_TIMELINE_TRACK_LANES;
+    function careerTimelineNodeLeftPercent(node, month) {
+        const day = Math.max(1, Number((node && node.day) || 1));
+        const daysInMonth = Math.max(1, Number((month && month.daysInMonth) || 31));
+        const leftPercent = (day - 1) / Math.max(daysInMonth - 1, 1) * 100;
+        return Math.min(91, Math.max(9, leftPercent));
+    }
+
+    function careerTimelineLayoutTrackNodes(nodes, month) {
+        const laneCenters = [];
+        return (Array.isArray(nodes) ? nodes : []).slice().sort(function(a, b) {
+            const dayDiff = Number((a && a.day) || 0) - Number((b && b.day) || 0);
+            if (dayDiff) return dayDiff;
+            return Number((b && b.priority) || 0) - Number((a && a.priority) || 0);
+        }).map(function(node) {
+            const center = careerTimelineNodeLeftPercent(node, month);
+            let lane = 0;
+            while (lane < laneCenters.length && laneCenters[lane].some(function(existing) {
+                return Math.abs(existing - center) < CAREER_TIMELINE_NODE_MIN_GAP_PERCENT;
+            })) lane += 1;
+            if (!laneCenters[lane]) laneCenters[lane] = [];
+            laneCenters[lane].push(center);
+            return { node: node, lane: lane };
+        });
     }
 
     function careerTimelineNodePositionStyle(node, month) {
         const laneIndex = arguments.length > 2 ? arguments[2] : 0;
-        const day = Math.max(1, Number((node && node.day) || 1));
+        const leftPercent = careerTimelineNodeLeftPercent(node, month);
+        const lane = Math.max(0, Number(laneIndex || 0));
+        const topOffset = 6 + lane * CAREER_TIMELINE_LANE_HEIGHT;
+        return ' style="left:' + safeHtml(leftPercent.toFixed(2)) + '%; top:' + safeHtml(String(topOffset)) + 'px" data-career-timeline-lane="' + safeHtml(String(lane)) + '"';
+    }
+
+    function careerTimelineDayTicksHtml(month) {
         const daysInMonth = Math.max(1, Number((month && month.daysInMonth) || 31));
-        const leftPercent = (day - 1) / Math.max(daysInMonth - 1, 1) * 100;
-        const clamped = Math.min(94, Math.max(6, leftPercent));
-        const lane = Math.max(0, Number(laneIndex || 0)) % CAREER_TIMELINE_TRACK_LANES;
-        const topOffset = 6 + lane * 36;
-        return ' style="left:' + safeHtml(clamped.toFixed(2)) + '%; top:' + safeHtml(String(topOffset)) + 'px" data-career-timeline-lane="' + safeHtml(String(lane)) + '"';
+        const activeDays = new Set((month && Array.isArray(month.nodes) ? month.nodes : []).map(function(node) {
+            return Math.max(1, Math.min(daysInMonth, Number((node && node.day) || 1)));
+        }));
+        const ticks = [];
+        for (let day = 1; day <= daysInMonth; day += 1) {
+            const leftPercent = (day - 1) / Math.max(daysInMonth - 1, 1) * 100;
+            const active = activeDays.has(day);
+            const major = day === 1 || day === daysInMonth || day % 5 === 0;
+            ticks.push('<span class="career-timeline-day-tick' + (major ? ' is-major' : '') + (active ? ' is-active' : '') + '" style="left:' + safeHtml(leftPercent.toFixed(2)) + '%" data-career-timeline-day="' + safeHtml(String(day)) + '"' + (active ? ' aria-label="' + safeHtml(String(day) + ' 日有事件') + '"' : ' aria-hidden="true"') + '>' + safeHtml(String(day)) + '</span>');
+        }
+        return '<div class="career-timeline-date-axis"><div class="career-timeline-date-axis-spacer" aria-hidden="true"></div><div class="career-timeline-date-ticks"><div class="career-timeline-axis-line" aria-hidden="true"></div>' + ticks.join('') + '</div></div>';
     }
 
     function careerTimelineTrackHtml(month, track) {
@@ -12625,14 +12734,16 @@
         const expanded = isCareerTimelineMonthExpanded(trackKey);
         const visibleNodes = careerTimelineTrackVisibleNodes(nodes, expanded);
         const hiddenNodes = careerTimelineTrackHiddenNodes(nodes, expanded);
-        const lane = visibleNodes.map(function(node, index) { return careerTimelineNodeHtml(node, month, careerTimelineNodeLane(node, index)); }).join('');
+        const layout = careerTimelineLayoutTrackNodes(visibleNodes, month);
+        const laneCount = layout.reduce(function(maxLane, item) { return Math.max(maxLane, item.lane + 1); }, 1);
+        const lane = layout.map(function(item) { return careerTimelineNodeHtml(item.node, month, item.lane); }).join('');
         const moreButton = hiddenNodes.length
             ? '<button type="button" class="career-timeline-track-more" data-career-timeline-track-key="' + safeHtml(trackKey) + '" aria-label="显示该轨道更多事件" onclick="expandCareerTimelineTrack(this)">更多 ' + safeHtml(String(hiddenNodes.length)) + ' 个事件</button>'
             : '';
         return '<div class="career-timeline-track" data-career-timeline-track="' + safeHtml(key) + '">'
             + '<div class="career-timeline-track-label ' + safeHtml(key) + '">' + safeHtml(careerTimelineTrackLabel(key)) + '</div>'
             + '<div class="career-timeline-track-content">'
-                + '<div class="career-timeline-track-lane">' + lane + '</div>'
+                + '<div class="career-timeline-track-lane" style="--career-timeline-lane-count:' + safeHtml(String(laneCount)) + '">' + lane + '</div>'
                 + moreButton
             + '</div>'
             + '</div>';
@@ -12646,7 +12757,7 @@
         return '<div class="career-timeline-month" data-career-timeline-month-key="' + safeHtml(monthKey) + '">'
             + '<div class="career-timeline-month-label">' + careerTimelineMonthLabel(month && month.month) + '</div>'
             + '<div class="career-timeline-month-axis" data-career-timeline-days="' + safeHtml(String((month && month.daysInMonth) || 31)) + '">'
-                + '<div class="career-timeline-axis-line" aria-hidden="true"></div>'
+                + careerTimelineDayTicksHtml(month)
                 + raceTrack
                 + milestoneTrack
             + '</div>'
