@@ -180,6 +180,7 @@ class TestCareerTimelineFrontendRender(unittest.TestCase):
         month_body = extract_function_body(self.source, "function careerTimelineMonthHtml(month)")
         track_body = extract_function_body(self.source, "function careerTimelineTrackHtml(month, track)")
         position_body = extract_function_body(self.source, "function careerTimelineNodePositionStyle(node, month)")
+        anchor_body = extract_function_body(self.source, "function careerTimelineDayAnchorPercent(dayValue, daysInMonthValue)")
         self.assertNotIn("careerTimelineSeasonSummaryHtml(year)", year_body)
         self.assertIn("career-timeline-year-title", year_body)
         self.assertIn("career-timeline-month-axis", month_body)
@@ -188,6 +189,7 @@ class TestCareerTimelineFrontendRender(unittest.TestCase):
         self.assertIn("careerTimelineTrackHtml(month, 'milestone', yearValue)", month_body)
         self.assertIn("data-career-timeline-track", track_body)
         self.assertIn("careerTimelineNodeLeftPercent(node, month)", position_body)
+        self.assertIn("Math.min(day, daysInMonth)", anchor_body)
         for token in FORBIDDEN_FACT_TOKENS:
             self.assertNotIn(token, year_body + month_body + track_body + position_body)
 

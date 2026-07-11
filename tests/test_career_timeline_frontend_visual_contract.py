@@ -175,7 +175,7 @@ class TestCareerTimelineFrontendVisualContract(unittest.TestCase):
         self.assertIn("grid-template-columns: 64px minmax(0, 1fr)", month_css)
         self.assertIn("position: relative", track_lane_css)
         self.assertIn("position: absolute", node_lane_css)
-        self.assertIn("transform: translateX(-50%)", node_lane_css)
+        self.assertIn("transform: none", node_lane_css)
         self.assertIn(".career-timeline-month", mobile_css)
         self.assertIn("grid-template-columns: 1fr", mobile_css)
         self.assertIn(".career-timeline-track-lane .career-timeline-node", mobile_css)
@@ -210,6 +210,7 @@ class TestCareerTimelineFrontendVisualContract(unittest.TestCase):
 
         self.assertIn("min-height: 32px", node_css)
         self.assertIn("padding: 5px 8px", node_css)
+        self.assertIn("box-sizing: border-box", node_css)
         self.assertIn("width: clamp(112px, 18%, 156px)", node_css)
         self.assertIn("display: block", node_css)
         self.assertIn("tone-race", self.source)
@@ -223,6 +224,23 @@ class TestCareerTimelineFrontendVisualContract(unittest.TestCase):
         self.assertIn("careerTimelineNodeLeftPercent(node, month)", position_body)
         self.assertIn("lane * CAREER_TIMELINE_LANE_HEIGHT", position_body)
         self.assertIn("careerTimelineNodeAriaLabel(node)", node_body)
+
+    def test_date_points_and_card_left_edges_share_one_anchor(self):
+        anchor_body = extract_function_body(self.source, "function careerTimelineDayAnchorPercent(dayValue, daysInMonthValue)")
+        left_body = extract_function_body(self.source, "function careerTimelineNodeLeftPercent(node, month)")
+        ticks_body = extract_function_body(self.source, "function careerTimelineDayTicksHtml(month)")
+        date_ticks_css = css_block(self.source, ".career-timeline-date-ticks")
+        lane_css = css_block(self.source, ".career-timeline-track-lane")
+        node_lane_css = css_block(self.source, ".career-timeline-track-lane .career-timeline-node")
+
+        self.assertIn("(Math.min(day, daysInMonth) - 1)", anchor_body)
+        self.assertIn("careerTimelineDayAnchorPercent", left_body)
+        self.assertIn("careerTimelineDayAnchorPercent(day, daysInMonth)", ticks_body)
+        self.assertIn("--career-timeline-card-reserve", date_ticks_css)
+        self.assertIn("--career-timeline-card-reserve", lane_css)
+        self.assertIn("--career-timeline-card-reserve: 184px", self.source)
+        self.assertIn("transform: none", node_lane_css)
+        self.assertNotIn("translateX(-50%)", node_lane_css)
 
     def test_timeline_day_axis_lights_event_dates(self):
         month_body = extract_function_body(self.source, "function careerTimelineMonthHtml(month)")
@@ -256,8 +274,8 @@ class TestCareerTimelineFrontendVisualContract(unittest.TestCase):
         lane_css = css_block(self.source, ".career-timeline-track-lane")
 
         self.assertIn("CAREER_TIMELINE_NODE_MIN_GAP_PERCENT", layout_body)
-        self.assertIn("Math.abs(existing - center)", layout_body)
-        self.assertIn("laneCenters[lane]", layout_body)
+        self.assertIn("Math.abs(existing - anchor)", layout_body)
+        self.assertIn("laneAnchors[lane]", layout_body)
         self.assertNotIn("% CAREER_TIMELINE_TRACK_LANES", layout_body)
         self.assertIn("careerTimelineLayoutTrackNodes(visibleNodes, month)", track_body)
         self.assertIn("--career-timeline-lane-count", track_body)
@@ -276,6 +294,13 @@ class TestCareerTimelineFrontendVisualContract(unittest.TestCase):
             self.assertIn("border-color", tone_css)
             self.assertNotIn("background:", tone_css)
         self.assertIn("background: rgba(15, 23, 42, 0.88)", node_css)
+
+    def test_race_cards_use_neutral_gray_border(self):
+        race_css = css_block(self.source, ".career-timeline-node.tone-race")
+        self.assertIn("border-color: rgba(148, 163, 184, 0.72)", race_css)
+        self.assertIn("rgba(148, 163, 184, 0.14)", race_css)
+        for blue in ("56, 189, 248", "59, 130, 246", "34, 211, 238"):
+            self.assertNotIn(blue, race_css)
 
     def test_race_node_shows_result_without_rank_fields(self):
         node_body = extract_function_body(self.source, "function careerTimelineNodeHtml(node)")

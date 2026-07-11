@@ -1469,6 +1469,7 @@
             line-height: 1;
         }
         .career-timeline-month-axis {
+            --career-timeline-card-reserve: 184px;
             min-width: 0;
             border-radius: 8px;
             border: 1px solid rgba(148, 163, 184, 0.14);
@@ -1507,6 +1508,7 @@
         }
         .career-timeline-date-ticks {
             position: relative;
+            width: calc(100% - var(--career-timeline-card-reserve));
             height: 24px;
             min-width: 0;
         }
@@ -1574,6 +1576,7 @@
         }
         .career-timeline-track-lane {
             position: relative;
+            width: calc(100% - var(--career-timeline-card-reserve));
             min-height: calc(var(--career-timeline-lane-count, 1) * 54px + 8px);
             min-width: 0;
             border-radius: 8px;
@@ -1613,6 +1616,7 @@
         }
         .career-timeline-node {
             position: relative;
+            box-sizing: border-box;
             width: clamp(112px, 18%, 156px);
             border-radius: 8px;
             border: 1px solid rgba(148, 163, 184, 0.24);
@@ -1627,7 +1631,7 @@
         }
         .career-timeline-track-lane .career-timeline-node {
             position: absolute;
-            transform: translateX(-50%);
+            transform: none;
         }
         .career-timeline-node:hover,
         .career-timeline-node:focus {
@@ -1638,8 +1642,8 @@
             z-index: 5;
         }
         .career-timeline-node.tone-race {
-            border-color: rgba(56, 189, 248, 0.82);
-            box-shadow: inset 3px 0 0 rgba(56, 189, 248, 0.18), 0 8px 18px rgba(2, 6, 23, 0.16);
+            border-color: rgba(148, 163, 184, 0.72);
+            box-shadow: inset 3px 0 0 rgba(148, 163, 184, 0.14), 0 8px 18px rgba(2, 6, 23, 0.16);
         }
         .career-timeline-node.tone-first {
             border-color: rgba(59, 130, 246, 0.82);
@@ -2727,6 +2731,10 @@
             }
             .career-timeline-date-axis-spacer {
                 display: none;
+            }
+            .career-timeline-date-ticks,
+            .career-timeline-track-lane {
+                width: 100%;
             }
             .career-timeline-day-tick {
                 color: transparent;
@@ -12675,27 +12683,33 @@
         return careerTimelineSortTrackNodes(nodes).slice(CAREER_TIMELINE_TRACK_INITIAL_LIMIT);
     }
 
+    function careerTimelineDayAnchorPercent(dayValue, daysInMonthValue) {
+        const day = Math.max(1, Number(dayValue || 1));
+        const daysInMonth = Math.max(1, Number(daysInMonthValue || 31));
+        return (Math.min(day, daysInMonth) - 1) / Math.max(daysInMonth - 1, 1) * 100;
+    }
+
     function careerTimelineNodeLeftPercent(node, month) {
-        const day = Math.max(1, Number((node && node.day) || 1));
-        const daysInMonth = Math.max(1, Number((month && month.daysInMonth) || 31));
-        const leftPercent = (day - 1) / Math.max(daysInMonth - 1, 1) * 100;
-        return Math.min(91, Math.max(9, leftPercent));
+        return careerTimelineDayAnchorPercent(
+            node && node.day,
+            month && month.daysInMonth
+        );
     }
 
     function careerTimelineLayoutTrackNodes(nodes, month) {
-        const laneCenters = [];
+        const laneAnchors = [];
         return (Array.isArray(nodes) ? nodes : []).slice().sort(function(a, b) {
             const dayDiff = Number((a && a.day) || 0) - Number((b && b.day) || 0);
             if (dayDiff) return dayDiff;
             return Number((b && b.priority) || 0) - Number((a && a.priority) || 0);
         }).map(function(node) {
-            const center = careerTimelineNodeLeftPercent(node, month);
+            const anchor = careerTimelineNodeLeftPercent(node, month);
             let lane = 0;
-            while (lane < laneCenters.length && laneCenters[lane].some(function(existing) {
-                return Math.abs(existing - center) < CAREER_TIMELINE_NODE_MIN_GAP_PERCENT;
+            while (lane < laneAnchors.length && laneAnchors[lane].some(function(existing) {
+                return Math.abs(existing - anchor) < CAREER_TIMELINE_NODE_MIN_GAP_PERCENT;
             })) lane += 1;
-            if (!laneCenters[lane]) laneCenters[lane] = [];
-            laneCenters[lane].push(center);
+            if (!laneAnchors[lane]) laneAnchors[lane] = [];
+            laneAnchors[lane].push(anchor);
             return { node: node, lane: lane };
         });
     }
@@ -12715,7 +12729,7 @@
         }));
         const ticks = [];
         for (let day = 1; day <= daysInMonth; day += 1) {
-            const leftPercent = (day - 1) / Math.max(daysInMonth - 1, 1) * 100;
+            const leftPercent = careerTimelineDayAnchorPercent(day, daysInMonth);
             const active = activeDays.has(day);
             const major = day === 1 || day === daysInMonth || day % 5 === 0;
             ticks.push('<span class="career-timeline-day-tick' + (major ? ' is-major' : '') + (active ? ' is-active' : '') + '" style="left:' + safeHtml(leftPercent.toFixed(2)) + '%" data-career-timeline-day="' + safeHtml(String(day)) + '"' + (active ? ' aria-label="' + safeHtml(String(day) + ' 日有事件') + '"' : ' aria-hidden="true"') + '>' + safeHtml(String(day)) + '</span>');

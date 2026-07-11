@@ -106,6 +106,7 @@ class TestCareerPhase8VisualDensity(unittest.TestCase):
         self.assertIn("grid-template-columns: 1fr", bucket_list_css)
         self.assertIn("min-height: 0", bucket_css)
         self.assertIn("padding: 5px 8px", timeline_node_css)
+        self.assertIn("box-sizing: border-box", timeline_node_css)
         self.assertIn("display: block", timeline_node_css)
         self.assertIn("min-height: 32px", timeline_node_css)
         self.assertIn("width: clamp(112px, 18%, 156px)", timeline_node_css)

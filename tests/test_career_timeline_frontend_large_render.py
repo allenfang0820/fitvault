@@ -144,7 +144,7 @@ class TestCareerTimelineFrontendLargeRender(unittest.TestCase):
         layout_body = extract_function_body(self.source, "function careerTimelineLayoutTrackNodes(nodes, month)")
         track_body = extract_function_body(self.source, "function careerTimelineTrackHtml(month, track)")
         self.assertIn("CAREER_TIMELINE_NODE_MIN_GAP_PERCENT", layout_body)
-        self.assertIn("Math.abs(existing - center)", layout_body)
+        self.assertIn("Math.abs(existing - anchor)", layout_body)
         self.assertIn("CAREER_TIMELINE_LANE_HEIGHT", position_body)
         self.assertIn("topOffset", position_body)
         self.assertIn("data-career-timeline-lane", position_body)
