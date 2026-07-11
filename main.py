@@ -11182,6 +11182,8 @@ class Api:
                 "skipped_unsafe_paths": skipped_unsafe_paths,
                 "expanded_duplicate_ids": duplicate_expanded_ids,
             }
+            if deletable_ids:
+                result["career_refresh"] = _refresh_career_derived_events_safe("delete_activities")
             if missing_ids:
                 result["missing_ids"] = missing_ids
             return _api_success(result)
@@ -14523,15 +14525,19 @@ def _api_save_activity(self, data: dict) -> dict:
             data["file_path"] = None
         if data.get("points_json") and len(data["points_json"]) > 0:
             data["start_time"] = data["points_json"][0].get("time")
-        profile_backend.save_activity(data)
-        return {"ok": True}
+        activity_id = profile_backend.save_activity(data)
+        career_refresh = _refresh_career_derived_events_safe("manual_save_activity")
+        return {"ok": True, "activity_id": activity_id, "career_refresh": career_refresh}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
 
 def _api_cleanup_duplicate_activities(self, dry_run: bool = True) -> dict:
     try:
-        return _api_success(profile_backend.cleanup_duplicate_activities(dry_run=bool(dry_run)))
+        result = profile_backend.cleanup_duplicate_activities(dry_run=bool(dry_run))
+        if not dry_run and int(result.get("rows_deleted") or 0) > 0:
+            result["career_refresh"] = _refresh_career_derived_events_safe("cleanup_duplicate_activities")
+        return _api_success(result)
     except Exception as e:
         logger.exception("cleanup_duplicate_activities failed")
         return _api_error(API_CODE_DB, "清理重复活动失败", {"error": str(e)})
