@@ -47,7 +47,6 @@ class TestCareerApiSkeleton(unittest.TestCase):
                     "race_count": 0,
                     "pb_count": 0,
                     "achievement_count": 0,
-                    "memory_count": 0,
                     "covered_city_count": 0,
                     "total_distance_km": None,
                 },

@@ -57,29 +57,32 @@ class TestCareerMemoryMediaFrontend(unittest.TestCase):
     def setUpClass(cls):
         cls.source = TRACK_HTML_PATH.read_text(encoding="utf-8")
 
-    def test_photo_and_track_type_labels_exist(self):
-        body = extract_function_body(self.source, "function careerMemoryTypeLabel(type)")
-        self.assertIn("key === 'photo'", body)
-        self.assertIn("return '照片'", body)
-        self.assertIn("key === 'track'", body)
-        self.assertIn("return '轨迹'", body)
-
     def test_media_state_uses_safe_thumbnail_view_field_only(self):
-        body = extract_function_body(self.source, "function careerMemoryItemHtml(item)")
-        self.assertIn("item && item.hasMedia", body)
-        self.assertIn("已绑定媒体", body)
-        self.assertIn("无图片也可沉淀记忆", body)
+        body = extract_function_body(self.source, "function careerMemoryAlbumCardHtml(album)")
+        self.assertIn("cover.imageRef", body)
+        self.assertIn("career-memory-album-art", body)
+        self.assertIn("safeHtml(artTitle)", body)
+        self.assertNotIn("暂无封面", body)
         self.assertIn("<img", body)
-        self.assertIn("thumbnailUrl", body)
+        self.assertIn("imageRef", body)
         for token in FORBIDDEN_FRONTEND_TOKENS:
             self.assertNotIn(token, body)
 
     def test_normalizer_accepts_only_safe_media_view_fields(self):
-        body = extract_function_body(self.source, "function normalizeCareerMemoryItem(item)")
+        body = "\n".join(
+            extract_function_body(self.source, signature)
+            for signature in (
+                "function normalizeCareerMemoryAlbum(album)",
+                "function normalizeCareerMemoryPhoto(photo)",
+            )
+        )
         self.assertIn("thumbnail_url", body)
-        self.assertIn("has_media", body)
+        self.assertIn("preview_url", body)
+        self.assertIn("image_ref", body)
+        self.assertIn("cover", body)
         self.assertNotIn("Object.assign", body)
-        self.assertNotIn("...item", body)
+        self.assertNotIn("...album", body)
+        self.assertNotIn("...photo", body)
         for token in FORBIDDEN_FRONTEND_TOKENS:
             self.assertNotIn(token, body)
 
@@ -102,9 +105,9 @@ class TestCareerMemoryMediaFrontend(unittest.TestCase):
         relevant = "\n".join(
             extract_function_body(self.source, signature)
             for signature in (
-                "function normalizeCareerMemoryItem(item)",
-                "function careerMemoryTypeLabel(type)",
-                "function careerMemoryItemHtml(item)",
+                "function normalizeCareerMemoryAlbum(album)",
+                "function normalizeCareerMemoryPhoto(photo)",
+                "function careerMemoryAlbumCardHtml(album)",
                 "function renderCareerMemory(viewModel)",
             )
         )

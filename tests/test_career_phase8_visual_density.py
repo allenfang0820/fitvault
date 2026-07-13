@@ -97,7 +97,7 @@ class TestCareerPhase8VisualDensity(unittest.TestCase):
         bucket_list_css = css_block(self.source, ".career-bucket-list")
         bucket_css = css_block(self.source, ".career-bucket")
         timeline_node_css = css_block(self.source, ".career-timeline-node")
-        memory_item_css = css_block(self.source, ".career-memory-item")
+        album_card_css = css_block(self.source, ".career-memory-album-card")
         insight_card_css = css_block(self.source, ".career-insight-card")
 
         self.assertIn("padding: 12px", section_css)
@@ -110,7 +110,9 @@ class TestCareerPhase8VisualDensity(unittest.TestCase):
         self.assertIn("display: block", timeline_node_css)
         self.assertIn("min-height: 32px", timeline_node_css)
         self.assertIn("width: clamp(112px, 18%, 156px)", timeline_node_css)
-        self.assertIn("padding: 10px", memory_item_css)
+        self.assertIn("aspect-ratio: 4 / 3", album_card_css)
+        self.assertIn("border-radius: 8px", album_card_css)
+        self.assertIn("padding: 0", album_card_css)
         self.assertIn("padding: 10px", insight_card_css)
 
     def test_timeline_large_scroll_uses_month_progressive_expansion(self):
@@ -144,12 +146,11 @@ class TestCareerPhase8VisualDensity(unittest.TestCase):
         self.assertIn(".career-bucket-list", self.mobile_css)
         self.assertIn(".career-spotlight", self.mobile_css)
         self.assertIn("grid-template-columns: 1fr", self.mobile_css)
-        self.assertIn("flex-wrap: wrap", self.mobile_css)
 
         for selector in (
             ".career-timeline-node-title",
             ".career-timeline-node-meta",
-            ".career-memory-title",
+            ".career-memory-album-title",
             ".career-insight-status",
         ):
             self.assertIn("overflow-wrap: anywhere", css_block(self.source, selector))

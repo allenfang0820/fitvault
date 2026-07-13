@@ -131,7 +131,8 @@ class TestCareerSnapshotPersistence(unittest.TestCase):
             self.assertEqual(row[3], "acs.v1")
             self.assertEqual(content["snapshot_version"], "acs.v1")
             self.assertEqual(content["summary"]["activity_count"], 1)
-            self.assertEqual(content["summary"]["memory_count"], 1)
+            self.assertNotIn("memory_count", content["summary"])
+            self.assertNotIn("representative_memories", content)
             _assert_forbidden_absent(self, result)
             _assert_forbidden_absent(self, content)
         finally:
@@ -196,6 +197,13 @@ class TestCareerSnapshotPersistence(unittest.TestCase):
                 "summary": {"activity_count": 1, "storage_ref": "/Users/example/private.jpg"},
                 "primary_sport": {"sport": "running", "activity_count": 1, "path": "/tmp/private"},
                 "pb_summary": [{"id": "pb:1", "activity_id": "1", "sport": "running", "pb_type": "running_5k", "value": 1500, "value_unit": "seconds", "event_date": "2026-05-19", "points": [1]}],
+                "records_summary": {
+                    "current_records": [{"id": "pb:1", "activity_id": "1", "sport": "running", "pb_type": "running_5k", "value": 1500, "value_unit": "seconds", "event_date": "2026-05-19", "detail_link": {"activity_id": "1"}}],
+                    "recent_refreshes": [{"id": "event:1", "record_id": "pb:1", "activity_id": "1", "pb_type": "running_5k", "event_type": "activated", "event_at": "2026-05-19", "resolver_version": "records-v1", "source": "resolver", "payload": {"path": "/tmp/private.fit"}}],
+                    "candidate_count": 2,
+                    "evolution_summary": {"total_event_count": 1, "refresh_event_count": 1, "by_event_type": {"activated": 1}, "by_pb_type": {"running_5k": 1}, "latest_event_at": "2026-05-19"},
+                    "trend_inputs": {"basis": "career_record_events", "refresh_frequency_count": 1, "evolution_event_count": 1, "interpretation": "ability_improved"},
+                },
                 "major_achievements": [{"id": "achievement:1", "activity_id": "1", "achievement_type": "first_running_5k", "title": "首次跑完 5K", "event_date": "2026-05-19", "score": 70, "track_json": "[forbidden]"}],
                 "timeline_digest": [{"id": "race:1", "activity_id": "1", "type": "race", "title": "比赛", "date": "2026-05-19", "detail_link": {"activity_id": "1"}, "File_Path": "/Users/example/private.fit"}],
                 "representative_memories": [{"id": "memory:1", "activity_id": "1", "race_id": "", "type": "photo", "title": "照片", "story": "", "date": "2026-05-19", "has_media": True, "storage_ref": "/Users/example/private.jpg", "Storage_Ref": "/Users/example/private-case.jpg", "thumbnail_url": "/tmp/private.jpg", "detail_link": {"activity_id": "1"}}],
@@ -214,8 +222,11 @@ class TestCareerSnapshotPersistence(unittest.TestCase):
             result = career_backend.get_latest_career_snapshot(conn=conn)
 
             self.assertEqual(result["snapshot"]["summary"]["activity_count"], 1)
-            self.assertEqual(result["snapshot"]["representative_memories"][0]["type"], "photo")
-            self.assertTrue(result["snapshot"]["representative_memories"][0]["has_media"])
+            self.assertEqual(result["snapshot"]["records_summary"]["candidate_count"], 2)
+            self.assertEqual(result["snapshot"]["records_summary"]["trend_inputs"]["interpretation"], "frequency_only")
+            self.assertNotIn("payload", result["snapshot"]["records_summary"]["recent_refreshes"][0])
+            self.assertNotIn("representative_memories", result["snapshot"])
+            self.assertNotIn("memory_count", result["snapshot"]["summary"])
             _assert_forbidden_absent(self, result)
         finally:
             conn.close()

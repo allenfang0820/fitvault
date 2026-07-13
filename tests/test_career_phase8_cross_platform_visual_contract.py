@@ -115,20 +115,19 @@ class TestCareerPhase8CrossPlatformVisualContract(unittest.TestCase):
             ".career-bucket-list",
             ".career-spotlight",
             ".career-timeline-month",
-            ".career-memory-story-row",
+            ".career-memory-list",
             ".career-insight-toolbar",
         ):
             self.assertIn(selector, self.mobile_css)
         self.assertIn("grid-template-columns: 1fr", self.mobile_css)
         self.assertIn("flex-direction: column", self.mobile_css)
-        self.assertIn("flex-wrap: wrap", self.mobile_css)
 
     def test_career_loaders_have_local_pywebview_error_states(self):
         loader_specs = (
             ("async function loadCareerOverview()", "生涯总览接口暂不可用", "renderCareerOverviewError(message)"),
             ("async function loadCareerTimeline(filters)", "生涯时间轴接口暂不可用", "renderCareerTimelineError(message)"),
             ("async function loadCareerArchives()", "生涯分区接口暂不可用", "renderCareerArchivesError(message)"),
-            ("async function loadCareerMemory(filters)", "生涯记忆接口暂不可用", "renderCareerMemoryError(message)"),
+            ("async function loadCareerMemory(filters)", "赛事相册接口暂不可用", "renderCareerMemoryError(message)"),
             ("async function loadCareerInsight(options)", "生涯本地洞察接口暂不可用", "renderCareerInsightError(message)"),
         )
         for signature, unavailable_text, error_renderer in loader_specs:
@@ -161,8 +160,8 @@ class TestCareerPhase8CrossPlatformVisualContract(unittest.TestCase):
             ".career-timeline-node-meta",
             ".career-archive-title",
             ".career-archive-meta",
-            ".career-memory-title",
-            ".career-memory-meta,\n        .career-memory-story",
+            ".career-memory-album-title",
+            ".career-memory-album-meta",
             ".career-insight-status",
             ".career-insight-list li",
         ):

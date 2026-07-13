@@ -105,7 +105,7 @@ class TestCareerPhase9PywebviewEnvelope(unittest.TestCase):
                     lambda: api.get_career_races({}),
                     lambda: api.get_career_pb({}),
                     lambda: api.get_career_achievements({}),
-                    lambda: api.get_career_memory({}),
+                    lambda: api.get_career_memory_gallery({}),
                     api.get_latest_career_snapshot,
                     lambda: api.generate_career_insight({"refresh_snapshot": False}),
                 )
@@ -120,17 +120,6 @@ class TestCareerPhase9PywebviewEnvelope(unittest.TestCase):
         api = main.Api()
         responses = (
             api.generate_career_insight({"prompt": "bad"}),
-            api.save_career_memory_story({}),
-            api.save_career_memory_media(
-                {
-                    "activity_id": "1",
-                    "memory_type": "photo",
-                    "title": "危险媒体",
-                    "media_ref": "C:/Users/example/private.jpg",
-                }
-            ),
-            api.update_career_memory_story({}),
-            api.deactivate_career_memory_item({}),
         )
         for response in responses:
             _assert_envelope(self, response, ok=False, code=main.API_CODE_VALIDATION)
@@ -148,7 +137,6 @@ class TestCareerPhase9PywebviewEnvelope(unittest.TestCase):
         for signature in (
             "async function loadCareerOverview()",
             "async function loadCareerMemory(filters)",
-            "async function saveCareerMemoryStory()",
         ):
             body = _extract_function_body(source, signature)
             self.assertIn("requireCareerApiData", body, signature)

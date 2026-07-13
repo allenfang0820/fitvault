@@ -138,14 +138,17 @@ class TestCareerArchivesFrontendRender(unittest.TestCase):
             "</section>",
         )
         self.assertIn('id="career-pb-status-text"', pb_section)
+        self.assertIn('id="career-pb-status-text" aria-live="polite"', pb_section)
         self.assertIn('id="career-pb-archive-shell"', pb_section)
-        self.assertIn('id="career-pb-summary"', pb_section)
+        self.assertIn('id="career-pb-summary" aria-live="polite"', pb_section)
         self.assertIn('id="career-pb-list"', pb_section)
+        self.assertIn('id="career-pb-detail-panel" aria-live="polite"', pb_section)
+        self.assertIn('id="career-pb-candidate-panel" aria-live="polite"', pb_section)
         self.assertIn('id="career-pb-year-filter"', pb_section)
         self.assertIn('id="career-pb-sport-filter"', pb_section)
         self.assertIn('id="career-pb-type-filter"', pb_section)
         self.assertIn('data-career-archive-list="pbs"', pb_section)
-        for label in ("PB 记录", "全部 PB", "5K", "半马", "最长骑行"):
+        for label in ("记录中心", "全部记录", "当前纪录", "5K", "半马", "最长骑行"):
             self.assertIn(label, pb_section)
 
     def test_achievement_dom_targets_exist(self):
@@ -192,6 +195,8 @@ class TestCareerArchivesFrontendRender(unittest.TestCase):
         self.assertIn("getCareerRaceArchiveFilters()", body)
         self.assertIn("getCareerPbArchiveFilters()", body)
         self.assertIn("getCareerAchievementArchiveFilters()", body)
+        self.assertIn("for (let attempt = 0; attempt < 2; attempt += 1)", body)
+        self.assertIn("await waitCareerApiRetry(340)", body)
         self.assertNotIn("resolve_", body)
         self.assertNotIn("save_", body)
         self.assertNotIn("generate_career_insight", body)
@@ -258,7 +263,9 @@ class TestCareerArchivesFrontendRender(unittest.TestCase):
         self.assertIn("career-achievement-card", self.source)
         self.assertIn("career-achievement-badge", self.source)
         self.assertIn("暂无赛事", self.relevant_js)
-        self.assertIn("暂无 PB", self.relevant_js)
+        self.assertIn("暂无当前纪录", self.relevant_js)
+        self.assertIn("待确认", self.relevant_js)
+        self.assertIn("记录中心已接入", self.relevant_js)
         self.assertIn("暂无里程碑", self.relevant_js)
         self.assertIn("正在加载赛事档案", self.relevant_js)
         self.assertIn("赛事档案暂不可用", self.relevant_js)
@@ -307,10 +314,63 @@ class TestCareerArchivesFrontendRender(unittest.TestCase):
         for token in (
             'role="button"',
             'data-activity-id="',
+            'data-record-id="',
+            'data-pb-type="',
+            'openCareerRecordDetailFromElement(event, this)',
+            'aria-label="查看纪录详情与演进"',
+            'title="查看纪录详情与演进"',
             'career-pb-value',
             'career-pb-badge',
         ):
             self.assertIn(token, card_body)
+
+    def test_pb_page_is_labeled_as_records_center(self):
+        self.assertIn("pb: '记录中心'", self.source)
+        self.assertIn("data-career-page-target=\"pb\" aria-pressed=\"false\" onclick=\"switchCareerPage('pb')\">记录</button>", self.source)
+
+    def test_pb_detail_and_history_view_calls_backend_contract(self):
+        for function_name in (
+            "function renderCareerPbDetailPanel(detail, history)",
+            "async function loadCareerPbDetail(recordId, pbType)",
+            "function openCareerRecordDetailFromElement(event, el)",
+        ):
+            self.assertIn(function_name, self.source)
+        load_body = extract_function_body(self.source, "async function loadCareerPbDetail(recordId, pbType)")
+        self.assertIn("api.get_career_pb_detail(recordId)", load_body)
+        self.assertIn("api.get_career_pb_history(pbType || 'all', {})", load_body)
+        render_body = extract_function_body(self.source, "function renderCareerPbDetailPanel(detail, history)")
+        self.assertIn("career-pb-history-list", render_body)
+        self.assertIn("career-pb-history-node", render_body)
+        self.assertIn("record.valueDisplay", render_body)
+
+    def test_pb_candidate_view_calls_backend_contract(self):
+        for function_name in (
+            "function normalizeCareerRecordCandidate(item)",
+            "function renderCareerPbCandidates(candidates)",
+            "async function decideCareerPbCandidateFromElement(event, el)",
+        ):
+            self.assertIn(function_name, self.source)
+        load_body = extract_function_body(self.source, "async function loadCareerArchives()")
+        self.assertIn("api.get_career_event_candidates({ candidate_type: 'pb_record', status: 'candidate' })", load_body)
+        self.assertIn("pbCandidates: archiveData[3] || {}", load_body)
+        render_body = extract_function_body(self.source, "function renderCareerPbCandidates(candidates)")
+        self.assertIn("data-career-record-candidate-id", render_body)
+        self.assertIn("data-decision=\"confirm\"", render_body)
+        self.assertIn("data-decision=\"reject\"", render_body)
+        self.assertIn("aria-label=\"确认候选纪录\"", render_body)
+        self.assertIn("aria-label=\"拒绝候选纪录\"", render_body)
+        decide_body = extract_function_body(self.source, "async function decideCareerPbCandidateFromElement(event, el)")
+        self.assertIn("el.disabled = true", decide_body)
+        self.assertIn("确认中...", decide_body)
+        self.assertIn("el.disabled = false", decide_body)
+        self.assertIn("api.decide_career_pb_candidate({ candidate_id: candidateId, decision: decision })", decide_body)
+        self.assertIn("await loadCareerArchives()", decide_body)
+
+    def test_records_center_responsive_and_accessible_states_are_defined(self):
+        self.assertIn(".career-pb-detail-action:disabled", self.source)
+        self.assertIn(".career-pb-detail-panel", self.source)
+        self.assertIn("@media (max-width: 980px)", self.source)
+        self.assertIn(".career-pb-list,\n            .career-achievement-list", self.source)
 
     def test_achievement_filters_reload_backend_view_model(self):
         body = extract_function_body(self.source, "function onCareerAchievementArchiveFilterChange()")

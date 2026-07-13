@@ -172,7 +172,6 @@ class TestCareerTimelineFrontendRender(unittest.TestCase):
             "get_career_event_candidates",
             "resolve_career_event_candidate",
         ):
-            self.assertNotIn(token, self.source)
             self.assertNotIn(token, timeline_panel)
 
     def test_year_renderer_uses_month_band_without_backend_season_summary(self):

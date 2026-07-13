@@ -6,6 +6,7 @@
     <title>脉图 - FitVault V1.2.0</title>
     <!-- 本地优先，减少首屏等待；若本地资源缺失再回退到 CDN -->
     <script src="lib/echarts/echarts.min.js" onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js';"></script>
+    <script src="assets/career_footprint_maps.js"></script>
     <script>
         window.CESIUM_BASE_URL = 'lib/Cesium/';
     </script>
@@ -932,7 +933,7 @@
             top: 24px;
             z-index: 0;
             font-family: "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans CJK SC", system-ui, sans-serif;
-            font-size: clamp(2rem, 7.6vw, 5.4rem);
+            font-size: clamp(2rem, 4.2rem, 5.4rem);
             line-height: 1.05;
             font-weight: 950;
             color: transparent;
@@ -1001,7 +1002,7 @@
             max-width: 100%;
             color: #f8fafc;
             font-family: "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans CJK SC", system-ui, sans-serif;
-            font-size: clamp(1.45rem, 3.5vw, 2.6rem);
+            font-size: clamp(1.45rem, 2rem, 2.6rem);
             line-height: 1.12;
             font-weight: 950;
             overflow-wrap: anywhere;
@@ -1181,6 +1182,7 @@
             gap: 10px;
         }
         .career-season-card {
+            position: relative;
             min-width: 0;
             min-height: 146px;
             border-radius: 8px;
@@ -1188,6 +1190,36 @@
             background: rgba(2, 6, 23, 0.28);
             padding: 12px;
             box-sizing: border-box;
+            transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+        }
+        .career-season-card::after {
+            content: attr(data-career-season-hint);
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            max-width: calc(100% - 24px);
+            border: 1px solid rgba(148, 163, 184, 0.24);
+            border-radius: 999px;
+            background: rgba(15, 23, 42, 0.94);
+            color: #cbd5e1;
+            padding: 4px 7px;
+            font-size: 0.56rem;
+            font-weight: 760;
+            line-height: 1;
+            opacity: 0;
+            transform: translateY(4px);
+            transition: opacity 140ms ease, transform 140ms ease;
+            pointer-events: none;
+        }
+        .career-season-card:hover {
+            transform: translateY(-3px);
+            border-color: rgba(148, 163, 184, 0.28);
+            background: rgba(2, 6, 23, 0.42);
+            box-shadow: 0 12px 24px rgba(2, 6, 23, 0.24);
+        }
+        .career-season-card:hover::after {
+            opacity: 1;
+            transform: translateY(0);
         }
         .career-season-head {
             display: flex;
@@ -1267,9 +1299,6 @@
         }
         .career-season-pill[data-career-season-pill="achievements"] {
             --career-season-pill-border: rgba(244, 114, 182, 0.5);
-        }
-        .career-season-pill[data-career-season-pill="memories"] {
-            --career-season-pill-border: rgba(250, 204, 21, 0.48);
         }
         .career-season-pill[data-career-season-pill="cities"] {
             --career-season-pill-border: rgba(34, 211, 238, 0.48);
@@ -1743,175 +1772,319 @@
             gap: 8px;
             flex-wrap: wrap;
         }
-        .career-memory-action {
-            border: 1px solid rgba(125, 211, 252, 0.28);
-            background: rgba(14, 116, 144, 0.18);
-            color: #e0f2fe;
-            border-radius: 8px;
-            padding: 5px 9px;
-            font-size: 0.66rem;
-            font-weight: 850;
-            cursor: pointer;
-        }
-        .career-memory-action:hover,
-        .career-memory-action:focus {
-            border-color: rgba(125, 211, 252, 0.46);
-            background: rgba(14, 116, 144, 0.3);
-            outline: none;
-        }
-        .career-memory-story-form {
-            display: none;
-            border-radius: 8px;
-            border: 1px solid rgba(255,255,255,0.07);
-            background: rgba(2, 6, 23, 0.24);
-            padding: 10px;
-        }
-        .career-memory-story-form.is-visible {
-            display: grid;
-            gap: 8px;
-        }
-        .career-memory-story-row {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 8px;
-        }
-        .career-memory-input,
-        .career-memory-textarea {
-            width: 100%;
-            min-width: 0;
-            border: 1px solid rgba(255,255,255,0.09);
-            background: rgba(15, 23, 42, 0.72);
-            color: #e2e8f0;
-            border-radius: 8px;
-            padding: 7px 9px;
-            font-size: 0.68rem;
-            outline: none;
-        }
-        .career-memory-textarea {
-            min-height: 72px;
-            resize: vertical;
-        }
-        .career-memory-input:focus,
-        .career-memory-textarea:focus {
-            border-color: rgba(125, 211, 252, 0.42);
-            box-shadow: 0 0 0 2px rgba(14, 116, 144, 0.18);
-        }
-        .career-memory-form-actions {
-            display: flex;
-            justify-content: flex-end;
-            gap: 8px;
-            flex-wrap: wrap;
-        }
-        .career-memory-form-error {
-            min-height: 18px;
-            color: #fca5a5;
-            font-size: 0.66rem;
-            font-weight: 700;
-            line-height: 1.4;
-            overflow-wrap: anywhere;
-        }
         .career-memory-list {
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 10px;
         }
-        .career-memory-item {
+        .career-memory-album-card {
+            position: relative;
+            min-width: 0;
+            aspect-ratio: 4 / 3;
+            overflow: hidden;
             border-radius: 8px;
             border: 1px solid rgba(255,255,255,0.07);
             background: rgba(2, 6, 23, 0.28);
-            padding: 10px;
-            min-width: 0;
-        }
-        .career-memory-item.is-clickable {
+            padding: 0;
             cursor: pointer;
+            text-align: left;
         }
-        .career-memory-item.is-clickable:hover,
-        .career-memory-item.is-clickable:focus {
-            border-color: rgba(125, 211, 252, 0.32);
+        .career-memory-album-card:hover,
+        .career-memory-album-card:focus {
+            border-color: rgba(45, 212, 191, 0.42);
             background: rgba(15, 23, 42, 0.58);
             outline: none;
         }
-        .career-memory-item-head {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            min-width: 0;
-        }
-        .career-memory-type {
-            flex: 0 0 auto;
-            min-width: 42px;
-            border-radius: 999px;
-            border: 1px solid rgba(148, 163, 184, 0.2);
-            color: #cbd5e1;
-            font-size: 0.62rem;
-            font-weight: 900;
-            line-height: 1;
-            text-align: center;
-            padding: 5px 7px;
-        }
-        .career-memory-title {
-            flex: 1 1 auto;
-            min-width: 0;
-            color: #f8fafc;
-            font-size: 0.76rem;
-            font-weight: 850;
-            line-height: 1.35;
-            overflow-wrap: anywhere;
-        }
-        .career-memory-item-actions {
-            margin-left: auto;
-            display: flex;
-            align-items: center;
-            justify-content: flex-end;
-            gap: 6px;
-            flex: 0 0 auto;
-        }
-        .career-memory-mini-action {
-            border: 1px solid rgba(148, 163, 184, 0.2);
-            background: rgba(15, 23, 42, 0.62);
-            color: #cbd5e1;
-            border-radius: 8px;
-            padding: 4px 7px;
-            font-size: 0.62rem;
-            font-weight: 850;
-            cursor: pointer;
-            line-height: 1;
-        }
-        .career-memory-mini-action:hover,
-        .career-memory-mini-action:focus {
-            border-color: rgba(125, 211, 252, 0.42);
-            color: #e0f2fe;
-            outline: none;
-        }
-        .career-memory-mini-action.is-danger {
-            border-color: rgba(248, 113, 113, 0.24);
-            color: #fecaca;
-        }
-        .career-memory-edit-form {
-            margin-top: 8px;
-            display: grid;
-            gap: 8px;
-        }
-        .career-memory-edit-form .career-memory-form-actions {
-            justify-content: flex-start;
-        }
-        .career-memory-meta,
-        .career-memory-story {
-            margin-top: 5px;
-            color: #94a3b8;
-            font-size: 0.64rem;
-            line-height: 1.35;
-            overflow-wrap: anywhere;
-        }
-        .career-memory-thumb {
+        .career-memory-album-cover,
+        .career-memory-album-placeholder {
+            position: absolute;
+            inset: 0;
             width: 100%;
-            aspect-ratio: 16 / 9;
+            height: 100%;
+        }
+        .career-memory-album-cover {
             object-fit: cover;
             display: block;
-            margin-top: 8px;
-            border-radius: 8px;
-            border: 1px solid rgba(255,255,255,0.08);
             background: rgba(15, 23, 42, 0.54);
+            transition: transform 160ms ease;
+        }
+        .career-memory-album-card:hover .career-memory-album-cover,
+        .career-memory-album-card:focus .career-memory-album-cover {
+            transform: scale(1.025);
+        }
+        .career-memory-album-placeholder {
+            display: grid;
+            place-items: center;
+            color: rgba(203, 213, 225, 0.82);
+            font-size: 0.68rem;
+            font-weight: 850;
+            background:
+                linear-gradient(135deg, rgba(45, 212, 191, 0.12), transparent 42%),
+                rgba(15, 23, 42, 0.72);
+            padding: 12px;
+            text-align: center;
+            line-height: 1.35;
+        }
+        .career-memory-album-art {
+            place-items: stretch;
+            align-content: center;
+            gap: 6px;
+            background:
+                radial-gradient(circle at center, transparent 48%, rgba(2, 6, 23, 0.68) 100%),
+                linear-gradient(90deg, rgba(2, 6, 23, 0.92) 0%, rgba(2, 6, 23, 0.48) 52%, rgba(2, 6, 23, 0.88) 100%),
+                linear-gradient(135deg, rgba(37, 99, 235, 0.2), rgba(20, 184, 166, 0.1) 48%, rgba(2, 6, 23, 0.94));
+            text-align: left;
+        }
+        .career-memory-album-art-word {
+            position: relative;
+            display: block;
+            max-width: 100%;
+            color: transparent;
+            font-family: "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans CJK SC", system-ui, sans-serif;
+            font-size: clamp(1.45rem, 2rem, 2.5rem);
+            font-weight: 950;
+            line-height: 1.05;
+            letter-spacing: 0;
+            overflow-wrap: anywhere;
+            background: linear-gradient(180deg, #f8fafc 0%, #b8c3d5 32%, #41516d 64%, #08142a 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            text-shadow: 0 18px 34px rgba(15, 23, 42, 0.8), 0 2px 0 rgba(255,255,255,0.28);
+            opacity: 0.78;
+            transform: skewX(-7deg);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .career-memory-album-art-word::after {
+            content: attr(data-career-album-art-text);
+            position: absolute;
+            left: 0;
+            right: 0;
+            top: 66%;
+            color: transparent;
+            background: linear-gradient(180deg, rgba(122, 152, 201, 0.26), rgba(8, 18, 42, 0));
+            -webkit-background-clip: text;
+            background-clip: text;
+            transform: scaleY(-0.52);
+            opacity: 0.45;
+            filter: blur(1px);
+            pointer-events: none;
+        }
+        .career-memory-album-art-caption {
+            color: rgba(186, 230, 253, 0.74);
+            font-size: 0.58rem;
+            font-weight: 900;
+            letter-spacing: 0;
+            text-transform: uppercase;
+        }
+        .career-memory-album-overlay {
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            padding: 42px 10px 10px;
+            background: linear-gradient(transparent, rgba(2, 6, 23, 0.88));
+        }
+        .career-memory-album-title {
+            color: #f8fafc;
+            font-size: 0.78rem;
+            font-weight: 900;
+            line-height: 1.28;
+            overflow-wrap: anywhere;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+        .career-memory-album-meta {
+            color: #94a3b8;
+            font-size: 0.62rem;
+            line-height: 1.35;
+            margin-top: 4px;
+            overflow-wrap: anywhere;
+        }
+        .career-memory-album-badge {
+            position: absolute;
+            right: 8px;
+            top: 8px;
+            border-radius: 999px;
+            border: 1px solid rgba(255,255,255,0.14);
+            background: rgba(2, 6, 23, 0.72);
+            color: #e2e8f0;
+            font-size: 0.58rem;
+            line-height: 1;
+            font-weight: 850;
+            padding: 5px 7px;
+        }
+        .career-memory-album-detail {
+            display: none;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .career-memory-album-detail.is-visible {
+            display: flex;
+        }
+        .career-memory-album-detail-head {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 10px;
+        }
+        .career-memory-back {
+            border: 1px solid rgba(45, 212, 191, 0.28);
+            background: rgba(20, 184, 166, 0.14);
+            color: #ccfbf1;
+            border-radius: 8px;
+            padding: 7px 10px;
+            font-size: 0.66rem;
+            font-weight: 850;
+            cursor: pointer;
+            flex: 0 0 auto;
+        }
+        .career-memory-back:hover,
+        .career-memory-back:focus {
+            outline: none;
+            border-color: rgba(250, 204, 21, 0.62);
+            color: #fef9c3;
+        }
+        .career-memory-album-detail-title {
+            color: #f8fafc;
+            font-size: 0.86rem;
+            font-weight: 920;
+            line-height: 1.3;
+            overflow-wrap: anywhere;
+        }
+        .career-memory-album-detail-meta {
+            color: #94a3b8;
+            font-size: 0.64rem;
+            line-height: 1.4;
+            margin-top: 4px;
+            overflow-wrap: anywhere;
+        }
+        .career-memory-photo-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 8px;
+        }
+        .career-memory-photo-cell {
+            position: relative;
+            min-width: 0;
+            aspect-ratio: 4 / 3;
+            overflow: hidden;
+            border-radius: 8px;
+            border: 1px solid rgba(255,255,255,0.07);
+            background: rgba(15, 23, 42, 0.6);
+            padding: 0;
+            cursor: pointer;
+        }
+        .career-memory-photo-cell:hover,
+        .career-memory-photo-cell:focus {
+            outline: none;
+            border-color: rgba(45, 212, 191, 0.42);
+        }
+        .career-memory-photo-cell img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+        .career-memory-photo-cell.is-error {
+            display: grid;
+            place-items: center;
+            color: #94a3b8;
+            font-size: 0.62rem;
+            line-height: 1.35;
+            padding: 8px;
+            text-align: center;
+        }
+        .career-memory-photo-cell.is-error::after {
+            content: "图片暂不可用";
+        }
+        .career-memory-photo-index {
+            position: absolute;
+            left: 6px;
+            top: 6px;
+            border-radius: 999px;
+            background: rgba(2, 6, 23, 0.72);
+            color: #e2e8f0;
+            font-size: 0.56rem;
+            font-weight: 850;
+            line-height: 1;
+            padding: 4px 6px;
+        }
+        .career-memory-photo-modal {
+            position: fixed;
+            inset: 0;
+            z-index: 1200;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            background: rgba(2, 6, 23, 0.88);
+            padding: 24px;
+        }
+        .career-memory-photo-modal.is-visible {
+            display: flex;
+        }
+        .career-memory-photo-stage {
+            position: relative;
+            width: min(980px, 100%);
+            max-height: min(720px, 88vh);
+            display: grid;
+            place-items: center;
+        }
+        .career-memory-photo-stage img {
+            max-width: 100%;
+            max-height: 88vh;
+            object-fit: contain;
+            border-radius: 8px;
+            border: 1px solid rgba(255,255,255,0.1);
+            background: rgba(15, 23, 42, 0.7);
+        }
+        .career-memory-photo-modal-bar {
+            position: absolute;
+            left: 0;
+            right: 0;
+            top: -44px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            color: #e2e8f0;
+            font-size: 0.72rem;
+            font-weight: 850;
+        }
+        .career-memory-photo-modal-actions {
+            display: flex;
+            gap: 8px;
+        }
+        .career-memory-photo-modal-btn {
+            border: 1px solid rgba(255,255,255,0.14);
+            background: rgba(15, 23, 42, 0.72);
+            color: #e2e8f0;
+            border-radius: 8px;
+            padding: 7px 10px;
+            font-size: 0.66rem;
+            font-weight: 850;
+            cursor: pointer;
+        }
+        .career-memory-photo-modal-btn:hover,
+        .career-memory-photo-modal-btn:focus {
+            outline: none;
+            border-color: rgba(250, 204, 21, 0.62);
+            color: #fef9c3;
+        }
+        .career-memory-photo-modal-empty {
+            min-width: min(420px, 100%);
+            min-height: 220px;
+            border-radius: 8px;
+            border: 1px dashed rgba(148, 163, 184, 0.28);
+            display: grid;
+            place-items: center;
+            color: #94a3b8;
+            background: rgba(15, 23, 42, 0.72);
+            padding: 18px;
+            text-align: center;
         }
         .career-memory-empty {
             min-height: 108px;
@@ -1926,128 +2099,388 @@
             font-size: 0.72rem;
             line-height: 1.55;
         }
-        .career-race-map-shell {
+        .career-footprint-shell {
             display: flex;
             flex-direction: column;
             gap: 10px;
         }
-        .career-race-map-toolbar {
+        .career-footprint-toolbar {
             display: flex;
             align-items: center;
             justify-content: space-between;
             gap: 8px;
             flex-wrap: wrap;
         }
-        .career-race-map-status {
+        .career-footprint-status {
             color: #94a3b8;
             font-size: 0.68rem;
             font-weight: 760;
             min-height: 18px;
         }
-        .career-race-map-summary {
+        .career-footprint-summary {
             display: grid;
             grid-template-columns: repeat(4, minmax(0, 1fr));
             gap: 8px;
         }
-        .career-race-map-metric {
+        .career-footprint-metric {
             border-radius: 8px;
             border: 1px solid rgba(255,255,255,0.07);
-            background: rgba(15, 23, 42, 0.38);
+            background: rgba(12, 18, 31, 0.66);
             padding: 9px;
             min-width: 0;
         }
-        .career-race-map-metric strong {
+        .career-footprint-metric strong {
             display: block;
             color: #f8fafc;
             font-size: 1rem;
             line-height: 1.1;
         }
-        .career-race-map-metric span {
+        .career-footprint-metric span {
             display: block;
             margin-top: 3px;
             color: #94a3b8;
             font-size: 0.62rem;
             line-height: 1.3;
         }
-        .career-race-map-canvas {
+        .career-footprint-map {
             position: relative;
-            min-height: 260px;
+            min-height: 420px;
             overflow: hidden;
             border-radius: 8px;
-            border: 1px solid rgba(125, 211, 252, 0.18);
+            border: 1px solid rgba(94, 234, 212, 0.16);
             background:
-                linear-gradient(rgba(148, 163, 184, 0.08) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(148, 163, 184, 0.08) 1px, transparent 1px),
-                rgba(2, 6, 23, 0.36);
-            background-size: 34px 34px;
+                radial-gradient(circle at 68% 42%, rgba(20, 184, 166, 0.16), transparent 30%),
+                linear-gradient(rgba(148, 163, 184, 0.06) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(148, 163, 184, 0.05) 1px, transparent 1px),
+                #030712;
+            background-size: auto, 36px 36px, 36px 36px, auto;
         }
-        .career-race-map-point {
+        .career-footprint-map-chart {
             position: absolute;
-            width: 14px;
-            height: 14px;
-            margin: -7px 0 0 -7px;
-            border-radius: 999px;
-            border: 2px solid rgba(226, 232, 240, 0.9);
-            background: #22d3ee;
-            box-shadow: 0 0 0 5px rgba(34, 211, 238, 0.14);
+            inset: 0;
+            z-index: 2;
+        }
+        .career-footprint-map-back {
+            position: absolute;
+            left: 12px;
+            bottom: 10px;
+            z-index: 5;
+            border-radius: 8px;
+            border: 1px solid rgba(45, 212, 191, 0.32);
+            background: rgba(2, 6, 23, 0.72);
+            color: #ccfbf1;
+            font-size: 0.62rem;
+            font-weight: 850;
+            padding: 7px 10px;
             cursor: pointer;
         }
-        .career-race-map-point:hover,
-        .career-race-map-point:focus {
+        .career-footprint-map-back:hover,
+        .career-footprint-map-back:focus {
             outline: none;
-            background: #facc15;
-            box-shadow: 0 0 0 7px rgba(250, 204, 21, 0.18);
+            border-color: rgba(250, 204, 21, 0.62);
+            color: #fef9c3;
         }
-        .career-race-map-label {
+        .career-footprint-map-empty-state {
             position: absolute;
-            left: 13px;
-            top: -6px;
-            min-width: 90px;
-            max-width: 150px;
-            color: #e2e8f0;
-            font-size: 0.62rem;
-            font-weight: 800;
-            line-height: 1.25;
-            overflow-wrap: anywhere;
+            inset: 0;
+            display: grid;
+            place-items: center;
+            z-index: 4;
+            color: #94a3b8;
+            font-size: 0.72rem;
+            font-weight: 780;
+            text-align: center;
+            padding: 18px;
+        }
+        .career-footprint-drilldown-back {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 32px;
+            border-radius: 8px;
+            border: 1px solid rgba(45, 212, 191, 0.28);
+            background: rgba(20, 184, 166, 0.14);
+            color: #ccfbf1;
+            font-size: 0.66rem;
+            font-weight: 850;
+            padding: 6px 10px;
+            cursor: pointer;
+        }
+        .career-footprint-drilldown-back:hover,
+        .career-footprint-drilldown-back:focus {
+            outline: none;
+            border-color: rgba(250, 204, 21, 0.62);
+            color: #fef9c3;
+        }
+        .career-footprint-static-map-layer {
+            position: absolute;
+            inset: 0;
+            z-index: 0;
+            overflow: hidden;
+            background: #020617;
+            opacity: 0.64;
+            filter: saturate(0.78) contrast(0.92) brightness(0.5);
+        }
+        .career-footprint-static-map-layer {
+            opacity: 1;
+            filter: none;
+            background:
+                linear-gradient(rgba(148, 163, 184, 0.08) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(148, 163, 184, 0.07) 1px, transparent 1px),
+                #020617;
+            background-size: 32px 32px, 32px 32px, auto;
+        }
+        .career-footprint-world-base {
+            position: absolute;
+            inset: 0;
+            z-index: 0;
+            overflow: hidden;
+            background: #020617;
+        }
+        .career-footprint-world-tile {
+            position: absolute;
+            top: 0;
+            width: 50%;
+            height: 100%;
+            object-fit: cover;
+            opacity: 0.46;
+            filter: saturate(0.5) brightness(0.42) contrast(1.08);
+        }
+        .career-footprint-world-tile.left {
+            left: 0;
+        }
+        .career-footprint-world-tile.right {
+            left: 50%;
+        }
+        .career-footprint-map-attribution {
+            position: absolute;
+            right: 8px;
+            bottom: 6px;
+            z-index: 3;
+            border-radius: 6px;
+            background: rgba(2, 6, 23, 0.58);
+            color: rgba(226, 232, 240, 0.74);
+            font-size: 0.52rem;
+            font-weight: 700;
+            line-height: 1;
+            padding: 4px 6px;
             pointer-events: none;
+        }
+        .career-footprint-map-surface {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            opacity: 0.18;
+            mix-blend-mode: screen;
+            pointer-events: none;
+        }
+        .career-footprint-land {
+            fill: rgba(30, 41, 59, 0.48);
+            stroke: rgba(148, 163, 184, 0.22);
+            stroke-width: 1.2;
+        }
+        .career-footprint-map[data-map-mode="china"] .career-footprint-land {
+            fill: rgba(20, 83, 45, 0.18);
+            stroke: rgba(45, 212, 191, 0.22);
+        }
+        .career-footprint-map::before {
+            content: attr(data-map-label);
+            position: absolute;
+            left: 12px;
+            top: 10px;
+            z-index: 3;
+            color: rgba(226, 232, 240, 0.72);
+            font-size: 0.68rem;
+            font-weight: 850;
+            letter-spacing: 0;
+            text-transform: uppercase;
+        }
+        .career-footprint-map[data-map-mode="china"] {
+            min-height: 500px;
+        }
+        .career-footprint-map[data-map-mode="world"] {
+            min-height: 460px;
+        }
+        .career-footprint-hover-card {
+            position: absolute;
+            right: 12px;
+            bottom: 12px;
+            z-index: 6;
+            max-width: min(260px, calc(100% - 24px));
+            border-radius: 8px;
+            border: 1px solid rgba(94, 234, 212, 0.22);
+            background: rgba(3, 7, 18, 0.86);
+            color: #e2e8f0;
+            padding: 10px;
+            box-shadow: 0 18px 42px rgba(0, 0, 0, 0.24);
+            pointer-events: none;
+        }
+        .career-footprint-hover-title {
+            font-size: 0.74rem;
+            font-weight: 880;
+            line-height: 1.3;
+            overflow-wrap: anywhere;
+        }
+        .career-footprint-hover-meta {
+            margin-top: 4px;
+            color: #94a3b8;
+            font-size: 0.62rem;
+            line-height: 1.4;
+            overflow-wrap: anywhere;
+        }
+        .career-footprint-shape-map {
+            position: absolute;
+            inset: 0;
+            z-index: 4;
+            width: 100%;
+            height: 100%;
+        }
+        .career-footprint-region-shape {
+            fill: rgba(30, 41, 59, 0.52);
+            stroke: rgba(148, 163, 184, 0.34);
+            stroke-width: 0.24;
+            vector-effect: non-scaling-stroke;
+            transition: fill 160ms ease, stroke 160ms ease, filter 160ms ease, opacity 160ms ease;
+        }
+        .career-footprint-map[data-map-mode="world"] .career-footprint-region-shape {
+            fill: rgba(30, 41, 59, 0.08);
+            stroke: rgba(226, 232, 240, 0.18);
+            stroke-width: 0.32;
+        }
+        .career-footprint-region-shape.is-lit {
+            fill: rgba(45, 212, 191, 0.82);
+            stroke: rgba(240, 253, 250, 0.92);
+            filter: drop-shadow(0 0 8px rgba(45, 212, 191, 0.55));
+            cursor: pointer;
+        }
+        .career-footprint-region-shape.is-lit:hover,
+        .career-footprint-region-shape.is-lit:focus {
+            outline: none;
+            fill: rgba(250, 204, 21, 0.8);
+            stroke: rgba(254, 249, 195, 0.96);
+            filter: drop-shadow(0 0 10px rgba(250, 204, 21, 0.56));
+        }
+        .career-footprint-region-label {
+            color: #e2e8f0;
+            font-size: 0.58rem;
+            font-weight: 800;
+            dominant-baseline: middle;
+            fill: rgba(226, 232, 240, 0.74);
+            pointer-events: none;
+            text-align: center;
+            text-anchor: middle;
             text-shadow: 0 1px 6px rgba(2, 6, 23, 0.95);
         }
-        .career-race-map-list {
+        .career-footprint-region-label.is-lit {
+            fill: rgba(248, 250, 252, 0.96);
+            font-weight: 900;
+        }
+        .career-footprint-detail {
+            display: none;
+            border-radius: 8px;
+            border: 1px solid rgba(94, 234, 212, 0.16);
+            background: rgba(12, 18, 31, 0.66);
+            padding: 12px;
+        }
+        .career-footprint-detail.is-visible {
+            display: block;
+        }
+        .career-footprint-detail-title {
+            color: #f8fafc;
+            font-size: 0.82rem;
+            font-weight: 900;
+            line-height: 1.35;
+            overflow-wrap: anywhere;
+        }
+        .career-footprint-detail-meta {
+            margin-top: 6px;
+            color: #94a3b8;
+            font-size: 0.66rem;
+            line-height: 1.45;
+            overflow-wrap: anywhere;
+        }
+        .career-footprint-detail-stats {
             display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 8px;
+            margin-top: 10px;
+        }
+        .career-footprint-detail-stat {
+            border-radius: 8px;
+            background: rgba(2, 6, 23, 0.34);
+            border: 1px solid rgba(255,255,255,0.06);
+            padding: 8px;
+            min-width: 0;
+        }
+        .career-footprint-detail-stat strong {
+            display: block;
+            color: #f8fafc;
+            font-size: 0.86rem;
+            line-height: 1.2;
+        }
+        .career-footprint-detail-stat span {
+            display: block;
+            margin-top: 3px;
+            color: #94a3b8;
+            font-size: 0.6rem;
+            line-height: 1.3;
+        }
+        .career-footprint-action {
+            margin-top: 10px;
+            border: 1px solid rgba(45, 212, 191, 0.32);
+            border-radius: 8px;
+            background: rgba(20, 184, 166, 0.14);
+            color: #ccfbf1;
+            font-size: 0.68rem;
+            font-weight: 850;
+            line-height: 1.2;
+            padding: 8px 10px;
+            cursor: pointer;
+        }
+        .career-footprint-action:hover,
+        .career-footprint-action:focus {
+            outline: none;
+            border-color: rgba(250, 204, 21, 0.62);
+            color: #fef9c3;
+        }
+        .career-footprint-missing-list {
+            display: none;
             grid-template-columns: repeat(2, minmax(0, 1fr));
             gap: 8px;
         }
-        .career-race-map-card {
+        .career-footprint-missing-card {
             border-radius: 8px;
             border: 1px solid rgba(255,255,255,0.07);
             background: rgba(15, 23, 42, 0.38);
             padding: 9px;
             min-width: 0;
         }
-        .career-race-map-card.is-clickable {
+        .career-footprint-missing-card.is-clickable {
             cursor: pointer;
         }
-        .career-race-map-card.is-clickable:hover,
-        .career-race-map-card.is-clickable:focus {
+        .career-footprint-missing-card.is-clickable:hover,
+        .career-footprint-missing-card.is-clickable:focus {
             border-color: rgba(125, 211, 252, 0.32);
             background: rgba(15, 23, 42, 0.58);
             outline: none;
         }
-        .career-race-map-card-title {
+        .career-footprint-missing-card-title {
             color: #f8fafc;
             font-size: 0.72rem;
             font-weight: 850;
             line-height: 1.35;
             overflow-wrap: anywhere;
         }
-        .career-race-map-card-meta {
+        .career-footprint-missing-card-meta {
             margin-top: 4px;
             color: #94a3b8;
             font-size: 0.62rem;
             line-height: 1.35;
             overflow-wrap: anywhere;
         }
-        .career-race-map-empty {
+        .career-footprint-empty {
             min-height: 84px;
             border-radius: 8px;
             border: 1px dashed rgba(148, 163, 184, 0.22);
@@ -2306,7 +2739,7 @@
             top: 50%;
             transform: translateY(-50%);
             color: rgba(248, 250, 252, 0.9);
-            font-size: clamp(1.35rem, 2.15vw, 2rem);
+            font-size: clamp(1.35rem, 1.7rem, 2rem);
             line-height: 1.02;
             font-weight: 1000;
             letter-spacing: 0;
@@ -2453,6 +2886,52 @@
             display: grid;
             grid-template-columns: repeat(2, minmax(0, 1fr));
             gap: 8px;
+        }
+        .career-pb-detail-panel {
+            margin-top: 10px;
+            border-radius: 10px;
+            border: 1px solid rgba(148, 163, 184, 0.16);
+            background: rgba(15, 23, 42, 0.45);
+            padding: 10px;
+        }
+        .career-pb-detail-title {
+            color: #f8fafc;
+            font-size: 0.82rem;
+            font-weight: 900;
+            margin-bottom: 5px;
+        }
+        .career-pb-detail-meta,
+        .career-pb-history-list {
+            color: #94a3b8;
+            font-size: 0.68rem;
+            line-height: 1.5;
+        }
+        .career-pb-history-list {
+            display: grid;
+            gap: 5px;
+            margin-top: 8px;
+        }
+        .career-pb-history-node {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            border-top: 1px solid rgba(148, 163, 184, 0.12);
+            padding-top: 5px;
+        }
+        .career-pb-detail-action {
+            margin-top: 8px;
+            border: 1px solid rgba(52, 211, 153, 0.28);
+            background: rgba(16, 185, 129, 0.12);
+            color: #a7f3d0;
+            border-radius: 999px;
+            padding: 5px 9px;
+            font-size: 0.68rem;
+            font-weight: 800;
+            cursor: pointer;
+        }
+        .career-pb-detail-action:disabled {
+            cursor: wait;
+            opacity: 0.58;
         }
         .career-pb-card {
             min-width: 0;
@@ -2711,6 +3190,9 @@
             .career-spotlight {
                 grid-template-columns: 1fr;
             }
+            .career-pb-detail-panel {
+                margin-top: 8px;
+            }
             .career-timeline-month {
                 grid-template-columns: 1fr;
             }
@@ -2778,10 +3260,10 @@
                 top: 32px;
                 left: 16px;
                 right: 16px;
-                font-size: clamp(2rem, 14vw, 3.6rem);
+                font-size: clamp(2rem, 2.8rem, 3.6rem);
             }
             .career-banner-title {
-                font-size: clamp(1.35rem, 8vw, 2.15rem);
+                font-size: clamp(1.35rem, 1.8rem, 2.15rem);
             }
             .career-banner-meta span {
                 max-width: 100%;
@@ -2790,25 +3272,24 @@
                 flex: 1 1 120px;
                 max-width: none;
             }
-            .career-race-map-summary,
-            .career-race-map-list {
+            .career-footprint-summary,
+            .career-footprint-missing-list {
                 grid-template-columns: 1fr;
             }
-            .career-race-map-canvas {
-                min-height: 220px;
+            .career-footprint-map {
+                min-height: 340px;
             }
-            .career-memory-story-row {
+            .career-footprint-detail-stats {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+            .career-memory-list {
                 grid-template-columns: 1fr;
             }
-            .career-memory-item-head {
-                align-items: flex-start;
-                flex-wrap: wrap;
+            .career-memory-album-detail-head {
+                flex-direction: column;
             }
-            .career-memory-item-actions {
-                width: 100%;
-                margin-left: 0;
-                justify-content: flex-start;
-                flex-wrap: wrap;
+            .career-memory-photo-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
             }
             .career-insight-toolbar {
                 align-items: flex-start;
@@ -8252,7 +8733,7 @@
                             <div class="profile-tab-panel" id="sport-hub-tab-honors">
                                 <div class="career-honor-entry" data-legacy-honor-entry="career-link">
                                     <h4>荣誉墙已升级为运动生涯模块</h4>
-                                    <p>赛事、PB、里程碑和记忆后续统一沉淀到一级功能「运动生涯」。这里保留为过渡入口，不再作为 ACS 主页面。</p>
+                                    <p>赛事、PB、里程碑和赛事相册后续统一沉淀到一级功能「运动生涯」。这里保留为过渡入口，不再作为 ACS 主页面。</p>
                                     <button type="button" class="career-inline-action" onclick="switchToCareerFromHonorWall()">进入运动生涯</button>
                                 </div>
                             </div>
@@ -8293,7 +8774,7 @@
                     <div class="career-title-block">
                         <div class="career-kicker">Athlete Career System</div>
                         <h2 class="career-title" id="career-page-title">生涯总览</h2>
-                        <p class="career-subtitle">总览、时间轴、赛事、PB、里程碑与记忆统一沉淀，所有事实均可回跳到原始活动。</p>
+                        <p class="career-subtitle">总览、时间轴、赛事、记录、里程碑与赛事相册统一沉淀，所有事实均可回跳到原始活动。</p>
                     </div>
                 </div>
 
@@ -8301,7 +8782,7 @@
                     <button type="button" class="career-page-tab is-active" data-career-page-target="overview" aria-pressed="true" onclick="switchCareerPage('overview')">总览</button>
                     <button type="button" class="career-page-tab" data-career-page-target="timeline" aria-pressed="false" onclick="switchCareerPage('timeline')">时间轴</button>
                     <button type="button" class="career-page-tab" data-career-page-target="races" aria-pressed="false" onclick="switchCareerPage('races')">赛事档案</button>
-                    <button type="button" class="career-page-tab" data-career-page-target="pb" aria-pressed="false" onclick="switchCareerPage('pb')">PB</button>
+                    <button type="button" class="career-page-tab" data-career-page-target="pb" aria-pressed="false" onclick="switchCareerPage('pb')">记录</button>
                     <button type="button" class="career-page-tab" data-career-page-target="achievements" aria-pressed="false" onclick="switchCareerPage('achievements')">荣誉</button>
                     <button type="button" class="career-page-tab" data-career-page-target="insight" aria-pressed="false" onclick="switchCareerPage('insight')">AI 总结</button>
                     <button type="button" class="career-page-tab" data-career-page-target="footprint" aria-pressed="false" onclick="switchCareerPage('footprint')">足迹</button>
@@ -8323,7 +8804,7 @@
                                 <div class="career-banner-badges" id="career-banner-badges">
                                     <span class="career-banner-badge">等待活动</span>
                                 </div>
-                                <div class="career-banner-title" data-career-hero-field="title">等待第一段运动记忆</div>
+                                <div class="career-banner-title" data-career-hero-field="title">等待第一个运动瞬间</div>
                                 <div class="career-banner-subtitle" data-career-hero-field="subtitle">导入活动后，脉图会在这里展示你的代表瞬间</div>
                                 <div class="career-banner-meta">
                                     <span data-career-hero-field="date">--</span>
@@ -8559,21 +9040,21 @@
                     <div class="career-page" data-career-page="pb" aria-hidden="true">
                     <section class="career-section" data-career-section="pb">
                         <div class="career-section-title">
-                            <span>PB 记录</span>
-                            <span id="career-pb-status-text">等待 PB 数据</span>
+                            <span>记录中心</span>
+                            <span id="career-pb-status-text" aria-live="polite">等待记录数据</span>
                         </div>
                         <div class="career-pb-archive-shell" id="career-pb-archive-shell">
-                            <div class="career-pb-filter-row" role="group" aria-label="PB 档案筛选">
-                                <select class="career-filter-select" id="career-pb-year-filter" aria-label="PB 年份筛选" onchange="onCareerPbArchiveFilterChange()">
+                            <div class="career-pb-filter-row" role="group" aria-label="记录中心筛选">
+                                <select class="career-filter-select" id="career-pb-year-filter" aria-label="记录年份筛选" onchange="onCareerPbArchiveFilterChange()">
                                     <option value="all">全部年份</option>
                                 </select>
-                                <select class="career-filter-select" id="career-pb-sport-filter" aria-label="PB 运动类型筛选" onchange="onCareerPbArchiveFilterChange()">
+                                <select class="career-filter-select" id="career-pb-sport-filter" aria-label="记录运动类型筛选" onchange="onCareerPbArchiveFilterChange()">
                                     <option value="all">全部运动</option>
                                     <option value="running">跑步</option>
                                     <option value="cycling">骑行</option>
                                 </select>
-                                <select class="career-filter-select" id="career-pb-type-filter" aria-label="PB 类型筛选" onchange="onCareerPbArchiveFilterChange()">
-                                    <option value="all">全部 PB</option>
+                                <select class="career-filter-select" id="career-pb-type-filter" aria-label="记录类型筛选" onchange="onCareerPbArchiveFilterChange()">
+                                    <option value="all">全部记录</option>
                                     <option value="running_5k">5K</option>
                                     <option value="running_10k">10K</option>
                                     <option value="running_half_marathon">半马</option>
@@ -8583,11 +9064,17 @@
                                     <option value="cycling_avg_speed">最快均速</option>
                                 </select>
                             </div>
-                            <div class="career-pb-summary" id="career-pb-summary">全部 PB</div>
+                            <div class="career-pb-summary" id="career-pb-summary" aria-live="polite">当前纪录</div>
                             <div class="career-pb-list" id="career-pb-list" data-career-archive-list="pbs">
-                                <div class="career-archive-empty">暂无 PB</div>
+                                <div class="career-archive-empty">暂无当前纪录</div>
                             </div>
-                            <div class="career-archive-empty" id="career-pb-empty" style="display:none;">暂无 PB 档案数据。</div>
+                            <div class="career-pb-detail-panel" id="career-pb-detail-panel" aria-live="polite">
+                                <div class="career-archive-empty">选择一条当前纪录查看详情与演进。</div>
+                            </div>
+                            <div class="career-pb-detail-panel" id="career-pb-candidate-panel" aria-live="polite">
+                                <div class="career-archive-empty">暂无待确认候选纪录。</div>
+                            </div>
+                            <div class="career-archive-empty" id="career-pb-empty" style="display:none;">暂无当前纪录数据。</div>
                         </div>
                     </section>
                     </div>
@@ -8669,45 +9156,51 @@
                     <section class="career-section" data-career-section="footprint">
                         <div class="career-section-title">
                             <span>生涯足迹</span>
-                            <span id="career-race-map-status-text">等待赛事足迹</span>
+                            <span id="career-footprint-status-text">等待生涯足迹</span>
                         </div>
-                        <div class="career-race-map-shell">
-                            <div class="career-race-map-toolbar">
-                                <div class="career-race-map-status" id="career-race-map-summary-text">仅展示已绑定 Activity 的赛事起点</div>
+                        <div class="career-footprint-shell">
+                            <div class="career-footprint-toolbar">
+                                <div class="career-footprint-status" id="career-footprint-summary-text">按 Activity 地理信息点亮行政区域</div>
                                 <div class="career-filter-row">
-                                    <select class="career-filter-select" id="career-race-map-year-filter" onchange="onCareerRaceMapFilterChange()">
+                                    <button type="button" class="career-footprint-drilldown-back" id="career-footprint-back-world" onclick="returnCareerFootprintWorldMap()" style="display:none;">返回世界图</button>
+                                    <select class="career-filter-select" id="career-footprint-year-filter" onchange="onCareerFootprintFilterChange()">
                                         <option value="all">全部年份</option>
                                     </select>
-                                    <select class="career-filter-select" id="career-race-map-sport-filter" onchange="onCareerRaceMapFilterChange()">
+                                    <select class="career-filter-select" id="career-footprint-sport-filter" onchange="onCareerFootprintFilterChange()">
                                         <option value="all">全部运动</option>
                                         <option value="running">跑步</option>
                                         <option value="cycling">骑行</option>
                                     </select>
                                 </div>
                             </div>
-                            <div class="career-race-map-summary">
-                                <div class="career-race-map-metric"><strong id="career-race-map-total">0</strong><span>赛事</span></div>
-                                <div class="career-race-map-metric"><strong id="career-race-map-with-coordinates">0</strong><span>已点亮</span></div>
-                                <div class="career-race-map-metric"><strong id="career-race-map-city-count">0</strong><span>城市</span></div>
-                                <div class="career-race-map-metric"><strong id="career-race-map-without-coordinates">0</strong><span>待补坐标</span></div>
+                            <div class="career-footprint-summary">
+                                <div class="career-footprint-metric"><strong id="career-footprint-activity-count">0</strong><span>活动</span></div>
+                                <div class="career-footprint-metric"><strong id="career-footprint-region-count">0</strong><span>点亮区域</span></div>
+                                <div class="career-footprint-metric"><strong id="career-footprint-country-count">0</strong><span>国家 / 地区</span></div>
+                                <div class="career-footprint-metric"><strong id="career-footprint-without-region-count">0</strong><span>缺少地区</span></div>
                             </div>
-                            <div class="career-race-map-canvas" id="career-race-map-locations"></div>
-                            <div class="career-race-map-list" id="career-race-map-missing-list"></div>
-                            <div class="career-race-map-empty" id="career-race-map-empty" style="display:none;">暂无可展示的赛事足迹。</div>
+                            <div class="career-footprint-map" id="career-footprint-map" data-map-mode="china" data-map-label="China">
+                                <div class="career-footprint-hover-card" id="career-footprint-hover-card" style="display:none;"></div>
+                            </div>
+                            <div class="career-footprint-detail" id="career-footprint-detail-panel" aria-live="polite"></div>
+                            <div class="career-footprint-missing-list" id="career-footprint-missing-list"></div>
+                            <div class="career-footprint-empty" id="career-footprint-empty" style="display:none;">暂无可展示的生涯足迹。</div>
                         </div>
                     </section>
                     <section class="career-section" data-career-section="memory">
                         <div class="career-section-title">
-                            <span>Memory Gallery</span>
-                            <span id="career-memory-status-text">等待记忆数据</span>
+                            <span>赛事相册</span>
+                            <span id="career-memory-status-text">等待相册数据</span>
                         </div>
                         <div class="career-memory-shell">
                             <div class="career-memory-summary-row">
-                                <div class="career-memory-status" id="career-memory-summary">活动照片与故事集中展示</div>
+                                <div class="career-memory-status" id="career-memory-summary">按赛事组织相册</div>
                             </div>
                             <div class="career-memory-list" id="career-memory-list"></div>
+                            <div class="career-memory-album-detail" id="career-memory-album-detail" aria-live="polite"></div>
+                            <div class="career-memory-photo-modal" id="career-memory-photo-modal" aria-modal="true" role="dialog"></div>
                             <div class="career-memory-empty" id="career-memory-empty">
-                                暂无生涯记忆。照片从赛事活动详情页绑定进入；这里仅集中展示，不提供上传入口。
+                                暂无赛事相册。照片从赛事活动详情页绑定进入；这里仅按赛事集中展示，不提供上传入口。
                             </div>
                         </div>
                     </section>
@@ -9489,12 +9982,6 @@
             memory: null,
             memoryLoading: false,
             memoryError: '',
-            memoryStoryFormVisible: false,
-            memoryStorySaving: false,
-            memoryStoryError: '',
-            memoryEditingId: '',
-            memoryEditSaving: false,
-            memoryEditError: '',
             archives: null,
             archivesLoading: false,
             archivesError: '',
@@ -10870,7 +11357,7 @@
             loadCareerSeasons().catch(function(e) { console.warn('loadCareerSeasons', e); }),
             loadCareerTimeline().catch(function(e) { console.warn('loadCareerTimeline', e); }),
             loadCareerArchives().catch(function(e) { console.warn('loadCareerArchives', e); }),
-            loadCareerRaceMap().catch(function(e) { console.warn('loadCareerRaceMap', e); }),
+            loadCareerFootprint().catch(function(e) { console.warn('loadCareerFootprint', e); }),
             loadCareerMemory().catch(function(e) { console.warn('loadCareerMemory', e); }),
             loadCareerInsight({ refresh_snapshot: false }).catch(function(e) { console.warn('loadCareerInsight', e); })
         ]);
@@ -10942,7 +11429,7 @@
             overview: '生涯总览',
             timeline: '生涯时间轴',
             races: '赛事档案',
-            pb: 'PB 成就',
+            pb: '记录中心',
             achievements: '荣誉里程碑',
             insight: 'AI 生涯总结',
             footprint: '生涯足迹'
@@ -10970,13 +11457,16 @@
         if (shellEl) shellEl.setAttribute('data-acs-active-page', nextPage);
         const titleEl = document.getElementById('career-page-title');
         if (titleEl) titleEl.textContent = careerPageTitle(nextPage);
+        if (nextPage === 'footprint') refreshCareerFootprintMapWhenVisible();
     }
 
     function normalizeCareerDetailLink(link) {
         const raw = link && typeof link === 'object' ? link : {};
         const activityId = raw.activity_id == null ? raw.activityId : raw.activity_id;
+        const recordId = raw.record_id == null ? raw.recordId : raw.record_id;
         return {
             activityId: activityId == null ? '' : String(activityId),
+            recordId: recordId == null ? '' : String(recordId),
             source: raw.source || 'career'
         };
     }
@@ -11087,7 +11577,7 @@
             mode: String(raw.mode || 'empty'),
             activityId: activityId == null ? '' : String(activityId),
             raceId: String(raceId || ''),
-            title: String(raw.title || '等待第一段运动记忆'),
+            title: String(raw.title || '等待第一个运动瞬间'),
             subtitle: String(raw.subtitle || '导入活动后，脉图会在这里展示你的代表瞬间'),
             sport: String(raw.sport || 'unknown'),
             sportLabel: String(sportLabel || '运动'),
@@ -11162,7 +11652,6 @@
             raceCount: Number(item.race_count || 0),
             pbCount: Number(item.pb_count || 0),
             achievementCount: Number(item.achievement_count || 0),
-            memoryCount: Number(item.memory_count || 0),
             cityCount: Number(item.city_count || 0),
             primarySport: String(item.primary_sport || 'unknown'),
             primarySportLabel: String(item.primary_sport_label || '未知'),
@@ -11198,7 +11687,6 @@
                 raceCount: Number(summary.race_count || 0),
                 pbCount: Number(summary.pb_count || 0),
                 achievementCount: Number(summary.achievement_count || 0),
-                memoryCount: Number(summary.memory_count || 0),
                 coveredCityCount: Number(summary.covered_city_count || 0),
                 totalDistanceKm: summary.total_distance_km == null ? null : Number(summary.total_distance_km)
             },
@@ -11437,14 +11925,14 @@
             artEl.textContent = artText;
             artEl.setAttribute('data-career-hero-art-text', artText);
         }
-        setCareerHeroField('title', activeHero.title || '等待第一段运动记忆');
+        setCareerHeroField('title', activeHero.title || '等待第一个运动瞬间');
         setCareerHeroField('subtitle', activeHero.subtitle || '导入活动后，脉图会在这里展示你的代表瞬间');
         setCareerHeroField('date', formatCareerDate(activeHero.eventDate));
         setCareerHeroField('sport', activeHero.sportLabel || '运动');
         setCareerHeroField('distance', activeHero.distanceDisplay || '--');
         setCareerHeroField('duration', activeHero.durationDisplay || '--');
         const badgeEl = document.getElementById('career-banner-badges');
-        const badges = Array.isArray(activeHero.badges) && activeHero.badges.length ? activeHero.badges : ['运动记忆'];
+        const badges = Array.isArray(activeHero.badges) && activeHero.badges.length ? activeHero.badges : ['运动瞬间'];
         if (badgeEl) {
             badgeEl.innerHTML = badges.map(function(badge) {
                 return '<span class="career-banner-badge">' + safeHtml(badge) + '</span>';
@@ -11497,7 +11985,6 @@
     function careerSeasonCardHtml(season) {
         const yearText = String((season && season.year) || '--');
         const summary = season && season.seasonSummary ? season.seasonSummary : '暂无年度摘要';
-        const memoryCount = Number((season && season.memoryCount) || 0);
         const cityCount = Number((season && season.cityCount) || 0);
         const pills = [
             careerSeasonPillHtml('activities', '活动', careerSeasonCountText(season && season.activityCount, '次')),
@@ -11506,9 +11993,8 @@
             careerSeasonPillHtml('pbs', 'PB', careerSeasonCountText(season && season.pbCount, '项')),
             careerSeasonPillHtml('achievements', '成就', careerSeasonCountText(season && season.achievementCount, '项'))
         ];
-        if (memoryCount > 0) pills.push(careerSeasonPillHtml('memories', '记忆', careerSeasonCountText(memoryCount, '条')));
         if (cityCount > 0) pills.push(careerSeasonPillHtml('cities', '城市', careerSeasonCountText(cityCount, '城')));
-        return '<div class="career-season-card" data-career-season-year="' + safeHtml(String((season && season.year) || '')) + '">'
+        return '<div class="career-season-card" data-career-season-year="' + safeHtml(String((season && season.year) || '')) + '" data-career-season-hint="点击我试试">'
             + '<div class="career-season-head">'
                 + '<div class="career-season-year"><span class="career-season-year-number">' + safeHtml(yearText) + '</span></div>'
             + '</div>'
@@ -11712,7 +12198,7 @@
             sportLabel: String(item.sport_label || item.sport || ''),
             pbType: String(item.pb_type || ''),
             pbTypeLabel: String(item.pb_type_label || item.pb_type || ''),
-            pbTitle: String(item.pb_title || item.pb_type || 'PB'),
+            pbTitle: String(item.pb_title || item.pb_type || '纪录'),
             value: item.value == null ? null : item.value,
             valueUnit: String(item.value_unit || ''),
             valueDisplay: String(item.value_display || ''),
@@ -11724,8 +12210,26 @@
             displayDate: String(item.display_date || item.event_date || ''),
             source: String(item.source || ''),
             sourceLabel: String(item.source_label || item.source || ''),
+            sourceMode: String(item.source_mode || ''),
+            sourceModeLabel: String(item.source_mode_label || item.source_mode || ''),
+            resolverVersion: String(item.resolver_version || ''),
+            recordStatus: String(item.status || ''),
             confidenceLabel: String(item.confidence_label || ''),
             detailLink: normalizeCareerDetailLink(item.detail_link)
+        };
+    }
+
+    function normalizeCareerRecordCandidate(item) {
+        if (!item || typeof item !== 'object') return null;
+        const detailLink = normalizeCareerDetailLink(item.detail_link);
+        return {
+            id: String(item.id || ''),
+            activityId: item.activity_id == null ? detailLink.activityId : String(item.activity_id),
+            title: String(item.title || '候选纪录'),
+            confidenceLabel: String(item.confidence_label || ''),
+            statusLabel: String(item.status_label || ''),
+            evidenceSummary: Array.isArray(item.evidence_summary) ? item.evidence_summary.map(function(value) { return String(value || ''); }).filter(Boolean) : [],
+            detailLink: detailLink
         };
     }
 
@@ -11762,19 +12266,23 @@
         const raceData = data.races && typeof data.races === 'object' ? data.races : {};
         const pbData = data.pbs && typeof data.pbs === 'object' ? data.pbs : {};
         const achievementData = data.achievements && typeof data.achievements === 'object' ? data.achievements : {};
+        const candidateData = data.pbCandidates && typeof data.pbCandidates === 'object' ? data.pbCandidates : {};
         const raceItems = Array.isArray(raceData.races) ? raceData.races : [];
         const pbItems = Array.isArray(pbData.pb_records) ? pbData.pb_records : [];
         const achievementItems = Array.isArray(achievementData.achievements) ? achievementData.achievements : [];
+        const candidateItems = Array.isArray(candidateData.candidates) ? candidateData.candidates : [];
         const status = data.status && typeof data.status === 'object' ? data.status : {};
         return {
             races: raceItems.map(normalizeCareerArchiveRace).filter(Boolean),
             pbs: pbItems.map(normalizeCareerArchivePb).filter(Boolean),
+            pbCandidates: candidateItems.map(normalizeCareerRecordCandidate).filter(Boolean),
             achievements: achievementItems.map(normalizeCareerArchiveAchievement).filter(Boolean),
             summary: {
                 raceCount: Number((raceData.summary && raceData.summary.total) || raceItems.length || 0),
                 raceByYear: raceData.summary && raceData.summary.by_year && typeof raceData.summary.by_year === 'object' ? raceData.summary.by_year : {},
                 pbCount: Number((pbData.summary && pbData.summary.total) || pbItems.length || 0),
                 pbByYear: pbData.summary && pbData.summary.by_year && typeof pbData.summary.by_year === 'object' ? pbData.summary.by_year : {},
+                pbCandidateCount: Number((pbData.status && pbData.status.candidate_count) || (candidateData.summary && candidateData.summary.total) || candidateItems.length || 0),
                 achievementCount: Number((achievementData.summary && achievementData.summary.total) || achievementItems.length || 0),
                 achievementByYear: achievementData.summary && achievementData.summary.by_year && typeof achievementData.summary.by_year === 'object' ? achievementData.summary.by_year : {},
                 achievementByCategory: achievementData.summary && achievementData.summary.by_category && typeof achievementData.summary.by_category === 'object' ? achievementData.summary.by_category : {}
@@ -11878,13 +12386,14 @@
 
     function careerArchivePbHtml(item) {
         const meta = [formatCareerDate(item && item.eventDate), item && item.sportLabel, item && item.valueDisplay].filter(Boolean).join(' · ');
-        return careerArchiveItemShell(item, item && item.pbTitle ? item.pbTitle : 'PB 记录', meta);
+        return careerArchiveItemShell(item, item && item.pbTitle ? item.pbTitle : '当前纪录', meta);
     }
 
     function careerPbArchiveCardHtml(item) {
         const activityId = item && item.detailLink && item.detailLink.activityId ? item.detailLink.activityId : (item && item.activityId ? item.activityId : '');
+        const recordId = item && item.detailLink && item.detailLink.recordId ? item.detailLink.recordId : (item && item.id ? item.id : '');
         const source = item && item.detailLink && item.detailLink.source ? item.detailLink.source : 'career';
-        const title = item && item.pbTitle ? item.pbTitle : 'PB 记录';
+        const title = item && item.pbTitle ? item.pbTitle : '当前纪录';
         const date = formatCareerDate((item && (item.displayDate || item.eventDate)) || '');
         const valueText = item && item.valueDisplay ? item.valueDisplay : careerArchiveValueText(item && item.value, item && item.valueUnit);
         const meta = [
@@ -11893,12 +12402,13 @@
             item && item.improvementDisplay
         ].filter(Boolean).join(' · ');
         const badges = [
+            item && item.sourceModeLabel,
             item && item.sourceLabel,
             item && item.confidenceLabel
         ].filter(Boolean);
         const badgeHtml = badges.length
             ? badges.map(function(value) { return '<span class="career-pb-badge">' + safeHtml(value) + '</span>'; }).join('')
-            : '<span class="career-pb-badge">PB 档案</span>';
+            : '<span class="career-pb-badge">正式纪录</span>';
         const attrs = activityId
             ? ' role="button" tabindex="0" onclick="openCareerActivityDetailFromElement(this)" onkeydown="onCareerActivityDetailKeydown(event, this)" data-activity-id="' + safeHtml(activityId) + '" data-career-source="' + safeHtml(source) + '"'
             : '';
@@ -11908,9 +12418,111 @@
                 + '<div class="career-pb-date">' + safeHtml(date) + '</div>'
             + '</div>'
             + '<div class="career-pb-value">' + safeHtml(valueText || '--') + '</div>'
-            + '<div class="career-pb-meta">' + safeHtml(meta || 'PB 信息待补齐') + '</div>'
+            + '<div class="career-pb-meta">' + safeHtml(meta || '记录信息待补齐') + '</div>'
             + '<div class="career-pb-badges">' + badgeHtml + '</div>'
+            + '<button type="button" class="career-pb-detail-action" data-record-id="' + safeHtml(recordId) + '" data-pb-type="' + safeHtml(item && item.pbType) + '" aria-label="查看纪录详情与演进" title="查看纪录详情与演进" onclick="openCareerRecordDetailFromElement(event, this)">查看演进</button>'
             + '</div>';
+    }
+
+    function renderCareerPbDetailPanel(detail, history) {
+        const panel = document.getElementById('career-pb-detail-panel');
+        if (!panel) return;
+        const record = detail && detail.record ? normalizeCareerArchivePb(detail.record) : null;
+        const records = history && Array.isArray(history.records) ? history.records.map(normalizeCareerArchivePb).filter(Boolean) : [];
+        if (!record) {
+            panel.innerHTML = '<div class="career-archive-empty">暂无纪录详情。</div>';
+            return;
+        }
+        const historyHtml = records.length
+            ? records.map(function(item) {
+                return '<div class="career-pb-history-node">'
+                    + '<span>' + safeHtml(formatCareerDate(item.eventDate) || '--') + ' · ' + safeHtml(item.status || item.recordStatus || 'history') + '</span>'
+                    + '<strong>' + safeHtml(item.valueDisplay || '--') + '</strong>'
+                    + '</div>';
+            }).join('')
+            : '<div class="career-archive-empty">暂无演进历史。</div>';
+        panel.innerHTML = '<div class="career-pb-detail-title">' + safeHtml(record.pbTitle || '纪录详情') + '</div>'
+            + '<div class="career-pb-detail-meta">'
+                + safeHtml([record.sportLabel, record.sourceModeLabel, record.resolverVersion].filter(Boolean).join(' · ') || '详情信息待补齐')
+            + '</div>'
+            + '<div class="career-pb-value">' + safeHtml(record.valueDisplay || '--') + '</div>'
+            + '<div class="career-pb-detail-meta">' + safeHtml(record.improvementDisplay || '') + '</div>'
+            + '<div class="career-pb-history-list" aria-label="纪录演进历史">' + historyHtml + '</div>';
+    }
+
+    async function loadCareerPbDetail(recordId, pbType) {
+        const panel = document.getElementById('career-pb-detail-panel');
+        if (panel) panel.innerHTML = '<div class="career-archive-empty">正在加载纪录详情...</div>';
+        const api = window.pywebview && window.pywebview.api ? window.pywebview.api : null;
+        if (!api || typeof api.get_career_pb_detail !== 'function' || typeof api.get_career_pb_history !== 'function') {
+            if (panel) panel.innerHTML = '<div class="career-archive-empty">纪录详情接口暂不可用。</div>';
+            return;
+        }
+        try {
+            const detailRes = await api.get_career_pb_detail(recordId);
+            const historyRes = await api.get_career_pb_history(pbType || 'all', {});
+            const detail = requireCareerApiData(detailRes, '纪录详情加载失败');
+            const history = requireCareerApiData(historyRes, '纪录演进加载失败');
+            renderCareerPbDetailPanel(detail, history);
+        } catch (error) {
+            console.warn('loadCareerPbDetail failed', error);
+            if (panel) panel.innerHTML = '<div class="career-archive-empty">纪录详情暂不可用。</div>';
+        }
+    }
+
+    function openCareerRecordDetailFromElement(event, el) {
+        if (event && typeof event.stopPropagation === 'function') event.stopPropagation();
+        const recordId = el && el.getAttribute ? el.getAttribute('data-record-id') : '';
+        const pbType = el && el.getAttribute ? el.getAttribute('data-pb-type') : '';
+        if (!recordId) return;
+        loadCareerPbDetail(recordId, pbType).catch(function(e) { console.warn('openCareerRecordDetailFromElement', e); });
+    }
+
+    function renderCareerPbCandidates(candidates) {
+        const panel = document.getElementById('career-pb-candidate-panel');
+        if (!panel) return;
+        const source = Array.isArray(candidates) ? candidates : [];
+        if (!source.length) {
+            panel.innerHTML = '<div class="career-archive-empty">暂无待确认候选纪录。</div>';
+            return;
+        }
+        const cards = source.map(function(item) {
+            const evidence = item.evidenceSummary.length ? item.evidenceSummary.join(' · ') : '等待用户确认后才会进入当前纪录';
+            const activityAttrs = item.activityId
+                ? ' data-activity-id="' + safeHtml(item.activityId) + '" data-career-source="' + safeHtml(item.detailLink.source || 'career') + '"'
+                : '';
+            return '<div class="career-pb-card" data-career-record-candidate-id="' + safeHtml(item.id) + '"' + activityAttrs + '>'
+                + '<div class="career-pb-card-head">'
+                    + '<div class="career-pb-title">' + safeHtml(item.title || '候选纪录') + '</div>'
+                    + '<div class="career-pb-date">' + safeHtml(item.confidenceLabel || item.statusLabel || '待确认') + '</div>'
+                + '</div>'
+                + '<div class="career-pb-meta">' + safeHtml(evidence) + '</div>'
+                + '<div class="career-pb-badges"><span class="career-pb-badge">候选</span></div>'
+                + '<button type="button" class="career-pb-detail-action" data-candidate-id="' + safeHtml(item.id) + '" data-decision="confirm" aria-label="确认候选纪录" title="确认候选纪录" onclick="decideCareerPbCandidateFromElement(event, this)">确认</button> '
+                + '<button type="button" class="career-pb-detail-action" data-candidate-id="' + safeHtml(item.id) + '" data-decision="reject" aria-label="拒绝候选纪录" title="拒绝候选纪录" onclick="decideCareerPbCandidateFromElement(event, this)">拒绝</button>'
+                + '</div>';
+        }).join('');
+        panel.innerHTML = '<div class="career-pb-detail-title">候选纪录</div>' + cards;
+    }
+
+    async function decideCareerPbCandidateFromElement(event, el) {
+        if (event && typeof event.stopPropagation === 'function') event.stopPropagation();
+        const candidateId = el && el.getAttribute ? el.getAttribute('data-candidate-id') : '';
+        const decision = el && el.getAttribute ? el.getAttribute('data-decision') : '';
+        const api = window.pywebview && window.pywebview.api ? window.pywebview.api : null;
+        if (!candidateId || !api || typeof api.decide_career_pb_candidate !== 'function') return;
+        const originalText = el.textContent || '';
+        el.disabled = true;
+        el.textContent = decision === 'confirm' ? '确认中...' : '处理中...';
+        try {
+            const res = await api.decide_career_pb_candidate({ candidate_id: candidateId, decision: decision });
+            requireCareerApiData(res, '候选纪录处理失败');
+            await loadCareerArchives();
+        } catch (error) {
+            console.warn('decideCareerPbCandidateFromElement failed', error);
+            el.disabled = false;
+            el.textContent = originalText || (decision === 'confirm' ? '确认' : '拒绝');
+        }
     }
 
     function careerArchiveAchievementHtml(item) {
@@ -12081,232 +12693,767 @@
         });
     }
 
-    function normalizeCareerRaceMapPoint(item) {
-        if (!item || typeof item !== 'object') return null;
-        const detailLink = normalizeCareerDetailLink(item.detail_link);
-        const lat = Number(item.lat);
-        const lon = Number(item.lon);
+    const CAREER_FOOTPRINT_MAP_PROVIDER = 'echarts-register-map';
+    const CAREER_FOOTPRINT_MAP_CONFIG = {
+        world: {
+            dataKey: 'world',
+            mapName: 'FitVaultCareerFootprintWorld',
+            label: 'World',
+            keyProperty: 'key',
+            supportedDrilldowns: { CN: 'china', TW: 'china', JP: 'japan', US: 'us' },
+            layoutCenter: ['50%', '52%'],
+            layoutSize: '150%',
+            roam: false
+        },
+        china: {
+            dataKey: 'china',
+            mapName: 'FitVaultCareerFootprintChina',
+            label: 'China',
+            keyProperty: 'region_key',
+            supportedDrilldowns: {},
+            layoutCenter: ['50%', '51%'],
+            layoutSize: '106%',
+            roam: false
+        },
+        japan: {
+            dataKey: 'japan',
+            mapName: 'FitVaultCareerFootprintJapan',
+            label: 'Japan',
+            keyProperty: 'region_key',
+            countryCode: 'JP',
+            supportedDrilldowns: {},
+            layoutCenter: ['50%', '52%'],
+            layoutSize: '108%',
+            roam: false
+        },
+        us: {
+            dataKey: 'us',
+            mapName: 'FitVaultCareerFootprintUS',
+            label: 'United States',
+            keyProperty: 'region_key',
+            countryCode: 'US',
+            supportedDrilldowns: {},
+            layoutCenter: ['50%', '51%'],
+            layoutSize: '106%',
+            roam: false,
+            script: 'assets/career_footprint_us.js'
+        }
+    };
+    const careerFootprintRegisteredMaps = {};
+    const careerFootprintMapScriptState = {};
+    const careerFootprintMapScriptCallbacks = {};
+
+    function getCareerFootprintMapBundle() {
+        return window.FITVAULT_CAREER_FOOTPRINT_MAPS && typeof window.FITVAULT_CAREER_FOOTPRINT_MAPS === 'object'
+            ? window.FITVAULT_CAREER_FOOTPRINT_MAPS
+            : { manifest: {}, world: null, china: null, japan: null, us: null };
+    }
+
+    function getCareerFootprintMapConfig(mapMode) {
+        return CAREER_FOOTPRINT_MAP_CONFIG[mapMode] || CAREER_FOOTPRINT_MAP_CONFIG.china;
+    }
+
+    function getCareerFootprintGeoJson(mapMode) {
+        const bundle = getCareerFootprintMapBundle();
+        const config = getCareerFootprintMapConfig(mapMode);
+        const geoJson = bundle[config.dataKey];
+        return geoJson && geoJson.type === 'FeatureCollection' ? geoJson : null;
+    }
+
+    function getCareerFootprintFeatureKey(feature, mapMode) {
+        const config = getCareerFootprintMapConfig(mapMode);
+        const props = feature && feature.properties && typeof feature.properties === 'object' ? feature.properties : {};
+        return String(props[config.keyProperty] || props.key || props.iso_a2 || props.region_key || '');
+    }
+
+    function getCareerFootprintFeatureName(feature, mapMode) {
+        const props = feature && feature.properties && typeof feature.properties === 'object' ? feature.properties : {};
+        return String(props.name || props.source_name || getCareerFootprintFeatureKey(feature, mapMode) || '');
+    }
+
+    function ensureCareerFootprintEchartsMap(mapMode) {
+        const config = getCareerFootprintMapConfig(mapMode);
+        if (!window.echarts || typeof echarts.registerMap !== 'function') return false;
+        if (careerFootprintRegisteredMaps[config.mapName]) return true;
+        const geoJson = getCareerFootprintGeoJson(mapMode);
+        if (!geoJson) return false;
+        echarts.registerMap(config.mapName, geoJson);
+        careerFootprintRegisteredMaps[config.mapName] = true;
+        return true;
+    }
+
+    function loadCareerFootprintMapScript(mapMode, onLoaded) {
+        const config = getCareerFootprintMapConfig(mapMode);
+        if (getCareerFootprintGeoJson(mapMode)) {
+            if (typeof onLoaded === 'function') onLoaded();
+            return true;
+        }
+        if (!config.script) return false;
+        careerFootprintMapScriptCallbacks[mapMode] = careerFootprintMapScriptCallbacks[mapMode] || [];
+        if (typeof onLoaded === 'function') careerFootprintMapScriptCallbacks[mapMode].push(onLoaded);
+        if (careerFootprintMapScriptState[mapMode] === 'loading') return true;
+        if (careerFootprintMapScriptState[mapMode] === 'failed') return false;
+        careerFootprintMapScriptState[mapMode] = 'loading';
+        const script = document.createElement('script');
+        script.src = config.script;
+        script.async = true;
+        script.onload = function() {
+            careerFootprintMapScriptState[mapMode] = 'loaded';
+            careerFootprintRegisteredMaps[config.mapName] = false;
+            const callbacks = careerFootprintMapScriptCallbacks[mapMode] || [];
+            careerFootprintMapScriptCallbacks[mapMode] = [];
+            callbacks.forEach(function(callback) {
+                if (typeof callback === 'function') callback();
+            });
+        };
+        script.onerror = function() {
+            careerFootprintMapScriptState[mapMode] = 'failed';
+            careerFootprintMapScriptCallbacks[mapMode] = [];
+        };
+        document.head.appendChild(script);
+        return true;
+    }
+
+    function normalizeCareerFootprintAssetRegion(feature, mapMode) {
+        const key = getCareerFootprintFeatureKey(feature, mapMode);
+        if (!key) return null;
         return {
-            id: String(item.id || ''),
-            activityId: item.activity_id == null ? '' : String(item.activity_id),
-            title: String(item.title || ''),
-            sport: String(item.sport || ''),
-            sportLabel: String(item.sport_label || ''),
-            eventType: String(item.event_type || ''),
-            eventTypeLabel: String(item.event_type_label || ''),
-            eventDate: String(item.event_date || ''),
-            city: String(item.city || ''),
-            regionDisplay: String(item.region_display || ''),
-            confidence: Number(item.confidence || 0),
-            source: String(item.source || ''),
-            sourceLabel: String(item.source_label || ''),
-            lat: Number.isFinite(lat) ? lat : null,
-            lon: Number.isFinite(lon) ? lon : null,
-            detailLink: detailLink
+            key: key,
+            name: getCareerFootprintFeatureName(feature, mapMode),
+            feature: feature
         };
     }
 
-    function normalizeCareerRaceMapMissing(item) {
-        if (!item || typeof item !== 'object') return null;
+    function buildCareerFootprintAssetRegionMap(mapMode) {
+        const geoJson = getCareerFootprintGeoJson(mapMode);
+        const result = {};
+        const features = geoJson && Array.isArray(geoJson.features) ? geoJson.features : [];
+        features.forEach(function(feature) {
+            const region = normalizeCareerFootprintAssetRegion(feature, mapMode);
+            if (region && region.key) result[region.key] = region;
+        });
+        return result;
+    }
+
+    function buildCareerFootprintCountryRegion(regions, countryCode) {
+        const countryRegions = regions.filter(function(region) {
+            return region && region.countryCode === countryCode;
+        });
+        if (!countryRegions.length) return null;
+        const activityCount = countryRegions.reduce(function(total, region) { return total + Number(region.activityCount || 0); }, 0);
+        const raceCount = countryRegions.reduce(function(total, region) { return total + Number(region.raceCount || 0); }, 0);
+        const cityCount = countryRegions.reduce(function(total, region) { return total + Number(region.cityCount || 0); }, 0);
+        const latest = countryRegions.map(function(region) { return region.latestActivityDate || ''; }).filter(Boolean).sort().pop() || '';
+        const first = countryRegions.map(function(region) { return region.firstActivityDate || ''; }).filter(Boolean).sort()[0] || '';
+        const representative = countryRegions.slice().sort(function(a, b) {
+            return String(b.latestActivityDate || '').localeCompare(String(a.latestActivityDate || ''));
+        })[0] || {};
         return {
-            id: String(item.id || ''),
-            activityId: item.activity_id == null ? '' : String(item.activity_id),
-            title: String(item.title || ''),
-            sportLabel: String(item.sport_label || ''),
-            eventTypeLabel: String(item.event_type_label || ''),
-            eventDate: String(item.event_date || ''),
-            city: String(item.city || ''),
-            regionDisplay: String(item.region_display || ''),
-            reason: String(item.reason || 'missing_start_coordinates'),
+            regionKey: countryCode,
+            name: representative.country || representative.name || countryCode,
+            country: representative.country || representative.name || countryCode,
+            countryCode: countryCode,
+            level: 'country',
+            mapMode: 'world',
+            activityCount: activityCount,
+            raceCount: raceCount,
+            firstActivityDate: first,
+            latestActivityDate: latest,
+            representativeActivityId: representative.representativeActivityId || '',
+            cityCount: cityCount,
+            cities: [],
+            detailLink: representative.detailLink || {}
+        };
+    }
+
+    function buildCareerFootprintMapRegions(viewModel, mapMode) {
+        const source = viewModel && Array.isArray(viewModel.regions) ? viewModel.regions : [];
+        if (mapMode !== 'world') {
+            const config = getCareerFootprintMapConfig(mapMode);
+            const countryCode = config.countryCode || (mapMode === 'china' ? 'CN' : '');
+            return countryCode ? source.filter(function(region) {
+                return region && region.countryCode === countryCode && region.regionKey !== countryCode;
+            }) : source;
+        }
+        const result = [];
+        const seenCountryCodes = {};
+        source.forEach(function(region) {
+            const countryCode = region && region.countryCode ? String(region.countryCode) : '';
+            if (countryCode) seenCountryCodes[countryCode] = true;
+        });
+        Object.keys(seenCountryCodes).sort().forEach(function(countryCode) {
+            const countryRegion = buildCareerFootprintCountryRegion(source, countryCode);
+            if (countryRegion) {
+                result.push(countryRegion);
+                if (countryCode === 'CN') {
+                    result.push(Object.assign({}, countryRegion, {
+                        regionKey: 'TW',
+                        name: '中国',
+                        country: '中国',
+                        countryCode: 'CN'
+                    }));
+                }
+            }
+        });
+        return result;
+    }
+
+    function careerFootprintDrilldownCountryCode(regionKey, drilldown) {
+        const key = String(regionKey || '');
+        const config = getCareerFootprintMapConfig(drilldown);
+        if (key === 'TW' && drilldown === 'china') return 'CN';
+        return config.countryCode || (drilldown === 'china' ? 'CN' : key);
+    }
+
+    function hasCareerFootprintDrilldownRegions(viewModel, regionKey, drilldown) {
+        const countryCode = careerFootprintDrilldownCountryCode(regionKey, drilldown);
+        const source = viewModel && Array.isArray(viewModel.regions) ? viewModel.regions : [];
+        return source.some(function(region) {
+            return region
+                && String(region.countryCode || '') === countryCode
+                && String(region.regionKey || '') !== countryCode
+                && String(region.mapMode || '') === drilldown;
+        });
+    }
+
+    function careerFootprintRegionSummaryText(region) {
+        if (!region) return '尚未点亮';
+        const cityText = region.cityCount ? String(region.cityCount) + ' 个城市' : '';
+        const raceText = region.raceCount ? String(region.raceCount) + ' 场赛事' : '';
+        const dateText = [formatCareerDate(region.firstActivityDate), formatCareerDate(region.latestActivityDate)]
+            .filter(Boolean)
+            .join(' - ');
+        return [
+            String(region.activityCount || 0) + ' 次活动',
+            raceText,
+            cityText,
+            dateText
+        ].filter(Boolean).join(' · ');
+    }
+
+    function getCareerFootprintRegionState(regionKey) {
+        appState.career = appState.career || {};
+        const key = String(regionKey || '');
+        const regionByKey = appState.career.footprintRegionByKey || {};
+        const assetByKey = appState.career.footprintAssetRegionByKey || {};
+        return {
+            key: key,
+            region: regionByKey[key] || null,
+            assetRegion: assetByKey[key] || null
+        };
+    }
+
+    function renderCareerFootprintPreview(regionKey) {
+        const cardEl = document.getElementById('career-footprint-hover-card');
+        if (!cardEl) return;
+        const state = getCareerFootprintRegionState(regionKey);
+        const displayName = state.region && state.region.name
+            ? state.region.name
+            : (state.assetRegion && state.assetRegion.name ? state.assetRegion.name : state.key);
+        cardEl.innerHTML = '<div class="career-footprint-hover-title">' + safeHtml(displayName || '区域') + '</div>'
+            + '<div class="career-footprint-hover-meta">' + safeHtml(careerFootprintRegionSummaryText(state.region)) + '</div>';
+        cardEl.style.display = '';
+    }
+
+    function previewCareerFootprintRegion(el) {
+        const regionKey = el ? el.getAttribute('data-region-key') : '';
+        renderCareerFootprintPreview(regionKey);
+    }
+
+    function clearCareerFootprintPreview() {
+        const cardEl = document.getElementById('career-footprint-hover-card');
+        if (cardEl) cardEl.style.display = 'none';
+    }
+
+    function renderCareerFootprintDetail(regionKey) {
+        const detailEl = document.getElementById('career-footprint-detail-panel');
+        if (!detailEl) return;
+        const state = getCareerFootprintRegionState(regionKey);
+        const region = state.region;
+        const assetRegion = state.assetRegion;
+        if (!region) {
+            detailEl.classList.remove('is-visible');
+            detailEl.innerHTML = '';
+            return;
+        }
+        const displayName = region && region.name ? region.name : (assetRegion && assetRegion.name ? assetRegion.name : state.key);
+        const detailLink = region && region.detailLink ? region.detailLink : {};
+        const activityId = detailLink && detailLink.activityId ? detailLink.activityId : (region && region.representativeActivityId ? region.representativeActivityId : '');
+        const source = detailLink && detailLink.source ? detailLink.source : 'career';
+        const action = activityId
+            ? '<button type="button" class="career-footprint-action" onclick="openCareerActivityDetailFromElement(this)" data-activity-id="' + safeHtml(activityId) + '" data-career-source="' + safeHtml(source) + '">打开代表活动</button>'
+            : '';
+        detailEl.classList.add('is-visible');
+        detailEl.innerHTML = '<div class="career-footprint-detail-title">' + safeHtml(displayName || '区域') + '</div>'
+            + '<div class="career-footprint-detail-meta">' + safeHtml(careerFootprintRegionSummaryText(region)) + '</div>'
+            + '<div class="career-footprint-detail-stats">'
+            + '<div class="career-footprint-detail-stat"><strong>' + safeHtml(String(region ? region.activityCount || 0 : 0)) + '</strong><span>活动</span></div>'
+            + '<div class="career-footprint-detail-stat"><strong>' + safeHtml(String(region ? region.raceCount || 0 : 0)) + '</strong><span>赛事</span></div>'
+            + '<div class="career-footprint-detail-stat"><strong>' + safeHtml(formatCareerDate(region && region.firstActivityDate) || '-') + '</strong><span>首次活动</span></div>'
+            + '<div class="career-footprint-detail-stat"><strong>' + safeHtml(formatCareerDate(region && region.latestActivityDate) || '-') + '</strong><span>最近活动</span></div>'
+            + '</div>'
+            + action;
+    }
+
+    function selectCareerFootprintRegion(regionKey) {
+        appState.career = appState.career || {};
+        appState.career.selectedFootprintRegionKey = String(regionKey || '');
+        renderCareerFootprintPreview(regionKey);
+        renderCareerFootprintDetail(regionKey);
+    }
+
+    function careerFootprintTooltipHtml(regionKey) {
+        const state = getCareerFootprintRegionState(regionKey);
+        const displayName = state.region && state.region.name
+            ? state.region.name
+            : (state.assetRegion && state.assetRegion.name ? state.assetRegion.name : state.key);
+        return '<div class="career-footprint-hover-title">' + safeHtml(displayName || '区域') + '</div>'
+            + '<div class="career-footprint-hover-meta">' + safeHtml(careerFootprintRegionSummaryText(state.region)) + '</div>';
+    }
+
+    function buildCareerFootprintStaticChartRegions(mapMode) {
+        if (mapMode !== 'china') return [];
+        return [{
+            name: 'CN-TW',
+            itemStyle: {
+                areaColor: 'rgba(30, 41, 59, 0.72)',
+                borderColor: 'rgba(226, 232, 240, 0.68)',
+                borderWidth: 1.15
+            }
+        }];
+    }
+
+    function buildCareerFootprintChartOption(mapMode, litByKey) {
+        const config = getCareerFootprintMapConfig(mapMode);
+        const data = Object.keys(litByKey || {}).map(function(key) {
+            const region = litByKey[key] || {};
+            return {
+                name: key,
+                value: Number(region.activityCount || 0),
+                regionKey: key,
+                displayName: region.name || key,
+                itemStyle: {
+                    areaColor: 'rgba(45, 212, 191, 0.82)',
+                    borderColor: 'rgba(240, 253, 250, 0.92)',
+                    borderWidth: 1.2,
+                    shadowColor: 'rgba(45, 212, 191, 0.42)',
+                    shadowBlur: 14
+                },
+                emphasis: {
+                    itemStyle: {
+                        areaColor: 'rgba(250, 204, 21, 0.86)',
+                        borderColor: 'rgba(254, 249, 195, 0.98)',
+                        shadowColor: 'rgba(250, 204, 21, 0.48)',
+                        shadowBlur: 16
+                    }
+                }
+            };
+        });
+        const maxValue = data.reduce(function(max, item) { return Math.max(max, Number(item.value || 0)); }, 1);
+        return {
+            backgroundColor: 'transparent',
+            tooltip: {
+                trigger: 'item',
+                borderWidth: 0,
+                padding: 0,
+                backgroundColor: 'transparent',
+                extraCssText: 'box-shadow:none;',
+                formatter: function(params) {
+                    const regionKey = params && params.data && params.data.regionKey ? params.data.regionKey : String(params && params.name || '');
+                    return careerFootprintTooltipHtml(regionKey);
+                }
+            },
+            visualMap: {
+                show: false,
+                min: 0,
+                max: maxValue,
+                inRange: {
+                    color: ['rgba(15, 118, 110, 0.66)', 'rgba(45, 212, 191, 0.92)']
+                }
+            },
+            series: [{
+                type: 'map',
+                map: config.mapName,
+                nameProperty: config.keyProperty,
+                layoutCenter: config.layoutCenter,
+                layoutSize: config.layoutSize,
+                roam: false,
+                selectedMode: false,
+                regions: buildCareerFootprintStaticChartRegions(mapMode),
+                data: data,
+                emphasis: {
+                    label: {
+                        show: true,
+                        color: '#f8fafc',
+                        fontWeight: 900,
+                        textBorderColor: 'rgba(2, 6, 23, 0.92)',
+                        textBorderWidth: 3,
+                        formatter: function(params) {
+                            const key = params && params.name ? String(params.name) : '';
+                            const state = getCareerFootprintRegionState(key);
+                            return state.region && state.region.name ? state.region.name : (state.assetRegion && state.assetRegion.name ? state.assetRegion.name : key);
+                        }
+                    },
+                    itemStyle: {
+                        areaColor: 'rgba(250, 204, 21, 0.78)',
+                        borderColor: 'rgba(254, 249, 195, 0.96)',
+                        shadowBlur: 12,
+                        shadowColor: 'rgba(250, 204, 21, 0.42)'
+                    }
+                },
+                label: {
+                    show: false
+                },
+                itemStyle: {
+                    areaColor: mapMode === 'world' ? 'rgba(30, 41, 59, 0.44)' : 'rgba(30, 41, 59, 0.56)',
+                    borderColor: mapMode === 'world' ? 'rgba(148, 163, 184, 0.26)' : 'rgba(148, 163, 184, 0.38)',
+                    borderWidth: mapMode === 'world' ? 0.7 : 0.9
+                }
+            }]
+        };
+    }
+
+    function ensureCareerFootprintChart(mapEl) {
+        appState.career = appState.career || {};
+        if (!mapEl || !window.echarts || typeof echarts.init !== 'function') return null;
+        const chartEl = mapEl.querySelector('.career-footprint-map-chart') || mapEl;
+        if (appState.career.footprintChart && appState.career.footprintChartEl === chartEl) return appState.career.footprintChart;
+        if (appState.career.footprintChart && typeof appState.career.footprintChart.dispose === 'function') {
+            appState.career.footprintChart.dispose();
+        }
+        appState.career.footprintChartEl = chartEl;
+        appState.career.footprintChart = echarts.init(chartEl);
+        appState.career.footprintChart.on('mouseover', function(params) {
+            const key = params && params.data && params.data.regionKey ? params.data.regionKey : String(params && params.name || '');
+            if (key) renderCareerFootprintPreview(key);
+        });
+        appState.career.footprintChart.on('mouseout', function() {
+            clearCareerFootprintPreview();
+        });
+        appState.career.footprintChart.on('click', function(params) {
+            const key = params && params.data && params.data.regionKey ? params.data.regionKey : String(params && params.name || '');
+            if (!key) return;
+            const regionState = getCareerFootprintRegionState(key);
+            const currentMode = appState.career.currentFootprintMapMode || appState.career.footprintBaseMapMode || 'china';
+            const drilldown = getCareerFootprintMapConfig(currentMode).supportedDrilldowns[key];
+            if (drilldown && hasCareerFootprintDrilldownRegions(appState.career.footprint || normalizeCareerFootprint({}), key, drilldown)) {
+                appState.career.currentFootprintMapMode = drilldown;
+                appState.career.selectedFootprintRegionKey = '';
+                renderCareerFootprint(appState.career.footprint || normalizeCareerFootprint({}), { mapMode: drilldown, isDrilldown: true });
+                return;
+            }
+            if (regionState.region) selectCareerFootprintRegion(key);
+            else if (currentMode === 'world') renderCareerFootprintUnsupportedDrilldown(key);
+        });
+        if (typeof window !== 'undefined' && !appState.career.footprintResizeHandler) {
+            appState.career.footprintResizeHandler = function() {
+                if (appState.career && appState.career.footprintChart && typeof appState.career.footprintChart.resize === 'function') {
+                    appState.career.footprintChart.resize();
+                }
+            };
+            window.addEventListener('resize', appState.career.footprintResizeHandler);
+        }
+        return appState.career.footprintChart;
+    }
+
+    function renderCareerFootprintUnsupportedDrilldown(regionKey) {
+        const detailEl = document.getElementById('career-footprint-detail-panel');
+        const state = getCareerFootprintRegionState(regionKey);
+        if (!detailEl) return;
+        detailEl.classList.add('is-visible');
+        detailEl.innerHTML = '<div class="career-footprint-detail-title">' + safeHtml(state.assetRegion && state.assetRegion.name ? state.assetRegion.name : regionKey) + '</div>'
+            + '<div class="career-footprint-detail-meta">该国家 / 地区的省州级下钻地图暂未支持；当前仅展示国家级足迹。</div>';
+    }
+
+    function returnCareerFootprintWorldMap() {
+        appState.career = appState.career || {};
+        appState.career.currentFootprintMapMode = 'world';
+        appState.career.selectedFootprintRegionKey = '';
+        renderCareerFootprint(appState.career.footprint || normalizeCareerFootprint({}), { mapMode: 'world' });
+    }
+
+    function disposeCareerFootprintChart() {
+        appState.career = appState.career || {};
+        if (appState.career.footprintChart && typeof appState.career.footprintChart.dispose === 'function') {
+            appState.career.footprintChart.dispose();
+        }
+        appState.career.footprintChart = null;
+        appState.career.footprintChartEl = null;
+    }
+
+    function normalizeCareerFootprintRegion(item) {
+        if (!item || typeof item !== 'object') return null;
+        const activityCount = Number(item.activity_count || 0);
+        const raceCount = Number(item.race_count || 0);
+        return {
+            regionKey: String(item.region_key || ''),
+            name: String(item.name || ''),
+            country: String(item.country || ''),
+            countryCode: String(item.country_code || ''),
+            level: String(item.level || ''),
+            mapMode: ['world', 'china', 'japan', 'us'].indexOf(String(item.map_mode || 'china')) >= 0 ? String(item.map_mode || 'china') : 'china',
+            activityCount: Number.isFinite(activityCount) ? activityCount : 0,
+            raceCount: Number.isFinite(raceCount) ? raceCount : 0,
+            firstActivityDate: String(item.first_activity_date || ''),
+            latestActivityDate: String(item.latest_activity_date || ''),
+            representativeActivityId: item.representative_activity_id == null ? '' : String(item.representative_activity_id),
+            cityCount: Number(item.city_count || 0),
+            cities: Array.isArray(item.cities) ? item.cities.map(function(value) { return String(value || ''); }).filter(Boolean).slice(0, 8) : [],
             detailLink: normalizeCareerDetailLink(item.detail_link)
         };
     }
 
-    function normalizeCareerRaceMap(payload) {
+    function normalizeCareerFootprintMissing(item) {
+        if (!item || typeof item !== 'object') return null;
+        return {
+            activityId: item.activity_id == null ? '' : String(item.activity_id),
+            eventDate: String(item.event_date || ''),
+            sport: String(item.sport || ''),
+            sportLabel: String(item.sport_label || ''),
+            reason: String(item.reason || 'missing_region'),
+            detailLink: normalizeCareerDetailLink(item.detail_link)
+        };
+    }
+
+    function normalizeCareerFootprint(payload) {
         const raw = payload && typeof payload === 'object' ? payload : {};
         const rawSummary = raw.summary && typeof raw.summary === 'object' ? raw.summary : {};
         const rawStatus = raw.status && typeof raw.status === 'object' ? raw.status : {};
-        const rawLocations = Array.isArray(raw.locations) ? raw.locations : (Array.isArray(raw.points) ? raw.points : []);
-        const locations = rawLocations.map(normalizeCareerRaceMapPoint).filter(function(item) {
-            return item && item.lat !== null && item.lon !== null;
-        });
-        const withoutCoordinates = Array.isArray(raw.without_coordinates) ? raw.without_coordinates.map(normalizeCareerRaceMapMissing).filter(Boolean) : [];
+        const regions = Array.isArray(raw.regions) ? raw.regions.map(normalizeCareerFootprintRegion).filter(function(item) {
+            return item && item.regionKey;
+        }) : [];
+        const withoutRegion = Array.isArray(raw.without_region) ? raw.without_region.map(normalizeCareerFootprintMissing).filter(Boolean) : [];
+        const mapMode = String(raw.map_mode || 'china') === 'world' ? 'world' : 'china';
         return {
-            locations: locations,
-            withoutCoordinates: withoutCoordinates,
+            mapMode: mapMode,
+            regions: regions,
+            withoutRegion: withoutRegion,
             summary: {
-                total: Number(rawSummary.total || locations.length + withoutCoordinates.length || 0),
-                withCoordinates: Number(rawSummary.with_coordinates || locations.length || 0),
-                withoutCoordinates: Number(rawSummary.without_coordinates || withoutCoordinates.length || 0),
-                cityCount: Number(rawSummary.city_count || 0),
-                countryCount: Number(rawSummary.country_count || 0)
+                activityCount: Number(rawSummary.activity_count || 0),
+                regionCount: Number(rawSummary.region_count || regions.length || 0),
+                countryCount: Number(rawSummary.country_count || 0),
+                chinaRegionCount: Number(rawSummary.china_region_count || 0),
+                overseasRegionCount: Number(rawSummary.overseas_region_count || 0),
+                withoutRegionCount: Number(rawSummary.without_region_count || withoutRegion.length || 0)
             },
-            filters: raw.filters && typeof raw.filters === 'object' ? raw.filters : {},
+            filters: raw.filters && typeof raw.filters === 'object'
+                ? { sport: String(raw.filters.sport || 'all'), year: raw.filters.year == null ? null : String(raw.filters.year) }
+                : { sport: 'all', year: null },
             status: {
+                schemaReady: !!rawStatus.schema_ready,
                 dataReady: !!rawStatus.data_ready,
                 message: String(rawStatus.message || '')
             }
         };
     }
 
-    function getCareerRaceMapFilters() {
+    function getCareerFootprintFilters() {
         appState.career = appState.career || {};
-        const fallback = appState.career.raceMapFilters || {};
-        const yearEl = document.getElementById('career-race-map-year-filter');
-        const sportEl = document.getElementById('career-race-map-sport-filter');
+        const fallback = appState.career.footprintFilters || {};
+        const yearEl = document.getElementById('career-footprint-year-filter');
+        const sportEl = document.getElementById('career-footprint-sport-filter');
         return {
             year: yearEl ? yearEl.value : (fallback.year || 'all'),
             sport: sportEl ? sportEl.value : (fallback.sport || 'all')
         };
     }
 
-    function syncCareerRaceMapFilters(filters, viewModel) {
+    function syncCareerFootprintFilters(filters, viewModel) {
         const normalized = filters && typeof filters === 'object' ? filters : {};
-        const yearEl = document.getElementById('career-race-map-year-filter');
+        const yearEl = document.getElementById('career-footprint-year-filter');
         if (yearEl) {
             const currentValue = normalized.year == null ? 'all' : String(normalized.year);
-            const items = viewModel ? [].concat(viewModel.locations || [], viewModel.withoutCoordinates || []) : [];
-            const years = items.map(function(item) { return String(item.eventDate || '').slice(0, 4); })
-                .filter(function(year, index, arr) { return /^\d{4}$/.test(year) && arr.indexOf(year) === index; })
-                .sort(function(a, b) { return Number(b) - Number(a); });
+            const items = viewModel ? [].concat(viewModel.regions || [], viewModel.withoutRegion || []) : [];
+            const years = [];
+            items.forEach(function(item) {
+                [item.firstActivityDate, item.latestActivityDate, item.eventDate].forEach(function(value) {
+                    const year = String(value || '').slice(0, 4);
+                    if (/^\d{4}$/.test(year) && years.indexOf(year) < 0) years.push(year);
+                });
+            });
+            years.sort(function(a, b) { return Number(b) - Number(a); });
             if (currentValue !== 'all' && years.indexOf(currentValue) < 0) years.unshift(currentValue);
             yearEl.innerHTML = '<option value="all">全部年份</option>' + years.map(function(year) {
                 return '<option value="' + safeHtml(year) + '">' + safeHtml(year) + '</option>';
             }).join('');
             yearEl.value = currentValue;
         }
-        const sportEl = document.getElementById('career-race-map-sport-filter');
+        const sportEl = document.getElementById('career-footprint-sport-filter');
         if (sportEl) sportEl.value = String(normalized.sport || 'all');
     }
 
-    function careerRaceMapPointHtml(item, bounds) {
-        const spanLat = bounds.maxLat - bounds.minLat;
-        const spanLon = bounds.maxLon - bounds.minLon;
-        const left = spanLon ? 8 + ((item.lon - bounds.minLon) / spanLon) * 84 : 50;
-        const top = spanLat ? 92 - ((item.lat - bounds.minLat) / spanLat) * 84 : 50;
-        const source = item.detailLink && item.detailLink.source ? item.detailLink.source : 'career';
-        const label = item.city || item.regionDisplay || item.title || '赛事';
-        return '<button type="button" class="career-race-map-point" style="left:' + safeHtml(left.toFixed(2)) + '%;top:' + safeHtml(top.toFixed(2)) + '%;" title="' + safeHtml(item.title || label) + '" onclick="openCareerActivityDetailFromElement(this)" data-activity-id="' + safeHtml(item.detailLink.activityId || item.activityId) + '" data-career-source="' + safeHtml(source) + '">'
-            + '<span class="career-race-map-label">' + safeHtml(label) + '</span>'
-            + '</button>';
-    }
-
-    function careerRaceMapMissingHtml(item) {
-        const activityId = item && item.detailLink && item.detailLink.activityId ? item.detailLink.activityId : (item && item.activityId ? item.activityId : '');
-        const source = item && item.detailLink && item.detailLink.source ? item.detailLink.source : 'career';
-        const reasonText = item && item.reason === 'invalid_start_coordinates' ? '起点坐标异常' : '缺少起点坐标';
-        const meta = [
-            formatCareerDate(item && item.eventDate),
-            item && (item.city || item.regionDisplay),
-            item && item.eventTypeLabel,
-            reasonText
-        ].filter(Boolean).join(' · ');
-        const attrs = activityId
-            ? ' role="button" tabindex="0" onclick="openCareerActivityDetailFromElement(this)" onkeydown="onCareerActivityDetailKeydown(event, this)" data-activity-id="' + safeHtml(activityId) + '" data-career-source="' + safeHtml(source) + '"'
-            : '';
-        return '<div class="career-race-map-card' + (activityId ? ' is-clickable' : '') + '"' + attrs + '>'
-            + '<div class="career-race-map-card-title">' + safeHtml((item && item.title) || '未命名赛事') + '</div>'
-            + '<div class="career-race-map-card-meta">' + safeHtml(meta || reasonText) + '</div>'
-            + '</div>';
-    }
-
-    function renderCareerRaceMap(viewModel) {
-        const vm = viewModel || normalizeCareerRaceMap({});
-        const statusText = document.getElementById('career-race-map-status-text');
-        const summaryText = document.getElementById('career-race-map-summary-text');
-        const locationsEl = document.getElementById('career-race-map-locations');
-        const missingEl = document.getElementById('career-race-map-missing-list');
-        const emptyEl = document.getElementById('career-race-map-empty');
+    function renderCareerFootprint(viewModel, options) {
+        const vm = viewModel || normalizeCareerFootprint({});
+        const renderOptions = options && typeof options === 'object' ? options : {};
+        const statusText = document.getElementById('career-footprint-status-text');
+        const summaryText = document.getElementById('career-footprint-summary-text');
+        const mapEl = document.getElementById('career-footprint-map');
+        const missingEl = document.getElementById('career-footprint-missing-list');
+        const emptyEl = document.getElementById('career-footprint-empty');
+        const backEl = document.getElementById('career-footprint-back-world');
         const summary = vm.summary || {};
-        syncCareerRaceMapFilters(vm.filters, vm);
+        const baseMapMode = vm.mapMode === 'world' ? 'world' : 'china';
+        const explicitMapMode = renderOptions.mapMode === 'china' || renderOptions.mapMode === 'world' || renderOptions.mapMode === 'japan' || renderOptions.mapMode === 'us'
+            ? renderOptions.mapMode
+            : '';
+        const retainedMapMode = appState.career && appState.career.currentFootprintMapMode ? appState.career.currentFootprintMapMode : '';
+        const mapMode = explicitMapMode || (baseMapMode === 'world' && retainedMapMode ? retainedMapMode : baseMapMode);
+        const config = getCareerFootprintMapConfig(mapMode);
+        const litByKey = {};
+        const assetByKey = buildCareerFootprintAssetRegionMap(mapMode);
+        const mapRegions = buildCareerFootprintMapRegions(vm, mapMode);
+        mapRegions.forEach(function(region) {
+            if (region && region.regionKey) litByKey[region.regionKey] = region;
+        });
+        appState.career = appState.career || {};
+        appState.career.footprintBaseMapMode = baseMapMode;
+        appState.career.currentFootprintMapMode = mapMode;
+        appState.career.footprintRegionByKey = litByKey;
+        appState.career.footprintAssetRegionByKey = assetByKey;
+        syncCareerFootprintFilters(vm.filters, vm);
         const metricMap = {
-            'career-race-map-total': summary.total || 0,
-            'career-race-map-with-coordinates': summary.withCoordinates || 0,
-            'career-race-map-city-count': summary.cityCount || 0,
-            'career-race-map-without-coordinates': summary.withoutCoordinates || 0
+            'career-footprint-activity-count': summary.activityCount || 0,
+            'career-footprint-region-count': summary.regionCount || 0,
+            'career-footprint-country-count': summary.countryCount || 0,
+            'career-footprint-without-region-count': summary.withoutRegionCount || 0
         };
         Object.keys(metricMap).forEach(function(id) {
             const el = document.getElementById(id);
             if (el) el.textContent = String(metricMap[id]);
         });
-        if (statusText) statusText.textContent = summary.total ? '赛事足迹已接入' : '等待赛事足迹';
-        if (summaryText) summaryText.textContent = summary.total
-            ? '当前筛选下 ' + String(summary.withCoordinates || 0) + ' 场赛事已点亮，' + String(summary.withoutCoordinates || 0) + ' 场待补坐标'
-            : '当前筛选下暂无赛事足迹';
-        if (locationsEl) {
-            const locations = Array.isArray(vm.locations) ? vm.locations : [];
-            if (locations.length) {
-                const bounds = locations.reduce(function(acc, item) {
-                    return {
-                        minLat: Math.min(acc.minLat, item.lat),
-                        maxLat: Math.max(acc.maxLat, item.lat),
-                        minLon: Math.min(acc.minLon, item.lon),
-                        maxLon: Math.max(acc.maxLon, item.lon)
-                    };
-                }, { minLat: locations[0].lat, maxLat: locations[0].lat, minLon: locations[0].lon, maxLon: locations[0].lon });
-                locationsEl.innerHTML = locations.map(function(item) { return careerRaceMapPointHtml(item, bounds); }).join('');
+        if (statusText) statusText.textContent = summary.activityCount ? '生涯足迹已点亮' : '等待生涯足迹';
+        if (summaryText) summaryText.textContent = summary.activityCount
+            ? '当前筛选下 ' + String(summary.regionCount || 0) + ' 个区域已点亮，地图模式：' + (mapMode === 'world' ? '世界地图' : (mapMode === 'china' ? '中国地图' : (config.label || '区域地图')))
+            : '当前筛选下暂无可点亮区域';
+        if (backEl) backEl.style.display = baseMapMode === 'world' && mapMode !== 'world' ? '' : 'none';
+        if (mapEl) {
+            mapEl.setAttribute('data-map-mode', mapMode);
+            mapEl.setAttribute('data-map-label', config.label || mapMode);
+            disposeCareerFootprintChart();
+            mapEl.innerHTML = '<div class="career-footprint-map-chart" aria-label="运动足迹行政区点亮地图"></div>'
+                + '<div class="career-footprint-hover-card" id="career-footprint-hover-card" style="display:none;"></div>'
+                + '<div class="career-footprint-map-attribution">本地 GeoJSON · ECharts</div>';
+            if (baseMapMode === 'world' && mapMode !== 'world') {
+                mapEl.innerHTML += '<button type="button" class="career-footprint-map-back" onclick="returnCareerFootprintWorldMap()">返回世界图</button>';
+            }
+            if (!summary.activityCount) {
+                mapEl.innerHTML += '<div class="career-footprint-map-empty-state">暂无可展示的生涯足迹。</div>';
+            } else if (!ensureCareerFootprintEchartsMap(mapMode)) {
+                if (loadCareerFootprintMapScript(mapMode, function() {
+                    renderCareerFootprint(vm, { mapMode: mapMode });
+                })) {
+                    mapEl.innerHTML += '<div class="career-footprint-map-empty-state">正在加载本地地图资源...</div>';
+                } else {
+                    mapEl.innerHTML += '<div class="career-footprint-map-empty-state">本地足迹地图资源暂不可用。</div>';
+                }
             } else {
-                locationsEl.innerHTML = '<div class="career-race-map-empty">暂无带安全起点坐标的赛事。</div>';
+                const chart = ensureCareerFootprintChart(mapEl);
+                if (chart) {
+                    chart.setOption(buildCareerFootprintChartOption(mapMode, litByKey), true);
+                    setTimeout(function() {
+                        if (chart && typeof chart.resize === 'function') chart.resize();
+                    }, 0);
+                }
             }
         }
         if (missingEl) {
-            const missing = Array.isArray(vm.withoutCoordinates) ? vm.withoutCoordinates : [];
-            missingEl.innerHTML = missing.length ? missing.map(careerRaceMapMissingHtml).join('') : '';
+            missingEl.innerHTML = '';
         }
-        if (emptyEl) emptyEl.style.display = summary.total ? 'none' : '';
+        if (emptyEl) emptyEl.style.display = summary.activityCount ? 'none' : '';
+        renderCareerFootprintDetail(appState.career.selectedFootprintRegionKey);
     }
 
-    function renderCareerRaceMapLoading() {
-        const statusText = document.getElementById('career-race-map-status-text');
-        const locationsEl = document.getElementById('career-race-map-locations');
-        const missingEl = document.getElementById('career-race-map-missing-list');
-        if (statusText) statusText.textContent = '正在加载赛事足迹';
-        if (locationsEl) locationsEl.innerHTML = '<div class="career-race-map-empty">正在加载赛事足迹...</div>';
-        if (missingEl) missingEl.innerHTML = '';
-    }
-
-    function renderCareerRaceMapError(message) {
-        const statusText = document.getElementById('career-race-map-status-text');
-        const locationsEl = document.getElementById('career-race-map-locations');
-        if (statusText) statusText.textContent = '赛事足迹暂不可用';
-        if (locationsEl) locationsEl.innerHTML = '<div class="career-race-map-empty">' + safeHtml(message || '赛事足迹暂不可用') + '</div>';
-    }
-
-    async function loadCareerRaceMap(filters) {
+    function refreshCareerFootprintMapWhenVisible() {
         appState.career = appState.career || {};
-        appState.career.raceMapLoading = true;
-        appState.career.raceMapError = '';
-        renderCareerRaceMapLoading();
-        try {
-            const api = window.pywebview && window.pywebview.api ? window.pywebview.api : null;
-            if (!api || typeof api.get_career_race_map !== 'function') {
-                throw new Error('赛事足迹接口暂不可用');
+        setTimeout(function() {
+            if (appState.career && appState.career.footprint) {
+                const baseMapMode = appState.career.footprint.mapMode === 'world' ? 'world' : 'china';
+                const retainedMapMode = appState.career.currentFootprintMapMode || appState.career.footprintBaseMapMode || baseMapMode;
+                renderCareerFootprint(appState.career.footprint, {
+                    mapMode: baseMapMode === 'world' ? retainedMapMode : baseMapMode
+                });
+                return;
             }
-            const nextFilters = filters || appState.career.raceMapFilters || getCareerRaceMapFilters();
-            appState.career.raceMapFilters = nextFilters;
-            const res = await api.get_career_race_map(nextFilters);
-            const raceMap = normalizeCareerRaceMap(requireCareerApiData(res, '赛事足迹加载失败'));
-            appState.career.raceMap = raceMap;
-            appState.career.raceMapLoading = false;
-            renderCareerRaceMap(raceMap);
-            return raceMap;
-        } catch (e) {
-            const message = e && e.message ? e.message : String(e || '赛事足迹加载失败');
-            appState.career.raceMapLoading = false;
-            appState.career.raceMapError = message;
-            renderCareerRaceMapError(message);
-            return {
-                ok: false,
-                error: message,
-                data: appState.career.raceMap || normalizeCareerRaceMap({})
-            };
+            if (appState.career && appState.career.footprintChart && typeof appState.career.footprintChart.resize === 'function') {
+                appState.career.footprintChart.resize();
+            }
+        }, 80);
+    }
+
+    function renderCareerFootprintLoading() {
+        const statusText = document.getElementById('career-footprint-status-text');
+        const mapEl = document.getElementById('career-footprint-map');
+        const missingEl = document.getElementById('career-footprint-missing-list');
+        const detailEl = document.getElementById('career-footprint-detail-panel');
+        if (statusText) statusText.textContent = '正在加载生涯足迹';
+        disposeCareerFootprintChart();
+        if (mapEl) mapEl.innerHTML = '<div class="career-footprint-map-empty-state">正在加载生涯足迹...</div>';
+        if (missingEl) missingEl.innerHTML = '';
+        if (detailEl) {
+            detailEl.classList.remove('is-visible');
+            detailEl.innerHTML = '';
         }
     }
 
-    function onCareerRaceMapFilterChange() {
+    function renderCareerFootprintError(message) {
+        const statusText = document.getElementById('career-footprint-status-text');
+        const mapEl = document.getElementById('career-footprint-map');
+        const detailEl = document.getElementById('career-footprint-detail-panel');
+        if (statusText) statusText.textContent = '生涯足迹暂不可用';
+        disposeCareerFootprintChart();
+        if (mapEl) mapEl.innerHTML = '<div class="career-footprint-map-empty-state">' + safeHtml(message || '生涯足迹暂不可用') + '</div>';
+        if (detailEl) {
+            detailEl.classList.remove('is-visible');
+            detailEl.innerHTML = '';
+        }
+    }
+
+    function waitCareerApiRetry(ms) {
+        return new Promise(function(resolve) {
+            setTimeout(resolve, ms);
+        });
+    }
+
+    async function loadCareerFootprint(filters) {
         appState.career = appState.career || {};
-        appState.career.raceMapFilters = getCareerRaceMapFilters();
-        loadCareerRaceMap(appState.career.raceMapFilters).catch(function(e) { console.warn('onCareerRaceMapFilterChange', e); });
+        appState.career.footprintLoading = true;
+        appState.career.footprintError = '';
+        renderCareerFootprintLoading();
+        const api = window.pywebview && window.pywebview.api ? window.pywebview.api : null;
+        const nextFilters = filters || appState.career.footprintFilters || getCareerFootprintFilters();
+        appState.career.footprintFilters = nextFilters;
+        let lastError = null;
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+            try {
+                if (!api || typeof api.get_career_footprint !== 'function') {
+                    throw new Error('生涯足迹接口暂不可用');
+                }
+                const res = await api.get_career_footprint(nextFilters);
+                const footprint = normalizeCareerFootprint(requireCareerApiData(res, '生涯足迹加载失败'));
+                appState.career.footprint = footprint;
+                appState.career.footprintLoading = false;
+                renderCareerFootprint(footprint);
+                return footprint;
+            } catch (e) {
+                lastError = e;
+                if (attempt === 0) await waitCareerApiRetry(320);
+            }
+        }
+        const message = lastError && lastError.message ? lastError.message : String(lastError || '生涯足迹加载失败');
+        appState.career.footprintLoading = false;
+        appState.career.footprintError = message;
+        renderCareerFootprintError(message);
+        return {
+            ok: false,
+            error: message,
+            data: appState.career.footprint || normalizeCareerFootprint({})
+        };
+    }
+
+    function onCareerFootprintFilterChange() {
+        appState.career = appState.career || {};
+        appState.career.footprintFilters = getCareerFootprintFilters();
+        loadCareerFootprint(appState.career.footprintFilters).catch(function(e) { console.warn('onCareerFootprintFilterChange', e); });
     }
 
     function renderCareerArchives(viewModel) {
@@ -12315,12 +13462,14 @@
         const emptyEl = document.getElementById('career-archives-empty');
         const races = Array.isArray(vm.races) ? vm.races : [];
         const pbs = Array.isArray(vm.pbs) ? vm.pbs : [];
+        const pbCandidates = Array.isArray(vm.pbCandidates) ? vm.pbCandidates : [];
         const achievements = Array.isArray(vm.achievements) ? vm.achievements : [];
         syncCareerRaceArchiveFilters(vm.filters, vm.summary);
         syncCareerPbArchiveFilters(vm.pbFilters, vm.summary);
         syncCareerAchievementArchiveFilters(vm.achievementFilters, vm.summary);
         renderCareerArchiveGroup('races', races, '暂无赛事', careerRaceArchiveCardHtml);
-        renderCareerArchiveGroup('pbs', pbs, '暂无 PB', careerPbArchiveCardHtml);
+        renderCareerArchiveGroup('pbs', pbs, '暂无当前纪录', careerPbArchiveCardHtml);
+        renderCareerPbCandidates(pbCandidates);
         renderCareerArchiveGroup('achievements', achievements, '暂无里程碑', careerAchievementArchiveCardHtml);
         const total = races.length;
         const pbTotal = pbs.length;
@@ -12328,13 +13477,18 @@
         const raceSummaryEl = document.getElementById('career-race-summary');
         if (raceSummaryEl) raceSummaryEl.textContent = total ? '当前筛选下共 ' + String(total) + ' 场赛事' : '当前筛选下暂无赛事';
         const pbSummaryEl = document.getElementById('career-pb-summary');
-        if (pbSummaryEl) pbSummaryEl.textContent = pbTotal ? '当前筛选下共 ' + String(pbTotal) + ' 项 PB' : '当前筛选下暂无 PB';
+        const pbCandidateCount = Number((vm.summary && vm.summary.pbCandidateCount) || 0);
+        if (pbSummaryEl) {
+            pbSummaryEl.textContent = pbTotal
+                ? '当前筛选下共 ' + String(pbTotal) + ' 项纪录 · 待确认 ' + String(pbCandidateCount) + ' 项'
+                : '当前筛选下暂无纪录 · 待确认 ' + String(pbCandidateCount) + ' 项';
+        }
         const pbStatusText = document.getElementById('career-pb-status-text');
-        if (pbStatusText) pbStatusText.textContent = pbTotal ? 'PB 档案已接入' : '等待 PB 数据';
+        if (pbStatusText) pbStatusText.textContent = pbTotal ? '记录中心已接入' : '等待记录数据';
         const pbEmptyEl = document.getElementById('career-pb-empty');
         if (pbEmptyEl) {
             pbEmptyEl.style.display = pbTotal ? 'none' : '';
-            pbEmptyEl.textContent = pbTotal ? '' : '暂无 PB 档案数据。';
+            pbEmptyEl.textContent = pbTotal ? '' : '暂无当前纪录数据。';
         }
         const achievementSummaryEl = document.getElementById('career-achievement-summary');
         if (achievementSummaryEl) achievementSummaryEl.textContent = achievementTotal ? '当前筛选下共 ' + String(achievementTotal) + ' 项荣誉' : '当前筛选下暂无荣誉';
@@ -12396,47 +13550,54 @@
         appState.career.archivesLoading = true;
         appState.career.archivesError = '';
         renderCareerArchivesLoading();
-        try {
-            const api = window.pywebview && window.pywebview.api ? window.pywebview.api : null;
-            if (!api || typeof api.get_career_races !== 'function' || typeof api.get_career_pb !== 'function' || typeof api.get_career_achievements !== 'function') {
-                throw new Error('生涯分区接口暂不可用');
+        const api = window.pywebview && window.pywebview.api ? window.pywebview.api : null;
+        const raceFilters = appState.career.raceArchiveFilters || getCareerRaceArchiveFilters();
+        appState.career.raceArchiveFilters = raceFilters;
+        const pbFilters = appState.career.pbArchiveFilters || getCareerPbArchiveFilters();
+        appState.career.pbArchiveFilters = pbFilters;
+        const achievementFilters = appState.career.achievementArchiveFilters || getCareerAchievementArchiveFilters();
+        appState.career.achievementArchiveFilters = achievementFilters;
+        let lastError = null;
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+            try {
+                if (!api || typeof api.get_career_races !== 'function' || typeof api.get_career_pb !== 'function' || typeof api.get_career_achievements !== 'function' || typeof api.get_career_event_candidates !== 'function') {
+                    throw new Error('生涯分区接口暂不可用');
+                }
+                const results = await Promise.all([
+                    api.get_career_races(raceFilters),
+                    api.get_career_pb(pbFilters),
+                    api.get_career_achievements(achievementFilters),
+                    api.get_career_event_candidates({ candidate_type: 'pb_record', status: 'candidate' })
+                ]);
+                const labels = ['赛事档案', '记录中心', '荣誉里程碑', '候选纪录'];
+                const archiveData = results.map(function(res, index) {
+                    return requireCareerApiData(res, labels[index] + '加载失败');
+                });
+                const archives = normalizeCareerArchives({
+                    races: archiveData[0] || {},
+                    pbs: archiveData[1] || {},
+                    achievements: archiveData[2] || {},
+                    pbCandidates: archiveData[3] || {},
+                    status: { dataReady: true, message: '' }
+                });
+                appState.career.archives = archives;
+                appState.career.archivesLoading = false;
+                renderCareerArchives(archives);
+                return archives;
+            } catch (e) {
+                lastError = e;
+                if (attempt === 0) await waitCareerApiRetry(340);
             }
-            const raceFilters = appState.career.raceArchiveFilters || getCareerRaceArchiveFilters();
-            appState.career.raceArchiveFilters = raceFilters;
-            const pbFilters = appState.career.pbArchiveFilters || getCareerPbArchiveFilters();
-            appState.career.pbArchiveFilters = pbFilters;
-            const achievementFilters = appState.career.achievementArchiveFilters || getCareerAchievementArchiveFilters();
-            appState.career.achievementArchiveFilters = achievementFilters;
-            const results = await Promise.all([
-                api.get_career_races(raceFilters),
-                api.get_career_pb(pbFilters),
-                api.get_career_achievements(achievementFilters)
-            ]);
-            const labels = ['赛事档案', 'PB 记录', '荣誉里程碑'];
-            const archiveData = results.map(function(res, index) {
-                return requireCareerApiData(res, labels[index] + '加载失败');
-            });
-            const archives = normalizeCareerArchives({
-                races: archiveData[0] || {},
-                pbs: archiveData[1] || {},
-                achievements: archiveData[2] || {},
-                status: { dataReady: true, message: '' }
-            });
-            appState.career.archives = archives;
-            appState.career.archivesLoading = false;
-            renderCareerArchives(archives);
-            return archives;
-        } catch (e) {
-            const message = e && e.message ? e.message : String(e || '生涯分区加载失败');
-            appState.career.archivesLoading = false;
-            appState.career.archivesError = message;
-            renderCareerArchivesError(message);
-            return {
-                ok: false,
-                error: message,
-                data: appState.career.archives || normalizeCareerArchives({})
-            };
         }
+        const message = lastError && lastError.message ? lastError.message : String(lastError || '生涯分区加载失败');
+        appState.career.archivesLoading = false;
+        appState.career.archivesError = message;
+        renderCareerArchivesError(message);
+        return {
+            ok: false,
+            error: message,
+            data: appState.career.archives || normalizeCareerArchives({})
+        };
     }
 
     function normalizeCareerTimelineFilters(filters) {
@@ -12894,34 +14055,21 @@
         }
     }
 
-    function normalizeCareerMemoryItem(item) {
-        if (!item || typeof item !== 'object') return null;
-        return {
-            id: String(item.id || ''),
-            activityId: item.activity_id == null ? '' : String(item.activity_id),
-            raceId: item.race_id == null ? '' : String(item.race_id),
-            type: String(item.type || 'story'),
-            title: String(item.title || ''),
-            story: String(item.story || ''),
-            date: String(item.date || ''),
-            thumbnailUrl: normalizeCareerSafeImagePreview(item.thumbnail_url),
-            hasMedia: !!item.has_media,
-            detailLink: normalizeCareerDetailLink(item.detail_link)
-        };
-    }
-
     function normalizeCareerMemory(payload) {
         const data = payload && payload.data && typeof payload.data === 'object' ? payload.data : (payload || {});
         const summary = data.summary && typeof data.summary === 'object' ? data.summary : {};
         const status = data.status && typeof data.status === 'object' ? data.status : {};
         return {
-            items: Array.isArray(data.items) ? data.items.map(normalizeCareerMemoryItem).filter(Boolean) : [],
+            albums: Array.isArray(data.albums) ? data.albums.map(normalizeCareerMemoryAlbum).filter(Boolean) : [],
             summary: {
-                total: Number(summary.total || 0),
+                albumCount: Number(summary.album_count || 0),
                 photoCount: Number(summary.photo_count || 0),
-                storyCount: Number(summary.story_count || 0),
-                trackCount: Number(summary.track_count || 0)
+                emptyAlbumCount: Number(summary.empty_album_count || 0),
+                coverCount: Number(summary.cover_count || 0)
             },
+            filters: data.filters && typeof data.filters === 'object'
+                ? { sport: String(data.filters.sport || 'all'), year: data.filters.year == null ? null : String(data.filters.year) }
+                : { sport: 'all', year: null },
             status: {
                 dataReady: !!status.data_ready,
                 message: String(status.message || '')
@@ -12929,64 +14077,334 @@
         };
     }
 
-    function careerMemoryTypeLabel(type) {
-        const key = String(type || 'story');
-        if (key === 'photo') return '照片';
-        if (key === 'track') return '轨迹';
-        return '故事';
+    function normalizeCareerMemoryPhoto(photo) {
+        if (!photo || typeof photo !== 'object') return null;
+        return {
+            id: String(photo.id || ''),
+            activityId: photo.activity_id == null ? '' : String(photo.activity_id),
+            raceId: photo.race_id == null ? '' : String(photo.race_id),
+            title: String(photo.title || ''),
+            orderIndex: Number(photo.order_index || 0),
+            thumbnailUrl: normalizeCareerSafeImagePreview(photo.thumbnail_url),
+            previewUrl: normalizeCareerSafeImagePreview(photo.preview_url),
+            isBanner: !!photo.is_banner
+        };
     }
 
-    function renderCareerMemoryEditForm(item) {
-        const state = appState.career || {};
-        const isSaving = !!state.memoryEditSaving;
-        const error = state.memoryEditError || '';
-        return '<div class="career-memory-edit-form" onclick="event.stopPropagation();">'
-            + '<input class="career-memory-input" id="career-memory-edit-title" maxlength="80" value="' + safeHtml((item && item.title) || '') + '" placeholder="记忆标题" ' + (isSaving ? 'disabled' : '') + '>'
-            + '<textarea class="career-memory-textarea" id="career-memory-edit-story" maxlength="500" placeholder="写下这次活动想记住的片段" ' + (isSaving ? 'disabled' : '') + '>' + safeHtml((item && item.story) || '') + '</textarea>'
-            + '<div class="career-memory-form-error" id="career-memory-edit-error">' + safeHtml(error) + '</div>'
-            + '<div class="career-memory-form-actions">'
-            + '<button type="button" class="career-memory-action" onclick="event.stopPropagation(); saveCareerMemoryEdit(this.getAttribute(\'data-career-memory-id\'))" data-career-memory-id="' + safeHtml((item && item.id) || '') + '"' + (isSaving ? ' disabled' : '') + '>保存</button>'
-            + '<button type="button" class="career-memory-action" onclick="event.stopPropagation(); cancelCareerMemoryEdit()" ' + (isSaving ? 'disabled' : '') + '>取消</button>'
+    function normalizeCareerMemoryAlbumFootprint(footprint) {
+        const raw = footprint && typeof footprint === 'object' ? footprint : {};
+        const mapMode = String(raw.map_mode || '');
+        return {
+            regionKey: String(raw.region_key || ''),
+            countryCode: String(raw.country_code || ''),
+            country: String(raw.country || ''),
+            name: String(raw.name || ''),
+            level: String(raw.level || ''),
+            mapMode: ['world', 'china', 'japan', 'us'].indexOf(mapMode) >= 0 ? mapMode : ''
+        };
+    }
+
+    function normalizeCareerMemoryAlbum(album) {
+        if (!album || typeof album !== 'object') return null;
+        const cover = album.cover && typeof album.cover === 'object' ? album.cover : {};
+        const location = album.location && typeof album.location === 'object' ? album.location : {};
+        const photos = Array.isArray(album.photos) ? album.photos.map(normalizeCareerMemoryPhoto).filter(Boolean) : [];
+        return {
+            id: String(album.id || ''),
+            raceId: album.race_id == null ? '' : String(album.race_id),
+            activityId: album.activity_id == null ? '' : String(album.activity_id),
+            title: String(album.title || ''),
+            eventType: String(album.event_type || ''),
+            eventTypeLabel: String(album.event_type_label || ''),
+            sport: String(album.sport || ''),
+            sportLabel: String(album.sport_label || ''),
+            eventDate: String(album.event_date || ''),
+            displayDate: String(album.display_date || ''),
+            city: String(album.city || ''),
+            locationDisplay: String(location.display || ''),
+            cover: {
+                hasPhoto: !!cover.has_photo,
+                imageRef: normalizeCareerSafeImagePreview(cover.image_ref),
+                photoId: cover.photo_id == null ? '' : String(cover.photo_id)
+            },
+            photos: photos,
+            photoCount: Number(album.photo_count || photos.length || 0),
+            isEmpty: !!album.is_empty,
+            footprint: normalizeCareerMemoryAlbumFootprint(album.footprint),
+            detailLink: normalizeCareerDetailLink(album.detail_link)
+        };
+    }
+
+    function careerMemoryAlbumCardHtml(album) {
+        const albumId = album && album.id ? String(album.id) : '';
+        const title = album && album.title ? album.title : '未命名赛事';
+        const cover = album && album.cover ? album.cover : {};
+        const imageRef = cover && cover.imageRef ? cover.imageRef : '';
+        const meta = careerMemoryAlbumMeta(album);
+        const badge = album && album.isEmpty ? '空相册' : String((album && album.photoCount) || 0) + ' 张';
+        const artTitle = String(title || '未命名赛事').trim().slice(0, 14) || '未命名赛事';
+        const media = imageRef
+            ? '<img class="career-memory-album-cover" alt="" loading="lazy" src="' + safeHtml(imageRef) + '">'
+            : '<div class="career-memory-album-placeholder career-memory-album-art" aria-hidden="true">'
+                + '<span class="career-memory-album-art-word" data-career-album-art-text="' + safeHtml(artTitle) + '">' + safeHtml(artTitle) + '</span>'
+                + '<span class="career-memory-album-art-caption">Race Album</span>'
+            + '</div>';
+        return '<button type="button" class="career-memory-album-card" data-career-memory-album-id="' + safeHtml(albumId) + '" onclick="openCareerMemoryAlbum(this)">'
+            + media
+            + '<span class="career-memory-album-badge">' + safeHtml(badge) + '</span>'
+            + '<div class="career-memory-album-overlay">'
+            + '<div class="career-memory-album-title">' + safeHtml(title) + '</div>'
+            + '<div class="career-memory-album-meta">' + safeHtml(meta || '赛事相册') + '</div>'
             + '</div>'
+            + '</button>';
+    }
+
+    function careerMemoryAlbumMeta(album) {
+        return [
+            formatCareerDate(album && (album.displayDate || album.eventDate)),
+            album && (album.locationDisplay || album.city),
+            album && album.sportLabel
+        ].filter(Boolean).join(' · ');
+    }
+
+    function findCareerMemoryAlbumById(albumId) {
+        const key = String(albumId || '');
+        const albums = appState.career && appState.career.memory && Array.isArray(appState.career.memory.albums)
+            ? appState.career.memory.albums
+            : [];
+        for (let index = 0; index < albums.length; index += 1) {
+            if (String((albums[index] && albums[index].id) || '') === key) return albums[index];
+        }
+        return null;
+    }
+
+    function careerMemoryPhotoCellHtml(photo, index) {
+        const imageRef = photo && (photo.thumbnailUrl || photo.previewUrl) ? (photo.thumbnailUrl || photo.previewUrl) : '';
+        const title = photo && photo.title ? photo.title : '赛事照片';
+        if (!imageRef) {
+            return '<button type="button" class="career-memory-photo-cell is-error" data-career-memory-photo-index="' + safeHtml(String(index)) + '" aria-label="' + safeHtml(title) + '"></button>';
+        }
+        return '<button type="button" class="career-memory-photo-cell" data-career-memory-photo-index="' + safeHtml(String(index)) + '" aria-label="' + safeHtml(title) + '" onclick="openCareerMemoryPhoto(this)">'
+            + '<img alt="" loading="lazy" src="' + safeHtml(imageRef) + '" onerror="this.parentElement.classList.add(\'is-error\');this.remove();">'
+            + '<span class="career-memory-photo-index">' + safeHtml(String(index + 1)) + '</span>'
+            + '</button>';
+    }
+
+    function currentCareerMemoryAlbum() {
+        const albumId = appState.career && appState.career.selectedMemoryAlbumId ? appState.career.selectedMemoryAlbumId : '';
+        return albumId ? findCareerMemoryAlbumById(albumId) : null;
+    }
+
+    function currentCareerMemoryPhotos() {
+        const album = currentCareerMemoryAlbum();
+        return album && Array.isArray(album.photos) ? album.photos : [];
+    }
+
+    function renderCareerMemoryPhotoModal() {
+        const modalEl = document.getElementById('career-memory-photo-modal');
+        if (!modalEl) return;
+        const photos = currentCareerMemoryPhotos();
+        const rawIndex = appState.career && appState.career.selectedMemoryPhotoIndex != null ? Number(appState.career.selectedMemoryPhotoIndex) : -1;
+        if (!photos.length || rawIndex < 0 || rawIndex >= photos.length) {
+            modalEl.classList.remove('is-visible');
+            modalEl.innerHTML = '';
+            return;
+        }
+        const index = Math.max(0, Math.min(photos.length - 1, rawIndex));
+        const photo = photos[index] || {};
+        const imageRef = photo.previewUrl || photo.thumbnailUrl || '';
+        const title = photo.title || '赛事照片';
+        const image = imageRef
+            ? '<img alt="" src="' + safeHtml(imageRef) + '" onerror="this.parentElement.innerHTML=\'<div class=&quot;career-memory-photo-modal-empty&quot;>图片暂不可用</div>\';">'
+            : '<div class="career-memory-photo-modal-empty">图片暂不可用</div>';
+        modalEl.classList.add('is-visible');
+        modalEl.innerHTML = '<div class="career-memory-photo-stage">'
+            + '<div class="career-memory-photo-modal-bar">'
+            + '<span>' + safeHtml(title) + ' · ' + safeHtml(String(index + 1)) + ' / ' + safeHtml(String(photos.length)) + '</span>'
+            + '<span class="career-memory-photo-modal-actions">'
+            + '<button type="button" class="career-memory-photo-modal-btn" onclick="stepCareerMemoryPhoto(-1)"' + (index <= 0 ? ' disabled' : '') + '>上一张</button>'
+            + '<button type="button" class="career-memory-photo-modal-btn" onclick="stepCareerMemoryPhoto(1)"' + (index >= photos.length - 1 ? ' disabled' : '') + '>下一张</button>'
+            + '<button type="button" class="career-memory-photo-modal-btn" onclick="closeCareerMemoryPhoto()">关闭</button>'
+            + '</span>'
+            + '</div>'
+            + image
             + '</div>';
     }
 
-    function careerMemoryItemHtml(item) {
-        const activityId = item && item.detailLink && item.detailLink.activityId ? item.detailLink.activityId : (item && item.activityId ? item.activityId : '');
-        const source = item && item.detailLink && item.detailLink.source ? item.detailLink.source : 'career';
-        const memoryId = item && item.id ? String(item.id) : '';
-        const type = item && item.type ? String(item.type) : 'story';
-        const isStory = type === 'story';
-        const isEditing = !!(memoryId && appState.career && appState.career.memoryEditingId === memoryId);
-        const story = item && item.story ? '<div class="career-memory-story">' + safeHtml(item.story) + '</div>' : '';
-        const thumb = item && item.thumbnailUrl
-            ? '<img class="career-memory-thumb" alt="" loading="lazy" src="' + safeHtml(item.thumbnailUrl) + '">'
-            : '';
-        const mediaText = item && item.hasMedia ? '已绑定媒体' : '无图片也可沉淀记忆';
-        const meta = [formatCareerDate(item && item.date), mediaText].filter(Boolean).join(' · ');
-        const editAction = isStory && memoryId && !isEditing
-            ? '<button type="button" class="career-memory-mini-action" title="编辑故事" aria-label="编辑故事" onclick="event.stopPropagation(); beginCareerMemoryEdit(this.getAttribute(\'data-career-memory-id\'))" data-career-memory-id="' + safeHtml(memoryId) + '">编辑</button>'
-            : '';
-        const deactivateAction = memoryId && !isEditing
-            ? '<button type="button" class="career-memory-mini-action is-danger" title="停用记忆" aria-label="停用记忆" onclick="event.stopPropagation(); deactivateCareerMemoryItem(this.getAttribute(\'data-career-memory-id\'))" data-career-memory-id="' + safeHtml(memoryId) + '">停用</button>'
-            : '';
-        const actions = editAction || deactivateAction
-            ? '<span class="career-memory-item-actions">' + editAction + deactivateAction + '</span>'
-            : '';
-        const content = '<div class="career-memory-item-head"><span class="career-memory-type">' + safeHtml(careerMemoryTypeLabel(type)) + '</span><span class="career-memory-title">' + safeHtml((item && item.title) || '未命名记忆') + '</span>' + actions + '</div>'
-            + '<div class="career-memory-meta">' + safeHtml(meta) + '</div>'
-            + thumb
-            + (isEditing ? renderCareerMemoryEditForm(item) : story);
-        if (activityId) {
-            if (!isEditing) {
-                return '<div class="career-memory-item is-clickable" role="button" tabindex="0" onclick="openCareerActivityDetailFromElement(this)" onkeydown="onCareerActivityDetailKeydown(event, this)" data-activity-id="' + safeHtml(activityId) + '" data-career-source="' + safeHtml(source) + '">'
-                    + content
-                    + '</div>';
+    function openCareerMemoryPhoto(el) {
+        appState.career = appState.career || {};
+        const index = Number(el ? el.getAttribute('data-career-memory-photo-index') : -1);
+        appState.career.selectedMemoryPhotoIndex = Number.isFinite(index) ? index : -1;
+        renderCareerMemoryPhotoModal();
+    }
+
+    function closeCareerMemoryPhoto() {
+        appState.career = appState.career || {};
+        appState.career.selectedMemoryPhotoIndex = -1;
+        renderCareerMemoryPhotoModal();
+    }
+
+    function stepCareerMemoryPhoto(delta) {
+        appState.career = appState.career || {};
+        const photos = currentCareerMemoryPhotos();
+        if (!photos.length) {
+            closeCareerMemoryPhoto();
+            return;
+        }
+        const current = Number(appState.career.selectedMemoryPhotoIndex || 0);
+        const next = Math.max(0, Math.min(photos.length - 1, current + Number(delta || 0)));
+        appState.career.selectedMemoryPhotoIndex = next;
+        renderCareerMemoryPhotoModal();
+    }
+
+    function onCareerMemoryPhotoModalKeydown(event) {
+        const modalEl = document.getElementById('career-memory-photo-modal');
+        if (!modalEl || !modalEl.classList.contains('is-visible')) return;
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            closeCareerMemoryPhoto();
+        } else if (event.key === 'ArrowLeft') {
+            event.preventDefault();
+            stepCareerMemoryPhoto(-1);
+        } else if (event.key === 'ArrowRight') {
+            event.preventDefault();
+            stepCareerMemoryPhoto(1);
+        }
+    }
+
+    if (!window.__careerMemoryPhotoModalKeydownBound) {
+        document.addEventListener('keydown', onCareerMemoryPhotoModalKeydown);
+        window.__careerMemoryPhotoModalKeydownBound = true;
+    }
+
+    function renderCareerMemoryAlbumDetail(album) {
+        const detailEl = document.getElementById('career-memory-album-detail');
+        if (!detailEl) return;
+        if (!album) {
+            detailEl.classList.remove('is-visible');
+            detailEl.innerHTML = '';
+            return;
+        }
+        const photos = Array.isArray(album.photos) ? album.photos : [];
+        const grid = photos.length
+            ? '<div class="career-memory-photo-grid">' + photos.map(function(photo, index) { return careerMemoryPhotoCellHtml(photo, index); }).join('') + '</div>'
+            : '<div class="career-memory-empty">这个赛事还没有上传照片。</div>';
+        detailEl.classList.add('is-visible');
+        detailEl.innerHTML = '<div class="career-memory-album-detail-head">'
+            + '<div>'
+            + '<div class="career-memory-album-detail-title">' + safeHtml(album.title || '未命名赛事') + '</div>'
+            + '<div class="career-memory-album-detail-meta">' + safeHtml(careerMemoryAlbumMeta(album) || '赛事相册') + ' · ' + safeHtml(String(album.photoCount || 0)) + ' 张照片</div>'
+            + '</div>'
+            + '<button type="button" class="career-memory-back" onclick="closeCareerMemoryAlbum()">返回相册墙</button>'
+            + '</div>'
+            + grid;
+    }
+
+    function careerAlbumFootprintMapMode(footprint) {
+        if (!footprint || !footprint.regionKey) return '';
+        if (footprint.countryCode === 'CN' || footprint.mapMode === 'china') return 'china';
+        if (footprint.countryCode === 'JP' || footprint.mapMode === 'japan') return 'japan';
+        if (footprint.mapMode === 'us' || /^US-[A-Z]{2}$/.test(String(footprint.regionKey || ''))) return 'us';
+        return 'world';
+    }
+
+    function careerAlbumFootprintMapRegionKey(footprint, mapMode) {
+        if (!footprint) return '';
+        if (mapMode === 'world') return footprint.countryCode || footprint.regionKey;
+        return footprint.regionKey;
+    }
+
+    function findCareerFootprintRegionForAlbumFocus(regionKey, countryCode, mapMode) {
+        const regions = appState.career && appState.career.footprint && Array.isArray(appState.career.footprint.regions)
+            ? appState.career.footprint.regions
+            : [];
+        const exactKey = String(regionKey || '');
+        for (let index = 0; index < regions.length; index += 1) {
+            if (String(regions[index] && regions[index].regionKey || '') === exactKey) return regions[index];
+        }
+        if (mapMode === 'world') {
+            const country = String(countryCode || '');
+            for (let index = 0; index < regions.length; index += 1) {
+                if (String(regions[index] && regions[index].countryCode || '') === country) return regions[index];
             }
         }
-        return '<div class="career-memory-item">'
-            + content
-            + '</div>';
+        return null;
+    }
+
+    function focusCareerFootprintForAlbum(album) {
+        const footprint = album && album.footprint ? album.footprint : null;
+        const mapMode = careerAlbumFootprintMapMode(footprint);
+        const regionKey = careerAlbumFootprintMapRegionKey(footprint, mapMode);
+        if (!mapMode || !regionKey) return;
+        appState.career = appState.career || {};
+        appState.career.footprintAlbumFocus = {
+            albumId: album.id || '',
+            regionKey: regionKey,
+            mapMode: mapMode
+        };
+        appState.career.currentFootprintMapMode = mapMode;
+        appState.career.selectedFootprintRegionKey = regionKey;
+        const sourceRegion = findCareerFootprintRegionForAlbumFocus(regionKey, footprint.countryCode, mapMode);
+        const focusedRegion = {
+            regionKey: regionKey,
+            name: (sourceRegion && sourceRegion.name) || footprint.name || footprint.country || regionKey,
+            country: (sourceRegion && sourceRegion.country) || footprint.country || footprint.name || '',
+            countryCode: (sourceRegion && sourceRegion.countryCode) || footprint.countryCode || '',
+            level: (sourceRegion && sourceRegion.level) || footprint.level || (mapMode === 'world' ? 'country' : 'region'),
+            mapMode: mapMode,
+            activityCount: Number(sourceRegion && sourceRegion.activityCount || 1),
+            raceCount: Number(sourceRegion && sourceRegion.raceCount || 1),
+            firstActivityDate: (sourceRegion && sourceRegion.firstActivityDate) || album.eventDate || '',
+            latestActivityDate: (sourceRegion && sourceRegion.latestActivityDate) || album.eventDate || '',
+            representativeActivityId: (sourceRegion && sourceRegion.representativeActivityId) || album.activityId || '',
+            cityCount: Number(sourceRegion && sourceRegion.cityCount || (album.city ? 1 : 0)),
+            cities: sourceRegion && Array.isArray(sourceRegion.cities) ? sourceRegion.cities : (album.city ? [album.city] : []),
+            detailLink: (sourceRegion && sourceRegion.detailLink) || album.detailLink || {}
+        };
+        const focusActivityCount = Number(focusedRegion.activityCount || 1);
+        renderCareerFootprint({
+            mapMode: mapMode === 'china' ? 'china' : 'world',
+            regions: [focusedRegion],
+            withoutRegion: [],
+            summary: {
+                activityCount: focusActivityCount,
+                regionCount: 1,
+                countryCount: 1,
+                chinaRegionCount: footprint.countryCode === 'CN' ? 1 : 0,
+                overseasRegionCount: footprint.countryCode === 'CN' ? 0 : 1,
+                withoutRegionCount: 0
+            },
+            filters: appState.career.footprintFilters || { sport: 'all', year: 'all' },
+            status: { schemaReady: true, dataReady: true, message: '当前相册足迹' }
+        }, { mapMode: mapMode });
+        const summaryText = document.getElementById('career-footprint-summary-text');
+        if (summaryText) summaryText.textContent = '当前相册足迹：' + (footprint.name || footprint.country || regionKey);
+    }
+
+    function clearCareerFootprintAlbumFocus() {
+        appState.career = appState.career || {};
+        appState.career.footprintAlbumFocus = null;
+        appState.career.selectedFootprintRegionKey = '';
+        if (appState.career.footprint) {
+            renderCareerFootprint(appState.career.footprint, { mapMode: appState.career.footprint.mapMode || 'china' });
+        }
+    }
+
+    function openCareerMemoryAlbum(el) {
+        appState.career = appState.career || {};
+        appState.career.selectedMemoryAlbumId = el ? String(el.getAttribute('data-career-memory-album-id') || '') : '';
+        const album = findCareerMemoryAlbumById(appState.career.selectedMemoryAlbumId);
+        if (album) focusCareerFootprintForAlbum(album);
+        renderCareerMemory(appState.career.memory || normalizeCareerMemory({}));
+    }
+
+    function closeCareerMemoryAlbum() {
+        appState.career = appState.career || {};
+        appState.career.selectedMemoryAlbumId = '';
+        appState.career.selectedMemoryPhotoIndex = -1;
+        renderCareerMemoryPhotoModal();
+        clearCareerFootprintAlbumFocus();
+        renderCareerMemory(appState.career.memory || normalizeCareerMemory({}));
     }
 
     function renderCareerMemory(viewModel) {
@@ -12995,121 +14413,47 @@
         const summaryEl = document.getElementById('career-memory-summary');
         const listEl = document.getElementById('career-memory-list');
         const emptyEl = document.getElementById('career-memory-empty');
-        const items = Array.isArray(vm.items) ? vm.items : [];
-        if (listEl) listEl.innerHTML = items.map(careerMemoryItemHtml).join('');
+        const albums = Array.isArray(vm.albums) ? vm.albums : [];
+        const selectedAlbumId = appState.career && appState.career.selectedMemoryAlbumId ? appState.career.selectedMemoryAlbumId : '';
+        const selectedAlbum = selectedAlbumId ? findCareerMemoryAlbumById(selectedAlbumId) : null;
+        if (selectedAlbumId && !selectedAlbum) appState.career.selectedMemoryAlbumId = '';
+        if (listEl) {
+            listEl.style.display = selectedAlbum ? 'none' : '';
+            listEl.innerHTML = albums.map(careerMemoryAlbumCardHtml).join('');
+        }
+        renderCareerMemoryAlbumDetail(selectedAlbum);
         if (emptyEl) {
-            emptyEl.style.display = items.length ? 'none' : '';
-            emptyEl.textContent = vm.status && vm.status.message ? vm.status.message : '暂无生涯记忆。可从活动故事、赛事经历和轨迹截图沉淀记忆。';
+            emptyEl.style.display = albums.length || selectedAlbum ? 'none' : '';
+            emptyEl.textContent = vm.status && vm.status.message ? vm.status.message : '暂无赛事相册。照片从赛事活动详情页绑定进入。';
         }
         if (summaryEl) {
             const summary = vm.summary || {};
-            summaryEl.textContent = '共 ' + String(summary.total || 0) + ' 条 · 故事 ' + String(summary.storyCount || 0) + ' · 照片 ' + String(summary.photoCount || 0) + ' · 轨迹 ' + String(summary.trackCount || 0);
+            summaryEl.textContent = selectedAlbum
+                ? (selectedAlbum.title || '赛事相册') + ' · ' + String(selectedAlbum.photoCount || 0) + ' 张照片'
+                : '共 ' + String(summary.albumCount || 0) + ' 个相册 · 照片 ' + String(summary.photoCount || 0) + ' 张 · 空相册 ' + String(summary.emptyAlbumCount || 0);
         }
-        if (statusText) statusText.textContent = vm.status && vm.status.dataReady ? '记忆可用' : '等待记忆数据';
-        renderCareerMemoryStoryFormState();
-    }
-
-    function beginCareerMemoryEdit(id) {
-        appState.career = appState.career || {};
-        const memoryId = String(id || '').trim();
-        if (!memoryId) return;
-        appState.career.memoryEditingId = memoryId;
-        appState.career.memoryEditSaving = false;
-        appState.career.memoryEditError = '';
-        renderCareerMemory(appState.career.memory || normalizeCareerMemory({}));
-    }
-
-    function cancelCareerMemoryEdit() {
-        appState.career = appState.career || {};
-        appState.career.memoryEditingId = '';
-        appState.career.memoryEditSaving = false;
-        appState.career.memoryEditError = '';
-        renderCareerMemory(appState.career.memory || normalizeCareerMemory({}));
-    }
-
-    async function saveCareerMemoryEdit(id) {
-        appState.career = appState.career || {};
-        const memoryId = String(id || appState.career.memoryEditingId || '').trim();
-        const titleEl = document.getElementById('career-memory-edit-title');
-        const storyEl = document.getElementById('career-memory-edit-story');
-        const title = titleEl ? String(titleEl.value || '').trim() : '';
-        const story = storyEl ? String(storyEl.value || '').trim() : '';
-        if (!memoryId) {
-            appState.career.memoryEditError = '记忆 ID 不能为空';
-            renderCareerMemory(appState.career.memory || normalizeCareerMemory({}));
-            return;
-        }
-        if (!title) {
-            appState.career.memoryEditError = '记忆标题不能为空';
-            renderCareerMemory(appState.career.memory || normalizeCareerMemory({}));
-            return;
-        }
-        if (!story) {
-            appState.career.memoryEditError = '记忆故事不能为空';
-            renderCareerMemory(appState.career.memory || normalizeCareerMemory({}));
-            return;
-        }
-        if (!(window.pywebview && window.pywebview.api && typeof window.pywebview.api.update_career_memory_story === 'function')) {
-            appState.career.memoryEditError = '当前版本暂不支持编辑记忆故事';
-            renderCareerMemory(appState.career.memory || normalizeCareerMemory({}));
-            return;
-        }
-        appState.career.memoryEditSaving = true;
-        appState.career.memoryEditError = '';
-        renderCareerMemory(appState.career.memory || normalizeCareerMemory({}));
-        try {
-            const payload = {
-                id: memoryId,
-                title: title,
-                story: story
-            };
-            const res = await window.pywebview.api.update_career_memory_story(payload);
-            requireCareerApiData(res, '记忆故事更新失败');
-            appState.career.memoryEditingId = '';
-            appState.career.memoryEditSaving = false;
-            appState.career.memoryEditError = '';
-            await loadCareerMemory();
-        } catch (e) {
-            appState.career.memoryEditSaving = false;
-            appState.career.memoryEditError = e && e.message ? e.message : String(e || '记忆故事更新失败');
-            renderCareerMemory(appState.career.memory || normalizeCareerMemory({}));
-        }
-    }
-
-    async function deactivateCareerMemoryItem(id) {
-        appState.career = appState.career || {};
-        const memoryId = String(id || '').trim();
-        if (!memoryId) return;
-        if (!(window.pywebview && window.pywebview.api && typeof window.pywebview.api.deactivate_career_memory_item === 'function')) {
-            appState.career.memoryEditError = '当前版本暂不支持停用记忆';
-            appState.career.memoryEditingId = memoryId;
-            renderCareerMemory(appState.career.memory || normalizeCareerMemory({}));
-            return;
-        }
-        appState.career.memoryEditSaving = true;
-        appState.career.memoryEditError = '';
-        try {
-            const res = await window.pywebview.api.deactivate_career_memory_item({ id: memoryId });
-            requireCareerApiData(res, '记忆停用失败');
-            appState.career.memoryEditingId = '';
-            appState.career.memoryEditSaving = false;
-            appState.career.memoryEditError = '';
-            await loadCareerMemory();
-        } catch (e) {
-            appState.career.memoryEditingId = memoryId;
-            appState.career.memoryEditSaving = false;
-            appState.career.memoryEditError = e && e.message ? e.message : String(e || '记忆停用失败');
-            renderCareerMemory(appState.career.memory || normalizeCareerMemory({}));
-        }
+        if (statusText) statusText.textContent = vm.status && vm.status.dataReady ? '相册可用' : '等待相册数据';
     }
 
     function renderCareerMemoryLoading() {
         const statusText = document.getElementById('career-memory-status-text');
         const emptyEl = document.getElementById('career-memory-empty');
-        if (statusText) statusText.textContent = '正在加载记忆';
+        const detailEl = document.getElementById('career-memory-album-detail');
+        const modalEl = document.getElementById('career-memory-photo-modal');
+        const listEl = document.getElementById('career-memory-list');
+        if (statusText) statusText.textContent = '正在加载相册';
+        if (listEl) listEl.style.display = '';
+        if (detailEl) {
+            detailEl.classList.remove('is-visible');
+            detailEl.innerHTML = '';
+        }
+        if (modalEl) {
+            modalEl.classList.remove('is-visible');
+            modalEl.innerHTML = '';
+        }
         if (emptyEl) {
             emptyEl.style.display = '';
-            emptyEl.textContent = '正在加载记忆';
+            emptyEl.textContent = '正在加载赛事相册';
         }
     }
 
@@ -13117,10 +14461,10 @@
         const statusText = document.getElementById('career-memory-status-text');
         const emptyEl = document.getElementById('career-memory-empty');
         renderCareerMemory(appState.career && appState.career.memory ? appState.career.memory : normalizeCareerMemory({}));
-        if (statusText) statusText.textContent = message || '记忆暂不可用';
+        if (statusText) statusText.textContent = message || '赛事相册暂不可用';
         if (emptyEl && !(appState.career && appState.career.memory && appState.career.memory.status && appState.career.memory.status.dataReady)) {
             emptyEl.style.display = '';
-            emptyEl.textContent = message || '记忆暂不可用';
+            emptyEl.textContent = message || '赛事相册暂不可用';
         }
     }
 
@@ -13129,27 +14473,34 @@
         appState.career.memoryLoading = true;
         appState.career.memoryError = '';
         renderCareerMemoryLoading();
-        try {
-            if (!window.pywebview || !window.pywebview.api || typeof window.pywebview.api.get_career_memory !== 'function') {
-                throw new Error('生涯记忆接口暂不可用');
+        const api = window.pywebview && window.pywebview.api ? window.pywebview.api : null;
+        const nextFilters = filters && typeof filters === 'object' ? filters : null;
+        let lastError = null;
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+            try {
+                if (!api || typeof api.get_career_memory_gallery !== 'function') {
+                    throw new Error('赛事相册接口暂不可用');
+                }
+                const res = await api.get_career_memory_gallery(nextFilters);
+                const memory = normalizeCareerMemory(requireCareerApiData(res, '赛事相册加载失败'));
+                appState.career.memory = memory;
+                appState.career.memoryLoading = false;
+                renderCareerMemory(memory);
+                return memory;
+            } catch (e) {
+                lastError = e;
+                if (attempt === 0) await waitCareerApiRetry(360);
             }
-            const res = await window.pywebview.api.get_career_memory(filters && typeof filters === 'object' ? filters : null);
-            const memory = normalizeCareerMemory(requireCareerApiData(res, '生涯记忆加载失败'));
-            appState.career.memory = memory;
-            appState.career.memoryLoading = false;
-            renderCareerMemory(memory);
-            return memory;
-        } catch (e) {
-            const message = e && e.message ? e.message : String(e || '生涯记忆加载失败');
-            appState.career.memoryLoading = false;
-            appState.career.memoryError = message;
-            renderCareerMemoryError(message);
-            return {
-                ok: false,
-                error: message,
-                data: appState.career.memory || normalizeCareerMemory({})
-            };
         }
+        const message = lastError && lastError.message ? lastError.message : String(lastError || '赛事相册加载失败');
+        appState.career.memoryLoading = false;
+        appState.career.memoryError = message;
+        renderCareerMemoryError(message);
+        return {
+            ok: false,
+            error: message,
+            data: appState.career.memory || normalizeCareerMemory({})
+        };
     }
 
     function normalizeCareerInsight(payload) {
@@ -13283,93 +14634,6 @@
                 error: message,
                 data: appState.career.insight || normalizeCareerInsight({})
             };
-        }
-    }
-
-    function clearCareerMemoryStoryFormFields() {
-        ['career-memory-story-activity-id', 'career-memory-story-race-id', 'career-memory-story-title', 'career-memory-story-text'].forEach(function(id) {
-            const el = document.getElementById(id);
-            if (el) el.value = '';
-        });
-    }
-
-    function renderCareerMemoryStoryFormState() {
-        appState.career = appState.career || {};
-        const formEl = document.getElementById('career-memory-story-form');
-        const toggleEl = document.getElementById('career-memory-story-toggle');
-        const errorEl = document.getElementById('career-memory-story-error');
-        const isVisible = !!appState.career.memoryStoryFormVisible;
-        const isSaving = !!appState.career.memoryStorySaving;
-        if (formEl) formEl.classList.toggle('is-visible', isVisible);
-        if (toggleEl) toggleEl.textContent = isVisible ? '收起' : '添加故事';
-        if (errorEl) errorEl.textContent = appState.career.memoryStoryError || '';
-        ['career-memory-story-activity-id', 'career-memory-story-race-id', 'career-memory-story-title', 'career-memory-story-text'].forEach(function(id) {
-            const el = document.getElementById(id);
-            if (el) el.disabled = isSaving;
-        });
-    }
-
-    function toggleCareerMemoryStoryForm(show) {
-        appState.career = appState.career || {};
-        const nextVisible = typeof show === 'boolean' ? show : !appState.career.memoryStoryFormVisible;
-        appState.career.memoryStoryFormVisible = nextVisible;
-        appState.career.memoryStoryError = '';
-        if (!nextVisible) clearCareerMemoryStoryFormFields();
-        renderCareerMemoryStoryFormState();
-    }
-
-    async function saveCareerMemoryStory() {
-        appState.career = appState.career || {};
-        const activityEl = document.getElementById('career-memory-story-activity-id');
-        const raceEl = document.getElementById('career-memory-story-race-id');
-        const titleEl = document.getElementById('career-memory-story-title');
-        const storyEl = document.getElementById('career-memory-story-text');
-        const activityId = activityEl ? String(activityEl.value || '').trim() : '';
-        const raceId = raceEl ? String(raceEl.value || '').trim() : '';
-        const title = titleEl ? String(titleEl.value || '').trim() : '';
-        const story = storyEl ? String(storyEl.value || '').trim() : '';
-        if (!activityId && !raceId) {
-            appState.career.memoryStoryError = '请填写活动 ID 或赛事 ID';
-            renderCareerMemoryStoryFormState();
-            return;
-        }
-        if (!title) {
-            appState.career.memoryStoryError = '记忆标题不能为空';
-            renderCareerMemoryStoryFormState();
-            return;
-        }
-        if (!story) {
-            appState.career.memoryStoryError = '记忆故事不能为空';
-            renderCareerMemoryStoryFormState();
-            return;
-        }
-        if (!(window.pywebview && window.pywebview.api && typeof window.pywebview.api.save_career_memory_story === 'function')) {
-            appState.career.memoryStoryError = '当前版本暂不支持保存记忆故事';
-            renderCareerMemoryStoryFormState();
-            return;
-        }
-        appState.career.memoryStorySaving = true;
-        appState.career.memoryStoryError = '';
-        renderCareerMemoryStoryFormState();
-        try {
-            const payload = {
-                activity_id: activityId,
-                race_id: raceId,
-                title: title,
-                story: story
-            };
-            const res = await window.pywebview.api.save_career_memory_story(payload);
-            requireCareerApiData(res, '记忆故事保存失败');
-            appState.career.memoryStorySaving = false;
-            appState.career.memoryStoryFormVisible = false;
-            appState.career.memoryStoryError = '';
-            clearCareerMemoryStoryFormFields();
-            renderCareerMemoryStoryFormState();
-            await loadCareerMemory();
-        } catch (e) {
-            appState.career.memoryStorySaving = false;
-            appState.career.memoryStoryError = e && e.message ? e.message : String(e || '记忆故事保存失败');
-            renderCareerMemoryStoryFormState();
         }
     }
 
@@ -21476,7 +22740,7 @@ function stopLLMHeartbeat() {
                 return;
             }
             _renderFatigueReviewSummary(data);
-            _renderFatigueReviewMetrics(data.metrics || {}, data.sport_type, data.cycling_explanation_signals || {}, data.summary || {});
+            _renderFatigueReviewMetrics(data.metrics || {}, data.sport_type, data.cycling_explanation_signals || {}, data.summary || {}, data.review_mode);
             _renderFatigueReviewDimensions(data.metrics || {});
             var reviewTotalDistanceKm = _fatigueReviewTotalDistanceKm(data);
             var hasSustainedZone = _fatigueReviewHasSustainedZone(data.fatigue_zones || [], reviewTotalDistanceKm);
@@ -21690,7 +22954,7 @@ function stopLLMHeartbeat() {
 
     function _fatigueReviewCyclingOverviewStabilityOverride(data) {
         data = data || {};
-        if (_fatigueReviewMetricSportMode(data.sport_type) !== 'cycling') return null;
+        if (_fatigueReviewMetricSportMode(data.sport_type, data.review_mode) !== 'cycling') return null;
         var signals = data.cycling_explanation_signals && typeof data.cycling_explanation_signals === 'object'
             ? data.cycling_explanation_signals
             : {};
@@ -21994,11 +23258,16 @@ function stopLLMHeartbeat() {
         _renderFatigueReviewOverviewDimensions(_buildFatigueReviewOverviewDimensions(data), 'backend');
     }
     function getFatigueReviewSportCopyGroup(sportType) {
+        var reviewMode = arguments.length > 1 ? String(arguments[1] || '').toLowerCase() : '';
+        if (reviewMode === 'cycling') return 'cycling';
+        if (reviewMode === 'running' && String(sportType || '').toLowerCase() === 'trail_running') return 'trail_running';
+        if (reviewMode === 'running') return 'running';
+        if (reviewMode === 'general') return 'hiking';
+        if (reviewMode === 'swimming') return 'hiking';
         var sport = String(sportType || '').toLowerCase();
         if (sport === 'trail_running') return 'trail_running';
-        if (sport === 'cycling' || sport === 'road_cycling') return 'cycling';
+        if (sport === 'cycling' || sport === 'road_cycling' || sport === 'mountain_biking' || sport === 'indoor_cycling' || sport === 'e_biking') return 'cycling';
         if (sport === 'hiking' || sport === 'walking' || sport === 'mountaineering') return 'hiking';
-        if (sport === 'mountain_biking') return 'cycling';
         return 'running';
     }
     var FATIGUE_REVIEW_METRIC_COPY = {
@@ -22229,19 +23498,32 @@ function stopLLMHeartbeat() {
     }
     function _fatigueReviewMetricMissingReason(metricKey, metric) {
         var reasons = Array.isArray(metric && metric.reasons) ? metric.reasons : [];
-        var text = reasons.join(' | ');
-        if (metricKey === 'efficiency' && metric && metric.basis && metric.basis !== 'power_hr') return '后端未返回功率口径指标';
-        if (metricKey === 'durability' && metric && metric.basis && metric.basis !== 'power_retention') return '后端未返回功率口径指标';
+        var reasonCode = metric && metric.reason_code ? String(metric.reason_code) : '';
+        var reasonCodes = Array.isArray(metric && metric.reason_codes) ? metric.reason_codes : [];
+        var text = reasons.concat(reasonCodes).concat([reasonCode]).join(' | ');
+        var basis = String(metric && metric.basis || '').toLowerCase();
+        var isPowerEfficiency = metricKey === 'power_efficiency' || (metricKey === 'efficiency' && basis === 'power_hr');
+        var isPowerRetention = metricKey === 'power_retention' || (metricKey === 'durability' && basis === 'power_retention');
+        var isPowerMetric = isPowerEfficiency || isPowerRetention || metricKey === 'power_variability';
+        var isPedalingMetric = metricKey === 'pedaling_stability';
+        if (
+            metricKey === 'efficiency'
+            && !isPowerEfficiency
+            && (/insufficient_efficiency_baseline|baseline.*insufficient|insufficient.*baseline|history.*baseline/i.test(text)
+                || (metric && metric.score == null && metric.confidence === 'low' && Number(metric.sample_size || 0) < 3))
+        ) return '历史对照样本不足';
         if (metricKey === 'efficiency' && /missing avg_hr|missing_hr|avg_hr|heart/i.test(text)) return '心率数据不足';
-        if (metricKey === 'durability' && /power data unavailable|insufficient_points|points<20|valid.*<20/i.test(text)) return '功率曲线样本不足';
-        if (/power_data_quality|missing_power|power.*missing|avg_power|normalized_power|insufficient_power/i.test(text)) return '功率数据不足';
-        if (/cadence_data_quality|missing_cadence|cadence.*missing|insufficient_cadence/i.test(text)) return metricKey === 'pedaling_stability' ? '踏频数据不足' : '步频数据不足';
+        if (isPowerRetention && /power data unavailable|insufficient_points|points<20|valid.*<20/i.test(text)) return '功率曲线样本不足';
+        if (metricKey === 'durability' && !isPowerRetention && /records<20|points<20|samples<20|valid.*<20|insufficient_points/i.test(text)) return '有效速度样本不足 20 个';
+        if (isPowerMetric && /power_data_quality|missing_power|power.*missing|avg_power|normalized_power|insufficient_power/i.test(text)) return '功率数据不足';
+        if (/cadence_data_quality|missing_cadence|cadence.*missing|insufficient_cadence/i.test(text)) return isPedalingMetric ? '踏频数据不足' : '步频数据不足';
         if (/duration<45min|duration < 45min/.test(text)) return '活动时长小于 45 分钟';
         if (/duration<30min|duration < 30min/.test(text)) return '活动时长小于 30 分钟';
         if (/duration<20min|duration < 20min/.test(text)) return '活动时长小于 20 分钟';
         if (/duration<15min|duration < 15min/.test(text)) return '活动时长小于 15 分钟';
         if (/duration<5min|duration < 5min/.test(text)) return '活动时长小于 5 分钟';
         if (/pace_cv/.test(text)) return metricKey === 'hr_drift' ? '本次变速或停顿较多，不能可靠判断心率漂移' : '节奏波动较大，不适合计算';
+        if (metricKey === 'cadence_stability' && /intermittent_cadence_pattern|variable_cadence_pattern|cadence_cv/i.test(text)) return '节奏变化较大，不适合稳定性评分';
         if (/records<20|points<20|samples<20|valid.*<20/.test(text)) return '有效采样点不足 20 个';
         if (/missing_hr|avg_hr|max_hr|heart/i.test(text)) return '心率数据不足';
         if (/missing_pace|pace/i.test(text)) return '配速数据不足';
@@ -22253,6 +23535,8 @@ function stopLLMHeartbeat() {
             bonk_risk: '热量或时长信息不足',
             efficiency: metric && metric.basis === 'power_hr' ? '需要可用功率和心率数据' : '需要至少 15 分钟且有心率、配速数据',
             durability: metric && metric.basis === 'power_retention' ? '需要可用功率曲线和足够样本' : '需要 45 分钟以上且有有效速度曲线',
+            power_efficiency: '需要可用功率和心率数据',
+            power_retention: '需要可用功率曲线和足够样本',
             cadence_stability: '需要 20 分钟以上且有足够步频记录',
             power_variability: '需要可用功率、平均功率和标准化功率',
             pedaling_stability: '需要 20 分钟以上且有足够踏频记录',
@@ -22330,6 +23614,25 @@ function stopLLMHeartbeat() {
         var formatted = Number.isInteger(num) ? String(num) : num.toFixed(1);
         return label + '约 ' + formatted + (unit || '');
     }
+    function _fatigueReviewDecouplingHeadline(decoupling, missing) {
+        if (missing) return '不适合判断';
+        var direction = String(decoupling && decoupling.direction || '').toLowerCase();
+        if (direction === 'improved') return '后程效率改善';
+        if (direction === 'stable') return '后程效率稳定';
+        if (direction === 'declined') return _fatigueReviewMetricHeadline('decoupling', decoupling && decoupling.level, false);
+        return _fatigueReviewMetricHeadline('decoupling', decoupling && decoupling.level, false);
+    }
+    function _fatigueReviewDecouplingEvidence(decoupling, missing) {
+        if (missing) return _fatigueReviewMetricMissingReason('decoupling', decoupling);
+        var direction = String(decoupling && decoupling.direction || '').toLowerCase();
+        if (direction === 'improved' && decoupling && decoupling.change_pct != null) {
+            return _fatigueReviewMetricEvidence('后程效率提升', decoupling.change_pct, '%');
+        }
+        if (direction === 'stable') {
+            return _fatigueReviewMetricEvidence('后程效率变化', decoupling && decoupling.change_pct, '%') || '后程效率基本稳定';
+        }
+        return _fatigueReviewMetricEvidence('后程效率下降', decoupling && (decoupling.decline_pct != null ? decoupling.decline_pct : decoupling.pct), '%');
+    }
     function _fatigueReviewMetricState(missing, level, isRisk) {
         if (missing) return 'missing';
         if (isRisk) return 'risk';
@@ -22338,9 +23641,13 @@ function stopLLMHeartbeat() {
         return 'normal';
     }
     function _fatigueReviewMetricSportMode(sportType) {
+        var reviewMode = arguments.length > 1 ? String(arguments[1] || '').toLowerCase() : '';
+        if (/^(running|cycling|swimming|general|not_applicable)$/.test(reviewMode)) return reviewMode;
         var sport = String(sportType || '').toLowerCase();
-        if (sport === 'cycling' || sport === 'road_cycling' || sport === 'mountain_biking') return 'cycling';
+        if (sport === 'cycling' || sport === 'road_cycling' || sport === 'mountain_biking' || sport === 'indoor_cycling' || sport === 'e_biking') return 'cycling';
         if (sport === 'running' || sport === 'trail_running' || sport === 'treadmill_running') return 'running';
+        if (sport === 'swimming' || sport === 'lap_swimming' || sport === 'open_water') return 'swimming';
+        if (/^(cardio|training|strength_training|breathing|stair_climbing|yoga|pilates|hiit)$/.test(sport)) return 'not_applicable';
         return 'general';
     }
     function _fatigueReviewMetricCardSlots() {
@@ -22404,8 +23711,9 @@ function stopLLMHeartbeat() {
         };
     }
     function _fatigueReviewMetricCardDefs(sportType) {
+        var reviewMode = arguments.length > 1 ? arguments[1] : null;
         var slots = _fatigueReviewMetricCardSlots();
-        var sportMode = _fatigueReviewMetricSportMode(sportType);
+        var sportMode = _fatigueReviewMetricSportMode(sportType, reviewMode);
         var withSlot = function(slotKey, metricKey, label, ariaLabel, tooltip, valueSource, unit) {
             var slot = slots[slotKey] || {};
             return {
@@ -22855,9 +24163,10 @@ function stopLLMHeartbeat() {
         var decoupling = metrics.decoupling || {};
         var bonk = metrics.bonk_risk || {};
         var events = metrics.events || { count: 0 };
-        var sportGroup = getFatigueReviewSportCopyGroup(sportType);
-        var sportMode = _fatigueReviewMetricSportMode(sportType);
-        var cardDefs = _fatigueReviewMetricCardDefs(sportType);
+        var reviewMode = arguments.length > 4 ? arguments[4] : null;
+        var sportGroup = getFatigueReviewSportCopyGroup(sportType, reviewMode);
+        var sportMode = _fatigueReviewMetricSportMode(sportType, reviewMode);
+        var cardDefs = _fatigueReviewMetricCardDefs(sportType, reviewMode);
         var cyclingSignals = arguments.length > 2 && arguments[2] && typeof arguments[2] === 'object' ? arguments[2] : {};
         var reviewSummary = arguments.length > 3 && arguments[3] && typeof arguments[3] === 'object' ? arguments[3] : {};
         var levelText = function(v, map) {
@@ -22974,14 +24283,15 @@ function stopLLMHeartbeat() {
                 _fatigueReviewCyclingSignalCopy(retentionSignal, _fatigueReviewPowerRetentionEvidence(durCycling, durMissingCycling) + '。' + _fatigueReviewMetricCopy('durability', durStateCycling, sportGroup), 'power_retention_signal', reviewSummary, cyclingSignals)
             );
 
-            var eventCountCycling = events.count != null ? events.count : 0;
-            var eventsStateCycling = _fatigueReviewMetricState(false, null, eventCountCycling > 0);
+            var eventsMissingCycling = !metrics.events || events.analysis_status === 'unavailable' || events.confidence === 'unavailable' || events.count == null;
+            var eventCountCycling = eventsMissingCycling ? 0 : Number(events.count || 0);
+            var eventsStateCycling = _fatigueReviewMetricState(eventsMissingCycling, null, eventCountCycling > 0);
             setMetricCard(
                 'fr-events-count', 'fr-events-status', 'fr-events-sub',
-                _fatigueReviewMetricHeadline('events', null, false, false, eventCountCycling),
-                eventCountCycling > 0 ? '已识别' : '状态平稳',
-                eventCountCycling > 0 ? 'warn' : 'ok',
-                '识别到 ' + eventCountCycling + ' 个参考点。' + _fatigueReviewMetricCopy('events', eventsStateCycling, sportGroup)
+                _fatigueReviewMetricHeadline('events', null, eventsMissingCycling, false, eventCountCycling),
+                eventsMissingCycling ? '数据不足' : (eventCountCycling > 0 ? '已识别' : '状态平稳'),
+                eventsMissingCycling ? 'empty' : (eventCountCycling > 0 ? 'warn' : 'ok'),
+                (eventsMissingCycling ? _fatigueReviewMetricMissingReason('events', events) : ('识别到 ' + eventCountCycling + ' 个参考点')) + '。' + _fatigueReviewMetricCopy('events', eventsStateCycling, sportGroup)
             );
             return;
         }
@@ -23001,10 +24311,10 @@ function stopLLMHeartbeat() {
         var decState = _fatigueReviewMetricState(decMissing, decoupling.level);
         setMetricCard(
             'fr-decoupling', 'fr-decoupling-status', 'fr-decoupling-sub',
-            _fatigueReviewMetricHeadline('decoupling', decoupling.level, decMissing),
+            _fatigueReviewDecouplingHeadline(decoupling, decMissing),
             decMissing ? '数据不足' : decStatus,
             levelTone(decoupling.level, decMissing),
-            (decMissing ? _fatigueReviewMetricMissingReason('decoupling', decoupling) : _fatigueReviewMetricEvidence('效率变化', decoupling.pct, '%')) + '。' + _fatigueReviewMetricCopy('decoupling', decState, sportGroup)
+            _fatigueReviewDecouplingEvidence(decoupling, decMissing) + '。' + _fatigueReviewMetricCopy('decoupling', decState, sportGroup)
         );
 
         var bonkMissing = !metrics.bonk_risk || bonk.confidence === 'unavailable';
@@ -23017,14 +24327,15 @@ function stopLLMHeartbeat() {
             (bonkMissing ? _fatigueReviewMetricMissingReason('bonk_risk', bonk) + '。' : '') + _fatigueReviewMetricCopy('bonk_risk', bonkState, sportGroup)
         );
 
-        var eventCount = events.count != null ? events.count : 0;
-        var eventsState = _fatigueReviewMetricState(false, null, eventCount > 0);
+        var eventsMissing = !metrics.events || events.analysis_status === 'unavailable' || events.confidence === 'unavailable' || events.count == null;
+        var eventCount = eventsMissing ? 0 : Number(events.count || 0);
+        var eventsState = _fatigueReviewMetricState(eventsMissing, null, eventCount > 0);
         setMetricCard(
             'fr-events-count', 'fr-events-status', 'fr-events-sub',
-            _fatigueReviewMetricHeadline('events', null, false, false, eventCount),
-            eventCount > 0 ? '已识别' : '状态平稳',
-            eventCount > 0 ? 'warn' : 'ok',
-            '识别到 ' + eventCount + ' 个参考点。' + _fatigueReviewMetricCopy('events', eventsState, sportGroup)
+            _fatigueReviewMetricHeadline('events', null, eventsMissing, false, eventCount),
+            eventsMissing ? '数据不足' : (eventCount > 0 ? '已识别' : '状态平稳'),
+            eventsMissing ? 'empty' : (eventCount > 0 ? 'warn' : 'ok'),
+            (eventsMissing ? _fatigueReviewMetricMissingReason('events', events) : ('识别到 ' + eventCount + ' 个参考点')) + '。' + _fatigueReviewMetricCopy('events', eventsState, sportGroup)
         );
 
         // V7.9 指标 5:Efficiency Score 渲染
@@ -23058,13 +24369,14 @@ function stopLLMHeartbeat() {
         // V7.12 指标 8:Cadence Stability 渲染
         // §5.4 AI 边界:cadence_stability 仅前端展示,不进入 AI prompt
         var cadStab = metrics.cadence_stability || {};
+        var cadPartial = cadStab.status === 'partial' || cadStab.confidence === 'low';
         var cadMissing = !metrics.cadence_stability || cadStab.confidence === 'unavailable' || cadStab.score == null;
         var cadStatus = levelText(cadStab.level, {excellent:'极佳', good:'良好', warn:'轻度波动', bad:'明显波动', unknown:'未知'});
         var cadState = _fatigueReviewMetricState(cadMissing, cadStab.level);
         setMetricCard(
             'fr-cadence-stability-score', 'fr-cadence-stability-status', 'fr-cadence-stability-sub',
             _fatigueReviewMetricHeadline('cadence_stability', cadStab.level, cadMissing),
-            cadMissing ? '设备未记录' : cadStatus,
+            cadMissing ? (cadPartial ? '不适合评分' : '设备未记录') : cadStatus,
             levelTone(cadStab.level, cadMissing),
             (cadMissing ? _fatigueReviewMetricMissingReason('cadence_stability', cadStab) : _fatigueReviewMetricEvidence('评分', cadStab.score, '')) + '。' + _fatigueReviewMetricCopy('cadence_stability', cadState, sportGroup)
         );
@@ -24201,8 +25513,8 @@ function stopLLMHeartbeat() {
             });
             addCandidate({
                 label: '后程效率变化',
-                value: _fatigueReviewMetricHeadline('decoupling', decoupling.level, decoupling.pct == null),
-                desc: (_fatigueReviewMetricEvidence('效率变化', decoupling.pct, '%') || '效率变化暂无数值') + ' · 状态下滑点 ' + eventCount + ' 个',
+                value: _fatigueReviewDecouplingHeadline(decoupling, decoupling.pct == null),
+                desc: (_fatigueReviewDecouplingEvidence(decoupling, decoupling.pct == null) || '效率变化暂无数值') + ' · 状态下滑点 ' + eventCount + ' 个',
                 tone: toneFromLevel(decoupling.level),
                 priority: decoupling.pct == null ? 8 : levelRank(decoupling.level),
                 order: 1

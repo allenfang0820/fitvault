@@ -52,13 +52,11 @@ ACS_FRONTEND_SIGNATURES = (
     "function careerTimelineMonthHtml(month)",
     "async function loadCareerTimeline(filters)",
     "function normalizeCareerMemory(payload)",
-    "function normalizeCareerMemoryItem(item)",
+    "function normalizeCareerMemoryAlbum(album)",
+    "function normalizeCareerMemoryPhoto(photo)",
     "async function loadCareerMemory(filters)",
     "function normalizeCareerInsight(payload)",
     "async function loadCareerInsight(options)",
-    "async function saveCareerMemoryStory()",
-    "async function saveCareerMemoryEdit(id)",
-    "async function deactivateCareerMemoryItem(id)",
 )
 
 
@@ -217,7 +215,7 @@ class TestCareerPhase9DataBoundaryAudit(unittest.TestCase):
                     api.get_career_races({}),
                     api.get_career_pb({}),
                     api.get_career_achievements({}),
-                    api.get_career_memory({}),
+                    api.get_career_memory_gallery({}),
                 )
                 for response in public_responses:
                     self.assertTrue(response.get("ok"), response)
@@ -262,9 +260,6 @@ class TestCareerPhase9DataBoundaryAudit(unittest.TestCase):
             "async function loadCareerTimeline(filters)",
             "async function loadCareerMemory(filters)",
             "async function loadCareerInsight(options)",
-            "async function saveCareerMemoryStory()",
-            "async function saveCareerMemoryEdit(id)",
-            "async function deactivateCareerMemoryItem(id)",
         ):
             body = _extract_function_body(source, signature)
             self.assertIn("requireCareerApiData", body, signature)

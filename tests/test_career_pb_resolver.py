@@ -171,6 +171,50 @@ class TestCareerPbResolver(unittest.TestCase):
         finally:
             conn.close()
 
+    def test_performance_summary_normalizes_distance_time_and_quality(self):
+        summary = career_backend._record_performance_summary({
+            "id": 42,
+            "sport_type": "running",
+            "sub_sport_type": "generic",
+            "start_time": "2026-07-01T08:00:00",
+            "dist_km": 10.02619,
+            "distance": 10026.19,
+            "duration": 3278,
+            "duration_sec": 3278,
+        })
+
+        self.assertEqual(summary["activity_id"], "42")
+        self.assertEqual(summary["sport"], "running")
+        self.assertEqual(summary["distance_m"], 10026)
+        self.assertEqual(summary["elapsed_time_sec"], 3278)
+        self.assertEqual(summary["timer_time_sec"], 3278)
+        self.assertEqual(summary["distance_quality"], "reliable_distance")
+        self.assertEqual(summary["time_quality"], "semantics_unknown")
+        self.assertIn("distance_from_dist_km", summary["reason_codes"])
+        self.assertIn("duration_semantics_unknown", summary["reason_codes"])
+
+    def test_resolver_persists_safe_performance_summary_metadata(self):
+        conn = sqlite3.connect(":memory:")
+        try:
+            _create_activity_table(conn)
+            _insert_activity(conn, id=1, dist_km=5.0, distance=5000.0, duration=1500, duration_sec=1500)
+
+            career_backend.resolve_pb_records(conn)
+
+            metadata_json = conn.execute(
+                "SELECT display_metadata_json FROM career_pb_records WHERE pb_type = 'running_5k'"
+            ).fetchone()[0]
+            metadata = json.loads(metadata_json)
+            summary = metadata["performance_summary"]
+            self.assertEqual(summary["distance_m"], 5000)
+            self.assertEqual(summary["elapsed_time_sec"], 1500)
+            self.assertEqual(summary["time_quality"], "semantics_unknown")
+            self.assertNotIn("points_json", json.dumps(summary))
+            self.assertNotIn("track_json", json.dumps(summary))
+            self.assertNotIn("file_path", json.dumps(summary))
+        finally:
+            conn.close()
+
     def test_resolver_is_idempotent(self):
         conn = sqlite3.connect(":memory:")
         try:

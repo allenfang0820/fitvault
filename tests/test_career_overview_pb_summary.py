@@ -88,7 +88,30 @@ class TestCareerOverviewPbSummary(unittest.TestCase):
             self.assertTrue(result["status"]["data_ready"])
             self.assertEqual(result["latest_pb"]["id"], "pb:running_10k:2")
             self.assertEqual(result["latest_pb"]["improvement_sec"], 120)
-            self.assertEqual(result["latest_pb"]["detail_link"], {"activity_id": "2", "source": "career"})
+            self.assertEqual(result["latest_pb"]["detail_link"], {"activity_id": "2", "source": "career", "record_id": "pb:running_10k:2"})
+            _assert_forbidden_keys_absent(self, result)
+        finally:
+            conn.close()
+
+    def test_pb_candidate_does_not_enter_overview_summary(self):
+        conn = sqlite3.connect(":memory:")
+        try:
+            career_backend.ensure_career_schema(conn)
+            conn.execute(
+                """
+                INSERT INTO career_event_candidates
+                    (id, activity_id, candidate_type, title, evidence_json, confidence, status)
+                VALUES
+                    ('record_candidate:1', '1', 'pb_record', '5K 候选',
+                     '{"record_key":"running_5k"}', 0.86, 'candidate')
+                """
+            )
+
+            result = career_backend.get_career_overview(conn)
+
+            self.assertEqual(result["summary"]["pb_count"], 0)
+            self.assertIsNone(result["latest_pb"])
+            self.assertEqual(result["representative_pb_records"], [])
             _assert_forbidden_keys_absent(self, result)
         finally:
             conn.close()
@@ -141,7 +164,7 @@ class TestCareerOverviewPbSummary(unittest.TestCase):
         try:
             career_backend.ensure_career_schema(conn)
             _insert_pb(conn, id="pb:running_marathon:4", activity_id="4", pb_type="running_marathon", event_date="2026-05-04")
-            _insert_pb(conn, id="pb:running_10k:2-old", activity_id="20", pb_type="running_10k", event_date="2026-05-02")
+            _insert_pb(conn, id="pb:running_10k:2-old", activity_id="20", pb_type="running_10k", event_date="2026-05-02", status="superseded")
             _insert_pb(conn, id="pb:running_5k:1", activity_id="1", pb_type="running_5k", event_date="2026-05-01")
             _insert_pb(conn, id="pb:running_half_marathon:3", activity_id="3", pb_type="running_half_marathon", event_date="2026-05-03")
             _insert_pb(conn, id="pb:running_10k:2-new", activity_id="2", pb_type="running_10k", event_date="2026-06-02")
@@ -153,8 +176,8 @@ class TestCareerOverviewPbSummary(unittest.TestCase):
                 [
                     "pb:running_5k:1",
                     "pb:running_10k:2-new",
-                    "pb:running_10k:2-old",
                     "pb:running_half_marathon:3",
+                    "pb:running_marathon:4",
                 ],
             )
             self.assertEqual(result["latest_pb"]["id"], "pb:running_10k:2-new")
@@ -170,8 +193,8 @@ class TestCareerOverviewPbSummary(unittest.TestCase):
             result = career_backend.get_career_overview(conn)
 
             record = result["representative_pb_records"][0]
-            self.assertEqual(record["detail_link"], {"activity_id": "10", "source": "career"})
-            self.assertEqual(result["latest_pb"]["detail_link"], {"activity_id": "10", "source": "career"})
+            self.assertEqual(record["detail_link"], {"activity_id": "10", "source": "career", "record_id": "pb:running_half_marathon:10"})
+            self.assertEqual(result["latest_pb"]["detail_link"], {"activity_id": "10", "source": "career", "record_id": "pb:running_half_marathon:10"})
             _assert_forbidden_keys_absent(self, result)
         finally:
             conn.close()

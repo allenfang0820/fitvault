@@ -72,7 +72,7 @@ class TestCareerGapP111FrontendDataLinkage(unittest.TestCase):
             "async function loadCareerSeasons(filters)": ("get_career_seasons",),
             "async function loadCareerTimeline(filters)": ("get_career_timeline",),
             "async function loadCareerArchives()": ("get_career_races", "get_career_pb", "get_career_achievements"),
-            "async function loadCareerMemory(filters)": ("get_career_memory",),
+            "async function loadCareerMemory(filters)": ("get_career_memory_gallery",),
             "async function loadCareerInsight(options)": ("generate_career_insight",),
         }
         for signature, api_names in expectations.items():
@@ -151,7 +151,8 @@ class TestCareerGapP111FrontendDataLinkage(unittest.TestCase):
 
     def test_footprint_copy_uses_full_career_language_not_race_only_language(self):
         self.assertIn("生涯足迹", self.career_panel)
-        self.assertIn("仅展示已绑定 Activity 的赛事起点", self.career_panel)
+        self.assertIn("按 Activity 地理信息点亮行政区域", self.career_panel)
+        self.assertNotIn("仅展示已绑定 Activity 的赛事起点", self.career_panel)
         self.assertIn("照片从赛事活动详情页绑定进入", self.career_panel)
         self.assertNotIn("career-memory-story-activity-id", self.career_panel)
 

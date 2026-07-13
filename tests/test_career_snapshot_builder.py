@@ -188,12 +188,12 @@ class TestCareerSnapshotBuilder(unittest.TestCase):
             self.assertEqual(snapshot["summary"]["race_count"], 0)
             self.assertEqual(snapshot["summary"]["pb_count"], 0)
             self.assertEqual(snapshot["summary"]["achievement_count"], 0)
-            self.assertEqual(snapshot["summary"]["memory_count"], 0)
+            self.assertNotIn("memory_count", snapshot["summary"])
             self.assertEqual(snapshot["primary_sport"], {"sport": "", "activity_count": 0, "confidence": "none"})
             self.assertEqual(snapshot["pb_summary"], [])
             self.assertEqual(snapshot["major_achievements"], [])
             self.assertEqual(snapshot["timeline_digest"], [])
-            self.assertEqual(snapshot["representative_memories"], [])
+            self.assertNotIn("representative_memories", snapshot)
             self.assertTrue(snapshot["status"]["schema_ready"])
             self.assertFalse(snapshot["status"]["data_ready"])
             _assert_forbidden_absent(self, snapshot)
@@ -220,7 +220,7 @@ class TestCareerSnapshotBuilder(unittest.TestCase):
             self.assertEqual(snapshot["summary"]["race_count"], 1)
             self.assertEqual(snapshot["summary"]["pb_count"], 1)
             self.assertEqual(snapshot["summary"]["achievement_count"], 1)
-            self.assertEqual(snapshot["summary"]["memory_count"], 1)
+            self.assertNotIn("memory_count", snapshot["summary"])
             self.assertEqual(snapshot["summary"]["covered_city_count"], 2)
             self.assertEqual(snapshot["summary"]["total_distance_km"], 45.0)
             self.assertEqual(snapshot["primary_sport"], {"sport": "running", "activity_count": 2, "confidence": "derived"})
@@ -234,10 +234,19 @@ class TestCareerSnapshotBuilder(unittest.TestCase):
         try:
             _create_activities_table(conn)
             career_backend.ensure_career_schema(conn)
+            pb_types = ["running_5k", "running_10k", "running_half_marathon", "running_marathon"]
             for index in range(1, 15):
                 _insert_activity(conn, id=index, sport_type="running", start_time=f"2026-05-{index:02d}T07:00:00+08:00")
                 _insert_race(conn, id=f"race:{index}", activity_id=str(index), event_date=f"2026-05-{index:02d}")
-                _insert_pb(conn, id=f"pb:{index}", activity_id=str(index), event_date=f"2026-05-{index:02d}", value=str(1400 + index))
+                _insert_pb(
+                    conn,
+                    id=f"pb:{index}",
+                    activity_id=str(index),
+                    pb_type=pb_types[(index - 1) % len(pb_types)],
+                    event_date=f"2026-05-{index:02d}",
+                    value=str(1400 + index),
+                    status="active" if index <= len(pb_types) else "superseded",
+                )
                 _insert_achievement(
                     conn,
                     id=f"achievement:{index}",
@@ -255,14 +264,19 @@ class TestCareerSnapshotBuilder(unittest.TestCase):
 
             snapshot = career_backend.build_career_snapshot(conn=conn)
 
-            self.assertEqual(len(snapshot["pb_summary"]), 6)
+            self.assertEqual(len(snapshot["pb_summary"]), 4)
             self.assertEqual(len(snapshot["major_achievements"]), 8)
             self.assertEqual(len(snapshot["timeline_digest"]), 12)
-            self.assertEqual(len(snapshot["representative_memories"]), 6)
+            self.assertNotIn("representative_memories", snapshot)
             self.assertEqual(
                 set(snapshot["pb_summary"][0]),
                 {"id", "activity_id", "sport", "pb_type", "value", "value_unit", "event_date"},
             )
+            self.assertEqual(
+                set(snapshot["records_summary"]),
+                {"current_records", "recent_refreshes", "candidate_count", "evolution_summary", "trend_inputs"},
+            )
+            self.assertEqual(len(snapshot["records_summary"]["current_records"]), 4)
             self.assertEqual(
                 set(snapshot["major_achievements"][0]),
                 {"id", "activity_id", "achievement_type", "title", "event_date", "score"},
@@ -271,15 +285,59 @@ class TestCareerSnapshotBuilder(unittest.TestCase):
                 set(snapshot["timeline_digest"][0]),
                 {"id", "activity_id", "type", "title", "date"},
             )
-            self.assertEqual(
-                set(snapshot["representative_memories"][0]),
-                {"id", "activity_id", "race_id", "type", "title", "story", "date", "has_media"},
-            )
             _assert_forbidden_absent(self, snapshot)
         finally:
             conn.close()
 
-    def test_representative_memories_exclude_ui_media_and_storage_fields(self):
+    def test_records_snapshot_uses_only_record_whitelist(self):
+        conn = sqlite3.connect(":memory:")
+        try:
+            _create_activities_table(conn)
+            career_backend.ensure_career_schema(conn)
+            _insert_activity(conn, id=1)
+            _insert_pb(conn, id="pb:running_5k:1", activity_id="1", pb_type="running_5k")
+            conn.execute(
+                """
+                INSERT INTO career_record_events
+                    (id, record_id, activity_id, pb_type, event_type, event_at,
+                     evidence_key, resolver_version, source, payload_json)
+                VALUES
+                    ('event:1', 'pb:running_5k:1', '1', 'running_5k', 'activated',
+                     '2026-05-19T00:00:00+00:00', 'evidence:1', 'records-v1', 'resolver',
+                     '{"detail_link":{"activity_id":"1"},"file_path":"/tmp/hidden.fit"}')
+                """
+            )
+            conn.execute(
+                """
+                INSERT INTO career_event_candidates
+                    (id, activity_id, candidate_type, title, evidence_json, confidence, status)
+                VALUES
+                    ('candidate:1', '1', 'pb_record', '10K 候选',
+                     '{"record_decision":{"elapsed_time_sec":3600}}', 0.82, 'candidate')
+                """
+            )
+
+            snapshot = career_backend.build_career_snapshot(conn=conn)
+            records_summary = snapshot["records_summary"]
+
+            self.assertEqual(records_summary["candidate_count"], 1)
+            self.assertEqual(records_summary["current_records"][0]["id"], "pb:running_5k:1")
+            self.assertEqual(records_summary["recent_refreshes"][0]["record_id"], "pb:running_5k:1")
+            self.assertEqual(records_summary["evolution_summary"]["refresh_event_count"], 1)
+            self.assertEqual(records_summary["evolution_summary"]["by_event_type"], {"activated": 1})
+            self.assertEqual(records_summary["trend_inputs"], {
+                "basis": "career_record_events",
+                "refresh_frequency_count": 1,
+                "evolution_event_count": 1,
+                "interpretation": "frequency_only",
+            })
+            self.assertNotIn("record_decision", json.dumps(records_summary, ensure_ascii=False))
+            self.assertNotIn("elapsed_time_sec", json.dumps(records_summary, ensure_ascii=False))
+            _assert_forbidden_absent(self, snapshot)
+        finally:
+            conn.close()
+
+    def test_snapshot_excludes_legacy_memory_items(self):
         conn = sqlite3.connect(":memory:")
         try:
             _create_activities_table(conn)
@@ -296,13 +354,8 @@ class TestCareerSnapshotBuilder(unittest.TestCase):
             )
 
             snapshot = career_backend.build_career_snapshot(conn=conn)
-            memory = snapshot["representative_memories"][0]
-
-            self.assertEqual(memory["type"], "photo")
-            self.assertTrue(memory["has_media"])
-            self.assertNotIn("thumbnail_url", memory)
-            self.assertNotIn("detail_link", memory)
-            self.assertNotIn("storage_ref", memory)
+            self.assertNotIn("representative_memories", snapshot)
+            self.assertNotIn("memory_count", snapshot["summary"])
             _assert_forbidden_absent(self, snapshot)
         finally:
             conn.close()

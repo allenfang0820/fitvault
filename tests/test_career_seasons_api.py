@@ -208,7 +208,8 @@ class TestCareerSeasonsApi(unittest.TestCase):
             self.assertEqual(season_2026["race_count"], 1)
             self.assertEqual(season_2026["pb_count"], 1)
             self.assertEqual(season_2026["achievement_count"], 0)
-            self.assertEqual(season_2026["memory_count"], 1)
+            self.assertNotIn("memory_count", season_2026)
+            self.assertNotIn("记忆", season_2026["season_summary"])
             self.assertEqual(season_2026["city_count"], 2)
             self.assertEqual(season_2026["primary_sport"], "running")
             self.assertEqual(season_2026["primary_sport_label"], "跑步")
@@ -218,6 +219,7 @@ class TestCareerSeasonsApi(unittest.TestCase):
             self.assertEqual(result["summary"]["total_seasons"], 2)
             self.assertEqual(result["summary"]["total_activity_count"], 4)
             self.assertEqual(result["summary"]["total_distance_km"], 85.0)
+            self.assertNotIn("total_memory_count", result["summary"])
             self.assertTrue(result["status"]["data_ready"])
             _assert_forbidden_keys_absent(self, result)
         finally:

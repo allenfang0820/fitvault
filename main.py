@@ -19,7 +19,7 @@ import uuid
 import zipfile
 import hashlib
 from urllib.parse import urlparse
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -31,6 +31,12 @@ import profile_backend  # noqa: F401 -- PyInstaller bundles profile 模块
 import career_backend  # noqa: F401 -- PyInstaller bundles ACS career backend
 from fit_engine import FITCoreEngine
 from metrics_resolver import MetricsResolver, SemanticSportsEngine, build_training_effect, _build_environment_challenge_block  # V9.4.0 修复 NameError:build_training_effect 已在 metrics_resolver.py:2760 定义, 此处补 import;V_ENV.1.16:补 _build_environment_challenge_block
+from metrics_registry import (
+    REVIEW_MODE_SPORTS,
+    get_review_capabilities,
+    get_review_mode,
+    normalize_review_sport_type,
+)
 
 DEBUG_MODE = False
 APP_VERSION = "V1.2.0"
@@ -72,7 +78,6 @@ TRACKS_DIR = os.path.abspath(os.path.expanduser("~/.fitvault/workspace/tracks/")
 IMPORTS_DIR = os.path.abspath(os.path.expanduser("~/.fitvault/workspace/imports/"))
 CAREER_MEDIA_DIR = os.path.abspath(os.path.expanduser("~/.fitvault/workspace/career_media/"))
 CAREER_RACE_BANNER_DIRNAME = "race_banner"
-CAREER_MEMORY_PHOTO_DIRNAME = "memory_photo"
 CAREER_ACTIVITY_RACE_PHOTO_DIRNAME = "activity_race_photo"
 CAREER_ACTIVITY_RACE_PHOTO_PREVIEW_DIRNAME = "activity_race_photo_preview"
 CAREER_ACTIVITY_RACE_PHOTO_THUMB_DIRNAME = "activity_race_photo_thumb"
@@ -173,9 +178,7 @@ LIST_POWER_ELIGIBLE_TYPES: frozenset[str] = frozenset({
     "cycling", "road_cycling", "mountain_biking", "indoor_cycling",
 })
 
-CYCLING_REVIEW_TYPES: frozenset[str] = frozenset({
-    "cycling", "road_cycling", "mountain_biking", "indoor_cycling",
-})
+CYCLING_REVIEW_TYPES: frozenset[str] = REVIEW_MODE_SPORTS["cycling"]
 
 IRRELEVANT_LIST_METRICS: dict[str, frozenset[str]] = {
     "cardio": frozenset({"distance", "pace"}),
@@ -523,30 +526,31 @@ def _normalize_activity_token(value: Any, fallback: str = "unknown") -> str:
     token = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
     if any(marker in token for marker in (".fit", ".gpx", ".kml", "/", "\\")):
         return fallback
-    aliases = {
-        "run": "running",
-        "road_running": "running",
-        "trail_run": "trail_running",
-        "trail": "trail_running",
-        "ride": "cycling",
-        "bike": "cycling",
-        "road_bike": "road_cycling",
-        "road_biking": "road_cycling",
-        "mountain_bike": "mountain_biking",
-        "mtb": "mountain_biking",
-        "walk": "walking",
-        "hike": "hiking",
-        "mountaineering": "mountaineering",
-        "climb": "mountaineering",
-        "sup": "stand_up_paddleboarding",
-        "standup_paddleboarding": "stand_up_paddleboarding",
-        "stand_up_paddle": "stand_up_paddleboarding",
-        "paddleboarding": "stand_up_paddleboarding",
-        "drive": "driving",
-        "car": "driving",
-        "auto": "driving",
-    }
-    return aliases.get(token, token or fallback)
+    return normalize_review_sport_type(token, fallback=fallback)
+
+
+def _resolve_activity_hr_source(*sources: Any) -> str:
+    """Resolve explicit HR sensor source without guessing from device model.
+
+    FR-Core-09: absence of a source is `unknown`, not chest strap. Device names
+    such as Fenix/Apple Watch are not sufficient evidence for chest strap.
+    """
+    for source in sources:
+        if not isinstance(source, dict):
+            continue
+        for key in (
+            "hr_source",
+            "heart_rate_source",
+            "heart_rate_sensor_source",
+            "hr_sensor_source",
+            "sensor_hr_source",
+        ):
+            token = str(source.get(key) or "").strip().lower().replace("-", "_").replace(" ", "_")
+            if token in {"chest_strap", "cheststrap", "hrm", "heart_rate_monitor", "external_hr", "external"}:
+                return "chest_strap"
+            if token in {"optical", "wrist", "wrist_hr", "ohr", "watch_optical"}:
+                return "optical"
+    return "unknown"
 
 
 def _clean_fit_activity_title(file_name: Any, fallback: str = "") -> str:
@@ -670,6 +674,114 @@ def _safe_int(value: Any, default: int = 0) -> int:
         return int(float(value))
     except (TypeError, ValueError):
         return default
+
+
+def _parse_activity_datetime(value: Any) -> datetime | None:
+    """Parse activity timestamps into UTC-aware datetimes for review windows."""
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        try:
+            parsed = datetime.strptime(text[:19], "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _activity_as_of_time(row: dict | None) -> datetime | None:
+    """FR-Core-01: current review time anchor, preferring start_time_utc."""
+    if not row:
+        return None
+    return _parse_activity_datetime(row.get("start_time_utc")) or _parse_activity_datetime(
+        row.get("start_time")
+    )
+
+
+def _activity_table_time_sql(cursor: sqlite3.Cursor) -> tuple[str, str, str]:
+    """Return SELECT/WHERE/ORDER snippets compatible with old and new activity DBs.
+
+    The real FR-Core-01 window check is done after parsing timestamps to UTC;
+    SQL only keeps the query bounded/readonly and must not be treated as the
+    source of time semantics. SQLite text ordering is intentionally not used for
+    the authoritative filter.
+    """
+    try:
+        cols = {str(r[1]) for r in cursor.execute("PRAGMA table_info(activities)").fetchall()}
+    except Exception:
+        cols = {"start_time"}
+    has_utc = "start_time_utc" in cols
+    select_sql = "start_time_utc, start_time" if has_utc else "NULL AS start_time_utc, start_time"
+    time_where_sql = (
+        "COALESCE(NULLIF(start_time_utc, ''), NULLIF(start_time, '')) IS NOT NULL"
+        if has_utc
+        else "NULLIF(start_time, '') IS NOT NULL"
+    )
+    where_sql = f"({time_where_sql})"
+    if "deleted_at" in cols:
+        where_sql += " AND deleted_at IS NULL"
+    order_sql = "COALESCE(start_time_utc, start_time) DESC" if has_utc else "start_time DESC"
+    return select_sql, where_sql, order_sql
+
+
+def _activity_optional_column_sql(cursor: sqlite3.Cursor, column: str, alias: str | None = None) -> str:
+    try:
+        cols = {str(r[1]) for r in cursor.execute("PRAGMA table_info(activities)").fetchall()}
+    except Exception:
+        cols = set()
+    output = alias or column
+    return column if column in cols and output == column else (f"{column} AS {output}" if column in cols else f"NULL AS {output}")
+
+
+def _activity_time_in_window(
+    start_time_utc: Any,
+    start_time: Any,
+    *,
+    window_start: datetime,
+    as_of_time: datetime,
+) -> bool:
+    activity_time = _parse_activity_datetime(start_time_utc) or _parse_activity_datetime(start_time)
+    return bool(activity_time and window_start <= activity_time < as_of_time)
+
+
+def _review_curve_from_track_points(points_json: Any, field: str) -> tuple[list, str]:
+    """Rebuild historical review curves from canonical track_json/points_json."""
+    points = _safe_json_list(points_json)
+    if not points:
+        return [], "missing"
+    values: list[Any] = []
+    has_numeric_field = False
+    for point in points:
+        if not isinstance(point, dict):
+            continue
+        value = _safe_float(point.get(field), None)
+        if value is not None:
+            has_numeric_field = True
+        values.append(value)
+    if not has_numeric_field:
+        return [], "missing"
+    return values, "canonical_track_json"
+
+
+def _review_historical_curve(
+    canonical_points_json: Any,
+    derived_curve_json: Any,
+    field: str,
+) -> tuple[list, str]:
+    """FR-Core-10: prefer canonical track_json, fallback to legacy derivative."""
+    curve, source_quality = _review_curve_from_track_points(canonical_points_json, field)
+    if curve:
+        return curve, source_quality
+    derived = _safe_json_list(derived_curve_json)
+    if derived:
+        return derived, "legacy_derived_column"
+    return [], "missing"
 
 
 def _is_fit_sport_event_race(value: Any) -> bool:
@@ -1023,15 +1135,6 @@ def _copy_career_race_photo_to_controlled_media(source_path: Any, activity_id: i
         activity_id,
         CAREER_RACE_BANNER_DIRNAME,
         "赛事照片",
-    )
-
-
-def _copy_career_memory_photo_to_controlled_media(source_path: Any, activity_id: int) -> str:
-    return _copy_career_photo_to_controlled_media(
-        source_path,
-        activity_id,
-        CAREER_MEMORY_PHOTO_DIRNAME,
-        "记忆照片",
     )
 
 
@@ -1583,7 +1686,7 @@ def _is_fatigue_review_trusted_pressure_zone(
 
 
 def _is_cycling_review_sport(sport_type: Any) -> bool:
-    return str(sport_type or "").strip().lower() in CYCLING_REVIEW_TYPES
+    return get_review_mode(sport_type) == "cycling"
 
 
 def _normalize_cycling_fatigue_zone_contract(zone: dict[str, Any]) -> dict[str, Any]:
@@ -4202,6 +4305,85 @@ def _strip_fatigue_review_forbidden_keys(value: Any) -> Any:
     if isinstance(value, list):
         return [_strip_fatigue_review_forbidden_keys(item) for item in value]
     return value
+
+
+_FATIGUE_REVIEW_METRIC_PRIMARY_KEYS = {
+    "hr_drift": ("pct",),
+    "decoupling": ("pct", "decline_pct"),
+    "efficiency": ("score", "power_per_hr"),
+    "durability": ("score", "power_retention_pct"),
+    "cadence_stability": ("score", "cv"),
+    "training_load": ("load",),
+    "power_variability": ("vi",),
+    "pedaling_stability": ("score", "cv"),
+}
+
+
+def _fatigue_review_unknown_trend(existing: Any) -> dict[str, Any]:
+    trend = dict(existing) if isinstance(existing, dict) else {}
+    compared_count = trend.get("compared_count", 0)
+    source = trend.get("source")
+    baseline_keys = {
+        key: value
+        for key, value in trend.items()
+        if key.startswith("baseline") or key in {"basis", "version"}
+    }
+    unknown = {
+        "delta_pct": None,
+        "level": "unknown",
+        "compared_count": compared_count,
+        "is_improving": None,
+    }
+    if source is not None:
+        unknown["source"] = source
+    unknown.update(baseline_keys)
+    return unknown
+
+
+def _gate_fatigue_review_metric_trends(
+    metrics: Any,
+    *,
+    ai_compact: bool = False,
+) -> dict[str, Any]:
+    """Remove strong trend semantics when the current metric is unavailable.
+
+    FR-Core-03: availability is not confidence. Unavailable/not-applicable metrics
+    must not carry delta/is_improving into UI or AI. Low/partial metrics are kept
+    visible in the backend snapshot, but AI compact input receives only an unknown
+    reference trend by default.
+    """
+    if not isinstance(metrics, dict):
+        return {}
+    gated: dict[str, Any] = {}
+    for metric_key, metric in metrics.items():
+        if not isinstance(metric, dict):
+            gated[metric_key] = metric
+            continue
+        item = dict(metric)
+        status = str(item.get("status") or "").strip().lower()
+        confidence = str(item.get("confidence") or "").strip().lower()
+        primary_keys = _FATIGUE_REVIEW_METRIC_PRIMARY_KEYS.get(metric_key, ())
+        primary_missing = bool(primary_keys) and all(item.get(key) is None for key in primary_keys)
+        unavailable = status in {"unavailable", "not_applicable"} or confidence in {
+            "unavailable",
+            "missing",
+        }
+        low_or_partial = status == "partial" or confidence == "low"
+        if isinstance(item.get("trend"), dict) and (
+            unavailable or primary_missing or (ai_compact and low_or_partial)
+        ):
+            if metric_key == "events":
+                existing_trend = item.get("trend") if isinstance(item.get("trend"), dict) else {}
+                item["trend"] = {
+                    "delta_count": None,
+                    "level": "unknown",
+                    "compared_count": existing_trend.get("compared_count", 0),
+                    "source": existing_trend.get("source", "historical_avg"),
+                }
+            else:
+                item["trend"] = _fatigue_review_unknown_trend(item.get("trend"))
+        gated[metric_key] = item
+    return gated
 
 
 def _compute_hr_drift_from_curve(hr_curve: list) -> float | None:
@@ -7451,10 +7633,16 @@ def _fit_health_skip_result(
     return result
 
 
-def _refresh_career_derived_events_safe(reason: str = "") -> dict[str, Any]:
+def _refresh_career_derived_events_safe(reason: str = "", activity_id: Any | None = None) -> dict[str, Any]:
     """Best-effort ACS refresh after Activity writes; never blocks import success."""
     try:
-        result = career_backend.refresh_career_derived_events()
+        incremental_record = None
+        if activity_id not in (None, ""):
+            with sqlite3.connect(profile_backend.DB_PATH) as conn:
+                incremental_record = career_backend.evaluate_activity_record_increment(conn, activity_id)
+        result = career_backend.refresh_career_derived_events(include_pb=incremental_record is None)
+        if incremental_record is not None:
+            result["record_increment"] = incremental_record
         if reason:
             result["reason"] = reason
         return result
@@ -7589,7 +7777,7 @@ def _sync_single_fit_file(file_path: str | Path, refresh_career: bool = True) ->
         "points": activity.get("points") or [],
     }
     if refresh_career and result["activity_id"] and write_res.get("op") in {"inserted", "updated"}:
-        result["career_refresh"] = _refresh_career_derived_events_safe("single_fit_sync")
+        result["career_refresh"] = _refresh_career_derived_events_safe("single_fit_sync", result["activity_id"])
     return result
 
 
@@ -9913,6 +10101,7 @@ class Api:
                     "running": "跑步", "trail_running": "越野跑", "treadmill_running": "跑步机",
                     "hiking": "徒步", "mountaineering": "登山",
                     "cycling": "骑行", "road_cycling": "公路骑行", "mountain_biking": "山地车",
+                    "indoor_cycling": "室内骑行", "e_biking": "电助力骑行",
                     "swimming": "游泳", "lap_swimming": "泳池游泳", "open_water": "公开水域游泳",
                 }.get(authoritative_sport_type, authoritative_sport_type or "该运动")
                 messages = llm_backend.build_fatigue_review_messages(fr_snapshot, authoritative_sport_type, sport_cn)
@@ -11695,6 +11884,15 @@ class Api:
             logger.exception("get_career_race_map failed")
             return _api_error(API_CODE_DB, "运动生涯赛事足迹查询失败")
 
+    def get_career_footprint(self, filters: dict | None = None) -> dict:
+        """Return Activity-backed ACS footprint regions without deriving facts in main.py."""
+        try:
+            clean_filters = filters if isinstance(filters, dict) else None
+            return _api_success(career_backend.get_career_footprint(clean_filters))
+        except Exception:
+            logger.exception("get_career_footprint failed")
+            return _api_error(API_CODE_DB, "运动生涯足迹查询失败")
+
     def get_career_pb(self, filters: dict | None = None) -> dict:
         """Return ACS PB records generated by the backend PB Resolver."""
         try:
@@ -11703,6 +11901,74 @@ class Api:
         except Exception:
             logger.exception("get_career_pb failed")
             return _api_error(API_CODE_DB, "运动生涯PB记录查询失败")
+
+    def get_career_pb_detail(self, record_id: str) -> dict:
+        """Return one ACS PB record detail."""
+        try:
+            return _api_success(career_backend.get_career_pb_detail(str(record_id or "")))
+        except Exception:
+            logger.exception("get_career_pb_detail failed")
+            return _api_error(API_CODE_DB, "运动生涯PB纪录详情查询失败")
+
+    def get_career_pb_history(self, pb_type: str, filters: dict | None = None) -> dict:
+        """Return one ACS PB type history."""
+        try:
+            clean_filters = filters if isinstance(filters, dict) else None
+            return _api_success(career_backend.get_career_pb_history(str(pb_type or ""), clean_filters))
+        except Exception:
+            logger.exception("get_career_pb_history failed")
+            return _api_error(API_CODE_DB, "运动生涯PB纪录历史查询失败")
+
+    def decide_career_pb_candidate(self, payload: dict | None = None) -> dict:
+        """Confirm or reject a Records Center PB candidate."""
+        try:
+            clean_payload = payload if isinstance(payload, dict) else {}
+            candidate_id = str(clean_payload.get("id") or clean_payload.get("candidate_id") or "").strip()
+            decision = str(clean_payload.get("decision") or clean_payload.get("action") or "").strip().lower()
+            if not candidate_id:
+                return _api_error(API_CODE_VALIDATION, "候选纪录 id 不能为空")
+            if decision not in {"confirm", "reject"}:
+                return _api_error(API_CODE_VALIDATION, "候选纪录操作无效")
+            result = career_backend.decide_career_pb_candidate(candidate_id, decision)
+            if not result.get("ok"):
+                return _api_error(API_CODE_VALIDATION, str(result.get("msg") or "候选纪录操作失败"))
+            data = dict(result.get("data") or {})
+            if isinstance(result.get("metrics"), dict):
+                data["metrics"] = result["metrics"]
+            return _api_success(data)
+        except Exception:
+            logger.exception("decide_career_pb_candidate failed")
+            return _api_error(API_CODE_DB, "运动生涯候选纪录处理失败")
+
+    def rebuild_career_pb_records(self, payload: dict | None = None) -> dict:
+        """Dry-run or apply a Records Center PB rebuild."""
+        try:
+            clean_payload = payload if isinstance(payload, dict) else {}
+            dry_run = bool(clean_payload.get("dry_run", True))
+            resolver_version = str(clean_payload.get("resolver_version") or career_backend.RECORDS_V1_RULE_VERSION)
+            conn = sqlite3.connect(profile_backend.DB_PATH)
+            try:
+                result = career_backend.rebuild_records(conn, dry_run=dry_run, resolver_version=resolver_version)
+                if not dry_run:
+                    conn.commit()
+                return _api_success(result)
+            except Exception:
+                conn.rollback()
+                raise
+            finally:
+                conn.close()
+        except Exception:
+            logger.exception("rebuild_career_pb_records failed")
+            return _api_error(API_CODE_DB, "运动生涯纪录重建失败")
+
+    def get_career_record_events(self, filters: dict | None = None) -> dict:
+        """Return append-only Records Center PB events."""
+        try:
+            clean_filters = filters if isinstance(filters, dict) else None
+            return _api_success(career_backend.get_career_record_events(clean_filters))
+        except Exception:
+            logger.exception("get_career_record_events failed")
+            return _api_error(API_CODE_DB, "运动生涯纪录事件查询失败")
 
     def get_career_achievements(self, filters: dict | None = None) -> dict:
         """Return ACS achievements generated by the backend Achievement Resolver."""
@@ -11734,14 +12000,14 @@ class Api:
             logger.exception("resolve_career_event_candidate failed")
             return _api_error(API_CODE_DB, "运动生涯候选事件处理失败")
 
-    def get_career_memory(self, filters: dict | None = None) -> dict:
-        """Return lightweight ACS memory items without exposing local storage references."""
+    def get_career_memory_gallery(self, filters: dict | None = None) -> dict:
+        """Return race-based ACS photo albums without exposing local storage references."""
         try:
             clean_filters = filters if isinstance(filters, dict) else None
-            return _api_success(career_backend.get_career_memory(clean_filters))
+            return _api_success(career_backend.get_career_memory_gallery(clean_filters))
         except Exception:
-            logger.exception("get_career_memory failed")
-            return _api_error(API_CODE_DB, "运动生涯记忆查询失败")
+            logger.exception("get_career_memory_gallery failed")
+            return _api_error(API_CODE_DB, "运动生涯赛事相册查询失败")
 
     def get_latest_career_snapshot(self) -> dict:
         """Return the latest persisted ACS Career Snapshot without generating or invoking AI."""
@@ -11761,76 +12027,6 @@ class Api:
         except Exception:
             logger.exception("generate_career_insight failed")
             return _api_error(API_CODE_DB, "运动生涯洞察生成失败")
-
-    def save_career_memory_story(self, payload: dict | None = None) -> dict:
-        """Create or update a user-written ACS story memory item."""
-        try:
-            clean_payload = payload if isinstance(payload, dict) else {}
-            return _api_success(career_backend.save_career_memory_story(clean_payload))
-        except ValueError as exc:
-            return _api_error(API_CODE_VALIDATION, str(exc))
-        except Exception:
-            logger.exception("save_career_memory_story failed")
-            return _api_error(API_CODE_DB, "运动生涯记忆故事保存失败")
-
-    def save_career_memory_media(self, payload: dict | None = None) -> dict:
-        """Create or update an ACS photo/track memory item with a safe media reference."""
-        try:
-            clean_payload = payload if isinstance(payload, dict) else {}
-            return _api_success(career_backend.save_career_memory_media(clean_payload))
-        except ValueError as exc:
-            return _api_error(API_CODE_VALIDATION, str(exc))
-        except Exception:
-            logger.exception("save_career_memory_media failed")
-            return _api_error(API_CODE_DB, "运动生涯记忆媒体保存失败")
-
-    def pick_and_save_career_memory_photo(self, payload: dict | None = None) -> dict:
-        """Pick a local image, copy it to the controlled media dir, and save a photo memory."""
-        clean_payload = payload if isinstance(payload, dict) else {}
-        try:
-            clean_activity_id = int(clean_payload.get("activity_id"))
-            if clean_activity_id <= 0:
-                return _api_error(API_CODE_VALIDATION, "activity_id 无效")
-        except (TypeError, ValueError):
-            return _api_error(API_CODE_VALIDATION, "activity_id 无效")
-
-        title = " ".join(str(clean_payload.get("title") or "照片记忆").split()) or "照片记忆"
-        race_id = str(clean_payload.get("race_id") or "").strip()
-        try:
-            import webview
-            from webview import FileDialog
-
-            if not webview.windows:
-                return _api_error(API_CODE_INTERNAL, "窗口未就绪")
-            try:
-                paths = webview.windows[0].create_file_dialog(
-                    FileDialog.OPEN,
-                    allow_multiple=False,
-                    file_types=("Image files (*.jpg;*.jpeg;*.png;*.webp)",),
-                )
-            except TypeError:
-                paths = webview.windows[0].create_file_dialog(
-                    FileDialog.OPEN,
-                    file_types=("Image files (*.jpg;*.jpeg;*.png;*.webp)",),
-                )
-            if not paths:
-                return _api_success({"cancelled": True})
-            selected = paths[0] if isinstance(paths, (list, tuple)) else paths
-            media_ref = _copy_career_memory_photo_to_controlled_media(selected, clean_activity_id)
-            data = career_backend.save_career_memory_media({
-                "activity_id": str(clean_activity_id),
-                "race_id": race_id,
-                "memory_type": "photo",
-                "title": title,
-                "media_ref": media_ref,
-            })
-            data["cancelled"] = False
-            return _api_success(data)
-        except ValueError as exc:
-            return _api_error(API_CODE_VALIDATION, str(exc))
-        except Exception:
-            logger.exception("pick_and_save_career_memory_photo failed")
-            return _api_error(API_CODE_DB, "运动生涯记忆照片保存失败")
 
     def get_activity_race_photos(self, activity_id: Any) -> dict:
         """Return safe race photos for the current Activity Detail context."""
@@ -11995,28 +12191,6 @@ class Api:
         except Exception:
             logger.exception("pick_and_save_career_race_photo failed")
             return _api_error(API_CODE_DB, "赛事照片保存失败")
-
-    def update_career_memory_story(self, payload: dict | None = None) -> dict:
-        """Update a user-written ACS story memory item."""
-        try:
-            clean_payload = payload if isinstance(payload, dict) else {}
-            return _api_success(career_backend.update_career_memory_story(clean_payload))
-        except ValueError as exc:
-            return _api_error(API_CODE_VALIDATION, str(exc))
-        except Exception:
-            logger.exception("update_career_memory_story failed")
-            return _api_error(API_CODE_DB, "运动生涯记忆故事更新失败")
-
-    def deactivate_career_memory_item(self, payload: dict | None = None) -> dict:
-        """Deactivate an ACS memory item without physical deletion."""
-        try:
-            clean_payload = payload if isinstance(payload, dict) else {}
-            return _api_success(career_backend.deactivate_career_memory_item(clean_payload))
-        except ValueError as exc:
-            return _api_error(API_CODE_VALIDATION, str(exc))
-        except Exception:
-            logger.exception("deactivate_career_memory_item failed")
-            return _api_error(API_CODE_DB, "运动生涯记忆停用失败")
 
     def _query_activity_list_records(self, sport_filter: str = "all", title_keyword: str = "") -> tuple[str, list[dict[str, Any]], list[str]]:
         try:
@@ -12471,14 +12645,15 @@ class Api:
             return _api_error(API_CODE_DB, "复盘数据查询失败")
 
     def _fetch_historical_metrics_avg(self, sport_type: str, current_activity_id: int, limit: int = 5) -> dict:
-        """V8.2: 从 hr_curve / speed_curve 列直接计算同运动类型历史基线。
+        """V8.2/FR-Core-02: 从可同口径曲线列计算同运动类型历史基线。
 
         替代 V7.6 的 storage_model 方案(V4.0 防腐层从未写入该列,V8.0 决策不补)。
-        V8.2 改为读 activities 表已有列(hr_curve / speed_curve),直接用曲线统计量
-        计算心率漂移和速度衰减的历史均值,作为 trend baseline。
+        V8.2 改为读 activities 表已有列(hr_curve),直接用曲线统计量
+        计算心率漂移历史均值,作为 trend baseline。FR-Core-02 起不再用 speed_curve
+        衰减冒充后程效率 decoupling baseline;缺少同口径 efficiency_curve 历史源时返回 None。
 
         契约:
-        - §2.1 全链路可追溯:trend 来源 = hr_curve + speed_curve(FIT 解析 → fit_sdk)
+        - §2.1 全链路可追溯:trend 来源 = hr_curve(FIT 解析 → fit_sdk)
         - §8 canonical 只读:仅 SELECT,严禁 INSERT/UPDATE
         - §7.2 安全:activity_id 走 _safe_int,DB 异常降级返回 sample_size=0
         - bonk_count 暂不可计算(需 Records → Resolver→ insight_events,V8.x 扩展)
@@ -12490,7 +12665,7 @@ class Api:
             try:
                 rows = conn.execute(
                     """
-                    SELECT id, hr_curve, speed_curve
+                    SELECT id, hr_curve
                     FROM activities
                     WHERE sport_type = ?
                       AND (? = 0 OR id < ?)
@@ -12509,24 +12684,19 @@ class Api:
                 return {"hr_drift_pct": None, "decoupling_pct": None, "bonk_count": 0, "sample_size": 0}
 
             hr_drift_vals: list[float] = []
-            decoupling_vals: list[float] = []
-
             for r in rows:
                 hr_curve = _safe_json_list(r["hr_curve"]) or []
-                speed_curve = _safe_json_list(r["speed_curve"]) or []
 
                 # V8.2: 直接从曲线计算,不依赖 Resolver(reduce coupling)
                 hr_drift = _compute_hr_drift_from_curve(hr_curve)
                 if hr_drift is not None:
                     hr_drift_vals.append(hr_drift)
 
-                speed_decay = _compute_speed_decay_from_curve(speed_curve)
-                if speed_decay is not None:
-                    decoupling_vals.append(speed_decay)
-
             return {
                 "hr_drift_pct": (sum(hr_drift_vals) / len(hr_drift_vals)) if hr_drift_vals else None,
-                "decoupling_pct": (sum(decoupling_vals) / len(decoupling_vals)) if decoupling_vals else None,
+                "decoupling_pct": None,
+                "decoupling_basis": "efficiency_curve_signed_change",
+                "decoupling_version": "fr_core_02_signed_decoupling_v1",
                 "bonk_count": 0,  # V8.2: 无法从曲线列计算(V8.x 扩展)
                 "sample_size": len(rows),
             }
@@ -12549,40 +12719,48 @@ class Api:
         try:
             from profile_backend import DB_PATH
             import sqlite3
-            from datetime import datetime, timedelta, timezone
             sport_type = str(row.get("sport_type") or "running")
             current_id = _safe_int(row.get("id")) or 0
+            as_of_time = _activity_as_of_time(row)
             avg_hr = _safe_float(row.get("avg_hr"))
             avg_pace = _safe_float(row.get("avg_pace") or row.get("avg_pace_sec"))
             duration_sec = _safe_int(row.get("duration_sec") or row.get("duration")) or 0
 
-            if not avg_hr or not avg_pace or duration_sec < 15 * 60:
+            if not as_of_time or not avg_hr or not avg_pace or duration_sec < 15 * 60:
                 return {"baseline_ratio": None, "compared_count": 0, "level": "flat"}
 
             conn = sqlite3.connect(str(DB_PATH))
             cursor = conn.cursor()
-            cutoff_ts = (datetime.now(timezone.utc) - timedelta(days=21)).isoformat()
+            time_select_sql, time_where_sql, time_order_sql = _activity_table_time_sql(cursor)
             cursor.execute(
-                """
-                SELECT avg_hr, avg_pace, duration_sec
+                f"""
+                SELECT {time_select_sql}, avg_hr, avg_pace, duration_sec
                 FROM activities
                 WHERE sport_type = ?
                   AND id != ?
-                  AND start_time >= ?
+                  AND {time_where_sql}
                   AND avg_hr IS NOT NULL
                   AND avg_pace IS NOT NULL
                   AND duration_sec > ?
-                ORDER BY start_time DESC
+                ORDER BY {time_order_sql}
                 """,
-                (sport_type, current_id, cutoff_ts, 15 * 60),
+                (sport_type, current_id, 15 * 60),
             )
             rows = cursor.fetchall()
             conn.close()
         except Exception:
             return {"baseline_ratio": None, "compared_count": 0, "level": "flat"}
 
+        window_start = as_of_time - timedelta(days=21)
         ratios = []
-        for h, p, _d in rows:
+        for start_utc, start_local, h, p, _d in rows:
+            if not _activity_time_in_window(
+                start_utc,
+                start_local,
+                window_start=window_start,
+                as_of_time=as_of_time,
+            ):
+                continue
             if p and float(p) > 0 and h and float(h) > 0:
                 speed_mps = 1000.0 / float(p)
                 ratios.append(speed_mps / float(h))
@@ -12607,41 +12785,55 @@ class Api:
         try:
             from profile_backend import DB_PATH
             import sqlite3
-            import json as _json_v714
-            from datetime import datetime, timedelta, timezone
             sport_type = str(row.get("sport_type") or "running")
             current_id = _safe_int(row.get("id")) or 0
+            as_of_time = _activity_as_of_time(row)
+            if not as_of_time:
+                return {"baseline_ratio": None, "compared_count": 0, "level": "flat"}
 
             conn = sqlite3.connect(str(DB_PATH))
             cursor = conn.cursor()
-            cutoff_ts = (datetime.now(timezone.utc) - timedelta(days=21)).isoformat()
+            time_select_sql, time_where_sql, time_order_sql = _activity_table_time_sql(cursor)
+            track_select_sql = _activity_optional_column_sql(cursor, "track_json", "track_json")
+            points_select_sql = _activity_optional_column_sql(cursor, "points_json", "points_json")
+            speed_select_sql = _activity_optional_column_sql(cursor, "speed_curve", "speed_curve")
             cursor.execute(
-                """
-                SELECT speed_curve
+                f"""
+                SELECT {time_select_sql}, {track_select_sql}, {points_select_sql}, {speed_select_sql}
                 FROM activities
                 WHERE sport_type = ?
                   AND id != ?
-                  AND start_time >= ?
-                  AND speed_curve IS NOT NULL
+                  AND {time_where_sql}
                   AND duration_sec > ?
-                ORDER BY start_time DESC
+                ORDER BY {time_order_sql}
                 """,
-                (sport_type, current_id, cutoff_ts, 45 * 60),
+                (sport_type, current_id, 45 * 60),
             )
             rows = cursor.fetchall()
             conn.close()
         except Exception:
             return {"baseline_ratio": None, "compared_count": 0, "level": "flat"}
 
+        window_start = as_of_time - timedelta(days=21)
         ratios = []
-        for (speed_curve_json,) in rows:
-            try:
-                speed_curve = _json_v714.loads(speed_curve_json)
-            except (TypeError, ValueError):
+        source_quality_counts: dict[str, int] = {}
+        for start_utc, start_local, track_json, points_json, speed_curve_json in rows:
+            if not _activity_time_in_window(
+                start_utc,
+                start_local,
+                window_start=window_start,
+                as_of_time=as_of_time,
+            ):
                 continue
+            speed_curve, source_quality = _review_historical_curve(
+                track_json or points_json,
+                speed_curve_json,
+                "speed",
+            )
             valid = [s for s in speed_curve if s and s > 0]
             if len(valid) < 20:
                 continue
+            source_quality_counts[source_quality] = source_quality_counts.get(source_quality, 0) + 1
             n = len(valid)
             head_idx = max(1, int(n * 0.30))
             tail_idx = max(1, int(n * 0.30))
@@ -12650,7 +12842,14 @@ class Api:
             if head_speed > 0:
                 ratios.append(tail_speed / head_speed)
         if len(ratios) < 3:
-            return {"baseline_ratio": None, "compared_count": len(ratios), "level": "flat"}
+            return {
+                "baseline_ratio": None,
+                "compared_count": len(ratios),
+                "level": "flat",
+                "basis": "speed_tail_head_ratio",
+                "version": "fr_core_10_canonical_curve_v1",
+                "source_quality": "insufficient_samples",
+            }
 
         ratios.sort()
         n = len(ratios)
@@ -12659,6 +12858,13 @@ class Api:
             "baseline_ratio": round(median, 6),
             "compared_count": len(ratios),
             "level": "computed",
+            "basis": "speed_tail_head_ratio",
+            "version": "fr_core_10_canonical_curve_v1",
+            "source_quality": (
+                "canonical_track_json"
+                if source_quality_counts.get("canonical_track_json", 0) == len(ratios)
+                else "mixed_with_legacy_derivative"
+            ),
         }
 
     def _fetch_cadence_stability_trend(self, row: dict) -> dict:
@@ -12681,43 +12887,56 @@ class Api:
         try:
             from profile_backend import DB_PATH
             import sqlite3
-            import json as _json_v85
-            from datetime import datetime, timedelta, timezone
             sport_type = str(row.get("sport_type") or "running")
             current_id = _safe_int(row.get("id")) or 0
+            as_of_time = _activity_as_of_time(row)
+            if not as_of_time:
+                return {"baseline_cv": None, "compared_count": 0, "level": "flat"}
 
             conn = sqlite3.connect(str(DB_PATH))
             cursor = conn.cursor()
-            cutoff_ts = (datetime.now(timezone.utc) - timedelta(days=21)).isoformat()
+            time_select_sql, time_where_sql, time_order_sql = _activity_table_time_sql(cursor)
+            track_select_sql = _activity_optional_column_sql(cursor, "track_json", "track_json")
+            points_select_sql = _activity_optional_column_sql(cursor, "points_json", "points_json")
+            cadence_select_sql = _activity_optional_column_sql(cursor, "cadence_curve", "cadence_curve")
             cursor.execute(
-                """
-                SELECT cadence_curve
+                f"""
+                SELECT {time_select_sql}, {track_select_sql}, {points_select_sql}, {cadence_select_sql}
                 FROM activities
                 WHERE sport_type = ?
                   AND id != ?
-                  AND start_time >= ?
-                  AND cadence_curve IS NOT NULL
-                  AND cadence_curve != ''
+                  AND {time_where_sql}
                   AND duration_sec > ?
-                ORDER BY start_time DESC
+                ORDER BY {time_order_sql}
                 """,
-                (sport_type, current_id, cutoff_ts, 20 * 60),
+                (sport_type, current_id, 20 * 60),
             )
             rows = cursor.fetchall()
             conn.close()
         except Exception:
             return {"baseline_cv": None, "compared_count": 0, "level": "flat"}
 
+        window_start = as_of_time - timedelta(days=21)
         cvs: list[float] = []
-        for (cadence_json,) in rows:
-            try:
-                cadence_stream = _json_v85.loads(cadence_json)
-            except (TypeError, ValueError):
+        source_quality_counts: dict[str, int] = {}
+        for start_utc, start_local, track_json, points_json, cadence_json in rows:
+            if not _activity_time_in_window(
+                start_utc,
+                start_local,
+                window_start=window_start,
+                as_of_time=as_of_time,
+            ):
                 continue
+            cadence_stream, source_quality = _review_historical_curve(
+                track_json or points_json,
+                cadence_json,
+                "cadence",
+            )
             # 复刻 V7.12 CV 计算:过滤 > 30 spm 的有效点
             valid = [c for c in cadence_stream if c and c > 30]
             if len(valid) < 20:
                 continue
+            source_quality_counts[source_quality] = source_quality_counts.get(source_quality, 0) + 1
             avg = sum(valid) / len(valid)
             if avg <= 0:
                 continue
@@ -12728,7 +12947,14 @@ class Api:
             cvs.append(round(cv, 2))
 
         if len(cvs) < 3:  # V7.9 MIN_HISTORY = 3
-            return {"baseline_cv": None, "compared_count": len(cvs), "level": "flat"}
+            return {
+                "baseline_cv": None,
+                "compared_count": len(cvs),
+                "level": "flat",
+                "basis": "cadence_cv",
+                "version": "fr_core_10_canonical_curve_v1",
+                "source_quality": "insufficient_samples",
+            }
 
         cvs.sort()
         n = len(cvs)
@@ -12737,6 +12963,13 @@ class Api:
             "baseline_cv": round(median, 2),
             "compared_count": len(cvs),
             "level": "computed",
+            "basis": "cadence_cv",
+            "version": "fr_core_10_canonical_curve_v1",
+            "source_quality": (
+                "canonical_track_json"
+                if source_quality_counts.get("canonical_track_json", 0) == len(cvs)
+                else "mixed_with_legacy_derivative"
+            ),
         }
 
     def _fetch_training_load_trend(self, row: dict) -> dict:
@@ -12760,10 +12993,12 @@ class Api:
             from profile_backend import DB_PATH
             import sqlite3
             import json as _json_v85
-            from datetime import datetime, timedelta, timezone
             from metrics_resolver import MetricsResolver as _MR_v85
             sport_type = str(row.get("sport_type") or "running")
             current_id = _safe_int(row.get("id")) or 0
+            as_of_time = _activity_as_of_time(row)
+            if not as_of_time:
+                return {"baseline_load": None, "compared_count": 0, "level": "flat"}
             try:
                 profile = profile_backend.get_profile()
                 profile_max_hr = _safe_float(profile.max_hr) if profile and profile.max_hr else None
@@ -12774,27 +13009,35 @@ class Api:
 
             conn = sqlite3.connect(str(DB_PATH))
             cursor = conn.cursor()
-            cutoff_ts = (datetime.now(timezone.utc) - timedelta(days=21)).isoformat()
+            time_select_sql, time_where_sql, time_order_sql = _activity_table_time_sql(cursor)
             cursor.execute(
-                """
-                SELECT hr_zone_distribution, avg_hr, duration_sec
+                f"""
+                SELECT {time_select_sql}, hr_zone_distribution, avg_hr, duration_sec
                 FROM activities
                 WHERE sport_type = ?
                   AND id != ?
-                  AND start_time >= ?
+                  AND {time_where_sql}
                   AND duration_sec > ?
                   AND avg_hr IS NOT NULL
-                ORDER BY start_time DESC
+                ORDER BY {time_order_sql}
                 """,
-                (sport_type, current_id, cutoff_ts, 5 * 60),
+                (sport_type, current_id, 5 * 60),
             )
             rows = cursor.fetchall()
             conn.close()
         except Exception:
             return {"baseline_load": None, "compared_count": 0, "level": "flat"}
 
+        window_start = as_of_time - timedelta(days=21)
         loads: list[float] = []
-        for zone_json, avg_hr, dur in rows:
+        for start_utc, start_local, zone_json, avg_hr, dur in rows:
+            if not _activity_time_in_window(
+                start_utc,
+                start_local,
+                window_start=window_start,
+                as_of_time=as_of_time,
+            ):
+                continue
             hr_zone_dist = None
             if zone_json:
                 try:
@@ -12842,10 +13085,15 @@ class Api:
         try:
             from profile_backend import DB_PATH
             import sqlite3
-            from datetime import datetime, timedelta, timezone
             from metrics_resolver import MetricsResolver as _MR_v714
             sport_type = str(row.get("sport_type") or "running")
             current_id = _safe_int(row.get("id")) or 0
+            as_of_time = _activity_as_of_time(row)
+            if not as_of_time:
+                return {
+                    "ratio": None, "acute_7d": None, "chronic_42d": None,
+                    "compared_count": 0, "level": "insufficient_data",
+                }
             try:
                 profile = profile_backend.get_profile()
                 profile_max_hr = _safe_float(profile.max_hr) if profile and profile.max_hr else None
@@ -12876,28 +13124,35 @@ class Api:
             # 7d 与 42d 历史累积 load
             conn = sqlite3.connect(str(DB_PATH))
             cursor = conn.cursor()
-            now = datetime.now(timezone.utc)
-            cutoff_7d = (now - timedelta(days=7)).isoformat()
-            cutoff_42d = (now - timedelta(days=42)).isoformat()
+            time_select_sql, time_where_sql, time_order_sql = _activity_table_time_sql(cursor)
+            cutoff_7d = as_of_time - timedelta(days=7)
+            cutoff_42d = as_of_time - timedelta(days=42)
 
-            def _query_period_load(cutoff_ts):
+            def _query_period_load(cutoff_dt):
                 cursor.execute(
-                    """
-                    SELECT avg_hr, duration_sec
+                    f"""
+                    SELECT {time_select_sql}, avg_hr, duration_sec
                     FROM activities
                     WHERE sport_type = ?
                       AND id != ?
-                      AND start_time <= ?
-                      AND start_time >= ?
+                      AND {time_where_sql}
                       AND avg_hr IS NOT NULL
                       AND duration_sec > ?
+                    ORDER BY {time_order_sql}
                     """,
-                    (sport_type, current_id, now.isoformat(), cutoff_ts, 5 * 60),
+                    (sport_type, current_id, 5 * 60),
                 )
                 period_rows = cursor.fetchall()
                 total = 0.0
                 count = 0
-                for h, d in period_rows:
+                for start_utc, start_local, h, d in period_rows:
+                    if not _activity_time_in_window(
+                        start_utc,
+                        start_local,
+                        window_start=cutoff_dt,
+                        as_of_time=as_of_time,
+                    ):
+                        continue
                     load = _MR_v714._compute_training_load(
                         avg_hr=float(h),
                         profile_max_hr=profile_max_hr,
@@ -12962,8 +13217,13 @@ class Api:
         本函数保证: 任何降级路径(无 hr_curve / Resolver 异常 / AI 失败)
         返回结构与正常路径完全一致,前端零特殊处理。
         """
+        sport_type = normalize_review_sport_type(sport_type)
+        review_mode = get_review_mode(sport_type)
+        review_capabilities = get_review_capabilities(sport_type)
         return {
             "sport_type": sport_type,
+            "review_mode": review_mode,
+            "capabilities": review_capabilities,
             "metrics": {
                 "hr_drift": {
                     "pct": None, "level": "unknown", "confidence": "unavailable",
@@ -12971,16 +13231,36 @@ class Api:
                     "trend": {"level": "flat", "compared_count": 0, "delta_pct": None, "is_improving": None, "source": "historical_avg"},
                 },
                 "decoupling": {
-                    "pct": 0.0, "level": "unknown",
-                    "trend": {"level": "flat", "compared_count": 0, "delta_pct": None, "is_improving": None, "source": "historical_avg"},
+                    "status": "unavailable",
+                    "pct": None,
+                    "change_pct": None,
+                    "decline_pct": None,
+                    "direction": "unknown",
+                    "level": "unknown",
+                    "confidence": "unavailable",
+                    "reasons": ["review snapshot unavailable"],
+                    "basis": "efficiency_curve_signed_change",
+                    "version": "fr_core_02_signed_decoupling_v1",
+                    "trend": {
+                        "level": "unknown",
+                        "compared_count": 0,
+                        "delta_pct": None,
+                        "is_improving": None,
+                        "source": "historical_avg",
+                        "basis": "efficiency_curve_signed_change",
+                        "version": "fr_core_02_signed_decoupling_v1",
+                    },
                 },
                 "bonk_risk": {
                     "is_at_risk": False, "confidence": "unavailable",
                     "trend": {"is_increasing": False, "compared_count": 0, "level": "flat", "source": "historical_avg"},
                 },
                 "events": {
-                    "count": 0,
-                    "trend": {"delta_count": 0, "level": "flat", "compared_count": 0, "source": "historical_avg"},
+                    "analysis_status": "unavailable",
+                    "count": None,
+                    "confidence": "unavailable",
+                    "reasons": ["review snapshot unavailable"],
+                    "trend": {"delta_count": None, "level": "unknown", "compared_count": 0, "source": "historical_avg"},
                 },
                 # V7.9 - V7.13 4 个新指标完整兜底
                 "efficiency": {
@@ -13011,7 +13291,7 @@ class Api:
                     "trend": {"level": "flat", "compared_count": 0, "baseline_ratio": None, "source": "v7_14_error"},
                 },
                 "cadence_stability": {
-                    "score": None, "level": "unknown", "confidence": "unavailable",
+                    "score": None, "level": "unknown", "status": "unavailable", "confidence": "unavailable",
                     "cv": None, "decay_pct": None, "is_intermittent": False, "reasons": ["review snapshot unavailable"],
                     "trend": {"level": "flat", "compared_count": 0, "is_improving": None, "baseline_cv": None, "source": "v8_5_error"},
                 },
@@ -13137,10 +13417,18 @@ class Api:
         if not row:
             return {}
         review_snapshot = self._build_fatigue_review_snapshot(row)
+        metrics = _gate_fatigue_review_metric_trends(
+            review_snapshot.get("metrics") or {},
+            ai_compact=True,
+        )
         compact = {
             "activity_id": aid,
             "sport_type": review_snapshot.get("sport_type") or row.get("sport_type") or sport_type or "running",
-            "metrics": review_snapshot.get("metrics") or {},
+            "review_mode": review_snapshot.get("review_mode")
+            or get_review_mode(review_snapshot.get("sport_type") or row.get("sport_type") or sport_type),
+            "capabilities": review_snapshot.get("capabilities")
+            or get_review_capabilities(review_snapshot.get("sport_type") or row.get("sport_type") or sport_type),
+            "metrics": metrics,
             "summary": review_snapshot.get("summary") or {},
             "fatigue_zones": review_snapshot.get("fatigue_zones") or [],
             "collapse_events": review_snapshot.get("collapse_events") or [],
@@ -13186,7 +13474,9 @@ class Api:
                 total_distance_m = dist_m_field
             else:
                 total_distance_m = 0.0
-            sport_type = str(row.get("sport_type") or "running")
+            sport_type = normalize_review_sport_type(row.get("sport_type") or "unknown")
+            review_mode = get_review_mode(sport_type)
+            review_capabilities = get_review_capabilities(sport_type)
 
             bundle = _build_fatigue_review_curve_bundle(row)
             total_distance_m = bundle.get("total_distance_m") or total_distance_m
@@ -13257,7 +13547,7 @@ class Api:
                 distance_curve_km,
             )
             review_speed_curve = _trim_review_series_by_window(
-                _safe_json_list(row.get("speed_curve")) or [],
+                curves_snapshot.get("speed") or speed_curve or [],
                 review_input_window,
                 distance_curve_km,
             )
@@ -13271,7 +13561,12 @@ class Api:
 
             # 4. metrics 白名单:四个核心指标
             decoupling = MetricsResolver._build_review_decoupling(review_efficiency_curve)
-            decoupling_pct = _safe_float(decoupling.get("pct")) or 0.0
+            decoupling_pct = _safe_float(
+                decoupling.get("decline_pct")
+                if decoupling.get("decline_pct") is not None
+                else decoupling.get("pct"),
+                None,
+            )
 
             bonk_risk = MetricsResolver._build_bonk_risk(
                 total_calories=total_calories,
@@ -13359,10 +13654,18 @@ class Api:
                 return {"delta_pct": delta_pct, "level": level, "compared_count": sample_size, "is_improving": is_improving, "source": "historical_avg"}
 
             metrics["hr_drift"]["trend"] = _trend_of(
-                _drift_pct if _drift_pct is not None else 0.0,
+                _drift_pct,
                 historical_avg.get("hr_drift_pct"),
             )
-            metrics["decoupling"]["trend"] = _trend_of(decoupling_pct, historical_avg.get("decoupling_pct"), reverse_polarity=True)
+            metrics["decoupling"]["trend"] = _trend_of(
+                decoupling_pct,
+                historical_avg.get("decoupling_pct"),
+                reverse_polarity=True,
+            )
+            metrics["decoupling"]["trend"]["basis"] = "efficiency_curve_signed_change"
+            metrics["decoupling"]["trend"]["version"] = "fr_core_02_signed_decoupling_v1"
+            metrics["decoupling"]["trend"]["baseline_basis"] = historical_avg.get("decoupling_basis")
+            metrics["decoupling"]["trend"]["baseline_version"] = historical_avg.get("decoupling_version")
             metrics["bonk_risk"]["trend"] = {
                 "is_increasing": bool(bonk_at_risk) and historical_avg.get("bonk_count", 0) == 0,
                 "compared_count": sample_size,
@@ -13376,6 +13679,7 @@ class Api:
                     MetricsResolver as _MR_efficiency,
                     evaluate_efficiency,
                 )
+                _hr_source_v79 = _resolve_activity_hr_source(row, bundle)
                 _eff_avg_hr = _safe_float(row.get("avg_hr"))
                 _eff_avg_pace = _safe_float(row.get("avg_pace") or row.get("avg_pace_sec"))
                 _eff_dur = _safe_int(row.get("duration_sec") or row.get("duration")) or 0
@@ -13386,6 +13690,7 @@ class Api:
                         db_path=str(DB_PATH),
                         sport_type=sport_type,
                         current_activity_id=_safe_int(row.get("id")) or 0,
+                        as_of_time=row.get("start_time_utc") or row.get("start_time"),
                     )
                 except Exception:
                     _eff_baseline = {"baseline_ratio": None, "sample_size": 0}
@@ -13398,21 +13703,25 @@ class Api:
                     sample_size=_eff_baseline.get("sample_size", 0),
                     avg_temp_c=None,
                     max_alt_m=_safe_float(row.get("max_altitude_m") or row.get("max_alt_m")),
-                    hr_source="chest_strap",
+                    hr_source=_hr_source_v79,
                 )
+                _eff_reasons = _eff_result.get("reasons") or []
+                if _eff_result.get("confidence") == "unavailable":
+                    _eff_reasons = _review_metric_reasons(
+                        "efficiency",
+                        duration_sec=_safe_int(row.get("duration_sec") or row.get("duration")) or 0,
+                        sport_type=sport_type,
+                        avg_hr=row.get("avg_hr"),
+                        avg_pace=row.get("avg_pace") or row.get("avg_pace_sec"),
+                    )
                 metrics["efficiency"] = {
                     "score": _eff_result.get("score"),
                     "level": _eff_result.get("level"),
                     "confidence": _eff_result.get("confidence"),
                     "delta_pct": _eff_result.get("delta_pct"),
                     "sample_size": _eff_result.get("sample_size"),
-                    "reasons": _review_metric_reasons(
-                        "efficiency",
-                        duration_sec=_safe_int(row.get("duration_sec") or row.get("duration")) or 0,
-                        sport_type=sport_type,
-                        avg_hr=row.get("avg_hr"),
-                        avg_pace=row.get("avg_pace") or row.get("avg_pace_sec"),
-                    ) if _eff_result.get("confidence") == "unavailable" else [],
+                    "reason_code": _eff_result.get("reason_code"),
+                    "reasons": _eff_reasons,
                 }
             except Exception:
                 # V7.9:efficiency 注入失败不影响其他 metric,降级为 unavailable
@@ -13476,6 +13785,9 @@ class Api:
                         "level": _dur_trend.get("level", "flat"),
                         "compared_count": _dur_trend.get("compared_count", 0),
                         "baseline_ratio": _dur_trend.get("baseline_ratio"),
+                        "basis": _dur_trend.get("basis"),
+                        "version": _dur_trend.get("version"),
+                        "source_quality": _dur_trend.get("source_quality"),
                         "source": "v7_14_baseline",
                     }
                 except Exception:
@@ -13510,16 +13822,20 @@ class Api:
                 metrics["cadence_stability"] = {
                     "score": _cadence_result.get("score"),
                     "level": _cadence_result.get("level"),
+                    "status": _cadence_result.get("status") or (
+                        "unavailable" if _cadence_result.get("confidence") == "unavailable"
+                        else ("partial" if _cadence_result.get("confidence") == "low" else "available")
+                    ),
                     "confidence": _cadence_result.get("confidence"),
                     "cv": _cadence_result.get("cv"),
                     "decay_pct": _cadence_result.get("decay_pct"),
                     "is_intermittent": _cadence_result.get("is_intermittent"),
-                    "reasons": _review_metric_reasons(
+                    "reasons": _cadence_result.get("reasons") or (_review_metric_reasons(
                         "cadence_stability",
                         duration_sec=_duration_v712,
                         sport_type=sport_type,
                         cadence_points=_review_cadence_valid_points(review_cadence_curve),
-                    ) if _cadence_result.get("confidence") == "unavailable" else [],
+                    ) if _cadence_result.get("confidence") == "unavailable" else []),
                 }
                 # V8.5:21d 中位数 cadence CV baseline trend
                 # 语义与 4 个老指标不同:CV 越小越稳(is_improving 方向反转)
@@ -13545,6 +13861,9 @@ class Api:
                         "compared_count": _cad_trend.get("compared_count", 0),
                         "is_improving": _cad_improving,
                         "baseline_cv": _baseline_cv,
+                        "basis": _cad_trend.get("basis"),
+                        "version": _cad_trend.get("version"),
+                        "source_quality": _cad_trend.get("source_quality"),
                         "source": "v8_5_21d_median_cadence_cv",
                     }
                 except Exception:
@@ -13572,6 +13891,7 @@ class Api:
             # §6 误用 2:跨 sport 不可比;前端显示需 sport_type 显式标注
             try:
                 from metrics_resolver import MetricsResolver as _MR_v713
+                _hr_source_v713 = _resolve_activity_hr_source(row, bundle)
                 # HR zone 分布(可选,row 字段 JSON 字符串;parse 失败则降级为 avg_hr 推算)
                 _hr_zone_dist = None
                 if row.get("hr_zone_distribution"):
@@ -13587,7 +13907,7 @@ class Api:
                     profile_resting_hr=bundle.get("profile_resting_hr"),
                     duration_sec=float(_duration_v713),
                     sport_type=sport_type,
-                    hr_source="chest_strap",  # 简化:假设胸带
+                    hr_source=_hr_source_v713,
                 )
                 _load_reasons = []
                 if _load_result.get("confidence") == "unavailable":
@@ -13712,17 +14032,26 @@ class Api:
             )
             historical_bonk_count = historical_avg.get("bonk_count", 0)
             event_delta = len(collapse_events) - historical_bonk_count
+            events_analysis_available = bool(distance_curve_km)
             metrics["events"] = {
-                "count": len(collapse_events),
+                "analysis_status": "available" if events_analysis_available else "unavailable",
+                "count": len(collapse_events) if events_analysis_available else None,
+                "confidence": "medium" if events_analysis_available else "unavailable",
+                "reasons": [] if events_analysis_available else ["missing_authoritative_distance_axis"],
                 "trend": {
-                    "delta_count": event_delta,
-                    "level": "up" if event_delta > 0 else ("down" if event_delta < 0 else "flat"),
+                    "delta_count": event_delta if events_analysis_available else None,
+                    "level": (
+                        "up" if event_delta > 0 else ("down" if event_delta < 0 else "flat")
+                    ) if events_analysis_available else "unknown",
                     "compared_count": sample_size,
                     "source": "historical_avg",
                 },
             }
+            metrics = _gate_fatigue_review_metric_trends(metrics)
             snapshot = {
                 "sport_type": sport_type,
+                "review_mode": review_mode,
+                "capabilities": review_capabilities,
                 "metrics": metrics,
                 "summary": summary,
                 "collapse_events": collapse_events,

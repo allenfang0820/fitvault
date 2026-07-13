@@ -250,7 +250,6 @@ class TestCareerOverviewApiClosure(unittest.TestCase):
                 "race_count": 2,
                 "pb_count": 2,
                 "achievement_count": 2,
-                "memory_count": 1,
                 "covered_city_count": 2,
                 "total_distance_km": 18.5,
             })
@@ -287,7 +286,10 @@ class TestCareerOverviewApiClosure(unittest.TestCase):
             self.assertEqual(result["latest_race"]["detail_link"], {"activity_id": "2", "source": "career"})
             _assert_forbidden_metadata_absent(self, result["latest_race"]["display_metadata"])
             self.assertEqual(result["latest_pb"]["id"], "pb:active-new")
-            self.assertEqual(result["latest_pb"]["detail_link"], {"activity_id": "2", "source": "career"})
+            self.assertEqual(
+                result["latest_pb"]["detail_link"],
+                {"activity_id": "2", "source": "career", "record_id": "pb:active-new"},
+            )
             _assert_forbidden_metadata_absent(self, result["latest_pb"]["display_metadata"])
             self.assertEqual(
                 [record["id"] for record in result["representative_pb_records"]],
@@ -322,11 +324,10 @@ class TestCareerOverviewApiClosure(unittest.TestCase):
             self.assertEqual(result["summary"]["race_count"], 0)
             self.assertEqual(result["summary"]["pb_count"], 0)
             self.assertEqual(result["summary"]["achievement_count"], 0)
-            self.assertEqual(result["summary"]["memory_count"], 0)
             self.assertIsNone(result["latest_race"])
             self.assertIsNone(result["latest_pb"])
             self.assertEqual(result["hero_banner"]["mode"], "title_art")
-            self.assertEqual(result["hero_banner"]["badges"], ["运动记忆"])
+            self.assertEqual(result["hero_banner"]["badges"], ["运动瞬间"])
             self.assertEqual(result["hero_banner"]["race_id"], "")
             self.assertEqual(result["hero_banner"]["detail_link"], {"activity_id": "1", "source": "career"})
             self.assertEqual(result["sport_totals"]["running_distance_km"], 5.0)
@@ -452,7 +453,6 @@ class TestCareerOverviewApiClosure(unittest.TestCase):
                 "race_count": 0,
                 "pb_count": 0,
                 "achievement_count": 0,
-                "memory_count": 0,
                 "covered_city_count": 0,
                 "total_distance_km": None,
             })
@@ -461,7 +461,7 @@ class TestCareerOverviewApiClosure(unittest.TestCase):
             self.assertEqual(result["representative_pb_records"], [])
             self.assertEqual(result["representative_achievements"], [])
             self.assertEqual(result["hero_banner"]["mode"], "empty")
-            self.assertEqual(result["hero_banner"]["title"], "等待第一段运动记忆")
+            self.assertEqual(result["hero_banner"]["title"], "等待第一个运动瞬间")
             self.assertEqual(result["hero_banner"]["media"], {"has_photo": False, "image_ref": ""})
             self.assertEqual(result["sport_totals"]["swimming_distance_km"], 0.0)
             self.assertEqual(result["sport_totals"]["strength_total_weight_status"], "unavailable")

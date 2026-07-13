@@ -114,6 +114,32 @@ def _insert_pb(conn: sqlite3.Connection) -> None:
     )
 
 
+def _insert_record_event(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        INSERT INTO career_record_events
+            (id, record_id, activity_id, pb_type, event_type, event_at,
+             evidence_key, resolver_version, source, payload_json)
+        VALUES
+            ('record_event:1', 'pb:1', '1', 'running_5k', 'activated',
+             '2026-05-19T00:00:00+00:00', 'evidence:1', 'records-v1',
+             'resolver', '{"detail_link":{"activity_id":"1"},"path":"/tmp/private.fit"}')
+        """
+    )
+
+
+def _insert_record_candidate(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        INSERT INTO career_event_candidates
+            (id, activity_id, candidate_type, title, evidence_json, confidence, status)
+        VALUES
+            ('record_candidate:1', '1', 'pb_record', '10K 候选',
+             '{"record_decision":{"elapsed_time_sec":3600}}', 0.82, 'candidate')
+        """
+    )
+
+
 def _insert_achievement(conn: sqlite3.Connection) -> None:
     conn.execute(
         """
@@ -147,6 +173,8 @@ def _seed_career_data(conn: sqlite3.Connection) -> None:
     _insert_activity(conn)
     _insert_race(conn)
     _insert_pb(conn)
+    _insert_record_event(conn)
+    _insert_record_candidate(conn)
     _insert_achievement(conn)
     _insert_memory(conn)
 
@@ -236,8 +264,11 @@ class TestCareerInsightApiSkeleton(unittest.TestCase):
             self.assertIn("已记录赛事 1 场", insight["highlights"])
             self.assertIn("已沉淀 PB 1 项", insight["highlights"])
             self.assertIn("已获得成就 1 项", insight["highlights"])
-            self.assertIn("已沉淀记忆 1 条", insight["highlights"])
+            self.assertIn("当前纪录 1 项", insight["highlights"])
+            self.assertIn("待确认纪录候选 1 项", insight["highlights"])
+            self.assertNotIn("记忆", " ".join(insight["highlights"]))
             self.assertNotIn("最后三公里", " ".join(insight["highlights"]))
+            self.assertNotIn("elapsed_time_sec", " ".join(insight["highlights"]))
             _assert_forbidden_absent(self, result)
         finally:
             conn.close()

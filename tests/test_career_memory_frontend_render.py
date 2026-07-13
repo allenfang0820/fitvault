@@ -56,7 +56,7 @@ class TestCareerMemoryFrontendRender(unittest.TestCase):
     def setUpClass(cls):
         cls.source = TRACK_HTML_PATH.read_text(encoding="utf-8")
 
-    def test_memory_gallery_dom_targets_exist_without_image_wall(self):
+    def test_memory_gallery_dom_targets_exist_as_album_wall(self):
         section = extract_between(
             self.source,
             '<section class="career-section" data-career-section="memory">',
@@ -66,17 +66,17 @@ class TestCareerMemoryFrontendRender(unittest.TestCase):
         self.assertIn('id="career-memory-summary"', section)
         self.assertIn('id="career-memory-list"', section)
         self.assertIn('id="career-memory-empty"', section)
-        self.assertIn("暂无生涯记忆", section)
+        self.assertIn("暂无赛事相册", section)
         self.assertNotIn("<img", section)
-        self.assertNotIn("photo-grid", section)
+        self.assertNotIn("type=\"file\"", section.lower())
 
     def test_load_career_memory_calls_api_and_handles_envelope(self):
         body = extract_function_body(self.source, "async function loadCareerMemory(filters)")
-        self.assertIn("window.pywebview.api.get_career_memory", body)
+        self.assertIn("api.get_career_memory_gallery", body)
         self.assertIn("memoryLoading = true", body)
         self.assertIn("memoryLoading = false", body)
         self.assertIn("memoryError", body)
-        self.assertIn("requireCareerApiData(res, '生涯记忆加载失败')", body)
+        self.assertIn("requireCareerApiData(res, '赛事相册加载失败')", body)
         self.assertIn("normalizeCareerMemory(requireCareerApiData", body)
         self.assertIn("renderCareerMemoryLoading()", body)
         self.assertIn("renderCareerMemoryError(message)", body)
@@ -86,20 +86,23 @@ class TestCareerMemoryFrontendRender(unittest.TestCase):
             extract_function_body(self.source, signature)
             for signature in (
                 "function normalizeCareerMemory(payload)",
-                "function normalizeCareerMemoryItem(item)",
+                "function normalizeCareerMemoryAlbum(album)",
+                "function normalizeCareerMemoryPhoto(photo)",
             )
         )
         for token in (
-            "items",
+            "albums",
             "summary",
             "activity_id",
             "race_id",
-            "type",
             "title",
-            "story",
-            "date",
+            "event_date",
+            "display_date",
+            "cover",
+            "photos",
             "thumbnail_url",
-            "has_media",
+            "preview_url",
+            "image_ref",
             "detail_link",
         ):
             self.assertIn(token, relevant)
@@ -113,33 +116,29 @@ class TestCareerMemoryFrontendRender(unittest.TestCase):
         loading_body = extract_function_body(self.source, "function renderCareerMemoryLoading()")
         error_body = extract_function_body(self.source, "function renderCareerMemoryError(message)")
         self.assertIn("career-memory-empty", render_body)
-        self.assertIn("暂无生涯记忆", render_body)
-        self.assertIn("正在加载记忆", loading_body)
-        self.assertIn("记忆暂不可用", error_body)
-        self.assertNotIn("<img", render_body)
-        self.assertNotIn("thumbnailUrl", render_body)
+        self.assertIn("暂无赛事相册", render_body)
+        self.assertIn("正在加载赛事相册", loading_body)
+        self.assertIn("赛事相册暂不可用", error_body)
+        self.assertIn("careerMemoryAlbumCardHtml", render_body)
 
-    def test_activity_bound_memory_items_reuse_activity_detail_handler(self):
-        body = extract_function_body(self.source, "function careerMemoryItemHtml(item)")
-        self.assertIn("item.detailLink.activityId", body)
-        self.assertIn('role="button"', body)
-        self.assertIn('tabindex="0"', body)
-        self.assertIn('data-activity-id="', body)
-        self.assertIn('data-career-source="', body)
-        self.assertIn('onclick="openCareerActivityDetailFromElement(this)"', body)
-        self.assertIn('onkeydown="onCareerActivityDetailKeydown(event, this)"', body)
-        self.assertIn("if (activityId)", body)
-        self.assertIn('return \'<div class="career-memory-item">', body)
+    def test_album_cards_are_clickable_four_three_units(self):
+        body = extract_function_body(self.source, "function careerMemoryAlbumCardHtml(album)")
+        css = extract_between(self.source, ".career-memory-album-card {", ".career-memory-empty {")
+        self.assertIn("aspect-ratio: 4 / 3", css)
+        self.assertIn('data-career-memory-album-id="', body)
+        self.assertIn('onclick="openCareerMemoryAlbum(this)"', body)
+        self.assertIn("career-memory-album-cover", body)
+        self.assertIn("career-memory-album-placeholder", body)
+        self.assertIn("career-memory-album-art", body)
+        self.assertIn("safeHtml(artTitle)", body)
+        self.assertIn("cover.imageRef", body)
 
     def test_memory_user_text_is_escaped_before_inner_html_render(self):
-        body = extract_function_body(self.source, "function careerMemoryItemHtml(item)")
-        edit_body = extract_function_body(self.source, "function renderCareerMemoryEditForm(item)")
+        body = extract_function_body(self.source, "function careerMemoryAlbumCardHtml(album)")
 
-        self.assertIn("safeHtml(item.story)", body)
-        self.assertIn("safeHtml((item && item.title) || '未命名记忆')", body)
-        self.assertIn("safeHtml(meta)", body)
-        self.assertIn("safeHtml((item && item.title) || '')", edit_body)
-        self.assertIn("safeHtml((item && item.story) || '')", edit_body)
+        self.assertIn("safeHtml(title)", body)
+        self.assertIn("safeHtml(meta", body)
+        self.assertIn("safeHtml(imageRef)", body)
 
     def test_switching_to_career_loads_memory(self):
         body = extract_function_body(self.source, "function switchTab(tabBtn)")
@@ -154,8 +153,9 @@ class TestCareerMemoryFrontendRender(unittest.TestCase):
             extract_function_body(self.source, signature)
             for signature in (
                 "function normalizeCareerMemory(payload)",
-                "function normalizeCareerMemoryItem(item)",
-                "function careerMemoryItemHtml(item)",
+                "function normalizeCareerMemoryAlbum(album)",
+                "function normalizeCareerMemoryPhoto(photo)",
+                "function careerMemoryAlbumCardHtml(album)",
                 "function renderCareerMemory(viewModel)",
                 "async function loadCareerMemory(filters)",
             )

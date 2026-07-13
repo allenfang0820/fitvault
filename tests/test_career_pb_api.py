@@ -139,8 +139,13 @@ class TestCareerPbApi(unittest.TestCase):
             self.assertEqual(record["month"], 5)
             self.assertEqual(record["display_date"], "2026-05-19")
             self.assertEqual(record["source_label"], "规则识别")
+            self.assertEqual(record["source_mode"], "activity_total")
+            self.assertEqual(record["source_mode_label"], "整场活动")
+            self.assertEqual(record["resolver_version"], "legacy")
+            self.assertEqual(record["status"], "active")
             self.assertEqual(record["confidence_label"], "高置信度")
-            self.assertEqual(record["detail_link"], {"activity_id": "1", "source": "career"})
+            self.assertEqual(record["detail_link"], {"activity_id": "1", "source": "career", "record_id": "pb:running_5k:1"})
+            self.assertIn("candidate_count", result["status"])
             _assert_forbidden_keys_absent(self, result)
         finally:
             conn.close()
@@ -169,6 +174,46 @@ class TestCareerPbApi(unittest.TestCase):
             self.assertEqual(record["improvement_display"], "提升 1:15")
             self.assertEqual(record["confidence_label"], "中置信度")
             _assert_forbidden_keys_absent(self, result)
+        finally:
+            conn.close()
+
+    def test_backend_returns_pb_detail_and_history(self):
+        conn = sqlite3.connect(":memory:")
+        try:
+            career_backend.ensure_career_schema(conn)
+            _insert_pb(
+                conn,
+                id="pb:running_5k:old",
+                activity_id="1",
+                value="1600",
+                event_date="2026-05-01",
+                status="superseded",
+                evidence_key="activity_total:1:running_5k:1600",
+                resolver_version="records-v1",
+            )
+            _insert_pb(
+                conn,
+                id="pb:running_5k:new",
+                activity_id="2",
+                value="1500",
+                improvement="100",
+                event_date="2026-06-01",
+                status="active",
+                previous_record_id="pb:running_5k:old",
+                evidence_key="activity_total:2:running_5k:1500",
+                resolver_version="records-v1",
+            )
+
+            detail = career_backend.get_career_pb_detail("pb:running_5k:new", conn=conn)
+            history = career_backend.get_career_pb_history("running_5k", conn=conn)
+
+            self.assertTrue(detail["status"]["data_ready"])
+            self.assertEqual(detail["record"]["previous_record_id"], "pb:running_5k:old")
+            self.assertEqual(detail["record"]["resolver_version"], "records-v1")
+            self.assertEqual([record["id"] for record in history["records"]], ["pb:running_5k:old", "pb:running_5k:new"])
+            self.assertEqual(history["records"][0]["status"], "superseded")
+            _assert_forbidden_keys_absent(self, detail)
+            _assert_forbidden_keys_absent(self, history)
         finally:
             conn.close()
 
@@ -293,11 +338,39 @@ class TestCareerPbApi(unittest.TestCase):
             finally:
                 profile_backend.DB_PATH = original_db_path
 
+    def test_pywebview_wrappers_return_pb_detail_and_history(self):
+        original_db_path = profile_backend.DB_PATH
+        with tempfile.TemporaryDirectory() as tmpdir:
+            try:
+                profile_backend.DB_PATH = Path(tmpdir) / "career-pb-api.sqlite"
+                conn = sqlite3.connect(str(profile_backend.DB_PATH))
+                try:
+                    career_backend.ensure_career_schema(conn)
+                    _insert_pb(conn, id="pb:running_5k:1", activity_id="1")
+                    conn.commit()
+                finally:
+                    conn.close()
+
+                api = main.Api()
+                detail = api.get_career_pb_detail("pb:running_5k:1")
+                history = api.get_career_pb_history("running_5k")
+
+                self.assertTrue(detail["ok"])
+                self.assertEqual(detail["data"]["record"]["id"], "pb:running_5k:1")
+                self.assertTrue(history["ok"])
+                self.assertEqual(history["data"]["records"][0]["id"], "pb:running_5k:1")
+                _assert_forbidden_keys_absent(self, detail["data"])
+                _assert_forbidden_keys_absent(self, history["data"])
+            finally:
+                profile_backend.DB_PATH = original_db_path
+
     def test_js_api_contract_registers_get_career_pb(self):
         contract = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
         methods = {item["name"]: item for item in contract["methods"]}
 
         self.assertIn("get_career_pb", methods)
+        self.assertIn("get_career_pb_detail", methods)
+        self.assertIn("get_career_pb_history", methods)
         method = methods["get_career_pb"]
         self.assertEqual(method["category"], "career")
         self.assertFalse(method["high_risk"])
@@ -305,6 +378,9 @@ class TestCareerPbApi(unittest.TestCase):
         self.assertIn("pb_records", method["returns"])
         self.assertIn("value_display", method["returns"])
         self.assertIn("improvement_display", method["returns"])
+        self.assertIn("source_mode", method["returns"])
+        self.assertTrue(methods["get_career_pb_detail"]["readonly"])
+        self.assertTrue(methods["get_career_pb_history"]["readonly"])
 
 
 if __name__ == "__main__":

@@ -288,10 +288,10 @@
       "line": 11330,
       "category": "career",
       "parameters": [],
-      "returns": "{ ok, code, msg, data: {summary: {career_start_year, activity_count, race_count, pb_count, achievement_count, memory_count, covered_city_count, total_distance_km}, hero_banner: {mode, activity_id, race_id, title, subtitle, sport, sport_label, event_date, city, country, distance_display, duration_display, badges, media: {has_photo, image_ref}, art: {text, tone, style}, detail_link: {activity_id, source}}, sport_totals: {running_distance_km, cycling_distance_km, walking_distance_km, hiking_distance_km, walking_hiking_distance_km, swimming_distance_km, strength_total_weight_kg, strength_total_weight_status}, career_stats: {activity_count, race_count, pb_count, achievement_count, total_duration_seconds, covered_city_count, covered_country_count, active_year_count, longest_activity_distance_km, max_elevation_gain_m, max_altitude_m}, best_pb: null|{title, value_display, event_date, detail_link: {activity_id, source}}, identity: {primary_sport, primary_sport_label, career_years, career_stage, identity_title, identity_summary, identity_tags, question_answers: {who, journey, experience}}, representative_seasons: [{year, activity_count, total_distance_km, total_duration_seconds, race_count, pb_count, achievement_count, memory_count, city_count, primary_sport, primary_sport_label, season_stage, season_title, season_summary, highlights}], latest_race: null|{id, activity_id, name, event_type, sport, event_date, city, confidence, source, confidence_level, display_metadata, detail_link: {activity_id, source}}, latest_pb: null|{id, activity_id, sport, pb_type, value, value_unit, improvement_sec, event_date, confidence, source, display_metadata, detail_link: {activity_id, source}}, representative_pb_records: [{id, activity_id, sport, pb_type, value, value_unit, improvement_sec, event_date, confidence, source, display_metadata, detail_link: {activity_id, source}}], representative_achievements: [{id, activity_id, achievement_type, title, event_date, score, icon, description, confidence, source, display_metadata, detail_link: {activity_id, source}}], status: {schema_ready, data_ready, message}}, traceId }",
+      "returns": "{ ok, code, msg, data: {summary: {career_start_year, activity_count, race_count, pb_count, achievement_count, covered_city_count, total_distance_km}, hero_banner: {mode, activity_id, race_id, title, subtitle, sport, sport_label, event_date, city, country, distance_display, duration_display, badges, media: {has_photo, image_ref}, art: {text, tone, style}, detail_link: {activity_id, source}}, sport_totals: {running_distance_km, cycling_distance_km, walking_distance_km, hiking_distance_km, walking_hiking_distance_km, swimming_distance_km, strength_total_weight_kg, strength_total_weight_status}, career_stats: {activity_count, race_count, pb_count, achievement_count, total_duration_seconds, covered_city_count, covered_country_count, active_year_count, longest_activity_distance_km, max_elevation_gain_m, max_altitude_m}, best_pb: null|{title, value_display, event_date, detail_link: {activity_id, source}}, identity: {primary_sport, primary_sport_label, career_years, career_stage, identity_title, identity_summary, identity_tags, question_answers: {who, journey, experience}}, representative_seasons: [{year, activity_count, total_distance_km, total_duration_seconds, race_count, pb_count, achievement_count, city_count, primary_sport, primary_sport_label, season_stage, season_title, season_summary, highlights}], latest_race: null|{id, activity_id, name, event_type, sport, event_date, city, confidence, source, confidence_level, display_metadata, detail_link: {activity_id, source}}, latest_pb: null|{id, activity_id, sport, pb_type, value, value_unit, improvement_sec, event_date, confidence, source, display_metadata, detail_link: {activity_id, source}}, representative_pb_records: [{id, activity_id, sport, pb_type, value, value_unit, improvement_sec, event_date, confidence, source, display_metadata, detail_link: {activity_id, source}}], representative_achievements: [{id, activity_id, achievement_type, title, event_date, score, icon, description, confidence, source, display_metadata, detail_link: {activity_id, source}}], status: {schema_ready, data_ready, message}}, traceId }",
       "high_risk": false,
       "readonly": true,
-      "description": "ACS 运动生涯总览只读 API；组织 Activity 基础摘要、赛事记忆 Banner、分运动类型累计数据、足迹/PB/年度入口以及 Race Resolver、PB Resolver、Achievement Resolver 生成的 active 派生摘要。hero_banner 有照片时 image_ref 只能是后端从应用受控媒体目录转换出的 data:image 引用；当前无安全预览时使用 title_art 艺术字 fallback，不返回 storage_ref、file_path、本地绝对路径、file:// 或原始媒体路径。strength_total_weight_kg 仅在 Activity 存在可靠总重量字段时聚合，否则返回 null 与 unavailable/partial 状态；max_altitude_m 仅聚合未删除 Activity 的 canonical max_alt_m，前端不得从轨迹点推导。status.data_ready 在存在普通 Activity 或任一 active 派生摘要时为 true。不重新计算赛事/PB/成就，不读取或返回 raw FIT、points、track_json、本地路径或 SQLite schema。"
+      "description": "ACS 运动生涯总览只读 API；组织 Activity 基础摘要、赛事照片 Banner、分运动类型累计数据、足迹/PB/年度入口以及 Race Resolver、PB Resolver、Achievement Resolver 生成的 active 派生摘要。hero_banner 有照片时 image_ref 只能是后端从应用受控媒体目录转换出的 data:image 引用；当前无安全预览时使用 title_art 艺术字 fallback，不返回 storage_ref、file_path、本地绝对路径、file:// 或原始媒体路径。strength_total_weight_kg 仅在 Activity 存在可靠总重量字段时聚合，否则返回 null 与 unavailable/partial 状态；max_altitude_m 仅聚合未删除 Activity 的 canonical max_alt_m，前端不得从轨迹点推导。status.data_ready 在存在普通 Activity 或任一 active 派生摘要时为 true。不重新计算赛事/PB/成就，不读取或返回 raw FIT、points、track_json、本地路径或 SQLite schema。"
     },
     {
       "name": "get_career_timeline",
@@ -326,7 +326,7 @@
           "description": "可选筛选: year/sport；sport 支持 all/running/cycling"
         }
       ],
-      "returns": "{ ok, code, msg, data: {seasons: [{year, activity_count, total_distance_km, total_duration_seconds, race_count, pb_count, achievement_count, memory_count, city_count, primary_sport, primary_sport_label, season_stage, season_title, season_summary, highlights}], summary: {total_seasons, latest_year, total_activity_count, total_distance_km, total_race_count, total_pb_count, total_achievement_count, total_memory_count}, filters: {year, sport}, status: {schema_ready, data_ready, message}}, traceId }",
+      "returns": "{ ok, code, msg, data: {seasons: [{year, activity_count, total_distance_km, total_duration_seconds, race_count, pb_count, achievement_count, city_count, primary_sport, primary_sport_label, season_stage, season_title, season_summary, highlights}], summary: {total_seasons, latest_year, total_activity_count, total_distance_km, total_race_count, total_pb_count, total_achievement_count}, filters: {year, sport}, status: {schema_ready, data_ready, message}}, traceId }",
       "high_risk": false,
       "readonly": true,
       "description": "ACS 年度 Season 结构只读 API；按年份组织 Activity 安全摘要以及 Race/PB/Achievement/Memory active 派生计数。Activity 仅读取安全摘要列，Race/PB/Achievement 仍由 resolver 产生，Memory 仅读取白名单事件日期与状态。不读取或返回 raw FIT、points、track_json、storage_ref、file_path、本地路径或 SQLite schema。"
@@ -370,6 +370,25 @@
       "description": "ACS Race Map / 赛事足迹只读 API；仅读取 Race Resolver 生成的 active 赛事与 Activity 安全起点坐标、地区展示摘要，返回可点击回 Activity Detail 的点位和缺坐标列表。不读取或返回 raw FIT、完整路线 points、points_json、track_json、storage_ref、file_path、本地路径或 SQLite schema；前端不得从标题、城市、日期或 DOM 文本推断坐标。"
     },
     {
+      "name": "get_career_footprint",
+      "file": "main.py",
+      "line": 11891,
+      "category": "career",
+      "parameters": [
+        {
+          "name": "filters",
+          "type": "dict",
+          "required": false,
+          "default": null,
+          "description": "可选筛选: sport/year；sport 支持 all/running/cycling/swimming/hiking/walking/strength"
+        }
+      ],
+      "returns": "{ ok, code, msg, data: {map_mode, regions: [{region_key, name, country, country_code, level, map_mode, activity_count, race_count, first_activity_date, latest_activity_date, representative_activity_id, city_count, cities, detail_link: {activity_id, source}}], without_region: [{activity_id, event_date, sport, sport_label, reason, detail_link: {activity_id, source}}], summary: {activity_count, region_count, country_count, china_region_count, overseas_region_count, without_region_count}, filters: {sport, year}, status: {schema_ready, data_ready, message}}, traceId }",
+      "high_risk": false,
+      "readonly": true,
+      "description": "ACS 生涯足迹只读 API；读取未删除 Activity 的结构化地区字段并由后端归一为中国省级/台湾/港澳、海外国家级区域，或已支持国家的 admin-1 区域（如美国州级 US-xx），返回暗黑地图区域点亮 ViewModel。顶层 map_mode 由后端根据是否存在海外区域返回 china 或 world；region.map_mode 可表达 china/world/japan/us 等具体下钻模式。普通 Activity 可进入生涯足迹，缺地区 Activity 进入 without_region。接口不读取或返回 raw FIT、完整路线 points、points_json、track_json、storage_ref、file_path、本地路径或 SQLite schema；前端不得从标题、城市、日期或 DOM 文本推断地图模式或区域 key。"
+    },
+    {
       "name": "get_career_pb",
       "file": "main.py",
       "line": 11356,
@@ -383,10 +402,109 @@
           "description": "可选筛选: sport/year/pb_type/source"
         }
       ],
-      "returns": "{ ok, code, msg, data: {pb_records: [{id, activity_id, sport, sport_label, pb_type, pb_type_label, pb_title, value, value_unit, value_display, improvement_sec, improvement_display, event_date, year, month, display_date, confidence, source, source_label, confidence_label, display_metadata, detail_link: {activity_id, source}}], summary: {total, by_pb_type, by_sport, by_year}, filters: {sport, year, pb_type, source}, status: {schema_ready, data_ready, message}}, traceId }",
+      "returns": "{ ok, code, msg, data: {pb_records: [{id, activity_id, sport, sport_label, pb_type, pb_type_label, pb_title, value, value_unit, value_display, improvement_sec, improvement_display, event_date, year, month, display_date, confidence, source, source_label, source_mode, source_mode_label, sport_scope, resolver_version, status, evidence_key, previous_record_id, confidence_label, display_metadata, detail_link: {activity_id, source, record_id}}], summary: {total, by_pb_type, by_sport, by_year}, filters: {sport, year, pb_type, source}, status: {schema_ready, data_ready, resolver_version, candidate_count, message}}, traceId }",
       "high_risk": false,
       "readonly": true,
       "description": "ACS PB 档案只读 API；仅读取 PB Resolver 生成的 career_pb_records active 记录，并返回正式 PB Archive ViewModel。支持 sport/year/pb_type/source 筛选；pb_title、pb_type_label、value_display、improvement_display、source_label、confidence_label 仅用于展示。PB 必须绑定 activity_id，不允许无 Activity 的手填 PB；不读取或返回 raw FIT、points、track_json、storage_ref、file_path、本地路径或 SQLite schema。"
+    },
+    {
+      "name": "get_career_pb_detail",
+      "file": "main.py",
+      "line": 11904,
+      "category": "career",
+      "parameters": [
+        {
+          "name": "record_id",
+          "type": "string",
+          "required": true,
+          "description": "career_pb_records.id"
+        }
+      ],
+      "returns": "{ ok, code, msg, data: {record: {id, activity_id, sport, sport_label, pb_type, pb_type_label, pb_title, value, value_unit, value_display, improvement_sec, improvement_display, event_date, year, month, display_date, confidence, source, source_label, source_mode, source_mode_label, sport_scope, resolver_version, status, evidence_key, previous_record_id, confidence_label, display_metadata, detail_link: {activity_id, source, record_id}} | null, status: {schema_ready, data_ready, resolver_version, message}}, traceId }",
+      "high_risk": false,
+      "readonly": true,
+      "description": "ACS PB 纪录详情只读 API；按 record_id 读取单条 career_pb_records 安全 ViewModel。不得返回 raw FIT、points、track_json、storage_ref、file_path、本地路径或 SQLite schema。"
+    },
+    {
+      "name": "get_career_pb_history",
+      "file": "main.py",
+      "line": 11912,
+      "category": "career",
+      "parameters": [
+        {
+          "name": "pb_type",
+          "type": "string",
+          "required": true,
+          "description": "record key / pb_type"
+        },
+        {
+          "name": "filters",
+          "type": "dict",
+          "required": false,
+          "default": null,
+          "description": "可选筛选: source_mode/sport_scope"
+        }
+      ],
+      "returns": "{ ok, code, msg, data: {records: [{id, activity_id, sport, sport_label, pb_type, pb_type_label, pb_title, value, value_unit, value_display, improvement_sec, improvement_display, event_date, year, month, display_date, confidence, source, source_label, source_mode, source_mode_label, sport_scope, resolver_version, status, evidence_key, previous_record_id, confidence_label, display_metadata, detail_link: {activity_id, source, record_id}}], filters: {pb_type, source_mode, sport_scope}, status: {schema_ready, data_ready, resolver_version, message}}, traceId }",
+      "high_risk": false,
+      "readonly": true,
+      "description": "ACS PB 单项历史只读 API；按 pb_type/source_mode/sport_scope 返回 active/superseded/invalidated 历史链，按发生日期升序。不得返回 raw FIT、points、track_json、storage_ref、file_path、本地路径或 SQLite schema。"
+    },
+    {
+      "name": "decide_career_pb_candidate",
+      "file": "main.py",
+      "line": 11920,
+      "category": "career",
+      "parameters": [
+        {
+          "name": "payload",
+          "type": "dict",
+          "required": true,
+          "description": "{id|candidate_id, decision|action}; decision 仅支持 confirm/reject"
+        }
+      ],
+      "returns": "{ ok, code, msg, data: {action, candidate_id?, record_id?, comparison?, result?, metrics: {elapsed_ms}}, traceId }",
+      "high_risk": true,
+      "readonly": false,
+      "description": "ACS PB 候选纪录确认/拒绝 API；仅处理 candidate_type=pb_record 的候选，confirm 后重新参与后端比较，reject 不进入历史链。前端不得修改成绩、距离、时间、Activity 或 record key；接口不得返回 raw FIT、points、track_json、storage_ref、file_path、本地路径或 SQLite schema。"
+    },
+    {
+      "name": "rebuild_career_pb_records",
+      "file": "main.py",
+      "line": 11938,
+      "category": "career",
+      "parameters": [
+        {
+          "name": "payload",
+          "type": "dict",
+          "required": false,
+          "default": null,
+          "description": "{dry_run?: bool, resolver_version?: string}; dry_run 默认 true"
+        }
+      ],
+      "returns": "{ ok, code, msg, data: {dry_run, run_id, resolver_version, processed, progress, summary, metrics: {elapsed_ms, processed, reason_counts, applied_summary?}, items, applied?, applied_count?}, traceId }",
+      "high_risk": true,
+      "readonly": false,
+      "description": "ACS PB Records 全量 dry-run/rebuild API；dry_run=true 只预览不写入，dry_run=false 事务化应用后端 rebuild plan。失败必须保留旧 active；返回 metrics 与安全运行摘要；日志只记录 run_id、resolver_version、处理/激活/候选/拒绝/失效/跳过数量、原因计数和耗时，不记录 payload、raw FIT、points、track_json、storage_ref、file_path、本地路径或 SQLite schema。不得返回 raw FIT、points、track_json、storage_ref、file_path、本地路径或 SQLite schema。"
+    },
+    {
+      "name": "get_career_record_events",
+      "file": "main.py",
+      "line": 11958,
+      "category": "career",
+      "parameters": [
+        {
+          "name": "filters",
+          "type": "dict",
+          "required": false,
+          "default": null,
+          "description": "可选筛选: record_id/pb_type/record_key/event_type"
+        }
+      ],
+      "returns": "{ ok, code, msg, data: {events: [{id, record_id, activity_id, pb_type, event_type, event_at, evidence_key, resolver_version, source, payload, created_at}], filters: {record_id, pb_type, event_type}, metrics: {elapsed_ms, returned_count}, status: {schema_ready, data_ready, message}}, traceId }",
+      "high_risk": false,
+      "readonly": true,
+      "description": "ACS PB Records append-only 事件查询 API；用于前端幂等消费新纪录、候选、回退和审计事件。不得返回 raw FIT、points、track_json、storage_ref、file_path、本地路径或 SQLite schema。"
     },
     {
       "name": "get_career_achievements",
@@ -445,9 +563,9 @@
       "description": "ACS 低置信度候选事件处理 API；当前支持赛事候选确认/拒绝。confirm_race 写入 Activity 的用户赛事确认元数据并触发 Race Resolver 生成正式 RaceEvent；dismiss/reject_race 写入用户取消赛事元数据并关闭候选，后续 resolver 必须尊重用户优先级。不修改 FIT 原始文件，不返回 raw FIT、points、track_json、storage_ref、file_path、本地路径或 SQLite schema。"
     },
     {
-      "name": "get_career_memory",
+      "name": "get_career_memory_gallery",
       "file": "main.py",
-      "line": 11374,
+      "line": 11948,
       "category": "career",
       "parameters": [
         {
@@ -455,13 +573,13 @@
           "type": "dict",
           "required": false,
           "default": null,
-          "description": "可选筛选: type/memory_type；支持 all/photo/story/track"
+          "description": "可选筛选: sport/year；相册以 active Race Event / 赛事 Activity 为单位"
         }
       ],
-      "returns": "{ ok, code, msg, data: {items: [{id, activity_id, race_id, type, title, story, date, thumbnail_url, has_media, detail_link: {activity_id, source}}], summary: {total, photo_count, story_count, track_count}, filters: {type}, status: {schema_ready, data_ready, message}}, traceId }",
+      "returns": "{ ok, code, msg, data: {albums: [{id, race_id, activity_id, title, event_type, event_type_label, sport, sport_label, event_date, display_date, city, location: {city, display}, cover: {has_photo, image_ref, photo_id}, photos: [{id, activity_id, race_id, title, order_index, thumbnail_url, preview_url, is_banner}], photo_count, is_empty, detail_link: {activity_id, source}}], summary: {album_count, photo_count, empty_album_count, cover_count}, filters: {sport, year}, status: {schema_ready, data_ready, message}}, traceId }",
       "high_risk": false,
       "readonly": true,
-      "description": "ACS 记忆相册轻量只读 API；仅读取 career_memory_items active 派生记录，返回白名单 view model。photo 记忆的 thumbnail_url 只能是后端从应用受控媒体目录转换出的 data:image 引用或空字符串；图片/轨迹媒体路径只用于判断 has_media，本接口不返回 storage_ref、path、file_path、本地绝对路径、file://、raw FIT、points、track_json 或 SQLite schema；无 activity_id 的记忆项不伪造详情跳转。"
+      "description": "ACS 赛事相册只读 API；以 active Race Event / 赛事 Activity 为相册单位，复用 Activity Detail 赛事照片排序与安全预览，第一张 active 照片作为 cover 并与 Overview Banner 第一张图逻辑一致。无照片赛事返回空相册卡片，不伪造图片。cover.image_ref、thumbnail_url、preview_url 只能是后端从应用受控媒体目录转换出的 data:image 引用或空字符串；不返回 storage_ref、path、file_path、本地绝对路径、file://、raw FIT、points、track_json 或 SQLite schema。"
     },
     {
       "name": "get_latest_career_snapshot",
@@ -469,10 +587,10 @@
       "line": 11383,
       "category": "career",
       "parameters": [],
-      "returns": "{ ok, code, msg, data: {snapshot: null | {snapshot_version, generated_at, summary, primary_sport, pb_summary, major_achievements, timeline_digest, representative_memories, status}, saved_at, source_version, status: {schema_ready, data_ready, message}}, traceId }",
+      "returns": "{ ok, code, msg, data: {snapshot: null | {snapshot_version, generated_at, summary, primary_sport, pb_summary, records_summary: {current_records, recent_refreshes, candidate_count, evolution_summary, trend_inputs}, major_achievements, timeline_digest, status}, saved_at, source_version, status: {schema_ready, data_ready, message}}, traceId }",
       "high_risk": false,
       "readonly": true,
-      "description": "ACS Career Snapshot 只读调试 API；仅返回已保存的白名单 Snapshot，不自动生成，不调用 LLM，不返回 raw FIT、points、track_json、file_path、storage_ref、SQLite schema、本地绝对路径、thumbnail_url 或 detail_link。保存 Snapshot 由后端受控函数完成，不暴露 pywebview 写接口。"
+      "description": "ACS Career Snapshot 只读调试 API；仅返回已保存的白名单 Snapshot，不自动生成，不调用 LLM；Records 分区仅包含当前纪录、最近刷新、候选数量和演进摘要/趋势输入白名单，不返回 raw FIT、points、track_json、file_path、storage_ref、SQLite schema、本地绝对路径、thumbnail_url 或 detail_link。保存 Snapshot 由后端受控函数完成，不暴露 pywebview 写接口。"
     },
     {
       "name": "generate_career_insight",
@@ -491,61 +609,7 @@
       "returns": "{ ok, code, msg, data: {insight: {mode, title, summary, highlights, next_steps, disclaimer}, snapshot_status: {available, source, snapshot_version}, status: {schema_ready, data_ready, message}}, traceId }",
       "high_risk": false,
       "readonly": false,
-      "description": "ACS Career Insight 后端骨架 API；当前阶段只返回本地 fallback 洞察，不调用 LLM，不调用 llm_backend，仅使用白名单 Career Snapshot。若无已保存 Snapshot 或 payload.refresh_snapshot=true，可能受控写入 career_snapshots；不读取或返回 raw FIT、points、track_json、file_path、storage_ref、SQLite schema、本地绝对路径、thumbnail_url 或 detail_link；不写 career_race_events、career_pb_records、career_achievement_events、career_memory_items 等 canonical 事实表。"
-    },
-    {
-      "name": "save_career_memory_story",
-      "file": "main.py",
-      "line": 11406,
-      "category": "career",
-      "parameters": [
-        {
-          "name": "payload",
-          "type": "dict",
-          "required": true,
-          "description": "故事型记忆绑定参数；仅支持 activity_id/race_id/title/story"
-        }
-      ],
-      "returns": "{ ok, code, msg, data: {item: {id, activity_id, race_id, type, title, story, date, thumbnail_url, has_media, detail_link: {activity_id, source}}, status: {schema_ready, data_ready, message}}, traceId }",
-      "high_risk": false,
-      "readonly": false,
-      "description": "ACS 记忆相册故事型最小写入 API；创建或更新 memory_type=story 的 career_memory_items 记录。必须绑定 activity_id 或 race_id，优先校验 activity_id 存在且未删除；只写入 title/story_text/event_date/status/metadata_json/storage_ref=''。不接收或返回 path、file_path、本地绝对路径、raw FIT、points、track_json 或 SQLite schema；不调用 LLM，不生成 AI Snapshot。"
-    },
-    {
-      "name": "save_career_memory_media",
-      "file": "main.py",
-      "line": 11417,
-      "category": "career",
-      "parameters": [
-        {
-          "name": "payload",
-          "type": "dict",
-          "required": true,
-          "description": "媒体型记忆绑定参数；仅支持 activity_id/race_id/memory_type/title/media_ref，其中 memory_type 只能为 photo 或 track"
-        }
-      ],
-      "returns": "{ ok, code, msg, data: {item: {id, activity_id, race_id, type, title, story, date, thumbnail_url, has_media, detail_link: {activity_id, source}}, status: {schema_ready, data_ready, message}}, traceId }",
-      "high_risk": false,
-      "readonly": false,
-      "description": "ACS 记忆相册媒体型最小写入 API；创建或更新 memory_type=photo/track 的 career_memory_items 记录。必须绑定 activity_id 或 race_id，优先校验 activity_id 存在且未删除；media_ref 只允许应用受控目录内的相对引用或逻辑引用，写入后端 storage_ref，但接口不返回 storage_ref、path、file_path、本地绝对路径、raw FIT、points、track_json 或 SQLite schema；不调用 LLM，不生成 AI Snapshot，不复制或删除媒体文件。"
-    },
-    {
-      "name": "pick_and_save_career_memory_photo",
-      "file": "main.py",
-      "line": 11574,
-      "category": "career",
-      "parameters": [
-        {
-          "name": "payload",
-          "type": "dict",
-          "required": true,
-          "description": "记忆照片选择参数；仅支持 activity_id/race_id/title，其中 activity_id 必须对应未删除活动，race_id 可选"
-        }
-      ],
-      "returns": "{ ok, code, msg, data: {cancelled?: bool, item?: {id, activity_id, race_id, type, title, story, date, thumbnail_url, has_media, detail_link: {activity_id, source}}, status?: {schema_ready, data_ready, message}}, traceId }",
-      "high_risk": false,
-      "readonly": false,
-      "description": "ACS Memory Gallery 照片文件选择 API；打开系统图片选择器，仅接受 jpg/jpeg/png/webp，将文件复制到应用受控 career_media/memory_photo 目录后生成 memory/photo/... 安全逻辑引用，再调用 save_career_memory_media 保存 photo MemoryItem。返回值不得包含源文件路径、目标绝对路径、storage_ref、file_path、raw FIT、points、track_json 或 SQLite schema；取消选择返回 data.cancelled=true；不调用 LLM，不生成 AI Snapshot。"
+      "description": "ACS Career Insight 后端骨架 API；当前阶段只返回本地 fallback 洞察，不调用 LLM，不调用 llm_backend，仅使用白名单 Career Snapshot。Records 相关内容只解释当前纪录、候选数量、刷新频率和演进事件数量，不重新计算 PB，不把一次 PB 等同为整体能力提升。若无已保存 Snapshot 或 payload.refresh_snapshot=true，可能受控写入 career_snapshots；不读取或返回 raw FIT、points、track_json、file_path、storage_ref、SQLite schema、本地绝对路径、thumbnail_url 或 detail_link；不写 career_race_events、career_pb_records、career_achievement_events、career_memory_items 等 canonical 事实表。"
     },
     {
       "name": "get_activity_race_photos",
@@ -617,7 +681,7 @@
       "returns": "{ ok, code, msg, data: {activity_id, race_id, event_date, photos: [{id, activity_id, race_id, title, order_index, thumbnail_url, preview_url, is_banner}], summary: {total, max, remaining, can_manage}, hero_banner_media: {has_photo, image_ref}, status: {schema_ready, data_ready, message}}, traceId }",
       "high_risk": false,
       "readonly": false,
-      "description": "ACS 活动详情赛事照片软删除 API；仅将当前已确认赛事活动的 active photo MemoryItem 标记为 inactive，不物理删除媒体文件，不删除或修改 raw FIT。后端校验 photo_id 必须属于当前 activity_id，并在删除后重排剩余 active 照片，第一张成为 overview_banner；若无剩余照片或无安全预览，hero_banner_media.has_photo=false，Overview 回到 title_art fallback。不接收或返回 storage_ref、path、file_path、本地绝对路径、file://、raw FIT、points、track_json 或 SQLite schema；不调用 LLM，不生成 AI Snapshot。"
+      "description": "ACS 活动详情赛事照片软删除 API；仅将当前已确认赛事活动的 active 照片记录标记为 inactive，不物理删除媒体文件，不删除或修改 raw FIT。后端校验 photo_id 必须属于当前 activity_id，并在删除后重排剩余 active 照片，第一张成为 overview_banner；若无剩余照片或无安全预览，hero_banner_media.has_photo=false，Overview 回到 title_art fallback。不接收或返回 storage_ref、path、file_path、本地绝对路径、file://、raw FIT、points、track_json 或 SQLite schema；不调用 LLM，不生成 AI Snapshot。"
     },
     {
       "name": "save_career_race_photo",
@@ -632,7 +696,7 @@
           "description": "赛事 Banner 照片绑定参数；仅支持 activity_id/media_ref/title，其中 activity_id 必须对应已确认赛事活动，media_ref 必须是应用受控目录内的安全逻辑引用"
         }
       ],
-      "returns": "{ ok, code, msg, data: {item: {id, activity_id, race_id, type, title, story, date, thumbnail_url, has_media, detail_link: {activity_id, source}}, hero_banner_media: {has_photo, image_ref}, status: {schema_ready, data_ready, message}}, traceId }",
+      "returns": "{ ok, code, msg, data: {item: {id, activity_id, race_id, type, title, date, thumbnail_url, has_media, detail_link: {activity_id, source}}, hero_banner_media: {has_photo, image_ref}, status: {schema_ready, data_ready, message}}, traceId }",
       "high_risk": false,
       "readonly": false,
       "description": "ACS 赛事 Banner 照片安全引用保存 API；仅允许把已确认赛事活动绑定到 memory/photo/... 或 asset:memory:... 安全逻辑引用，并写入 career_memory_items 的 overview_banner 角色。hero_banner_media.image_ref 只能是后端从应用受控媒体目录转换出的 data:image 引用或空字符串。接口不接收或返回 path、file_path、本地绝对路径、file://、storage_ref、raw FIT、points、track_json 或 SQLite schema；不复制文件、不调用 LLM、不生成 AI Snapshot。"
@@ -650,46 +714,10 @@
           "description": "要设置 Banner 照片的赛事活动 ID；必须为已确认赛事活动"
         }
       ],
-      "returns": "{ ok, code, msg, data: {cancelled?: bool, item?: {id, activity_id, race_id, type, title, story, date, thumbnail_url, has_media, detail_link: {activity_id, source}}, hero_banner_media?: {has_photo, image_ref}, status?: {schema_ready, data_ready, message}}, traceId }",
+      "returns": "{ ok, code, msg, data: {cancelled?: bool, item?: {id, activity_id, race_id, type, title, date, thumbnail_url, has_media, detail_link: {activity_id, source}}, hero_banner_media?: {has_photo, image_ref}, status?: {schema_ready, data_ready, message}}, traceId }",
       "high_risk": false,
       "readonly": false,
       "description": "ACS 赛事 Banner 照片文件选择 API；打开系统图片选择器，仅接受 jpg/jpeg/png/webp，将文件复制到应用受控 career_media/race_banner 目录后生成 memory/photo/... 安全逻辑引用，再调用 save_career_race_photo 绑定。返回值不得包含源文件路径、目标绝对路径、storage_ref、file_path、raw FIT、points、track_json 或 SQLite schema；取消选择返回 data.cancelled=true。"
-    },
-    {
-      "name": "update_career_memory_story",
-      "file": "main.py",
-      "line": 11428,
-      "category": "career",
-      "parameters": [
-        {
-          "name": "payload",
-          "type": "dict",
-          "required": true,
-          "description": "故事型记忆编辑参数；仅支持 id/title/story"
-        }
-      ],
-      "returns": "{ ok, code, msg, data: {item: {id, activity_id, race_id, type, title, story, date, thumbnail_url, has_media, detail_link: {activity_id, source}}, status: {schema_ready, data_ready, message}}, traceId }",
-      "high_risk": false,
-      "readonly": false,
-      "description": "ACS 记忆相册故事型编辑 API；仅允许编辑 active 且 memory_type=story 的 MemoryItem，只更新 title/story_text/metadata_json/updated_at，不改 activity_id、race_id、memory_type、event_date、storage_ref 或 created_at。不接收或返回 path、file_path、本地绝对路径、raw FIT、points、track_json 或 SQLite schema；不调用 LLM，不生成 AI Snapshot。"
-    },
-    {
-      "name": "deactivate_career_memory_item",
-      "file": "main.py",
-      "line": 11439,
-      "category": "career",
-      "parameters": [
-        {
-          "name": "payload",
-          "type": "dict",
-          "required": true,
-          "description": "记忆停用参数；仅支持 id"
-        }
-      ],
-      "returns": "{ ok, code, msg, data: {id, status: 'inactive'}, traceId }",
-      "high_risk": false,
-      "readonly": false,
-      "description": "ACS 记忆相册停用 API；将 MemoryItem 标记为 inactive，不物理删除记录，不删除或修改媒体文件，不返回 storage_ref、path、file_path、本地绝对路径、raw FIT、points、track_json 或 SQLite schema。"
     },
     {
       "name": "get_activity_list_snapshot",
@@ -1484,7 +1512,8 @@
     "data_flow": "所有字段必须兜底，禁止 None/null/undefined 污染展示",
     "ai_boundary": "普通 AI 输入仅来自 _ai_snapshot(DB truth)；活动建议输入仅来自 _activity_advice_snapshot(后端路线事实白名单) + 用户显式 planning context；前端计算值不进入 LLM 链路",
     "ai_insight_pattern": "功能区 AI 洞察按钮必须通过 call_llm(SENTINEL, control_context) + 后端权威数据白名单 + prompt builder + normalizer 实现；禁止前端 points[] 拼 prompt，调用后必须隔离普通 AI 教练会话，结果默认只存在前端内存，不写 localStorage/sessionStorage。control_context 只能是控制参数或用户显式 planning context,不得携带前端推导事实字段。sentinel 必须独立：__REPORT_INSIGHT__ 用于单次活动，__RADAR_INSIGHT__ 用于 90 天雷达滚动聚合，__REPORT_ACTIVITY_ADVICE__ 用于轨迹报告活动建议，__FATIGUE_REVIEW_INSIGHT__ 用于复盘 AI 洞察。",
-    "fatigue_review_ai_contract": "__FATIGUE_REVIEW_INSIGHT__ 仅用于复盘 AI 洞察，前端只传 sentinel + sport_type；后端只消费 compact snapshot(activity_id/sport_type/summary/metrics/fatigue_zones/collapse_events/curves_summary/context_tags/environment_context/cycling_explanation_signals/advice/disclaimer)，其中骑行 compact snapshot 必须预留 curves_summary.has_power/has_cadence/power_points_count/cadence_points_count 与 summary.avg_power/max_power/normalized_power/avg_cadence/power_available/cadence_available/power_data_quality/cadence_data_quality；如包含 cycling_explanation_signals,只能来自 review_snapshot.get(\"cycling_explanation_signals\") 的后端字段,不得由前端或 AI 从 summary/metrics/curves_summary/DOM/ECharts/points 构造；P6 起 AI 只能解释后端已有 intensity_signal/aerobic_drift_signal/power_retention_signal/pacing_signal/cadence_signal,不得补算或补造解释信号；status=unavailable/partial 必须温和降级,无 FTP 不得编造 FTP/IF/TSS/训练负荷,无功率不得输出功率强度/后程功率保持/pacing 确定性结论,无心率不得输出有氧漂移结论；不得编造补给、天气、设备、路况等 snapshot 未提供事实；无功率骑行必须体现 power_available=false 或 power_data_quality=missing/insufficient_points，禁止完整功率复盘口吻；禁止 DOM/ECharts/截图/活动标题/设备/路线/points/records/raw_records/track_points/fit_records/gpx_points/shadow_diff/diff 或全量 power/cadence 曲线进入 prompt；输出只做解释层,key_dimensions 固定为 overall_stability/fatigue_progression/risk_triggers/context_impact(全程稳定性/疲劳阶段/风险触发/外部影响)，不写 DB、不写 localStorage/sessionStorage、不改 metrics/curves/fatigue_zones/collapse_events/cycling_explanation_signals。",
+    "fatigue_review_ai_contract": "__FATIGUE_REVIEW_INSIGHT__ 仅用于复盘 AI 洞察，前端只传 sentinel + sport_type；后端只消费 compact snapshot(activity_id/sport_type/review_mode/capabilities/summary/metrics/fatigue_zones/collapse_events/curves_summary/context_tags/environment_context/cycling_explanation_signals/advice/disclaimer)，其中 review_mode/capabilities 必须来自后端 review capability registry,AI 不得自行维护 sport mode 映射；其中骑行 compact snapshot 必须预留 curves_summary.has_power/has_cadence/power_points_count/cadence_points_count 与 summary.avg_power/max_power/normalized_power/avg_cadence/power_available/cadence_available/power_data_quality/cadence_data_quality；如包含 cycling_explanation_signals,只能来自 review_snapshot.get(\"cycling_explanation_signals\") 的后端字段,不得由前端或 AI 从 summary/metrics/curves_summary/DOM/ECharts/points 构造；P6 起 AI 只能解释后端已有 intensity_signal/aerobic_drift_signal/power_retention_signal/pacing_signal/cadence_signal,不得补算或补造解释信号；status=unavailable/partial 必须温和降级,无 FTP 不得编造 FTP/IF/TSS/训练负荷,无功率不得输出功率强度/后程功率保持/pacing 确定性结论,无心率不得输出有氧漂移结论；不得编造补给、天气、设备、路况等 snapshot 未提供事实；无功率骑行必须体现 power_available=false 或 power_data_quality=missing/insufficient_points，禁止完整功率复盘口吻；禁止 DOM/ECharts/截图/活动标题/设备/路线/points/records/raw_records/track_points/fit_records/gpx_points/shadow_diff/diff 或全量 power/cadence 曲线进入 prompt；输出只做解释层,key_dimensions 固定为 overall_stability/fatigue_progression/risk_triggers/context_impact(全程稳定性/疲劳阶段/风险触发/外部影响)，不写 DB、不写 localStorage/sessionStorage、不改 metrics/curves/fatigue_zones/collapse_events/cycling_explanation_signals。",
+    "fatigue_review_core_audit_contract": "FR-Core-00/06/07/08/09/10 复盘核心审计契约冻结: get_fatigue_review(activity_id) 是复盘页唯一权威数据源; 所有 7d/21d/42d 历史窗口必须以当前活动 start_time/start_time_utc 归一化后的 as_of_time 为截止点,只允许读取 as_of_time 之前且排除当前 activity_id 的活动,禁止使用电脑当前时间 datetime.now() 作为历史活动复盘窗口终点; 指标 availability 状态统一为 available / partial / unavailable / not_applicable,并与 confidence(high/medium/low/unavailable) 区分; unavailable/not_applicable 的主值必须为 null,不得用 0 表示缺失; 当前指标 unavailable 时 trend.delta_pct、trend.is_improving、强 direction 必须为 null/unknown,AI 不接收不可用趋势; partial/low confidence 默认不得生成强历史趋势; current 与 baseline 必须携带相同 basis/version,且必须使用同一公式、方向、单位、过滤规则和曲线来源; 历史 speed/cadence baseline 必须只读重建并优先使用 canonical track_json/points_json,仅在老库没有 canonical 轨迹时 fallback 到 legacy 派生列,趋势必须携带 basis/version/source_quality; 跑步耐久使用速度/配速口径,骑行后程保持使用有效踩踏功率口径,跑步功率即使作为 FIT 事实存在也不得自动进入跑步耐久、跑步 pacing 或骑行专项结论; HR 传感器来源默认 unknown,只有明确 hr_source/heart_rate_source/hr_sensor_source 等字段证明外置胸带时才能标记 chest_strap,明确腕式/光电证据时标记 optical,不得根据 device_name 推断胸带,unknown/optical 必须保守降级置信度; 前端只翻译后端 status/reason_code/basis,不得从 curves/DOM/ECharts/points 补算或跨运动改写文案; 缺失原因必须按 metric+basis 分流,running durability 只允许速度/配速/时长文案,cycling power_retention 只允许功率/有效踩踏文案,用户可见 copy 不得出现后端未返回功率口径指标等开发者措辞; cadence_stability 必须区分 missing cadence 与 partial/low confidence cadence,CV 超阈值或间歇模式返回 status=partial、confidence=low、reasons 包含 intermittent_cadence_pattern,前端显示节奏变化较大不适合评分,不得显示设备未记录; sport review matrix 由 metrics_registry.py review capability registry 作为单一真理源,后端 snapshot 顶层必须导出 review_mode/capabilities,前端与 AI 只消费该后端模式做分流; 矩阵至少覆盖 running、trail_running、treadmill_running、cycling、road_cycling、mountain_biking、indoor_cycling、e_biking、walking、hiking、mountaineering、swimming、training/cardio/strength/breathing/stair_climbing not_applicable/general unsupported。",
     "activity_advice_contract": "__REPORT_ACTIVITY_ADVICE__ 仅用于轨迹报告活动建议，返回 {ok,activity_advice}；只消费 _activity_advice_snapshot 中的后端路线事实白名单 + 用户显式填写的活动类型/计划活动时间；DB 活动快照来自 Resolver truth 白名单，无 activity_id 的当前轨迹只允许由后端从 sync_track_context 聚合临时路线事实；禁止使用 FIT/GPX 历史 start_time、start_time_utc、历史天气、points[]、placemarks[]、shadow_diff；结果不持久化、不写 canonical、不写 ai_snapshots、不污染普通 AI 教练会话，切换轨迹或导入新 GPX/FIT 即丢弃。",
     "removed_legacy_contracts": "旧风险评估/预警生产链路已删除；轨迹报告建议功能只支持 __REPORT_ACTIVITY_ADVICE__ 和 {ok,activity_advice}",
     "report_metrics_v2": "load_activity_track 返回的 activity 对象中新增 avg_grade_pct/max_slope_pct/min_slope_pct/uphill_pct/downhill_pct/report_metrics_version；字段来源为 DB canonical compute_report_metrics() 窗口算法派生，禁止前端从 points[] 或 gain_m/dist_km 计算，AI snapshot 消费同名 DB truth 字段且不要求 LLM 重算坡度",

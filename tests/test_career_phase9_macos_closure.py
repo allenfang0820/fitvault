@@ -16,40 +16,33 @@ CAREER_API_METHODS = (
     "get_career_timeline",
     "get_career_races",
     "get_career_race_map",
+    "get_career_footprint",
     "get_career_pb",
     "get_career_achievements",
-    "get_career_memory",
+    "get_career_memory_gallery",
     "get_latest_career_snapshot",
     "generate_career_insight",
-    "save_career_memory_story",
-    "save_career_memory_media",
-    "pick_and_save_career_memory_photo",
     "get_activity_race_photos",
     "pick_and_add_activity_race_photos",
     "reorder_activity_race_photos",
     "deactivate_activity_race_photo",
     "save_career_race_photo",
     "pick_and_save_career_race_photo",
-    "update_career_memory_story",
-    "deactivate_career_memory_item",
 )
 
 FRONTEND_CAREER_API_METHODS = (
     "get_career_overview",
     "get_career_timeline",
     "get_career_races",
-    "get_career_race_map",
+    "get_career_footprint",
     "get_career_pb",
     "get_career_achievements",
-    "get_career_memory",
+    "get_career_memory_gallery",
     "generate_career_insight",
-    "save_career_memory_story",
     "get_activity_race_photos",
     "pick_and_add_activity_race_photos",
     "reorder_activity_race_photos",
     "deactivate_activity_race_photo",
-    "update_career_memory_story",
-    "deactivate_career_memory_item",
 )
 
 INLINE_CAREER_HANDLERS = (
@@ -57,9 +50,7 @@ INLINE_CAREER_HANDLERS = (
     "setCareerTimelineTypeFilter",
     "setCareerTimelineYearFilter",
     "loadCareerInsight",
-    "onCareerRaceMapFilterChange",
-    "toggleCareerMemoryStoryForm",
-    "saveCareerMemoryStory",
+    "onCareerFootprintFilterChange",
     "loadActivityRacePhotos",
     "addActivityRacePhotos",
     "reorderActivityRacePhotos",
@@ -67,10 +58,6 @@ INLINE_CAREER_HANDLERS = (
     "openCareerActivityDetailFromElement",
     "onCareerActivityDetailKeydown",
     "expandCareerTimelineTrack",
-    "saveCareerMemoryEdit",
-    "cancelCareerMemoryEdit",
-    "beginCareerMemoryEdit",
-    "deactivateCareerMemoryItem",
 )
 
 
@@ -129,17 +116,14 @@ class TestCareerPhase9MacosClosure(unittest.TestCase):
         loader_signatures = (
             "async function loadCareerOverview()",
             "async function loadCareerArchives()",
-            "async function loadCareerRaceMap(filters)",
+            "async function loadCareerFootprint(filters)",
             "async function loadCareerTimeline(filters)",
             "async function loadCareerMemory(filters)",
             "async function loadCareerInsight(options)",
-            "async function saveCareerMemoryStory()",
             "async function loadActivityRacePhotos(record)",
             "async function addActivityRacePhotos()",
             "async function reorderActivityRacePhotos(orderedIds)",
             "async function deleteActivityRacePhoto(event, photoId)",
-            "async function saveCareerMemoryEdit(id)",
-            "async function deactivateCareerMemoryItem(id)",
         )
         for signature in loader_signatures:
             body = _extract_function_body(self.track_html, signature)

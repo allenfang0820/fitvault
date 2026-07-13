@@ -5,21 +5,6 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 TRACK_HTML_PATH = PROJECT_ROOT / "track.html"
 
-FORBIDDEN_RACE_MAP_TOKENS = (
-    "points_json",
-    "track_json",
-    "raw_records",
-    "fit_records",
-    "file_path",
-    "advanced_metrics",
-    "shadow_diff_json",
-    "sqlite_schema",
-    "storage_ref",
-    "file://",
-    "/Users/",
-)
-
-
 def extract_function_body(source: str, signature: str) -> str:
     start = source.find(signature)
     if start < 0:
@@ -56,77 +41,22 @@ class TestCareerRaceMapFrontend(unittest.TestCase):
     def setUpClass(cls):
         cls.source = TRACK_HTML_PATH.read_text(encoding="utf-8")
 
-    def test_footprint_page_contains_race_map_targets_without_manual_inputs(self):
+    def test_footprint_page_no_longer_uses_legacy_race_map_targets(self):
         section = extract_between(
             self.source,
             '<section class="career-section" data-career-section="footprint">',
             '</section>',
         )
-        for token in (
-            'id="career-race-map-status-text"',
-            'id="career-race-map-year-filter"',
-            'id="career-race-map-sport-filter"',
-            'id="career-race-map-locations"',
-            'id="career-race-map-missing-list"',
-            'id="career-race-map-empty"',
-            "生涯足迹",
-        ):
-            self.assertIn(token, section)
-        self.assertNotIn("career-memory-story-activity-id", section)
-        self.assertNotIn("placeholder=\"活动 ID\"", section)
-        self.assertNotIn("添加故事", section)
+        self.assertIn('id="career-footprint-map"', section)
+        self.assertIn("生涯足迹", section)
+        self.assertNotIn("career-race-map-locations", section)
+        self.assertNotIn("career-race-map-status-text", section)
+        self.assertNotIn("赛事起点", section)
 
-    def test_load_career_race_map_calls_api_and_handles_envelope(self):
-        body = extract_function_body(self.source, "async function loadCareerRaceMap(filters)")
-        self.assertIn("window.pywebview", body)
-        self.assertIn("api.get_career_race_map(nextFilters)", body)
-        self.assertIn("requireCareerApiData(res, '赛事足迹加载失败')", body)
-        self.assertIn("normalizeCareerRaceMap(requireCareerApiData", body)
-        self.assertIn("renderCareerRaceMapLoading()", body)
-        self.assertIn("renderCareerRaceMapError(message)", body)
-
-    def test_race_map_normalizer_uses_whitelisted_fields(self):
-        relevant = "\n".join(
-            extract_function_body(self.source, signature)
-            for signature in (
-                "function normalizeCareerRaceMapPoint(item)",
-                "function normalizeCareerRaceMapMissing(item)",
-                "function normalizeCareerRaceMap(payload)",
-            )
-        )
-        for token in (
-            "activity_id",
-            "title",
-            "sport_label",
-            "event_type_label",
-            "event_date",
-            "city",
-            "region_display",
-            "lat",
-            "lon",
-            "detail_link",
-            "locations",
-            "without_coordinates",
-        ):
-            self.assertIn(token, relevant)
-        self.assertNotIn("Object.assign", relevant)
-        self.assertNotIn("...item", relevant)
-        for token in FORBIDDEN_RACE_MAP_TOKENS:
-            self.assertNotIn(token, relevant)
-
-    def test_race_map_items_return_to_activity_detail(self):
-        point_body = extract_function_body(self.source, "function careerRaceMapPointHtml(item, bounds)")
-        missing_body = extract_function_body(self.source, "function careerRaceMapMissingHtml(item)")
-        combined = point_body + "\n" + missing_body
-        self.assertIn("openCareerActivityDetailFromElement(this)", combined)
-        self.assertIn('data-activity-id="', combined)
-        self.assertIn('data-career-source="', combined)
-        self.assertIn("item.detailLink.activityId", combined)
-        self.assertIn("onCareerActivityDetailKeydown(event, this)", missing_body)
-
-    def test_load_career_data_includes_race_map(self):
+    def test_load_career_data_uses_footprint_loader(self):
         body = extract_function_body(self.source, "async function loadCareerData()")
-        self.assertIn("loadCareerRaceMap().catch", body)
+        self.assertIn("loadCareerFootprint().catch", body)
+        self.assertNotIn("loadCareerRaceMap().catch", body)
 
 
 if __name__ == "__main__":

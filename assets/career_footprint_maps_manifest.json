@@ -1,0 +1,45 @@
+{
+  "version": "2026-07-14.footprint-echarts-geojson.v4-us-drilldown",
+  "runtime": "echarts-register-map",
+  "default_map": "china",
+  "supported_drilldowns": {
+    "CN": "china",
+    "JP": "japan",
+    "US": "us"
+  },
+  "maps": {
+    "world": {
+      "name": "FitVaultCareerFootprintWorld",
+      "label": "World",
+      "asset": "assets/career_footprint_world.geo.json",
+      "key_property": "key",
+      "feature_count": 178,
+      "coverage": "Natural Earth 110m countries, complete world outline for static footprint lighting"
+    },
+    "china": {
+      "name": "FitVaultCareerFootprintChina",
+      "label": "China",
+      "asset": "assets/career_footprint_china.geo.json",
+      "key_property": "region_key"
+    },
+    "japan": {
+      "file": "career_footprint_japan.geo.json",
+      "map_name": "FitVaultCareerFootprintJapan",
+      "key_property": "region_key",
+      "feature_count": 47,
+      "coverage": "Japan prefectures converted from japan-map-js MIT canvas polygons for static footprint drilldown"
+    },
+    "us": {
+      "script": "assets/career_footprint_us.js",
+      "map_name": "FitVaultCareerFootprintUS",
+      "key_property": "region_key",
+      "feature_count": 51,
+      "coverage": "United States states and District of Columbia from Natural Earth 50m admin-1 for static footprint drilldown"
+    }
+  },
+  "sources": {
+    "world": "Natural Earth 110m admin-0, normalized for FitVault popular marathon and Southeast Asia country keys",
+    "china": "DataV.GeoAtlas 100000_full province boundaries, normalized for FitVault region keys",
+    "us": "Natural Earth 50m admin-1 states/provinces, filtered to USA and normalized for FitVault region keys"
+  }
+}

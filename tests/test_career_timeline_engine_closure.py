@@ -298,7 +298,7 @@ class TestCareerTimelineEngineClosure(unittest.TestCase):
                 event_date="2026-05-19",
             )
             _insert_race(conn, id="race:2025", activity_id="4", event_date="2025-05-21")
-            _insert_pb(conn, id="pb:2025", activity_id="5", event_date="2025-05-20")
+            _insert_pb(conn, id="pb:2025", activity_id="5", pb_type="running_10k", event_date="2025-05-20")
             _insert_achievement(conn, id="achievement:2025", activity_id="6", event_date="2025-05-19")
 
             result = career_backend.get_career_timeline({"type": "all", "year": "2026"}, conn)
@@ -317,7 +317,7 @@ class TestCareerTimelineEngineClosure(unittest.TestCase):
             _insert_race(conn, id="race:running", activity_id="1", sport="running")
             _insert_race(conn, id="race:cycling", activity_id="2", sport="cycling")
             _insert_pb(conn, id="pb:running", activity_id="3", sport="running")
-            _insert_pb(conn, id="pb:cycling", activity_id="4", sport="cycling")
+            _insert_pb(conn, id="pb:cycling", activity_id="4", sport="cycling", pb_type="running_10k")
             _insert_achievement(conn, id="achievement:running", activity_id="5")
 
             result = career_backend.get_career_timeline({"type": "all", "sport": "cycling"}, conn)

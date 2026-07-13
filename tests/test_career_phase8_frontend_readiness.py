@@ -42,7 +42,7 @@ class TestCareerPhase8FrontendReadiness(unittest.TestCase):
         for section in ("overview", "timeline", "archives", "pb", "achievements", "insight", "memory"):
             self.assertIn(f'data-career-section="{section}"', self.career_panel)
 
-        for label in ("生涯总览", "生涯时间轴", "赛事档案", "PB 记录", "荣誉里程碑", "AI 生涯总结", "生涯足迹"):
+        for label in ("生涯总览", "生涯时间轴", "赛事档案", "记录中心", "荣誉里程碑", "AI 生涯总结", "生涯足迹"):
             self.assertIn(label, self.career_panel)
 
         for filter_value in ("all", "race", "milestone"):
@@ -74,7 +74,7 @@ class TestCareerPhase8FrontendReadiness(unittest.TestCase):
         self.assertIn(".career-bucket-list", self.mobile_css)
         self.assertIn("grid-template-columns: 1fr", self.mobile_css)
         self.assertIn(".career-timeline-month", self.mobile_css)
-        self.assertIn(".career-memory-story-row", self.mobile_css)
+        self.assertIn(".career-memory-list", self.mobile_css)
         self.assertIn(".career-insight-toolbar", self.mobile_css)
 
 

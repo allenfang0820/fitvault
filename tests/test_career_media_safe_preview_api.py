@@ -100,25 +100,6 @@ class TestCareerMediaSafePreviewApi(unittest.TestCase):
         target.write_bytes(content)
         return "memory/photo/" + relative.replace("\\", "/")
 
-    def test_safe_media_ref_converts_to_data_url_for_memory_gallery(self):
-        media_ref = self._write_media("memory_photo/finish.jpg", b"finish")
-
-        saved = career_backend.save_career_memory_media(
-            {
-                "activity_id": "1",
-                "memory_type": "photo",
-                "title": "终点照片",
-                "media_ref": media_ref,
-            },
-            conn=self.conn,
-        )
-        memory = career_backend.get_career_memory(conn=self.conn)
-
-        self.assertTrue(saved["item"]["thumbnail_url"].startswith("data:image/jpeg;base64,"))
-        self.assertTrue(memory["items"][0]["thumbnail_url"].startswith("data:image/jpeg;base64,"))
-        _assert_no_media_leak(self, saved)
-        _assert_no_media_leak(self, memory)
-
     def test_overview_banner_uses_safe_data_url_or_title_art_fallback(self):
         media_ref = self._write_media("race_banner/banner.png", b"banner")
 
@@ -207,17 +188,17 @@ class TestCareerMediaSafePreviewApi(unittest.TestCase):
             """
         )
 
-        memory = career_backend.get_career_memory(conn=self.conn)
         gallery = career_backend.get_activity_race_photos("1", conn=self.conn)
+        albums = career_backend.get_career_memory_gallery(conn=self.conn)
         overview = career_backend.get_career_overview(self.conn)
 
-        self.assertEqual([item["thumbnail_url"] for item in memory["items"]], ["", ""])
         self.assertEqual([item["thumbnail_url"] for item in gallery["photos"]], ["", ""])
         self.assertEqual([item["preview_url"] for item in gallery["photos"]], ["", ""])
+        self.assertEqual([photo["thumbnail_url"] for photo in albums["albums"][0]["photos"]], ["", ""])
         self.assertNotEqual(overview["hero_banner"]["mode"], "photo")
         self.assertEqual(overview["hero_banner"]["media"], {"has_photo": False, "image_ref": ""})
-        _assert_no_media_leak(self, memory)
         _assert_no_media_leak(self, gallery)
+        _assert_no_media_leak(self, albums)
         _assert_no_media_leak(self, overview)
 
 

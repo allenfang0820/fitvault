@@ -1,5 +1,7 @@
 # ACS-Phase6-05 Memory Gallery 闭环验收报告
 
+> 历史状态说明（2026-07-13）：本文记录 Phase 6 当时的交付结果，不再代表当前公开接口契约。后续产品决策已退役 `get_career_memory`、故事新增/编辑/停用、通用 photo/track 写入及旧照片选择器；当前仅保留赛事 Activity Detail 照片管理、赛事相册只读浏览与 Overview Banner 首图复用。现行接口以 `docs/js_api_contract.json` 为准。
+
 ## 结论
 
 Phase 6 Memory Gallery 的轻量闭环已完成，可以进入 Phase 7 AI Career Insight。

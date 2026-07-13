@@ -82,16 +82,17 @@ class TestCareerMediaSafePreviewFrontend(unittest.TestCase):
         for token in FORBIDDEN_FRONTEND_MEDIA_TOKENS:
             self.assertNotIn(token, normalize_body + render_body)
 
-    def test_memory_gallery_is_readonly_and_uses_safe_thumbnail_field(self):
+    def test_race_album_is_readonly_and_uses_safe_preview_fields(self):
         section = extract_between(
             self.source,
             '<section class="career-section" data-career-section="memory">',
             '</section>',
         )
-        normalize_body = extract_function_body(self.source, "function normalizeCareerMemoryItem(item)")
-        render_body = extract_function_body(self.source, "function careerMemoryItemHtml(item)")
-        self.assertIn("normalizeCareerSafeImagePreview(item.thumbnail_url)", normalize_body)
-        self.assertIn("item.thumbnailUrl", render_body)
+        normalize_body = extract_function_body(self.source, "function normalizeCareerMemoryPhoto(photo)")
+        render_body = extract_function_body(self.source, "function careerMemoryPhotoCellHtml(photo, index)")
+        self.assertIn("normalizeCareerSafeImagePreview(photo.thumbnail_url)", normalize_body)
+        self.assertIn("normalizeCareerSafeImagePreview(photo.preview_url)", normalize_body)
+        self.assertIn("photo.thumbnailUrl", render_body)
         self.assertIn("<img", render_body)
         self.assertNotIn("save_career_memory_media", section)
         self.assertNotIn("pick_and_save_career_memory_photo", section)
