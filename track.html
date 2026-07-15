@@ -25383,6 +25383,40 @@ function stopLLMHeartbeat() {
         var stateCopy = metricCopy[state] || metricCopy.normal || metricCopy.missing || {};
         return stateCopy[sportGroup] || stateCopy.running || '本次指标说明暂不可用。';
     }
+    function _fatigueReviewMetricReasonText(metric) {
+        var reasons = Array.isArray(metric && metric.reasons) ? metric.reasons : [];
+        var reasonCode = metric && metric.reason_code ? String(metric.reason_code) : '';
+        var reasonCodes = Array.isArray(metric && metric.reason_codes) ? metric.reason_codes : [];
+        return reasons.concat(reasonCodes).concat([reasonCode]).join(' | ');
+    }
+    function _fatigueReviewEfficiencyBaselineInsufficient(metric) {
+        var text = _fatigueReviewMetricReasonText(metric);
+        return /insufficient_efficiency_baseline|baseline.*insufficient|insufficient.*baseline|history.*baseline/i.test(text);
+    }
+    function _fatigueReviewCadencePartialLowConfidence(metric) {
+        var text = _fatigueReviewMetricReasonText(metric);
+        return !!(
+            metric
+            && (metric.status === 'partial' || metric.confidence === 'low')
+            && /intermittent_cadence_pattern|variable_cadence_pattern|cadence_cv/i.test(text)
+        );
+    }
+    function _fatigueReviewMetricSupplementCopy(metricKey, state, sportGroup, metric) {
+        if (metricKey === 'efficiency' && _fatigueReviewEfficiencyBaselineInsufficient(metric)) {
+            return '本次心率和配速可用，但缺少足够历史对照，暂不做转化效率评分。';
+        }
+        if (metricKey === 'cadence_stability' && _fatigueReviewCadencePartialLowConfidence(metric)) {
+            return '有步频记录，但节奏波动过大，本次只保留为低置信度参考。';
+        }
+        return _fatigueReviewMetricCopy(metricKey, state, sportGroup);
+    }
+    function _fatigueReviewMetricStatusLabel(metricKey, missing, fallbackStatus, metric) {
+        if (!missing) return fallbackStatus;
+        if (metricKey === 'efficiency' && _fatigueReviewEfficiencyBaselineInsufficient(metric)) return '历史不足';
+        if (metricKey === 'cadence_stability' && _fatigueReviewCadencePartialLowConfidence(metric)) return '不适合评分';
+        if (metricKey === 'cadence_stability') return '设备未记录';
+        return '数据不足';
+    }
     function _fatigueReviewPctVal(v) {
         if (v == null || isNaN(v)) return '--';
         return Number(v).toFixed(1) + '%';
@@ -25403,21 +25437,13 @@ function stopLLMHeartbeat() {
         return '心率后半程约上浮 ' + _fatigueReviewPctVal(hrDrift && hrDrift.pct);
     }
     function _fatigueReviewMetricMissingReason(metricKey, metric) {
-        var reasons = Array.isArray(metric && metric.reasons) ? metric.reasons : [];
-        var reasonCode = metric && metric.reason_code ? String(metric.reason_code) : '';
-        var reasonCodes = Array.isArray(metric && metric.reason_codes) ? metric.reason_codes : [];
-        var text = reasons.concat(reasonCodes).concat([reasonCode]).join(' | ');
+        var text = _fatigueReviewMetricReasonText(metric);
         var basis = String(metric && metric.basis || '').toLowerCase();
         var isPowerEfficiency = metricKey === 'power_efficiency' || (metricKey === 'efficiency' && basis === 'power_hr');
         var isPowerRetention = metricKey === 'power_retention' || (metricKey === 'durability' && basis === 'power_retention');
         var isPowerMetric = isPowerEfficiency || isPowerRetention || metricKey === 'power_variability';
         var isPedalingMetric = metricKey === 'pedaling_stability';
-        if (
-            metricKey === 'efficiency'
-            && !isPowerEfficiency
-            && (/insufficient_efficiency_baseline|baseline.*insufficient|insufficient.*baseline|history.*baseline/i.test(text)
-                || (metric && metric.score == null && metric.confidence === 'low' && Number(metric.sample_size || 0) < 3))
-        ) return '历史对照样本不足';
+        if (metricKey === 'efficiency' && !isPowerEfficiency && _fatigueReviewEfficiencyBaselineInsufficient(metric)) return '历史对照样本不足';
         if (metricKey === 'efficiency' && /missing avg_hr|missing_hr|avg_hr|heart/i.test(text)) return '心率数据不足';
         if (isPowerRetention && /power data unavailable|insufficient_points|points<20|valid.*<20/i.test(text)) return '功率曲线样本不足';
         if (metricKey === 'durability' && !isPowerRetention && /records<20|points<20|samples<20|valid.*<20|insufficient_points/i.test(text)) return '有效速度样本不足 20 个';
@@ -25429,7 +25455,7 @@ function stopLLMHeartbeat() {
         if (/duration<15min|duration < 15min/.test(text)) return '活动时长小于 15 分钟';
         if (/duration<5min|duration < 5min/.test(text)) return '活动时长小于 5 分钟';
         if (/pace_cv/.test(text)) return metricKey === 'hr_drift' ? '本次变速或停顿较多，不能可靠判断心率漂移' : '节奏波动较大，不适合计算';
-        if (metricKey === 'cadence_stability' && /intermittent_cadence_pattern|variable_cadence_pattern|cadence_cv/i.test(text)) return '节奏变化较大，不适合稳定性评分';
+        if (metricKey === 'cadence_stability' && _fatigueReviewCadencePartialLowConfidence(metric)) return '节奏变化较大，不适合稳定性评分';
         if (/records<20|points<20|samples<20|valid.*<20/.test(text)) return '有效采样点不足 20 个';
         if (/missing_hr|avg_hr|max_hr|heart/i.test(text)) return '心率数据不足';
         if (/missing_pace|pace/i.test(text)) return '配速数据不足';
@@ -25450,8 +25476,12 @@ function stopLLMHeartbeat() {
         };
         return defaults[metricKey] || '数据不足，暂时不能计算';
     }
-    function _fatigueReviewMetricHeadline(kind, level, missing, isRisk, count) {
-        if (missing) return '不适合判断';
+    function _fatigueReviewMetricHeadline(kind, level, missing, isRisk, count, metric) {
+        if (missing) {
+            if (kind === 'efficiency' && _fatigueReviewEfficiencyBaselineInsufficient(metric)) return '缺少历史对照';
+            if (kind === 'cadence_stability' && _fatigueReviewCadencePartialLowConfidence(metric)) return '不适合评分';
+            return '不适合判断';
+        }
         var normalized = String(level || '').toLowerCase();
         if (kind === 'decoupling') {
             if (/^(excellent|good|stable|low|very_low)$/.test(normalized)) return '后程效率稳定';
@@ -26252,10 +26282,10 @@ function stopLLMHeartbeat() {
         var effState = _fatigueReviewMetricState(effMissing, eff.level);
         setMetricCard(
             'fr-efficiency-score', 'fr-efficiency-status', 'fr-efficiency-sub',
-            _fatigueReviewMetricHeadline('efficiency', eff.level, effMissing),
-            effMissing ? '数据不足' : effStatus,
+            _fatigueReviewMetricHeadline('efficiency', eff.level, effMissing, false, null, eff),
+            _fatigueReviewMetricStatusLabel('efficiency', effMissing, effStatus, eff),
             levelTone(eff.level, effMissing),
-            (effMissing ? _fatigueReviewMetricMissingReason('efficiency', eff) : _fatigueReviewMetricEvidence('评分', eff.score, '')) + '。' + _fatigueReviewMetricCopy('efficiency', effState, sportGroup)
+            (effMissing ? _fatigueReviewMetricMissingReason('efficiency', eff) : _fatigueReviewMetricEvidence('评分', eff.score, '')) + '。' + _fatigueReviewMetricSupplementCopy('efficiency', effState, sportGroup, eff)
         );
 
         // V7.11 指标 7:Durability Index 渲染
@@ -26275,16 +26305,15 @@ function stopLLMHeartbeat() {
         // V7.12 指标 8:Cadence Stability 渲染
         // §5.4 AI 边界:cadence_stability 仅前端展示,不进入 AI prompt
         var cadStab = metrics.cadence_stability || {};
-        var cadPartial = cadStab.status === 'partial' || cadStab.confidence === 'low';
         var cadMissing = !metrics.cadence_stability || cadStab.confidence === 'unavailable' || cadStab.score == null;
         var cadStatus = levelText(cadStab.level, {excellent:'极佳', good:'良好', warn:'轻度波动', bad:'明显波动', unknown:'未知'});
         var cadState = _fatigueReviewMetricState(cadMissing, cadStab.level);
         setMetricCard(
             'fr-cadence-stability-score', 'fr-cadence-stability-status', 'fr-cadence-stability-sub',
-            _fatigueReviewMetricHeadline('cadence_stability', cadStab.level, cadMissing),
-            cadMissing ? (cadPartial ? '不适合评分' : '设备未记录') : cadStatus,
+            _fatigueReviewMetricHeadline('cadence_stability', cadStab.level, cadMissing, false, null, cadStab),
+            _fatigueReviewMetricStatusLabel('cadence_stability', cadMissing, cadStatus, cadStab),
             levelTone(cadStab.level, cadMissing),
-            (cadMissing ? _fatigueReviewMetricMissingReason('cadence_stability', cadStab) : _fatigueReviewMetricEvidence('评分', cadStab.score, '')) + '。' + _fatigueReviewMetricCopy('cadence_stability', cadState, sportGroup)
+            (cadMissing ? _fatigueReviewMetricMissingReason('cadence_stability', cadStab) : _fatigueReviewMetricEvidence('评分', cadStab.score, '')) + '。' + _fatigueReviewMetricSupplementCopy('cadence_stability', cadState, sportGroup, cadStab)
         );
 
         // V7.13 指标 9:Training Load 渲染

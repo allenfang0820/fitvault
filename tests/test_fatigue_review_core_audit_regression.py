@@ -43,6 +43,15 @@ def _extract_js_function(source: str, name: str) -> str:
     raise AssertionError(f"unterminated JS function: {name}")
 
 
+def _fatigue_review_missing_reason_js(source: str) -> str:
+    return (
+        _extract_js_function(source, "_fatigueReviewMetricReasonText")
+        + "\n" + _extract_js_function(source, "_fatigueReviewEfficiencyBaselineInsufficient")
+        + "\n" + _extract_js_function(source, "_fatigueReviewCadencePartialLowConfidence")
+        + "\n" + _extract_js_function(source, "_fatigueReviewMetricMissingReason")
+    )
+
+
 class TestFRCore00HistoricalTimeContract(unittest.TestCase):
     def _make_db(self) -> str:
         fd, path = tempfile.mkstemp(prefix="fr_core00_", suffix=".sqlite")
@@ -302,9 +311,8 @@ class TestFRCore00FrontendCopyContract(unittest.TestCase):
             self.skipTest("node is required for JS semantic execution")
 
         source = _read_text(TRACK_HTML)
-        fn = _extract_js_function(source, "_fatigueReviewMetricMissingReason")
         script = (
-            fn
+            _fatigue_review_missing_reason_js(source)
             + "\nconst result = _fatigueReviewMetricMissingReason('durability', "
             + "{confidence:'unavailable', reasons:['points<20']});\n"
             + "process.stdout.write(result);"
@@ -320,9 +328,8 @@ class TestFRCore00FrontendCopyContract(unittest.TestCase):
             self.skipTest("node is required for JS semantic execution")
 
         source = _read_text(TRACK_HTML)
-        fn = _extract_js_function(source, "_fatigueReviewMetricMissingReason")
         script = (
-            fn
+            _fatigue_review_missing_reason_js(source)
             + "\nconst result = _fatigueReviewMetricMissingReason('durability', "
             + "{basis:'power_retention', confidence:'unavailable', reasons:['points<20']});\n"
             + "process.stdout.write(result);"
@@ -338,9 +345,8 @@ class TestFRCore00FrontendCopyContract(unittest.TestCase):
             self.skipTest("node is required for JS semantic execution")
 
         source = _read_text(TRACK_HTML)
-        fn = _extract_js_function(source, "_fatigueReviewMetricMissingReason")
         script = (
-            fn
+            _fatigue_review_missing_reason_js(source)
             + "\nconst result = _fatigueReviewMetricMissingReason('cadence_stability', "
             + "{status:'partial', confidence:'low', reasons:['intermittent_cadence_pattern']});\n"
             + "process.stdout.write(result);"
@@ -356,21 +362,84 @@ class TestFRCore00FrontendCopyContract(unittest.TestCase):
             self.skipTest("node is required for JS semantic execution")
 
         source = _read_text(TRACK_HTML)
-        fn = _extract_js_function(source, "_fatigueReviewMetricMissingReason")
         script = (
-            fn
+            _fatigue_review_missing_reason_js(source)
             + "\nconst result = _fatigueReviewMetricMissingReason('efficiency', "
             + "{score:null, confidence:'low', sample_size:0, reason_code:'insufficient_efficiency_baseline'});\n"
-            + "const legacyResult = _fatigueReviewMetricMissingReason('efficiency', "
+            + "const noBackendReasonResult = _fatigueReviewMetricMissingReason('efficiency', "
             + "{score:null, confidence:'low', sample_size:0});\n"
-            + "process.stdout.write(result + '\\n' + legacyResult);"
+            + "process.stdout.write(result + '\\n' + noBackendReasonResult);"
         )
         result = subprocess.check_output([node, "-e", script], text=True)
 
         self.assertIn("历史对照样本不足", result)
-        self.assertEqual(result.count("历史对照样本不足"), 2)
+        self.assertEqual(result.count("历史对照样本不足"), 1)
         self.assertNotIn("心率数据不足", result)
         self.assertNotIn("配速数据不足", result)
+
+    def test_efficiency_baseline_missing_headline_and_supplement_do_not_claim_current_data_missing(self):
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node is required for JS semantic execution")
+
+        source = _read_text(TRACK_HTML)
+        script = (
+            _extract_js_function(source, "_fatigueReviewMetricReasonText")
+            + "\n" + _extract_js_function(source, "_fatigueReviewEfficiencyBaselineInsufficient")
+            + "\n" + _extract_js_function(source, "_fatigueReviewCadencePartialLowConfidence")
+            + "\n" + _extract_js_function(source, "_fatigueReviewMetricSupplementCopy")
+            + "\n" + _extract_js_function(source, "_fatigueReviewMetricStatusLabel")
+            + "\n" + _extract_js_function(source, "_fatigueReviewMetricHeadline")
+            + "\nconst metric = {score:null, confidence:'low', sample_size:0, reason_code:'insufficient_efficiency_baseline'};\n"
+            + "const headline = _fatigueReviewMetricHeadline('efficiency', 'unknown', true, false, null, metric);\n"
+            + "const status = _fatigueReviewMetricStatusLabel('efficiency', true, '未知', metric);\n"
+            + "const supplement = _fatigueReviewMetricSupplementCopy('efficiency', 'missing', 'running', metric);\n"
+            + "process.stdout.write(headline + '\\n' + status + '\\n' + supplement);"
+        )
+        result = subprocess.check_output([node, "-e", script], text=True)
+
+        self.assertIn("缺少历史对照", result)
+        self.assertIn("历史不足", result)
+        self.assertIn("缺少足够历史对照", result)
+        self.assertNotIn("当前数据不足", result)
+        self.assertNotIn("心率数据不足", result)
+        self.assertNotIn("配速数据不足", result)
+
+    def test_frontend_efficiency_copy_only_translates_backend_reason_not_sample_size(self):
+        source = _read_text(TRACK_HTML)
+        helper = _extract_js_function(source, "_fatigueReviewEfficiencyBaselineInsufficient")
+
+        self.assertIn("insufficient_efficiency_baseline", helper)
+        self.assertNotIn("sample_size", helper)
+        self.assertNotIn("score == null", helper)
+
+    def test_low_confidence_cadence_headline_and_supplement_do_not_claim_device_missing(self):
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node is required for JS semantic execution")
+
+        source = _read_text(TRACK_HTML)
+        script = (
+            _extract_js_function(source, "_fatigueReviewMetricReasonText")
+            + "\n" + _extract_js_function(source, "_fatigueReviewEfficiencyBaselineInsufficient")
+            + "\n" + _extract_js_function(source, "_fatigueReviewCadencePartialLowConfidence")
+            + "\n" + _extract_js_function(source, "_fatigueReviewMetricSupplementCopy")
+            + "\n" + _extract_js_function(source, "_fatigueReviewMetricStatusLabel")
+            + "\n" + _extract_js_function(source, "_fatigueReviewMetricHeadline")
+            + "\nconst metric = {status:'partial', confidence:'low', reasons:['intermittent_cadence_pattern']};\n"
+            + "const headline = _fatigueReviewMetricHeadline('cadence_stability', 'unknown', true, false, null, metric);\n"
+            + "const status = _fatigueReviewMetricStatusLabel('cadence_stability', true, '未知', metric);\n"
+            + "const supplement = _fatigueReviewMetricSupplementCopy('cadence_stability', 'missing', 'running', metric);\n"
+            + "process.stdout.write(headline + '\\n' + status + '\\n' + supplement);"
+        )
+        result = subprocess.check_output([node, "-e", script], text=True)
+
+        self.assertIn("不适合评分", result)
+        self.assertIn("有步频记录", result)
+        self.assertIn("节奏波动过大", result)
+        self.assertNotIn("设备没记到", result)
+        self.assertNotIn("设备未记录", result)
+        self.assertNotIn("步频记录不足", result)
 
 
 class TestFRCore00ContractDocs(unittest.TestCase):
