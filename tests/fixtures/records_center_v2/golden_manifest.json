@@ -34,12 +34,6 @@
     ]
   },
   "defaults": {
-    "route_match": {
-      "start_end_tolerance_m": 100,
-      "length_tolerance_ratio": 0.05,
-      "min_track_coverage_ratio": 0.95,
-      "min_corridor_overlap_ratio": 0.85
-    },
     "open_water_distance_tolerance_ratio": 0.05,
     "power_stream": {
       "max_gap_sec": 5,
@@ -188,6 +182,50 @@
       }
     },
     {
+      "case_id": "trail_activity_total_candidate_only",
+      "sport": "trail_running",
+      "source_mode": "activity_total",
+      "purpose": "Trail running current Records Center scope covers whole-activity records only; route/segment/Pace-GAP are out of scope.",
+      "activity": {
+        "activity_id": "fixture:trail:activity_total",
+        "sport_type": "trail_running",
+        "sub_sport_type": "generic",
+        "distance_m": 32000,
+        "duration_sec": 21600,
+        "gain_m": 1800,
+        "max_alt_m": 2450
+      },
+      "input": {
+        "track_points": [
+          {"d": 0, "t": 0, "alt_m": 600},
+          {"d": 6000, "t": 4200, "alt_m": 1100},
+          {"d": 11000, "t": 7800, "alt_m": 1650},
+          {"d": 17000, "t": 12000, "alt_m": 2450},
+          {"d": 24000, "t": 16800, "alt_m": 1500},
+          {"d": 32000, "t": 21600, "alt_m": 900}
+        ]
+      },
+      "expected": {
+        "quality": "candidate",
+        "candidate_only": true,
+        "reason_codes": ["real_data_sample_missing"],
+        "current_record_keys": [
+          "trail_longest_distance",
+          "trail_max_ascent",
+          "trail_longest_elapsed_time",
+          "trail_max_altitude",
+          "trail_max_single_climb"
+        ],
+        "excluded_record_keys": [
+          "trail_route_best_time",
+          "trail_segment_best_time",
+          "trail_climb_segment_best_time"
+        ],
+        "route_segment_pr": false,
+        "pace_gap_curve": false
+      }
+    },
+    {
       "case_id": "pool_swim_25m_freestyle_with_rest",
       "sport": "swimming",
       "source_mode": "best_effort_distance",
@@ -277,52 +315,6 @@
         "quality": "candidate",
         "reason_codes": ["open_water_gps_unreliable"],
         "candidate_only": true
-      }
-    },
-    {
-      "case_id": "trail_route_same_reverse_low_overlap",
-      "sport": "trail_running",
-      "source_mode": "route_total",
-      "purpose": "Route matching fixtures for same direction, reverse direction, and low overlap.",
-      "activity": {
-        "activity_id": "fixture:trail:route_target",
-        "sport_type": "trail_running",
-        "sub_sport_type": "generic",
-        "distance_m": 10000,
-        "duration_sec": 5400,
-        "gain_m": 720
-      },
-      "input": {
-        "target_route_xy": [[0, 0], [1000, 0], [2000, 300], [3000, 900], [4200, 1200], [5600, 1300], [7000, 1000], [8600, 400], [10000, 0]],
-        "comparison_routes": [
-          {
-            "route_id": "same_direction",
-            "points_xy": [[5, 4], [1005, 8], [1995, 305], [3002, 902], [4200, 1190], [5605, 1302], [7003, 998], [8604, 402], [10002, 2]]
-          },
-          {
-            "route_id": "reverse_direction",
-            "points_xy": [[10002, 2], [8604, 402], [7003, 998], [5605, 1302], [4200, 1190], [3002, 902], [1995, 305], [1005, 8], [5, 4]]
-          },
-          {
-            "route_id": "low_overlap",
-            "points_xy": [[0, 0], [1000, -800], [2000, -1200], [3000, -900], [4200, -700], [5600, -500], [7000, -300], [8600, -100], [10000, 0]]
-          }
-        ]
-      },
-      "expected": {
-        "same_direction": {
-          "route_match": true,
-          "candidate_only": true,
-          "reason_codes": ["real_data_sample_missing"]
-        },
-        "reverse_direction": {
-          "route_match": false,
-          "reason_codes": ["route_direction_mismatch"]
-        },
-        "low_overlap": {
-          "route_match": false,
-          "reason_codes": ["route_match_low_overlap"]
-        }
       }
     }
   ]

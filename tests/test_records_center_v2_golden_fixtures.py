@@ -44,8 +44,11 @@ def test_records_center_v2_golden_manifest_covers_required_edge_cases():
         "pool_length_missing",
         "swim_stroke_unknown",
         "open_water_gps_unreliable",
-        "route_direction_mismatch",
-        "route_match_low_overlap",
+        "trail_activity_total_candidate_only",
+        "trail_max_single_climb",
+        "trail_route_best_time",
+        "route_segment_pr",
+        "pace_gap_curve",
         "real_data_sample_missing",
     ]
     for token in required_tokens:
@@ -83,6 +86,8 @@ def test_records_center_v2_golden_manifest_documents_candidate_only_limits():
     by_id = {case["case_id"]: case for case in manifest["cases"]}
 
     assert by_id["pool_swim_missing_pool_length_unknown_stroke"]["expected"]["candidate_only"] is True
-    assert by_id["trail_route_same_reverse_low_overlap"]["expected"]["same_direction"]["candidate_only"] is True
+    assert by_id["trail_activity_total_candidate_only"]["expected"]["candidate_only"] is True
+    assert by_id["trail_activity_total_candidate_only"]["expected"]["route_segment_pr"] is False
+    assert by_id["trail_activity_total_candidate_only"]["expected"]["pace_gap_curve"] is False
     assert "must_not_default_pool_length_m" in by_id["pool_swim_missing_pool_length_unknown_stroke"]["expected"]
     assert by_id["open_water_750m_boundary_and_gps_jump"]["expected"]["boundary_is_inclusive"] is True

@@ -3535,1064 +3535,6 @@ def apply_trail_activity_total_records(
     return {"ok": True, "dry_run": False, "applied_count": len(results), "summary": summary, "results": results, "skipped": plan["skipped"]}
 
 
-TRAIL_ROUTE_SIGNATURE_VERSION = "trail-route-signature-v1"
-TRAIL_ROUTE_MATCH_VERSION = "trail-route-match-v1"
-TRAIL_ROUTE_MATCH_DEFAULT_CONFIG = {
-    "start_end_tolerance_m": 100.0,
-    "length_tolerance_ratio": 0.05,
-    "min_track_coverage_ratio": 0.95,
-    "min_corridor_overlap_ratio": 0.85,
-    "corridor_tolerance_m": 100.0,
-    "resample_step_m": 100.0,
-    "max_time_gap_sec": 300.0,
-    "max_gps_jump_distance_m": 2500.0,
-}
-TRAIL_ROUTE_SAFE_JSON_FORBIDDEN_KEYS = ACS_PUBLIC_METADATA_FORBIDDEN_KEYS | {
-    "absolute_path",
-    "account",
-    "account_id",
-    "api_key",
-    "authorization",
-    "device",
-    "device_id",
-    "device_identifier",
-    "device_name",
-    "device_serial",
-    "fit_file",
-    "full_track",
-    "gps_points",
-    "latitude",
-    "longitude",
-    "lat",
-    "lon",
-    "lng",
-    "local_path",
-    "path",
-    "polyline",
-    "encoded_polyline",
-    "coordinates",
-    "geometry",
-    "points",
-    "points_xy",
-    "raw_fit",
-    "raw_path",
-    "raw_points",
-    "real_lat",
-    "real_lon",
-    "samples",
-    "serial_number",
-    "storage_ref",
-    "token",
-    "track",
-    "track_json",
-    "track_points",
-    "user_id",
-    "weight",
-    "weight_history",
-}
-
-
-def _assert_trail_route_safe_json(value: Any, *, path: str = "route") -> None:
-    if isinstance(value, dict):
-        for key, child in value.items():
-            clean_key = str(key or "").strip()
-            normalized_key = clean_key.lower()
-            if normalized_key in TRAIL_ROUTE_SAFE_JSON_FORBIDDEN_KEYS:
-                raise ValueError(f"{path}.{clean_key} is not allowed in route derived data")
-            if isinstance(child, str) and _looks_like_local_path(child):
-                raise ValueError(f"{path}.{clean_key} must not contain a local path")
-            _assert_trail_route_safe_json(child, path=f"{path}.{clean_key}" if clean_key else path)
-        return
-    if isinstance(value, list):
-        for index, child in enumerate(value):
-            _assert_trail_route_safe_json(child, path=f"{path}[{index}]")
-        return
-    if isinstance(value, str) and _looks_like_local_path(value):
-        raise ValueError(f"{path} must not contain a local path")
-
-
-def _trail_route_match_config(config: dict[str, Any] | None = None) -> dict[str, float]:
-    merged = dict(TRAIL_ROUTE_MATCH_DEFAULT_CONFIG)
-    if isinstance(config, dict):
-        for key, value in config.items():
-            if key not in merged:
-                continue
-            parsed = _safe_float(value)
-            if parsed is not None and parsed > 0:
-                merged[key] = float(parsed)
-    return {key: float(value) for key, value in merged.items()}
-
-
-def _extract_route_xy_point(point: Any, index: int) -> dict[str, float] | None:
-    x_value = y_value = None
-    if isinstance(point, (list, tuple)) and len(point) >= 2:
-        x_value, y_value = point[0], point[1]
-    elif isinstance(point, dict):
-        x_value = point.get("x_m", point.get("x", point.get("easting_m")))
-        y_value = point.get("y_m", point.get("y", point.get("northing_m")))
-        if x_value is None or y_value is None:
-            lat = _safe_float(point.get("lat", point.get("latitude")))
-            lon = _safe_float(point.get("lon", point.get("lng", point.get("longitude"))))
-            if lat is not None and lon is not None:
-                # Internal-only coarse projection; never persisted or returned.
-                x_value = lon * 111_320.0
-                y_value = lat * 110_540.0
-    else:
-        return None
-    x = _finite_float(x_value)
-    y = _finite_float(y_value)
-    if x is None or y is None:
-        return None
-    t_sec = None
-    if isinstance(point, dict):
-        t_sec = _parse_record_timestamp_seconds(point.get("t_sec", point.get("t", point.get("time_sec", point.get("elapsed_time_sec")))))
-    return {"x": float(x), "y": float(y), "index": float(index), "t_sec": float(t_sec) if t_sec is not None else float(index)}
-
-
-def _normalize_route_points(track_points: Any) -> list[dict[str, float]]:
-    points: list[dict[str, float]] = []
-    if not isinstance(track_points, (list, tuple)):
-        return points
-    for index, raw in enumerate(track_points):
-        point = _extract_route_xy_point(raw, index)
-        if point is None:
-            continue
-        points.append(point)
-    return points
-
-
-def _route_distance(a: dict[str, float], b: dict[str, float]) -> float:
-    return ((float(a["x"]) - float(b["x"])) ** 2 + (float(a["y"]) - float(b["y"])) ** 2) ** 0.5
-
-
-def _route_hash(prefix: str, value: Any) -> str:
-    return f"{prefix}:sha256:" + hashlib.sha256(_json_dumps(value).encode("utf-8")).hexdigest()
-
-
-def _route_cell(point: dict[str, float], grid_m: float) -> tuple[int, int]:
-    grid = max(float(grid_m), 1.0)
-    return (round(float(point["x"]) / grid), round(float(point["y"]) / grid))
-
-
-def _route_cell_hash(cell: tuple[int, int], *, salt: str) -> str:
-    return _route_hash("route-cell", {"salt": salt, "cell": [int(cell[0]), int(cell[1])]})
-
-
-def _route_neighbor_cell_hashes(point: dict[str, float], *, grid_m: float, salt: str) -> list[str]:
-    base_x, base_y = _route_cell(point, grid_m)
-    hashes = [
-        _route_cell_hash((base_x + dx, base_y + dy), salt=salt)
-        for dx in (-1, 0, 1)
-        for dy in (-1, 0, 1)
-    ]
-    return sorted(set(hashes))
-
-
-def _resample_route_points(points: list[dict[str, float]], step_m: float) -> list[dict[str, float]]:
-    if len(points) < 2:
-        return list(points)
-    step = max(float(step_m), 10.0)
-    samples: list[dict[str, float]] = [dict(points[0])]
-    next_mark = step
-    travelled = 0.0
-    for start, end in zip(points, points[1:]):
-        segment_len = _route_distance(start, end)
-        if segment_len <= 0:
-            continue
-        while next_mark <= travelled + segment_len:
-            ratio = (next_mark - travelled) / segment_len
-            samples.append({
-                "x": float(start["x"]) + (float(end["x"]) - float(start["x"])) * ratio,
-                "y": float(start["y"]) + (float(end["y"]) - float(start["y"])) * ratio,
-                "t_sec": float(start.get("t_sec", 0.0)) + (float(end.get("t_sec", 0.0)) - float(start.get("t_sec", 0.0))) * ratio,
-                "index": float(start.get("index", 0.0)) + (float(end.get("index", 0.0)) - float(start.get("index", 0.0))) * ratio,
-            })
-            next_mark += step
-        travelled += segment_len
-    if _route_distance(samples[-1], points[-1]) > 1.0:
-        samples.append(dict(points[-1]))
-    return samples
-
-
-def _route_length_and_quality(points: list[dict[str, float]], config: dict[str, float]) -> dict[str, Any]:
-    if len(points) < 2:
-        return {
-            "distance_m": 0.0,
-            "track_coverage_ratio": 0.0,
-            "bad_distance_m": 0.0,
-            "reason_codes": ["route_signature_insufficient_points"],
-        }
-    total = 0.0
-    bad = 0.0
-    reason_codes: list[str] = []
-    for start, end in zip(points, points[1:]):
-        segment_len = _route_distance(start, end)
-        total += segment_len
-        dt = float(end.get("t_sec", 0.0)) - float(start.get("t_sec", 0.0))
-        if dt > float(config["max_time_gap_sec"]):
-            bad += segment_len
-            reason_codes.append("route_gps_long_gap")
-        if segment_len > float(config["max_gps_jump_distance_m"]):
-            bad += segment_len
-            reason_codes.append("route_gps_jump")
-    coverage = 0.0 if total <= 0 else max(0.0, min(1.0, 1.0 - (bad / total)))
-    return {
-        "distance_m": round(total, 3),
-        "track_coverage_ratio": round(coverage, 4),
-        "bad_distance_m": round(bad, 3),
-        "reason_codes": list(_dedupe_reason_codes(reason_codes)),
-    }
-
-
-def _safe_activity_route_distance(activity: dict[str, Any] | None, fallback_distance_m: float) -> float:
-    if isinstance(activity, dict):
-        parsed = _hiking_activity_metric_float(activity, "distance_m", "distance")
-        if parsed is not None:
-            return float(parsed)
-    return float(fallback_distance_m)
-
-
-def build_trail_route_signature(
-    *,
-    activity: dict[str, Any] | None,
-    track_points: list[Any] | tuple[Any, ...] | None,
-    config: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    """Build a privacy-safe trail route signature from in-memory Activity track facts."""
-    cfg = _trail_route_match_config(config)
-    activity = activity or {}
-    scope = _trail_activity_scope(activity)
-    if not scope.get("accepted"):
-        return {
-            "ok": False,
-            "status": "ignored",
-            "reason_codes": [str(scope.get("reason") or "record_definition_conflict")],
-            "signature": {},
-            "quality": {},
-        }
-    points = _normalize_route_points(track_points or [])
-    quality_base = _route_length_and_quality(points, cfg)
-    if len(points) < 2 or quality_base["distance_m"] <= 0:
-        return {
-            "ok": False,
-            "status": "ignored",
-            "reason_codes": quality_base["reason_codes"],
-            "signature": {},
-            "quality": quality_base,
-        }
-    route_distance_m = _safe_activity_route_distance(activity, quality_base["distance_m"])
-    step_m = float(cfg["resample_step_m"])
-    samples = _resample_route_points(points, step_m)
-    salt = f"{TRAIL_ROUTE_SIGNATURE_VERSION}:{round(float(cfg['corridor_tolerance_m']), 3)}:{round(step_m, 3)}"
-    primary_cells = [_route_cell(sample, step_m) for sample in samples]
-    primary_hashes = [_route_cell_hash(cell, salt=salt) for cell in primary_cells]
-    corridor_hashes: set[str] = set()
-    for sample in samples:
-        corridor_hashes.update(_route_neighbor_cell_hashes(sample, grid_m=step_m, salt=salt))
-    start = points[0]
-    end = points[-1]
-    start_anchor_hashes = _route_neighbor_cell_hashes(start, grid_m=float(cfg["start_end_tolerance_m"]), salt=salt)
-    end_anchor_hashes = _route_neighbor_cell_hashes(end, grid_m=float(cfg["start_end_tolerance_m"]), salt=salt)
-    start_primary_hash = _route_cell_hash(_route_cell(start, float(cfg["start_end_tolerance_m"])), salt=salt)
-    end_primary_hash = _route_cell_hash(_route_cell(end, float(cfg["start_end_tolerance_m"])), salt=salt)
-    shape_hash = _route_hash("route-shape", {
-        "version": TRAIL_ROUTE_SIGNATURE_VERSION,
-        "cells": primary_hashes,
-        "distance_bucket_m": round(route_distance_m / 100.0) * 100,
-    })
-    reverse_shape_hash = _route_hash("route-shape", {
-        "version": TRAIL_ROUTE_SIGNATURE_VERSION,
-        "cells": list(reversed(primary_hashes)),
-        "distance_bucket_m": round(route_distance_m / 100.0) * 100,
-    })
-    is_loop = bool(set(start_anchor_hashes) & set(end_anchor_hashes))
-    endpoint_pair = sorted([start_primary_hash, end_primary_hash]) if is_loop else [start_primary_hash, end_primary_hash]
-    route_key = _route_hash("route-key", {
-        "version": TRAIL_ROUTE_SIGNATURE_VERSION,
-        "sport": "trail_running",
-        "endpoint_pair": sorted([start_primary_hash, end_primary_hash]),
-        "shape_hash": min(shape_hash, reverse_shape_hash),
-        "distance_bucket_m": round(route_distance_m / 100.0) * 100,
-    })
-    direction_key = _route_hash("route-direction", {
-        "version": TRAIL_ROUTE_SIGNATURE_VERSION,
-        "mode": "loop" if is_loop else "point_to_point",
-        "endpoint_pair": endpoint_pair,
-        "shape_hash": shape_hash,
-    })
-    signature = {
-        "signature_version": TRAIL_ROUTE_SIGNATURE_VERSION,
-        "route_key": route_key,
-        "direction_key": direction_key,
-        "sport": "trail_running",
-        "distance_m": round(route_distance_m, 3),
-        "computed_track_distance_m": quality_base["distance_m"],
-        "start_anchor_hashes": start_anchor_hashes,
-        "end_anchor_hashes": end_anchor_hashes,
-        "shape_hash": shape_hash,
-        "reverse_shape_hash": reverse_shape_hash,
-        "route_sample_hashes": sorted(set(primary_hashes)),
-        "corridor_hashes": sorted(corridor_hashes),
-        "sample_count": len(samples),
-        "source_point_count": len(points),
-        "grid_step_m": step_m,
-        "corridor_tolerance_m": float(cfg["corridor_tolerance_m"]),
-        "is_loop_or_out_and_back": is_loop,
-        "privacy": "hashed_derived_signature_only",
-    }
-    quality = {
-        "track_coverage_ratio": quality_base["track_coverage_ratio"],
-        "bad_distance_m": quality_base["bad_distance_m"],
-        "reason_codes": list(quality_base["reason_codes"]),
-        "log_safety": "hashed_route_signature_only",
-        "candidate_only": True,
-    }
-    if quality["track_coverage_ratio"] < float(cfg["min_track_coverage_ratio"]):
-        quality["reason_codes"] = list(_dedupe_reason_codes([*quality["reason_codes"], "route_track_low_coverage"]))
-    _assert_trail_route_safe_json(signature, path="route_signature")
-    _assert_trail_route_safe_json(quality, path="route_quality")
-    return {
-        "ok": True,
-        "status": "candidate",
-        "activity_id": str(activity.get("activity_id") or activity.get("id") or ""),
-        "sport": "trail_running",
-        "route_key": route_key,
-        "direction_key": direction_key,
-        "distance_m": round(route_distance_m, 3),
-        "duration_sec": _safe_int(activity.get("elapsed_time_sec") or activity.get("duration_sec") or activity.get("duration"), 0),
-        "ascent_m": _hiking_activity_metric_float(activity, "ascent_m", "total_ascent", "gain_m", "elevation_gain_m", "elevation_gain"),
-        "signature": signature,
-        "quality": quality,
-        "config": {
-            "start_end_tolerance_m": float(cfg["start_end_tolerance_m"]),
-            "length_tolerance_ratio": float(cfg["length_tolerance_ratio"]),
-            "min_track_coverage_ratio": float(cfg["min_track_coverage_ratio"]),
-            "min_corridor_overlap_ratio": float(cfg["min_corridor_overlap_ratio"]),
-        },
-    }
-
-
-def _signature_dict(value: Any) -> dict[str, Any]:
-    if isinstance(value, dict) and isinstance(value.get("signature"), dict):
-        return value["signature"]
-    return value if isinstance(value, dict) else {}
-
-
-def _signature_hash_set(signature: dict[str, Any], key: str) -> set[str]:
-    raw = signature.get(key)
-    if not isinstance(raw, list):
-        return set()
-    return {str(item) for item in raw if str(item or "").strip()}
-
-
-def _route_anchor_intersects(a: dict[str, Any], a_key: str, b: dict[str, Any], b_key: str) -> bool:
-    return bool(_signature_hash_set(a, a_key) & _signature_hash_set(b, b_key))
-
-
-def _route_signature_direction(target: dict[str, Any], comparison: dict[str, Any]) -> str:
-    target_loop = bool(target.get("is_loop_or_out_and_back"))
-    comparison_loop = bool(comparison.get("is_loop_or_out_and_back"))
-    if target_loop and comparison_loop and _route_anchor_intersects(target, "start_anchor_hashes", comparison, "start_anchor_hashes"):
-        return "loop"
-    same = (
-        _route_anchor_intersects(target, "start_anchor_hashes", comparison, "start_anchor_hashes")
-        and _route_anchor_intersects(target, "end_anchor_hashes", comparison, "end_anchor_hashes")
-    )
-    reverse = (
-        _route_anchor_intersects(target, "start_anchor_hashes", comparison, "end_anchor_hashes")
-        and _route_anchor_intersects(target, "end_anchor_hashes", comparison, "start_anchor_hashes")
-    )
-    if same:
-        return "same"
-    if reverse:
-        return "reverse"
-    return "unknown"
-
-
-def match_trail_route_signatures(
-    target_signature: dict[str, Any],
-    comparison_signature: dict[str, Any],
-    *,
-    config: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    """Compare two safe trail route signatures without requiring raw track points."""
-    cfg = _trail_route_match_config(config)
-    target = _signature_dict(target_signature)
-    comparison = _signature_dict(comparison_signature)
-    reason_codes: list[str] = []
-    target_samples = _signature_hash_set(target, "route_sample_hashes")
-    comparison_samples = _signature_hash_set(comparison, "route_sample_hashes")
-    target_corridor = _signature_hash_set(target, "corridor_hashes")
-    comparison_corridor = _signature_hash_set(comparison, "corridor_hashes")
-    target_distance = _safe_float(target.get("distance_m")) or 0.0
-    comparison_distance = _safe_float(comparison.get("distance_m")) or 0.0
-    length_error_ratio = 1.0
-    if target_distance > 0 and comparison_distance > 0:
-        length_error_ratio = abs(target_distance - comparison_distance) / max(target_distance, comparison_distance)
-    target_coverage = len(target_samples & comparison_corridor) / len(target_samples) if target_samples else 0.0
-    comparison_coverage = len(comparison_samples & target_corridor) / len(comparison_samples) if comparison_samples else 0.0
-    coverage_ratio = min(target_coverage, comparison_coverage)
-    overlap_ratio = (target_coverage + comparison_coverage) / 2.0
-    direction = _route_signature_direction(target, comparison)
-    target_quality = target_signature.get("quality") if isinstance(target_signature.get("quality"), dict) else {}
-    comparison_quality = comparison_signature.get("quality") if isinstance(comparison_signature.get("quality"), dict) else {}
-    track_coverage = min(
-        _safe_float(target_quality.get("track_coverage_ratio")) or 0.0,
-        _safe_float(comparison_quality.get("track_coverage_ratio")) or 0.0,
-    )
-    if direction == "reverse":
-        reason_codes.append("route_direction_mismatch")
-    elif direction == "unknown":
-        reason_codes.append("route_endpoint_mismatch")
-    if length_error_ratio > float(cfg["length_tolerance_ratio"]):
-        reason_codes.append("route_length_mismatch")
-    if track_coverage < float(cfg["min_track_coverage_ratio"]):
-        reason_codes.append("route_track_low_coverage")
-    if overlap_ratio < float(cfg["min_corridor_overlap_ratio"]):
-        reason_codes.append("route_match_low_overlap")
-    hard_blocked = any(
-        code in set(reason_codes)
-        for code in (
-            "route_direction_mismatch",
-            "route_endpoint_mismatch",
-            "route_length_mismatch",
-            "route_track_low_coverage",
-            "route_match_low_overlap",
-        )
-    )
-    if not hard_blocked:
-        reason_codes.append("real_data_sample_missing")
-    match_score = max(0.0, min(1.0, (overlap_ratio * 0.6) + (coverage_ratio * 0.25) + ((1.0 - min(length_error_ratio, 1.0)) * 0.15)))
-    result = {
-        "match_version": TRAIL_ROUTE_MATCH_VERSION,
-        "route_key": str(target.get("route_key") or ""),
-        "direction": direction,
-        "match_score": round(match_score, 4),
-        "coverage_ratio": round(coverage_ratio, 4),
-        "overlap_ratio": round(overlap_ratio, 4),
-        "length_error_ratio": round(length_error_ratio, 4),
-        "decision": "ignored" if hard_blocked else "candidate",
-        "candidate_only": True,
-        "reason_codes": list(_dedupe_reason_codes(reason_codes)),
-        "privacy": "hashed_route_signature_only",
-    }
-    _assert_trail_route_safe_json(result, path="route_match")
-    return result
-
-
-def build_trail_route_candidate_plan(
-    *,
-    activity: dict[str, Any] | None,
-    track_points: list[Any] | tuple[Any, ...] | None,
-    comparison_routes: list[dict[str, Any]] | tuple[dict[str, Any], ...] | None = None,
-    config: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    target = build_trail_route_signature(activity=activity, track_points=track_points, config=config)
-    if not target.get("ok"):
-        return {"ok": False, "signature": target, "matches": [], "candidate_count": 0, "skipped": target.get("reason_codes", [])}
-    matches: list[dict[str, Any]] = []
-    for item in comparison_routes or []:
-        comparison = item.get("signature") if isinstance(item.get("signature"), dict) else None
-        if comparison is None:
-            comparison = build_trail_route_signature(
-                activity=item.get("activity") if isinstance(item.get("activity"), dict) else {"activity_id": item.get("activity_id"), "sport_type": "trail_running"},
-                track_points=item.get("track_points") or item.get("points_xy") or item.get("points"),
-                config=config,
-            )
-        match = match_trail_route_signatures(target, comparison, config=config)
-        match["activity_id"] = str(target.get("activity_id") or "")
-        item_activity = item.get("activity") if isinstance(item.get("activity"), dict) else {}
-        match["matched_activity_id"] = str(item.get("activity_id") or item_activity.get("activity_id") or comparison.get("activity_id") or "")
-        matches.append(match)
-    return {
-        "ok": True,
-        "signature": target,
-        "matches": matches,
-        "candidate_count": sum(1 for match in matches if match.get("decision") == "candidate"),
-        "candidate_only": True,
-    }
-
-
-def _trail_elapsed_time_sec(activity: dict[str, Any] | None, *extra_values: Any) -> float | None:
-    for value in extra_values:
-        parsed = _finite_float(value)
-        if parsed is not None and parsed > 0:
-            return float(parsed)
-    if isinstance(activity, dict):
-        for key in ("elapsed_time_sec", "duration_sec", "timer_time_sec", "duration"):
-            parsed = _finite_float(activity.get(key))
-            if parsed is not None and parsed > 0:
-                return float(parsed)
-    return None
-
-
-def _trail_segment_key(value: Any) -> str:
-    text = str(value or "").strip()
-    if not text:
-        raise ValueError("segment_key is required")
-    return text
-
-
-def _trail_segment_elapsed(segment: dict[str, Any]) -> float | None:
-    elapsed = _trail_elapsed_time_sec(
-        None,
-        segment.get("elapsed_time_sec"),
-        segment.get("duration_sec"),
-        segment.get("timer_time_sec"),
-        segment.get("duration"),
-    )
-    if elapsed is not None:
-        return elapsed
-    start = _safe_float(segment.get("start_sec"))
-    end = _safe_float(segment.get("end_sec"))
-    if start is not None and end is not None and end > start:
-        return float(end - start)
-    return None
-
-
-def _trail_segment_range(segment: dict[str, Any]) -> dict[str, Any]:
-    segment_key = _trail_segment_key(segment.get("segment_key") or segment.get("id") or segment.get("key"))
-    start_sec = _safe_float(segment.get("start_sec"))
-    end_sec = _safe_float(segment.get("end_sec"))
-    duration_sec = _trail_segment_elapsed(segment)
-    range_data: dict[str, Any] = {
-        "segment_key": segment_key,
-        "duration_sec": duration_sec,
-    }
-    for key in ("start_distance_m", "end_distance_m", "distance_m"):
-        parsed = _safe_float(segment.get(key))
-        if parsed is not None:
-            range_data[key] = round(parsed, 3)
-    if start_sec is not None:
-        range_data["start_sec"] = round(start_sec, 3)
-    if end_sec is not None:
-        range_data["end_sec"] = round(end_sec, 3)
-    if "start_sec" not in range_data or "end_sec" not in range_data:
-        raise ValueError("segment evidence requires start_sec and end_sec")
-    return {key: value for key, value in range_data.items() if value not in (None, "")}
-
-
-def _trail_route_match_allows_evidence(match: dict[str, Any] | None) -> bool:
-    if not isinstance(match, dict):
-        return False
-    return str(match.get("decision") or "") == "candidate" and str(match.get("direction") or "") in {"same", "loop"}
-
-
-def build_trail_route_record_evidences(
-    *,
-    activity: dict[str, Any] | None,
-    route_signature: dict[str, Any] | None,
-    route_matches: list[dict[str, Any]] | tuple[dict[str, Any], ...] | None = None,
-) -> dict[str, Any]:
-    """Build candidate-only route-total elapsed-time evidences from safe route matches."""
-    activity = activity or {}
-    scope = _trail_activity_scope(activity)
-    if not scope.get("accepted"):
-        return {"evidences": [], "skipped": [{"record_key": "trail_route_best_time", "reason": scope.get("reason"), "sport": scope.get("sport")}]}
-    signature = route_signature if isinstance(route_signature, dict) else {}
-    signature_body = _signature_dict(signature)
-    route_key = str(signature.get("route_key") or signature_body.get("route_key") or "").strip()
-    if not route_key:
-        return {"evidences": [], "skipped": [{"record_key": "trail_route_best_time", "reason": "route_signature_missing"}]}
-    elapsed_sec = _trail_elapsed_time_sec(activity)
-    if elapsed_sec is None:
-        return {"evidences": [], "skipped": [{"record_key": "trail_route_best_time", "reason": "elapsed_time_missing"}]}
-    matches = [match for match in (route_matches or []) if _trail_route_match_allows_evidence(match)]
-    if not matches:
-        return {"evidences": [], "skipped": [{"record_key": "trail_route_best_time", "reason": "route_match_missing_or_blocked"}]}
-    activity_id = str(activity.get("activity_id") or activity.get("id") or "")
-    event_date = _cycling_power_event_date(activity)
-    evidences: list[RecordEvidence] = []
-    skipped: list[dict[str, Any]] = []
-    for match in matches:
-        direction = str(match.get("direction") or "same")
-        reason_codes = list(_dedupe_reason_codes([*(match.get("reason_codes") or ()), "candidate_only_registry"]))
-        quality = {
-            "confidence": min(0.89, max(0.70, _safe_float(match.get("match_score")) or 0.80)),
-            "confidence_band": "candidate",
-            "decision": "candidate",
-            "reason_codes": reason_codes,
-            "source": "route_match",
-            "quality_policy": "trail_route_match",
-            "log_safety": "hashed_route_signature_only",
-            "can_user_confirm": True,
-            "blocks_active": True,
-        }
-        evidences.append(build_record_evidence(
-            record_key="trail_route_best_time",
-            activity_id=activity_id,
-            sport="trail_running",
-            source_mode="route_total",
-            metric_name="elapsed_time_sec",
-            metric_value=round(elapsed_sec, 3),
-            metric_unit="seconds",
-            event_date=event_date,
-            scope={"sport_scope": "trail_running", "route_key": route_key},
-            range_data={
-                "route_key": route_key,
-                "direction": direction,
-                "start_sec": 0,
-                "end_sec": round(elapsed_sec, 3),
-                "duration_sec": round(elapsed_sec, 3),
-                "distance_m": _safe_float(signature.get("distance_m") or signature_body.get("distance_m")),
-            },
-            quality=quality,
-            resolver_version=TRAIL_ROUTE_MATCH_VERSION,
-            rule_version=RECORDS_V2_RULE_VERSION,
-        ))
-    return {"evidences": _dedupe_best_elapsed_record_evidences(evidences), "skipped": skipped}
-
-
-def _is_trail_climb_segment(segment: dict[str, Any]) -> bool:
-    raw_type = _normalise_cycling_scope_token(segment.get("segment_type") or segment.get("type") or segment.get("kind"))
-    return bool(segment.get("is_climb") is True or raw_type in {"climb", "climb_segment", "uphill", "ascent"})
-
-
-def build_trail_segment_record_evidences(
-    *,
-    activity: dict[str, Any] | None,
-    segments: list[dict[str, Any]] | tuple[dict[str, Any], ...] | None,
-) -> dict[str, Any]:
-    """Build candidate-only trail segment and climb-segment elapsed-time evidences."""
-    activity = activity or {}
-    scope = _trail_activity_scope(activity)
-    if not scope.get("accepted"):
-        return {"evidences": [], "skipped": [{"record_key": "trail_segment_best_time", "reason": scope.get("reason"), "sport": scope.get("sport")}]}
-    activity_id = str(activity.get("activity_id") or activity.get("id") or "")
-    event_date = _cycling_power_event_date(activity)
-    evidences: list[RecordEvidence] = []
-    skipped: list[dict[str, Any]] = []
-    for index, raw_segment in enumerate(segments or []):
-        if not isinstance(raw_segment, dict):
-            skipped.append({"record_key": "trail_segment_best_time", "reason": "segment_invalid", "index": index})
-            continue
-        try:
-            range_data = _trail_segment_range(raw_segment)
-            segment_key = str(range_data["segment_key"])
-        except ValueError as exc:
-            skipped.append({"record_key": "trail_segment_best_time", "reason": str(exc), "index": index})
-            continue
-        elapsed_sec = _trail_segment_elapsed(raw_segment)
-        if elapsed_sec is None or elapsed_sec <= 0:
-            skipped.append({"record_key": segment_key, "reason": "elapsed_time_missing", "index": index})
-            continue
-        record_key = "trail_climb_segment_best_time" if _is_trail_climb_segment(raw_segment) else "trail_segment_best_time"
-        quality_policy = "trail_climb_segment" if record_key == "trail_climb_segment_best_time" else "trail_segment"
-        reason_codes = list(_dedupe_reason_codes([*(raw_segment.get("reason_codes") or ()), "real_data_sample_missing", "candidate_only_registry"]))
-        evidences.append(build_record_evidence(
-            record_key=record_key,
-            activity_id=activity_id,
-            sport="trail_running",
-            source_mode="segment",
-            metric_name="elapsed_time_sec",
-            metric_value=round(elapsed_sec, 3),
-            metric_unit="seconds",
-            event_date=event_date,
-            scope={"sport_scope": "trail_running", "segment_key": segment_key},
-            range_data=range_data,
-            quality={
-                "confidence": 0.80,
-                "confidence_band": "candidate",
-                "decision": "candidate",
-                "reason_codes": reason_codes,
-                "source": "trail_segment_resolver",
-                "quality_policy": quality_policy,
-                "log_safety": "aggregate_range_only",
-                "can_user_confirm": True,
-                "blocks_active": True,
-            },
-            resolver_version=RECORDS_V2_RULE_VERSION,
-            rule_version=RECORDS_V2_RULE_VERSION,
-        ))
-    return {"evidences": _dedupe_best_elapsed_record_evidences(evidences), "skipped": skipped}
-
-
-def _dedupe_best_elapsed_record_evidences(evidences: list[RecordEvidence]) -> list[RecordEvidence]:
-    best_by_scope: dict[tuple[str, str, str], RecordEvidence] = {}
-    for evidence in evidences:
-        payload = evidence.to_dict()
-        metric = payload.get("metric") if isinstance(payload.get("metric"), dict) else {}
-        elapsed = _safe_float(metric.get("value"))
-        if elapsed is None:
-            continue
-        key = (
-            str(payload.get("record_key") or ""),
-            str(payload.get("source_mode") or ""),
-            str(payload.get("scope_hash") or ""),
-        )
-        current = best_by_scope.get(key)
-        if current is None:
-            best_by_scope[key] = evidence
-            continue
-        current_metric = current.to_dict().get("metric") or {}
-        current_elapsed = _safe_float(current_metric.get("value"))
-        if current_elapsed is None or elapsed < current_elapsed:
-            best_by_scope[key] = evidence
-    return list(best_by_scope.values())
-
-
-def build_trail_route_segment_record_evidences(
-    *,
-    activity: dict[str, Any] | None,
-    route_signature: dict[str, Any] | None = None,
-    route_matches: list[dict[str, Any]] | tuple[dict[str, Any], ...] | None = None,
-    segments: list[dict[str, Any]] | tuple[dict[str, Any], ...] | None = None,
-) -> dict[str, Any]:
-    route_plan = build_trail_route_record_evidences(
-        activity=activity,
-        route_signature=route_signature,
-        route_matches=route_matches,
-    ) if route_signature is not None else {"evidences": [], "skipped": []}
-    segment_plan = build_trail_segment_record_evidences(activity=activity, segments=segments) if segments is not None else {"evidences": [], "skipped": []}
-    evidences = _dedupe_best_elapsed_record_evidences([*route_plan["evidences"], *segment_plan["evidences"]])
-    return {"evidences": evidences, "skipped": [*route_plan["skipped"], *segment_plan["skipped"]]}
-
-
-def apply_trail_route_segment_records(
-    conn: sqlite3.Connection,
-    *,
-    activity: dict[str, Any] | None,
-    route_signature: dict[str, Any] | None = None,
-    route_matches: list[dict[str, Any]] | tuple[dict[str, Any], ...] | None = None,
-    segments: list[dict[str, Any]] | tuple[dict[str, Any], ...] | None = None,
-    dry_run: bool = True,
-    run_id: str = "",
-) -> dict[str, Any]:
-    ensure_career_schema(conn)
-    plan = build_trail_route_segment_record_evidences(
-        activity=activity,
-        route_signature=route_signature,
-        route_matches=route_matches,
-        segments=segments,
-    )
-    payloads = [evidence.to_dict() for evidence in plan["evidences"]]
-    if dry_run:
-        return {"ok": True, "dry_run": True, "planned_count": len(payloads), "evidences": payloads, "skipped": plan["skipped"]}
-    summary: dict[str, int] = {}
-    results: list[dict[str, Any]] = []
-    for evidence in plan["evidences"]:
-        payload = evidence.to_dict()
-        quality = payload.get("quality") if isinstance(payload.get("quality"), dict) else {}
-        result = apply_record_evidence_state(
-            conn,
-            evidence,
-            confidence=_safe_float(quality.get("confidence")),
-            run_id=run_id,
-            decision_source="trail_route_segment_resolver",
-        )
-        action = str(result.get("action") or "unknown")
-        summary[action] = int(summary.get(action) or 0) + 1
-        results.append({"record_key": payload.get("record_key"), "scope_hash": payload.get("scope_hash"), "action": action, "result": result})
-    return {"ok": True, "dry_run": False, "applied_count": len(results), "summary": summary, "results": results, "skipped": plan["skipped"]}
-
-
-TRAIL_PACE_GAP_CURVE_ALGORITHM_VERSION = "trail-pace-gap-curve-v1"
-TRAIL_PACE_GAP_ANCHOR_DISTANCES_M = (1000, 3000, 5000, 10000, 20000, 30000, 50000)
-
-
-def _parse_record_date(value: Any) -> datetime | None:
-    text = str(value or "").strip()
-    if not text:
-        return None
-    try:
-        return datetime.fromisoformat(text[:10] + "T00:00:00+00:00")
-    except ValueError:
-        return None
-
-
-def _trail_activity_date(activity: dict[str, Any] | None) -> datetime | None:
-    if not isinstance(activity, dict):
-        return None
-    for key in ("event_date", "start_time", "start_time_utc", "date"):
-        parsed = _parse_record_date(activity.get(key))
-        if parsed is not None:
-            return parsed
-    return None
-
-
-def _trail_curve_time_scope_accepts(activity: dict[str, Any], *, time_scope: str, as_of_date: Any = None) -> bool:
-    scope = str(time_scope or "all").strip() or "all"
-    if scope == "all":
-        return True
-    activity_date = _trail_activity_date(activity)
-    if activity_date is None:
-        return False
-    as_of = _parse_record_date(as_of_date) or datetime.now(timezone.utc)
-    if scope == "season":
-        return activity_date.year == as_of.year
-    if scope in {"last_42_days", "42_days", "last42"}:
-        start = as_of - timedelta(days=41)
-        return start.date() <= activity_date.date() <= as_of.date()
-    raise ValueError(f"unsupported trail curve time_scope: {scope}")
-
-
-def _normalize_trail_curve_points(track_points: Any) -> list[dict[str, float]]:
-    raw_points = _normalize_route_points(track_points or [])
-    if not raw_points:
-        return []
-    normalized: list[dict[str, float]] = []
-    cumulative = 0.0
-    previous_xy: dict[str, float] | None = None
-    for index, raw in enumerate(track_points or []):
-        xy = _extract_route_xy_point(raw, index)
-        if xy is None:
-            continue
-        if isinstance(raw, dict):
-            distance_m = _finite_float(raw.get("distance_m", raw.get("distance")))
-            altitude_m = _finite_float(raw.get("altitude_m", raw.get("altitude", raw.get("enhanced_altitude"))))
-        else:
-            distance_m = None
-            altitude_m = None
-        if previous_xy is not None:
-            cumulative += _route_distance(previous_xy, xy)
-        previous_xy = xy
-        normalized.append({
-            "distance_m": float(distance_m) if distance_m is not None else round(cumulative, 3),
-            "t_sec": float(xy.get("t_sec", index)),
-            "altitude_m": float(altitude_m) if altitude_m is not None else 0.0,
-        })
-    normalized.sort(key=lambda item: (item["distance_m"], item["t_sec"]))
-    deduped: list[dict[str, float]] = []
-    for point in normalized:
-        if deduped and point["distance_m"] <= deduped[-1]["distance_m"]:
-            continue
-        deduped.append(point)
-    return deduped
-
-
-def _trail_curve_track_summary(activity: dict[str, Any] | None, points: list[dict[str, float]]) -> dict[str, Any]:
-    distance_m = _safe_activity_route_distance(activity, points[-1]["distance_m"] if points else 0.0)
-    altitude_values = [point["altitude_m"] for point in points]
-    return {
-        "activity_id": str((activity or {}).get("activity_id") or (activity or {}).get("id") or ""),
-        "point_count": len(points),
-        "distance_m": round(distance_m, 3),
-        "duration_sec": _trail_elapsed_time_sec(activity),
-        "has_elevation": bool(altitude_values and any(abs(value) > 0 for value in altitude_values)),
-        "altitude_range_m": round(max(altitude_values) - min(altitude_values), 3) if altitude_values else 0.0,
-    }
-
-
-def _trail_curve_window_anchor(points: list[dict[str, float]], target_distance_m: float) -> dict[str, Any]:
-    if len(points) < 2:
-        return {"status": "unavailable", "reason_codes": ["trail_curve_insufficient_points"]}
-    total_distance = points[-1]["distance_m"] - points[0]["distance_m"]
-    if total_distance + 1e-6 < target_distance_m:
-        return {"status": "unavailable", "reason_codes": ["activity_shorter_than_window"]}
-    best: dict[str, Any] | None = None
-    end_index = 0
-    for start_index, start in enumerate(points):
-        while end_index < len(points) and points[end_index]["distance_m"] - start["distance_m"] < target_distance_m:
-            end_index += 1
-        if end_index >= len(points):
-            break
-        end = points[end_index]
-        elapsed = end["t_sec"] - start["t_sec"]
-        if elapsed <= 0:
-            continue
-        distance = end["distance_m"] - start["distance_m"]
-        altitude_delta = end["altitude_m"] - start["altitude_m"]
-        grade = altitude_delta / max(distance, 1.0)
-        uphill_factor = max(0.0, grade) * 3.0
-        downhill_factor = min(0.0, grade) * 1.0
-        adjustment_factor = max(0.75, min(1.35, 1.0 + uphill_factor + downhill_factor))
-        gap_elapsed = elapsed / adjustment_factor
-        candidate = {
-            "status": "available",
-            "distance_m": float(target_distance_m),
-            "elapsed_time_sec": round(float(elapsed), 3),
-            "pace_sec_per_km": round(float(elapsed) / (target_distance_m / 1000.0), 3),
-            "gap_sec_per_km": round(float(gap_elapsed) / (target_distance_m / 1000.0), 3),
-            "grade": round(float(grade), 5),
-            "range": {
-                "start_sec": round(float(start["t_sec"]), 3),
-                "end_sec": round(float(end["t_sec"]), 3),
-                "duration_sec": round(float(elapsed), 3),
-                "start_distance_m": round(float(start["distance_m"]), 3),
-                "end_distance_m": round(float(end["distance_m"]), 3),
-                "distance_m": float(target_distance_m),
-            },
-            "reason_codes": ["analysis_only"],
-        }
-        if best is None or candidate["elapsed_time_sec"] < best["elapsed_time_sec"]:
-            best = candidate
-    return best or {"status": "unavailable", "reason_codes": ["trail_curve_window_missing"]}
-
-
-def resolve_trail_pace_gap_activity_curve(
-    *,
-    activity: dict[str, Any] | None,
-    track_points: list[Any] | tuple[Any, ...] | None,
-) -> dict[str, Any]:
-    """Resolve analysis-only trail pace/GAP anchors for one Activity."""
-    activity = activity or {}
-    scope = _trail_activity_scope(activity)
-    if not scope.get("accepted"):
-        return {"ok": False, "status": "ignored", "reason_codes": [scope.get("reason")], "anchors": []}
-    points = _normalize_trail_curve_points(track_points or [])
-    summary = _trail_curve_track_summary(activity, points)
-    anchors: list[dict[str, Any]] = []
-    for distance_m in TRAIL_PACE_GAP_ANCHOR_DISTANCES_M:
-        anchor = _trail_curve_window_anchor(points, float(distance_m))
-        anchor["label"] = f"{int(distance_m / 1000)}K"
-        anchor["distance_m"] = float(distance_m)
-        if anchor.get("status") == "available":
-            anchor["source"] = {
-                "activity_id": summary["activity_id"],
-                "range": anchor.pop("range"),
-            }
-        anchors.append(anchor)
-    view_model = {
-        "ok": True,
-        "status": "analysis_only",
-        "activity_id": summary["activity_id"],
-        "sport": "trail_running",
-        "curve_types": ["trail_pace_curve", "trail_gap_curve"],
-        "algorithm_version": TRAIL_PACE_GAP_CURVE_ALGORITHM_VERSION,
-        "gap_algorithm": {
-            "version": TRAIL_PACE_GAP_CURVE_ALGORITHM_VERSION,
-            "basis": "grade_adjusted_elapsed_time",
-            "elevation_input": "available" if summary["has_elevation"] else "missing_or_flat",
-            "limitations": [
-                "analysis_only_not_record",
-                "does_not_model_technical_terrain",
-                "grade_adjustment_is_approximate",
-            ],
-        },
-        "summary": summary,
-        "anchors": anchors,
-        "quality": {
-            "reason_codes": ["analysis_only"],
-            "log_safety": "aggregate_curve_anchors_only",
-        },
-    }
-    _assert_record_curve_cache_safe_json({key: value for key, value in view_model.items() if key != "anchors"}, path="trail_curve_view_model")
-    _assert_record_curve_cache_safe_json({"anchors": anchors}, path="trail_curve_anchors")
-    return view_model
-
-
-def build_trail_pace_gap_curve_viewmodel(
-    *,
-    activities: list[dict[str, Any]] | tuple[dict[str, Any], ...],
-    activity_tracks: dict[str, list[Any]] | None = None,
-    time_scope: str = "all",
-    as_of_date: Any = None,
-) -> dict[str, Any]:
-    """Aggregate Activity-level trail pace/GAP curves into a safe analysis ViewModel."""
-    tracks = activity_tracks or {}
-    scoped_activities = [
-        activity
-        for activity in activities
-        if isinstance(activity, dict) and _trail_curve_time_scope_accepts(activity, time_scope=time_scope, as_of_date=as_of_date)
-    ]
-    resolved = [
-        resolve_trail_pace_gap_activity_curve(
-            activity=activity,
-            track_points=tracks.get(str(activity.get("activity_id") or activity.get("id") or "")) or activity.get("track_points") or [],
-        )
-        for activity in scoped_activities
-    ]
-    best_by_distance: dict[float, dict[str, Any]] = {}
-    for curve in resolved:
-        if not curve.get("ok"):
-            continue
-        for anchor in curve.get("anchors") or []:
-            if anchor.get("status") != "available":
-                continue
-            distance = float(anchor.get("distance_m") or 0.0)
-            current = best_by_distance.get(distance)
-            if current is None or float(anchor.get("pace_sec_per_km") or 999999) < float(current.get("pace_sec_per_km") or 999999):
-                best_by_distance[distance] = copy.deepcopy(anchor)
-    anchors: list[dict[str, Any]] = []
-    for distance_m in TRAIL_PACE_GAP_ANCHOR_DISTANCES_M:
-        anchor = best_by_distance.get(float(distance_m))
-        if anchor is None:
-            anchor = {
-                "status": "unavailable",
-                "label": f"{int(distance_m / 1000)}K",
-                "distance_m": float(distance_m),
-                "reason_codes": ["no_activity_in_time_scope" if not scoped_activities else "activity_shorter_than_window"],
-            }
-        anchors.append(anchor)
-    view_model = {
-        "ok": True,
-        "status": "analysis_only",
-        "sport": "trail_running",
-        "time_scope": str(time_scope or "all"),
-        "as_of_date": str(as_of_date or "")[:10],
-        "activity_count": len(scoped_activities),
-        "curve_types": ["trail_pace_curve", "trail_gap_curve"],
-        "algorithm_version": TRAIL_PACE_GAP_CURVE_ALGORITHM_VERSION,
-        "gap_algorithm": {
-            "version": TRAIL_PACE_GAP_CURVE_ALGORITHM_VERSION,
-            "basis": "grade_adjusted_elapsed_time",
-            "elevation_input": "per_activity_summary",
-            "limitations": [
-                "analysis_only_not_record",
-                "does_not_model_technical_terrain",
-                "grade_adjustment_is_approximate",
-            ],
-        },
-        "anchors": anchors,
-        "quality": {"reason_codes": ["analysis_only"], "log_safety": "aggregate_curve_anchors_only"},
-    }
-    _assert_record_curve_cache_safe_json(view_model, path="trail_curve_view_model")
-    return view_model
-
-
-def save_trail_pace_gap_curve_cache(
-    *,
-    activity_id: Any,
-    view_model: dict[str, Any],
-    conn: sqlite3.Connection | None = None,
-    scope: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    """Persist analysis-only trail pace/GAP anchors to safe curve cache rows."""
-    if not isinstance(view_model, dict):
-        raise ValueError("view_model must be a JSON object")
-    anchors = view_model.get("anchors") if isinstance(view_model.get("anchors"), list) else []
-    quality = view_model.get("quality") if isinstance(view_model.get("quality"), dict) else {"reason_codes": ["analysis_only"]}
-    summary = view_model.get("summary") if isinstance(view_model.get("summary"), dict) else {}
-    safe_curve = {
-        "status": "analysis_only",
-        "algorithm_version": TRAIL_PACE_GAP_CURVE_ALGORITHM_VERSION,
-        "anchors": anchors,
-        "gap_algorithm": view_model.get("gap_algorithm") if isinstance(view_model.get("gap_algorithm"), dict) else {},
-        "summary": summary,
-    }
-    _assert_record_curve_cache_safe_json(safe_curve, path="trail_curve_cache")
-    fingerprint = compute_career_record_curve_input_fingerprint(
-        activity_id=activity_id,
-        sport="trail_running",
-        source_mode="activity_total",
-        canonical_facts_version=RECORDS_V2_RULE_VERSION,
-        stream_summary_hash=_route_hash("trail-curve-summary", {
-            "activity_id": str(activity_id or ""),
-            "summary": summary,
-            "anchor_count": len(anchors),
-            "algorithm_version": TRAIL_PACE_GAP_CURVE_ALGORITHM_VERSION,
-        }),
-        algorithm_version=TRAIL_PACE_GAP_CURVE_ALGORITHM_VERSION,
-        rule_version=RECORDS_V2_RULE_VERSION,
-        scope=scope or {"sport_scope": "trail_running"},
-    )
-    saved: dict[str, Any] = {}
-    for curve_type in ("trail_pace_curve", "trail_gap_curve"):
-        saved[curve_type] = save_career_record_curve_cache(
-            activity_id=activity_id,
-            sport="trail_running",
-            curve_type=curve_type,
-            source_mode="activity_total",
-            scope=scope or {"sport_scope": "trail_running"},
-            input_fingerprint=fingerprint,
-            algorithm_version=TRAIL_PACE_GAP_CURVE_ALGORITHM_VERSION,
-            curve=safe_curve,
-            quality=quality,
-            conn=conn,
-        )
-    return {"ok": True, "input_fingerprint": fingerprint, "saved": saved}
-
-
 def _dedupe_reason_codes(reason_codes: list[str] | tuple[str, ...]) -> tuple[str, ...]:
     return tuple(str(reason) for reason in dict.fromkeys(reason_codes) if str(reason or "").strip())
 
@@ -6135,9 +5077,6 @@ RECORD_EVIDENCE_ALLOWED_RANGE_FIELDS = {
     "lap_count",
     "length_start",
     "length_end",
-    "segment_key",
-    "route_key",
-    "direction",
 }
 RECORD_EVIDENCE_ALLOWED_QUALITY_FIELDS = {
     "confidence",
@@ -6291,7 +5230,7 @@ def canonicalize_record_quality(quality: Any) -> dict[str, Any]:
 def _record_scope_key(scope: dict[str, Any]) -> str:
     if not scope:
         return "default"
-    for key in ("route_key", "segment_key", "pool_length_scope", "stroke_scope", "water_scope", "indoor_scope", "sport_scope"):
+    for key in ("pool_length_scope", "stroke_scope", "water_scope", "indoor_scope", "sport_scope"):
         value = str(scope.get(key) or "").strip()
         if value:
             return value
@@ -6308,12 +5247,8 @@ def _validate_record_evidence_source_requirements(
     scope: dict[str, Any],
     range_json: dict[str, Any],
 ) -> None:
-    if source_mode in {"best_effort_duration", "best_effort_distance", "segment"} and not range_json:
+    if source_mode in {"best_effort_duration", "best_effort_distance"} and not range_json:
         raise ValueError(f"{source_mode} evidence requires an activity range")
-    if source_mode == "route_total" and not str(scope.get("route_key") or "").strip():
-        raise ValueError("route_total evidence requires scope.route_key")
-    if source_mode == "segment" and not str(scope.get("segment_key") or range_json.get("segment_key") or "").strip():
-        raise ValueError("segment evidence requires segment_key")
 
 
 def build_record_evidence(
@@ -8755,33 +7690,6 @@ def _superseded_v2_fallback_record(
     return None
 
 
-def _invalidate_route_records_for_activity(conn: sqlite3.Connection, activity_id: str, invalidated_at: str) -> dict[str, int]:
-    signatures = 0
-    matches = 0
-    if _table_exists(conn, "career_route_signatures"):
-        result = conn.execute(
-            """
-            UPDATE career_route_signatures
-            SET invalidated_at = ?, updated_at = CURRENT_TIMESTAMP
-            WHERE activity_id = ? AND invalidated_at IS NULL
-            """,
-            (invalidated_at, activity_id),
-        )
-        signatures = int(result.rowcount or 0)
-    if _table_exists(conn, "career_route_matches"):
-        result = conn.execute(
-            """
-            UPDATE career_route_matches
-            SET invalidated_at = ?
-            WHERE (activity_id = ? OR matched_activity_id = ?)
-              AND invalidated_at IS NULL
-            """,
-            (invalidated_at, activity_id, activity_id),
-        )
-        matches = int(result.rowcount or 0)
-    return {"route_cache": signatures, "route_matches": matches}
-
-
 def invalidate_career_record_state_for_activity(
     conn: sqlite3.Connection,
     activity_id: Any,
@@ -8790,7 +7698,7 @@ def invalidate_career_record_state_for_activity(
     dry_run: bool = True,
     run_id: str | None = None,
 ) -> dict[str, Any]:
-    """Invalidate V2 records/cache/route data for an Activity and optionally promote scoped fallback."""
+    """Invalidate V2 records/cache data for an Activity and optionally promote scoped fallback."""
     ensure_career_schema(conn)
     clean_activity_id = str(activity_id or "").strip()
     active_rows = _rows_to_dicts(conn.execute(
@@ -8814,23 +7722,6 @@ def invalidate_career_record_state_for_activity(
             "SELECT COUNT(*) FROM career_record_curve_cache WHERE activity_id = ? AND invalidated_at IS NULL",
             (clean_activity_id,),
         ).fetchone()[0] or 0)
-    route_cache_count = 0
-    if _table_exists(conn, "career_route_signatures"):
-        route_cache_count = int(conn.execute(
-            "SELECT COUNT(*) FROM career_route_signatures WHERE activity_id = ? AND invalidated_at IS NULL",
-            (clean_activity_id,),
-        ).fetchone()[0] or 0)
-    route_match_count = 0
-    if _table_exists(conn, "career_route_matches"):
-        route_match_count = int(conn.execute(
-            """
-            SELECT COUNT(*)
-            FROM career_route_matches
-            WHERE (activity_id = ? OR matched_activity_id = ?)
-              AND invalidated_at IS NULL
-            """,
-            (clean_activity_id, clean_activity_id),
-        ).fetchone()[0] or 0)
     if dry_run:
         would_promote = [
             fallback.get("id")
@@ -8847,8 +7738,6 @@ def invalidate_career_record_state_for_activity(
             "reason": reason,
             "would_invalidate_records": [row.get("id") for row in active_rows],
             "would_invalidate_cache": int(cache_count),
-            "would_invalidate_route_cache": int(route_cache_count),
-            "would_invalidate_route_matches": int(route_match_count),
             "would_promote": would_promote,
         }
     savepoint_name = "records_v2_activity_invalidation"
@@ -8910,7 +7799,6 @@ def invalidate_career_record_state_for_activity(
             )
             promoted.append(fallback_id)
         invalidated_cache = invalidate_career_record_curve_cache(activity_id=clean_activity_id, conn=conn)
-        route_counts = _invalidate_route_records_for_activity(conn, clean_activity_id, invalidated_at)
         conn.execute(f"RELEASE SAVEPOINT {savepoint_name}")
     except Exception:
         try:
@@ -8927,7 +7815,6 @@ def invalidate_career_record_state_for_activity(
         "invalidated": invalidated,
         "promoted": promoted,
         "invalidated_cache": invalidated_cache,
-        **route_counts,
     }
 
 
@@ -8967,7 +7854,7 @@ def plan_career_records_v2_rebuild(
             by_family[family] = int(by_family.get(family) or 0) + 1
     if cancelled:
         summary["cancelled"] = 1
-    cache_route = _records_v2_cache_route_observability(conn)
+    cache_observability = _records_v2_cache_observability(conn)
     seed = _json_dumps({
         "resolver_version": resolver_version,
         "batch_size": int(batch_size),
@@ -8992,7 +7879,7 @@ def plan_career_records_v2_rebuild(
             "elapsed_ms": _elapsed_ms(start),
             "processed": len(items),
             "performance_target_ms": RECORDS_V2_PERFORMANCE_TARGETS_MS["rebuild_plan"],
-            **cache_route,
+            **cache_observability,
         },
         "observability": records_v2_safe_observation(
             "records_v2_rebuild_plan",
@@ -9002,7 +7889,7 @@ def plan_career_records_v2_rebuild(
             by_sport=by_sport,
             by_family=by_family,
             by_reason=by_reason,
-            **cache_route,
+            **cache_observability,
         ),
         "failure_recovery": {
             "transaction": "savepoint",
@@ -9872,54 +8759,6 @@ def _ensure_career_business_tables(conn: sqlite3.Connection, created: list[str])
         """,
         created,
     )
-    _create_table_if_missing(
-        conn,
-        "career_route_signatures",
-        """
-        CREATE TABLE IF NOT EXISTS career_route_signatures (
-            id TEXT PRIMARY KEY,
-            activity_id TEXT NOT NULL,
-            sport TEXT NOT NULL,
-            route_key TEXT NOT NULL,
-            direction_key TEXT NOT NULL,
-            distance_m REAL,
-            ascent_m REAL,
-            duration_sec INTEGER,
-            signature_version TEXT NOT NULL,
-            signature_json TEXT NOT NULL DEFAULT '{}',
-            quality_json TEXT NOT NULL DEFAULT '{}',
-            generated_at TEXT NOT NULL,
-            invalidated_at TEXT,
-            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-        )
-        """,
-        created,
-    )
-    _create_table_if_missing(
-        conn,
-        "career_route_matches",
-        """
-        CREATE TABLE IF NOT EXISTS career_route_matches (
-            id TEXT PRIMARY KEY,
-            route_key TEXT NOT NULL,
-            activity_id TEXT NOT NULL,
-            matched_activity_id TEXT NOT NULL,
-            match_version TEXT NOT NULL,
-            direction TEXT NOT NULL,
-            match_score REAL NOT NULL,
-            coverage_ratio REAL,
-            overlap_ratio REAL,
-            length_error_ratio REAL,
-            decision TEXT NOT NULL,
-            reason_codes_json TEXT NOT NULL DEFAULT '[]',
-            generated_at TEXT NOT NULL,
-            invalidated_at TEXT,
-            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-        )
-        """,
-        created,
-    )
 
 
 def _ensure_career_light_memory_columns(conn: sqlite3.Connection, migrated: list[str]) -> None:
@@ -10219,26 +9058,6 @@ def _ensure_career_indexes(conn: sqlite3.Connection) -> None:
         ON career_record_curve_cache(activity_id, curve_type, generated_at)
         """
     )
-    conn.execute(
-        """
-        CREATE UNIQUE INDEX IF NOT EXISTS ux_career_route_signatures_activity_version
-        ON career_route_signatures(activity_id, signature_version)
-        WHERE invalidated_at IS NULL
-        """
-    )
-    conn.execute(
-        """
-        CREATE INDEX IF NOT EXISTS idx_career_route_signatures_route_key
-        ON career_route_signatures(route_key, sport, invalidated_at)
-        """
-    )
-    conn.execute(
-        """
-        CREATE UNIQUE INDEX IF NOT EXISTS ux_career_route_matches_pair_version
-        ON career_route_matches(route_key, activity_id, matched_activity_id, match_version)
-        WHERE invalidated_at IS NULL
-        """
-    )
 
 
 CAREER_RECORDS_V2_PB_COLUMNS = {
@@ -10264,8 +9083,6 @@ CAREER_RECORDS_V2_EVENT_COLUMNS = {
 }
 CAREER_RECORDS_V2_TABLES = {
     "career_record_curve_cache",
-    "career_route_signatures",
-    "career_route_matches",
 }
 CAREER_SCHEMA_REQUIRED_TABLES = {
     "career_schema_meta",
@@ -10283,14 +9100,9 @@ CAREER_RECORDS_V2_INDEXES = {
     "idx_career_event_candidates_type_status_updated",
     "ux_career_record_curve_cache_current",
     "idx_career_record_curve_cache_activity",
-    "ux_career_route_signatures_activity_version",
-    "idx_career_route_signatures_route_key",
-    "ux_career_route_matches_pair_version",
 }
 CAREER_RECORD_CURVE_TYPES = {
     "cycling_power_duration_curve",
-    "trail_pace_curve",
-    "trail_gap_curve",
     "pool_swim_pace_curve",
 }
 CAREER_RECORD_CURVE_CACHE_FORBIDDEN_KEYS = ACS_PUBLIC_METADATA_FORBIDDEN_KEYS | {
@@ -10635,430 +9447,6 @@ def invalidate_career_record_curve_cache(
         if owns_conn:
             db.rollback()
         raise
-    finally:
-        if owns_conn:
-            db.close()
-
-
-def _career_route_signature_row_to_dict(row: sqlite3.Row | tuple[Any, ...] | None) -> dict[str, Any] | None:
-    if row is None:
-        return None
-    values = dict(row) if isinstance(row, sqlite3.Row) else dict(zip((
-        "id",
-        "activity_id",
-        "sport",
-        "route_key",
-        "direction_key",
-        "distance_m",
-        "ascent_m",
-        "duration_sec",
-        "signature_version",
-        "signature_json",
-        "quality_json",
-        "generated_at",
-        "invalidated_at",
-        "created_at",
-        "updated_at",
-    ), row))
-    values["signature"] = _json_loads_object(values.get("signature_json"))
-    values["quality"] = _json_loads_object(values.get("quality_json"))
-    return values
-
-
-def _career_route_match_row_to_dict(row: sqlite3.Row | tuple[Any, ...] | None) -> dict[str, Any] | None:
-    if row is None:
-        return None
-    values = dict(row) if isinstance(row, sqlite3.Row) else dict(zip((
-        "id",
-        "route_key",
-        "activity_id",
-        "matched_activity_id",
-        "match_version",
-        "direction",
-        "match_score",
-        "coverage_ratio",
-        "overlap_ratio",
-        "length_error_ratio",
-        "decision",
-        "reason_codes_json",
-        "generated_at",
-        "invalidated_at",
-        "created_at",
-    ), row))
-    values["reason_codes"] = [str(item) for item in _json_loads_list(values.get("reason_codes_json")) if str(item or "").strip()]
-    return values
-
-
-def save_career_route_signature(
-    *,
-    activity_id: Any,
-    sport: Any,
-    route_key: Any,
-    direction_key: Any,
-    signature: dict[str, Any],
-    quality: dict[str, Any] | None = None,
-    distance_m: Any = None,
-    ascent_m: Any = None,
-    duration_sec: Any = None,
-    signature_version: Any = TRAIL_ROUTE_SIGNATURE_VERSION,
-    generated_at: Any = None,
-    conn: sqlite3.Connection | None = None,
-) -> dict[str, Any]:
-    """Insert or refresh a derived route signature row without storing raw track data."""
-    if not isinstance(signature, dict):
-        raise ValueError("signature must be a JSON object")
-    if quality is not None and not isinstance(quality, dict):
-        raise ValueError("quality must be a JSON object")
-    _assert_trail_route_safe_json(signature, path="route_signature")
-    _assert_trail_route_safe_json(quality or {}, path="route_quality")
-    owns_conn = conn is None
-    db = conn or _connect_default()
-    try:
-        ensure_career_schema(db)
-        clean_activity_id = _normalize_record_curve_cache_text(activity_id, "activity_id")
-        clean_sport = _normalize_record_curve_cache_text(sport, "sport")
-        clean_route_key = _normalize_record_curve_cache_text(route_key, "route_key")
-        clean_direction_key = _normalize_record_curve_cache_text(direction_key, "direction_key")
-        clean_version = _normalize_record_curve_cache_text(signature_version, "signature_version")
-        clean_generated_at = str(generated_at or _utc_now_iso())
-        row = db.execute(
-            """
-            SELECT id
-            FROM career_route_signatures
-            WHERE activity_id = ?
-              AND signature_version = ?
-              AND invalidated_at IS NULL
-            LIMIT 1
-            """,
-            (clean_activity_id, clean_version),
-        ).fetchone()
-        signature_json = _json_dumps(signature)
-        quality_json = _json_dumps(quality or {})
-        parsed_distance = _safe_float(distance_m)
-        parsed_ascent = _safe_float(ascent_m)
-        parsed_duration = _safe_int(duration_sec, 0) if duration_sec not in (None, "") else None
-        if row:
-            signature_id = row[0]
-            db.execute(
-                """
-                UPDATE career_route_signatures
-                SET sport = ?,
-                    route_key = ?,
-                    direction_key = ?,
-                    distance_m = ?,
-                    ascent_m = ?,
-                    duration_sec = ?,
-                    signature_json = ?,
-                    quality_json = ?,
-                    generated_at = ?,
-                    invalidated_at = NULL,
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?
-                """,
-                (
-                    clean_sport,
-                    clean_route_key,
-                    clean_direction_key,
-                    parsed_distance,
-                    parsed_ascent,
-                    parsed_duration,
-                    signature_json,
-                    quality_json,
-                    clean_generated_at,
-                    signature_id,
-                ),
-            )
-        else:
-            signature_id = "route-signature:" + hashlib.sha256(_json_dumps({
-                "activity_id": clean_activity_id,
-                "signature_version": clean_version,
-            }).encode("utf-8")).hexdigest()
-            db.execute(
-                """
-                INSERT INTO career_route_signatures (
-                    id, activity_id, sport, route_key, direction_key, distance_m,
-                    ascent_m, duration_sec, signature_version, signature_json,
-                    quality_json, generated_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    signature_id,
-                    clean_activity_id,
-                    clean_sport,
-                    clean_route_key,
-                    clean_direction_key,
-                    parsed_distance,
-                    parsed_ascent,
-                    parsed_duration,
-                    clean_version,
-                    signature_json,
-                    quality_json,
-                    clean_generated_at,
-                ),
-            )
-        if owns_conn:
-            db.commit()
-        saved = get_career_route_signature(activity_id=clean_activity_id, signature_version=clean_version, conn=db)
-        if saved is None:
-            raise RuntimeError("route signature write did not produce a readable current row")
-        return saved
-    except Exception:
-        if owns_conn:
-            db.rollback()
-        raise
-    finally:
-        if owns_conn:
-            db.close()
-
-
-def get_career_route_signature(
-    *,
-    activity_id: Any,
-    signature_version: Any = TRAIL_ROUTE_SIGNATURE_VERSION,
-    conn: sqlite3.Connection | None = None,
-) -> dict[str, Any] | None:
-    owns_conn = conn is None
-    db = conn or _connect_default()
-    try:
-        ensure_career_schema(db)
-        row = db.execute(
-            """
-            SELECT id, activity_id, sport, route_key, direction_key, distance_m,
-                   ascent_m, duration_sec, signature_version, signature_json,
-                   quality_json, generated_at, invalidated_at, created_at, updated_at
-            FROM career_route_signatures
-            WHERE activity_id = ?
-              AND signature_version = ?
-              AND invalidated_at IS NULL
-            ORDER BY generated_at DESC, updated_at DESC
-            LIMIT 1
-            """,
-            (
-                _normalize_record_curve_cache_text(activity_id, "activity_id"),
-                _normalize_record_curve_cache_text(signature_version, "signature_version"),
-            ),
-        ).fetchone()
-        return _career_route_signature_row_to_dict(row)
-    finally:
-        if owns_conn:
-            db.close()
-
-
-def save_career_route_match(
-    *,
-    route_key: Any,
-    activity_id: Any,
-    matched_activity_id: Any,
-    match: dict[str, Any],
-    match_version: Any = TRAIL_ROUTE_MATCH_VERSION,
-    generated_at: Any = None,
-    conn: sqlite3.Connection | None = None,
-) -> dict[str, Any]:
-    """Insert or refresh a derived route match row; never creates an active record."""
-    if not isinstance(match, dict):
-        raise ValueError("match must be a JSON object")
-    _assert_trail_route_safe_json(match, path="route_match")
-    owns_conn = conn is None
-    db = conn or _connect_default()
-    try:
-        ensure_career_schema(db)
-        clean_route_key = _normalize_record_curve_cache_text(route_key, "route_key")
-        clean_activity_id = _normalize_record_curve_cache_text(activity_id, "activity_id")
-        clean_matched_activity_id = _normalize_record_curve_cache_text(matched_activity_id, "matched_activity_id")
-        clean_version = _normalize_record_curve_cache_text(match_version, "match_version")
-        clean_generated_at = str(generated_at or _utc_now_iso())
-        direction = str(match.get("direction") or "unknown").strip()
-        decision = str(match.get("decision") or "ignored").strip()
-        reason_codes = list(_dedupe_reason_codes(tuple(str(item) for item in match.get("reason_codes") or ())))
-        _assert_trail_route_safe_json({"reason_codes": reason_codes}, path="route_match")
-        row = db.execute(
-            """
-            SELECT id
-            FROM career_route_matches
-            WHERE route_key = ?
-              AND activity_id = ?
-              AND matched_activity_id = ?
-              AND match_version = ?
-              AND invalidated_at IS NULL
-            LIMIT 1
-            """,
-            (clean_route_key, clean_activity_id, clean_matched_activity_id, clean_version),
-        ).fetchone()
-        if row:
-            match_id = row[0]
-            db.execute(
-                """
-                UPDATE career_route_matches
-                SET direction = ?,
-                    match_score = ?,
-                    coverage_ratio = ?,
-                    overlap_ratio = ?,
-                    length_error_ratio = ?,
-                    decision = ?,
-                    reason_codes_json = ?,
-                    generated_at = ?,
-                    invalidated_at = NULL
-                WHERE id = ?
-                """,
-                (
-                    direction,
-                    _safe_float(match.get("match_score")) or 0.0,
-                    _safe_float(match.get("coverage_ratio")),
-                    _safe_float(match.get("overlap_ratio")),
-                    _safe_float(match.get("length_error_ratio")),
-                    decision,
-                    _json_dumps(reason_codes),
-                    clean_generated_at,
-                    match_id,
-                ),
-            )
-        else:
-            match_id = "route-match:" + hashlib.sha256(_json_dumps({
-                "route_key": clean_route_key,
-                "activity_id": clean_activity_id,
-                "matched_activity_id": clean_matched_activity_id,
-                "match_version": clean_version,
-            }).encode("utf-8")).hexdigest()
-            db.execute(
-                """
-                INSERT INTO career_route_matches (
-                    id, route_key, activity_id, matched_activity_id, match_version,
-                    direction, match_score, coverage_ratio, overlap_ratio,
-                    length_error_ratio, decision, reason_codes_json, generated_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    match_id,
-                    clean_route_key,
-                    clean_activity_id,
-                    clean_matched_activity_id,
-                    clean_version,
-                    direction,
-                    _safe_float(match.get("match_score")) or 0.0,
-                    _safe_float(match.get("coverage_ratio")),
-                    _safe_float(match.get("overlap_ratio")),
-                    _safe_float(match.get("length_error_ratio")),
-                    decision,
-                    _json_dumps(reason_codes),
-                    clean_generated_at,
-                ),
-            )
-        if owns_conn:
-            db.commit()
-        saved = db.execute(
-            """
-            SELECT id, route_key, activity_id, matched_activity_id, match_version,
-                   direction, match_score, coverage_ratio, overlap_ratio,
-                   length_error_ratio, decision, reason_codes_json, generated_at,
-                   invalidated_at, created_at
-            FROM career_route_matches
-            WHERE id = ?
-            LIMIT 1
-            """,
-            (match_id,),
-        ).fetchone()
-        result = _career_route_match_row_to_dict(saved)
-        if result is None:
-            raise RuntimeError("route match write did not produce a readable current row")
-        return result
-    except Exception:
-        if owns_conn:
-            db.rollback()
-        raise
-    finally:
-        if owns_conn:
-            db.close()
-
-
-def get_trail_route_comparison_viewmodel(
-    payload: dict[str, Any] | None = None,
-    conn: sqlite3.Connection | None = None,
-) -> dict[str, Any]:
-    """Return safe route match comparison rows without exposing route signatures."""
-    start = time.perf_counter()
-    raw = payload if isinstance(payload, dict) else {}
-    owns_conn = conn is None
-    db = conn or _connect_default()
-    try:
-        schema = ensure_career_schema(db)
-        where_parts = ["invalidated_at IS NULL"]
-        params: list[Any] = []
-        for key in ("route_key", "activity_id", "matched_activity_id", "decision", "direction"):
-            value = str(raw.get(key) or "").strip()
-            if value:
-                where_parts.append(f"{key} = ?")
-                params.append(value)
-        rows = db.execute(
-            f"""
-            SELECT id, route_key, activity_id, matched_activity_id, match_version,
-                   direction, match_score, coverage_ratio, overlap_ratio,
-                   length_error_ratio, decision, reason_codes_json, generated_at
-            FROM career_route_matches
-            WHERE {' AND '.join(where_parts)}
-            ORDER BY generated_at DESC, route_key ASC, activity_id ASC, matched_activity_id ASC
-            LIMIT 100
-            """,
-            tuple(params),
-        ).fetchall()
-        matches = []
-        for row in rows:
-            data = _career_route_match_row_to_dict(row)
-            if not data:
-                continue
-            matches.append({
-                "id": str(data.get("id") or ""),
-                "route_key": str(data.get("route_key") or ""),
-                "activity_id": str(data.get("activity_id") or ""),
-                "matched_activity_id": str(data.get("matched_activity_id") or ""),
-                "match_version": str(data.get("match_version") or ""),
-                "direction": str(data.get("direction") or ""),
-                "match_score": _safe_float(data.get("match_score")),
-                "coverage_ratio": _safe_float(data.get("coverage_ratio")),
-                "overlap_ratio": _safe_float(data.get("overlap_ratio")),
-                "length_error_ratio": _safe_float(data.get("length_error_ratio")),
-                "decision": str(data.get("decision") or ""),
-                "reason_codes": list(data.get("reason_codes") or []),
-                "candidate_only": str(data.get("decision") or "") == "candidate",
-                "source_refs": {
-                    "activity_id": str(data.get("activity_id") or ""),
-                    "matched_activity_id": str(data.get("matched_activity_id") or ""),
-                },
-                "generated_at": str(data.get("generated_at") or ""),
-            })
-        response = {
-            "matches": matches,
-            "summary": {
-                "returned_count": len(matches),
-                "candidate_count": sum(1 for match in matches if match.get("decision") == "candidate"),
-                "ignored_count": sum(1 for match in matches if match.get("decision") == "ignored"),
-                "route_candidates": sum(1 for match in matches if match.get("decision") == "candidate"),
-                "verified_real_data": False,
-            },
-            "filters": {
-                "route_key": str(raw.get("route_key") or ""),
-                "activity_id": str(raw.get("activity_id") or ""),
-                "matched_activity_id": str(raw.get("matched_activity_id") or ""),
-                "decision": str(raw.get("decision") or ""),
-                "direction": str(raw.get("direction") or ""),
-            },
-            "metrics": {
-                "elapsed_ms": _elapsed_ms(start),
-                "returned_count": len(matches),
-                "performance_target_ms": RECORDS_V2_PERFORMANCE_TARGETS_MS["route_comparison"],
-                "cache_hit": bool(matches),
-                "cache_miss": not bool(matches),
-                "route_candidates": sum(1 for match in matches if match.get("decision") == "candidate"),
-            },
-            "status": _records_v2_status(
-                schema,
-                data_ready=bool(matches),
-                state="ready" if matches else "empty",
-                message="路线对比已生成" if matches else "暂无路线对比",
-            ),
-        }
-        return _records_api_safe(response)
     finally:
         if owns_conn:
             db.close()
@@ -11952,8 +10340,6 @@ def _pb_source_mode_label(source_mode: Any) -> str:
         "activity_total": "整场活动",
         "best_effort_duration": "固定时长最佳努力",
         "best_effort_distance": "固定距离最佳努力",
-        "route_total": "同路线",
-        "segment": "赛段",
     }
     return labels.get(key, key)
 
@@ -12090,7 +10476,6 @@ RECORDS_V2_PERFORMANCE_TARGETS_MS = {
     "record_history": 250,
     "record_curve": 150,
     "record_candidates": 200,
-    "route_comparison": 250,
     "rebuild_plan": 1000,
 }
 RECORDS_V2_OBSERVABILITY_ALLOWED_FIELDS = {
@@ -12110,12 +10495,9 @@ RECORDS_V2_OBSERVABILITY_ALLOWED_FIELDS = {
     "processed",
     "returned_count",
     "candidate_count",
-    "route_candidates",
     "cache_hit",
     "cache_miss",
     "curve_cache_count",
-    "route_match_count",
-    "route_cache_count",
     "elapsed_ms",
     "by_sport",
     "by_family",
@@ -12194,16 +10576,10 @@ def records_v2_safe_observation(event: str, **fields: Any) -> dict[str, Any]:
     return observation
 
 
-def _records_v2_cache_route_observability(conn: sqlite3.Connection) -> dict[str, int]:
+def _records_v2_cache_observability(conn: sqlite3.Connection) -> dict[str, int]:
     curve_cache_count = _count_rows(conn, "career_record_curve_cache", "invalidated_at IS NULL")
-    route_cache_count = _count_rows(conn, "career_route_signatures", "invalidated_at IS NULL")
-    route_match_count = _count_rows(conn, "career_route_matches", "invalidated_at IS NULL")
-    route_candidates = _count_rows(conn, "career_route_matches", "invalidated_at IS NULL AND decision = 'candidate'")
     return {
         "curve_cache_count": int(curve_cache_count),
-        "route_cache_count": int(route_cache_count),
-        "route_match_count": int(route_match_count),
-        "route_candidates": int(route_candidates),
     }
 
 
@@ -13940,14 +12316,10 @@ def _sanitize_snapshot_record_refresh(row: dict[str, Any]) -> dict[str, Any]:
 RECORDS_SNAPSHOT_FORMAL_REFRESH_EVENT_TYPES = {"activated", "activated_from_rebuild", "user_confirmed"}
 RECORDS_SNAPSHOT_CURVE_TYPES = (
     "cycling_power_duration_curve",
-    "trail_pace_curve",
-    "trail_gap_curve",
     "pool_swim_pace_curve",
 )
 RECORDS_SNAPSHOT_TREND_CURVE_TYPES = (
     "cycling_power_duration_curve",
-    "trail_pace_curve",
-    "trail_gap_curve",
 )
 RECORDS_SNAPSHOT_MODEL_ESTIMATES = ("eFTP", "CP", "W'", "MAP", "PMax", "GAP", "NGP")
 
@@ -18945,9 +17317,12 @@ def get_career_timeline(
         schema = ensure_career_schema(db)
         normalized_filters = _normalize_timeline_filters(filters)
         candidates_count = _count_rows(db, "career_event_candidates", "status = 'candidate'")
-        available_nodes = _build_timeline_nodes_for_type(db, normalized_filters["type"], year=None)
-        available_years = _timeline_available_years(available_nodes)
-        nodes = _build_timeline_nodes_for_type(db, normalized_filters["type"], year=normalized_filters["year"])
+        all_nodes = _build_timeline_nodes_for_type(db, normalized_filters["type"], year=None)
+        available_years = _timeline_available_years(all_nodes)
+        if normalized_filters["year"] is not None:
+            nodes = [node for node in all_nodes if node.get("year") == normalized_filters["year"]]
+        else:
+            nodes = all_nodes
         years = _group_timeline_nodes(nodes)
         data_ready = bool(years)
         return {

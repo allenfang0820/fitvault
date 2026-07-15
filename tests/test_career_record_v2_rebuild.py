@@ -108,7 +108,7 @@ class CareerRecordV2RebuildTest(unittest.TestCase):
         finally:
             conn.close()
 
-    def test_activity_invalidation_updates_record_cache_route_and_promotes_fallback(self):
+    def test_activity_invalidation_updates_record_cache_and_promotes_fallback(self):
         conn = sqlite3.connect(":memory:")
         try:
             _create_activities(conn)
@@ -137,33 +137,19 @@ class CareerRecordV2RebuildTest(unittest.TestCase):
                 curve={"anchors": [{"duration_sec": 60, "value": 200}]},
                 conn=conn,
             )
-            conn.execute(
-                """
-                INSERT INTO career_route_signatures
-                    (id, activity_id, sport, route_key, direction_key, signature_version, generated_at)
-                VALUES ('sig-2', '2', 'cycling', 'route-2', 'forward', 'route:v1', '2026-07-14T00:00:00Z')
-                """
-            )
-            conn.execute(
-                """
-                INSERT INTO career_route_matches
-                    (id, route_key, activity_id, matched_activity_id, match_version, direction, match_score, decision, generated_at)
-                VALUES ('match-2', 'route-2', '2', '1', 'match:v1', 'same', 0.95, 'candidate', '2026-07-14T00:00:00Z')
-                """
-            )
-
             dry = career_backend.invalidate_career_record_state_for_activity(conn, 2, reason="activity_deleted", dry_run=True)
             applied = career_backend.invalidate_career_record_state_for_activity(conn, 2, reason="activity_deleted", dry_run=False)
 
             self.assertEqual(dry["would_invalidate_records"], [applied["invalidated"][0]])
             self.assertEqual(len(dry["would_promote"]), 1)
+            self.assertEqual(dry["would_invalidate_cache"], 1)
             active = conn.execute("SELECT activity_id, status FROM career_pb_records WHERE status = 'active'").fetchall()
             invalidated = conn.execute("SELECT activity_id, status FROM career_pb_records WHERE status = 'invalidated'").fetchall()
             self.assertEqual(active, [("1", "active")])
             self.assertEqual(invalidated, [("2", "invalidated")])
             self.assertEqual(applied["invalidated_cache"], 1)
-            self.assertEqual(applied["route_cache"], 1)
-            self.assertEqual(applied["route_matches"], 1)
+            self.assertNotIn("route_cache", applied)
+            self.assertNotIn("route_matches", applied)
         finally:
             conn.close()
 
@@ -174,7 +160,7 @@ class CareerRecordV2RebuildTest(unittest.TestCase):
             _insert_activity(conn, 1, "cycling")
             career_backend.apply_record_evidence_state(conn, _cycling_distance_evidence(1, 100000))
 
-            with mock.patch.object(career_backend, "_invalidate_route_records_for_activity", side_effect=RuntimeError("boom")):
+            with mock.patch.object(career_backend, "invalidate_career_record_curve_cache", side_effect=RuntimeError("boom")):
                 with self.assertRaisesRegex(RuntimeError, "boom"):
                     career_backend.invalidate_career_record_state_for_activity(conn, 1, dry_run=False)
 

@@ -121,23 +121,6 @@ class CareerRecordsV2SecurityPerfObservabilityTest(unittest.TestCase):
             conn=self.conn,
         )
 
-    def _save_route_candidate(self):
-        return career_backend.save_career_route_match(
-            route_key="route:test",
-            activity_id="activity-2",
-            matched_activity_id="activity-1",
-            match={
-                "direction": "same",
-                "match_score": 0.94,
-                "coverage_ratio": 0.91,
-                "overlap_ratio": 0.93,
-                "length_error_ratio": 0.02,
-                "decision": "candidate",
-                "reason_codes": ["same_route_candidate"],
-            },
-            conn=self.conn,
-        )
-
     def test_observability_contract_and_safe_observation_drop_sensitive_fields(self):
         contract = career_backend.records_v2_observability_contract()
         observation = career_backend.records_v2_safe_observation(
@@ -179,9 +162,8 @@ class CareerRecordsV2SecurityPerfObservabilityTest(unittest.TestCase):
         assert_no_sensitive_text(self, records)
         assert_no_sensitive_text(self, candidates)
 
-    def test_curve_and_route_views_report_cache_hit_miss_and_route_candidates(self):
+    def test_curve_view_reports_cache_hit_miss(self):
         self._save_curve()
-        self._save_route_candidate()
 
         curve_hit = career_backend.get_career_record_curve(
             {"activity_id": "activity-1", "curve_type": "cycling_power_duration_curve"},
@@ -191,20 +173,16 @@ class CareerRecordsV2SecurityPerfObservabilityTest(unittest.TestCase):
             {"activity_id": "missing", "curve_type": "cycling_power_duration_curve"},
             conn=self.conn,
         )
-        route = career_backend.get_trail_route_comparison_viewmodel({"route_key": "route:test"}, conn=self.conn)
 
         self.assertTrue(curve_hit["metrics"]["cache_hit"])
         self.assertFalse(curve_hit["metrics"]["cache_miss"])
         self.assertFalse(curve_miss["metrics"]["cache_hit"])
         self.assertTrue(curve_miss["metrics"]["cache_miss"])
-        self.assertTrue(route["metrics"]["cache_hit"])
-        self.assertEqual(route["summary"]["route_candidates"], 1)
-        self.assertEqual(route["metrics"]["route_candidates"], 1)
-        assert_no_sensitive_text(self, route)
+        assert_no_sensitive_text(self, curve_hit)
+        assert_no_sensitive_text(self, curve_miss)
 
-    def test_rebuild_plan_reports_counts_cache_route_metrics_and_failure_recovery(self):
+    def test_rebuild_plan_reports_curve_cache_metrics_and_failure_recovery(self):
         self._save_curve()
-        self._save_route_candidate()
 
         plan = career_backend.rebuild_career_records({"dry_run": True, "batch_size": 1, "cancel_after": 1}, conn=self.conn)
 
@@ -214,9 +192,9 @@ class CareerRecordsV2SecurityPerfObservabilityTest(unittest.TestCase):
         self.assertIn("by_family", plan)
         self.assertIn("by_reason", plan)
         self.assertEqual(plan["metrics"]["curve_cache_count"], 1)
-        self.assertEqual(plan["metrics"]["route_cache_count"], 0)
-        self.assertEqual(plan["metrics"]["route_match_count"], 1)
-        self.assertEqual(plan["metrics"]["route_candidates"], 1)
+        self.assertNotIn("route_cache_count", plan["metrics"])
+        self.assertNotIn("route_match_count", plan["metrics"])
+        self.assertNotIn("route_candidates", plan["metrics"])
         self.assertTrue(plan["failure_recovery"]["supports_batching"])
         self.assertTrue(plan["failure_recovery"]["supports_cancel"])
         self.assertFalse(plan["failure_recovery"]["raw_payload_logged"])

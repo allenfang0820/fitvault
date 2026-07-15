@@ -86,8 +86,8 @@ class CareerRecordSchemaMigrationTest(unittest.TestCase):
             for column in {"record_key", "scope_hash", "scope_key", "run_id", "decision", "reason_codes_json"}:
                 self.assertIn(column, _columns(conn, "career_record_events"))
             self.assertTrue(career_backend._table_exists(conn, "career_record_curve_cache"))
-            self.assertTrue(career_backend._table_exists(conn, "career_route_signatures"))
-            self.assertTrue(career_backend._table_exists(conn, "career_route_matches"))
+            self.assertFalse(career_backend._table_exists(conn, "career_route_signatures"))
+            self.assertFalse(career_backend._table_exists(conn, "career_route_matches"))
 
             pb_indexes = _index_names(conn, "career_pb_records")
             self.assertIn("ux_career_pb_records_active_scope", pb_indexes)
@@ -99,8 +99,6 @@ class CareerRecordSchemaMigrationTest(unittest.TestCase):
             self.assertIn("idx_career_record_events_evidence", event_indexes)
             self.assertIn("idx_career_record_events_record_scope", event_indexes)
             self.assertIn("ux_career_record_curve_cache_current", _index_names(conn, "career_record_curve_cache"))
-            self.assertIn("ux_career_route_signatures_activity_version", _index_names(conn, "career_route_signatures"))
-            self.assertIn("ux_career_route_matches_pair_version", _index_names(conn, "career_route_matches"))
         finally:
             conn.close()
 
@@ -247,15 +245,13 @@ class CareerRecordSchemaMigrationTest(unittest.TestCase):
         finally:
             conn.close()
 
-    def test_v2_derived_tables_do_not_store_raw_stream_or_path_columns(self):
+    def test_v2_curve_cache_does_not_store_raw_stream_or_path_columns(self):
         conn = sqlite3.connect(":memory:")
         try:
             career_backend.ensure_career_schema(conn)
 
             forbidden = {"points", "track_json", "power_stream", "file_path", "storage_ref", "real_lat", "real_lon", "weight_history"}
-            for table_name in ("career_record_curve_cache", "career_route_signatures", "career_route_matches"):
-                with self.subTest(table_name=table_name):
-                    self.assertTrue(forbidden.isdisjoint(_columns(conn, table_name)))
+            self.assertTrue(forbidden.isdisjoint(_columns(conn, "career_record_curve_cache")))
         finally:
             conn.close()
 
