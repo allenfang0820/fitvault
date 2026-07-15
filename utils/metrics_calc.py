@@ -2,20 +2,14 @@ import logging
 import math
 from collections import deque
 
+from metrics_registry import REVIEW_MODE_SPORTS
+
 logger = logging.getLogger(__name__)
 
 
-_CYCLING_SPORT_TYPES: frozenset[str] = frozenset({
-    "cycling",
-    "road_cycling",
-    "mountain_biking",
-})
+_CYCLING_SPORT_TYPES: frozenset[str] = REVIEW_MODE_SPORTS["cycling"]
 
-_RUNNING_SPORT_TYPES: frozenset[str] = frozenset({
-    "running",
-    "trail_running",
-    "treadmill_running",
-})
+_RUNNING_SPORT_TYPES: frozenset[str] = REVIEW_MODE_SPORTS["running"]
 
 _HIKING_SPORT_TYPES: frozenset[str] = frozenset({
     "hiking",

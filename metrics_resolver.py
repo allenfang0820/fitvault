@@ -3,85 +3,26 @@ from __future__ import annotations
 import copy
 import json
 import math
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from metrics_registry import METRICS_REGISTRY, SPORT_ALIASES, SPORT_DISPLAY_NAMES
+from metrics_registry import (
+    METRICS_REGISTRY,
+    REVIEW_SPORT_CAPABILITY_REGISTRY,
+    SPORT_ALIASES,
+    SPORT_DISPLAY_NAMES,
+    get_review_capabilities,
+    normalize_review_sport_type,
+)
 # V7.1 Resolver 接入 GapCalculator 引擎(任务 1.1-1.3 已定型,API 稳定)
 from gap_calculator import GapCalculator
 
-# === V7.8 sport 隔离:能力路由注册表 ===
-# 见 docs/physiology_reference.md §指标 4 Capability Routing
-# 字段定义(只增不改,见 reference §四 1.3 退出机制):
-#   uses_altitude: 海拔是否构成主要环境压力(陆上有氧)
-#   uses_heat:     是否进入"热应激"判定(池水温度恒定故 False)
-#   uses_power:    是否进入功率分支(骑行/滑雪)
-#   uses_swolf:    是否进入 SWOLF 分支(游泳)
-#   uses_cadence:  是否采集步频/踏频数据
-# 严禁硬 sport 字符串排除:必须通过 capability 决定指标启用
-_SPORT_CAPABILITY_REGISTRY: dict[str, dict[str, bool]] = {
-    "running": {
-        "uses_altitude": True,
-        "uses_heat": True,
-        "uses_power": False,
-        "uses_swolf": False,
-        "uses_cadence": True,
-    },
-    "trail_running": {
-        "uses_altitude": True,
-        "uses_heat": True,
-        "uses_power": False,
-        "uses_swolf": False,
-        "uses_cadence": True,
-    },
-    "hiking": {
-        "uses_altitude": True,
-        "uses_heat": True,
-        "uses_power": False,
-        "uses_swolf": False,
-        "uses_cadence": False,
-    },
-    "swimming": {
-        "uses_altitude": False,  # 池内/水面海拔无意义
-        "uses_heat": False,      # 池温恒定
-        "uses_power": False,
-        "uses_swolf": True,
-        "uses_cadence": False,
-    },
-    "open_water": {
-        "uses_altitude": False,
-        "uses_heat": True,       # 水温低,应激大
-        "uses_power": False,
-        "uses_swolf": True,
-        "uses_cadence": False,
-    },
-    "cycling": {
-        "uses_altitude": False,  # 公路骑行海拔非主因
-        "uses_heat": True,
-        "uses_power": True,
-        "uses_swolf": False,
-        "uses_cadence": False,
-    },
-    "mountain_biking": {
-        "uses_altitude": True,   # 爬升是核心
-        "uses_heat": True,
-        "uses_power": True,
-        "uses_swolf": False,
-        "uses_cadence": False,
-    },
-    "skiing": {
-        "uses_altitude": True,
-        "uses_heat": True,
-        "uses_power": True,
-        "uses_swolf": False,
-        "uses_cadence": False,
-    },
-    "default": {
-        "uses_altitude": True,
-        "uses_heat": True,
-        "uses_power": False,
-        "uses_swolf": False,
-        "uses_cadence": False,
-    },
+# === FR-Core-06 sport review capability single source ===
+# Compatibility alias: callers may still import _SPORT_CAPABILITY_REGISTRY, but
+# the source of truth is metrics_registry.REVIEW_SPORT_CAPABILITY_REGISTRY.
+_SPORT_CAPABILITY_REGISTRY: dict[str, dict[str, Any]] = {
+    **REVIEW_SPORT_CAPABILITY_REGISTRY,
+    "default": get_review_capabilities("unknown"),
 }
 
 
@@ -92,8 +33,8 @@ def _classify_sport_dimension(sport_type: str | None) -> dict[str, bool]:
     未知 sport 走 default(最保守,全部 False)。
     严禁抛 KeyError(见 reference §6 风险说明 降级路径)。
     """
-    token = str(sport_type or "").strip().lower()
-    return _SPORT_CAPABILITY_REGISTRY.get(token, _SPORT_CAPABILITY_REGISTRY["default"])
+    token = normalize_review_sport_type(sport_type)
+    return dict(_SPORT_CAPABILITY_REGISTRY.get(token, get_review_capabilities(token)))
 
 
 # ── V4.0 核心数据契约 (防腐层) ──
@@ -627,6 +568,15 @@ class MetricsResolver:
             return float(value)
         except (TypeError, ValueError):
             return 0.0
+
+    @staticmethod
+    def _normalize_hr_source(value: Any) -> str:
+        token = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+        if token in {"chest_strap", "cheststrap", "hrm", "heart_rate_monitor", "external_hr", "external"}:
+            return "chest_strap"
+        if token in {"optical", "wrist", "wrist_hr", "ohr", "watch_optical"}:
+            return "optical"
+        return "unknown"
 
     @staticmethod
     def _optional_num(value: Any) -> float | None:
@@ -1664,7 +1614,12 @@ class MetricsResolver:
         """Build the review-facing decoupling metric from efficiency curve."""
         result: dict[str, Any] = {
             "pct": 0.0,
+            "change_pct": None,
+            "decline_pct": None,
+            "direction": "unknown",
             "level": "unknown",
+            "basis": "efficiency_curve_signed_change",
+            "version": "fr_core_02_signed_decoupling_v1",
         }
         if not efficiency_curve or len(efficiency_curve) < 2:
             return result
@@ -1688,22 +1643,35 @@ class MetricsResolver:
         if early_efficiency <= 0:
             return result
 
-        pct = round(abs(early_efficiency - late_efficiency) / early_efficiency * 100.0, 2)
-        if pct < 5:
+        change_pct = round((late_efficiency - early_efficiency) / early_efficiency * 100.0, 2)
+        decline_pct = round(max(0.0, -change_pct), 2)
+        if change_pct > 2.0:
+            direction = "improved"
+        elif change_pct < -2.0:
+            direction = "declined"
+        else:
+            direction = "stable"
+
+        if decline_pct < 5:
             level = "excellent"
-        elif pct < 10:
+        elif decline_pct < 10:
             level = "good"
-        elif pct < 15:
+        elif decline_pct < 15:
             level = "warn"
         else:
             level = "bad"
 
         return {
-            "pct": pct,
+            "pct": decline_pct,
+            "change_pct": change_pct,
+            "decline_pct": decline_pct,
+            "direction": direction,
             "level": level,
             "confidence": "medium",
             "early_efficiency": round(early_efficiency, 4),
             "late_efficiency": round(late_efficiency, 4),
+            "basis": "efficiency_curve_signed_change",
+            "version": "fr_core_02_signed_decoupling_v1",
         }
 
     @staticmethod
@@ -2782,6 +2750,7 @@ class MetricsResolver:
         sport_type: str,
         current_activity_id: int,
         window_days: int = 21,
+        as_of_time: Any = None,
     ) -> dict[str, Any]:
         """V7.9:从 activities 表取 21d 同 sport 历史中位数 efficiency ratio。
 
@@ -2789,24 +2758,68 @@ class MetricsResolver:
         返回:{"baseline_ratio": float|None, "sample_size": int, "window_days": int}
         """
         import sqlite3
-        from datetime import datetime, timedelta, timezone
+
+        def _parse_activity_datetime(value: Any) -> datetime | None:
+            if value is None:
+                return None
+            text = str(value).strip()
+            if not text:
+                return None
+            try:
+                parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+            except ValueError:
+                try:
+                    parsed = datetime.strptime(text[:19], "%Y-%m-%d %H:%M:%S")
+                except ValueError:
+                    return None
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            return parsed.astimezone(timezone.utc)
+
         try:
+            as_of_dt = _parse_activity_datetime(as_of_time)
             conn = sqlite3.connect(db_path)
             cursor = conn.cursor()
-            cutoff_ts = (datetime.now(timezone.utc) - timedelta(days=window_days)).isoformat()
+            cols = {str(r[1]) for r in cursor.execute("PRAGMA table_info(activities)").fetchall()}
+            has_utc = "start_time_utc" in cols
+            if as_of_dt is None:
+                current_time_select = "start_time_utc, start_time" if has_utc else "NULL, start_time"
+                current_row = cursor.execute(
+                    f"SELECT {current_time_select} FROM activities WHERE id = ?",
+                    (current_activity_id,),
+                ).fetchone()
+                if current_row:
+                    as_of_dt = _parse_activity_datetime(current_row[0]) or _parse_activity_datetime(
+                        current_row[1]
+                    )
+            if as_of_dt is None:
+                conn.close()
+                return {"baseline_ratio": None, "sample_size": 0, "window_days": window_days}
+
+            window_start = as_of_dt - timedelta(days=window_days)
+            time_select = "start_time_utc, start_time" if has_utc else "NULL, start_time"
+            time_where = (
+                "COALESCE(NULLIF(start_time_utc, ''), NULLIF(start_time, '')) IS NOT NULL"
+                if has_utc
+                else "NULLIF(start_time, '') IS NOT NULL"
+            )
+            time_where = f"({time_where})"
+            if "deleted_at" in cols:
+                time_where += " AND deleted_at IS NULL"
+            time_order = "COALESCE(start_time_utc, start_time) DESC" if has_utc else "start_time DESC"
             cursor.execute(
-                """
-                SELECT avg_hr, avg_pace, duration_sec
+                f"""
+                SELECT {time_select}, avg_hr, avg_pace, duration_sec
                 FROM activities
                 WHERE sport_type = ?
                   AND id != ?
-                  AND start_time < ?
+                  AND {time_where}
                   AND avg_hr IS NOT NULL
                   AND avg_pace IS NOT NULL
                   AND duration_sec > ?
-                ORDER BY start_time DESC
+                ORDER BY {time_order}
                 """,
-                (sport_type, current_activity_id, cutoff_ts, 15 * 60),
+                (sport_type, current_activity_id, 15 * 60),
             )
             rows = cursor.fetchall()
             conn.close()
@@ -2814,7 +2827,10 @@ class MetricsResolver:
             return {"baseline_ratio": None, "sample_size": 0, "window_days": window_days}
 
         ratios = []
-        for avg_hr, avg_pace, _dur in rows:
+        for start_utc, start_time, avg_hr, avg_pace, _dur in rows:
+            activity_dt = _parse_activity_datetime(start_utc) or _parse_activity_datetime(start_time)
+            if not activity_dt or not (window_start <= activity_dt < as_of_dt):
+                continue
             if avg_pace and float(avg_pace) > 0 and avg_hr and float(avg_hr) > 0:
                 speed_mps = 1000.0 / float(avg_pace)
                 ratios.append(speed_mps / float(avg_hr))
@@ -2983,7 +2999,7 @@ class MetricsResolver:
         profile_resting_hr=None,
         duration_sec: float = 0.0,
         sport_type: str = "running",
-        hr_source: str = "chest_strap",
+        hr_source: str = "unknown",
     ) -> dict:
         """V7.13 指标 9:Training Load(Banister TRIMP 简化版)。
 
@@ -3079,8 +3095,11 @@ class MetricsResolver:
 
         # confidence 校正(reference §7 4 级条件)
         confidence = "high"
-        if hr_source == "optical":
+        normalized_hr_source = MetricsResolver._normalize_hr_source(hr_source)
+        if normalized_hr_source in {"optical", "unknown"}:
             confidence = "medium"
+            if normalized_hr_source == "unknown":
+                reasons.append("hr_source_unknown")
         if not hr_zone_distribution or used_hrr_fallback:
             confidence = "medium"  # MEDIUM:无 zone distribution(基于 avg_hr 推算)
         if sport_type == "swimming":
@@ -3156,6 +3175,8 @@ class MetricsResolver:
                 "cv": None, "decay_pct": None,
                 "is_intermittent": False,
                 "confidence": "unavailable",
+                "status": "not_applicable",
+                "reasons": ["unsupported_sport"],
             }
 
         # 前置检查
@@ -3165,6 +3186,8 @@ class MetricsResolver:
                 "cv": None, "decay_pct": None,
                 "is_intermittent": False,
                 "confidence": "unavailable",
+                "status": "unavailable",
+                "reasons": ["points<20"],
             }
         if duration_sec < MetricsResolver._CADENCE_MIN_DURATION_MIN * 60:
             return {
@@ -3172,6 +3195,8 @@ class MetricsResolver:
                 "cv": None, "decay_pct": None,
                 "is_intermittent": False,
                 "confidence": "unavailable",
+                "status": "unavailable",
+                "reasons": ["duration<20min"],
             }
 
         # 过滤 0 / 异常值(Garmin 静止时输出 0)
@@ -3183,6 +3208,8 @@ class MetricsResolver:
                 "cv": None, "decay_pct": None,
                 "is_intermittent": False,
                 "confidence": "unavailable",
+                "status": "unavailable",
+                "reasons": ["points<20"],
             }
 
         n = len(valid)
@@ -3197,6 +3224,8 @@ class MetricsResolver:
                 "cv": round(cv, 2), "decay_pct": None,
                 "is_intermittent": True,
                 "confidence": "low",
+                "status": "partial",
+                "reasons": ["intermittent_cadence_pattern"],
             }
 
         # 前后半程步频均值
@@ -3250,6 +3279,8 @@ class MetricsResolver:
             "decay_pct": decay_pct_val,
             "is_intermittent": False,
             "confidence": confidence,
+            "status": "available",
+            "reasons": [],
         }
 
     @staticmethod
@@ -3493,7 +3524,7 @@ def evaluate_efficiency(
     sample_size: int,
     avg_temp_c: float | None = None,
     max_alt_m: float | None = None,
-    hr_source: str = "chest_strap",
+    hr_source: str = "unknown",
 ) -> dict[str, Any]:
     """V7.9 公开 API:组合 baseline 比对 + confidence 评估(reference §7 4 级条件)。
 
@@ -3519,6 +3550,8 @@ def evaluate_efficiency(
             "score": None, "ratio": base["ratio"], "level": "unknown",
             "confidence": "low", "delta_pct": None,
             "baseline_ratio": None, "sample_size": sample_size,
+            "reason_code": "insufficient_efficiency_baseline",
+            "reasons": ["insufficient_efficiency_baseline"],
         }
 
     delta_pct = (base["ratio"] - baseline_ratio) / baseline_ratio * 100
@@ -3536,7 +3569,8 @@ def evaluate_efficiency(
 
     # confidence 校正(reference §7 4 级条件)
     confidence = "high"
-    if hr_source == "optical":
+    normalized_hr_source = MetricsResolver._normalize_hr_source(hr_source)
+    if normalized_hr_source in {"optical", "unknown"}:
         confidence = "medium"
     if duration_sec < 30 * 60:
         confidence = "medium"

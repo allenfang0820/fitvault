@@ -37,8 +37,8 @@ updated: 2026-07-09
 
 - [x] 代码闭环：新增一级导航「运动生涯」。
   - 证据：`track.html` 中 `bookmark-tab[data-panel="career"]` 与 `panel-career`。
-- [x] 代码闭环：移除或降级当前「个人运动数据 > 荣誉墙」预留页，改为跳转入口。
-  - 证据：荣誉墙保留为 `data-legacy-honor-entry="career-link"`。
+- [x] 代码闭环：移除当前「个人运动数据 > 荣誉墙 / 运动生涯入口」重复入口。
+  - 证据：运动生涯已作为一级导航存在，个人运动数据页不再保留 `data-hub-tab="honors"`、`data-legacy-honor-entry` 或 `switchToCareerFromHonorWall`。
 - [x] 代码闭环：新建 ACS 后端模块 `career_backend.py`，避免继续膨胀 `main.py`。
   - 证据：`docs/acs_phase0_01_architecture_baseline_completion_report.md`。
 - [x] 代码闭环：新增 ACS API 契约到 `docs/js_api_contract.json`。
@@ -59,7 +59,9 @@ updated: 2026-07-09
 - [x] 代码闭环：支持用户手动标记/取消赛事。
   - 用户确认优先级高于后续 FIT 自动同步。
   - 活动列表在「时间」与「标题」之间提供独立赛事奖牌列；点亮 `🏅` 表示赛事，灰阶未点亮 `🏅` 表示非赛事。
-  - 用户点击奖牌即时切换赛事标记，不弹窗；前端只展示后端 `is_race` 事实，不根据标题 / 距离自行推断。
+  - 活动列表奖牌展示以后端输出为准：`activities.is_race` 为真，或存在 active `career_race_events` 且用户未手动否决时，都应点亮 `🏅`。
+  - 用户点击奖牌即时切换赛事标记，不弹窗；前端不根据标题 / 距离自行推断赛事，只消费后端判定后的字段。
+  - 赛事档案中由 Race Resolver / 标题距离规则自动识别的赛事卡片，应提供「是赛事 / 不是赛事」内联判断按钮；已由用户手动点亮 `🏅` 的赛事卡片不再展示判断按钮。
 - [x] 代码闭环：建立 Race Resolver，证据来源包括：
   - FIT `sport_event`
   - 用户确认状态
@@ -149,17 +151,16 @@ updated: 2026-07-09
 - [x] 代码闭环：实现 `get_career_timeline` API。
 - [x] 轻量闭环：500+ 节点采用按月份分段渲染与渐进展开。
   - 后续真实用户数据达到更高规模时，再评估真正虚拟列表或后端分页。
-- [ ] 未完成：记忆节点进入主时间轴的完整产品化展示仍需后续增强。
+- [x] 已取消：通用记忆节点不进入主时间轴。
 
 ## Phase 6：Memory Gallery
+
+> 2026-07-13 产品决策更新：通用“记忆”写入、故事编辑与停用能力已退役，不再作为现行产品契约。仅保留从赛事 Activity Detail 管理照片、按赛事只读浏览相册，以及 Overview Banner 复用赛事首图的链路；底层 `career_memory_items` 只作为现有赛事照片的内部存储实现。
 
 ### 已完成：轻量闭环
 
 - [x] 先做轻量版，不急着做复杂相册。
-- [x] MemoryItem 轻量支持：
-  - 故事文本：已支持新增、原位编辑、软停用。
-  - 图片：已支持 `photo` 类型安全媒体引用，不做真实上传器。
-  - 轨迹截图：已支持 `track` 类型安全媒体引用，不做自动截图生成。
+- [x] 历史轻量记忆能力已退役为内部实现说明：现行产品只保留赛事照片 `photo` 类型安全媒体引用；故事文本、轨迹截图和通用记忆写入不再作为现行产品契约。
 - [x] 图片缺失时不能空成一堆占位图；当前只展示文本卡片和 `has_media` 状态。
 - [x] 每个 MemoryItem 必须绑定 `activity_id` 或 `race_id`。
 - [x] macOS / Windows 路径走应用受控逻辑引用，不把绝对本地路径暴露给 AI；当前 API 不返回 `storage_ref` 或本地路径。
@@ -185,7 +186,7 @@ updated: 2026-07-09
   - PB 摘要
   - major_achievements
   - timeline digest
-  - representative_memories
+- [x] 契约同步：旧通用记忆、赛事照片内部存储、媒体引用和本地路径不得进入 Career Snapshot；年度 Year Snapshot 后续使用独立 scope、年份、版本、指纹和 API。
 - [x] 轻量闭环：禁止进入 AI / Career Insight 前端展示：
   - 原始 FIT
   - points
@@ -215,9 +216,10 @@ updated: 2026-07-09
   - 时间轴
   - 赛事档案
   - PB
-  - 荣誉
   - AI 总结
   - 足迹入口
+- [x] 代码闭环：移除运动生涯二级导航中的「荣誉」标签页。
+  - 说明：赛事成绩、PB、里程碑分别在赛事档案、记录中心、时间轴 / 总览中体现；Achievement Engine 与后端 API 保留为底层语义能力，不作为独立二级页直接展示。
 - [x] 代码闭环：不再使用当前“照片卡片墙 + coming soon 遮罩”作为 ACS 主形态。
 - [x] 代码闭环：卡片保持紧凑、可扫描，不做营销式 landing page。
 - [x] 代码闭环：移动端单列布局。

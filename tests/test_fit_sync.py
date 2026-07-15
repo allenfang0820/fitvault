@@ -40,6 +40,7 @@ class TestFitSync(unittest.TestCase):
         self.original_profile_cache_path = profile_backend.PROFILE_CACHE_PATH
         self.original_np_backfill_status = dict(main._NP_BACKFILL_STATUS)
         self.original_weather_backfill_status = dict(main._WEATHER_BACKFILL_STATUS)
+        self.original_region_cooldown = profile_backend.REGION_ENRICH_PROVIDER_COOLDOWN_UNTIL
 
         profile_backend.DB_PATH = self.temp_dir / "user_profile.db"
         profile_backend.DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -50,6 +51,7 @@ class TestFitSync(unittest.TestCase):
         profile_backend.SYNC_STATE_DIR = str(self.temp_dir / "sync_state")
         profile_backend.SYNC_STATE_PATH = os.path.join(profile_backend.SYNC_STATE_DIR, "sync_state.json")
         profile_backend.PROFILE_CACHE_PATH = os.path.join(profile_backend.SYNC_STATE_DIR, "user_profile_cache.json")
+        profile_backend.REGION_ENRICH_PROVIDER_COOLDOWN_UNTIL = None
         Path(main.TRACKS_DIR).mkdir(parents=True, exist_ok=True)
         Path(main.IMPORTS_DIR).mkdir(parents=True, exist_ok=True)
         Path(profile_backend.SYNC_STATE_DIR).mkdir(parents=True, exist_ok=True)
@@ -82,6 +84,7 @@ class TestFitSync(unittest.TestCase):
         profile_backend.SYNC_STATE_DIR = self.original_sync_state_dir
         profile_backend.SYNC_STATE_PATH = self.original_sync_state_path
         profile_backend.PROFILE_CACHE_PATH = self.original_profile_cache_path
+        profile_backend.REGION_ENRICH_PROVIDER_COOLDOWN_UNTIL = self.original_region_cooldown
         with main._NP_BACKFILL_LOCK:
             main._NP_BACKFILL_STATUS.clear()
             main._NP_BACKFILL_STATUS.update(self.original_np_backfill_status)
@@ -318,7 +321,7 @@ class TestFitSync(unittest.TestCase):
         self.assertTrue(result["ok"], result)
         self.assertEqual(result["op"], "inserted")
         self.assertEqual(result["career_refresh"]["ok"], True)
-        refresh_mock.assert_called_once_with()
+        refresh_mock.assert_called_once_with(include_pb=False)
 
     def test_single_fit_sync_keeps_import_success_when_career_refresh_fails(self):
         fit_path = self.temp_dir / "career-refresh-warning.fit"
@@ -1817,6 +1820,19 @@ class TestFitSync(unittest.TestCase):
         for forbidden_surface in ("raw FIT", "points", "track_json", "file_path", "SQLite schema"):
             self.assertIn(forbidden_surface, method["description"])
 
+    def test_js_api_contract_registers_region_enrichment_dry_run_as_readonly(self):
+        contract = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
+        methods = {item["name"]: item for item in contract["methods"]}
+
+        self.assertIn("get_region_enrichment_dry_run", methods)
+        method = methods["get_region_enrichment_dry_run"]
+        self.assertEqual(method["category"], "activity")
+        self.assertTrue(method["readonly"])
+        self.assertFalse(method["high_risk"])
+        self.assertIn("不写 activities", method["description"])
+        self.assertIn("不调用 Nominatim", method["description"])
+        self.assertIn("不生成或刷新年度 AI 报告", method["description"])
+
     def test_activity_list_item_falls_back_to_clean_filename_when_title_missing(self):
         row = {
             "id": 1,
@@ -2190,6 +2206,84 @@ class TestFitSync(unittest.TestCase):
         self.assertEqual(row["region_status"], "success")
         self.assertIsNone(row["region_error"])
 
+    def test_region_enrichment_cache_hit_bulk_writes_same_coordinate_without_nominatim(self):
+        main.ensure_activity_sync_schema()
+        first = self._activity("cache_bulk_1.fit")
+        second = self._activity("cache_bulk_2.fit")
+        for activity in (first, second):
+            activity["region"] = ""
+            activity["region_status"] = "pending"
+            activity["start_lat"] = 30.671
+            activity["start_lon"] = 104.061
+            activity["title_source"] = "auto_sport"
+        self._set_activity_start(second, "2026-05-20T08:00:00Z")
+        r1 = main._persist_sync_activity(first)
+        r2 = main._persist_sync_activity(second)
+
+        conn = profile_backend._conn()
+        try:
+            conn.execute(
+                "INSERT INTO geocode_cache (cache_key, lat_round, lon_round, city, country, display, provider, status, created_at, updated_at, last_used_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, 'nominatim', 'success', datetime('now'), datetime('now'), datetime('now'))",
+                ("30.67,104.06", 30.67, 104.06, "成都市", "中国", "成都市/中国"),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        with mock.patch.object(profile_backend, "reverse_geocode", side_effect=AssertionError("不应访问 Nominatim")):
+            enrichment = profile_backend.run_region_enrichment_once(limit=5)
+
+        self.assertTrue(enrichment["ok"])
+        self.assertEqual(enrichment["cache_hits"], 2)
+        self.assertEqual(enrichment["requests"], 0)
+        conn = profile_backend._conn()
+        try:
+            rows = conn.execute(
+                "SELECT id, title, title_source, region_city, region_status FROM activities WHERE id IN (?, ?) ORDER BY id",
+                (r1["id"], r2["id"]),
+            ).fetchall()
+        finally:
+            conn.close()
+
+        self.assertEqual([row["region_city"] for row in rows], ["成都市", "成都市"])
+        self.assertEqual([row["region_status"] for row in rows], ["success", "success"])
+        self.assertEqual([row["title"] for row in rows], ["成都市 跑步", "成都市 跑步"])
+
+    def test_region_enrichment_requests_unique_coordinate_once_and_bulk_writes(self):
+        main.ensure_activity_sync_schema()
+        first = self._activity("unique_coord_1.fit")
+        second = self._activity("unique_coord_2.fit")
+        for activity in (first, second):
+            activity["region"] = ""
+            activity["region_status"] = "pending"
+            activity["start_lat"] = 31.230
+            activity["start_lon"] = 121.470
+            activity["title_source"] = "auto_sport"
+        self._set_activity_start(second, "2026-05-20T08:00:00Z")
+        main._persist_sync_activity(first)
+        main._persist_sync_activity(second)
+
+        calls = []
+        def fake_reverse(lat, lon):
+            calls.append((lat, lon))
+            return {"city": "上海市", "country": "中国", "display_name": "上海市, 中国"}
+
+        with mock.patch.object(profile_backend, "reverse_geocode", side_effect=fake_reverse):
+            enrichment = profile_backend.run_region_enrichment_once(limit=5)
+
+        self.assertEqual(calls, [(31.23, 121.47)])
+        self.assertEqual(enrichment["requests"], 1)
+        self.assertEqual(enrichment["success"], 2)
+
+        conn = profile_backend._conn()
+        try:
+            rows = conn.execute("SELECT region_city, region_status FROM activities ORDER BY id").fetchall()
+        finally:
+            conn.close()
+        self.assertEqual([row["region_city"] for row in rows], ["上海市", "上海市"])
+        self.assertEqual([row["region_status"] for row in rows], ["success", "success"])
+
     def test_region_enrichment_upgrades_auto_coros_title_after_cache_populated(self):
         main.ensure_activity_sync_schema()
         activity = self._activity("coros___activity-fit-files_3a4c7694c39941c98ef78f4fe33feae2.fit")
@@ -2232,6 +2326,123 @@ class TestFitSync(unittest.TestCase):
         self.assertEqual(row["title_source"], "auto_region_sport")
         self.assertEqual(row["region"], display)
         self.assertEqual(row["region_status"], "success")
+
+    def test_region_enrichment_preserves_manual_title_on_success(self):
+        main.ensure_activity_sync_schema()
+        activity = self._activity("manual_title_region.fit")
+        activity["title"] = "我的自定义标题"
+        activity["title_source"] = "user"
+        activity["region"] = ""
+        activity["region_status"] = "pending"
+        activity["start_lat"] = 39.90
+        activity["start_lon"] = 116.40
+        result = main._persist_sync_activity(activity)
+
+        conn = profile_backend._conn()
+        try:
+            conn.execute(
+                "INSERT INTO geocode_cache (cache_key, lat_round, lon_round, city, country, display, provider, status, created_at, updated_at, last_used_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, 'nominatim', 'success', datetime('now'), datetime('now'), datetime('now'))",
+                ("39.90,116.40", 39.90, 116.40, "北京市", "中国", "北京市/中国"),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        enrichment = profile_backend.run_region_enrichment_once(limit=5)
+        self.assertEqual(enrichment["success"], 1)
+        self.assertEqual(enrichment["title_updated"], 0)
+
+        conn = profile_backend._conn()
+        try:
+            row = conn.execute("SELECT title, title_source, region_city, region_status FROM activities WHERE id = ?", (result["id"],)).fetchone()
+        finally:
+            conn.close()
+        self.assertEqual(row["title"], "我的自定义标题")
+        self.assertEqual(row["title_source"], "user")
+        self.assertEqual(row["region_city"], "北京市")
+        self.assertEqual(row["region_status"], "success")
+
+    def test_region_enrichment_inferred_does_not_rename_and_later_success_overrides(self):
+        main.ensure_activity_sync_schema()
+        activity = self._activity("offline_fallback.fit")
+        activity["title"] = "跑步"
+        activity["title_source"] = "auto_sport"
+        activity["region"] = ""
+        activity["region_status"] = "pending"
+        activity["start_lat"] = 34.89
+        activity["start_lon"] = 135.81
+        result = main._persist_sync_activity(activity)
+
+        def offline(lat, lon):
+            return {"city": "宇治市", "country": "日本", "display_name": "宇治市, 日本"}
+
+        with mock.patch.object(profile_backend, "reverse_geocode", side_effect=ConnectionError("Nominatim 不可达")):
+            enrichment = profile_backend.run_region_enrichment_once(limit=5, offline_resolver=offline)
+        self.assertEqual(enrichment["inferred"], 1)
+        conn = profile_backend._conn()
+        try:
+            row = conn.execute("SELECT title, title_source, region_city, region_status, region_source FROM activities WHERE id = ?", (result["id"],)).fetchone()
+        finally:
+            conn.close()
+        self.assertEqual(row["title"], "跑步")
+        self.assertEqual(row["title_source"], "auto_sport")
+        self.assertEqual(row["region_city"], "宇治市")
+        self.assertEqual(row["region_status"], "inferred")
+        self.assertEqual(row["region_source"], "offline_geocoder")
+
+        conn = profile_backend._conn()
+        try:
+            conn.execute(
+                """
+                INSERT INTO geocode_cache (cache_key, lat_round, lon_round, city, country, display, provider, status, created_at, updated_at, last_used_at)
+                VALUES (?, ?, ?, ?, ?, ?, 'nominatim', 'success', datetime('now'), datetime('now'), datetime('now'))
+                ON CONFLICT(cache_key) DO UPDATE SET city=excluded.city, country=excluded.country, display=excluded.display, status='success', updated_at=datetime('now')
+                """,
+                ("34.89,135.81", 34.89, 135.81, "京都府", "日本", "京都府/日本"),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        profile_backend.run_region_enrichment_once(limit=5)
+        conn = profile_backend._conn()
+        try:
+            row = conn.execute("SELECT title, region_city, region_status, region_source FROM activities WHERE id = ?", (result["id"],)).fetchone()
+        finally:
+            conn.close()
+        self.assertEqual(row["title"], "京都府 跑步")
+        self.assertEqual(row["region_city"], "京都府")
+        self.assertEqual(row["region_status"], "success")
+        self.assertEqual(row["region_source"], "nominatim")
+
+    def test_region_enrichment_dry_run_reports_cache_and_title_counts_by_year(self):
+        main.ensure_activity_sync_schema()
+        activity = self._activity("dry_run_region.fit")
+        activity["start_time"] = "2024-03-01T08:00:00+08:00"
+        activity["start_time_utc"] = "2024-03-01T00:00:00Z"
+        activity["region"] = ""
+        activity["region_status"] = "pending"
+        activity["start_lat"] = 30.67
+        activity["start_lon"] = 104.06
+        activity["title_source"] = "auto_sport"
+        main._persist_sync_activity(activity)
+        conn = profile_backend._conn()
+        try:
+            conn.execute(
+                "INSERT INTO geocode_cache (cache_key, lat_round, lon_round, city, country, display, provider, status, created_at, updated_at, last_used_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, 'nominatim', 'success', datetime('now'), datetime('now'), datetime('now'))",
+                ("30.67,104.06", 30.67, 104.06, "成都市", "中国", "成都市/中国"),
+            )
+            conn.commit()
+            dry_run = profile_backend.region_enrichment_dry_run([2024], conn=conn)
+        finally:
+            conn.close()
+
+        self.assertTrue(dry_run["ok"])
+        self.assertEqual(dry_run["years"][0]["year"], 2024)
+        self.assertEqual(dry_run["years"][0]["pending_gps_activity_count"], 1)
+        self.assertEqual(dry_run["years"][0]["cache_hit_activity_count"], 1)
+        self.assertEqual(dry_run["years"][0]["auto_title_update_candidate_count"], 1)
 
     def test_backfill_auto_activity_titles_updates_existing_coros_title(self):
         main.ensure_activity_sync_schema()

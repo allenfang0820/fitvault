@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import career_backend
 import main
 import profile_backend
 
@@ -26,22 +27,53 @@ class TestActivityRaceFlagApi(unittest.TestCase):
         main._ACTIVITY_SYNC_SCHEMA_READY_FOR = self.original_main_schema
         self.temp_dir_obj.cleanup()
 
-    def _insert_activity(self) -> int:
+    def _insert_activity(self, **overrides) -> int:
         main.ensure_activity_sync_schema()
         conn = profile_backend._conn()
         try:
+            data = {
+                "filename": "manual-race.fit",
+                "file_name": "manual-race.fit",
+                "title": "测试活动",
+                "title_source": "filename",
+                "sport_type": "running",
+                "start_time": "2026-05-19T08:00:00+08:00",
+                "deleted_at": None,
+                "is_race": 0,
+                "race_source": None,
+                "race_confidence": None,
+                "race_override": 0,
+            }
+            data.update(overrides)
+            columns = list(data)
+            placeholders = ", ".join("?" for _ in columns)
             cur = conn.execute(
-                """
-                INSERT INTO activities
-                    (filename, file_name, title, title_source, sport_type, start_time, deleted_at,
-                     is_race, race_source, race_confidence, race_override)
-                VALUES
-                    ('manual-race.fit', 'manual-race.fit', '测试活动', 'filename', 'running',
-                     '2026-05-19T08:00:00+08:00', NULL, 0, NULL, NULL, 0)
-                """
+                f"INSERT INTO activities ({', '.join(columns)}) VALUES ({placeholders})",
+                [data[column] for column in columns],
             )
             conn.commit()
             return int(cur.lastrowid)
+        finally:
+            conn.close()
+
+    def _insert_active_career_race(self, activity_id: int, source: str = "resolver") -> None:
+        conn = profile_backend._conn()
+        try:
+            career_backend.ensure_career_schema(conn)
+            conn.execute(
+                """
+                INSERT INTO career_race_events
+                    (id, activity_id, name, event_type, sport, event_date, location_json,
+                     performance_summary_json, achievement_ids_json, confidence, source, status,
+                     display_metadata_json, updated_at)
+                VALUES
+                    (?, ?, '系统识别赛事', 'race', 'running', '2026-05-19', '{}',
+                     '{}', '[]', 0.82, ?, 'active',
+                     '{"confidence_level":"medium"}', datetime('now'))
+                """,
+                (f"race:auto:{activity_id}", str(activity_id), source),
+            )
+            conn.commit()
         finally:
             conn.close()
 
@@ -143,6 +175,36 @@ class TestActivityRaceFlagApi(unittest.TestCase):
         data = res["data"]
         for field in ("points", "track_json", "raw_records", "fit_records", "file_path"):
             self.assertNotIn(field, data)
+
+    def test_activity_list_lights_medal_for_active_system_detected_race(self):
+        activity_id = self._insert_activity()
+        self._insert_active_career_race(activity_id, source="resolver")
+
+        res = self.api.get_activity_list(page=1, page_size=20)
+
+        self.assertTrue(res["ok"])
+        record = next(item for item in res["data"]["records"] if item["id"] == activity_id)
+        self.assertTrue(record["is_race"])
+        self.assertEqual(record["race_source"], "resolver")
+        self.assertTrue(record["career_race_is_active"])
+        self.assertEqual(record["career_race_source"], "resolver")
+
+    def test_activity_list_respects_user_cancelled_race_over_active_race_event(self):
+        activity_id = self._insert_activity(
+            is_race=0,
+            race_source="user",
+            race_confidence="high",
+            race_override=1,
+        )
+        self._insert_active_career_race(activity_id, source="resolver")
+
+        res = self.api.get_activity_list(page=1, page_size=20)
+
+        self.assertTrue(res["ok"])
+        record = next(item for item in res["data"]["records"] if item["id"] == activity_id)
+        self.assertFalse(record["is_race"])
+        self.assertEqual(record["race_source"], "user")
+        self.assertTrue(record["career_race_is_active"])
 
 
 if __name__ == "__main__":

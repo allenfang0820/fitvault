@@ -1,0 +1,24 @@
+{
+  "app": "/Users/fanglei/应用开发/AI track/dist/脉图.app/Contents/MacOS/FitVault",
+  "home": "/Users/fanglei/应用开发/AI track/docs/records_center_real_db_audit/rc28_packaged_home",
+  "runs": [
+    {
+      "run": 1,
+      "returncode": -15,
+      "timed_out_running_gui": true,
+      "elapsed_sec": 8.019,
+      "fitvault_dir_exists": true,
+      "profile_db_exists": true,
+      "stderr_tail": "2026-07-14 00:58:48 - INFO - 工作区已初始化: TRACKS_DIR=/Users/fanglei/应用开发/AI track/docs/records_center_real_db_audit/rc28_packaged_home/.fitvault/workspace/tracks, IMPORTS_DIR=/Users/fanglei/应用开发/AI track/docs/records_center_real_db_audit/rc28_packaged_home/.fitvault/workspace/imports\n2026-07-14 00:58:48 - INFO - Schema 版本升级: 0 -> 2，触发增量数据清洗\n2026-07-14 00:58:48 - INFO - 全量重建: 无活动记录需要处理\n2026-07-14 00:58:48 - INFO - Watchdog 已启动: path=/Users/fanglei/应用开发/AI track/docs/records_center_real_db_audit/rc28_packaged_home/.fitvault/workspace/tracks, observer=FSEventsObserver\n[pywebview] unhashable type: 'dict'\nTraceback (most recent call last):\n  File \"webview/event.py\", line 46, in execute\nTypeError: unhashable type: 'dict'\n2026-07-14 00:58:49 - ERROR - unhashable type: 'dict'\nTraceback (most recent call last):\n  File \"webview/event.py\", line 46, in execute\nTypeError: unhashable type: 'dict'\n"
+    },
+    {
+      "run": 2,
+      "returncode": -15,
+      "timed_out_running_gui": true,
+      "elapsed_sec": 8.02,
+      "fitvault_dir_exists": true,
+      "profile_db_exists": true,
+      "stderr_tail": "2026-07-14 00:58:56 - INFO - 工作区已初始化: TRACKS_DIR=/Users/fanglei/应用开发/AI track/docs/records_center_real_db_audit/rc28_packaged_home/.fitvault/workspace/tracks, IMPORTS_DIR=/Users/fanglei/应用开发/AI track/docs/records_center_real_db_audit/rc28_packaged_home/.fitvault/workspace/imports\n2026-07-14 00:58:56 - INFO - Schema 版本一致 (v=2)，跳过数据清洗\n2026-07-14 00:58:56 - INFO - Watchdog 已启动: path=/Users/fanglei/应用开发/AI track/docs/records_center_real_db_audit/rc28_packaged_home/.fitvault/workspace/tracks, observer=FSEventsObserver\n[pywebview] unhashable type: 'dict'\nTraceback (most recent call last):\n  File \"webview/event.py\", line 46, in execute\nTypeError: unhashable type: 'dict'\n2026-07-14 00:58:57 - ERROR - unhashable type: 'dict'\nTraceback (most recent call last):\n  File \"webview/event.py\", line 46, in execute\nTypeError: unhashable type: 'dict'\n"
+    }
+  ]
+}

@@ -199,6 +199,36 @@ class TestCareerFootprintRegionResolver(unittest.TestCase):
                 self.assertEqual(region["country_code"], expected_key)
                 self.assertEqual(region["map_mode"], "world")
 
+    def test_resolves_composite_multilingual_country_field_to_iso_code(self):
+        cases = {
+            "泰国;泰國": ("TH", "泰国"),
+            "Thailand;ประเทศไทย": ("TH", "泰国"),
+            "JP/日本": ("JP", "日本"),
+            "United States；美国": ("US", "美国"),
+            "马来西亚，馬來西亞": ("MY", "马来西亚"),
+        }
+        for country, (expected_key, expected_name) in cases.items():
+            with self.subTest(country=country):
+                region = career_backend._resolve_career_footprint_region({
+                    "region_country": country,
+                    "region_display": f"Somewhere/{country}",
+                })
+
+                self.assertEqual(region["region_key"], expected_key)
+                self.assertEqual(region["name"], expected_name)
+                self.assertEqual(region["country_code"], expected_key)
+                self.assertEqual(region["map_mode"], "world")
+
+    def test_composite_unknown_country_keeps_unmapped_fallback_without_guessing(self):
+        region = career_backend._resolve_career_footprint_region({
+            "region_country": "未知国家;未知國家",
+            "region_display": "Somewhere/未知国家;未知國家",
+        })
+
+        self.assertEqual(region["region_key"], "未知国家")
+        self.assertEqual(region["country_code"], "未知国家")
+        self.assertEqual(region["map_mode"], "world")
+
     def test_resolves_japan_prefecture_when_country_is_japan(self):
         region = career_backend._resolve_career_footprint_region({
             "region_country": "Japan",

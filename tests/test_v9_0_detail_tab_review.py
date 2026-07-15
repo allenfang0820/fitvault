@@ -369,7 +369,7 @@ class TestV9AiInsightModalHtml(unittest.TestCase):
             "metrics.hr_drift", "metrics.decoupling", "metrics.bonk_risk",
             "metrics.events", "metrics.efficiency", "metrics.durability",
             "metrics.cadence_stability", "metrics.training_load",
-            "getFatigueReviewSportCopyGroup(sportType)",
+            "getFatigueReviewSportCopyGroup(sportType, reviewMode)",
         ]:
             self.assertIn(required, body)
         for forbidden in [
@@ -389,7 +389,10 @@ class TestV9AiInsightModalHtml(unittest.TestCase):
         render_body = self.html[render_start:self.html.find("\n    function _renderFatigueReviewDimensions", render_start)]
 
         self.assertIn("function _fatigueReviewMetricSportMode(sportType)", self.html)
-        self.assertIn("sport === 'cycling' || sport === 'road_cycling' || sport === 'mountain_biking'", self.html)
+        self.assertIn("var reviewMode = arguments.length > 1 ? String(arguments[1] || '').toLowerCase() : ''", self.html)
+        self.assertIn("if (reviewMode === 'cycling') return 'cycling'", self.html)
+        self.assertIn("sport === 'indoor_cycling'", self.html)
+        self.assertIn("sport === 'e_biking'", self.html)
         for text in [
             "withSlot('hr_drift', 'power_variability', '输出节奏'",
             "withSlot('decoupling', 'efficiency', '功率效率'",

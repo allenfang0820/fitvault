@@ -1,0 +1,223 @@
+{
+  "staging": "docs/records_center_real_db_audit/user_profile_rc27_staging_20260714_004536.db",
+  "before": {
+    "career_pb_records": 3,
+    "active_pb_records": 3,
+    "candidates": 32,
+    "record_events": 0
+  },
+  "after": {
+    "career_pb_records": 3,
+    "active_pb_records": 3,
+    "candidates": 45,
+    "record_events": 506
+  },
+  "apply_wall_ms": 104.182,
+  "run_id": "records_rebuild:5849c6fe7eb97bfa",
+  "resolver_version": "records-v1-rc27-staging-apply",
+  "processed": 253,
+  "summary": {
+    "new": 0,
+    "replace": 0,
+    "candidate": 13,
+    "unchanged": 0,
+    "ignored": 240
+  },
+  "applied_count": 253,
+  "metrics": {
+    "elapsed_ms": 104.151,
+    "processed": 253,
+    "reason_counts": {
+      "distance_from_dist_km": 244,
+      "duration_from_total_timer_time": 253,
+      "duration_semantics_unknown": 253,
+      "record_definition_not_matched": 240,
+      "distance_missing": 9
+    },
+    "applied_summary": {
+      "ignored": 240,
+      "candidate_created": 13
+    }
+  },
+  "current_pb_records": [
+    {
+      "id": "pb:running_10k:108",
+      "activity_id": "108",
+      "sport": "running",
+      "sport_label": "跑步",
+      "pb_type": "running_10k",
+      "pb_type_label": "10K",
+      "pb_title": "10K PB",
+      "value": 2406,
+      "value_unit": "seconds",
+      "value_display": "40:06",
+      "improvement_sec": null,
+      "improvement_display": "首次记录",
+      "event_date": "2025-05-03",
+      "year": 2025,
+      "month": 5,
+      "display_date": "2025-05-03",
+      "confidence": 1.0,
+      "source": "resolver",
+      "source_label": "规则识别",
+      "source_mode": "activity_total",
+      "source_mode_label": "整场活动",
+      "sport_scope": "default",
+      "resolver_version": "legacy",
+      "status": "active",
+      "evidence_key": "activity_total:108:running_10k:2406",
+      "previous_record_id": null,
+      "confidence_label": "高置信度",
+      "display_metadata": {
+        "distance_km": 9.531,
+        "improvement_sec": null,
+        "matched_range_km": [
+          9.5,
+          10.8
+        ],
+        "pb_type": "running_10k",
+        "performance_summary": {
+          "distance_m": 9531,
+          "distance_quality": "reliable_distance",
+          "elapsed_time_sec": 2406,
+          "reason_codes": [
+            "distance_from_dist_km",
+            "duration_from_total_timer_time",
+            "duration_semantics_unknown"
+          ],
+          "time_quality": "semantics_unknown",
+          "timer_time_sec": 2406
+        },
+        "previous_activity_id": null,
+        "previous_value": null,
+        "resolver": "pb"
+      },
+      "detail_link": {
+        "activity_id": "108",
+        "source": "career",
+        "record_id": "pb:running_10k:108"
+      }
+    },
+    {
+      "id": "pb:running_half_marathon:239",
+      "activity_id": "239",
+      "sport": "running",
+      "sport_label": "跑步",
+      "pb_type": "running_half_marathon",
+      "pb_type_label": "半程马拉松",
+      "pb_title": "半程马拉松 PB",
+      "value": 7642,
+      "value_unit": "seconds",
+      "value_display": "2:07:22",
+      "improvement_sec": null,
+      "improvement_display": "首次记录",
+      "event_date": "2023-03-25",
+      "year": 2023,
+      "month": 3,
+      "display_date": "2023-03-25",
+      "confidence": 1.0,
+      "source": "resolver",
+      "source_label": "规则识别",
+      "source_mode": "activity_total",
+      "source_mode_label": "整场活动",
+      "sport_scope": "default",
+      "resolver_version": "legacy",
+      "status": "active",
+      "evidence_key": "activity_total:239:running_half_marathon:7642",
+      "previous_record_id": null,
+      "confidence_label": "高置信度",
+      "display_metadata": {
+        "distance_km": 21.457,
+        "improvement_sec": null,
+        "matched_range_km": [
+          20.5,
+          21.7
+        ],
+        "pb_type": "running_half_marathon",
+        "performance_summary": {
+          "distance_m": 21457,
+          "distance_quality": "reliable_distance",
+          "elapsed_time_sec": 7642,
+          "reason_codes": [
+            "distance_from_dist_km",
+            "duration_from_total_timer_time",
+            "duration_semantics_unknown"
+          ],
+          "time_quality": "semantics_unknown",
+          "timer_time_sec": 7642
+        },
+        "previous_activity_id": null,
+        "previous_value": null,
+        "resolver": "pb"
+      },
+      "detail_link": {
+        "activity_id": "239",
+        "source": "career",
+        "record_id": "pb:running_half_marathon:239"
+      }
+    },
+    {
+      "id": "pb:running_5k:167",
+      "activity_id": "167",
+      "sport": "running",
+      "sport_label": "跑步",
+      "pb_type": "running_5k",
+      "pb_type_label": "5K",
+      "pb_title": "5K PB",
+      "value": 1628,
+      "value_unit": "seconds",
+      "value_display": "27:08",
+      "improvement_sec": null,
+      "improvement_display": "首次记录",
+      "event_date": "2022-06-28",
+      "year": 2022,
+      "month": 6,
+      "display_date": "2022-06-28",
+      "confidence": 1.0,
+      "source": "resolver",
+      "source_label": "规则识别",
+      "source_mode": "activity_total",
+      "source_mode_label": "整场活动",
+      "sport_scope": "default",
+      "resolver_version": "legacy",
+      "status": "active",
+      "evidence_key": "activity_total:167:running_5k:1628",
+      "previous_record_id": null,
+      "confidence_label": "高置信度",
+      "display_metadata": {
+        "distance_km": 5.111,
+        "improvement_sec": null,
+        "matched_range_km": [
+          4.8,
+          5.3
+        ],
+        "pb_type": "running_5k",
+        "performance_summary": {
+          "distance_m": 5111,
+          "distance_quality": "reliable_distance",
+          "elapsed_time_sec": 1628,
+          "reason_codes": [
+            "distance_from_dist_km",
+            "duration_from_total_timer_time",
+            "duration_semantics_unknown"
+          ],
+          "time_quality": "semantics_unknown",
+          "timer_time_sec": 1628
+        },
+        "previous_activity_id": null,
+        "previous_value": null,
+        "resolver": "pb"
+      },
+      "detail_link": {
+        "activity_id": "167",
+        "source": "career",
+        "record_id": "pb:running_5k:167"
+      }
+    }
+  ],
+  "history_lengths": {
+    "running_10k": 1,
+    "running_half_marathon": 1,
+    "running_5k": 1
+  }
+}

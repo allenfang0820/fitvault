@@ -55,18 +55,20 @@ class TestV8_5TrendHelpersExist(unittest.TestCase):
         self.assertIn("def _fetch_training_load_trend(self, row: dict)",
                       self.main)
 
-    def test_v8_5_cadence_trend_sql_21d(self):
-        """SQL 必须有 21d 窗口(start_time >= cutoff)。"""
+    def test_v8_5_cadence_trend_uses_activity_as_of_window(self):
+        """FR-Core-01: 21d 窗口必须以活动 as_of_time 解析过滤,不能依赖 SQLite 文本比较。"""
         fn_src = _get_fn_body(self.main, "_fetch_cadence_stability_trend")
-        self.assertIn("start_time >= ?", fn_src,
-                      "V8.5 FAIL: cadence trend SQL 缺 21d 窗口")
+        self.assertIn("_activity_as_of_time(row)", fn_src)
+        self.assertIn("_activity_time_in_window", fn_src)
+        self.assertIn("as_of_time=as_of_time", fn_src)
         self.assertIn("21", fn_src)
 
-    def test_v8_5_load_trend_sql_21d(self):
-        """SQL 必须有 21d 窗口。"""
+    def test_v8_5_load_trend_uses_activity_as_of_window(self):
+        """FR-Core-01: load trend 21d 窗口必须以活动 as_of_time 解析过滤。"""
         fn_src = _get_fn_body(self.main, "_fetch_training_load_trend")
-        self.assertIn("start_time >= ?", fn_src,
-                      "V8.5 FAIL: load trend SQL 缺 21d 窗口")
+        self.assertIn("_activity_as_of_time(row)", fn_src)
+        self.assertIn("_activity_time_in_window", fn_src)
+        self.assertIn("as_of_time=as_of_time", fn_src)
         self.assertIn("21", fn_src)
 
     def test_v8_5_cadence_trend_filter_valid(self):
@@ -95,7 +97,7 @@ class TestV8_5InjectBlocks(unittest.TestCase):
         self.assertGreater(idx, 0)
         # V8.5 在 dict 后用 try 段设 metrics["cadence_stability"]["trend"] = {...}
         # 取之后 2500 字符找 trend 段
-        block = self.fn_src[idx:idx + 2500]
+        block = self.fn_src[idx:idx + 3500]
         self.assertIn('metrics["cadence_stability"]["trend"]', block,
                       "V8.5 FAIL: cadence trend 段缺失")
         self.assertIn('"baseline_cv":', block)
@@ -117,7 +119,7 @@ class TestV8_5InjectBlocks(unittest.TestCase):
         """cadence trend: is_improving 含义是 CV 下降(与 4 个老指标反向)。"""
         block_idx = self.fn_src.find('metrics["cadence_stability"] = {')
         # 在 cadence_stability 注入块中,is_improving 与 _cad_improving 绑定
-        block = self.fn_src[block_idx:block_idx + 2500]
+        block = self.fn_src[block_idx:block_idx + 3500]
         # 验证 _cad_improving 与 _cad_level 联动
         self.assertIn("_cad_improving", block)
 

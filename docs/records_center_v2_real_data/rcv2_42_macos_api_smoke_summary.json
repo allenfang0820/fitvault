@@ -1,0 +1,92 @@
+{
+  "generated_at": "2026-07-15T13:49:05+0800",
+  "pywebview_available": true,
+  "pywebview_error": "",
+  "api_smoke": {
+    "catalog": {
+      "ok": true,
+      "code": 0,
+      "has_traceId": true,
+      "data_keys": [
+        "filters",
+        "sports",
+        "status"
+      ]
+    },
+    "records": {
+      "ok": true,
+      "code": 0,
+      "has_traceId": true,
+      "data_keys": [
+        "filters",
+        "metrics",
+        "records",
+        "status",
+        "summary"
+      ]
+    },
+    "candidates": {
+      "ok": true,
+      "code": 0,
+      "has_traceId": true,
+      "data_keys": [
+        "candidates",
+        "filters",
+        "metrics",
+        "status",
+        "summary"
+      ]
+    },
+    "rebuild_status": {
+      "ok": true,
+      "code": 0,
+      "has_traceId": true,
+      "data_keys": [
+        "dry_run",
+        "finished_at",
+        "progress",
+        "run_id",
+        "started_at",
+        "state",
+        "status",
+        "summary"
+      ]
+    },
+    "latest_snapshot": {
+      "ok": true,
+      "code": 0,
+      "has_traceId": true,
+      "data_keys": [
+        "snapshot",
+        "status"
+      ]
+    }
+  },
+  "source_unchanged": {
+    "hash": true,
+    "mtime_ns": false,
+    "counts": true,
+    "content_hash_and_counts": true
+  },
+  "source_counts_before": {
+    "activities": 981,
+    "career_pb_records": 3,
+    "career_event_candidates": 129,
+    "career_record_events": 0,
+    "career_snapshots": 0
+  },
+  "source_counts_after": {
+    "activities": 981,
+    "career_pb_records": 3,
+    "career_event_candidates": 129,
+    "career_record_events": 0,
+    "career_snapshots": 0
+  },
+  "packaging_not_run": true,
+  "readonly_recheck_after_api_smoke": {
+    "hash": true,
+    "mtime_ns": true,
+    "counts": true,
+    "note": "A subsequent sqlite mode=ro check kept hash/mtime/counts stable. The main.Api smoke changed mtime but not content hash or key counts."
+  }
+}

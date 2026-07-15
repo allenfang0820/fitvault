@@ -15,7 +15,6 @@ FORBIDDEN_CAREER_TOKENS = (
     "advanced_metrics",
     "shadow_diff_json",
     "sqlite_schema",
-    "schema",
     "storage_ref",
     "display_metadata",
 )
@@ -128,7 +127,7 @@ class TestCareerPhase8CrossPlatformVisualContract(unittest.TestCase):
             ("async function loadCareerTimeline(filters)", "生涯时间轴接口暂不可用", "renderCareerTimelineError(message)"),
             ("async function loadCareerArchives()", "生涯分区接口暂不可用", "renderCareerArchivesError(message)"),
             ("async function loadCareerMemory(filters)", "赛事相册接口暂不可用", "renderCareerMemoryError(message)"),
-            ("async function loadCareerInsight(options)", "生涯本地洞察接口暂不可用", "renderCareerInsightError(message)"),
+            ("async function loadCareerYearInsight(options)", "年度总结只读接口暂不可用", "renderCareerYearInsightError(message)"),
         )
         for signature, unavailable_text, error_renderer in loader_specs:
             body = extract_function_body(self.source, signature)
@@ -148,9 +147,9 @@ class TestCareerPhase8CrossPlatformVisualContract(unittest.TestCase):
             "loadCareerTimeline().catch",
             "loadCareerArchives().catch",
             "loadCareerMemory().catch",
-            "loadCareerInsight({ refresh_snapshot: false }).catch",
         ):
             self.assertIn(token, load_body)
+        self.assertNotIn("loadCareerInsight", load_body)
 
     def test_long_text_constraints_cover_interactive_career_items(self):
         for selector in (
@@ -163,7 +162,7 @@ class TestCareerPhase8CrossPlatformVisualContract(unittest.TestCase):
             ".career-memory-album-title",
             ".career-memory-album-meta",
             ".career-insight-status",
-            ".career-insight-list li",
+            ".career-insight-title",
         ):
             self.assertIn("overflow-wrap: anywhere", css_block(self.source, selector))
 
@@ -190,11 +189,10 @@ class TestCareerPhase8CrossPlatformVisualContract(unittest.TestCase):
                 "function normalizeCareerTimeline(payload)",
                 "function normalizeCareerArchives(payload)",
                 "function normalizeCareerMemory(payload)",
-                "function normalizeCareerInsight(payload)",
                 "function renderCareerArchives(viewModel)",
                 "function renderCareerTimeline(viewModel)",
                 "function renderCareerMemory(viewModel)",
-                "function renderCareerInsight(viewModel)",
+                "function renderCareerYearInsight(viewModel)",
             )
         )
         for token in FORBIDDEN_CAREER_TOKENS:

@@ -1,3 +1,6 @@
+import json
+import shutil
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -42,6 +45,27 @@ def extract_function_body(source: str, signature: str) -> str:
     if depth != 0:
         raise AssertionError(f"函数体括号不闭合: {signature}")
     return source[brace_start + 1:index - 1]
+
+
+def extract_function_source(source: str, signature: str) -> str:
+    start = source.find(signature)
+    if start < 0:
+        raise AssertionError(f"未找到函数签名: {signature}")
+    brace_start = source.find("{", start + len(signature))
+    if brace_start < 0:
+        raise AssertionError(f"未找到函数体起始: {signature}")
+    depth = 1
+    index = brace_start + 1
+    while index < len(source) and depth > 0:
+        char = source[index]
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+        index += 1
+    if depth != 0:
+        raise AssertionError(f"函数体括号不闭合: {signature}")
+    return source[start:index]
 
 
 def extract_between(source: str, start_marker: str, end_marker: str) -> str:
@@ -95,6 +119,7 @@ class TestCareerArchivesFrontendRender(unittest.TestCase):
                 "function careerArchiveRaceHtml(item)",
                 "function careerRaceCardMedia(item)",
                 "function careerRaceMetricsHtml(item)",
+                "function careerRaceJudgementHtml(item)",
                 "function careerRaceArchiveCardHtml(item)",
                 "function careerArchivePbHtml(item)",
                 "function careerPbArchiveCardHtml(item)",
@@ -105,14 +130,11 @@ class TestCareerArchivesFrontendRender(unittest.TestCase):
                 "function syncCareerRaceArchiveFilters(filters, summary)",
                 "function getCareerPbArchiveFilters()",
                 "function syncCareerPbArchiveFilters(filters, summary)",
-                "function getCareerAchievementArchiveFilters()",
-                "function syncCareerAchievementArchiveFilters(filters, summary)",
                 "function renderCareerArchives(viewModel)",
                 "function renderCareerArchivesLoading()",
                 "function renderCareerArchivesError(message)",
                 "function onCareerRaceArchiveFilterChange()",
                 "function onCareerPbArchiveFilterChange()",
-                "function onCareerAchievementArchiveFilterChange()",
                 "async function loadCareerArchives()",
             )
         )
@@ -140,35 +162,26 @@ class TestCareerArchivesFrontendRender(unittest.TestCase):
         self.assertIn('id="career-pb-status-text"', pb_section)
         self.assertIn('id="career-pb-status-text" aria-live="polite"', pb_section)
         self.assertIn('id="career-pb-archive-shell"', pb_section)
-        self.assertIn('id="career-pb-summary" aria-live="polite"', pb_section)
-        self.assertIn('id="career-pb-list"', pb_section)
-        self.assertIn('id="career-pb-detail-panel" aria-live="polite"', pb_section)
-        self.assertIn('id="career-pb-candidate-panel" aria-live="polite"', pb_section)
-        self.assertIn('id="career-pb-year-filter"', pb_section)
-        self.assertIn('id="career-pb-sport-filter"', pb_section)
-        self.assertIn('id="career-pb-type-filter"', pb_section)
-        self.assertIn('data-career-archive-list="pbs"', pb_section)
-        for label in ("记录中心", "全部记录", "当前纪录", "5K", "半马", "最长骑行"):
+        for token in (
+            'id="career-records-v2-shell"',
+            'id="career-record-current-list" aria-live="polite"',
+            'id="career-record-analysis-panel" aria-live="polite"',
+            'id="career-pb-summary" aria-live="polite"',
+            'id="career-pb-list"',
+            'id="career-pb-detail-panel" aria-live="polite"',
+            'id="career-pb-candidate-panel" aria-live="polite"',
+            'data-career-archive-list="pbs"',
+        ):
+            self.assertIn(token, self.source)
+        self.assertNotIn('id="career-record-dashboard-stats"', self.source)
+        for label in ("记录中心", "当前纪录", "演进", "候选"):
             self.assertIn(label, pb_section)
 
-    def test_achievement_dom_targets_exist(self):
-        achievement_section = extract_between(
-            self.source,
-            '<section class="career-section" data-career-section="achievements">',
-            "</section>",
-        )
-        self.assertIn('id="career-achievement-status-text"', achievement_section)
-        self.assertIn('id="career-achievement-archive-shell"', achievement_section)
-        self.assertIn('id="career-achievement-summary"', achievement_section)
-        self.assertIn('id="career-achievement-list"', achievement_section)
-        self.assertIn('id="career-achievement-year-filter"', achievement_section)
-        self.assertIn('id="career-achievement-category-filter"', achievement_section)
-        self.assertIn('id="career-achievement-type-filter"', achievement_section)
-        self.assertIn('id="career-achievement-source-filter"', achievement_section)
-        self.assertIn('id="career-achievement-score-filter"', achievement_section)
-        self.assertIn('data-career-archive-list="achievements"', achievement_section)
-        for label in ("全部分类", "首次突破", "个人纪录", "地点点亮", "年度里程碑", "90 分以上"):
-            self.assertIn(label, achievement_section)
+    def test_dedicated_achievement_archive_page_is_removed(self):
+        self.assertNotIn('<section class="career-section" data-career-section="achievements">', self.source)
+        self.assertNotIn('id="career-achievement-archive-shell"', self.source)
+        self.assertNotIn('data-career-archive-list="achievements"', self.source)
+        self.assertNotIn('function onCareerAchievementArchiveFilterChange()', self.source)
 
     def test_archives_use_single_column_right_rail_layout(self):
         bucket_list_css = css_block(self.source, ".career-bucket-list")
@@ -191,10 +204,10 @@ class TestCareerArchivesFrontendRender(unittest.TestCase):
         body = extract_function_body(self.source, "async function loadCareerArchives()")
         self.assertIn("api.get_career_races(raceFilters)", body)
         self.assertIn("api.get_career_pb(pbFilters)", body)
-        self.assertIn("api.get_career_achievements(achievementFilters)", body)
         self.assertIn("getCareerRaceArchiveFilters()", body)
         self.assertIn("getCareerPbArchiveFilters()", body)
-        self.assertIn("getCareerAchievementArchiveFilters()", body)
+        self.assertNotIn("api.get_career_achievements", body)
+        self.assertNotIn("getCareerAchievementArchiveFilters()", body)
         self.assertIn("for (let attempt = 0; attempt < 2; attempt += 1)", body)
         self.assertIn("await waitCareerApiRetry(340)", body)
         self.assertNotIn("resolve_", body)
@@ -213,6 +226,8 @@ class TestCareerArchivesFrontendRender(unittest.TestCase):
             "source_label",
             "confidence_label",
             "is_user_confirmed",
+            "is_system_detected",
+            "needs_user_judgement",
             "confidence_level",
             "pb_type",
             "pb_type_label",
@@ -240,11 +255,11 @@ class TestCareerArchivesFrontendRender(unittest.TestCase):
     def test_renderers_include_formal_race_archive_and_bucket_states(self):
         self.assertIn("renderCareerArchiveGroup('races'", self.relevant_js)
         self.assertIn("renderCareerArchiveGroup('pbs'", self.relevant_js)
-        self.assertIn("renderCareerArchiveGroup('achievements'", self.relevant_js)
-        self.assertIn("name === 'races' || name === 'pbs' || name === 'achievements' ? source : source.slice(0, 5)", self.relevant_js)
+        self.assertNotIn("renderCareerArchiveGroup('achievements'", self.relevant_js)
+        self.assertIn("name === 'races' || name === 'pbs' ? source : source.slice(0, 5)", self.relevant_js)
         self.assertIn("careerRaceArchiveCardHtml", self.relevant_js)
         self.assertIn("careerPbArchiveCardHtml", self.relevant_js)
-        self.assertIn("careerAchievementArchiveCardHtml", self.relevant_js)
+        self.assertNotIn("careerAchievementArchiveCardHtml", self.relevant_js)
         self.assertIn("career-race-card", self.source)
         self.assertIn("repeat(auto-fill, minmax(270px, 1fr))", self.source)
         self.assertIn("aspect-ratio: 4 / 5", self.source)
@@ -252,6 +267,8 @@ class TestCareerArchivesFrontendRender(unittest.TestCase):
         self.assertIn("transform: scale(1.065)", self.source)
         self.assertIn("career-race-cover", self.source)
         self.assertIn("career-race-cover-art", self.source)
+        self.assertIn("career-race-judgement", self.source)
+        self.assertIn("career-race-judge-btn", self.source)
         self.assertIn("top: 50%", self.source)
         self.assertIn('data-race-cover-mode="', self.relevant_js)
         self.assertIn("normalizeCareerSafeImagePreview(media.imageRef || media.image_ref || '')", self.relevant_js)
@@ -266,7 +283,6 @@ class TestCareerArchivesFrontendRender(unittest.TestCase):
         self.assertIn("暂无当前纪录", self.relevant_js)
         self.assertIn("待确认", self.relevant_js)
         self.assertIn("记录中心已接入", self.relevant_js)
-        self.assertIn("暂无里程碑", self.relevant_js)
         self.assertIn("正在加载赛事档案", self.relevant_js)
         self.assertIn("赛事档案暂不可用", self.relevant_js)
         self.assertIn("当前筛选下共", self.relevant_js)
@@ -283,17 +299,72 @@ class TestCareerArchivesFrontendRender(unittest.TestCase):
         ):
             self.assertIn(token, body)
         self.assertIn("careerRaceMetricsHtml(item)", body)
+        self.assertIn("careerRaceJudgementHtml(item)", body)
         self.assertIn("data-career-race-art-text", body)
         metrics_body = extract_function_body(self.source, "function careerRaceMetricsHtml(item)")
         self.assertIn("Array.isArray(item.cardMetrics)", metrics_body)
         self.assertNotIn("performanceSummary", metrics_body)
         self.assertNotIn("duration_text", metrics_body)
         self.assertNotIn("pace_text", metrics_body)
-        self.assertNotIn("<button", body)
         self.assertNotIn("Activity Detail", body)
         self.assertNotIn("分段数据", body)
         self.assertNotIn("海拔曲线", body)
         self.assertNotIn("window.pywebview.api", body)
+
+    def test_race_cards_offer_inline_judgement_and_manual_override(self):
+        normalize_body = extract_function_body(self.source, "function normalizeCareerArchiveRace(item)")
+        judgement_body = extract_function_body(self.source, "function careerRaceJudgementHtml(item)")
+        handler_body = extract_function_body(self.source, "async function judgeCareerRaceFromCard(event, activityId, isRace)")
+
+        self.assertIn("needsUserJudgement", normalize_body)
+        self.assertIn("isSystemDetected", normalize_body)
+        self.assertIn("item.needsUserJudgement", judgement_body)
+        self.assertIn("item.isUserConfirmed", judgement_body)
+        self.assertIn("取消赛事标记", judgement_body)
+        self.assertIn("是赛事", judgement_body)
+        self.assertIn("不是赛事", judgement_body)
+        self.assertIn("judgeCareerRaceFromCard(event", judgement_body)
+        self.assertIn("event.stopPropagation()", handler_body)
+        self.assertIn("api.set_activity_race_flag(id, nextIsRace)", handler_body)
+        self.assertIn("loadCareerArchives()", handler_body)
+        self.assertIn("sportHubState.needsRefresh = true", handler_body)
+        self.assertIn("appState.career.needsRefresh = true", handler_body)
+        self.assertNotIn("showModal", judgement_body + handler_body)
+        self.assertNotIn("confirm(", judgement_body + handler_body)
+
+    def test_race_judgement_renderer_outputs_actions_for_each_race_state(self):
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node is required for JS semantic execution")
+
+        function_source = extract_function_source(self.source, "function careerRaceJudgementHtml(item)")
+        script = "\n".join(
+            (
+                "function safeHtml(value) { return String(value == null ? '' : value); }",
+                function_source,
+                "const output = {",
+                "  missing: careerRaceJudgementHtml({ activityId: '' }),",
+                "  resolver: careerRaceJudgementHtml({ activityId: '12', sourceLabel: '规则识别', needsUserJudgement: true, isUserConfirmed: false }),",
+                "  user: careerRaceJudgementHtml({ activityId: '13', sourceLabel: '用户确认', needsUserJudgement: false, isUserConfirmed: true }),",
+                "  fit: careerRaceJudgementHtml({ activityId: '14', sourceLabel: 'FIT 赛事标记', needsUserJudgement: false, isUserConfirmed: false })",
+                "};",
+                "process.stdout.write(JSON.stringify(output));",
+            )
+        )
+        output = json.loads(subprocess.check_output([node, "-e", script], text=True))
+
+        self.assertEqual(output["missing"], "")
+        self.assertIn("是赛事", output["resolver"])
+        self.assertIn("不是赛事", output["resolver"])
+        self.assertIn("judgeCareerRaceFromCard(event, 12, true)", output["resolver"])
+        self.assertIn("judgeCareerRaceFromCard(event, 12, false)", output["resolver"])
+        self.assertIn("已由你确认这是赛事", output["user"])
+        self.assertIn("取消赛事标记", output["user"])
+        self.assertNotIn("judgeCareerRaceFromCard(event, 13, true)", output["user"])
+        self.assertIn("judgeCareerRaceFromCard(event, 13, false)", output["user"])
+        self.assertIn("FIT 赛事标记，可手动调整", output["fit"])
+        self.assertIn("取消赛事标记", output["fit"])
+        self.assertIn("judgeCareerRaceFromCard(event, 14, false)", output["fit"])
 
     def test_race_filters_reload_backend_view_model(self):
         body = extract_function_body(self.source, "function onCareerRaceArchiveFilterChange()")
@@ -352,7 +423,7 @@ class TestCareerArchivesFrontendRender(unittest.TestCase):
             self.assertIn(function_name, self.source)
         load_body = extract_function_body(self.source, "async function loadCareerArchives()")
         self.assertIn("api.get_career_event_candidates({ candidate_type: 'pb_record', status: 'candidate' })", load_body)
-        self.assertIn("pbCandidates: archiveData[3] || {}", load_body)
+        self.assertIn("pbCandidates: archiveData[2] || {}", load_body)
         render_body = extract_function_body(self.source, "function renderCareerPbCandidates(candidates)")
         self.assertIn("data-career-record-candidate-id", render_body)
         self.assertIn("data-decision=\"confirm\"", render_body)
@@ -370,15 +441,12 @@ class TestCareerArchivesFrontendRender(unittest.TestCase):
         self.assertIn(".career-pb-detail-action:disabled", self.source)
         self.assertIn(".career-pb-detail-panel", self.source)
         self.assertIn("@media (max-width: 980px)", self.source)
-        self.assertIn(".career-pb-list,\n            .career-achievement-list", self.source)
+        self.assertIn(".career-pb-list", self.source)
 
-    def test_achievement_filters_reload_backend_view_model(self):
-        body = extract_function_body(self.source, "function onCareerAchievementArchiveFilterChange()")
-        self.assertIn("getCareerAchievementArchiveFilters()", body)
-        self.assertIn("loadCareerArchives()", body)
-        sync_body = extract_function_body(self.source, "function syncCareerAchievementArchiveFilters(filters, summary)")
-        self.assertIn("career-achievement-year-filter", sync_body)
-        self.assertIn("achievementByYear", sync_body)
+    def test_achievement_archive_card_helper_has_no_dedicated_page_entry(self):
+        self.assertNotIn("function onCareerAchievementArchiveFilterChange()", self.source)
+        self.assertNotIn("function getCareerAchievementArchiveFilters()", self.source)
+        self.assertNotIn("function syncCareerAchievementArchiveFilters(filters, summary)", self.source)
         card_body = extract_function_body(self.source, "function careerAchievementArchiveCardHtml(item)")
         for token in (
             'role="button"',

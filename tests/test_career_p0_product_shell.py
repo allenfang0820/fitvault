@@ -93,8 +93,7 @@ class TestCareerP0ProductShell(unittest.TestCase):
             "overview": "总览",
             "timeline": "时间轴",
             "races": "赛事档案",
-            "pb": "PB",
-            "achievements": "荣誉",
+            "pb": "记录",
             "insight": "AI 总结",
             "footprint": "足迹",
         }
@@ -102,6 +101,8 @@ class TestCareerP0ProductShell(unittest.TestCase):
             self.assertIn(f'data-career-page-target="{page}"', self.career_panel)
             self.assertIn(f'data-career-page="{page}"', self.career_panel)
             self.assertIn(label, self.career_panel)
+        self.assertNotIn('data-career-page-target="achievements"', self.career_panel)
+        self.assertNotIn('data-career-page="achievements"', self.career_panel)
 
         switch_page_body = extract_function_body(self.source, "function switchCareerPage(page)")
         self.assertIn("validPages", switch_page_body)

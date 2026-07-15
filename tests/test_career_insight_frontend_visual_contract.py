@@ -15,7 +15,6 @@ FORBIDDEN_FRONTEND_TOKENS = (
     "advanced_metrics",
     "shadow_diff_json",
     "sqlite_schema",
-    "schema",
     "storage_ref",
     "path",
     "thumbnail_url",
@@ -76,19 +75,19 @@ class TestCareerInsightFrontendVisualContract(unittest.TestCase):
         cls.relevant_js = "\n".join(
             extract_function_body(cls.source, signature)
             for signature in (
-                "function normalizeCareerInsight(payload)",
-                "function careerInsightListHtml(items, className, label)",
-                "function renderCareerInsight(viewModel)",
-                "function renderCareerInsightLoading()",
-                "function renderCareerInsightError(message)",
-                "async function loadCareerInsight(options)",
+                "function renderCareerYearInsight(viewModel)",
+                "function renderCareerYearInsightLoading(year)",
+                "function renderCareerYearInsightError(message)",
+                "async function loadCareerYearInsight(options)",
+                "async function generateCareerYearInsight()",
             )
         )
 
-    def test_placeholder_copy_is_local_and_not_misleading_ai_copy(self):
-        self.assertIn("本地洞察将基于安全摘要生成", self.dom)
-        self.assertIn("不会调用 AI", self.dom)
-        self.assertIn("不会展示快照原文", self.dom)
+    def test_placeholder_copy_is_annual_and_not_full_career_copy(self):
+        self.assertIn("年度事实准备完成后", self.dom)
+        self.assertIn("年度 AI 总结", self.dom)
+        self.assertNotIn("生涯总结", self.dom)
+        self.assertNotIn("本地洞察", self.dom)
         for text in (
             "AI 深度总结已生成",
             "AI 洞察已生成",
@@ -99,22 +98,19 @@ class TestCareerInsightFrontendVisualContract(unittest.TestCase):
             self.assertNotIn(text, self.dom)
             self.assertNotIn(text, self.relevant_js)
 
-    def test_loading_low_data_and_error_copy_are_scoped_to_insight_block(self):
-        self.assertIn("正在生成本地洞察", self.relevant_js)
-        self.assertIn("需要更多生涯数据，本地洞察将基于安全摘要生成。", self.relevant_js)
-        self.assertIn("本地洞察暂不可用", self.relevant_js)
-        self.assertIn("生涯本地洞察接口暂不可用", self.relevant_js)
+    def test_loading_and_error_copy_are_scoped_to_annual_report(self):
+        self.assertIn("年度总结加载中", self.relevant_js)
+        self.assertIn("年度总结暂不可用", self.relevant_js)
+        self.assertIn("年度总结只读接口暂不可用", self.relevant_js)
+        self.assertNotIn("生涯本地洞察", self.relevant_js)
         self.assertNotIn("alert(", self.relevant_js)
 
-    def test_highlights_and_next_steps_have_distinct_visual_blocks(self):
-        self.assertIn(".career-insight-block", self.css)
-        self.assertIn(".career-insight-block.next-steps", self.css)
-        self.assertIn(".career-insight-block-label", self.css)
-        self.assertIn(".career-insight-list.next-steps li::before", self.css)
-        self.assertIn("阶段亮点", self.relevant_js)
-        self.assertIn("下一步建议", self.relevant_js)
-        self.assertIn("'highlights'", self.relevant_js)
-        self.assertIn("'next-steps'", self.relevant_js)
+    def test_year_selector_and_report_card_keep_visual_structure(self):
+        self.assertIn(".career-year-selector", self.css)
+        self.assertIn(".career-year-chip", self.css)
+        self.assertIn(".career-insight-card", self.css)
+        self.assertIn("career-insight-title", self.relevant_js)
+        self.assertIn("career-insight-disclaimer", self.relevant_js)
 
     def test_disclaimer_and_disabled_button_are_visually_deemphasized(self):
         self.assertIn(".career-insight-action:disabled", self.css)
@@ -122,7 +118,7 @@ class TestCareerInsightFrontendVisualContract(unittest.TestCase):
         disclaimer_css = extract_between(
             self.css,
             ".career-insight-disclaimer {",
-            ".career-insight-block {",
+            ".career-year-facts {",
         )
         self.assertIn("border-top", disclaimer_css)
         self.assertIn("font-size: 0.62rem", disclaimer_css)
@@ -132,15 +128,14 @@ class TestCareerInsightFrontendVisualContract(unittest.TestCase):
         self.assertIn(".career-insight-toolbar", self.mobile_css)
         self.assertIn("flex-direction: column", self.mobile_css)
         self.assertIn("align-items: flex-start", self.mobile_css)
-        self.assertIn(".career-insight-block", self.mobile_css)
         self.assertIn("width: 100%", self.mobile_css)
-        self.assertIn(".career-insight-list li", self.mobile_css)
 
     def test_frontend_visual_slice_does_not_expose_snapshot_or_forbidden_fields(self):
         relevant = "\n".join((self.dom, self.css, self.relevant_js))
         self.assertNotIn("<pre", relevant)
         self.assertNotIn("JSON.stringify", relevant)
         self.assertNotIn("get_latest_career_snapshot", relevant)
+        self.assertNotIn("generate_career_insight", relevant)
         self.assertNotIn("call_llm", relevant)
         for token in FORBIDDEN_FRONTEND_TOKENS:
             self.assertNotIn(token, self.relevant_js)

@@ -1,12 +1,13 @@
 """
-V8.2 契约测试:_fetch_historical_metrics_avg 重写 + compute helpers
+V8.2 / FR-Core-02 契约测试:_fetch_historical_metrics_avg 重写 + compute helpers
 
 任务: §V8.2 修复 _fetch_historical_metrics_avg 的 storage_model 死依赖,
-      从 hr_curve / speed_curve 列直接计算历史 baseline。
+      从 hr_curve 列直接计算心率漂移历史 baseline。
       一次性修复 D2(4 个 trend 静默失败)缺陷。
+      FR-Core-02 起禁止用 speed_curve 衰减冒充后程效率 decoupling baseline。
 
 契约依据:
-- §2.1 全链路可追溯:trend 来源 = hr_curve + speed_curve(最终来源 = FIT 解析)
+- §2.1 全链路可追溯:trend 来源 = hr_curve(最终来源 = FIT 解析)
 - §8 canonical 只读:纯 SELECT + 纯计算,不写 activities 表
 - §7.2 安全:返回 sample_size 而非 raw rows
 
@@ -112,20 +113,21 @@ class TestV8_2HistoricalMetricsAvg(unittest.TestCase):
         sql_section = self.fn_src[self.fn_src.find("SELECT"):self.fn_src.rfind("LIMIT")]
         self.assertNotIn("storage_model", sql_section)
 
-    def test_query_uses_hr_curve(self):
-        """SQL SELECT 含 hr_curve, speed_curve。"""
+    def test_query_uses_hr_curve_not_speed_curve_for_decoupling(self):
+        """FR-Core-02: SQL SELECT 含 hr_curve,但不再用 speed_curve 冒充 decoupling baseline。"""
         self.assertIn("hr_curve", self.fn_src)
-        self.assertIn("speed_curve", self.fn_src)
+        select_section = self.fn_src[self.fn_src.find("SELECT"):self.fn_src.find("FROM activities")]
+        self.assertNotIn("speed_curve", select_section)
 
     def test_processing_uses_safe_json_list(self):
         """曲线列用 _safe_json_list 安全解析。"""
         self.assertIn('_safe_json_list(r["hr_curve"])', self.fn_src)
-        self.assertIn('_safe_json_list(r["speed_curve"])', self.fn_src)
+        self.assertNotIn('_safe_json_list(r["speed_curve"])', self.fn_src)
 
     def test_processing_calls_compute_helpers(self):
-        """计算逻辑调 _compute_hr_drift_from_curve + _compute_speed_decay_from_curve。"""
+        """计算逻辑调 _compute_hr_drift_from_curve,不再调 speed decay。"""
         self.assertIn("_compute_hr_drift_from_curve", self.fn_src)
-        self.assertIn("_compute_speed_decay_from_curve", self.fn_src)
+        self.assertNotIn("_compute_speed_decay_from_curve", self.fn_src)
 
     def test_return_format_has_four_keys(self):
         """返回值含 hr_drift_pct / decoupling_pct / bonk_count / sample_size。"""

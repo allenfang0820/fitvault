@@ -223,7 +223,10 @@ class TestCareerSnapshotPersistence(unittest.TestCase):
 
             self.assertEqual(result["snapshot"]["summary"]["activity_count"], 1)
             self.assertEqual(result["snapshot"]["records_summary"]["candidate_count"], 2)
-            self.assertEqual(result["snapshot"]["records_summary"]["trend_inputs"]["interpretation"], "frequency_only")
+            self.assertEqual(
+                result["snapshot"]["records_summary"]["trend_inputs"]["interpretation"],
+                "frequency_and_curve_availability_only",
+            )
             self.assertNotIn("payload", result["snapshot"]["records_summary"]["recent_refreshes"][0])
             self.assertNotIn("representative_memories", result["snapshot"])
             self.assertNotIn("memory_count", result["snapshot"]["summary"])
@@ -293,6 +296,32 @@ class TestCareerSnapshotPersistence(unittest.TestCase):
                 self.assertIsInstance(response["traceId"], str)
                 self.assertEqual(response["data"]["snapshot"]["snapshot_version"], "acs.v1")
                 _assert_forbidden_absent(self, response["data"])
+            finally:
+                profile_backend.DB_PATH = original_db_path
+
+    def test_main_generate_career_insight_commits_snapshot_across_connections(self):
+        original_db_path = profile_backend.DB_PATH
+        with tempfile.TemporaryDirectory() as tmpdir:
+            try:
+                profile_backend.DB_PATH = Path(tmpdir) / "career-insight-api.sqlite"
+                conn = sqlite3.connect(str(profile_backend.DB_PATH))
+                try:
+                    _seed_snapshot_source(conn)
+                    conn.commit()
+                finally:
+                    conn.close()
+
+                response = main.Api().generate_career_insight({"refresh_snapshot": False})
+
+                self.assertTrue(response["ok"])
+                verify = sqlite3.connect(str(profile_backend.DB_PATH))
+                try:
+                    row = verify.execute(
+                        "SELECT snapshot_type FROM career_snapshots WHERE id = 'career_snapshot:latest'"
+                    ).fetchone()
+                finally:
+                    verify.close()
+                self.assertEqual(row, ("career",))
             finally:
                 profile_backend.DB_PATH = original_db_path
 

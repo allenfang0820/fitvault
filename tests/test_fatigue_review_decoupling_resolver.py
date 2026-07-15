@@ -14,6 +14,9 @@ def test_build_review_decoupling_stable_excellent():
     )
 
     assert decoupling["pct"] == 2.0
+    assert decoupling["change_pct"] == -2.0
+    assert decoupling["decline_pct"] == 2.0
+    assert decoupling["direction"] == "stable"
     assert decoupling["level"] == "excellent"
     assert decoupling["confidence"] == "medium"
 
@@ -24,22 +27,32 @@ def test_build_review_decoupling_late_decline_warn():
     )
 
     assert decoupling["pct"] == 12.0
+    assert decoupling["change_pct"] == -12.0
+    assert decoupling["decline_pct"] == 12.0
+    assert decoupling["direction"] == "declined"
     assert decoupling["level"] == "warn"
 
 
-def test_build_review_decoupling_late_improvement_uses_absolute_delta():
+def test_build_review_decoupling_late_improvement_is_positive_direction():
     decoupling = MetricsResolver._build_review_decoupling(
         [1.0] * 10 + [1.2] * 10
     )
 
-    assert decoupling["pct"] == 20.0
-    assert decoupling["level"] == "bad"
+    assert decoupling["pct"] == 0.0
+    assert decoupling["change_pct"] == 20.0
+    assert decoupling["decline_pct"] == 0.0
+    assert decoupling["direction"] == "improved"
+    assert decoupling["level"] == "excellent"
 
 
 def test_build_review_decoupling_insufficient_data_keeps_legacy_empty_shape():
     decoupling = MetricsResolver._build_review_decoupling([1.0])
 
-    assert decoupling == {"pct": 0.0, "level": "unknown"}
+    assert decoupling["pct"] == 0.0
+    assert decoupling["direction"] == "unknown"
+    assert decoupling["change_pct"] is None
+    assert decoupling["decline_pct"] is None
+    assert decoupling["level"] == "unknown"
 
 
 def test_main_uses_resolver_for_review_decoupling():

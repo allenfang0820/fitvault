@@ -15,6 +15,7 @@ from typing import Any, Callable
 
 
 GARMINCONNECT_EXPECTED_VERSION = "0.3.6"
+GARMIN_FIT_SDK_EXPECTED_VERSION = "21.205.0"
 CURL_CFFI_MIN_VERSION = "0.6"
 MANIFEST_FILENAME = "build_dependency_manifest.json"
 SENSITIVE_PATTERN = re.compile(
@@ -79,10 +80,19 @@ def require_distribution(
             "Run python -m pip install -r requirements.txt -c constraints.txt in the packaging venv."
         )
     if expected_version and version != expected_version:
+        if package_name == "garminconnect":
+            detail = (
+                f"当前源码仅兼容 garminconnect {GARMINCONNECT_EXPECTED_VERSION}，"
+                "请同步 requirements/constraints 后重新安装依赖。"
+            )
+        else:
+            detail = (
+                f"当前源码需要 {package_name} {expected_version}，"
+                "请同步 requirements/constraints 后重新安装依赖。"
+            )
         raise PackagingCheckError(
             f"Incompatible {package_name} version: detected {version}, expected {expected_version}. "
-            f"当前源码仅兼容 garminconnect {GARMINCONNECT_EXPECTED_VERSION}，"
-            "请同步 requirements/constraints 后重新安装依赖。"
+            + detail
         )
     if min_version and _version_tuple(version) < _version_tuple(min_version):
         raise PackagingCheckError(
@@ -107,10 +117,23 @@ def check_garmin_dependencies(
         min_version=CURL_CFFI_MIN_VERSION,
         version_lookup=version_lookup,
     )
+    sdk_version = require_distribution(
+        "garmin-fit-sdk",
+        expected_version=GARMIN_FIT_SDK_EXPECTED_VERSION,
+        version_lookup=version_lookup,
+    )
     try:
         garmin_module = import_module("garminconnect")
     except Exception as exc:
         raise PackagingCheckError(f"Cannot import garminconnect: {type(exc).__name__}: {exc}") from exc
+    try:
+        import_module("garmin_fit_sdk")
+    except Exception as exc:
+        raise PackagingCheckError(
+            "Cannot import garmin_fit_sdk: "
+            f"{type(exc).__name__}: {exc}. "
+            "Run python -m pip install -r requirements.txt -c constraints.txt in the packaging venv."
+        ) from exc
     garmin_cls = getattr(garmin_module, "Garmin", None)
     if garmin_cls is None:
         raise PackagingCheckError("garminconnect.Garmin is missing; reinstall pinned dependencies.")
@@ -126,7 +149,7 @@ def check_garmin_dependencies(
             + f". 当前源码仅兼容 garminconnect {GARMINCONNECT_EXPECTED_VERSION}，"
               "请同步 requirements/constraints 后重新安装依赖。"
         )
-    return {"garminconnect": garmin_version, "curl_cffi": curl_version}
+    return {"garminconnect": garmin_version, "curl_cffi": curl_version, "garmin-fit-sdk": sdk_version}
 
 
 def check_skill_zip(zip_path: Path, *, root_name: str, required_members: list[str]) -> dict[str, Any]:
@@ -181,6 +204,75 @@ def check_windows_runtime(project_root: Path, *, system: str | None = None, mach
     return {"required": True, "node": True, "npm": True}
 
 
+def check_python_environment() -> dict[str, Any]:
+    version_info = {
+        "major": sys.version_info.major,
+        "minor": sys.version_info.minor,
+        "micro": sys.version_info.micro,
+    }
+    warnings: list[str] = []
+    if (sys.version_info.major, sys.version_info.minor) < (3, 12):
+        warnings.append("Packaging runtime is expected to use Python >= 3.12; reinstall dependencies in the packaging venv.")
+    return {
+        "executable": sys.executable,
+        "version": sys.version.split()[0],
+        "version_info": version_info,
+        "warnings": warnings,
+    }
+
+
+def _extract_json_object(text: str) -> dict[str, Any]:
+    stripped = (text or "").strip()
+    if not stripped:
+        raise ValueError("empty output")
+    try:
+        payload = json.loads(stripped)
+    except json.JSONDecodeError:
+        start = stripped.find("{")
+        end = stripped.rfind("}")
+        if start < 0 or end < start:
+            raise
+        payload = json.loads(stripped[start:end + 1])
+    if not isinstance(payload, dict):
+        raise ValueError("runtime check output is not a JSON object")
+    return payload
+
+
+def check_python312_runtime_script(
+    project_root: str | Path = ".",
+    *,
+    runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+) -> dict[str, Any]:
+    root = Path(project_root)
+    script = root / "scripts" / "check_python312_runtime.py"
+    if not script.exists():
+        raise PackagingCheckError(f"Missing Python 3.12 runtime check script: {script}")
+    try:
+        completed = runner(
+            [sys.executable, str(script)],
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+    except Exception as exc:
+        raise PackagingCheckError(f"Cannot run Python 3.12 runtime check: {type(exc).__name__}: {exc}") from exc
+    try:
+        report = _extract_json_object(completed.stdout)
+    except Exception as exc:
+        stderr = (completed.stderr or "").strip()
+        stdout = (completed.stdout or "").strip()
+        detail = stderr or stdout[:500] or type(exc).__name__
+        raise PackagingCheckError(f"Python 3.12 runtime check returned invalid JSON: {detail}") from exc
+    if completed.returncode != 0 or report.get("ok") is not True:
+        raw_errors = report.get("errors")
+        errors = [str(item) for item in raw_errors] if isinstance(raw_errors, list) else []
+        detail = "; ".join(errors[:5]) or (completed.stderr or "").strip() or "unknown runtime check failure"
+        raise PackagingCheckError(f"Python 3.12 runtime check failed: {detail}")
+    return report
+
+
 def check_packaging_prerequisites(
     project_root: str | Path = ".",
     *,
@@ -188,6 +280,7 @@ def check_packaging_prerequisites(
     machine: str | None = None,
 ) -> dict[str, Any]:
     root = Path(project_root)
+    python_runtime = check_python312_runtime_script(root)
     versions = check_garmin_dependencies()
     check_skill_zip(
         root / "skills" / "garmin-stats.zip",
@@ -206,7 +299,13 @@ def check_packaging_prerequisites(
         if not script.exists():
             raise PackagingCheckError(f"Missing required skill script: {script}")
     runtime = check_windows_runtime(root, system=system, machine=machine)
-    return {"packages": versions, "runtime": runtime, "skills": {"garmin-stats": True, "coros-stats": True}}
+    return {
+        "packages": versions,
+        "python_runtime": python_runtime,
+        "runtime": runtime,
+        "skills": {"garmin-stats": True, "coros-stats": True},
+    }
+
 
 
 def _command_version(command: list[str]) -> str | None:
@@ -220,17 +319,21 @@ def _command_version(command: list[str]) -> str | None:
 
 def build_dependency_manifest(project_root: str | Path = ".") -> dict[str, Any]:
     root = Path(project_root)
+    python_env = check_python_environment()
     runtime_dir = resolve_node_runtime_dir(root)
     node_name = "node.exe" if platform.system().lower() == "windows" else "bin/node"
     npm_name = "npm.cmd" if platform.system().lower() == "windows" else "bin/npm"
     node_path = runtime_dir / node_name
     npm_path = runtime_dir / npm_name
     manifest = {
+        "python_executable": python_env["executable"],
         "python_version": sys.version.split()[0],
+        "python_version_info": python_env["version_info"],
+        "python_warnings": python_env["warnings"],
         "platform": platform.platform(),
         "packages": {
             name: package_version(name)
-            for name in ("garminconnect", "garth", "curl_cffi", "requests", "urllib3", "certifi")
+            for name in ("garminconnect", "garmin-fit-sdk", "garth", "curl_cffi", "requests", "urllib3", "certifi")
         },
         "runtime": {
             "node": {"path": str(node_path), "version": _command_version([str(node_path), "--version"]) if node_path.exists() else None},
@@ -248,6 +351,7 @@ def build_dependency_manifest(project_root: str | Path = ".") -> dict[str, Any]:
         },
         "compatibility": {
             "garminconnect_expected": GARMINCONNECT_EXPECTED_VERSION,
+            "garmin_fit_sdk_expected": GARMIN_FIT_SDK_EXPECTED_VERSION,
             "garmin_api": "0.3.x-tokenstore-client",
             "codex_cli_windows_shim_supported": True,
             "coros_mcp_envelope_supported": True,
@@ -265,6 +369,10 @@ def write_dependency_manifest(project_root: str | Path = ".", output_path: str |
 
 
 if __name__ == "__main__":
-    check_packaging_prerequisites(Path.cwd())
-    path = write_dependency_manifest(Path.cwd())
+    try:
+        check_packaging_prerequisites(Path.cwd())
+        path = write_dependency_manifest(Path.cwd())
+    except PackagingCheckError as exc:
+        print(f"PackagingCheckError: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
     print(path)

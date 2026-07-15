@@ -1,0 +1,25 @@
+[
+  {
+    "path": "dist/脉图.app",
+    "exists": true,
+    "is_dir": true,
+    "size": 96,
+    "mtime": "2026-07-14 00:55:31",
+    "du": "314M",
+    "info_plist_exists": true,
+    "bundle_name": "脉图",
+    "bundle_display_name": "脉图",
+    "bundle_version": "1.2.0",
+    "bundle_identifier": "com.mrfang.fitvault",
+    "executable_exists": true,
+    "executable_size": 15587776
+  },
+  {
+    "path": "dist/FitVault-1.2.0-records-center-macOS-arm64.dmg",
+    "exists": true,
+    "is_dir": false,
+    "size": 107905812,
+    "mtime": "2026-07-14 00:56:17",
+    "sha256": "7e64980b51a6f895a530157860510dd00d7cd4c38b51fadd401eb537bbfee863"
+  }
+]

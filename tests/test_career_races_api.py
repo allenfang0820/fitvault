@@ -196,8 +196,35 @@ class TestCareerRacesApi(unittest.TestCase):
             self.assertEqual(race["source_label"], "用户确认")
             self.assertEqual(race["confidence_label"], "高置信度")
             self.assertTrue(race["is_user_confirmed"])
+            self.assertFalse(race["is_system_detected"])
+            self.assertFalse(race["needs_user_judgement"])
             self.assertEqual(race["confidence_level"], "high")
             self.assertEqual(race["detail_link"], {"activity_id": "1", "source": "career"})
+            _assert_forbidden_keys_absent(self, result)
+        finally:
+            conn.close()
+
+    def test_backend_marks_resolver_races_as_needing_user_judgement(self):
+        conn = sqlite3.connect(":memory:")
+        try:
+            career_backend.ensure_career_schema(conn)
+            _insert_race(
+                conn,
+                id="race:auto",
+                activity_id="2",
+                name="标题距离规则识别赛事",
+                source="resolver",
+                confidence=0.82,
+                display_metadata_json=json.dumps({"confidence_level": "medium"}, ensure_ascii=False),
+            )
+
+            result = career_backend.get_career_races(conn=conn)
+
+            race = result["races"][0]
+            self.assertFalse(race["is_user_confirmed"])
+            self.assertTrue(race["is_system_detected"])
+            self.assertTrue(race["needs_user_judgement"])
+            self.assertEqual(race["source_label"], "规则识别")
             _assert_forbidden_keys_absent(self, result)
         finally:
             conn.close()

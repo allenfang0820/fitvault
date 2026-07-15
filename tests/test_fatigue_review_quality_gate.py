@@ -115,6 +115,8 @@ class TestP5SnapshotWhitelistGate(unittest.TestCase):
         "display_meta",
         "context_tags",
         "environment_context",
+        "review_mode",
+        "capabilities",
         "cycling_explanation_signals",
         "ai_insight",
         "advice",
@@ -1373,7 +1375,9 @@ class TestP5P4UiStructureGate(unittest.TestCase):
             "_fatigueReviewMetricEvidence",
             "_fatigueReviewMetricMissingReason",
             "label + '约 ' + formatted",
-            "_fatigueReviewMetricEvidence('效率变化', decoupling.pct, '%')",
+            "_fatigueReviewDecouplingEvidence(decoupling, decMissing)",
+            "后程效率提升",
+            "后程效率下降",
             "_fatigueReviewMetricEvidence('评分', eff.score, '')",
             "_fatigueReviewMetricEvidence('评分', dur.score, '')",
             "_fatigueReviewMetricEvidence('评分', cadStab.score, '')",
@@ -1384,6 +1388,7 @@ class TestP5P4UiStructureGate(unittest.TestCase):
         self.assertNotIn("<div class=\"lbl\">Bonk 风险</div>", self.html)
         self.assertNotIn("TRIMP 简化版", self.html)
         self.assertNotIn("std + late_decay 综合", self.html)
+        self.assertNotIn("后端未返回功率口径指标", self.html)
 
     def test_p5_cycling_metric_cards_use_backend_power_and_pedaling_metrics(self):
         card_defs = _extract_js_function(self.html, "_fatigueReviewMetricCardDefs")
@@ -1392,7 +1397,10 @@ class TestP5P4UiStructureGate(unittest.TestCase):
         render_body = self.html[render_body_idx:self.html.find("\n    function _renderFatigueReviewDimensions", render_body_idx)]
         for text in (
             "function _fatigueReviewMetricSportMode(sportType)",
-            "sport === 'cycling' || sport === 'road_cycling' || sport === 'mountain_biking'",
+            "var reviewMode = arguments.length > 1 ? String(arguments[1] || '').toLowerCase() : ''",
+            "if (reviewMode === 'cycling') return 'cycling'",
+            "sport === 'indoor_cycling'",
+            "sport === 'e_biking'",
             "if (sportMode === 'cycling')",
             "'power_variability'",
             "'输出节奏'",
@@ -1486,7 +1494,7 @@ class TestP5P4UiStructureGate(unittest.TestCase):
         render_body = _extract_js_function(self.html, "_renderFatigueReviewMetrics")
 
         self.assertIn(
-            "_renderFatigueReviewMetrics(data.metrics || {}, data.sport_type, data.cycling_explanation_signals || {}, data.summary || {})",
+            "_renderFatigueReviewMetrics(data.metrics || {}, data.sport_type, data.cycling_explanation_signals || {}, data.summary || {}, data.review_mode)",
             open_body,
         )
         for text in (

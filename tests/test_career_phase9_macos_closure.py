@@ -36,9 +36,9 @@ FRONTEND_CAREER_API_METHODS = (
     "get_career_races",
     "get_career_footprint",
     "get_career_pb",
-    "get_career_achievements",
     "get_career_memory_gallery",
-    "generate_career_insight",
+    "get_career_year_insight",
+    "generate_career_year_insight",
     "get_activity_race_photos",
     "pick_and_add_activity_race_photos",
     "reorder_activity_race_photos",
@@ -46,10 +46,10 @@ FRONTEND_CAREER_API_METHODS = (
 )
 
 INLINE_CAREER_HANDLERS = (
-    "switchToCareerFromHonorWall",
     "setCareerTimelineTypeFilter",
     "setCareerTimelineYearFilter",
-    "loadCareerInsight",
+    "loadCareerYearInsight",
+    "generateCareerYearInsight",
     "onCareerFootprintFilterChange",
     "loadActivityRacePhotos",
     "addActivityRacePhotos",
@@ -119,7 +119,7 @@ class TestCareerPhase9MacosClosure(unittest.TestCase):
             "async function loadCareerFootprint(filters)",
             "async function loadCareerTimeline(filters)",
             "async function loadCareerMemory(filters)",
-            "async function loadCareerInsight(options)",
+            "async function loadCareerYearInsight(options)",
             "async function loadActivityRacePhotos(record)",
             "async function addActivityRacePhotos()",
             "async function reorderActivityRacePhotos(orderedIds)",

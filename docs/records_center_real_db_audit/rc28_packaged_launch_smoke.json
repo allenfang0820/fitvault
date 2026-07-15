@@ -1,0 +1,11 @@
+{
+  "app": "/Users/fanglei/应用开发/AI track/dist/脉图.app/Contents/MacOS/FitVault",
+  "home": "/var/folders/xq/r8kyh7zn5dscp3qvspk7xqh40000gn/T/fitvault-packaged-home-lxnupe95",
+  "returncode": -15,
+  "timed_out_running_gui": true,
+  "elapsed_sec": 12.018,
+  "fitvault_dir_exists": true,
+  "profile_db_exists": true,
+  "stdout_tail": "",
+  "stderr_tail": "2026-07-14 00:58:20 - INFO - 工作区已初始化: TRACKS_DIR=/var/folders/xq/r8kyh7zn5dscp3qvspk7xqh40000gn/T/fitvault-packaged-home-lxnupe95/.fitvault/workspace/tracks, IMPORTS_DIR=/var/folders/xq/r8kyh7zn5dscp3qvspk7xqh40000gn/T/fitvault-packaged-home-lxnupe95/.fitvault/workspace/imports\n2026-07-14 00:58:20 - INFO - Schema 版本升级: 0 -> 2，触发增量数据清洗\n2026-07-14 00:58:20 - INFO - 全量重建: 无活动记录需要处理\n2026-07-14 00:58:20 - INFO - Watchdog 已启动: path=/var/folders/xq/r8kyh7zn5dscp3qvspk7xqh40000gn/T/fitvault-packaged-home-lxnupe95/.fitvault/workspace/tracks, observer=FSEventsObserver\n[pywebview] unhashable type: 'dict'\nTraceback (most recent call last):\n  File \"webview/event.py\", line 46, in execute\nTypeError: unhashable type: 'dict'\n2026-07-14 00:58:22 - ERROR - unhashable type: 'dict'\nTraceback (most recent call last):\n  File \"webview/event.py\", line 46, in execute\nTypeError: unhashable type: 'dict'\n"
+}

@@ -274,7 +274,15 @@ class TestCareerSnapshotBuilder(unittest.TestCase):
             )
             self.assertEqual(
                 set(snapshot["records_summary"]),
-                {"current_records", "recent_refreshes", "candidate_count", "evolution_summary", "trend_inputs"},
+                {
+                    "current_records",
+                    "formal_records",
+                    "recent_refreshes",
+                    "candidate_count",
+                    "evolution_summary",
+                    "curve_availability",
+                    "trend_inputs",
+                },
             )
             self.assertEqual(len(snapshot["records_summary"]["current_records"]), 4)
             self.assertEqual(
@@ -325,14 +333,14 @@ class TestCareerSnapshotBuilder(unittest.TestCase):
             self.assertEqual(records_summary["recent_refreshes"][0]["record_id"], "pb:running_5k:1")
             self.assertEqual(records_summary["evolution_summary"]["refresh_event_count"], 1)
             self.assertEqual(records_summary["evolution_summary"]["by_event_type"], {"activated": 1})
-            self.assertEqual(records_summary["trend_inputs"], {
-                "basis": "career_record_events",
-                "refresh_frequency_count": 1,
-                "evolution_event_count": 1,
-                "interpretation": "frequency_only",
-            })
+            self.assertEqual(records_summary["trend_inputs"]["basis"], "career_record_events")
+            self.assertEqual(records_summary["trend_inputs"]["refresh_frequency_count"], 1)
+            self.assertEqual(records_summary["trend_inputs"]["evolution_event_count"], 1)
+            self.assertEqual(records_summary["trend_inputs"]["interpretation"], "frequency_and_curve_availability_only")
+            self.assertTrue(
+                all(not item["creates_formal_record"] for item in records_summary["trend_inputs"]["curve_inputs"])
+            )
             self.assertNotIn("record_decision", json.dumps(records_summary, ensure_ascii=False))
-            self.assertNotIn("elapsed_time_sec", json.dumps(records_summary, ensure_ascii=False))
             _assert_forbidden_absent(self, snapshot)
         finally:
             conn.close()

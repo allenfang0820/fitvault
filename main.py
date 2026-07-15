@@ -4668,6 +4668,8 @@ def ensure_activity_sync_schema() -> None:
                 ("race_confirmed_at", "TEXT"),
                 ("race_confidence", "TEXT"),
                 ("race_override", "INTEGER DEFAULT 0"),
+                ("region_source", "TEXT"),
+                ("region_confidence", "TEXT"),
             ]:
                 try:
                     conn.execute(f"ALTER TABLE activities ADD COLUMN {col} {dtype}")
@@ -7227,7 +7229,8 @@ def _dedupe_activity_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     deduped: list[dict[str, Any]] = []
     seen: set[str] = set()
     for row in rows:
-        identity = _activity_row_identity(row)
+        row_id = str(row.get("id") or "").strip()
+        identity = f"id:{row_id}" if row_id else _activity_row_identity(row)
         if identity in seen:
             continue
         seen.add(identity)
@@ -10734,6 +10737,59 @@ class Api:
         config = init_application_config()
         return str(config.get("workspace_track_abs_path") or "").strip()
 
+    def _enrich_activity_rows_with_career_race_flags(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Overlay active ACS RaceEvent state onto activity-list rows without exposing race internals."""
+        if not rows:
+            return rows
+        ids = [str(row.get("id") or "").strip() for row in rows if str(row.get("id") or "").strip()]
+        if not ids:
+            return rows
+        conn = profile_backend._conn()
+        try:
+            table_row = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'career_race_events' LIMIT 1"
+            ).fetchone()
+            if not table_row:
+                return rows
+            placeholders = ", ".join("?" for _ in ids)
+            race_rows = conn.execute(
+                f"""
+                SELECT activity_id, source, confidence, display_metadata_json
+                FROM career_race_events
+                WHERE status = 'active'
+                  AND CAST(activity_id AS TEXT) IN ({placeholders})
+                """,
+                tuple(ids),
+            ).fetchall()
+        except Exception:
+            logger.debug("activity_list_career_race_enrichment_skipped", exc_info=True)
+            return rows
+        finally:
+            conn.close()
+
+        race_by_activity: dict[str, dict[str, Any]] = {}
+        for race_row in race_rows:
+            data = dict(race_row)
+            activity_id = str(data.get("activity_id") or "").strip()
+            if not activity_id or activity_id in race_by_activity:
+                continue
+            race_by_activity[activity_id] = data
+
+        for row in rows:
+            activity_id = str(row.get("id") or "").strip()
+            race_row = race_by_activity.get(activity_id)
+            if not race_row:
+                continue
+            row["career_race_is_active"] = 1
+            row["career_race_source"] = str(race_row.get("source") or "resolver")
+            row["career_race_confidence"] = str(race_row.get("confidence") or "")
+            metadata = _decode_weather_json(race_row.get("display_metadata_json")) or {}
+            evidence = metadata.get("evidence") if isinstance(metadata.get("evidence"), dict) else {}
+            confidence_level = str(metadata.get("confidence_level") or evidence.get("confidence_level") or "").strip()
+            if confidence_level:
+                row["career_race_confidence_level"] = confidence_level
+        return rows
+
     def _build_activity_list_item(self, row: dict) -> dict:
         display_type = _resolve_display_sport_type(row.get("sport_type"), row.get("sub_sport_type"))
         # V8.x 修复: distance 字段已对齐米单位, dist_km 是真公里值
@@ -10828,6 +10884,20 @@ class Api:
             power_field_value = None
             power_field_display = "/"
 
+        activity_is_race = bool(_safe_int(row.get("is_race")))
+        activity_race_source = str(row.get("race_source") or "").strip()
+        activity_race_confidence = str(row.get("race_confidence") or "").strip()
+        race_override = _safe_int(row.get("race_override"))
+        user_cancelled_race = race_override == 1 and activity_race_source.lower() == "user" and not activity_is_race
+        career_race_is_active = bool(_safe_int(row.get("career_race_is_active")))
+        display_is_race = activity_is_race or (career_race_is_active and not user_cancelled_race)
+        display_race_source = activity_race_source
+        if not display_race_source and career_race_is_active:
+            display_race_source = str(row.get("career_race_source") or "resolver").strip()
+        display_race_confidence = activity_race_confidence
+        if not display_race_confidence and career_race_is_active:
+            display_race_confidence = str(row.get("career_race_confidence_level") or row.get("career_race_confidence") or "").strip()
+
         return {
             "id": int(row.get("id") or 0),
             "file_name": display_filename,
@@ -10880,11 +10950,13 @@ class Api:
             "has_local_file": bool(str(row.get("file_path") or "").strip() and os.path.exists(str(row.get("file_path") or "").strip())),
             "processing_status": str(row.get("processing_status") or "ready"),
             "processing_error": str(row.get("processing_error") or ""),
-            "is_race": bool(_safe_int(row.get("is_race"))),
-            "race_source": str(row.get("race_source") or ""),
+            "is_race": display_is_race,
+            "race_source": display_race_source,
             "race_confirmed_at": str(row.get("race_confirmed_at") or ""),
-            "race_confidence": str(row.get("race_confidence") or ""),
-            "race_override": _safe_int(row.get("race_override")),
+            "race_confidence": display_race_confidence,
+            "race_override": race_override,
+            "career_race_is_active": career_race_is_active,
+            "career_race_source": str(row.get("career_race_source") or ""),
         }
 
     def _fetch_activity_row(self, activity_id: int) -> dict | None:
@@ -11919,6 +11991,130 @@ class Api:
             logger.exception("get_career_pb_history failed")
             return _api_error(API_CODE_DB, "运动生涯PB纪录历史查询失败")
 
+    def get_career_record_catalog(self, filters: dict | None = None) -> dict:
+        """Return V2 Records Catalog generated from backend Registry."""
+        try:
+            clean_filters = filters if isinstance(filters, dict) else None
+            return _api_success(career_backend.get_career_record_catalog(clean_filters))
+        except Exception:
+            logger.exception("get_career_record_catalog failed")
+            return _api_error(API_CODE_DB, "运动生涯记录目录查询失败")
+
+    def get_career_records(self, filters: dict | None = None) -> dict:
+        """Return V2 current Records ViewModel."""
+        try:
+            clean_filters = filters if isinstance(filters, dict) else None
+            return _api_success(career_backend.get_career_records(clean_filters))
+        except Exception:
+            logger.exception("get_career_records failed")
+            return _api_error(API_CODE_DB, "运动生涯记录查询失败")
+
+    def get_career_record_detail(self, payload: dict | None = None) -> dict:
+        """Return one V2 record detail ViewModel."""
+        try:
+            clean_payload = payload if isinstance(payload, dict) else {}
+            return _api_success(career_backend.get_career_record_detail(clean_payload))
+        except Exception:
+            logger.exception("get_career_record_detail failed")
+            return _api_error(API_CODE_DB, "运动生涯记录详情查询失败")
+
+    def get_career_record_history(self, filters: dict | None = None) -> dict:
+        """Return one V2 record history ViewModel."""
+        try:
+            clean_filters = filters if isinstance(filters, dict) else None
+            return _api_success(career_backend.get_career_record_history(clean_filters))
+        except Exception:
+            logger.exception("get_career_record_history failed")
+            return _api_error(API_CODE_DB, "运动生涯记录历史查询失败")
+
+    def get_career_record_curve(self, payload: dict | None = None) -> dict:
+        """Return safe V2 derived curve ViewModel."""
+        try:
+            clean_payload = payload if isinstance(payload, dict) else {}
+            return _api_success(career_backend.get_career_record_curve(clean_payload))
+        except Exception:
+            logger.exception("get_career_record_curve failed")
+            return _api_error(API_CODE_DB, "运动生涯记录曲线查询失败")
+
+    def get_career_record_candidates(self, filters: dict | None = None) -> dict:
+        """Return V2 record candidates without raw evidence payload."""
+        try:
+            clean_filters = filters if isinstance(filters, dict) else None
+            return _api_success(career_backend.get_career_record_candidates(clean_filters))
+        except Exception:
+            logger.exception("get_career_record_candidates failed")
+            return _api_error(API_CODE_DB, "运动生涯记录候选查询失败")
+
+    def decide_career_record_candidate(self, payload: dict | None = None) -> dict:
+        """Confirm or reject a V2 record candidate."""
+        started = time.perf_counter()
+        try:
+            clean_payload = payload if isinstance(payload, dict) else {}
+            result = career_backend.decide_career_record_candidate(clean_payload)
+            if not result.get("ok"):
+                return _api_error(API_CODE_VALIDATION, str(result.get("msg") or "记录候选处理失败"))
+            data = result.get("data") or {}
+            logger.info(
+                "records_v2_candidate_decision %s",
+                career_backend.records_v2_safe_observation(
+                    "records_v2_candidate_decision",
+                    candidate_id=str(clean_payload.get("candidate_id") or clean_payload.get("id") or ""),
+                    decision=str(clean_payload.get("decision") or clean_payload.get("action") or ""),
+                    action=str(data.get("action") or ""),
+                    record_id=str(data.get("record_id") or ""),
+                    elapsed_ms=round((time.perf_counter() - started) * 1000.0, 2),
+                ),
+            )
+            return _api_success(data)
+        except Exception:
+            logger.exception("decide_career_record_candidate failed")
+            return _api_error(API_CODE_DB, "运动生涯记录候选处理失败")
+
+    def rebuild_career_records(self, payload: dict | None = None) -> dict:
+        """Run V2 Records rebuild; dry-run is default and real DB apply is gated."""
+        started = time.perf_counter()
+        try:
+            clean_payload = payload if isinstance(payload, dict) else {}
+            dry_run = bool(clean_payload.get("dry_run", True))
+            if not dry_run and not bool(clean_payload.get("apply_to_real_db")):
+                logger.info(
+                    "records_v2_rebuild_denied %s",
+                    career_backend.records_v2_safe_observation(
+                        "records_v2_rebuild_denied",
+                        dry_run=False,
+                        action="apply_denied",
+                        elapsed_ms=round((time.perf_counter() - started) * 1000.0, 2),
+                    ),
+                )
+                return _api_error(API_CODE_VALIDATION, "当前仅允许记录重建 dry-run")
+            data = career_backend.rebuild_career_records(clean_payload)
+            logger.info(
+                "records_v2_rebuild %s",
+                career_backend.records_v2_safe_observation(
+                    "records_v2_rebuild",
+                    run_id=str(data.get("run_id") or ""),
+                    dry_run=bool(data.get("dry_run", True)),
+                    processed=int(data.get("processed") or 0),
+                    by_sport=data.get("by_sport") if isinstance(data.get("by_sport"), dict) else {},
+                    by_family=data.get("by_family") if isinstance(data.get("by_family"), dict) else {},
+                    by_reason=data.get("by_reason") if isinstance(data.get("by_reason"), dict) else {},
+                    elapsed_ms=round((time.perf_counter() - started) * 1000.0, 2),
+                ),
+            )
+            return _api_success(data)
+        except Exception:
+            logger.exception("rebuild_career_records failed")
+            return _api_error(API_CODE_DB, "运动生涯记录重建失败")
+
+    def get_career_record_rebuild_status(self, payload: dict | None = None) -> dict:
+        """Return current V2 Records rebuild status."""
+        try:
+            clean_payload = payload if isinstance(payload, dict) else {}
+            return _api_success(career_backend.get_career_record_rebuild_status(clean_payload))
+        except Exception:
+            logger.exception("get_career_record_rebuild_status failed")
+            return _api_error(API_CODE_DB, "运动生涯记录重建状态查询失败")
+
     def decide_career_pb_candidate(self, payload: dict | None = None) -> dict:
         """Confirm or reject a Records Center PB candidate."""
         try:
@@ -12018,7 +12214,7 @@ class Api:
             return _api_error(API_CODE_DB, "运动生涯快照查询失败")
 
     def generate_career_insight(self, payload: dict | None = None) -> dict:
-        """Return a fallback ACS Career Insight from the white-listed Career Snapshot."""
+        """Return a compatibility fallback ACS Career Insight without a frontend entry."""
         try:
             clean_payload = payload if isinstance(payload, dict) else {}
             return _api_success(career_backend.generate_career_insight(clean_payload))
@@ -12027,6 +12223,97 @@ class Api:
         except Exception:
             logger.exception("generate_career_insight failed")
             return _api_error(API_CODE_DB, "运动生涯洞察生成失败")
+
+    def get_career_year_insight(self, payload: dict | None = None) -> dict:
+        """Return the annual ACS read model without generating AI content."""
+        started = time.perf_counter()
+        trace_id = _new_trace_id()
+        try:
+            clean_payload = payload if isinstance(payload, dict) else {}
+            allowed_keys = {"year"}
+            unknown_keys = set(clean_payload) - allowed_keys
+            if unknown_keys:
+                return _api_error(API_CODE_VALIDATION, "年度总结参数仅支持 year")
+            raw_year = clean_payload.get("year")
+            year = None
+            if raw_year not in (None, ""):
+                if isinstance(raw_year, bool):
+                    return _api_error(API_CODE_VALIDATION, "year 必须是有效整数")
+                try:
+                    year = int(raw_year)
+                except (TypeError, ValueError):
+                    return _api_error(API_CODE_VALIDATION, "year 必须是有效整数")
+                if year < career_backend.CAREER_YEAR_MIN or year > career_backend.CAREER_YEAR_MAX:
+                    return _api_error(
+                        API_CODE_VALIDATION,
+                        f"year 必须在 {career_backend.CAREER_YEAR_MIN}-{career_backend.CAREER_YEAR_MAX} 之间",
+                    )
+            data = career_backend.get_career_year_insight(year)
+            elapsed_ms = round((time.perf_counter() - started) * 1000.0, 2)
+            logger.info(
+                "get_career_year_insight ok year=%s traceId=%s state=%s elapsed_ms=%s",
+                data.get("year"),
+                trace_id,
+                data.get("report_state"),
+                elapsed_ms,
+            )
+            return {
+                "ok": True,
+                "code": API_CODE_OK,
+                "msg": "ok",
+                "data": data,
+                "traceId": trace_id,
+            }
+        except ValueError as exc:
+            return _api_error(API_CODE_VALIDATION, str(exc))
+        except Exception:
+            logger.exception("get_career_year_insight failed traceId=%s", trace_id)
+            return _api_error(API_CODE_DB, "年度总结查询失败")
+
+    def generate_career_year_insight(self, payload: dict | None = None) -> dict:
+        """Generate or refresh one annual ACS AI report."""
+        started = time.perf_counter()
+        trace_id = _new_trace_id()
+        try:
+            clean_payload = payload if isinstance(payload, dict) else {}
+            allowed_keys = {"year"}
+            unknown_keys = set(clean_payload) - allowed_keys
+            if unknown_keys:
+                return _api_error(API_CODE_VALIDATION, "年度总结生成参数仅支持 year")
+            raw_year = clean_payload.get("year")
+            if raw_year in (None, "") or isinstance(raw_year, bool):
+                return _api_error(API_CODE_VALIDATION, "year 必须是有效整数")
+            try:
+                year = int(raw_year)
+            except (TypeError, ValueError):
+                return _api_error(API_CODE_VALIDATION, "year 必须是有效整数")
+            if year < career_backend.CAREER_YEAR_MIN or year > career_backend.CAREER_YEAR_MAX:
+                return _api_error(
+                    API_CODE_VALIDATION,
+                    f"year 必须在 {career_backend.CAREER_YEAR_MIN}-{career_backend.CAREER_YEAR_MAX} 之间",
+                )
+            data = career_backend.generate_career_year_insight(year)
+            elapsed_ms = round((time.perf_counter() - started) * 1000.0, 2)
+            logger.info(
+                "generate_career_year_insight ok year=%s traceId=%s state=%s generation=%s elapsed_ms=%s",
+                data.get("year"),
+                trace_id,
+                data.get("report_state"),
+                (data.get("generation") or {}).get("status") if isinstance(data.get("generation"), dict) else "",
+                elapsed_ms,
+            )
+            return {
+                "ok": True,
+                "code": API_CODE_OK,
+                "msg": "ok",
+                "data": data,
+                "traceId": trace_id,
+            }
+        except ValueError as exc:
+            return _api_error(API_CODE_VALIDATION, str(exc))
+        except Exception:
+            logger.exception("generate_career_year_insight failed traceId=%s", trace_id)
+            return _api_error(API_CODE_DB, "年度总结生成失败")
 
     def get_activity_race_photos(self, activity_id: Any) -> dict:
         """Return safe race photos for the current Activity Detail context."""
@@ -12283,7 +12570,7 @@ class Api:
             finally:
                 conn.close()
 
-            deduped_rows = _dedupe_activity_rows([dict(row) for row in all_rows])
+            deduped_rows = self._enrich_activity_rows_with_career_race_flags(_dedupe_activity_rows([dict(row) for row in all_rows]))
             records = [self._build_activity_list_item(row) for row in deduped_rows]
             activity_types = sorted(
                 {
@@ -12339,7 +12626,7 @@ class Api:
             page_size = requested_page_size if requested_page_size in SPORT_HUB_PAGE_SIZES else 20
             offset = (page - 1) * page_size
             db_rows, total_count = profile_backend.get_activity_list_filtered(offset, page_size, sport_filter, title_keyword=title_keyword)
-            deduped_rows = _dedupe_activity_rows(db_rows)
+            deduped_rows = self._enrich_activity_rows_with_career_race_flags(_dedupe_activity_rows(db_rows))
             records = [self._build_activity_list_item(row) for row in deduped_rows]
             total_pages = max(1, (total_count + page_size - 1) // page_size)
             page = min(page, total_pages)
@@ -12421,7 +12708,7 @@ class Api:
             page_size = requested_page_size if requested_page_size in SPORT_HUB_PAGE_SIZES else 10
             offset = (page - 1) * page_size
             db_rows, total_count = profile_backend.get_activity_list_filtered(offset, page_size, sport_filter, title_keyword=title_keyword)
-            deduped_rows = _dedupe_activity_rows(db_rows)
+            deduped_rows = self._enrich_activity_rows_with_career_race_flags(_dedupe_activity_rows(db_rows))
             records = [self._build_activity_list_item(row) for row in deduped_rows]
             total_pages = max(1, (total_count + page_size - 1) // page_size)
             page = min(page, total_pages)
@@ -14214,7 +14501,7 @@ class Api:
                 sport_filter=sport_filter, gps_only=True,
             )
 
-            return _api_success({
+            payload = {
                 "records": records,
                 "total": total_count,
                 "page": page,
@@ -14222,7 +14509,13 @@ class Api:
                 "total_pages": total_pages,
                 "activity_types": activity_types,
                 "locations": location_options,
-            })
+            }
+            response = _api_success(payload)
+            # Backward compatibility: earlier Trace Activity History consumers and
+            # tests read pagination/filter fields at the top level. Keep the
+            # unified envelope while mirroring safe scalar/list view fields.
+            response.update(payload)
+            return response
         except Exception as e:
             logger.exception("get_trace_activity_history failed")
             return _api_error(API_CODE_DB, str(e))
@@ -14236,6 +14529,23 @@ class Api:
         except Exception as e:
             logger.warning("refresh_activity_region failed: %s", e)
             return _api_error(API_CODE_EXTERNAL_SERVICE, str(e))
+
+    def get_region_enrichment_dry_run(self, payload: dict | None = None) -> dict:
+        try:
+            raw_years = []
+            if isinstance(payload, dict):
+                raw_years = payload.get("years") or []
+            years = []
+            if isinstance(raw_years, (list, tuple)):
+                for item in raw_years:
+                    year = _safe_int(item, 0)
+                    if 1900 <= year <= 2100:
+                        years.append(year)
+            result = profile_backend.region_enrichment_dry_run(years or None)
+            return _api_success(result)
+        except Exception as e:
+            logger.warning("get_region_enrichment_dry_run failed: %s", e)
+            return _api_error(API_CODE_DB, str(e))
 
     def check_activity_data_integrity(self) -> dict:
         try:

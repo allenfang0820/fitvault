@@ -80,8 +80,9 @@ REGION_CACHE_PRECISION = 2
 REGION_ENRICH_LIMIT = 20
 REGION_ENRICH_MAX_REQUESTS = 50
 REGION_ENRICH_RETRY_COOLDOWN_MINUTES = 30
-GEOCODE_REQUEST_INTERVAL_MIN_SEC = 1.5
-GEOCODE_REQUEST_INTERVAL_MAX_SEC = 5.0
+GEOCODE_REQUEST_INTERVAL_MIN_SEC = 1.1
+GEOCODE_REQUEST_INTERVAL_MAX_SEC = 1.6
+REGION_PROVIDER_COOLDOWN_MINUTES = 24 * 60
 GEOCODE_REQUEST_TIMEOUT_SEC = 8
 GEOCODE_LANG = "zh-CN"
 GEOCODE_USER_AGENT = "FitVault/1.0"
@@ -89,6 +90,7 @@ GPX_FALLBACK_GAIN_THRESHOLD_M = 0.1
 _REGION_CACHE_LOCK = threading.Lock()
 _REGION_CACHE: dict[tuple[float, float], str] = {}
 _REGION_ENRICH_LOCK = threading.Lock()
+REGION_ENRICH_PROVIDER_COOLDOWN_UNTIL: datetime | None = None
 
 _DB_CONN_SEMAPHORE = threading.BoundedSemaphore(SQLITE_POOL_SIZE)
 _PROFILE_SYNC_LOCK = threading.Lock()
@@ -1062,6 +1064,7 @@ def _init_schema(conn: sqlite3.Connection) -> None:
         "start_time_utc","start_lat",  "start_lon",   "region",
         "region_city",  "region_country","region_display",
         "region_status","region_error","region_updated_at","region_attempt_count",
+        "region_source","region_confidence",
         "weather_json", "weather_status", "weather_updated_at", "weather_attempt_count", "weather_error",
         "file_mtime",  "file_size",   "deleted_at",
         "avg_pace",     "calories",    "avg_power",   "max_power",
@@ -1082,6 +1085,7 @@ def _init_schema(conn: sqlite3.Connection) -> None:
         "TEXT", "REAL", "REAL", "TEXT",
         "TEXT", "TEXT", "TEXT",
         "TEXT DEFAULT 'pending'", "TEXT", "TEXT", "INTEGER DEFAULT 0",
+        "TEXT", "TEXT",
         "TEXT", "TEXT DEFAULT 'pending'", "TEXT", "INTEGER DEFAULT 0", "TEXT",
         "REAL", "INTEGER", "TEXT",
         "REAL", "INTEGER", "REAL", "REAL",
@@ -1152,6 +1156,8 @@ def _init_schema(conn: sqlite3.Connection) -> None:
         ("region_error", "TEXT"),
         ("region_updated_at", "TEXT"),
         ("region_attempt_count", "INTEGER DEFAULT 0"),
+        ("region_source", "TEXT"),
+        ("region_confidence", "TEXT"),
         ("weather_json", "TEXT"),
         ("weather_status", "TEXT DEFAULT 'pending'"),
         ("weather_updated_at", "TEXT"),
@@ -1739,7 +1745,8 @@ def translate_sport_type(sport_type: str | None) -> str:
     return raw.replace("_", " ").title() if raw else "综合运动"
 
 
-_AUTO_ACTIVITY_TITLE_SOURCES = {"auto_sport", "auto_region_sport"}
+_AUTO_ACTIVITY_TITLE_SOURCES = {"auto", "auto_sport", "auto_region_sport", "garmin_auto", "coros_auto", "region_auto"}
+_PROTECTED_ACTIVITY_TITLE_SOURCES = {"manual", "user", "edited"}
 _GENERIC_SUB_SPORT_TYPES = {"", "unknown", "generic", "other"}
 _TECHNICAL_ACTIVITY_TITLE_RE = re.compile(
     r"^(?:coros[\s_-]*)?(?:activity[\s_-]*fit[\s_-]*files?|activity)(?:[\s_-]+[0-9a-f]{8,})?$",
@@ -1797,6 +1804,8 @@ def build_activity_display_title(
     """Build a user-facing activity title without exposing provider temp filenames."""
     source = str(title_source or "").strip()
     title = str(current_title or "").strip()
+    if title and source in _PROTECTED_ACTIVITY_TITLE_SOURCES:
+        return title, source
     if title and source == "filename":
         cleaned_filename_title = clean_activity_filename_title(title)
         if cleaned_filename_title != title and not _is_technical_activity_title(cleaned_filename_title):
@@ -1813,6 +1822,17 @@ def build_activity_display_title(
     if region_prefix:
         return f"{region_prefix} {sport_cn}", "auto_region_sport"
     return sport_cn, "auto_sport"
+
+
+def _can_region_update_activity_title(title_source: Any, current_title: Any = "") -> bool:
+    source = str(title_source or "").strip()
+    if source in _PROTECTED_ACTIVITY_TITLE_SOURCES:
+        return False
+    if source in _AUTO_ACTIVITY_TITLE_SOURCES:
+        return True
+    if source == "filename" and _is_technical_activity_title(current_title):
+        return True
+    return False
 
 
 def backfill_auto_activity_titles(conn: sqlite3.Connection | None = None, limit: int = 500) -> int:
@@ -2527,7 +2547,180 @@ def _write_geocode_cache(conn: sqlite3.Connection, cache_key: str, lat_round: fl
     )
 
 
-def run_region_enrichment_once(limit: int = REGION_ENRICH_LIMIT, max_requests: int = REGION_ENRICH_MAX_REQUESTS) -> dict[str, Any]:
+def _region_enrich_can_call_provider() -> bool:
+    if REGION_ENRICH_PROVIDER_COOLDOWN_UNTIL is None:
+        return True
+    return datetime.now(timezone.utc) >= REGION_ENRICH_PROVIDER_COOLDOWN_UNTIL
+
+
+def _region_enrich_provider_cooldown(reason: str) -> str:
+    global REGION_ENRICH_PROVIDER_COOLDOWN_UNTIL
+    REGION_ENRICH_PROVIDER_COOLDOWN_UNTIL = datetime.now(timezone.utc) + timedelta(minutes=REGION_PROVIDER_COOLDOWN_MINUTES)
+    logger.warning("Nominatim 地区补全进入 cooldown: reason=%s until=%s", reason, REGION_ENRICH_PROVIDER_COOLDOWN_UNTIL.isoformat())
+    return REGION_ENRICH_PROVIDER_COOLDOWN_UNTIL.isoformat()
+
+
+def _region_enrich_activity_update_sql(*, include_title: bool, inferred: bool = False) -> str:
+    title_sql = "title = ?, title_source = ?," if include_title else ""
+    source_sql = "region_source = 'offline_geocoder', region_confidence = 'medium'," if inferred else "region_source = 'nominatim', region_confidence = 'high',"
+    status = "inferred" if inferred else "success"
+    return f"""
+        UPDATE activities
+        SET {title_sql}
+            region_city = ?, region_country = ?, region_display = ?, region = ?,
+            region_status = '{status}', region_error = NULL, {source_sql}
+            region_updated_at = ?, updated_at = updated_at
+        WHERE id = ?
+    """
+
+
+def _region_enrich_apply_to_matching_activities(
+    *,
+    cache_key: str,
+    lat_round: float,
+    lon_round: float,
+    city: Any,
+    country: Any,
+    display: Any,
+    source: str = "nominatim",
+) -> dict[str, int]:
+    display_text = str(display or "").strip()
+    if not display_text:
+        return {"updated": 0, "title_updated": 0, "title_protected": 0}
+    inferred = source == "offline_geocoder"
+    conn = _conn()
+    try:
+        rows = conn.execute(
+            """
+            SELECT id, start_lat, start_lon, title, title_source, sport_type, sub_sport_type
+            FROM activities
+            WHERE COALESCE(deleted_at, '') = ''
+              AND region_status IN ('pending', 'failed', 'inferred')
+              AND start_lat IS NOT NULL
+              AND start_lon IS NOT NULL
+              AND printf('%.2f,%.2f', round(start_lat, 2), round(start_lon, 2)) = ?
+            ORDER BY id ASC
+            """,
+            (cache_key,),
+        ).fetchall()
+        updated = 0
+        title_updated = 0
+        title_protected = 0
+        now = datetime.now().isoformat()
+        for row in rows:
+            allow_title_update = (not inferred) and _can_region_update_activity_title(row["title_source"], row["title"])
+            if allow_title_update:
+                title, title_source = build_activity_display_title(
+                    current_title=row["title"],
+                    title_source=row["title_source"],
+                    sport_type=row["sport_type"],
+                    sub_sport_type=row["sub_sport_type"],
+                    region_display=display_text,
+                )
+                params = (title, title_source, city, country, display_text, display_text, now, int(row["id"]))
+                title_updated += 1
+            else:
+                params = (city, country, display_text, display_text, now, int(row["id"]))
+                if str(row["title"] or "").strip():
+                    title_protected += 1
+            conn.execute(_region_enrich_activity_update_sql(include_title=allow_title_update, inferred=inferred), params)
+            updated += 1
+        if updated:
+            conn.execute("UPDATE geocode_cache SET last_used_at = ? WHERE cache_key = ?", (now, cache_key))
+        conn.commit()
+        return {"updated": updated, "title_updated": title_updated, "title_protected": title_protected}
+    finally:
+        conn.close()
+
+
+def _region_pending_rows(limit: int) -> list[sqlite3.Row]:
+    conn = _conn()
+    try:
+        return conn.execute(
+            """
+            SELECT id, start_lat, start_lon, region_attempt_count,
+                   title, title_source, sport_type, sub_sport_type, region_status, region_updated_at
+            FROM activities
+            WHERE COALESCE(deleted_at, '') = ''
+              AND region_status IN ('pending', 'failed', 'inferred')
+              AND start_lat IS NOT NULL
+              AND start_lon IS NOT NULL
+              AND (
+                region_status = 'inferred'
+                OR COALESCE(region_attempt_count, 0) < 3
+                OR region_updated_at IS NULL
+                OR region_updated_at < datetime('now', ?)
+              )
+            ORDER BY
+              CASE
+                WHEN region_status = 'inferred' THEN 0
+                WHEN region_updated_at IS NULL THEN 1
+                ELSE 2
+              END ASC,
+              COALESCE(start_time, updated_at) ASC,
+              id ASC
+            LIMIT ?
+            """,
+            (f"-{REGION_ENRICH_RETRY_COOLDOWN_MINUTES} minutes", int(limit)),
+        ).fetchall()
+    finally:
+        conn.close()
+
+
+def region_enrichment_dry_run(years: list[int] | None = None, conn: sqlite3.Connection | None = None) -> dict[str, Any]:
+    owns_conn = conn is None
+    db = conn or _conn()
+    try:
+        year_filter = ""
+        params: list[Any] = []
+        if years:
+            clean_years = [str(int(year)) for year in years]
+            placeholders = ",".join("?" for _ in clean_years)
+            year_filter = f"AND substr(COALESCE(a.start_time, ''), 1, 4) IN ({placeholders})"
+            params.extend(clean_years)
+        rows = db.execute(
+            f"""
+            SELECT substr(COALESCE(a.start_time, ''), 1, 4) AS year,
+                   COUNT(*) AS pending_gps,
+                   SUM(CASE WHEN g.status = 'success' THEN 1 ELSE 0 END) AS cache_hit,
+                   COUNT(DISTINCT printf('%.2f,%.2f', round(a.start_lat, 2), round(a.start_lon, 2))) AS unique_coords,
+                   SUM(CASE WHEN COALESCE(a.title_source, '') IN ('auto','auto_sport','auto_region_sport','garmin_auto','coros_auto','region_auto')
+                         OR (COALESCE(a.title_source, '') = 'filename' AND COALESCE(a.title, '') LIKE '%activity%')
+                         THEN 1 ELSE 0 END) AS auto_title_candidates
+            FROM activities a
+            LEFT JOIN geocode_cache g
+              ON g.cache_key = printf('%.2f,%.2f', round(a.start_lat, 2), round(a.start_lon, 2))
+            WHERE COALESCE(a.deleted_at, '') = ''
+              AND a.region_status IN ('pending', 'failed', 'inferred')
+              AND a.start_lat IS NOT NULL
+              AND a.start_lon IS NOT NULL
+              {year_filter}
+            GROUP BY year
+            ORDER BY year
+            """,
+            tuple(params),
+        ).fetchall()
+        by_year = []
+        for row in rows:
+            pending = int(row["pending_gps"] or 0)
+            cache_hit = int(row["cache_hit"] or 0)
+            unique_coords = int(row["unique_coords"] or 0)
+            auto_titles = int(row["auto_title_candidates"] or 0)
+            by_year.append({
+                "year": int(row["year"]) if str(row["year"] or "").isdigit() else None,
+                "pending_gps_activity_count": pending,
+                "cache_hit_activity_count": cache_hit,
+                "nominatim_unique_coord_count": max(0, unique_coords),
+                "auto_title_update_candidate_count": auto_titles,
+                "protected_title_count": max(0, pending - auto_titles),
+            })
+        return {"ok": True, "years": by_year}
+    finally:
+        if owns_conn:
+            db.close()
+
+
+def run_region_enrichment_once(limit: int = REGION_ENRICH_LIMIT, max_requests: int = REGION_ENRICH_MAX_REQUESTS, offline_resolver: Any | None = None) -> dict[str, Any]:
     if not _REGION_ENRICH_LOCK.acquire(blocking=False):
         return {"ok": True, "skipped": True, "reason": "running"}
     processed = 0
@@ -2536,59 +2729,22 @@ def run_region_enrichment_once(limit: int = REGION_ENRICH_LIMIT, max_requests: i
     cache_hits = 0
     requests_count = 0
     consecutive_failures = 0
+    title_updated = 0
+    title_protected = 0
+    inferred = 0
+    stopped_reason = ""
+    provider_cooldown_until = ""
     try:
-        conn = _conn()
-        try:
-            rows = conn.execute(
-                """
-                SELECT id, start_lat, start_lon, region_attempt_count,
-                       title, title_source, sport_type, sub_sport_type
-                FROM activities
-                WHERE COALESCE(deleted_at, '') = ''
-                  AND region_status IN ('pending', 'failed')
-                  AND start_lat IS NOT NULL
-                  AND start_lon IS NOT NULL
-                  AND (
-                    COALESCE(region_attempt_count, 0) < 3
-                    OR region_updated_at IS NULL
-                    OR region_updated_at < datetime('now', ?)
-                  )
-                ORDER BY COALESCE(start_time, updated_at) DESC, id DESC
-                LIMIT ?
-                """,
-                (f"-{REGION_ENRICH_RETRY_COOLDOWN_MINUTES} minutes", int(limit)),
-            ).fetchall()
-        finally:
-            conn.close()
-
+        rows = _region_pending_rows(limit)
+        requested_keys: set[str] = set()
         for row in rows:
-            if requests_count >= max_requests or consecutive_failures >= 3:
+            if consecutive_failures >= 3:
+                stopped_reason = "consecutive_failures"
                 break
             processed += 1
             activity_id = int(row["id"])
             cache_info = _region_cache_key(row["start_lat"], row["start_lon"])
             if cache_info is None:
-                title, title_source = build_activity_display_title(
-                    current_title=row["title"],
-                    title_source=row["title_source"],
-                    sport_type=row["sport_type"],
-                    sub_sport_type=row["sub_sport_type"],
-                    region_display="室内运动",
-                )
-                conn = _conn()
-                try:
-                    conn.execute(
-                        """
-                        UPDATE activities
-                        SET title = ?, title_source = ?,
-                            region_status = 'none', region_display = '室内运动', region = '室内运动（无GPS）', region_error = NULL, region_updated_at = ?, updated_at = updated_at
-                        WHERE id = ?
-                        """,
-                        (title, title_source, datetime.now().isoformat(), activity_id),
-                    )
-                    conn.commit()
-                finally:
-                    conn.close()
                 continue
             cache_key, lat_round, lon_round = cache_info
             conn = _conn()
@@ -2598,31 +2754,45 @@ def run_region_enrichment_once(limit: int = REGION_ENRICH_LIMIT, max_requests: i
                     (cache_key,),
                 ).fetchone()
                 if cached:
-                    display = str(cached["display"] or "").strip()
-                    title, title_source = build_activity_display_title(
-                        current_title=row["title"],
-                        title_source=row["title_source"],
-                        sport_type=row["sport_type"],
-                        sub_sport_type=row["sub_sport_type"],
-                        region_display=display,
+                    result = _region_enrich_apply_to_matching_activities(
+                        cache_key=cache_key,
+                        lat_round=lat_round,
+                        lon_round=lon_round,
+                        city=cached["city"],
+                        country=cached["country"],
+                        display=cached["display"],
                     )
-                    conn.execute(
-                        """
-                        UPDATE activities
-                        SET title = ?, title_source = ?,
-                            region_city = ?, region_country = ?, region_display = ?, region = ?, region_status = 'success', region_error = NULL, region_updated_at = ?, updated_at = updated_at
-                        WHERE id = ?
-                        """,
-                        (title, title_source, cached["city"], cached["country"], display, display, datetime.now().isoformat(), activity_id),
-                    )
-                    conn.execute("UPDATE geocode_cache SET last_used_at = ? WHERE cache_key = ?", (datetime.now().isoformat(), cache_key))
-                    conn.commit()
-                    cache_hits += 1
-                    success += 1
+                    cache_hits += int(result["updated"])
+                    success += int(result["updated"])
+                    title_updated += int(result["title_updated"])
+                    title_protected += int(result["title_protected"])
                     continue
             finally:
                 conn.close()
 
+            if cache_key in requested_keys:
+                continue
+            requested_keys.add(cache_key)
+            if requests_count >= max_requests:
+                stopped_reason = "request_budget_exhausted"
+                if offline_resolver:
+                    offline = offline_resolver(lat_round, lon_round)
+                    city, country, display = _extract_city_country(offline)
+                    result = _region_enrich_apply_to_matching_activities(
+                        cache_key=cache_key,
+                        lat_round=lat_round,
+                        lon_round=lon_round,
+                        city=city,
+                        country=country,
+                        display=display,
+                        source="offline_geocoder",
+                    )
+                    inferred += int(result["updated"])
+                    title_protected += int(result["title_protected"])
+                continue
+            if not _region_enrich_can_call_provider():
+                stopped_reason = "provider_cooldown"
+                break
             if requests_count > 0:
                 time.sleep(random.uniform(GEOCODE_REQUEST_INTERVAL_MIN_SEC, GEOCODE_REQUEST_INTERVAL_MAX_SEC))
             requests_count += 1
@@ -2631,34 +2801,31 @@ def run_region_enrichment_once(limit: int = REGION_ENRICH_LIMIT, max_requests: i
                 city, country, display = _extract_city_country(geo)
                 if not display:
                     raise RuntimeError("未返回城市/国家")
-                title, title_source = build_activity_display_title(
-                    current_title=row["title"],
-                    title_source=row["title_source"],
-                    sport_type=row["sport_type"],
-                    sub_sport_type=row["sub_sport_type"],
-                    region_display=display,
-                )
                 conn = _conn()
                 try:
                     _write_geocode_cache(conn, cache_key, lat_round, lon_round, city, country, display, "success", None)
-                    conn.execute(
-                        """
-                        UPDATE activities
-                        SET title = ?, title_source = ?,
-                            region_city = ?, region_country = ?, region_display = ?, region = ?, region_status = 'success', region_error = NULL, region_updated_at = ?, updated_at = updated_at
-                        WHERE id = ?
-                        """,
-                        (title, title_source, city, country, display, display, datetime.now().isoformat(), activity_id),
-                    )
                     conn.commit()
                 finally:
                     conn.close()
+                result = _region_enrich_apply_to_matching_activities(
+                    cache_key=cache_key,
+                    lat_round=lat_round,
+                    lon_round=lon_round,
+                    city=city,
+                    country=country,
+                    display=display,
+                )
                 with _REGION_CACHE_LOCK:
                     _REGION_CACHE[(lat_round, lon_round)] = display
-                success += 1
+                success += int(result["updated"])
+                title_updated += int(result["title_updated"])
+                title_protected += int(result["title_protected"])
                 consecutive_failures = 0
             except Exception as exc:
                 message = str(exc)
+                if "429" in message or "too many requests" in message.lower():
+                    provider_cooldown_until = _region_enrich_provider_cooldown("rate_limited")
+                    stopped_reason = "provider_rate_limited"
                 conn = _conn()
                 try:
                     _write_geocode_cache(conn, cache_key, lat_round, lon_round, None, None, "", "failed", message)
@@ -2675,7 +2842,35 @@ def run_region_enrichment_once(limit: int = REGION_ENRICH_LIMIT, max_requests: i
                     conn.close()
                 failed += 1
                 consecutive_failures += 1
-        return {"ok": True, "processed": processed, "success": success, "failed": failed, "cache_hits": cache_hits, "requests": requests_count}
+                if offline_resolver:
+                    offline = offline_resolver(lat_round, lon_round)
+                    city, country, display = _extract_city_country(offline)
+                    result = _region_enrich_apply_to_matching_activities(
+                        cache_key=cache_key,
+                        lat_round=lat_round,
+                        lon_round=lon_round,
+                        city=city,
+                        country=country,
+                        display=display,
+                        source="offline_geocoder",
+                    )
+                    inferred += int(result["updated"])
+                    title_protected += int(result["title_protected"])
+                if stopped_reason == "provider_rate_limited":
+                    break
+        return {
+            "ok": True,
+            "processed": processed,
+            "success": success,
+            "failed": failed,
+            "cache_hits": cache_hits,
+            "requests": requests_count,
+            "inferred": inferred,
+            "title_updated": title_updated,
+            "title_protected": title_protected,
+            "stopped_reason": stopped_reason,
+            "provider_cooldown_until": provider_cooldown_until or (REGION_ENRICH_PROVIDER_COOLDOWN_UNTIL.isoformat() if REGION_ENRICH_PROVIDER_COOLDOWN_UNTIL else ""),
+        }
     finally:
         _REGION_ENRICH_LOCK.release()
 
@@ -2718,6 +2913,8 @@ def refresh_activity_region(activity_id: int) -> dict[str, Any]:
                 UPDATE activities
                 SET title = ?, title_source = ?,
                     region_status = 'none',
+                    region_source = 'none',
+                    region_confidence = 'none',
                     region_display = '室内运动',
                     region = '室内运动（无GPS）',
                     region_error = NULL,
@@ -2760,7 +2957,10 @@ def refresh_activity_region(activity_id: int) -> dict[str, Any]:
                 UPDATE activities
                 SET title = ?, title_source = ?,
                     region_city = ?, region_country = ?, region_display = ?, region = ?,
-                    region_status = 'success', region_error = NULL, region_updated_at = ?,
+                    region_status = 'success',
+                    region_source = 'nominatim',
+                    region_confidence = 'high',
+                    region_error = NULL, region_updated_at = ?,
                     updated_at = updated_at
                 WHERE id = ?
                 """,
@@ -2802,7 +3002,10 @@ def refresh_activity_region(activity_id: int) -> dict[str, Any]:
                 UPDATE activities
                 SET title = ?, title_source = ?,
                     region_city = ?, region_country = ?, region_display = ?, region = ?,
-                    region_status = 'success', region_error = NULL, region_updated_at = ?,
+                    region_status = 'success',
+                    region_source = 'nominatim',
+                    region_confidence = 'high',
+                    region_error = NULL, region_updated_at = ?,
                     updated_at = updated_at
                 WHERE id = ?
                 """,
@@ -2831,6 +3034,8 @@ def refresh_activity_region(activity_id: int) -> dict[str, Any]:
                 """
                 UPDATE activities
                 SET region_status = 'failed',
+                    region_source = 'nominatim',
+                    region_confidence = 'none',
                     region_error = ?,
                     region_attempt_count = COALESCE(region_attempt_count, 0) + 1,
                     region_updated_at = ?,

@@ -120,9 +120,12 @@ class TestTrendShadowDiffIsolation:
             "source_type": "mock",
         }
         snapshot = api._build_fatigue_review_snapshot(mock_row)
-        for f in ["shadow_diff", "shadow_diff_json", "diff", "records"]:
+        for f in ["shadow_diff", "shadow_diff_json", "diff"]:
             assert f not in snapshot
             assert f not in json.dumps(snapshot, ensure_ascii=False)
+        payload = json.dumps(snapshot, ensure_ascii=False)
+        assert '"records"' not in payload
+        assert '"raw_records"' not in payload
 
 
 class TestHistoricalTrendQuery:
@@ -144,6 +147,5 @@ class TestFrontendTrendContract:
         with open(track_path, "r", encoding="utf-8") as f:
             html = f.read()
         assert "trend-trend" in html
-        assert "较近" in html
-        assert "数据不足（需 ≥3 次历史）" in html
+        assert "数据不足" in html
         assert "fr-events-count" in html

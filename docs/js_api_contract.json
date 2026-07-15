@@ -288,10 +288,10 @@
       "line": 11330,
       "category": "career",
       "parameters": [],
-      "returns": "{ ok, code, msg, data: {summary: {career_start_year, activity_count, race_count, pb_count, achievement_count, covered_city_count, total_distance_km}, hero_banner: {mode, activity_id, race_id, title, subtitle, sport, sport_label, event_date, city, country, distance_display, duration_display, badges, media: {has_photo, image_ref}, art: {text, tone, style}, detail_link: {activity_id, source}}, sport_totals: {running_distance_km, cycling_distance_km, walking_distance_km, hiking_distance_km, walking_hiking_distance_km, swimming_distance_km, strength_total_weight_kg, strength_total_weight_status}, career_stats: {activity_count, race_count, pb_count, achievement_count, total_duration_seconds, covered_city_count, covered_country_count, active_year_count, longest_activity_distance_km, max_elevation_gain_m, max_altitude_m}, best_pb: null|{title, value_display, event_date, detail_link: {activity_id, source}}, identity: {primary_sport, primary_sport_label, career_years, career_stage, identity_title, identity_summary, identity_tags, question_answers: {who, journey, experience}}, representative_seasons: [{year, activity_count, total_distance_km, total_duration_seconds, race_count, pb_count, achievement_count, city_count, primary_sport, primary_sport_label, season_stage, season_title, season_summary, highlights}], latest_race: null|{id, activity_id, name, event_type, sport, event_date, city, confidence, source, confidence_level, display_metadata, detail_link: {activity_id, source}}, latest_pb: null|{id, activity_id, sport, pb_type, value, value_unit, improvement_sec, event_date, confidence, source, display_metadata, detail_link: {activity_id, source}}, representative_pb_records: [{id, activity_id, sport, pb_type, value, value_unit, improvement_sec, event_date, confidence, source, display_metadata, detail_link: {activity_id, source}}], representative_achievements: [{id, activity_id, achievement_type, title, event_date, score, icon, description, confidence, source, display_metadata, detail_link: {activity_id, source}}], status: {schema_ready, data_ready, message}}, traceId }",
+      "returns": "{ ok, code, msg, data: {summary: {career_start_year, activity_count, race_count, pb_count, achievement_count, covered_city_count, total_distance_km}, hero_banner: {mode, activity_id, race_id, title, subtitle, sport, sport_label, event_date, city, country, distance_display, duration_display, badges, media: {has_photo, image_ref}, art: {text, tone, style}, detail_link: {activity_id, source}}, sport_totals: {running_distance_km, cycling_distance_km, walking_distance_km, hiking_distance_km, walking_hiking_distance_km, swimming_distance_km, strength_total_weight_kg, strength_total_weight_status}, career_stats: {activity_count, race_count, pb_count, achievement_count, total_duration_seconds, covered_city_count, covered_country_count, active_year_count, longest_activity_distance_km, max_elevation_gain_m, max_altitude_m}, best_pb: null|{title, value_display, event_date, detail_link: {activity_id, source}}, identity: {primary_sport, primary_sport_label, career_years, career_stage, identity_title, identity_summary, identity_tags, question_answers: {who, journey, experience}}, representative_seasons: [{year, activity_count, total_distance_km, total_duration_seconds, race_count, pb_count, achievement_count, city_count, primary_sport, primary_sport_label, season_stage, season_title, season_summary, highlights, report_update_available}], latest_race: null|{id, activity_id, name, event_type, sport, event_date, city, confidence, source, confidence_level, display_metadata, detail_link: {activity_id, source}}, latest_pb: null|{id, activity_id, sport, pb_type, value, value_unit, improvement_sec, event_date, confidence, source, display_metadata, detail_link: {activity_id, source}}, representative_pb_records: [{id, activity_id, sport, pb_type, value, value_unit, improvement_sec, event_date, confidence, source, display_metadata, detail_link: {activity_id, source}}], representative_achievements: [{id, activity_id, achievement_type, title, event_date, score, icon, description, confidence, source, display_metadata, detail_link: {activity_id, source}}], status: {schema_ready, data_ready, message}}, traceId }",
       "high_risk": false,
       "readonly": true,
-      "description": "ACS 运动生涯总览只读 API；组织 Activity 基础摘要、赛事照片 Banner、分运动类型累计数据、足迹/PB/年度入口以及 Race Resolver、PB Resolver、Achievement Resolver 生成的 active 派生摘要。hero_banner 有照片时 image_ref 只能是后端从应用受控媒体目录转换出的 data:image 引用；当前无安全预览时使用 title_art 艺术字 fallback，不返回 storage_ref、file_path、本地绝对路径、file:// 或原始媒体路径。strength_total_weight_kg 仅在 Activity 存在可靠总重量字段时聚合，否则返回 null 与 unavailable/partial 状态；max_altitude_m 仅聚合未删除 Activity 的 canonical max_alt_m，前端不得从轨迹点推导。status.data_ready 在存在普通 Activity 或任一 active 派生摘要时为 true。不重新计算赛事/PB/成就，不读取或返回 raw FIT、points、track_json、本地路径或 SQLite schema。"
+      "description": "ACS 运动生涯总览只读 API；组织 Activity 基础摘要、赛事照片 Banner、分运动类型累计数据、足迹/PB/年度入口以及 Race Resolver、PB Resolver、Achievement Resolver 生成的 active 派生摘要。representative_seasons[].report_update_available 仅表示该年份当前 Year Snapshot 的 source_fingerprint 与 ready 年度报告缓存不同，用于显示 NEW/可刷新提示，不自动生成或刷新报告。hero_banner 有照片时 image_ref 只能是后端从应用受控媒体目录转换出的 data:image 引用；当前无安全预览时使用 title_art 艺术字 fallback，不返回 storage_ref、file_path、本地绝对路径、file:// 或原始媒体路径。strength_total_weight_kg 仅在 Activity 存在可靠总重量字段时聚合，否则返回 null 与 unavailable/partial 状态；max_altitude_m 仅聚合未删除 Activity 的 canonical max_alt_m，前端不得从轨迹点推导。status.data_ready 在存在普通 Activity 或任一 active 派生摘要时为 true。不重新计算赛事/PB/成就，不读取或返回 raw FIT、points、track_json、本地路径或 SQLite schema。"
     },
     {
       "name": "get_career_timeline",
@@ -326,10 +326,10 @@
           "description": "可选筛选: year/sport；sport 支持 all/running/cycling"
         }
       ],
-      "returns": "{ ok, code, msg, data: {seasons: [{year, activity_count, total_distance_km, total_duration_seconds, race_count, pb_count, achievement_count, city_count, primary_sport, primary_sport_label, season_stage, season_title, season_summary, highlights}], summary: {total_seasons, latest_year, total_activity_count, total_distance_km, total_race_count, total_pb_count, total_achievement_count}, filters: {year, sport}, status: {schema_ready, data_ready, message}}, traceId }",
+      "returns": "{ ok, code, msg, data: {seasons: [{year, activity_count, total_distance_km, total_duration_seconds, race_count, pb_count, achievement_count, city_count, primary_sport, primary_sport_label, season_stage, season_title, season_summary, highlights, report_update_available}], summary: {total_seasons, latest_year, total_activity_count, total_distance_km, total_race_count, total_pb_count, total_achievement_count}, filters: {year, sport}, status: {schema_ready, data_ready, message}}, traceId }",
       "high_risk": false,
       "readonly": true,
-      "description": "ACS 年度 Season 结构只读 API；按年份组织 Activity 安全摘要以及 Race/PB/Achievement/Memory active 派生计数。Activity 仅读取安全摘要列，Race/PB/Achievement 仍由 resolver 产生，Memory 仅读取白名单事件日期与状态。不读取或返回 raw FIT、points、track_json、storage_ref、file_path、本地路径或 SQLite schema。"
+      "description": "ACS 年度 Season 结构只读 API；按年份组织 Activity 安全摘要以及 Race/PB/Achievement/Memory active 派生计数。report_update_available 由该年份当前 Year Snapshot source_fingerprint 与 ready 年度报告 snapshot_fingerprint 比较得到，任何年度事实变化都可提示报告可更新，但不因 prompt/model/generated_at/UI 变化触发。Activity 仅读取安全摘要列，Race/PB/Achievement 仍由 resolver 产生，Memory 仅读取白名单事件日期与状态。不读取或返回 raw FIT、points、track_json、storage_ref、file_path、本地路径或 SQLite schema。"
     },
     {
       "name": "get_career_races",
@@ -451,6 +451,174 @@
       "description": "ACS PB 单项历史只读 API；按 pb_type/source_mode/sport_scope 返回 active/superseded/invalidated 历史链，按发生日期升序。不得返回 raw FIT、points、track_json、storage_ref、file_path、本地路径或 SQLite schema。"
     },
     {
+      "name": "get_career_record_catalog",
+      "file": "main.py",
+      "line": 11926,
+      "category": "career",
+      "parameters": [
+        {
+          "name": "filters",
+          "type": "dict",
+          "required": false,
+          "default": null,
+          "description": "可选筛选: sport/include_unavailable/include_analysis"
+        }
+      ],
+      "returns": "{ ok, code, msg, data: {sports: [{sport, sport_label, icon, availability_state, state_label, record_count, active_count, candidate_count, capabilities, groups}], filters, status: {schema_ready, data_ready, state, message, catalog_version}}, traceId }",
+      "high_risk": false,
+      "readonly": true,
+      "description": "Records Center V2 Catalog API；Catalog 是运动页签、纪录分组、availability/validation/candidate 灰态说明和运动能力状态的唯一来源。骑行 capabilities 必须表达标准距离最快成绩需要距离-时间流且当前 validation-required、PDC 逐点功率需求、W/kg 不可用/门禁、model-only 估计和 validation-required 纪录。越野 capabilities 仅包含当前不依赖赛道管理的整次活动纪录；同赛道/Route PR/Segment PR/越野路线对比和 Pace/GAP 分析不属于当前记录中心。前端不得硬编码运动纪录列表或自行推断可用性。不得返回 raw FIT、points、track_json、power_stream、storage_ref、file_path、本地路径、设备标识、体重历史或 SQLite schema。"
+    },
+    {
+      "name": "get_career_records",
+      "file": "main.py",
+      "line": 11934,
+      "category": "career",
+      "parameters": [
+        {
+          "name": "filters",
+          "type": "dict",
+          "required": false,
+          "default": null,
+          "description": "可选筛选: sport/record_key/family/scope_hash/status/year"
+        }
+      ],
+      "returns": "{ ok, code, msg, data: {records: [{id, activity_id, record_key, pb_type, display_name, sport, family, metric, comparison, axis_direction, improvement, event_date, source_mode, scope, range, quality, status, catalog_state, detail_link}], summary, filters, metrics, status}, traceId }",
+      "high_risk": false,
+      "readonly": true,
+      "description": "Records Center V2 当前纪录列表 API；前端只渲染 ViewModel，不计算纪录事实、scope、confidence、improvement 或 axis direction。candidate 不得渲染为 current record。不得返回 raw FIT、points、track_json、power_stream、storage_ref、file_path、本地路径、设备标识、体重历史或 SQLite schema。"
+    },
+    {
+      "name": "get_career_record_detail",
+      "file": "main.py",
+      "line": 11942,
+      "category": "career",
+      "parameters": [
+        {
+          "name": "payload",
+          "type": "dict",
+          "required": true,
+          "description": "{record_id|id?, record_key?, scope_hash?, status?}"
+        }
+      ],
+      "returns": "{ ok, code, msg, data: {record, activity_summary, related, metrics, status}, traceId }",
+      "high_risk": false,
+      "readonly": true,
+      "description": "Records Center V2 纪录详情 API；activity_summary 只包含 Activity 安全摘要，detail_link.source 保持 career。不得返回 raw FIT、points、track_json、power_stream、storage_ref、file_path、本地路径、设备标识、体重历史或 SQLite schema。"
+    },
+    {
+      "name": "get_career_record_history",
+      "file": "main.py",
+      "line": 11950,
+      "category": "career",
+      "parameters": [
+        {
+          "name": "filters",
+          "type": "dict",
+          "required": true,
+          "description": "{record_key|pb_type, scope_hash?, include_invalidated?}"
+        }
+      ],
+      "returns": "{ ok, code, msg, data: {records, history_summary: {record_key, scope_hash, axis_direction, comparison, first_value, current_value, total_improvement, record_count, invalidated_count, last_record_at}, chart, filters, metrics, status}, traceId }",
+      "high_risk": false,
+      "readonly": true,
+      "description": "Records Center V2 历史演进 API；history_summary.total_improvement 和 chart axis direction 必须由后端提供，前端不得重算累计提升或自行决定 y 轴方向。chart.points 是安全绘图点，不是运动轨迹点。"
+    },
+    {
+      "name": "get_career_record_curve",
+      "file": "main.py",
+      "line": 11958,
+      "category": "career",
+      "parameters": [
+        {
+          "name": "payload",
+          "type": "dict",
+          "required": false,
+          "default": null,
+          "description": "{activity_id?, curve_type?, scope_hash?}"
+        }
+      ],
+      "returns": "{ ok, code, msg, data: {curve: {id, activity_id, curve_type, scope_hash, algorithm_version, input_fingerprint, source_mode, plot_series, anchors, quality, generated_at} | null, metrics, status}, traceId }",
+      "high_risk": false,
+      "readonly": true,
+      "description": "Records Center V2 安全曲线 API；只读取派生 curve cache 的降采样/锚点化点位，不返回 raw stream、完整轨迹、功率流、GPS 点或路径。前端不得从 curve 反算正式纪录事实。"
+    },
+    {
+      "name": "get_career_record_candidates",
+      "file": "main.py",
+      "line": 11976,
+      "category": "career",
+      "parameters": [
+        {
+          "name": "filters",
+          "type": "dict",
+          "required": false,
+          "default": null,
+          "description": "可选筛选: sport/record_key/status"
+        }
+      ],
+      "returns": "{ ok, code, msg, data: {candidates: [{id, activity_id, record_key, display_name, sport, metric, scope, quality, candidate_state, created_at, detail_link}], summary, filters, metrics, status}, traceId }",
+      "high_risk": false,
+      "readonly": true,
+      "description": "Records Center V2 候选列表 API；只返回安全候选 ViewModel，不透传内部 raw evidence payload。前端只能展示并提交 confirm/reject，不能修改成绩、scope、range 或 reason。"
+    },
+    {
+      "name": "decide_career_record_candidate",
+      "file": "main.py",
+      "line": 11974,
+      "category": "career",
+      "parameters": [
+        {
+          "name": "payload",
+          "type": "dict",
+          "required": true,
+          "description": "{candidate_id|id, action|decision}; action 仅支持 confirm/reject"
+        }
+      ],
+      "returns": "{ ok, code, msg, data: {action, candidate_id?, record_id?, comparison?}, traceId }",
+      "high_risk": true,
+      "readonly": false,
+      "description": "Records Center V2 候选决策 API；confirm 后后端使用原始安全 Evidence 重新比较，前端不得提交修改后的成绩、距离、时间、scope、range 或 reason。真实库写入仍受发布门禁约束。"
+    },
+    {
+      "name": "rebuild_career_records",
+      "file": "main.py",
+      "line": 11986,
+      "category": "career",
+      "parameters": [
+        {
+          "name": "payload",
+          "type": "dict",
+          "required": false,
+          "default": null,
+          "description": "{dry_run?: bool, resolver_version?: string, batch_size?: number, max_activities?: number, cancel_after?: number, apply_to_real_db?: bool}; dry_run 默认 true"
+        }
+      ],
+      "returns": "{ ok, code, msg, data: {dry_run, run_id, resolver_version, batch_size, processed, cancelled, summary, by_sport, by_family, by_reason, items, metrics: {elapsed_ms, processed, performance_target_ms, curve_cache_count}, observability, failure_recovery, applied?, applied_count?}, traceId }",
+      "high_risk": true,
+      "readonly": false,
+      "description": "Records Center V2 rebuild API；dry_run=true 默认只预览不写库。main.py bridge 对 dry_run=false 增加 apply_to_real_db 显式门禁；没有用户授权不得真实库 apply。返回仅包含安全摘要、分发计划、by_sport/by_family/by_reason、cache 计数、elapsed metrics、observability 白名单字段和 savepoint/cancel/batch failure_recovery 说明；日志只记录 run_id、dry_run、processed、by_sport/by_family/by_reason、elapsed_ms 等安全字段。不返回 raw evidence、candidate evidence、raw FIT、raw streams、points_json、track_json、route signature、file_path、本地路径、SQLite schema、设备标识或体重详情。"
+    },
+    {
+      "name": "get_career_record_rebuild_status",
+      "file": "main.py",
+      "line": 11998,
+      "category": "career",
+      "parameters": [
+        {
+          "name": "payload",
+          "type": "dict",
+          "required": false,
+          "default": null,
+          "description": "{run_id?: string}"
+        }
+      ],
+      "returns": "{ ok, code, msg, data: {run_id, state, dry_run, started_at, finished_at, progress, summary, status}, traceId }",
+      "high_risk": false,
+      "readonly": true,
+      "description": "Records Center V2 rebuild 状态 API；只返回当前运行状态和安全摘要，不返回内部计划 payload、raw evidence、路径或 schema。"
+    },
+    {
       "name": "decide_career_pb_candidate",
       "file": "main.py",
       "line": 11920,
@@ -498,10 +666,10 @@
           "type": "dict",
           "required": false,
           "default": null,
-          "description": "可选筛选: record_id/pb_type/record_key/event_type"
+          "description": "可选筛选: record_id/pb_type/record_key/scope_hash/run_id/decision/event_type"
         }
       ],
-      "returns": "{ ok, code, msg, data: {events: [{id, record_id, activity_id, pb_type, event_type, event_at, evidence_key, resolver_version, source, payload, created_at}], filters: {record_id, pb_type, event_type}, metrics: {elapsed_ms, returned_count}, status: {schema_ready, data_ready, message}}, traceId }",
+      "returns": "{ ok, code, msg, data: {events: [{id, record_id, activity_id, pb_type, record_key, scope_hash, scope_key, run_id, decision, reason_codes, event_type, event_at, evidence_key, resolver_version, source, payload, created_at}], filters: {record_id, pb_type, scope_hash, run_id, decision, event_type}, metrics: {elapsed_ms, returned_count}, status: {schema_ready, data_ready, message}}, traceId }",
       "high_risk": false,
       "readonly": true,
       "description": "ACS PB Records append-only 事件查询 API；用于前端幂等消费新纪录、候选、回退和审计事件。不得返回 raw FIT、points、track_json、storage_ref、file_path、本地路径或 SQLite schema。"
@@ -587,10 +755,10 @@
       "line": 11383,
       "category": "career",
       "parameters": [],
-      "returns": "{ ok, code, msg, data: {snapshot: null | {snapshot_version, generated_at, summary, primary_sport, pb_summary, records_summary: {current_records, recent_refreshes, candidate_count, evolution_summary, trend_inputs}, major_achievements, timeline_digest, status}, saved_at, source_version, status: {schema_ready, data_ready, message}}, traceId }",
+      "returns": "{ ok, code, msg, data: {snapshot: null | {snapshot_version, generated_at, summary, primary_sport, pb_summary, records_summary: {current_records, formal_records, recent_refreshes, candidate_count, evolution_summary, curve_availability, trend_inputs}, major_achievements, timeline_digest, status}, saved_at, source_version, status: {schema_ready, data_ready, message}}, traceId }",
       "high_risk": false,
       "readonly": true,
-      "description": "ACS Career Snapshot 只读调试 API；仅返回已保存的白名单 Snapshot，不自动生成，不调用 LLM；Records 分区仅包含当前纪录、最近刷新、候选数量和演进摘要/趋势输入白名单，不返回 raw FIT、points、track_json、file_path、storage_ref、SQLite schema、本地绝对路径、thumbnail_url 或 detail_link。保存 Snapshot 由后端受控函数完成，不暴露 pywebview 写接口。"
+      "description": "ACS Career Snapshot 只读兼容 API；前端已移除独立生涯总结入口，本接口不再对应用户页面。仅从 career_snapshots 返回已保存的全生涯白名单 Snapshot，不自动生成，不调用 LLM，且不得暴露 storage_ref、文件路径或原始活动数据；年度 Year Snapshot 必须使用独立 scope、year、version、source_fingerprint 和年度 API。"
     },
     {
       "name": "generate_career_insight",
@@ -603,13 +771,50 @@
           "type": "dict",
           "required": false,
           "default": null,
-          "description": "可选控制参数；当前仅支持 refresh_snapshot，用于受控刷新 Career Snapshot"
+          "description": "兼容参数；仅支持 refresh_snapshot"
         }
       ],
       "returns": "{ ok, code, msg, data: {insight: {mode, title, summary, highlights, next_steps, disclaimer}, snapshot_status: {available, source, snapshot_version}, status: {schema_ready, data_ready, message}}, traceId }",
       "high_risk": false,
       "readonly": false,
-      "description": "ACS Career Insight 后端骨架 API；当前阶段只返回本地 fallback 洞察，不调用 LLM，不调用 llm_backend，仅使用白名单 Career Snapshot。Records 相关内容只解释当前纪录、候选数量、刷新频率和演进事件数量，不重新计算 PB，不把一次 PB 等同为整体能力提升。若无已保存 Snapshot 或 payload.refresh_snapshot=true，可能受控写入 career_snapshots；不读取或返回 raw FIT、points、track_json、file_path、storage_ref、SQLite schema、本地绝对路径、thumbnail_url 或 detail_link；不写 career_race_events、career_pb_records、career_achievement_events、career_memory_items 等 canonical 事实表。"
+      "description": "ACS 全生涯 fallback 兼容 API；前端已移除独立生涯总结入口，不再作为用户功能使用。仅消费 career_snapshots 中的 canonical 白名单 Career Snapshot，不调用 LLM；年度 AI 总结不得复用该接口。"
+    },
+    {
+      "name": "get_career_year_insight",
+      "file": "main.py",
+      "line": 12031,
+      "category": "career",
+      "parameters": [
+        {
+          "name": "payload",
+          "type": "dict",
+          "required": false,
+          "default": null,
+          "description": "只读年度总结查询参数；仅支持 year，省略时默认最近一个有有效 Activity 的年份"
+        }
+      ],
+      "returns": "{ ok, code, msg, data: {available_years, year_update_badges: {years, year_map}, year, report_state, can_generate, can_refresh, has_source_changes, format_upgrade_available, can_upgrade_format, facts: {year, period, summary, sport_breakdown, month_digest, key_events, highlight_moments, city_moments, comparison, data_quality}, report: null|{mode, schema_version, content, snapshot_fingerprint, snapshot_version, prompt_version, model_id, generated_at}, local_fallback: {mode, title, summary, highlights, key_events, month_rhythm, comparison, disclaimer}, generated_at, data_through, status: {schema_ready, data_ready, message}}, traceId }",
+      "high_risk": false,
+      "readonly": true,
+      "description": "ACS 年度总结只读 API；只组合 Year Snapshot 安全聚合、年度 AI 缓存当前 ready 报告和年度状态机，不调用 LLM，不生成 AI 内容，不写 career_ai_insights 或任何 Activity/Race/PB/Achievement/照片事实表。year_update_badges 标记所有 available_years 中当前 Year Snapshot source_fingerprint 与 ready 年度报告 snapshot_fingerprint 不一致的年份，用于页面年份数字右上角 NEW 提示；任何年度事实变化都可触发，prompt/model/generated_at/UI 变化不触发。payload 只允许 year；未知字段拒绝，year 必须是有效范围内整数。v1/v2 报告继续可读；同指纹仅有旧 schema 且 AI 可用时返回 format_upgrade_available=true，但只读调用本身不升级。v3 content 是当前结构化文章母稿，精确数字由 fact_leads/fact_lead/evidence 后端回填；highlight_moments 与 city_moments 来自 Year Snapshot v2 后端可信线索，城市文化提示只来自受控词典。缓存时间在数据库中保持 UTC，返回给页面的 generated_at 转换为运行设备当地时间并携带时区偏移。无数据年份返回稳定 no_data/not_generated 业务状态，不泄露 SQL、栈、Snapshot 原文、debug JSON、本地路径、raw FIT、points、track_json 或 SQLite schema。无成功 AI 报告时 report 为 null，并通过 local_fallback.mode=local_fallback 明确展示本地事实摘要，不伪装成 AI 报告。"
+    },
+    {
+      "name": "generate_career_year_insight",
+      "file": "main.py",
+      "line": 12078,
+      "category": "career",
+      "parameters": [
+        {
+          "name": "payload",
+          "type": "dict",
+          "required": true,
+          "description": "年度总结生成参数；仅支持 year，不接受 prompt、Snapshot、model、force 或任何事实字段"
+        }
+      ],
+      "returns": "{ ok, code, msg, data: {available_years, year, report_state, can_generate, can_refresh, has_source_changes, format_upgrade_available, can_upgrade_format, facts, report, local_fallback, generated_at, data_through, generation: {status, message, insight_id, snapshot_fingerprint, prompt_version, model_id, generated_at}, status: {schema_ready, data_ready, message}}, traceId }",
+      "high_risk": false,
+      "readonly": false,
+      "description": "ACS 年度总结生成/更新 API；payload 仅支持 year，由后端构建当前 Year Snapshot v2、按状态机判断 not_generated/stale 或同指纹旧格式升级是否可调用年度 LLM，并在校验 v3 schema/章节/evidence/highlight 后原子写入 career_ai_insights ready 缓存。v3 ready、no_data 和非法 payload 不调用 LLM；旧格式升级失败继续展示旧报告。AI 配置缺失或调用不可用返回 ai_unavailable 业务状态并保留 facts 和历史报告。不得复用全生涯 generate_career_insight，不接收前端 prompt、Snapshot、model、force 或事实字段，不返回 raw FIT、points、track_json、file_path、本地绝对路径、Prompt、Snapshot 原文或 raw AI response。"
     },
     {
       "name": "get_activity_race_photos",
@@ -901,6 +1106,26 @@
       "returns": "{ ok, code, msg, data: {ok, region, region_city?, region_country?, region_display?, region_status, cache_hit?}, traceId }",
       "high_risk": false,
       "description": "手动重新查询单条活动起点地区；只更新地区相关字段和自动标题，保留用户标题优先级，不覆盖 title_source='user' 的手动标题；不读取或返回 raw FIT、points、track_json、file_path 或 SQLite schema。"
+    },
+    {
+      "name": "get_region_enrichment_dry_run",
+      "file": "main.py",
+      "line": 14472,
+      "category": "activity",
+      "parameters": [
+        {
+          "name": "payload",
+          "type": "object",
+          "required": false,
+          "schema": {
+            "years": "int[] optional"
+          }
+        }
+      ],
+      "returns": "{ ok, code, msg, data: {ok, years: [{year, pending_gps_activity_count, cache_hit_activity_count, nominatim_unique_coord_count, auto_title_update_candidate_count, protected_title_count}]}, traceId }",
+      "readonly": true,
+      "high_risk": false,
+      "description": "活动地区回填 dry-run；只统计 pending/failed/inferred GPS 活动、已有 geocode_cache 命中、唯一 Nominatim 坐标和标题保护影响，不写 activities，不调用 Nominatim，不生成或刷新年度 AI 报告，不返回 raw FIT、points、track_json、file_path 或 SQLite schema。"
     },
     {
       "name": "get_fatigue_review",

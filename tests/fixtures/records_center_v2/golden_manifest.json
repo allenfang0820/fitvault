@@ -1,0 +1,329 @@
+{
+  "manifest_version": "records-center-v2-golden-fixtures-v1",
+  "created_at": "2026-07-14",
+  "description": "Synthetic, privacy-safe fixtures for Records Center V2 resolver development. These fixtures are algorithm inputs and must not be used as product rules or real-data verification evidence.",
+  "privacy_contract": {
+    "synthetic_only": true,
+    "forbidden_fields": [
+      "file_path",
+      "storage_ref",
+      "device_serial",
+      "serial_number",
+      "email",
+      "token",
+      "password",
+      "api_key",
+      "real_lat",
+      "real_lon",
+      "weight_history"
+    ],
+    "coordinate_system": "synthetic_xy_meters",
+    "contains_real_user_data": false
+  },
+  "update_policy": {
+    "owner": "Records Center V2 implementation tasks",
+    "allowed_changes": [
+      "Add new synthetic cases for a frozen rule.",
+      "Add expected fields required by a later resolver task.",
+      "Bump manifest_version when expected semantics change."
+    ],
+    "not_allowed": [
+      "Copy raw real tracks or power streams.",
+      "Store local paths, real GPS coordinates, device serials, or account data.",
+      "Use a fixture passing result as real-data Verified status."
+    ]
+  },
+  "defaults": {
+    "route_match": {
+      "start_end_tolerance_m": 100,
+      "length_tolerance_ratio": 0.05,
+      "min_track_coverage_ratio": 0.95,
+      "min_corridor_overlap_ratio": 0.85
+    },
+    "open_water_distance_tolerance_ratio": 0.05,
+    "power_stream": {
+      "max_gap_sec": 5,
+      "short_power_spike_ratio": 1.8
+    },
+    "elevation": {
+      "spike_threshold_m": 35,
+      "flat_tolerance_m": 2
+    }
+  },
+  "cases": [
+    {
+      "case_id": "cycling_power_clean_non_1hz",
+      "sport": "cycling",
+      "source_mode": "best_effort_duration",
+      "purpose": "Non-1Hz time-weighted power stream with valid 0W coasting.",
+      "activity": {
+        "activity_id": "fixture:cycling:clean_non_1hz",
+        "sport_type": "cycling",
+        "sub_sport_type": "generic",
+        "distance_m": 5200,
+        "duration_sec": 20,
+        "indoor_scope": "outdoor",
+        "power_source": "synthetic_power_meter"
+      },
+      "input": {
+        "power_points": [
+          {"t": 0, "power_w": 200},
+          {"t": 2, "power_w": 0},
+          {"t": 5, "power_w": 240},
+          {"t": 9, "power_w": 260},
+          {"t": 14, "power_w": 280},
+          {"t": 20, "power_w": 300}
+        ]
+      },
+      "expected": {
+        "quality": "high",
+        "reason_codes": [],
+        "zero_watts_are_valid": true,
+        "missing_power_count": 0,
+        "candidate_only": false,
+        "expected_anchor_ranges": {
+          "5s": {"available": true, "range_required": true},
+          "30s": {"available": false, "reason_code": "activity_shorter_than_window"}
+        }
+      }
+    },
+    {
+      "case_id": "cycling_power_gap_missing_spike",
+      "sport": "cycling",
+      "source_mode": "best_effort_duration",
+      "purpose": "Power stream quality edge cases: missing value, pause gap, and spike.",
+      "activity": {
+        "activity_id": "fixture:cycling:gap_missing_spike",
+        "sport_type": "cycling",
+        "sub_sport_type": "generic",
+        "distance_m": 8300,
+        "duration_sec": 26,
+        "indoor_scope": "outdoor",
+        "power_source": "synthetic_power_meter"
+      },
+      "input": {
+        "power_points": [
+          {"t": 0, "power_w": 180},
+          {"t": 1, "power_w": 0},
+          {"t": 2, "power_w": null},
+          {"t": 4, "power_w": 250},
+          {"t": 5, "power_w": 260},
+          {"t": 6, "power_w": 900},
+          {"t": 7, "power_w": 255},
+          {"t": 20, "power_w": 240},
+          {"t": 21, "power_w": 245},
+          {"t": 23, "power_w": 250},
+          {"t": 26, "power_w": 260}
+        ]
+      },
+      "expected": {
+        "quality": "candidate",
+        "reason_codes": ["missing_power_stream_sample", "power_spike_detected", "power_stream_gap"],
+        "zero_watts_are_valid": true,
+        "missing_power_count": 1,
+        "spike_times_sec": [6],
+        "gap_after_times_sec": [7],
+        "windows_must_not_bridge_gaps": true,
+        "candidate_only": true
+      }
+    },
+    {
+      "case_id": "cycling_power_ebike_excluded",
+      "sport": "cycling",
+      "source_mode": "best_effort_duration",
+      "purpose": "E-bike is excluded from ordinary cycling power records.",
+      "activity": {
+        "activity_id": "fixture:cycling:ebike",
+        "sport_type": "e_biking",
+        "sub_sport_type": "e_bike_fitness",
+        "distance_m": 5000,
+        "duration_sec": 1200,
+        "indoor_scope": "outdoor"
+      },
+      "input": {
+        "power_points": [
+          {"t": 0, "power_w": 120},
+          {"t": 1, "power_w": 125},
+          {"t": 2, "power_w": 130}
+        ]
+      },
+      "expected": {
+        "quality": "ignored",
+        "reason_codes": ["ebike_scope_excluded"],
+        "candidate_only": false
+      }
+    },
+    {
+      "case_id": "hiking_elevation_spike_single_climb",
+      "sport": "hiking",
+      "source_mode": "activity_total",
+      "purpose": "Elevation track with one GPS spike and one valid continuous climb.",
+      "activity": {
+        "activity_id": "fixture:hiking:elevation_spike",
+        "sport_type": "hiking",
+        "sub_sport_type": "generic",
+        "distance_m": 6000,
+        "duration_sec": 7200,
+        "gain_m": 420,
+        "max_alt_m": 860
+      },
+      "input": {
+        "track_points": [
+          {"d": 0, "t": 0, "alt_m": 120},
+          {"d": 800, "t": 900, "alt_m": 165},
+          {"d": 1600, "t": 1800, "alt_m": 230},
+          {"d": 2200, "t": 2700, "alt_m": 690},
+          {"d": 2600, "t": 3300, "alt_m": 270},
+          {"d": 3600, "t": 4500, "alt_m": 410},
+          {"d": 4700, "t": 5700, "alt_m": 520},
+          {"d": 6000, "t": 7200, "alt_m": 500}
+        ]
+      },
+      "expected": {
+        "quality": "candidate",
+        "reason_codes": ["elevation_spike_detected"],
+        "spike_point_indexes": [3],
+        "max_single_climb_requires_range": true,
+        "must_not_use_total_ascent_as_single_climb": true
+      }
+    },
+    {
+      "case_id": "pool_swim_25m_freestyle_with_rest",
+      "sport": "swimming",
+      "source_mode": "best_effort_distance",
+      "purpose": "Pool swim valid freestyle lengths; rest breaks best-effort window.",
+      "activity": {
+        "activity_id": "fixture:swim:pool_25m_free",
+        "sport_type": "swimming",
+        "sub_sport_type": "lap_swimming",
+        "water_scope": "pool_swimming",
+        "pool_length_m": 25,
+        "pool_length_scope": "scm_25m",
+        "stroke_scope": "freestyle"
+      },
+      "input": {
+        "lengths": [
+          {"index": 0, "elapsed_sec": 31, "stroke": "freestyle", "rest_after_sec": 0},
+          {"index": 1, "elapsed_sec": 32, "stroke": "freestyle", "rest_after_sec": 0},
+          {"index": 2, "elapsed_sec": 33, "stroke": "freestyle", "rest_after_sec": 45},
+          {"index": 3, "elapsed_sec": 34, "stroke": "freestyle", "rest_after_sec": 0},
+          {"index": 4, "elapsed_sec": 35, "stroke": "freestyle", "rest_after_sec": 0}
+        ]
+      },
+      "expected": {
+        "quality": "high",
+        "candidate_only": false,
+        "record_expectations": {
+          "pool_swim_50m": {"best_elapsed_sec": 63, "range_indexes": [0, 1]},
+          "pool_swim_100m": {"available": false, "reason_code": "pool_rest_break"}
+        },
+        "distance_uses_length_count_times_pool_length": true,
+        "no_tolerance_ratio": true
+      }
+    },
+    {
+      "case_id": "pool_swim_missing_pool_length_unknown_stroke",
+      "sport": "swimming",
+      "source_mode": "best_effort_distance",
+      "purpose": "Pool swim with missing pool length and unknown stroke must not auto-confirm.",
+      "activity": {
+        "activity_id": "fixture:swim:pool_missing_length",
+        "sport_type": "swimming",
+        "sub_sport_type": "lap_swimming",
+        "water_scope": "pool_swimming",
+        "pool_length_m": null,
+        "stroke_scope": "unknown"
+      },
+      "input": {
+        "lengths": [
+          {"index": 0, "elapsed_sec": 30, "stroke": "unknown", "rest_after_sec": 0},
+          {"index": 1, "elapsed_sec": 31, "stroke": "unknown", "rest_after_sec": 0}
+        ]
+      },
+      "expected": {
+        "quality": "candidate",
+        "candidate_only": true,
+        "reason_codes": ["pool_length_missing", "swim_stroke_unknown"],
+        "must_not_default_pool_length_m": 25
+      }
+    },
+    {
+      "case_id": "open_water_750m_boundary_and_gps_jump",
+      "sport": "swimming",
+      "source_mode": "activity_total",
+      "purpose": "Open-water distance tolerance and GPS jump quality gate.",
+      "activity": {
+        "activity_id": "fixture:swim:open_water_750_boundary",
+        "sport_type": "swimming",
+        "sub_sport_type": "open_water",
+        "water_scope": "open_water_swimming",
+        "distance_m": 787.5,
+        "duration_sec": 1500
+      },
+      "input": {
+        "track_points_xy": [
+          {"x": 0, "y": 0, "t": 0},
+          {"x": 120, "y": 0, "t": 240},
+          {"x": 240, "y": 0, "t": 480},
+          {"x": 1000, "y": 0, "t": 720},
+          {"x": 360, "y": 0, "t": 960},
+          {"x": 787.5, "y": 0, "t": 1500}
+        ]
+      },
+      "expected": {
+        "matched_standard_distance_m": 750,
+        "distance_error_ratio": 0.05,
+        "boundary_is_inclusive": true,
+        "quality": "candidate",
+        "reason_codes": ["open_water_gps_unreliable"],
+        "candidate_only": true
+      }
+    },
+    {
+      "case_id": "trail_route_same_reverse_low_overlap",
+      "sport": "trail_running",
+      "source_mode": "route_total",
+      "purpose": "Route matching fixtures for same direction, reverse direction, and low overlap.",
+      "activity": {
+        "activity_id": "fixture:trail:route_target",
+        "sport_type": "trail_running",
+        "sub_sport_type": "generic",
+        "distance_m": 10000,
+        "duration_sec": 5400,
+        "gain_m": 720
+      },
+      "input": {
+        "target_route_xy": [[0, 0], [1000, 0], [2000, 300], [3000, 900], [4200, 1200], [5600, 1300], [7000, 1000], [8600, 400], [10000, 0]],
+        "comparison_routes": [
+          {
+            "route_id": "same_direction",
+            "points_xy": [[5, 4], [1005, 8], [1995, 305], [3002, 902], [4200, 1190], [5605, 1302], [7003, 998], [8604, 402], [10002, 2]]
+          },
+          {
+            "route_id": "reverse_direction",
+            "points_xy": [[10002, 2], [8604, 402], [7003, 998], [5605, 1302], [4200, 1190], [3002, 902], [1995, 305], [1005, 8], [5, 4]]
+          },
+          {
+            "route_id": "low_overlap",
+            "points_xy": [[0, 0], [1000, -800], [2000, -1200], [3000, -900], [4200, -700], [5600, -500], [7000, -300], [8600, -100], [10000, 0]]
+          }
+        ]
+      },
+      "expected": {
+        "same_direction": {
+          "route_match": true,
+          "candidate_only": true,
+          "reason_codes": ["real_data_sample_missing"]
+        },
+        "reverse_direction": {
+          "route_match": false,
+          "reason_codes": ["route_direction_mismatch"]
+        },
+        "low_overlap": {
+          "route_match": false,
+          "reason_codes": ["route_match_low_overlap"]
+        }
+      }
+    }
+  ]
+}

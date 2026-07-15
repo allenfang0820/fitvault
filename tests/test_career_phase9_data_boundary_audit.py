@@ -55,8 +55,8 @@ ACS_FRONTEND_SIGNATURES = (
     "function normalizeCareerMemoryAlbum(album)",
     "function normalizeCareerMemoryPhoto(photo)",
     "async function loadCareerMemory(filters)",
-    "function normalizeCareerInsight(payload)",
-    "async function loadCareerInsight(options)",
+    "function renderCareerYearInsight(viewModel)",
+    "async function loadCareerYearInsight(options)",
 )
 
 
@@ -259,7 +259,7 @@ class TestCareerPhase9DataBoundaryAudit(unittest.TestCase):
             "async function loadCareerArchives()",
             "async function loadCareerTimeline(filters)",
             "async function loadCareerMemory(filters)",
-            "async function loadCareerInsight(options)",
+            "async function loadCareerYearInsight(options)",
         ):
             body = _extract_function_body(source, signature)
             self.assertIn("requireCareerApiData", body, signature)

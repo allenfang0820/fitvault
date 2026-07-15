@@ -82,7 +82,7 @@ class TestCareerGapP109PageIntegrity(unittest.TestCase):
         self.assertIn("visibility: hidden", hidden_css)
 
     def test_secondary_pages_have_mutual_exclusion_state(self):
-        pages = ("overview", "timeline", "races", "pb", "achievements", "insight", "footprint")
+        pages = ("overview", "timeline", "races", "pb", "insight", "footprint")
         self.assertIn('data-acs-active-page="overview"', self.career_panel)
         self.assertEqual(self.career_panel.count('class="career-page is-active"'), 1)
         for page in pages:
@@ -97,29 +97,12 @@ class TestCareerGapP109PageIntegrity(unittest.TestCase):
         self.assertIn("data-career-page-target", switch_body)
         self.assertIn("aria-pressed", switch_body)
 
-    def test_achievement_wall_is_formal_archive_not_placeholder(self):
-        achievement_section = extract_between(
-            self.source,
-            '<section class="career-section" data-career-section="achievements">',
-            "</section>",
-        )
-        for token in (
-            'id="career-achievement-archive-shell"',
-            'id="career-achievement-year-filter"',
-            'id="career-achievement-category-filter"',
-            'id="career-achievement-type-filter"',
-            'id="career-achievement-source-filter"',
-            'id="career-achievement-score-filter"',
-            'class="career-achievement-list"',
-            'data-career-archive-list="achievements"',
-        ):
-            self.assertIn(token, achievement_section)
+    def test_achievement_wall_is_not_a_dedicated_secondary_page(self):
+        self.assertNotIn('<section class="career-section" data-career-section="achievements">', self.career_panel)
+        self.assertNotIn('data-career-page-target="achievements"', self.career_panel)
+        self.assertNotIn('data-career-page="achievements"', self.career_panel)
+        self.assertNotIn('id="career-achievement-archive-shell"', self.career_panel)
         self.assertIn("function careerAchievementArchiveCardHtml(item)", self.source)
-        self.assertIn("career-achievement-card", self.source)
-        self.assertIn("career-achievement-badge", self.source)
-        self.assertNotIn("coming-soon-overlay", achievement_section)
-        self.assertNotIn("首版", achievement_section)
-        self.assertNotIn("占位", achievement_section)
 
     def test_each_secondary_page_has_stable_state_targets(self):
         required_targets = (
@@ -131,8 +114,6 @@ class TestCareerGapP109PageIntegrity(unittest.TestCase):
             "career-archives-empty",
             "career-pb-status-text",
             "career-pb-empty",
-            "career-achievement-status-text",
-            "career-achievement-empty",
             "career-insight-status-text",
             "career-insight-empty",
             "career-memory-status-text",
@@ -148,8 +129,8 @@ class TestCareerGapP109PageIntegrity(unittest.TestCase):
             "function renderCareerTimelineError(message)",
             "function renderCareerMemoryLoading()",
             "function renderCareerMemoryError(message)",
-            "function renderCareerInsightLoading()",
-            "function renderCareerInsightError(message)",
+            "function renderCareerYearInsightLoading(year)",
+            "function renderCareerYearInsightError(message)",
         ):
             extract_function_body(self.source, signature)
 

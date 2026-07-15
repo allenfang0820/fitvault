@@ -26,14 +26,17 @@ if _PROJECT_ROOT not in sys.path:
 class TestSportCapabilityRegistry:
     """指标 4:Capability Routing 注册表契约。"""
 
-    def test_registry_has_nine_sport_keys(self):
-        """A1:注册表 9 个 sport(含 default)。"""
+    def test_registry_has_review_mode_sport_keys(self):
+        """FR-Core-06:注册表由 metrics_registry 单一真理源派生。"""
         from metrics_resolver import _SPORT_CAPABILITY_REGISTRY
-        expected = {
-            "running", "trail_running", "hiking", "swimming", "open_water",
-            "cycling", "mountain_biking", "skiing", "default",
+        expected_subset = {
+            "running", "trail_running", "treadmill_running",
+            "cycling", "road_cycling", "mountain_biking", "indoor_cycling", "e_biking",
+            "hiking", "walking", "mountaineering",
+            "swimming", "lap_swimming", "open_water",
+            "strength_training", "breathing", "stair_climbing", "default",
         }
-        assert set(_SPORT_CAPABILITY_REGISTRY.keys()) == expected, (
+        assert expected_subset.issubset(set(_SPORT_CAPABILITY_REGISTRY.keys())), (
             f"注册表 sport 数量不足,实际:{set(_SPORT_CAPABILITY_REGISTRY.keys())}"
         )
 
@@ -58,17 +61,15 @@ class TestSportCapabilityRegistry:
         from metrics_resolver import _classify_sport_dimension
         dim = _classify_sport_dimension("cycling")
         assert dim["uses_power"] is True
-        assert dim["uses_altitude"] is False, "公路骑行海拔非主因"
+        assert dim["review_mode"] == "cycling"
 
     def test_unknown_sport_returns_default(self):
-        """A2:未知 sport 走 default,严禁 KeyError。"""
+        """FR-Core-06:未知 sport 不得默认跑步,应进入 not_applicable。"""
         from metrics_resolver import _classify_sport_dimension
         dim = _classify_sport_dimension("not_a_real_sport_xyz")
-        assert dim == _classify_sport_dimension("default")
-        # default 是最保守
-        default_dim = _classify_sport_dimension("default")
-        assert default_dim["uses_heat"] is True
-        assert default_dim["uses_power"] is False
+        assert dim["review_mode"] == "not_applicable"
+        assert dim["is_applicable"] is False
+        assert dim["uses_power"] is False
 
 
 class TestGlycogenDepletionRisk:
@@ -483,6 +484,35 @@ class TestEfficiencyScore:
         )
         assert result["confidence"] == "medium"
 
+    def test_unknown_hr_source_medium_confidence(self):
+        """hr_source 缺失/unknown → confidence=medium,不能假设胸带。"""
+        from metrics_resolver import evaluate_efficiency
+        result = evaluate_efficiency(
+            avg_hr=150,
+            avg_pace_sec_per_km=300.0,
+            sport_type="running",
+            duration_sec=45 * 60,
+            baseline_ratio=0.10,
+            sample_size=10,
+        )
+        assert result["confidence"] == "medium"
+
+    def test_missing_efficiency_baseline_has_explicit_reason(self):
+        """本次心率/配速可用但历史 baseline 不足时,必须给出可翻译原因。"""
+        from metrics_resolver import evaluate_efficiency
+        result = evaluate_efficiency(
+            avg_hr=166,
+            avg_pace_sec_per_km=362.39,
+            sport_type="running",
+            duration_sec=7768,
+            baseline_ratio=None,
+            sample_size=0,
+        )
+        assert result["score"] is None
+        assert result["confidence"] == "low"
+        assert result["reason_code"] == "insufficient_efficiency_baseline"
+        assert "insufficient_efficiency_baseline" in result["reasons"]
+
     def test_score_clamped_to_0_100(self):
         """score 必须 clamp 在 [0, 100],禁止负分/超分。"""
         from metrics_resolver import evaluate_efficiency
@@ -809,6 +839,8 @@ class TestCadenceStability:
         assert result["confidence"] == "low"
         assert result["is_intermittent"] is True
         assert result["score"] is None  # 间歇训练不计算
+        assert result.get("status") == "partial"
+        assert "intermittent_cadence_pattern" in result.get("reasons", [])
 
     def test_cycling_unavailable(self):
         """sport_type=cycling → confidence=unavailable(仅 running 适用)。"""
@@ -873,11 +905,11 @@ class TestTrainingLoad:
     """
 
     def test_running_zone_distribution_complete_high_load(self):
-        """Z2=60% + Z3=30% + Z4=10% + 60min → load=156, level=moderate, confidence=high。"""
+        """明确 chest_strap 时,Z2/Z3/Z4 + 60min → confidence=high。"""
         from metrics_resolver import MetricsResolver
         dist = {"Z2": 60.0, "Z3": 30.0, "Z4": 10.0}
         result = MetricsResolver._compute_training_load(
-            hr_zone_distribution=dist, duration_sec=60 * 60
+            hr_zone_distribution=dist, duration_sec=60 * 60, hr_source="chest_strap"
         )
         # 60 * (2*0.6 + 3*0.3 + 5*0.1) = 60 * 2.6 = 156
         assert result["load"] == 156.0
@@ -886,6 +918,16 @@ class TestTrainingLoad:
         assert "Z2" in result["zone_used"]
         assert "Z3" in result["zone_used"]
         assert "Z4" in result["zone_used"]
+
+    def test_unknown_hr_source_demotes_zone_distribution_confidence(self):
+        """缺少 HR 来源证据时不得默认胸带级 high confidence。"""
+        from metrics_resolver import MetricsResolver
+        dist = {"Z2": 60.0, "Z3": 30.0, "Z4": 10.0}
+        result = MetricsResolver._compute_training_load(
+            hr_zone_distribution=dist, duration_sec=60 * 60
+        )
+        assert result["confidence"] == "medium"
+        assert "hr_source_unknown" in result["reasons"]
 
     def test_zone_distribution_counts_are_normalized_before_load(self):
         """hr_zone_distribution 持久化为秒数/采样点时,训练负荷必须先转百分比。"""
@@ -1092,6 +1134,7 @@ class TestV714TrendBaseline:
         row = {
             "id": 999, "sport_type": "running",
             "avg_hr": 150, "avg_pace": 300, "duration_sec": 60 * 60,
+            "start_time": now.isoformat(),
         }
         result = api._fetch_efficiency_trend(row)
         assert result["compared_count"] == 5
@@ -1135,6 +1178,7 @@ class TestV714TrendBaseline:
         api = Api.__new__(Api)
         row = {
             "id": 999, "sport_type": "running", "duration_sec": 60 * 60,
+            "start_time": now.isoformat(),
         }
         result = api._fetch_durability_trend(row)
         assert result["compared_count"] == 5
@@ -1184,6 +1228,7 @@ class TestV714TrendBaseline:
         row = {
             "id": 999, "sport_type": "running",
             "avg_hr": 150, "max_hr": 200, "duration_sec": 60 * 60,
+            "start_time": now.isoformat(),
         }
         result = api._fetch_load_ratio_7d_42d(row)
         assert result["ratio"] is not None
@@ -1223,6 +1268,7 @@ class TestV714TrendBaseline:
         row = {
             "id": 999, "sport_type": "running",
             "avg_hr": 150, "max_hr": 200, "duration_sec": 60 * 60,
+            "start_time": now.isoformat(),
         }
         result = api._fetch_load_ratio_7d_42d(row)
         assert result["level"] == "insufficient_data"
@@ -1268,6 +1314,7 @@ class TestV714TrendBaseline:
         row = {
             "id": 999, "sport_type": "running",
             "avg_hr": 150, "max_hr": 200, "duration_sec": 60 * 60,
+            "start_time": now.isoformat(),
         }
         result = api._fetch_load_ratio_7d_42d(row)
         # acute_7d: 5 条 × 180 + 1 条 current(120) = 1020

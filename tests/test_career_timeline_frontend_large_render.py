@@ -129,6 +129,8 @@ class TestCareerTimelineFrontendLargeRender(unittest.TestCase):
             'onkeydown="onCareerActivityDetailKeydown(event, this)"',
         ):
             self.assertIn(token, node_body)
+        self.assertIn('aria-label="', node_body)
+        self.assertNotIn('title="', node_body)
         self.assertIn("careerTimelineNodeHtml", track_body)
 
     def test_more_button_css_is_stable_for_narrow_windows(self):

@@ -71,9 +71,9 @@ class TestCareerGapP111FrontendDataLinkage(unittest.TestCase):
             "async function loadCareerOverview()": ("get_career_overview",),
             "async function loadCareerSeasons(filters)": ("get_career_seasons",),
             "async function loadCareerTimeline(filters)": ("get_career_timeline",),
-            "async function loadCareerArchives()": ("get_career_races", "get_career_pb", "get_career_achievements"),
+            "async function loadCareerArchives()": ("get_career_races", "get_career_pb"),
             "async function loadCareerMemory(filters)": ("get_career_memory_gallery",),
-            "async function loadCareerInsight(options)": ("generate_career_insight",),
+            "async function loadCareerYearInsight(options)": ("get_career_year_insight",),
         }
         for signature, api_names in expectations.items():
             body = extract_function_body(self.source, signature)

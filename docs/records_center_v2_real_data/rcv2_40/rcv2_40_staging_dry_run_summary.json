@@ -1,0 +1,651 @@
+{
+  "generated_at": "2026-07-15T13:43:55+0800",
+  "source_before": {
+    "size": 1485168640,
+    "mtime_ns": 1784092943105369642,
+    "sha256": "a38bab1d57a31767fc6d2cb50d7a74034fcea9647c968ca895c294c592e4d1c2"
+  },
+  "source_after": {
+    "size": 1485168640,
+    "mtime_ns": 1784092943105369642,
+    "sha256": "a38bab1d57a31767fc6d2cb50d7a74034fcea9647c968ca895c294c592e4d1c2"
+  },
+  "source_unchanged": {
+    "hash": true,
+    "mtime_ns": true,
+    "counts": true
+  },
+  "copy_verification": {
+    "backup_hash_matches_source_before": true,
+    "staging_initial_hash_matches_source_before": true,
+    "backup_sha256": "a38bab1d57a31767fc6d2cb50d7a74034fcea9647c968ca895c294c592e4d1c2",
+    "staging_initial_sha256": "a38bab1d57a31767fc6d2cb50d7a74034fcea9647c968ca895c294c592e4d1c2"
+  },
+  "source_counts_before": {
+    "tables": {
+      "activities": 981,
+      "career_pb_records": 3,
+      "career_record_events": 0,
+      "career_event_candidates": 129,
+      "career_record_curve_cache": 0,
+      "career_route_cache": 0,
+      "career_route_matches": 0,
+      "career_snapshots": 0,
+      "career_ai_insights": 14
+    },
+    "active": {
+      "career_pb_records_active": 3,
+      "career_event_candidates_candidate": 125,
+      "career_record_curve_cache_current": 0,
+      "career_route_matches_current": 0
+    }
+  },
+  "source_counts_after": {
+    "tables": {
+      "activities": 981,
+      "career_pb_records": 3,
+      "career_record_events": 0,
+      "career_event_candidates": 129,
+      "career_record_curve_cache": 0,
+      "career_route_cache": 0,
+      "career_route_matches": 0,
+      "career_snapshots": 0,
+      "career_ai_insights": 14
+    },
+    "active": {
+      "career_pb_records_active": 3,
+      "career_event_candidates_candidate": 125,
+      "career_record_curve_cache_current": 0,
+      "career_route_matches_current": 0
+    }
+  },
+  "source_sport_counts": [
+    {
+      "sport_type": "running",
+      "sub_sport_type": "generic",
+      "count": 449
+    },
+    {
+      "sport_type": "cycling",
+      "sub_sport_type": "generic",
+      "count": 229
+    },
+    {
+      "sport_type": "cycling",
+      "sub_sport_type": "commuting",
+      "count": 138
+    },
+    {
+      "sport_type": "walking",
+      "sub_sport_type": "generic",
+      "count": 82
+    },
+    {
+      "sport_type": "hiking",
+      "sub_sport_type": "generic",
+      "count": 30
+    },
+    {
+      "sport_type": "mountaineering",
+      "sub_sport_type": "generic",
+      "count": 11
+    },
+    {
+      "sport_type": "e_biking",
+      "sub_sport_type": "e_bike_fitness",
+      "count": 10
+    },
+    {
+      "sport_type": "swimming",
+      "sub_sport_type": "open_water",
+      "count": 7
+    },
+    {
+      "sport_type": "stand_up_paddleboarding",
+      "sub_sport_type": "generic",
+      "count": 4
+    },
+    {
+      "sport_type": "hiking",
+      "sub_sport_type": "unknown",
+      "count": 3
+    },
+    {
+      "sport_type": "running",
+      "sub_sport_type": "track",
+      "count": 3
+    },
+    {
+      "sport_type": "training",
+      "sub_sport_type": "62",
+      "count": 3
+    },
+    {
+      "sport_type": "62",
+      "sub_sport_type": "generic",
+      "count": 2
+    },
+    {
+      "sport_type": "road_cycling",
+      "sub_sport_type": "road",
+      "count": 2
+    },
+    {
+      "sport_type": "52",
+      "sub_sport_type": "generic",
+      "count": 1
+    },
+    {
+      "sport_type": "cardio",
+      "sub_sport_type": "cardio_training",
+      "count": 1
+    },
+    {
+      "sport_type": "cycling",
+      "sub_sport_type": "252",
+      "count": 1
+    },
+    {
+      "sport_type": "generic",
+      "sub_sport_type": "navigate",
+      "count": 1
+    },
+    {
+      "sport_type": "horseback_riding",
+      "sub_sport_type": "generic",
+      "count": 1
+    },
+    {
+      "sport_type": "running",
+      "sub_sport_type": "unknown",
+      "count": 1
+    },
+    {
+      "sport_type": "stair_climbing",
+      "sub_sport_type": "generic",
+      "count": 1
+    },
+    {
+      "sport_type": "strength_training",
+      "sub_sport_type": "strength_training",
+      "count": 1
+    }
+  ],
+  "source_sample_quality": {
+    "cycling_total": 368,
+    "cycling_with_power_summary": 66,
+    "hiking_total": 33,
+    "hiking_with_elevation_summary": 33,
+    "open_water_swimming_total": 7,
+    "pool_swimming_total": 0,
+    "pool_with_pool_length": 0,
+    "trail_running_total": 0
+  },
+  "staging_counts_before_schema": {
+    "tables": {
+      "activities": 981,
+      "career_pb_records": 3,
+      "career_record_events": 0,
+      "career_event_candidates": 129,
+      "career_record_curve_cache": 0,
+      "career_route_cache": 0,
+      "career_route_matches": 0,
+      "career_snapshots": 0,
+      "career_ai_insights": 14
+    },
+    "active": {
+      "career_pb_records_active": 3,
+      "career_event_candidates_candidate": 125,
+      "career_record_curve_cache_current": 0,
+      "career_route_matches_current": 0
+    }
+  },
+  "staging_counts_after_dry_run": {
+    "tables": {
+      "activities": 981,
+      "career_pb_records": 3,
+      "career_record_events": 0,
+      "career_event_candidates": 129,
+      "career_record_curve_cache": 0,
+      "career_route_cache": 0,
+      "career_route_matches": 0,
+      "career_snapshots": 0,
+      "career_ai_insights": 14
+    },
+    "active": {
+      "career_pb_records_active": 3,
+      "career_event_candidates_candidate": 125,
+      "career_record_curve_cache_current": 0,
+      "career_route_matches_current": 0
+    }
+  },
+  "staging_schema": {
+    "ok": true,
+    "schema_version": "2026-07-14.records-v2.10",
+    "migrated": []
+  },
+  "staging_migration_plan": {
+    "ok": true,
+    "dry_run": true,
+    "would_create_tables": [],
+    "would_add_columns": [],
+    "would_create_indexes": [],
+    "legacy_rows_to_backfill": 0,
+    "active_scope_conflicts": [],
+    "blocked": false,
+    "status": {
+      "schema_ready": true,
+      "message": "V2 schema migration dry-run complete"
+    }
+  },
+  "staging_rebuild_plan_summary": {
+    "ok": true,
+    "dry_run": true,
+    "run_id": "records_v2_rebuild:31fef5efdfd3acfb",
+    "processed": 981,
+    "cancelled": false,
+    "summary": {
+      "dispatch_planned": 854,
+      "ignored": 127,
+      "cancelled": 0
+    },
+    "by_sport": {
+      "running": 453,
+      "cycling": 368,
+      "walking": 82,
+      "hiking": 33,
+      "swimming": 7,
+      "mountaineering": 11,
+      "training": 3,
+      "strength_training": 1,
+      "e_biking": 10,
+      "52": 1,
+      "stair_climbing": 1,
+      "62": 2,
+      "cardio": 1,
+      "road_cycling": 2,
+      "stand_up_paddleboarding": 4,
+      "horseback_riding": 1,
+      "generic": 1
+    },
+    "by_family": {
+      "distance_time_pb": 1812,
+      "power_duration_pb": 2208,
+      "activity_total_record": 1236
+    },
+    "by_reason": {
+      "definitions_planned": 854,
+      "no_available_definitions": 127
+    },
+    "metrics": {
+      "elapsed_ms": 1897.06,
+      "processed": 981,
+      "performance_target_ms": 1000,
+      "curve_cache_count": 0,
+      "route_cache_count": 0,
+      "route_match_count": 0,
+      "route_candidates": 0
+    },
+    "failure_recovery": {
+      "transaction": "savepoint",
+      "supports_cancel": true,
+      "supports_batching": true,
+      "raw_payload_logged": false
+    }
+  },
+  "downstream_records_summary": {
+    "overview": {
+      "formal_record_count": 3,
+      "eligible_statuses": [
+        "active",
+        "superseded"
+      ],
+      "by_sport": {
+        "running": 3
+      },
+      "by_family": {
+        "distance_time_pb": 3
+      },
+      "records": [
+        {
+          "id": "pb:running_10k:108",
+          "activity_id": "108",
+          "record_key": "running_10k",
+          "sport": "running",
+          "family": "distance_time_pb",
+          "status": "active",
+          "catalog_state": "available",
+          "event_date": "2025-05-03",
+          "detail_link": {
+            "activity_id": "108",
+            "source": "career",
+            "record_id": "pb:running_10k:108"
+          }
+        },
+        {
+          "id": "pb:running_half_marathon:239",
+          "activity_id": "239",
+          "record_key": "running_half_marathon",
+          "sport": "running",
+          "family": "distance_time_pb",
+          "status": "active",
+          "catalog_state": "available",
+          "event_date": "2023-03-25",
+          "detail_link": {
+            "activity_id": "239",
+            "source": "career",
+            "record_id": "pb:running_half_marathon:239"
+          }
+        },
+        {
+          "id": "pb:running_5k:167",
+          "activity_id": "167",
+          "record_key": "running_5k",
+          "sport": "running",
+          "family": "distance_time_pb",
+          "status": "active",
+          "catalog_state": "available",
+          "event_date": "2022-06-28",
+          "detail_link": {
+            "activity_id": "167",
+            "source": "career",
+            "record_id": "pb:running_5k:167"
+          }
+        }
+      ]
+    },
+    "timeline": {
+      "formal_event_count": 0,
+      "formal_event_types": [
+        "activated",
+        "activated_from_rebuild",
+        "user_confirmed"
+      ],
+      "idempotency_key": "career_record_events.id"
+    },
+    "achievement": {
+      "formal_trigger_count": 0,
+      "trigger_event_types": [
+        "activated",
+        "activated_from_rebuild",
+        "user_confirmed"
+      ],
+      "candidate_triggers": 0,
+      "cache_curve_triggers": 0
+    },
+    "excluded_sources": {
+      "candidate_count": 0,
+      "curve_cache_count": 0,
+      "excluded_event_count": 0,
+      "excluded_event_types": [
+        "candidate_created",
+        "detected",
+        "ignored",
+        "recalculated",
+        "user_rejected"
+      ],
+      "excluded_catalog_states": [
+        "analysis_only",
+        "model_only",
+        "unavailable"
+      ],
+      "model_and_analysis_records": "excluded_by_family_and_catalog_state"
+    }
+  },
+  "snapshot_records_summary": {
+    "current_records": [
+      {
+        "id": "pb:running_10k:108",
+        "activity_id": "108",
+        "sport": "running",
+        "pb_type": "running_10k",
+        "value": 2406,
+        "value_unit": "seconds",
+        "event_date": "2025-05-03"
+      },
+      {
+        "id": "pb:running_half_marathon:239",
+        "activity_id": "239",
+        "sport": "running",
+        "pb_type": "running_half_marathon",
+        "value": 7642,
+        "value_unit": "seconds",
+        "event_date": "2023-03-25"
+      },
+      {
+        "id": "pb:running_5k:167",
+        "activity_id": "167",
+        "sport": "running",
+        "pb_type": "running_5k",
+        "value": 1628,
+        "value_unit": "seconds",
+        "event_date": "2022-06-28"
+      }
+    ],
+    "formal_records": [
+      {
+        "id": "pb:running_10k:108",
+        "activity_id": "108",
+        "record_key": "running_10k",
+        "sport": "running",
+        "family": "distance_time_pb",
+        "status": "active",
+        "catalog_state": "available",
+        "source_mode": "activity_total",
+        "event_date": "2025-05-03",
+        "metric": {
+          "name": "elapsed_time_sec",
+          "value": 2406.0,
+          "unit": "seconds",
+          "display": "40:06"
+        },
+        "scope": {
+          "scope_key": "default",
+          "scope_hash": "scope:v2:sha256:adbb8a24585e0d952ff836597720cbad7c7eec3aadfbf3ab019523b95c2d5f87",
+          "labels": [
+            "默认"
+          ]
+        }
+      },
+      {
+        "id": "pb:running_half_marathon:239",
+        "activity_id": "239",
+        "record_key": "running_half_marathon",
+        "sport": "running",
+        "family": "distance_time_pb",
+        "status": "active",
+        "catalog_state": "available",
+        "source_mode": "activity_total",
+        "event_date": "2023-03-25",
+        "metric": {
+          "name": "elapsed_time_sec",
+          "value": 7642.0,
+          "unit": "seconds",
+          "display": "2:07:22"
+        },
+        "scope": {
+          "scope_key": "default",
+          "scope_hash": "scope:v2:sha256:adbb8a24585e0d952ff836597720cbad7c7eec3aadfbf3ab019523b95c2d5f87",
+          "labels": [
+            "默认"
+          ]
+        }
+      },
+      {
+        "id": "pb:running_5k:167",
+        "activity_id": "167",
+        "record_key": "running_5k",
+        "sport": "running",
+        "family": "distance_time_pb",
+        "status": "active",
+        "catalog_state": "available",
+        "source_mode": "activity_total",
+        "event_date": "2022-06-28",
+        "metric": {
+          "name": "elapsed_time_sec",
+          "value": 1628.0,
+          "unit": "seconds",
+          "display": "27:08"
+        },
+        "scope": {
+          "scope_key": "default",
+          "scope_hash": "scope:v2:sha256:adbb8a24585e0d952ff836597720cbad7c7eec3aadfbf3ab019523b95c2d5f87",
+          "labels": [
+            "默认"
+          ]
+        }
+      }
+    ],
+    "recent_refreshes": [],
+    "candidate_count": 0,
+    "evolution_summary": {
+      "total_event_count": 0,
+      "refresh_event_count": 0,
+      "by_event_type": {},
+      "by_pb_type": {},
+      "latest_event_at": ""
+    },
+    "curve_availability": {
+      "source": "career_record_curve_cache",
+      "kind": "analysis",
+      "available_count": 0,
+      "unavailable_count": 4,
+      "by_curve_type": {
+        "cycling_power_duration_curve": {
+          "curve_type": "cycling_power_duration_curve",
+          "sport": "",
+          "source_mode": "",
+          "state": "unavailable",
+          "sample_count": 0,
+          "algorithm_versions": [],
+          "latest_generated_at": "",
+          "source": "career_record_curve_cache",
+          "kind": "analysis",
+          "creates_formal_record": false
+        },
+        "trail_pace_curve": {
+          "curve_type": "trail_pace_curve",
+          "sport": "",
+          "source_mode": "",
+          "state": "unavailable",
+          "sample_count": 0,
+          "algorithm_versions": [],
+          "latest_generated_at": "",
+          "source": "career_record_curve_cache",
+          "kind": "analysis",
+          "creates_formal_record": false
+        },
+        "trail_gap_curve": {
+          "curve_type": "trail_gap_curve",
+          "sport": "",
+          "source_mode": "",
+          "state": "unavailable",
+          "sample_count": 0,
+          "algorithm_versions": [],
+          "latest_generated_at": "",
+          "source": "career_record_curve_cache",
+          "kind": "analysis",
+          "creates_formal_record": false
+        },
+        "pool_swim_pace_curve": {
+          "curve_type": "pool_swim_pace_curve",
+          "sport": "",
+          "source_mode": "",
+          "state": "unavailable",
+          "sample_count": 0,
+          "algorithm_versions": [],
+          "latest_generated_at": "",
+          "source": "career_record_curve_cache",
+          "kind": "analysis",
+          "creates_formal_record": false
+        }
+      },
+      "degraded_curve_types": [
+        "cycling_power_duration_curve",
+        "trail_pace_curve",
+        "trail_gap_curve",
+        "pool_swim_pace_curve"
+      ],
+      "boundary": "curve_cache_is_analysis_only_not_formal_record"
+    },
+    "trend_inputs": {
+      "basis": "career_record_events",
+      "refresh_frequency_count": 0,
+      "evolution_event_count": 0,
+      "interpretation": "frequency_and_curve_availability_only",
+      "curve_inputs": [
+        {
+          "curve_type": "cycling_power_duration_curve",
+          "sport": "",
+          "source": "career_record_curve_cache",
+          "kind": "analysis",
+          "state": "unavailable",
+          "sample_count": 0,
+          "algorithm_versions": [],
+          "creates_formal_record": false
+        },
+        {
+          "curve_type": "trail_pace_curve",
+          "sport": "",
+          "source": "career_record_curve_cache",
+          "kind": "analysis",
+          "state": "unavailable",
+          "sample_count": 0,
+          "algorithm_versions": [],
+          "creates_formal_record": false
+        },
+        {
+          "curve_type": "trail_gap_curve",
+          "sport": "",
+          "source": "career_record_curve_cache",
+          "kind": "analysis",
+          "state": "unavailable",
+          "sample_count": 0,
+          "algorithm_versions": [],
+          "creates_formal_record": false
+        }
+      ],
+      "model_boundary": {
+        "model_estimates_create_records": false,
+        "candidate_evidence_exposed": false,
+        "formal_record_refresh_event_types": [
+          "activated",
+          "activated_from_rebuild",
+          "user_confirmed"
+        ],
+        "excluded_estimates": [
+          "eFTP",
+          "CP",
+          "W'",
+          "MAP",
+          "PMax",
+          "GAP",
+          "NGP"
+        ],
+        "boundary": "analysis_and_model_outputs_do_not_refresh_formal_records"
+      }
+    }
+  },
+  "catalog_decision_notes": {
+    "cycling": "真实样本存在；功率纪录仍以功率流质量和候选规则为准，未在真实库 apply。",
+    "hiking": "真实样本存在；海拔/连续爬升仍需质量门禁，未在真实库 apply。",
+    "open_water_swimming": "公开水域样本存在但 V2 仍 candidate-only，需人工复核 GPS/计时质量。",
+    "pool_swimming": "无可确认泳池 pool length 样本时保持 validation_required。",
+    "trail_running": "无真实越野样本时 route/segment/pace-gap 保持 candidate-only/analysis-only。"
+  },
+  "source_db_label": "user_profile.db",
+  "backup_db_label": "user_profile_rcv2_40_backup.db",
+  "staging_db_label": "user_profile_rcv2_40_staging.db",
+  "source_candidate_type_status_counts": [
+    {
+      "candidate_type": "race",
+      "status": "candidate",
+      "count": 125
+    },
+    {
+      "candidate_type": "race",
+      "status": "resolved",
+      "count": 4
+    }
+  ]
+}

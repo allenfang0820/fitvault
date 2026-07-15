@@ -9,6 +9,7 @@ import io
 import csv
 import errno
 import json
+import logging
 import math
 import ntpath
 import os
@@ -27,12 +28,51 @@ import requests
 
 from subprocess_utils import run_hidden
 
+logger = logging.getLogger(__name__)
+
 DEFAULT_URL = "http://localhost:3000/v1/chat/completions"
 DEFAULT_MODEL = "openclaw"
 DEFAULT_PROVIDER = "local_mcp"
 DEFAULT_AGENT_ID = ""
 DEFAULT_TRANSPORT = "http"
 DEFAULT_CLI_TIMEOUT_SEC = 300
+CAREER_YEAR_SUMMARY_PROMPT_VERSION = "acs.year.summary.zh-CN.v4"
+CAREER_YEAR_SUMMARY_TIMEOUT_SEC = 120
+CAREER_YEAR_SUMMARY_OUTPUT_SCHEMA = """{
+  "schema_version": "acs.year.report.v3",
+  "year": 2026,
+  "title": "一句有年份感的年度故事标题",
+  "subtitle": "一句克制的副标题",
+  "opening": "先建立年度主线和成就感，不复述精确数字，不一次性公布全部数据",
+  "body_sections": [{"type": "annual_story|races|progress|footprints|rhythm|comparison", "heading": "章节标题", "paragraphs": ["连续叙事段落"], "evidence_ids": ["来自 evidence_catalog 或 highlight_moments 的 id"]}],
+  "closing": "回答这一年真正值得记住的是什么",
+  "letter_to_next_year": "写给下一年的一段话",
+  "share_caption": "未来分享图片可用的短句，不含精确事实",
+  "caveats": ["数据不足或部分年度说明"]
+}"""
+CAREER_YEAR_SUMMARY_FORBIDDEN_KEYS = {
+    "absolute_path",
+    "access_token",
+    "api_key",
+    "authorization",
+    "auth_token",
+    "database",
+    "file_path",
+    "fit_file",
+    "llm_config",
+    "metadata_json",
+    "path",
+    "photo",
+    "points",
+    "points_json",
+    "preview_url",
+    "provider_token",
+    "raw_fit",
+    "sqlite_schema",
+    "storage_ref",
+    "token",
+    "track_json",
+}
 VALID_TRANSPORTS = {"http", "cli"}
 VALID_CLI_TYPES = {"codex", "openclaw", "claude", "custom"}
 VALID_GARMIN_REGIONS = {"cn", "global"}
@@ -1477,6 +1517,177 @@ def build_activity_advice_user_prompt() -> str:
     return "请基于系统指令中的路线事实和用户计划上下文生成活动建议 JSON。只输出纯 JSON，不要输出 markdown 标记，不要补充额外解释。"
 
 
+def _career_year_summary_safe_value(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            str(key): _career_year_summary_safe_value(child)
+            for key, child in value.items()
+            if str(key).strip().lower() not in CAREER_YEAR_SUMMARY_FORBIDDEN_KEYS
+        }
+    if isinstance(value, list):
+        return [_career_year_summary_safe_value(item) for item in value]
+    return value
+
+
+def career_year_summary_prompt_payload(snapshot: dict[str, Any] | None) -> dict[str, Any]:
+    """Return the only Year Snapshot fields allowed to enter the annual prompt."""
+    raw = snapshot if isinstance(snapshot, dict) else {}
+    allowed = {
+        "snapshot_version",
+        "scope",
+        "year",
+        "period",
+        "summary",
+        "sport_breakdown",
+        "month_digest",
+        "evidence_catalog",
+        "highlight_moments",
+        "city_moments",
+        "comparison",
+        "data_quality",
+        "source_fingerprint",
+    }
+    payload = {
+        key: _career_year_summary_safe_value(raw.get(key))
+        for key in allowed
+        if key in raw
+    }
+    return payload
+
+
+def build_career_year_summary_messages(snapshot: dict[str, Any] | None) -> list[dict[str, str]]:
+    payload = career_year_summary_prompt_payload(snapshot)
+    payload_json = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+    system_prompt = f"""你是脉图 ACS 年度总结写作器，只能基于系统提供的 Year Snapshot 事实写中文年度总结。
+
+【数据边界】
+你只能使用下方 Year Snapshot JSON。不得使用常识补全、不得使用用户前端 payload、不得假设 Snapshot 之外的伤病、心理、生活事件、训练动机、设备、照片、路线、医疗信息或详细训练计划。
+
+【语气与安全】
+- 如果 period.is_partial_year=true，必须使用“截至当前数据周期”的语气。
+- 数据不足时必须降级表达，不补全故事。
+- 禁止伤病、心理、生活事件、训练动机、年度等级、人格判断、医疗建议和详细训练计划。
+- 目标读感是“用户读完会有成就感，也愿意截图分享”，不是审计报告，也不是训练周报。
+- 语气要温暖、真诚、有光、有分量，像一个懂运动数据的朋友认真庆祝用户这一年做成的事。
+- 允许使用有分享欲的表达，例如“点亮城市”“留下坐标”“跨过新的距离”“把运动带去更多地方”“值得发出来给自己看看”。
+- 承认努力，也尊重普通年份；鼓励用户看见持续、完成、抵达和突破，而不只崇拜 PB。
+- 禁止“封神”“王者”“炸裂”“逆天”等营销、鸡血或制造焦虑的表达。
+- 避免“含金量不言而喻”“硬核”“彻底爆发”等短视频式夸张表达；可以写得有力量，但必须贴着事实。
+- 没有比赛、没有 PB 或活动较少不等于失败。
+- AI 只写叙事，不计算或复述精确数字、日期和成绩；这些事实由后端导语和 evidence 节点呈现。
+- 不要在 opening 或第一段一次性公布活动次数、总里程、总时长、赛事、PB、成就等全部年度数据；数据应随着文章逐步展开。
+- 每组数据都要回答“这对这一年意味着什么、为什么值得记住”，不要只做统计陈述。
+- highlight_moments 是后端可信高光候选池，你可以引用和解释，但不得自行新增 PB、赛事、海拔、距离或里程碑事实。
+- city_moments 的 culture_hint 是受控城市文化提示，只能克制提及“某城市因某文化符号闻名”；不得写用户实际吃了、去了、旅行了或发生了生活事件。
+- 不得写“春节假期”“旅行”“身体感受”“看世界的方式”等 Snapshot 外生活场景或心理感受；可以写“这座城市留下了运动坐标”。
+
+【文章结构】
+- 最终读感必须是一篇连续的年度故事，不是数据分析表或字段解释。
+- body_sections.type 仅允许 annual_story、races、progress、footprints、rhythm、comparison，且按此顺序排列。
+- annual_story 与 rhythm 必须出现；races 仅在有 race evidence 时出现；progress 仅在有 pb/achievement evidence 时出现；comparison 仅在 comparison.status=available 时出现。
+- footprints 仅在 city_moments 非空时出现，用于写运动足迹和城市记忆。
+- races/progress 的 evidence_ids 必须引用 evidence_catalog 中存在且类型匹配的 evidence_id；没有对应事实时省略章节，不写空洞补位。
+- 若引用 highlight_moments，必须使用其中已有 id；不要把普通数字编成新高光。
+- annual_story 要先抛出这一年的主线和成就感，再逐步展开数据，不要像流水账。
+- progress 和 races 要把高光写得郑重，让用户觉得“这件事值得被记住”。
+- footprints 要写出“我去过/点亮过/留下过运动坐标”的分享感，但不要编造游玩或饮食经历。
+- closing 先收束这一年真正值得记住的事，语气可以庆祝；letter_to_next_year 给出温和方向，但不制定训练计划。
+
+【Year Snapshot JSON】
+{payload_json}
+"""
+    developer_prompt = f"""输出必须是严格 JSON 对象，禁止 Markdown code fence，禁止附加解释。
+JSON schema:
+{CAREER_YEAR_SUMMARY_OUTPUT_SCHEMA}
+prompt_version: {CAREER_YEAR_SUMMARY_PROMPT_VERSION}
+"""
+    user_prompt = "请基于 Year Snapshot 生成年度总结 JSON。只输出纯 JSON。"
+    return [
+        {"role": "system", "content": system_prompt},
+        {"role": "system", "content": developer_prompt},
+        {"role": "user", "content": user_prompt},
+    ]
+
+
+def _strict_json_object_from_text(raw_text: Any) -> dict[str, Any]:
+    text = str(raw_text or "").strip()
+    if not text:
+        raise ValueError("LLM 未返回内容")
+    if text.startswith("```") or "```" in text:
+        raise ValueError("LLM 返回了 Markdown code fence")
+    if not (text.startswith("{") and text.endswith("}")):
+        raise ValueError("LLM 必须只返回 JSON 对象")
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ValueError("LLM JSON 解析失败") from exc
+    if not isinstance(data, dict):
+        raise ValueError("LLM JSON 必须是对象")
+    return data
+
+
+def _career_year_summary_repair_messages(messages: list[dict[str, str]], invalid_text: Any) -> list[dict[str, str]]:
+    safe_prefix = str(invalid_text or "")[:80].replace("\n", " ")
+    repair_instruction = (
+        "上一次输出不是严格 JSON 对象。请仅根据原始 Year Snapshot 重新输出一个合法 JSON 对象；"
+        "不要输出 Markdown code fence、不要附加解释。"
+        f"错误输出前缀: {safe_prefix}"
+    )
+    return list(messages) + [{"role": "user", "content": repair_instruction}]
+
+
+def generate_career_year_summary(
+    snapshot: dict[str, Any],
+    *,
+    client: Any = None,
+    config: dict[str, Any] | None = None,
+    session_id: str = "career-year-summary",
+) -> dict[str, Any]:
+    """Generate an annual AI summary using only backend Year Snapshot facts."""
+    prompt_payload = career_year_summary_prompt_payload(snapshot)
+    year = prompt_payload.get("year")
+    fingerprint = str(prompt_payload.get("source_fingerprint") or "")
+    cfg = load_llm_config() if config is None else dict(config or {})
+    model_id = str(cfg.get("model") or cfg.get("cli_model") or "").strip()
+    if not model_id and _normalize_transport(cfg.get("transport")) == "cli":
+        cli_type = _normalize_cli_type(cfg.get("cli_type"))
+        if cli_type:
+            model_id = f"{cli_type}-default"
+    timeout = min(_normalize_cli_timeout(cfg.get("cli_timeout_sec")), CAREER_YEAR_SUMMARY_TIMEOUT_SEC)
+    messages = build_career_year_summary_messages(prompt_payload)
+    call = client or generate_text
+    started = time.perf_counter()
+    status = "unknown"
+    raw_text = ""
+    try:
+        raw_text = call(config=cfg, messages=messages, session_id=session_id, timeout=timeout)
+        try:
+            content = _strict_json_object_from_text(raw_text)
+        except ValueError:
+            repair_messages = _career_year_summary_repair_messages(messages, raw_text)
+            raw_text = call(config=cfg, messages=repair_messages, session_id=session_id, timeout=timeout)
+            content = _strict_json_object_from_text(raw_text)
+        status = "ok"
+        return {
+            "content": content,
+            "prompt_version": CAREER_YEAR_SUMMARY_PROMPT_VERSION,
+            "model_id": model_id,
+            "source_fingerprint": fingerprint,
+            "status": "success",
+        }
+    finally:
+        elapsed_ms = round((time.perf_counter() - started) * 1000.0, 2)
+        logger.info(
+            "career_year_summary year=%s fingerprint=%s prompt=%s model=%s elapsed_ms=%s status=%s",
+            year,
+            fingerprint[:18],
+            CAREER_YEAR_SUMMARY_PROMPT_VERSION,
+            model_id,
+            elapsed_ms,
+            status,
+        )
+
+
 def empty_activity_advice(error: str = "") -> dict[str, Any]:
     default_basis = "当前路线事实或用户计划信息不足。"
     default_advice = "建议结合实际路线、个人状态和出发前最新信息谨慎准备。"
@@ -1987,13 +2198,9 @@ def build_fatigue_review_messages(
     契约:§5.4 规则 3 — 后端从 _ai_snapshot 构建 prompt,前端不参与。
     """
     payload = json.dumps(snapshot or {}, ensure_ascii=False, indent=2, default=str)
-    sport_mode_map = {
-        "running": "running", "trail_running": "running", "treadmill_running": "running",
-        "hiking": "general", "mountaineering": "general",
-        "cycling": "cycling", "road_cycling": "cycling", "mountain_biking": "cycling",
-        "swimming": "swimming", "lap_swimming": "swimming", "open_water": "swimming",
-    }
-    mode = sport_mode_map.get(sport_type, "general")
+    mode = str((snapshot or {}).get("review_mode") or "").strip().lower() or "general"
+    if mode == "not_applicable":
+        mode = "general"
 
     system = f"""你是一位资深运动表现分析师与训练科学专家,专长于{sport_cn}单次训练复盘分析。
 

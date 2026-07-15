@@ -129,16 +129,16 @@ class TestTrackHtmlSyncLogic(unittest.TestCase):
         for forbidden in ("window.pywebview.api", "points", "track_json", "raw FIT", "get_career_"):
             self.assertNotIn(forbidden, career_panel)
 
-    def test_legacy_honor_wall_is_career_entry_not_acs_primary_surface(self):
-        self.assertIn('data-hub-tab="honors" onclick="switchSportHubTab(\'honors\')">运动生涯入口</button>', self.source)
-        self.assertIn('data-legacy-honor-entry="career-link"', self.source)
-        self.assertIn('function switchToCareerFromHonorWall()', self.source)
+    def test_profile_sport_hub_no_longer_keeps_legacy_career_entry(self):
+        self.assertIn('class="bookmark-tab" data-panel="career"', self.source)
+        self.assertIn('<span class="tab-label">运动生涯</span>', self.source)
+        self.assertNotIn('data-hub-tab="honors"', self.source)
+        self.assertNotIn('运动生涯入口</button>', self.source)
+        self.assertNotIn('data-legacy-honor-entry="career-link"', self.source)
+        self.assertNotIn('function switchToCareerFromHonorWall()', self.source)
+        self.assertNotIn('function onSwitchToHonors()', self.source)
+        self.assertNotIn("isHonorsInitialized", self.source)
         self.assertNotIn('id="sport-honor-wall"', self.source)
-
-        honors_body = extract_function_body(self.source, "async function onSwitchToHonors()")
-        self.assertIn("isHonorsInitialized = true;", honors_body)
-        self.assertNotIn("loadPersonSportHubData", honors_body)
-        self.assertNotIn("renderSportHubHonors", honors_body)
 
         render_tab_body = extract_function_body(self.source, "function renderCurrentSportHubTab()")
         self.assertIn("new Set(['results', 'reserved'])", render_tab_body)
@@ -158,6 +158,17 @@ class TestTrackHtmlSyncLogic(unittest.TestCase):
             "loadCareerArchives().catch",
         ):
             self.assertIn(token, load_body)
+
+    def test_activity_fact_changes_invalidate_year_and_career_caches(self):
+        for signature in (
+            "async function refreshRecordsAfterDetection()",
+            "async function saveSportHubTitleEdit(event, activityId)",
+            "async function toggleSportHubRaceFlag(event, activityId)",
+            "async function deleteSelectedSportHubRecords()",
+            "async function importLocalFitFiles()",
+            "async function syncRemoteSportHubActivities()",
+        ):
+            self.assertIn("invalidateCareerDataCaches()", extract_function_body(self.source, signature), signature)
 
     def test_activity_list_has_medal_race_flag_column(self):
         title_body = extract_function_body(self.source, "function renderSportHubTitleCell(item)")

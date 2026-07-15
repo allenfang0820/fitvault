@@ -35,15 +35,18 @@ class TestCareerPhase8FrontendReadiness(unittest.TestCase):
         self.assertIn('class="bookmark-tab" data-panel="career"', self.source)
         self.assertIn('<span class="tab-label">运动生涯</span>', self.source)
         self.assertIn('id="panel-career" class="tab-panel"', self.source)
-        self.assertIn('data-legacy-honor-entry="career-link"', self.source)
-        self.assertIn("switchToCareerFromHonorWall", self.source)
+        self.assertNotIn('data-legacy-honor-entry="career-link"', self.source)
+        self.assertNotIn("switchToCareerFromHonorWall", self.source)
+        self.assertNotIn('data-hub-tab="honors"', self.source)
 
     def test_phase8_primary_sections_and_filters_are_present(self):
-        for section in ("overview", "timeline", "archives", "pb", "achievements", "insight", "memory"):
+        for section in ("overview", "timeline", "archives", "pb", "insight", "memory"):
             self.assertIn(f'data-career-section="{section}"', self.career_panel)
+        self.assertNotIn('data-career-section="achievements"', self.career_panel)
 
-        for label in ("生涯总览", "生涯时间轴", "赛事档案", "记录中心", "荣誉里程碑", "AI 生涯总结", "生涯足迹"):
+        for label in ("生涯总览", "生涯时间轴", "赛事档案", "记录中心", "年度 AI 总结", "生涯足迹"):
             self.assertIn(label, self.career_panel)
+        self.assertNotIn("荣誉里程碑", self.career_panel)
 
         for filter_value in ("all", "race", "milestone"):
             self.assertIn(f'data-career-timeline-filter="{filter_value}"', self.career_panel)
@@ -55,10 +58,12 @@ class TestCareerPhase8FrontendReadiness(unittest.TestCase):
     def test_acs_product_shell_has_top_level_secondary_navigation(self):
         self.assertIn('data-acs-product-shell="v1"', self.career_panel)
         self.assertIn('class="career-product-nav"', self.career_panel)
-        for page in ("overview", "timeline", "races", "pb", "achievements", "insight", "footprint"):
+        for page in ("overview", "timeline", "races", "pb", "insight", "footprint"):
             self.assertIn(f'data-career-page-target="{page}"', self.career_panel)
             self.assertIn(f'data-career-page="{page}"', self.career_panel)
-        for label in ("总览", "时间轴", "赛事档案", "PB", "荣誉", "AI 总结", "足迹"):
+        self.assertNotIn('data-career-page-target="achievements"', self.career_panel)
+        self.assertNotIn('data-career-page="achievements"', self.career_panel)
+        for label in ("总览", "时间轴", "赛事档案", "记录", "AI 总结", "足迹"):
             self.assertIn(label, self.career_panel)
 
     def test_career_primary_surface_is_not_legacy_photo_wall_or_coming_soon(self):

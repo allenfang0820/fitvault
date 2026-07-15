@@ -238,6 +238,7 @@ class TestContractCompliance(unittest.TestCase):
         script_tags = re.findall(r'<script\s+[^>]*src\s*=\s*["\']([^"\']+)["\']', self.src)
         # 已知允许的库(ECharts 是既有合法依赖,用于复盘图表)
         allowed = {
+            "assets/career_footprint_maps.js",
             "lib/Cesium/Cesium.js",
             "https://cdn.jsdelivr.net/npm/cesium@1.105.1/Build/Cesium/Cesium.js",
             "https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js",
