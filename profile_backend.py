@@ -980,6 +980,8 @@ def _conn() -> sqlite3.Connection:
 
 
 def _init_schema(conn: sqlite3.Connection) -> None:
+    from metrics_resolver import ensure_device_product_mapping_seed
+
     conn.execute("""
         CREATE TABLE IF NOT EXISTS user_profile (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1041,6 +1043,28 @@ def _init_schema(conn: sqlite3.Connection) -> None:
         )
     """)
     conn.execute("""
+        CREATE TABLE IF NOT EXISTS device_product_mappings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            vendor TEXT NOT NULL,
+            product_key TEXT NOT NULL,
+            product_id TEXT,
+            display_name TEXT NOT NULL,
+            display_brand TEXT,
+            source TEXT NOT NULL,
+            confidence TEXT NOT NULL,
+            status TEXT NOT NULL,
+            notes TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(vendor, product_key)
+        )
+    """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_device_product_mappings_status
+        ON device_product_mappings(vendor, product_key, status)
+    """)
+    ensure_device_product_mapping_seed(conn)
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS activities (
             id             INTEGER PRIMARY KEY AUTOINCREMENT,
             filename       TEXT,
@@ -1100,6 +1124,7 @@ def _init_schema(conn: sqlite3.Connection) -> None:
         "avg_pace",     "calories",    "avg_power",   "max_power",
         "normalized_power","avg_stroke_distance","swolf","list_metric_backfill_version",
         "device_name",  "source_type", "is_mock",     "shadow_diff_json",
+        "device_vendor", "device_product_key", "device_product_id", "device_serial", "device_mapping_status",
         "hr_curve",     "speed_curve",
         "gain_m",       "max_alt_m",   "max_hr",      "avg_cadence",
         "hr_decoupling","tss",         "points_json", "updated_at",
@@ -1121,6 +1146,7 @@ def _init_schema(conn: sqlite3.Connection) -> None:
         "REAL", "INTEGER", "REAL", "REAL",
         "REAL", "REAL", "REAL", "INTEGER DEFAULT 0",
         "TEXT", "TEXT", "INTEGER", "TEXT",
+        "TEXT", "TEXT", "TEXT", "TEXT", "TEXT",
         "TEXT", "TEXT",
         "REAL", "REAL", "INTEGER", "REAL",
         "REAL", "REAL", "TEXT", "TEXT DEFAULT (datetime('now'))",
@@ -1205,6 +1231,11 @@ def _init_schema(conn: sqlite3.Connection) -> None:
         ("swolf", "REAL"),
         ("list_metric_backfill_version", "INTEGER DEFAULT 0"),
         ("device_name", "TEXT"),
+        ("device_vendor", "TEXT"),
+        ("device_product_key", "TEXT"),
+        ("device_product_id", "TEXT"),
+        ("device_serial", "TEXT"),
+        ("device_mapping_status", "TEXT"),
         ("source_type", "TEXT"),
         ("is_mock", "INTEGER"),
         ("shadow_diff_json", "TEXT"),

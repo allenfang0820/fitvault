@@ -1128,6 +1128,27 @@
       "description": "活动地区回填 dry-run；只统计 pending/failed/inferred GPS 活动、已有 geocode_cache 命中、唯一 Nominatim 坐标和标题保护影响，不写 activities，不调用 Nominatim，不生成或刷新年度 AI 报告，不返回 raw FIT、points、track_json、file_path 或 SQLite schema。"
     },
     {
+      "name": "get_device_product_mapping_dry_run",
+      "file": "main.py",
+      "line": 14630,
+      "category": "activity",
+      "parameters": [
+        {
+          "name": "payload",
+          "type": "object",
+          "required": false,
+          "schema": {
+            "limit": "int optional",
+            "vendor": "string optional"
+          }
+        }
+      ],
+      "returns": "{ ok, code, msg, data: {ok, total_activity_count, unresolved_device_count, garmin_product_fallback_count, refreshable_count, by_product_key, samples}, traceId }",
+      "readonly": true,
+      "high_risk": false,
+      "description": "设备产品映射 dry-run；只读取 activities 已持久化设备字段，并通过本地 device_product_mappings 表与 Garmin SDK profile 统一 resolver 统计 Garmin Product 数字 fallback、未解析设备和可用刷新候选；不解析 FIT，不写 activities，不联网，不推断 HR 来源，不从标题、文件名或用户偏好推断设备。"
+    },
+    {
       "name": "get_fatigue_review",
       "file": "main.py",
       "line": 4761,

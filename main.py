@@ -30,7 +30,17 @@ import track_backend  # noqa: F401 -- PyInstaller bundles track_backend
 import profile_backend  # noqa: F401 -- PyInstaller bundles profile 模块
 import career_backend  # noqa: F401 -- PyInstaller bundles ACS career backend
 from fit_engine import FITCoreEngine
-from metrics_resolver import MetricsResolver, SemanticSportsEngine, build_training_effect, _build_environment_challenge_block  # V9.4.0 修复 NameError:build_training_effect 已在 metrics_resolver.py:2760 定义, 此处补 import;V_ENV.1.16:补 _build_environment_challenge_block
+from metrics_resolver import (
+    MetricsResolver,
+    SemanticSportsEngine,
+    build_training_effect,
+    _build_environment_challenge_block,
+    ensure_device_product_mapping_seed,
+    extract_device_identity_from_fit_file_id,
+    extract_device_identity_from_persisted_fields,
+    is_device_name_unresolved,
+    resolve_device_display_name,
+)  # V9.4.0 修复 NameError:build_training_effect 已在 metrics_resolver.py:2760 定义, 此处补 import;V_ENV.1.16:补 _build_environment_challenge_block
 from metrics_registry import (
     REVIEW_MODE_SPORTS,
     get_review_capabilities,
@@ -4527,6 +4537,48 @@ def _safe_data_migrate(conn, sql: str) -> None:
         raise
 
 
+def ensure_device_product_mapping_schema(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS device_product_mappings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            vendor TEXT NOT NULL,
+            product_key TEXT NOT NULL,
+            product_id TEXT,
+            display_name TEXT NOT NULL,
+            display_brand TEXT,
+            source TEXT NOT NULL,
+            confidence TEXT NOT NULL,
+            status TEXT NOT NULL,
+            notes TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(vendor, product_key)
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_device_product_mappings_status
+        ON device_product_mappings(vendor, product_key, status)
+        """
+    )
+    ensure_device_product_mapping_seed(conn)
+
+
+def _resolve_device_display_for_sync(file_id_mesgs: list[dict[str, Any]] | None) -> dict[str, Any]:
+    identity = extract_device_identity_from_fit_file_id(file_id_mesgs or [])
+    conn = None
+    try:
+        conn = profile_backend._conn()
+        return resolve_device_display_name(identity, conn)
+    except Exception:
+        return resolve_device_display_name(identity, None)
+    finally:
+        if conn is not None:
+            conn.close()
+
+
 def ensure_activity_sync_schema() -> None:
     global _ACTIVITY_SYNC_SCHEMA_READY_FOR
     cache_key = _activity_schema_cache_key()
@@ -4539,6 +4591,7 @@ def ensure_activity_sync_schema() -> None:
 
         conn = profile_backend._conn()
         try:
+            ensure_device_product_mapping_schema(conn)
 
             conn.execute(
                 """
@@ -4670,11 +4723,18 @@ def ensure_activity_sync_schema() -> None:
                 ("race_override", "INTEGER DEFAULT 0"),
                 ("region_source", "TEXT"),
                 ("region_confidence", "TEXT"),
+                ("device_vendor", "TEXT"),
+                ("device_product_key", "TEXT"),
+                ("device_product_id", "TEXT"),
+                ("device_serial", "TEXT"),
+                ("device_mapping_status", "TEXT"),
             ]:
                 try:
                     conn.execute(f"ALTER TABLE activities ADD COLUMN {col} {dtype}")
                 except Exception:
                     pass
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_activities_device_mapping_status ON activities(device_mapping_status)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_activities_device_product_key ON activities(device_product_key)")
             _safe_data_migrate(
                 conn,
                 """
@@ -6611,14 +6671,14 @@ def _parse_fit_activity_for_sync(file_path: Path) -> dict[str, Any]:
         "processing_error": None,
     }
 
-    # 从 FIT 文件解析设备型号
+    # 从 FIT 文件解析设备事实,再通过本地产品映射表生成展示型号
+    device_resolution = resolve_device_display_name({}, None)
     try:
         from garmin_fit_sdk import Decoder, Stream
 
         fit_stream = Stream.from_file(resolved_path)
         fit_msgs, _ = Decoder(fit_stream).read()
-        raw_for_device = {"file_id_mesgs": list(fit_msgs.get("file_id_mesgs", []))}
-        device_name = MetricsResolver._resolve_device_name(raw_for_device, {})
+        device_resolution = _resolve_device_display_for_sync(list(fit_msgs.get("file_id_mesgs", [])))
     except Exception:
         try:
             from fitparse import FitFile
@@ -6628,11 +6688,15 @@ def _parse_fit_activity_for_sync(file_path: Path) -> dict[str, Any]:
             for msg in fit.get_messages("file_id"):
                 file_id_mesgs.append({field.name: field.value for field in msg})
                 break
-            raw_for_device = {"file_id_mesgs": file_id_mesgs}
-            device_name = MetricsResolver._resolve_device_name(raw_for_device, {})
+            device_resolution = _resolve_device_display_for_sync(file_id_mesgs)
         except Exception:
-            device_name = ""
-    result["device_name"] = device_name
+            device_resolution = resolve_device_display_name({}, None)
+    result["device_name"] = device_resolution.get("device_name") or "Unknown Device"
+    result["device_vendor"] = device_resolution.get("vendor") or "unknown"
+    result["device_product_key"] = device_resolution.get("product_key") or ""
+    result["device_product_id"] = device_resolution.get("product_id") or ""
+    result["device_serial"] = device_resolution.get("serial") or ""
+    result["device_mapping_status"] = device_resolution.get("mapping_status") or "unknown"
 
     # ── MetricsResolver Shadow Layer (对比验证用，不参与生产决策) ───
     # LEGACY SNAPSHOT — freeze before resolver overwrite
@@ -6808,12 +6872,13 @@ def _insert_activity_sync_row(conn: sqlite3.Connection, activity: dict[str, Any]
                  region_city, region_country, region_display, region_status, region_error, region_updated_at, region_attempt_count,
                  weather_json, weather_status, weather_updated_at, weather_attempt_count, weather_error,
                  file_mtime, file_size, advanced_metrics, avg_power, max_power, normalized_power, avg_stroke_distance, swolf, device_name,
+                 device_vendor, device_product_key, device_product_id, device_serial, device_mapping_status,
                  shadow_diff_json, source_type, is_mock, deleted_at, updated_at, hr_curve, speed_curve, cadence_curve, hr_zone_distribution, laps_json,
                  min_alt_m, total_descent_m, up_count, down_count, max_single_climb_m, difficulty_score, report_metrics_version,
                  avg_grade_pct, max_slope_pct, min_slope_pct, uphill_pct, downhill_pct,
                  aerobic_training_effect, anaerobic_training_effect, processing_status, processing_error)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, 'fit_sdk', 0, NULL, datetime('now'), ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'fit_sdk', 0, NULL, datetime('now'), ?, ?, ?, ?, ?,
                     ?, ?, ?, ?, ?, ?, ?,
                     ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
@@ -6863,6 +6928,11 @@ def _insert_activity_sync_row(conn: sqlite3.Connection, activity: dict[str, Any]
                 activity.get("avg_stroke_distance"),
                 activity.get("swolf"),
                 activity.get("device_name") or "Unknown Device",
+                activity.get("device_vendor"),
+                activity.get("device_product_key"),
+                activity.get("device_product_id"),
+                activity.get("device_serial"),
+                activity.get("device_mapping_status"),
                 activity.get("shadow_diff_json"),
                 activity.get("hr_curve"),
                 activity.get("speed_curve"),
@@ -6916,7 +6986,8 @@ def _update_activity_sync_row(conn: sqlite3.Connection, activity_id: int, activi
             weather_json = ?, weather_status = ?, weather_updated_at = ?, weather_attempt_count = ?, weather_error = ?,
             file_mtime = ?, file_size = ?, advanced_metrics = ?,
             avg_power = ?, max_power = ?, normalized_power = ?, avg_stroke_distance = ?, swolf = ?,
-            device_name = ?, shadow_diff_json = ?, hr_curve = ?, speed_curve = ?,
+            device_name = ?, device_vendor = ?, device_product_key = ?, device_product_id = ?, device_serial = ?, device_mapping_status = ?,
+            shadow_diff_json = ?, hr_curve = ?, speed_curve = ?,
             laps_json = ?,
             min_alt_m = ?, total_descent_m = ?, up_count = ?, down_count = ?, max_single_climb_m = ?, difficulty_score = ?, report_metrics_version = ?,
             avg_grade_pct = ?, max_slope_pct = ?, min_slope_pct = ?, uphill_pct = ?, downhill_pct = ?,
@@ -6970,6 +7041,11 @@ def _update_activity_sync_row(conn: sqlite3.Connection, activity_id: int, activi
             activity.get("avg_stroke_distance"),
             activity.get("swolf"),
             activity.get("device_name") or "Unknown Device",
+            activity.get("device_vendor"),
+            activity.get("device_product_key"),
+            activity.get("device_product_id"),
+            activity.get("device_serial"),
+            activity.get("device_mapping_status"),
             activity.get("shadow_diff_json"),
             activity.get("hr_curve"),
             activity.get("speed_curve"),
@@ -7398,7 +7474,8 @@ def _find_activity_by_file_name(conn: sqlite3.Connection, file_name: str, includ
     deleted_clause = "" if include_deleted else "AND deleted_at IS NULL"
     row = conn.execute(
         f"""
-        SELECT id, file_name, filename, file_path, deleted_at, processing_status
+        SELECT id, file_name, filename, file_path, deleted_at, processing_status,
+               device_name, device_mapping_status, device_product_key
         FROM activities
         WHERE COALESCE(file_name, filename) = ? {deleted_clause}
         ORDER BY id DESC
@@ -7414,7 +7491,8 @@ def _find_activity_by_file_path(conn: sqlite3.Connection, file_path: str, includ
     row = conn.execute(
         f"""
         SELECT id, file_name, filename, file_path, title, sport_type, sub_sport_type, start_time, updated_at,
-               file_mtime, file_size, deleted_at, processing_status
+               file_mtime, file_size, deleted_at, processing_status,
+               device_name, device_mapping_status, device_product_key
         FROM activities
         WHERE file_path = ? {deleted_clause}
         ORDER BY id DESC
@@ -7431,7 +7509,7 @@ def _load_existing_file_index(conn: sqlite3.Connection) -> dict[str, dict[str, A
     """
     rows = conn.execute(
         """
-        SELECT id, file_path, file_mtime, file_size, device_name
+        SELECT id, file_path, file_mtime, file_size, device_name, device_mapping_status, device_product_key
         FROM activities
         WHERE deleted_at IS NULL
           AND COALESCE(file_path, '') != ''
@@ -7450,9 +7528,10 @@ def _load_existing_file_index(conn: sqlite3.Connection) -> dict[str, dict[str, A
                 "file_mtime": row["file_mtime"],
                 "file_size": row["file_size"],
                 "device_name": row["device_name"] or "",
+                "device_mapping_status": row["device_mapping_status"] or "",
+                "device_product_key": row["device_product_key"] or "",
             }
     return index
-
 
 
 def _load_activity_sync_merge_context(conn: sqlite3.Connection, activity_id: int) -> dict[str, Any] | None:
@@ -7520,6 +7599,247 @@ def _merge_activity_sync_update_fields(existing: dict[str, Any] | None, activity
 
     return merged
 
+
+def device_product_mapping_dry_run(
+    limit: int | None = None,
+    vendor: str | None = None,
+    conn: sqlite3.Connection | None = None,
+) -> dict[str, Any]:
+    """Read-only device mapping audit.
+
+    Contract: do not parse FIT files, do not call network services, and do not
+    update activities. This inspects persisted device columns, then resolves
+    through the same table/profile resolver used by FIT imports.
+    """
+    owns_conn = conn is None
+    if conn is None:
+        conn = profile_backend._conn()
+    try:
+        raw_vendor = str(vendor or "").strip().lower()
+        rows = conn.execute(
+            """
+            SELECT id, start_time, sport_type, device_name, device_vendor,
+                   device_product_key, device_product_id, device_serial, device_mapping_status
+            FROM activities
+            WHERE deleted_at IS NULL
+              AND COALESCE(is_mock, 0) = 0
+            ORDER BY start_time DESC, id DESC
+            """
+        ).fetchall()
+
+        by_product_key: dict[str, dict[str, Any]] = {}
+        samples: list[dict[str, Any]] = []
+        unresolved_count = 0
+        garmin_fallback_count = 0
+        refreshable_count = 0
+        sample_limit = max(0, int(limit or 20))
+
+        for row in rows:
+            row_dict = dict(row)
+            device_name = str(row_dict.get("device_name") or "").strip()
+            mapping_status = str(row_dict.get("device_mapping_status") or "").strip()
+            identity = extract_device_identity_from_persisted_fields(row_dict)
+            row_vendor = str(identity.get("vendor") or "unknown").strip().lower()
+            product_key = str(identity.get("product_key") or "").strip()
+            product_id = str(identity.get("product_id") or "").strip()
+            if raw_vendor and row_vendor != raw_vendor:
+                continue
+
+            fallback_match = re.match(r"^\s*Garmin\s+Product\s+\d+\s*$", device_name, re.IGNORECASE)
+            if fallback_match:
+                garmin_fallback_count += 1
+
+            unresolved = is_device_name_unresolved(device_name, mapping_status)
+            resolution = resolve_device_display_name(identity, conn)
+            resolved_name = str(resolution.get("device_name") or "").strip()
+            resolved_status = str(resolution.get("mapping_status") or "").strip()
+            resolved_source = str(resolution.get("source") or "").strip()
+            refreshable = bool(
+                unresolved
+                and resolved_status == "resolved"
+                and resolved_name
+                and resolved_name != "Unknown Device"
+                and resolved_name != device_name
+            )
+            if unresolved:
+                unresolved_count += 1
+            if refreshable:
+                refreshable_count += 1
+
+            if unresolved or product_key:
+                group_key = product_key or f"{row_vendor or 'unknown'}:unknown"
+                bucket = by_product_key.setdefault(
+                    group_key,
+                    {
+                        "vendor": row_vendor or "unknown",
+                        "product_key": product_key,
+                        "product_id": product_id,
+                        "activity_count": 0,
+                        "unresolved_count": 0,
+                        "refreshable_count": 0,
+                        "mapped_display_name": resolved_name if resolved_status == "resolved" else "",
+                        "resolution_source": resolved_source,
+                    },
+                )
+                bucket["activity_count"] += 1
+                if unresolved:
+                    bucket["unresolved_count"] += 1
+                if refreshable:
+                    bucket["refreshable_count"] += 1
+                if resolved_status == "resolved" and resolved_name:
+                    bucket["mapped_display_name"] = resolved_name
+                    bucket["resolution_source"] = resolved_source
+
+            if (unresolved or refreshable) and len(samples) < sample_limit:
+                samples.append(
+                    {
+                        "id": int(row_dict.get("id") or 0),
+                        "start_time": row_dict.get("start_time"),
+                        "sport_type": row_dict.get("sport_type"),
+                        "device_name": device_name,
+                        "device_vendor": row_vendor or "unknown",
+                        "device_product_key": product_key,
+                        "device_mapping_status": mapping_status or "unknown",
+                        "refreshable": refreshable,
+                        "mapped_display_name": resolved_name if resolved_status == "resolved" else "",
+                        "resolution_source": resolved_source,
+                    }
+                )
+
+        return {
+            "ok": True,
+            "total_activity_count": len(rows),
+            "unresolved_device_count": unresolved_count,
+            "garmin_product_fallback_count": garmin_fallback_count,
+            "refreshable_count": refreshable_count,
+            "by_product_key": sorted(
+                by_product_key.values(),
+                key=lambda item: (-int(item.get("unresolved_count") or 0), str(item.get("product_key") or "")),
+            ),
+            "samples": samples,
+        }
+    finally:
+        if owns_conn and conn is not None:
+            conn.close()
+
+
+def backfill_device_product_mappings(
+    *,
+    limit: int | None = None,
+    vendor: str | None = None,
+    dry_run: bool = False,
+    conn: sqlite3.Connection | None = None,
+) -> dict[str, Any]:
+    """Refresh persisted fallback device names through mapping table + SDK profile.
+
+    This path never parses FIT files and never guesses from titles, filenames,
+    or user preferences. It only updates rows whose existing persisted device
+    fields can be resolved by the shared resolver.
+    """
+    owns_conn = conn is None
+    if conn is None:
+        conn = profile_backend._conn()
+    try:
+        raw_vendor = str(vendor or "").strip().lower()
+        row_limit = max(0, int(limit or 0))
+        rows = conn.execute(
+            """
+            SELECT id, device_name, device_vendor, device_product_key,
+                   device_product_id, device_serial, device_mapping_status
+            FROM activities
+            WHERE deleted_at IS NULL
+              AND COALESCE(is_mock, 0) = 0
+              AND (
+                COALESCE(device_name, '') = ''
+                OR lower(COALESCE(device_name, '')) IN ('unknown', 'unknown device', 'none')
+                OR COALESCE(device_name, '') LIKE 'Garmin Product %'
+                OR (
+                    COALESCE(device_product_key, '') != ''
+                    AND COALESCE(device_mapping_status, '') != 'resolved'
+                )
+              )
+            ORDER BY id ASC
+            """
+        ).fetchall()
+        updates: list[tuple[Any, ...]] = []
+        skipped_by_product_key: dict[str, int] = {}
+        samples: list[dict[str, Any]] = []
+        for row in rows:
+            row_dict = dict(row)
+            identity = extract_device_identity_from_persisted_fields(row_dict)
+            row_vendor = str(identity.get("vendor") or "unknown").strip().lower()
+            if raw_vendor and row_vendor != raw_vendor:
+                continue
+            resolution = resolve_device_display_name(identity, conn)
+            current_name = str(row_dict.get("device_name") or "").strip()
+            resolved_name = str(resolution.get("device_name") or "").strip()
+            product_key = str(resolution.get("product_key") or identity.get("product_key") or "").strip()
+            if (
+                str(resolution.get("mapping_status") or "") != "resolved"
+                or not resolved_name
+                or resolved_name == "Unknown Device"
+                or resolved_name == current_name
+            ):
+                skipped_key = product_key or f"{row_vendor or 'unknown'}:unknown"
+                skipped_by_product_key[skipped_key] = skipped_by_product_key.get(skipped_key, 0) + 1
+                continue
+            updates.append(
+                (
+                    resolved_name,
+                    resolution.get("vendor") or row_vendor or "unknown",
+                    product_key,
+                    resolution.get("product_id") or identity.get("product_id") or "",
+                    resolution.get("serial") or identity.get("serial") or "",
+                    "resolved",
+                    int(row_dict["id"]),
+                )
+            )
+            if len(samples) < 20:
+                samples.append(
+                    {
+                        "id": int(row_dict["id"]),
+                        "from": current_name,
+                        "to": resolved_name,
+                        "product_key": product_key,
+                        "source": resolution.get("source") or "",
+                    }
+                )
+            if row_limit and len(updates) >= row_limit:
+                break
+
+        if not dry_run and updates:
+            conn.executemany(
+                """
+                UPDATE activities
+                SET device_name = ?,
+                    device_vendor = ?,
+                    device_product_key = ?,
+                    device_product_id = ?,
+                    device_serial = COALESCE(NULLIF(?, ''), device_serial),
+                    device_mapping_status = ?
+                WHERE id = ?
+                """,
+                updates,
+            )
+            conn.commit()
+
+        return {
+            "ok": True,
+            "dry_run": bool(dry_run),
+            "updated": 0 if dry_run else len(updates),
+            "refreshable": len(updates),
+            "skipped_unresolved_by_product_key": skipped_by_product_key,
+            "samples": samples,
+        }
+    except Exception:
+        if not dry_run:
+            conn.rollback()
+        raise
+    finally:
+        if owns_conn and conn is not None:
+            conn.close()
+
+
 def _is_file_unchanged(disk_path: Path, existing: dict[str, Any]) -> bool:
     """判断磁盘文件与 DB 记录是否一致（mtime 和 size 均匹配）。"""
     existing_mtime = existing.get("file_mtime")
@@ -7576,12 +7896,13 @@ def _persist_sync_activity(
             if existing and not existing.get("deleted_at"):
                 file_mtime = activity.get("file_mtime")
                 file_size = activity.get("file_size")
-                existing_device = str(existing.get("device_name") or "").strip().lower()
+                existing_device = str(existing.get("device_name") or "").strip()
                 needs_device_refresh = (
-                    not existing_device
-                    or existing_device == "unknown"
-                    or existing_device == "unknown device"
-                    or existing_device.isdigit()
+                    is_device_name_unresolved(existing_device, existing.get("device_mapping_status"))
+                    or (
+                        not str(existing.get("device_product_key") or "").strip()
+                        and str(activity.get("device_product_key") or "").strip()
+                    )
                 )
                 if (
                     not needs_device_refresh
@@ -14613,6 +14934,22 @@ class Api:
             return _api_success(result)
         except Exception as e:
             logger.warning("get_region_enrichment_dry_run failed: %s", e)
+            return _api_error(API_CODE_DB, str(e))
+
+    def get_device_product_mapping_dry_run(self, payload: dict | None = None) -> dict:
+        try:
+            raw_limit = 20
+            raw_vendor = None
+            if isinstance(payload, dict):
+                raw_limit = payload.get("limit", 20)
+                raw_vendor = payload.get("vendor")
+            limit = _safe_int(raw_limit, 20)
+            if limit < 0:
+                limit = 0
+            result = device_product_mapping_dry_run(limit=limit, vendor=raw_vendor)
+            return _api_success(result)
+        except Exception as e:
+            logger.warning("get_device_product_mapping_dry_run failed: %s", e)
             return _api_error(API_CODE_DB, str(e))
 
     def check_activity_data_integrity(self) -> dict:

@@ -1,5 +1,5 @@
 garminconnect==0.3.6
-garmin-fit-sdk==21.205.0
+garmin-fit-sdk==21.208.0
 curl_cffi>=0.6
 requests==2.34.2
 urllib3==2.7.0

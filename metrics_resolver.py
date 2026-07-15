@@ -3,6 +3,8 @@ from __future__ import annotations
 import copy
 import json
 import math
+import re
+import sqlite3
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -84,10 +86,277 @@ def _garmin_device_name_dict() -> dict[int, str]:
 
 _DEVICE_DISPLAY_OVERLAY: dict[int, str] = {
     3910: "Fenix 7X (APAC)",
+    3515: "Fenix6 Asia",
     4536: "Fenix 8",
     4759: "Instinct 3 Solar 50mm",
     4775: "Tactix 8 AMOLED",
 }
+
+DEVICE_PRODUCT_MAPPING_SEEDS: tuple[dict[str, str], ...] = (
+    {
+        "vendor": "garmin",
+        "product_key": "garmin:4536",
+        "product_id": "4536",
+        "display_name": "Fenix 8",
+        "display_brand": "Garmin",
+        "source": "builtin",
+        "confidence": "high",
+        "status": "active",
+        "notes": "Built-in Garmin product mapping seed",
+    },
+    {
+        "vendor": "garmin",
+        "product_key": "garmin:3515",
+        "product_id": "3515",
+        "display_name": "Fenix6 Asia",
+        "display_brand": "Garmin",
+        "source": "builtin",
+        "confidence": "high",
+        "status": "active",
+        "notes": "Built-in Garmin product mapping seed",
+    },
+)
+
+_DEVICE_PRODUCT_FALLBACK_RE = re.compile(r"^\s*Garmin\s+Product\s+\d+\s*$", re.IGNORECASE)
+
+
+def ensure_device_product_mapping_seed(conn: sqlite3.Connection) -> None:
+    """Seed built-in device product mappings without overwriting user mappings."""
+    now = datetime.now(timezone.utc).isoformat()
+    for seed in DEVICE_PRODUCT_MAPPING_SEEDS:
+        existing = conn.execute(
+            """
+            SELECT source
+            FROM device_product_mappings
+            WHERE vendor = ? AND product_key = ?
+            LIMIT 1
+            """,
+            (seed["vendor"], seed["product_key"]),
+        ).fetchone()
+        if existing:
+            source = str(existing["source"] if isinstance(existing, sqlite3.Row) else existing[0] or "")
+            if source == "builtin":
+                conn.execute(
+                    """
+                    UPDATE device_product_mappings
+                    SET product_id = ?, display_name = ?, display_brand = ?,
+                        confidence = ?, status = ?, notes = ?, updated_at = ?
+                    WHERE vendor = ? AND product_key = ? AND source = 'builtin'
+                    """,
+                    (
+                        seed["product_id"],
+                        seed["display_name"],
+                        seed["display_brand"],
+                        seed["confidence"],
+                        seed["status"],
+                        seed["notes"],
+                        now,
+                        seed["vendor"],
+                        seed["product_key"],
+                    ),
+                )
+            continue
+        conn.execute(
+            """
+            INSERT INTO device_product_mappings
+                (vendor, product_key, product_id, display_name, display_brand, source, confidence, status, notes, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                seed["vendor"],
+                seed["product_key"],
+                seed["product_id"],
+                seed["display_name"],
+                seed["display_brand"],
+                seed["source"],
+                seed["confidence"],
+                seed["status"],
+                seed["notes"],
+                now,
+                now,
+            ),
+        )
+
+
+def is_device_name_unresolved(value: Any, mapping_status: Any = None) -> bool:
+    """Return True when a persisted device name is an unresolved/fallback state."""
+    status = str(mapping_status or "").strip().lower()
+    if status and status != "resolved":
+        return True
+    text = str(value or "").strip()
+    lowered = text.lower()
+    return (
+        not text
+        or lowered in {"unknown", "unknown device", "none"}
+        or text.isdigit()
+        or bool(_DEVICE_PRODUCT_FALLBACK_RE.match(text))
+    )
+
+
+def _first_file_id(raw_or_messages: Any) -> dict[str, Any]:
+    if isinstance(raw_or_messages, dict):
+        messages = raw_or_messages.get("file_id_mesgs")
+    else:
+        messages = raw_or_messages
+    if isinstance(messages, list) and messages:
+        first = messages[0]
+        return dict(first) if isinstance(first, dict) else {}
+    return {}
+
+
+def extract_device_identity_from_fit_file_id(file_id_mesgs: Any) -> dict[str, Any]:
+    """Extract stable device product identity from FIT file_id messages."""
+    file_id = _first_file_id(file_id_mesgs)
+    manufacturer = str(file_id.get("manufacturer") or "").strip()
+    manufacturer_lower = manufacturer.lower()
+    garmin_product = file_id.get("garmin_product")
+    product = file_id.get("product")
+    serial = file_id.get("serial_number")
+
+    if garmin_product is not None or manufacturer_lower == "garmin":
+        product_id = str(garmin_product if garmin_product is not None else product or "").strip()
+        product_id = str(int(float(product_id))) if product_id.replace(".", "", 1).isdigit() else product_id
+        return {
+            "vendor": "garmin",
+            "product_key": f"garmin:{product_id}" if product_id else "",
+            "product_id": product_id,
+            "serial": str(serial or "").strip(),
+            "manufacturer": manufacturer or "garmin",
+            "raw": file_id,
+        }
+
+    product_id = str(product or "").strip()
+    vendor = manufacturer_lower or "unknown"
+    return {
+        "vendor": vendor,
+        "product_key": f"{vendor}:{product_id}" if product_id else "",
+        "product_id": product_id,
+        "serial": str(serial or "").strip(),
+        "manufacturer": manufacturer,
+        "raw": file_id,
+    }
+
+
+def extract_device_identity_from_persisted_fields(row: dict[str, Any]) -> dict[str, Any]:
+    """Extract device identity from persisted DB device columns.
+
+    This is used by dry-run/backfill paths that must not parse FIT files. It can
+    safely recover Garmin product ids from legacy fallback names such as
+    "Garmin Product 4587" while refusing to infer devices from titles,
+    filenames, or user preferences.
+    """
+    vendor = str(row.get("device_vendor") or "").strip().lower()
+    product_key = str(row.get("device_product_key") or "").strip()
+    product_id = str(row.get("device_product_id") or "").strip()
+    serial = str(row.get("device_serial") or "").strip()
+    device_name = str(row.get("device_name") or "").strip()
+
+    fallback_match = _DEVICE_PRODUCT_FALLBACK_RE.match(device_name)
+    if fallback_match:
+        fallback_product = re.search(r"\d+", device_name)
+        vendor = vendor or "garmin"
+        if fallback_product and not product_id:
+            product_id = fallback_product.group(0)
+        if product_id and not product_key:
+            product_key = f"garmin:{product_id}"
+
+    if not product_key and vendor and product_id:
+        product_key = f"{vendor}:{product_id}"
+    if product_key and ":" in product_key:
+        key_vendor, key_product_id = product_key.split(":", 1)
+        vendor = vendor or key_vendor.strip().lower()
+        product_id = product_id or key_product_id.strip()
+
+    return {
+        "vendor": vendor or "unknown",
+        "product_key": product_key,
+        "product_id": product_id,
+        "serial": serial,
+        "manufacturer": vendor or "",
+        "raw": {
+            "device_name": device_name,
+            "device_mapping_status": row.get("device_mapping_status"),
+        },
+    }
+
+
+def _lookup_device_mapping(conn: sqlite3.Connection | None, vendor: str, product_key: str) -> dict[str, Any] | None:
+    if conn is None or not vendor or not product_key:
+        return None
+    try:
+        row = conn.execute(
+            """
+            SELECT vendor, product_key, product_id, display_name, display_brand, source, confidence, status
+            FROM device_product_mappings
+            WHERE vendor = ? AND product_key = ? AND status = 'active'
+            LIMIT 1
+            """,
+            (vendor, product_key),
+        ).fetchone()
+    except sqlite3.Error:
+        return None
+    if not row:
+        return None
+    if isinstance(row, sqlite3.Row):
+        return dict(row)
+    return {
+        "vendor": row[0],
+        "product_key": row[1],
+        "product_id": row[2],
+        "display_name": row[3],
+        "display_brand": row[4],
+        "source": row[5],
+        "confidence": row[6],
+        "status": row[7],
+    }
+
+
+def resolve_device_display_name(identity: dict[str, Any], conn: sqlite3.Connection | None = None) -> dict[str, Any]:
+    """Resolve a device identity to UI display name without inventing fallback models."""
+    vendor = str(identity.get("vendor") or "unknown").strip().lower()
+    product_key = str(identity.get("product_key") or "").strip()
+    product_id = str(identity.get("product_id") or "").strip()
+    serial = str(identity.get("serial") or "").strip()
+
+    mapping = _lookup_device_mapping(conn, vendor, product_key)
+    if mapping and str(mapping.get("display_name") or "").strip():
+        return {
+            "device_name": str(mapping["display_name"]).strip(),
+            "mapping_status": "resolved",
+            "vendor": vendor,
+            "product_key": product_key,
+            "product_id": product_id,
+            "serial": serial,
+            "source": str(mapping.get("source") or "mapping_table"),
+        }
+
+    profile_name = ""
+    if vendor == "garmin" and product_id:
+        try:
+            pid_int = int(float(product_id))
+            profile_name = _DEVICE_DISPLAY_OVERLAY.get(pid_int) or _garmin_device_name_dict().get(pid_int, "")
+        except (TypeError, ValueError):
+            profile_name = ""
+    if profile_name and not _DEVICE_PRODUCT_FALLBACK_RE.match(str(profile_name)):
+        return {
+            "device_name": MetricsResolver._fmt_device_display_name(profile_name),
+            "mapping_status": "resolved",
+            "vendor": vendor,
+            "product_key": product_key,
+            "product_id": product_id,
+            "serial": serial,
+            "source": "profile",
+        }
+
+    return {
+        "device_name": "Unknown Device",
+        "mapping_status": "unresolved" if product_key else "unknown",
+        "vendor": vendor,
+        "product_key": product_key,
+        "product_id": product_id,
+        "serial": serial,
+        "source": "fallback",
+    }
 
 
 class MetricsResolver:
@@ -1284,31 +1553,13 @@ class MetricsResolver:
     @staticmethod
     def _resolve_device_name(raw: dict[str, Any], meta: dict[str, Any]) -> str:
         """从 raw['file_id_mesgs'] 提取 product_id，通过 SDK profile 翻译为产品型号"""
-        fid = raw.get("file_id_mesgs")
-        file_id = fid[0] if isinstance(fid, list) and fid else {}
-
-        garmin_product = file_id.get("garmin_product") if isinstance(file_id, dict) else None
-        product = file_id.get("product") if isinstance(file_id, dict) else None
-
-        if garmin_product:
-            product_code = str(garmin_product).strip()
-            if product_code.replace(".", "", 1).isdigit():
-                pid_int = int(float(product_code))
-                display = _DEVICE_DISPLAY_OVERLAY.get(pid_int)
-                product_code = display or _garmin_device_name_dict().get(pid_int, f"Garmin Product {pid_int}")
-        elif product is not None:
-            pid_int = int(float(product)) if product else 0
-            display = _DEVICE_DISPLAY_OVERLAY.get(pid_int)
-            if display:
-                product_code = display
-            else:
-                product_code = _garmin_device_name_dict().get(pid_int, f"Garmin Product {pid_int}")
-        else:
-            product_code = (meta.get("device") or {}).get("name") or ""
-
-        if not product_code or str(product_code).isdigit():
+        identity = extract_device_identity_from_fit_file_id(raw)
+        resolved = resolve_device_display_name(identity)
+        if resolved.get("mapping_status") == "resolved":
+            return str(resolved.get("device_name") or "Unknown Device")
+        product_code = (meta.get("device") or {}).get("name") or ""
+        if not product_code or str(product_code).isdigit() or is_device_name_unresolved(product_code):
             return "Unknown Device"
-
         return MetricsResolver._fmt_device_display_name(product_code)
 
     @staticmethod

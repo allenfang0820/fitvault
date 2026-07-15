@@ -23,10 +23,10 @@ class TestPackagingDiagnostics(unittest.TestCase):
         pyinstaller_spec = (root / "HikingTrackAnalyzer.spec").read_text(encoding="utf-8")
 
         self.assertIn("garminconnect==0.3.6", requirements)
-        self.assertIn("garmin-fit-sdk==21.205.0", requirements)
+        self.assertIn("garmin-fit-sdk==21.208.0", requirements)
         self.assertIn("curl_cffi>=0.6", requirements)
         self.assertIn("garminconnect==0.3.6", constraints)
-        self.assertIn("garmin-fit-sdk==21.205.0", constraints)
+        self.assertIn("garmin-fit-sdk==21.208.0", constraints)
         self.assertIn("curl_cffi>=0.6", constraints)
         self.assertIn("requests==2.34.2", constraints)
         self.assertIn("urllib3==2.7.0", constraints)
@@ -133,20 +133,20 @@ class TestPackagingDiagnostics(unittest.TestCase):
 
         result = diag.check_garmin_dependencies(
             version_lookup=self._version_lookup(
-                {"garminconnect": "0.3.6", "curl_cffi": "0.6.1", "garmin-fit-sdk": "21.205.0"}
+                {"garminconnect": "0.3.6", "curl_cffi": "0.6.1", "garmin-fit-sdk": "21.208.0"}
             ),
             import_module=fake_import,
         )
 
         self.assertEqual(result["garminconnect"], "0.3.6")
         self.assertEqual(result["curl_cffi"], "0.6.1")
-        self.assertEqual(result["garmin-fit-sdk"], "21.205.0")
+        self.assertEqual(result["garmin-fit-sdk"], "21.208.0")
 
     def test_garmin_dependency_check_fails_old_version(self):
         with self.assertRaisesRegex(diag.PackagingCheckError, "仅兼容 garminconnect 0.3.6"):
             diag.check_garmin_dependencies(
                 version_lookup=self._version_lookup(
-                    {"garminconnect": "0.2.8", "curl_cffi": "0.6.1", "garmin-fit-sdk": "21.205.0"}
+                    {"garminconnect": "0.2.8", "curl_cffi": "0.6.1", "garmin-fit-sdk": "21.208.0"}
                 ),
                 import_module=lambda name: types.SimpleNamespace(Garmin=object),
             )
@@ -180,7 +180,7 @@ class TestPackagingDiagnostics(unittest.TestCase):
         with self.assertRaisesRegex(diag.PackagingCheckError, "Cannot import garmin_fit_sdk"):
             diag.check_garmin_dependencies(
                 version_lookup=self._version_lookup(
-                    {"garminconnect": "0.3.6", "curl_cffi": "0.6.1", "garmin-fit-sdk": "21.205.0"}
+                    {"garminconnect": "0.3.6", "curl_cffi": "0.6.1", "garmin-fit-sdk": "21.208.0"}
                 ),
                 import_module=fake_import,
             )
@@ -193,7 +193,7 @@ class TestPackagingDiagnostics(unittest.TestCase):
         with self.assertRaisesRegex(diag.PackagingCheckError, "prompt_mfa"):
             diag.check_garmin_dependencies(
                 version_lookup=self._version_lookup(
-                    {"garminconnect": "0.3.6", "curl_cffi": "0.6.1", "garmin-fit-sdk": "21.205.0"}
+                    {"garminconnect": "0.3.6", "curl_cffi": "0.6.1", "garmin-fit-sdk": "21.208.0"}
                 ),
                 import_module=lambda name: types.SimpleNamespace(Garmin=OldGarmin),
             )
@@ -226,13 +226,13 @@ class TestPackagingDiagnostics(unittest.TestCase):
             ) as runtime_check, mock.patch.object(
                 diag,
                 "check_garmin_dependencies",
-                return_value={"garminconnect": "0.3.6", "curl_cffi": "0.6.1", "garmin-fit-sdk": "21.205.0"},
+                return_value={"garminconnect": "0.3.6", "curl_cffi": "0.6.1", "garmin-fit-sdk": "21.208.0"},
             ):
                 result = diag.check_packaging_prerequisites(root)
 
         runtime_check.assert_called_once_with(root)
         self.assertEqual(result["python_runtime"]["python_executable"], "/tmp/python")
-        self.assertEqual(result["packages"]["garmin-fit-sdk"], "21.205.0")
+        self.assertEqual(result["packages"]["garmin-fit-sdk"], "21.208.0")
 
     def test_skill_zip_check_accepts_correct_root(self):
         with TemporaryDirectory() as temp:
@@ -314,7 +314,7 @@ class TestPackagingDiagnostics(unittest.TestCase):
             def fake_version(name):
                 return {
                     "garminconnect": "0.3.6",
-                    "garmin-fit-sdk": "21.205.0",
+                    "garmin-fit-sdk": "21.208.0",
                     "curl_cffi": "0.6.1",
                     "requests": "2.32.0",
                     "urllib3": "2.2.0",
@@ -332,8 +332,8 @@ class TestPackagingDiagnostics(unittest.TestCase):
         self.assertEqual(manifest["python_version_info"]["minor"], diag.sys.version_info.minor)
         self.assertIsInstance(manifest["python_warnings"], list)
         self.assertEqual(manifest["packages"]["garminconnect"], "0.3.6")
-        self.assertEqual(manifest["packages"]["garmin-fit-sdk"], "21.205.0")
-        self.assertEqual(manifest["compatibility"]["garmin_fit_sdk_expected"], "21.205.0")
+        self.assertEqual(manifest["packages"]["garmin-fit-sdk"], "21.208.0")
+        self.assertEqual(manifest["compatibility"]["garmin_fit_sdk_expected"], "21.208.0")
         self.assertEqual(manifest["compatibility"]["garmin_api"], "0.3.x-tokenstore-client")
         self.assertTrue(manifest["compatibility"]["codex_cli_windows_shim_supported"])
         self.assertTrue(manifest["skills"]["garmin-stats"]["script_present"])

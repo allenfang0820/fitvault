@@ -1833,6 +1833,171 @@ class TestFitSync(unittest.TestCase):
         self.assertIn("不调用 Nominatim", method["description"])
         self.assertIn("不生成或刷新年度 AI 报告", method["description"])
 
+    def test_activity_sync_schema_includes_device_mapping_registry(self):
+        main.ensure_activity_sync_schema()
+        conn = profile_backend._conn()
+        try:
+            tables = {
+                row["name"]
+                for row in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table'"
+                ).fetchall()
+            }
+            activity_cols = {
+                row["name"]
+                for row in conn.execute("PRAGMA table_info(activities)").fetchall()
+            }
+            mapping = conn.execute(
+                "SELECT display_name FROM device_product_mappings WHERE vendor = 'garmin' AND product_key = 'garmin:3515'"
+            ).fetchone()
+        finally:
+            conn.close()
+
+        self.assertIn("device_product_mappings", tables)
+        for col in ("device_vendor", "device_product_key", "device_product_id", "device_serial", "device_mapping_status"):
+            self.assertIn(col, activity_cols)
+        self.assertEqual(mapping["display_name"], "Fenix6 Asia")
+
+    def test_persist_refreshes_unchanged_file_when_existing_device_is_fallback(self):
+        main.ensure_activity_sync_schema()
+        fit_path = self.temp_dir / "device_refresh.fit"
+        fit_path.write_bytes(b"x" * 32)
+        stat = fit_path.stat()
+
+        activity = self._activity(fit_path.name)
+        activity["file_path"] = str(fit_path.resolve())
+        activity["file_mtime"] = stat.st_mtime
+        activity["file_size"] = stat.st_size
+        activity["device_name"] = "Garmin Product 3515"
+        activity["device_vendor"] = "garmin"
+        activity["device_product_key"] = ""
+        activity["device_product_id"] = "3515"
+        activity["device_mapping_status"] = "unresolved"
+        inserted = main._persist_sync_activity(activity)
+        self.assertEqual(inserted["op"], "inserted")
+
+        refreshed = dict(activity)
+        refreshed["device_name"] = "Fenix6 Asia"
+        refreshed["device_product_key"] = "garmin:3515"
+        refreshed["device_mapping_status"] = "resolved"
+        updated = main._persist_sync_activity(refreshed)
+
+        conn = profile_backend._conn()
+        try:
+            row = conn.execute(
+                "SELECT device_name, device_product_key, device_mapping_status FROM activities WHERE id = ?",
+                (inserted["id"],),
+            ).fetchone()
+        finally:
+            conn.close()
+
+        self.assertEqual(updated["op"], "updated")
+        self.assertEqual(row["device_name"], "Fenix6 Asia")
+        self.assertEqual(row["device_product_key"], "garmin:3515")
+        self.assertEqual(row["device_mapping_status"], "resolved")
+
+    def test_persist_skips_unchanged_file_when_device_is_already_resolved(self):
+        main.ensure_activity_sync_schema()
+        fit_path = self.temp_dir / "device_skip.fit"
+        fit_path.write_bytes(b"x" * 32)
+        stat = fit_path.stat()
+
+        activity = self._activity(fit_path.name)
+        activity["file_path"] = str(fit_path.resolve())
+        activity["file_mtime"] = stat.st_mtime
+        activity["file_size"] = stat.st_size
+        activity["device_name"] = "Fenix6 Asia"
+        activity["device_vendor"] = "garmin"
+        activity["device_product_key"] = "garmin:3515"
+        activity["device_product_id"] = "3515"
+        activity["device_mapping_status"] = "resolved"
+        inserted = main._persist_sync_activity(activity)
+
+        skipped = main._persist_sync_activity(dict(activity))
+
+        self.assertEqual(inserted["op"], "inserted")
+        self.assertEqual(skipped["op"], "skipped")
+        self.assertEqual(skipped["id"], inserted["id"])
+
+    def test_device_product_mapping_dry_run_and_contract_are_readonly(self):
+        contract = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
+        methods = {item["name"]: item for item in contract["methods"]}
+
+        self.assertIn("get_device_product_mapping_dry_run", methods)
+        method = methods["get_device_product_mapping_dry_run"]
+        self.assertEqual(method["category"], "activity")
+        self.assertTrue(method["readonly"])
+        self.assertFalse(method["high_risk"])
+        self.assertIn("不解析 FIT", method["description"])
+        self.assertIn("不联网", method["description"])
+        self.assertIn("不写 activities", method["description"])
+        self.assertIn("Garmin SDK profile", method["description"])
+
+        main.ensure_activity_sync_schema()
+        activity = self._activity("dry_run_device.fit")
+        activity["device_name"] = "Garmin Product 3515"
+        activity["device_vendor"] = "garmin"
+        activity["device_product_key"] = ""
+        activity["device_product_id"] = "3515"
+        activity["device_mapping_status"] = "unresolved"
+        persisted = main._persist_sync_activity(activity)
+
+        api_res = self.api.get_device_product_mapping_dry_run({"limit": 5})
+        self.assertEqual(api_res["code"], 0, api_res)
+        data = api_res["data"]
+        self.assertTrue(data["ok"])
+        self.assertEqual(data["garmin_product_fallback_count"], 1)
+        self.assertEqual(data["refreshable_count"], 1)
+        self.assertEqual(data["samples"][0]["id"], persisted["id"])
+        self.assertEqual(data["samples"][0]["mapped_display_name"], "Fenix6 Asia")
+
+    def test_device_product_dry_run_and_backfill_use_sdk_profile_without_mapping_row(self):
+        main.ensure_activity_sync_schema()
+        conn = profile_backend._conn()
+        try:
+            self.assertIsNone(
+                conn.execute(
+                    "SELECT 1 FROM device_product_mappings WHERE vendor = 'garmin' AND product_key = 'garmin:4587'"
+                ).fetchone()
+            )
+        finally:
+            conn.close()
+
+        activity = self._activity("sdk_profile_device.fit")
+        activity["device_name"] = "Garmin Product 4587"
+        activity["device_vendor"] = ""
+        activity["device_product_key"] = ""
+        activity["device_product_id"] = ""
+        activity["device_mapping_status"] = ""
+        persisted = main._persist_sync_activity(activity)
+
+        dry_run = main.device_product_mapping_dry_run(limit=5)
+        sample = next(item for item in dry_run["samples"] if item["id"] == persisted["id"])
+        self.assertEqual(sample["mapped_display_name"], "Instinct3 Amoled 50mm")
+        self.assertEqual(sample["resolution_source"], "profile")
+        self.assertTrue(sample["refreshable"])
+
+        preview = main.backfill_device_product_mappings(dry_run=True)
+        self.assertEqual(preview["updated"], 0)
+        self.assertGreaterEqual(preview["refreshable"], 1)
+
+        result = main.backfill_device_product_mappings()
+        self.assertGreaterEqual(result["updated"], 1)
+        conn = profile_backend._conn()
+        try:
+            row = conn.execute(
+                "SELECT device_name, device_vendor, device_product_key, device_product_id, device_mapping_status FROM activities WHERE id = ?",
+                (persisted["id"],),
+            ).fetchone()
+        finally:
+            conn.close()
+
+        self.assertEqual(row["device_name"], "Instinct3 Amoled 50mm")
+        self.assertEqual(row["device_vendor"], "garmin")
+        self.assertEqual(row["device_product_key"], "garmin:4587")
+        self.assertEqual(row["device_product_id"], "4587")
+        self.assertEqual(row["device_mapping_status"], "resolved")
+
     def test_activity_list_item_falls_back_to_clean_filename_when_title_missing(self):
         row = {
             "id": 1,
