@@ -7454,6 +7454,72 @@ def _load_existing_file_index(conn: sqlite3.Connection) -> dict[str, dict[str, A
     return index
 
 
+
+def _load_activity_sync_merge_context(conn: sqlite3.Connection, activity_id: int) -> dict[str, Any] | None:
+    row = conn.execute(
+        """
+        SELECT id, title, title_source,
+               region, region_city, region_country, region_display, region_status,
+               region_error, region_updated_at, region_attempt_count,
+               region_source, region_confidence
+        FROM activities
+        WHERE id = ?
+        LIMIT 1
+        """,
+        (int(activity_id),),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def _merge_activity_sync_update_fields(existing: dict[str, Any] | None, activity: dict[str, Any]) -> dict[str, Any]:
+    if not existing:
+        return activity
+    merged = dict(activity)
+
+    old_region_status = str(existing.get("region_status") or "").strip().lower()
+    new_region_status = str(activity.get("region_status") or "").strip().lower()
+    new_has_gps = activity.get("start_lat") is not None and activity.get("start_lon") is not None
+    preserve_existing_region = old_region_status in {"success", "inferred"} and (
+        new_region_status == "pending" or (new_region_status == "none" and new_has_gps)
+    )
+    if preserve_existing_region:
+        for key in (
+            "region",
+            "region_city",
+            "region_country",
+            "region_display",
+            "region_status",
+            "region_error",
+            "region_updated_at",
+            "region_attempt_count",
+            "region_source",
+            "region_confidence",
+        ):
+            if key in existing:
+                merged[key] = existing.get(key)
+
+    old_title_source = str(existing.get("title_source") or "").strip()
+    new_title_source = str(activity.get("title_source") or "").strip()
+    old_title = str(existing.get("title") or "").strip()
+    new_title = str(activity.get("title") or "").strip()
+    preserve_existing_title = False
+    if old_title and old_title_source in {"user", "manual", "edited"}:
+        preserve_existing_title = True
+    elif old_title and old_title_source == "auto_region_sport":
+        new_is_low_information = (
+            new_title_source == "auto_sport"
+            or (
+                new_title_source == "filename"
+                and profile_backend._is_technical_activity_title(new_title)
+            )
+        )
+        preserve_existing_title = bool(new_is_low_information)
+    if preserve_existing_title:
+        merged["title"] = existing.get("title")
+        merged["title_source"] = existing.get("title_source")
+
+    return merged
+
 def _is_file_unchanged(disk_path: Path, existing: dict[str, Any]) -> bool:
     """判断磁盘文件与 DB 记录是否一致（mtime 和 size 均匹配）。"""
     existing_mtime = existing.get("file_mtime")
@@ -7579,9 +7645,11 @@ def _persist_sync_activity(
                     ).fetchone()
                     existing = dict(row) if row else None
             if existing:
-                _update_activity_sync_row(conn, int(existing["id"]), activity)
-                op = "updated"
                 activity_id = int(existing["id"])
+                merge_context = _load_activity_sync_merge_context(conn, activity_id)
+                activity_for_update = _merge_activity_sync_update_fields(merge_context, activity)
+                _update_activity_sync_row(conn, activity_id, activity_for_update)
+                op = "updated"
                 dedupe = "semantic" if semantic_duplicate else ("strict_key" if strict_dedupe_key else None)
             else:
                 activity_id = _insert_activity_sync_row(conn, activity)

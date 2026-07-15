@@ -87,6 +87,36 @@ GEOCODE_REQUEST_TIMEOUT_SEC = 8
 GEOCODE_LANG = "zh-CN"
 GEOCODE_USER_AGENT = "FitVault/1.0"
 GPX_FALLBACK_GAIN_THRESHOLD_M = 0.1
+_OFFLINE_REGION_CITY_INDEX: tuple[tuple[str, str, float, float, float], ...] = (
+    ("北京市", "中国", 39.9042, 116.4074, 90.0),
+    ("上海市", "中国", 31.2304, 121.4737, 80.0),
+    ("天津市", "中国", 39.3434, 117.3616, 80.0),
+    ("重庆市", "中国", 29.5630, 106.5516, 95.0),
+    ("成都市", "中国", 30.5728, 104.0668, 85.0),
+    ("绵阳市", "中国", 31.4675, 104.6796, 60.0),
+    ("德阳市", "中国", 31.1269, 104.3979, 50.0),
+    ("眉山市", "中国", 30.0754, 103.8485, 50.0),
+    ("雅安市", "中国", 30.0105, 103.0424, 55.0),
+    ("都江堰市", "中国", 30.9880, 103.6466, 45.0),
+    ("杭州市", "中国", 30.2741, 120.1551, 65.0),
+    ("南京市", "中国", 32.0603, 118.7969, 65.0),
+    ("苏州市", "中国", 31.2989, 120.5853, 55.0),
+    ("广州市", "中国", 23.1291, 113.2644, 70.0),
+    ("深圳市", "中国", 22.5431, 114.0579, 60.0),
+    ("西安市", "中国", 34.3416, 108.9398, 70.0),
+    ("武汉市", "中国", 30.5928, 114.3055, 70.0),
+    ("长沙市", "中国", 28.2282, 112.9388, 65.0),
+    ("昆明市", "中国", 25.0389, 102.7183, 70.0),
+    ("贵阳市", "中国", 26.6470, 106.6302, 65.0),
+    ("拉萨市", "中国", 29.6520, 91.1721, 70.0),
+    ("乌鲁木齐市", "中国", 43.8256, 87.6168, 80.0),
+    ("东京", "日本", 35.6762, 139.6503, 70.0),
+    ("大阪市", "日本", 34.6937, 135.5023, 55.0),
+    ("京都市", "日本", 35.0116, 135.7681, 45.0),
+    ("宇治市", "日本", 34.8845, 135.7997, 25.0),
+    ("奈良市", "日本", 34.6851, 135.8048, 35.0),
+    ("神户市", "日本", 34.6901, 135.1955, 45.0),
+)
 _REGION_CACHE_LOCK = threading.Lock()
 _REGION_CACHE: dict[tuple[float, float], str] = {}
 _REGION_ENRICH_LOCK = threading.Lock()
@@ -2395,6 +2425,33 @@ def _extract_city_country(geo: dict[str, Any] | None) -> tuple[str | None, str |
     return city, country, _format_city_country(city, country)
 
 
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    radius_km = 6371.0
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    d_phi = math.radians(lat2 - lat1)
+    d_lambda = math.radians(lon2 - lon1)
+    a = math.sin(d_phi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(d_lambda / 2) ** 2
+    return 2 * radius_km * math.atan2(math.sqrt(a), math.sqrt(max(0.0, 1 - a)))
+
+
+def resolve_region_offline(lat: Any, lon: Any) -> dict[str, Any] | None:
+    """Best-effort offline city resolver used only after Nominatim/cache cannot answer."""
+    coord = _coerce_lat_lon(lat, lon)
+    if coord is None:
+        return None
+    lat_val, lon_val = coord
+    best: tuple[float, str, str] | None = None
+    for city, country, city_lat, city_lon, radius_km in _OFFLINE_REGION_CITY_INDEX:
+        distance = _haversine_km(lat_val, lon_val, city_lat, city_lon)
+        if distance <= radius_km and (best is None or distance < best[0]):
+            best = (distance, city, country)
+    if best is None:
+        return None
+    _, city, country = best
+    return {"city": city, "country": country, "display_name": _format_city_country(city, country)}
+
+
 def resolve_activity_region(lat: Any, lon: Any) -> str:
     cache_info = _region_cache_key(lat, lon)
     if cache_info is None:
@@ -2633,6 +2690,34 @@ def _region_enrich_apply_to_matching_activities(
         conn.close()
 
 
+def _region_enrich_apply_offline_fallback(
+    *,
+    cache_key: str,
+    lat_round: float,
+    lon_round: float,
+    offline_resolver: Any | None,
+) -> dict[str, int]:
+    if not offline_resolver:
+        return {"updated": 0, "title_updated": 0, "title_protected": 0}
+    try:
+        offline = offline_resolver(lat_round, lon_round)
+        city, country, display = _extract_city_country(offline)
+        if not display:
+            return {"updated": 0, "title_updated": 0, "title_protected": 0}
+        return _region_enrich_apply_to_matching_activities(
+            cache_key=cache_key,
+            lat_round=lat_round,
+            lon_round=lon_round,
+            city=city,
+            country=country,
+            display=display,
+            source="offline_geocoder",
+        )
+    except Exception as exc:
+        logger.warning("Offline region fallback failed: %s", exc)
+        return {"updated": 0, "title_updated": 0, "title_protected": 0}
+
+
 def _region_pending_rows(limit: int) -> list[sqlite3.Row]:
     conn = _conn()
     try:
@@ -2775,23 +2860,27 @@ def run_region_enrichment_once(limit: int = REGION_ENRICH_LIMIT, max_requests: i
             requested_keys.add(cache_key)
             if requests_count >= max_requests:
                 stopped_reason = "request_budget_exhausted"
-                if offline_resolver:
-                    offline = offline_resolver(lat_round, lon_round)
-                    city, country, display = _extract_city_country(offline)
-                    result = _region_enrich_apply_to_matching_activities(
-                        cache_key=cache_key,
-                        lat_round=lat_round,
-                        lon_round=lon_round,
-                        city=city,
-                        country=country,
-                        display=display,
-                        source="offline_geocoder",
-                    )
-                    inferred += int(result["updated"])
-                    title_protected += int(result["title_protected"])
+                result = _region_enrich_apply_offline_fallback(
+                    cache_key=cache_key,
+                    lat_round=lat_round,
+                    lon_round=lon_round,
+                    offline_resolver=offline_resolver,
+                )
+                inferred += int(result["updated"])
+                title_protected += int(result["title_protected"])
                 continue
             if not _region_enrich_can_call_provider():
                 stopped_reason = "provider_cooldown"
+                result = _region_enrich_apply_offline_fallback(
+                    cache_key=cache_key,
+                    lat_round=lat_round,
+                    lon_round=lon_round,
+                    offline_resolver=offline_resolver,
+                )
+                inferred += int(result["updated"])
+                title_protected += int(result["title_protected"])
+                if offline_resolver:
+                    continue
                 break
             if requests_count > 0:
                 time.sleep(random.uniform(GEOCODE_REQUEST_INTERVAL_MIN_SEC, GEOCODE_REQUEST_INTERVAL_MAX_SEC))
@@ -2842,20 +2931,14 @@ def run_region_enrichment_once(limit: int = REGION_ENRICH_LIMIT, max_requests: i
                     conn.close()
                 failed += 1
                 consecutive_failures += 1
-                if offline_resolver:
-                    offline = offline_resolver(lat_round, lon_round)
-                    city, country, display = _extract_city_country(offline)
-                    result = _region_enrich_apply_to_matching_activities(
-                        cache_key=cache_key,
-                        lat_round=lat_round,
-                        lon_round=lon_round,
-                        city=city,
-                        country=country,
-                        display=display,
-                        source="offline_geocoder",
-                    )
-                    inferred += int(result["updated"])
-                    title_protected += int(result["title_protected"])
+                result = _region_enrich_apply_offline_fallback(
+                    cache_key=cache_key,
+                    lat_round=lat_round,
+                    lon_round=lon_round,
+                    offline_resolver=offline_resolver,
+                )
+                inferred += int(result["updated"])
+                title_protected += int(result["title_protected"])
                 if stopped_reason == "provider_rate_limited":
                     break
         return {
@@ -3050,9 +3133,11 @@ def refresh_activity_region(activity_id: int) -> dict[str, Any]:
         return {"ok": False, "error": message, "region_status": "failed"}
 
 
-def start_region_enrichment_background(limit: int = REGION_ENRICH_LIMIT, on_complete = None) -> None:
+def start_region_enrichment_background(limit: int = REGION_ENRICH_LIMIT, on_complete = None, offline_resolver: Any | None = None) -> None:
+    resolver = offline_resolver or resolve_region_offline
+
     def _run():
-        result = run_region_enrichment_once(limit=limit)
+        result = run_region_enrichment_once(limit=limit, offline_resolver=resolver)
         if callable(on_complete):
             try:
                 on_complete(result)

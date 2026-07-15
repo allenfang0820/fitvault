@@ -2206,6 +2206,218 @@ class TestFitSync(unittest.TestCase):
         self.assertEqual(row["region_status"], "success")
         self.assertIsNone(row["region_error"])
 
+    def test_region_enrichment_background_uses_offline_fallback_after_nominatim_failure(self):
+        main.ensure_activity_sync_schema()
+        activity = self._activity("background_offline.fit")
+        activity["title"] = "跑步"
+        activity["title_source"] = "auto_sport"
+        activity["region"] = ""
+        activity["region_status"] = "pending"
+        activity["start_lat"] = 34.89
+        activity["start_lon"] = 135.81
+        result = main._persist_sync_activity(activity)
+
+        def offline(lat, lon):
+            return {"city": "宇治市", "country": "日本", "display_name": "宇治市, 日本"}
+
+        done = threading.Event()
+        completed: list[dict] = []
+
+        def on_complete(payload):
+            completed.append(payload)
+            done.set()
+
+        with mock.patch.object(profile_backend, "reverse_geocode", side_effect=ConnectionError("Nominatim 不可达")), \
+             mock.patch.object(profile_backend, "resolve_region_offline", side_effect=offline):
+            profile_backend.start_region_enrichment_background(limit=5, on_complete=on_complete)
+            self.assertTrue(done.wait(timeout=2.0), "后台地区回填未完成")
+
+        self.assertEqual(completed[0]["inferred"], 1)
+        conn = profile_backend._conn()
+        try:
+            row = conn.execute(
+                """
+                SELECT title, title_source, region_city, region_status, region_source, region_confidence
+                FROM activities WHERE id = ?
+                """,
+                (result["id"],),
+            ).fetchone()
+        finally:
+            conn.close()
+
+        self.assertEqual(row["title"], "跑步")
+        self.assertEqual(row["title_source"], "auto_sport")
+        self.assertEqual(row["region_city"], "宇治市")
+        self.assertEqual(row["region_status"], "inferred")
+        self.assertEqual(row["region_source"], "offline_geocoder")
+        self.assertEqual(row["region_confidence"], "medium")
+
+    def test_resync_preserves_success_region_and_auto_region_title_when_new_parse_is_pending(self):
+        main.ensure_activity_sync_schema()
+        activity = self._activity("resync_success_region.fit")
+        activity["title"] = "跑步"
+        activity["title_source"] = "auto_sport"
+        activity["region"] = ""
+        activity["region_status"] = "pending"
+        inserted = main._persist_sync_activity(activity)
+
+        conn = profile_backend._conn()
+        try:
+            conn.execute(
+                """
+                UPDATE activities
+                SET title = '成都市 跑步',
+                    title_source = 'auto_region_sport',
+                    region = '成都市/中国',
+                    region_city = '成都市',
+                    region_country = '中国',
+                    region_display = '成都市/中国',
+                    region_status = 'success',
+                    region_source = 'nominatim',
+                    region_confidence = 'high',
+                    region_error = NULL,
+                    region_updated_at = '2026-07-15T08:00:00',
+                    region_attempt_count = 2
+                WHERE id = ?
+                """,
+                (inserted["id"],),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        reparsed = dict(activity)
+        reparsed.update({
+            "title": "跑步",
+            "title_source": "auto_sport",
+            "region": "",
+            "region_city": None,
+            "region_country": None,
+            "region_display": None,
+            "region_status": "pending",
+            "region_error": None,
+            "region_updated_at": None,
+            "region_attempt_count": 0,
+        })
+        updated = main._persist_sync_activity(reparsed)
+
+        conn = profile_backend._conn()
+        try:
+            row = conn.execute(
+                """
+                SELECT title, title_source, region, region_city, region_status,
+                       region_source, region_confidence, region_attempt_count
+                FROM activities WHERE id = ?
+                """,
+                (inserted["id"],),
+            ).fetchone()
+        finally:
+            conn.close()
+
+        self.assertEqual(updated["op"], "updated")
+        self.assertEqual(row["title"], "成都市 跑步")
+        self.assertEqual(row["title_source"], "auto_region_sport")
+        self.assertEqual(row["region"], "成都市/中国")
+        self.assertEqual(row["region_city"], "成都市")
+        self.assertEqual(row["region_status"], "success")
+        self.assertEqual(row["region_source"], "nominatim")
+        self.assertEqual(row["region_confidence"], "high")
+        self.assertEqual(row["region_attempt_count"], 2)
+
+    def test_resync_preserves_inferred_region_when_new_parse_is_pending(self):
+        main.ensure_activity_sync_schema()
+        activity = self._activity("resync_inferred_region.fit")
+        activity["region"] = ""
+        activity["region_status"] = "pending"
+        inserted = main._persist_sync_activity(activity)
+
+        conn = profile_backend._conn()
+        try:
+            conn.execute(
+                """
+                UPDATE activities
+                SET region = '宇治市/日本',
+                    region_city = '宇治市',
+                    region_country = '日本',
+                    region_display = '宇治市/日本',
+                    region_status = 'inferred',
+                    region_source = 'offline_geocoder',
+                    region_confidence = 'medium',
+                    region_error = NULL,
+                    region_updated_at = '2026-07-15T08:00:00',
+                    region_attempt_count = 1
+                WHERE id = ?
+                """,
+                (inserted["id"],),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        reparsed = dict(activity)
+        reparsed.update({
+            "region": "",
+            "region_city": None,
+            "region_country": None,
+            "region_display": None,
+            "region_status": "pending",
+            "region_error": None,
+            "region_updated_at": None,
+            "region_attempt_count": 0,
+        })
+        updated = main._persist_sync_activity(reparsed)
+
+        conn = profile_backend._conn()
+        try:
+            row = conn.execute(
+                """
+                SELECT region, region_city, region_status, region_source,
+                       region_confidence, region_attempt_count
+                FROM activities WHERE id = ?
+                """,
+                (inserted["id"],),
+            ).fetchone()
+        finally:
+            conn.close()
+
+        self.assertEqual(updated["op"], "updated")
+        self.assertEqual(row["region"], "宇治市/日本")
+        self.assertEqual(row["region_city"], "宇治市")
+        self.assertEqual(row["region_status"], "inferred")
+        self.assertEqual(row["region_source"], "offline_geocoder")
+        self.assertEqual(row["region_confidence"], "medium")
+        self.assertEqual(row["region_attempt_count"], 1)
+
+    def test_resync_preserves_user_title(self):
+        main.ensure_activity_sync_schema()
+        activity = self._activity("resync_user_title.fit")
+        inserted = main._persist_sync_activity(activity)
+
+        conn = profile_backend._conn()
+        try:
+            conn.execute(
+                "UPDATE activities SET title = '2026 成都半程马拉松', title_source = 'user' WHERE id = ?",
+                (inserted["id"],),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        reparsed = dict(activity)
+        reparsed["title"] = "跑步"
+        reparsed["title_source"] = "auto_sport"
+        updated = main._persist_sync_activity(reparsed)
+
+        conn = profile_backend._conn()
+        try:
+            row = conn.execute("SELECT title, title_source FROM activities WHERE id = ?", (inserted["id"],)).fetchone()
+        finally:
+            conn.close()
+
+        self.assertEqual(updated["op"], "updated")
+        self.assertEqual(row["title"], "2026 成都半程马拉松")
+        self.assertEqual(row["title_source"], "user")
+
     def test_region_enrichment_cache_hit_bulk_writes_same_coordinate_without_nominatim(self):
         main.ensure_activity_sync_schema()
         first = self._activity("cache_bulk_1.fit")
@@ -2391,20 +2603,10 @@ class TestFitSync(unittest.TestCase):
         self.assertEqual(row["region_status"], "inferred")
         self.assertEqual(row["region_source"], "offline_geocoder")
 
-        conn = profile_backend._conn()
-        try:
-            conn.execute(
-                """
-                INSERT INTO geocode_cache (cache_key, lat_round, lon_round, city, country, display, provider, status, created_at, updated_at, last_used_at)
-                VALUES (?, ?, ?, ?, ?, ?, 'nominatim', 'success', datetime('now'), datetime('now'), datetime('now'))
-                ON CONFLICT(cache_key) DO UPDATE SET city=excluded.city, country=excluded.country, display=excluded.display, status='success', updated_at=datetime('now')
-                """,
-                ("34.89,135.81", 34.89, 135.81, "京都府", "日本", "京都府/日本"),
-            )
-            conn.commit()
-        finally:
-            conn.close()
-        profile_backend.run_region_enrichment_once(limit=5)
+        with mock.patch.object(profile_backend, "reverse_geocode", return_value={"city": "京都府", "country": "日本", "display_name": "京都府, 日本"}):
+            enrichment = profile_backend.run_region_enrichment_once(limit=5)
+        self.assertEqual(enrichment["success"], 1)
+        self.assertEqual(enrichment["requests"], 1)
         conn = profile_backend._conn()
         try:
             row = conn.execute("SELECT title, region_city, region_status, region_source FROM activities WHERE id = ?", (result["id"],)).fetchone()
