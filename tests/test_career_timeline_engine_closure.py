@@ -1,6 +1,7 @@
 import json
 import sqlite3
 import unittest
+from unittest import mock
 
 import career_backend
 
@@ -307,6 +308,48 @@ class TestCareerTimelineEngineClosure(unittest.TestCase):
             self.assertEqual(result["available_years"], [2026, 2025])
             self.assertEqual([year["year"] for year in result["years"]], [2026])
             self.assertEqual([node["id"] for node in _flatten_nodes(result)], ["race:2026", "achievement:2026"])
+        finally:
+            conn.close()
+
+    def test_year_filter_builds_nodes_once_and_filters_in_memory(self):
+        conn = sqlite3.connect(":memory:")
+        try:
+            career_backend.ensure_career_schema(conn)
+            nodes = [
+                {
+                    "id": "race:2026",
+                    "type": "race",
+                    "track": "race",
+                    "activity_id": "1",
+                    "title": "2026 Race",
+                    "date": "2026-05-21",
+                    "year": 2026,
+                    "month": 5,
+                    "day": 21,
+                    "priority": 70,
+                    "detail_link": {"activity_id": "1", "source": "career"},
+                },
+                {
+                    "id": "race:2025",
+                    "type": "race",
+                    "track": "race",
+                    "activity_id": "2",
+                    "title": "2025 Race",
+                    "date": "2025-05-21",
+                    "year": 2025,
+                    "month": 5,
+                    "day": 21,
+                    "priority": 70,
+                    "detail_link": {"activity_id": "2", "source": "career"},
+                },
+            ]
+            with mock.patch.object(career_backend, "_build_timeline_nodes_for_type", return_value=nodes) as build_nodes:
+                result = career_backend.get_career_timeline({"type": "all", "year": "2026"}, conn)
+
+            build_nodes.assert_called_once_with(conn, "all", year=None)
+            self.assertEqual(result["available_years"], [2026, 2025])
+            self.assertEqual([year["year"] for year in result["years"]], [2026])
+            self.assertEqual([node["id"] for node in _flatten_nodes(result)], ["race:2026"])
         finally:
             conn.close()
 

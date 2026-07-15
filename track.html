@@ -10619,6 +10619,8 @@
             timelineLoading: false,
             timelineError: '',
             timelineAvailableYears: [],
+            timelineByFilter: {},
+            timelineRequestId: 0,
             timelineExpandedMonths: {},
             activePage: 'overview',
             sportScope: 'all',
@@ -12002,6 +12004,8 @@
         appState.career.careerDataLoaded = false;
         appState.career.careerDataNeedsRefresh = true;
         appState.career.careerSourceVersion = Number(appState.career.careerSourceVersion || 0) + 1;
+        appState.career.timelineByFilter = {};
+        appState.career.timelineAvailableYears = [];
         appState.career.yearInsightByYear = appState.career.yearInsightByYear || {};
         appState.career.yearInsightNeedsRefresh = appState.career.yearInsightNeedsRefresh || {};
         const hasSpecificYear = year !== null && year !== undefined && year !== '';
@@ -15189,6 +15193,12 @@
         return { type: type, year: year };
     }
 
+    function careerTimelineFilterCacheKey(filters) {
+        const normalized = normalizeCareerTimelineFilters(filters);
+        const yearKey = normalized.year === null ? 'all' : String(normalized.year);
+        return String(normalized.type || 'all') + '::' + yearKey;
+    }
+
     function normalizeCareerTimelineNode(item) {
         if (!item || typeof item !== 'object') return null;
         return {
@@ -15600,6 +15610,29 @@
     async function loadCareerTimeline(filters) {
         appState.career = appState.career || {};
         appState.career.timelineFilters = normalizeCareerTimelineFilters(filters || appState.career.timelineFilters);
+        appState.career.timelineByFilter = appState.career.timelineByFilter || {};
+        const options = arguments.length > 1 && arguments[1] && typeof arguments[1] === 'object' ? arguments[1] : {};
+        const force = !!options.force;
+        const cacheKey = careerTimelineFilterCacheKey(appState.career.timelineFilters);
+        const cached = appState.career.timelineByFilter[cacheKey];
+        if (cached && !force) {
+            appState.career.timelineRequestId = Number(appState.career.timelineRequestId || 0) + 1;
+            resetCareerTimelineExpansion();
+            appState.career.timeline = cached;
+            appState.career.timelineFilters = cached.filters || appState.career.timelineFilters;
+            const cachedYears = careerTimelineYearsFromTimeline(cached);
+            if (cachedYears.length || !Array.isArray(appState.career.timelineAvailableYears) || !appState.career.timelineAvailableYears.length) {
+                appState.career.timelineAvailableYears = cachedYears;
+            }
+            appState.career.timelineLoading = false;
+            appState.career.timelineError = '';
+            renderCareerTimeline(cached);
+            return cached;
+        }
+        const requestId = Number(appState.career.timelineRequestId || 0) + 1;
+        appState.career.timelineRequestId = requestId;
+        const requestedKey = cacheKey;
+        const requestedFilters = normalizeCareerTimelineFilters(appState.career.timelineFilters);
         appState.career.timelineLoading = true;
         appState.career.timelineError = '';
         renderCareerTimelineLoading();
@@ -15607,11 +15640,21 @@
             if (!window.pywebview || !window.pywebview.api || typeof window.pywebview.api.get_career_timeline !== 'function') {
                 throw new Error('生涯时间轴接口暂不可用');
             }
-            const res = await window.pywebview.api.get_career_timeline(appState.career.timelineFilters);
+            const res = await window.pywebview.api.get_career_timeline(requestedFilters);
             const timeline = normalizeCareerTimeline(requireCareerApiData(res, '生涯时间轴加载失败'));
+            const currentKey = careerTimelineFilterCacheKey(appState.career.timelineFilters);
+            if (appState.career.timelineRequestId !== requestId || currentKey !== requestedKey) {
+                return {
+                    ok: false,
+                    ignored: true,
+                    reason: 'stale_timeline_response',
+                    requestId: requestId
+                };
+            }
             resetCareerTimelineExpansion();
             appState.career.timeline = timeline;
             appState.career.timelineFilters = timeline.filters || appState.career.timelineFilters;
+            appState.career.timelineByFilter[requestedKey] = timeline;
             const nextYears = careerTimelineYearsFromTimeline(timeline);
             if (nextYears.length || !Array.isArray(appState.career.timelineAvailableYears) || !appState.career.timelineAvailableYears.length) {
                 appState.career.timelineAvailableYears = nextYears;
@@ -15621,6 +15664,15 @@
             return timeline;
         } catch (e) {
             const message = e && e.message ? e.message : String(e || '生涯时间轴加载失败');
+            if (appState.career.timelineRequestId !== requestId || careerTimelineFilterCacheKey(appState.career.timelineFilters) !== requestedKey) {
+                return {
+                    ok: false,
+                    ignored: true,
+                    reason: 'stale_timeline_error',
+                    requestId: requestId
+                };
+            }
+            appState.career.timelineFilters = requestedFilters;
             appState.career.timelineLoading = false;
             appState.career.timelineError = message;
             renderCareerTimelineError(message);

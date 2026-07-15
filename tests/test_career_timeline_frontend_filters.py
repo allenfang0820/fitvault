@@ -115,6 +115,32 @@ class TestCareerTimelineFrontendFilters(unittest.TestCase):
         self.assertIn("data-career-timeline-year", capsule_body)
         self.assertIn("setCareerTimelineYearFilter", capsule_body)
 
+    def test_timeline_filter_cache_key_and_load_cache_contract_exist(self):
+        key_body = extract_function_body(self.source, "function careerTimelineFilterCacheKey(filters)")
+        load_body = extract_function_body(self.source, "async function loadCareerTimeline(filters)")
+        self.assertIn("normalizeCareerTimelineFilters(filters)", key_body)
+        self.assertIn("'all'", key_body)
+        self.assertIn("'::'", key_body)
+        self.assertIn("timelineByFilter", load_body)
+        self.assertIn("careerTimelineFilterCacheKey(appState.career.timelineFilters)", load_body)
+        self.assertIn("cached && !force", load_body)
+        self.assertIn("renderCareerTimeline(cached)", load_body)
+        self.assertIn("window.pywebview.api.get_career_timeline(requestedFilters)", load_body)
+        self.assertIn("appState.career.timelineByFilter[requestedKey] = timeline", load_body)
+
+    def test_timeline_load_ignores_stale_responses_and_errors(self):
+        load_body = extract_function_body(self.source, "async function loadCareerTimeline(filters)")
+        self.assertIn("timelineRequestId", load_body)
+        self.assertIn("requestedKey", load_body)
+        self.assertIn("currentKey !== requestedKey", load_body)
+        self.assertIn("stale_timeline_response", load_body)
+        self.assertIn("stale_timeline_error", load_body)
+
+    def test_career_data_invalidation_clears_timeline_cache(self):
+        body = extract_function_body(self.source, "function invalidateCareerDataCaches(year)")
+        self.assertIn("timelineByFilter = {}", body)
+        self.assertIn("timelineAvailableYears = []", body)
+
     def test_timeline_filters_do_not_render_sport_filter(self):
         panel = extract_between(
             self.source,
@@ -135,6 +161,7 @@ class TestCareerTimelineFrontendFilters(unittest.TestCase):
             extract_function_body(self.source, signature)
             for signature in (
                 "function normalizeCareerTimelineFilters(filters)",
+                "function careerTimelineFilterCacheKey(filters)",
                 "function careerTimelineYearsFromTimeline(timeline)",
                 "function careerTimelineYearCapsuleHtml(year, active)",
                 "function renderCareerTimelineFilters(filters)",
