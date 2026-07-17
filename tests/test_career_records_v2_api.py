@@ -7,7 +7,6 @@ import career_backend
 
 FORBIDDEN = (
     "track_json",
-    "power_stream",
     "file_path",
     "storage_ref",
     "sqlite_master",

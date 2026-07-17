@@ -44,6 +44,35 @@ class TestStartupTimelineContract(unittest.TestCase):
         events = main._startup_timeline_snapshot()
         self.assertEqual(events[-1]["name"], "activity_list_api")
 
+    def test_on_loaded_event_callback_returns_none_when_already_shown(self):
+        api = main.Api()
+        fake_window = mock.Mock()
+        api.bind_window(fake_window)
+        api._window_shown = True
+
+        result = api.on_loaded()
+
+        self.assertIsNone(result)
+        fake_window.show.assert_not_called()
+
+    def test_on_loaded_event_callback_shows_hidden_window_and_is_hashable_for_pywebview(self):
+        api = main.Api()
+        fake_window = mock.Mock()
+        api.bind_window(fake_window)
+
+        with mock.patch.object(main, "apply_macos_native_window_chrome") as chrome:
+            result = api.on_loaded()
+
+        self.assertIsNone(result)
+        chrome.assert_called_once_with(fake_window)
+        fake_window.show.assert_called_once_with()
+        self.assertTrue(api._window_shown)
+        self.assertEqual(main._startup_timeline_snapshot()[-1]["name"], "window_show")
+
+        return_values = set()
+        return_values.add(result)
+        self.assertIn(None, return_values)
+
     def test_windows_packaged_startup_log_writes_utf8_jsonl(self):
         with tempfile.TemporaryDirectory() as temp:
             with mock.patch.object(main, "_windows_packaged_startup_log_enabled", return_value=True), \

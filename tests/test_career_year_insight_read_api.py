@@ -141,6 +141,7 @@ class TestCareerYearInsightReadApi(unittest.TestCase):
         api = main.Api()
         responses = (
             api.get_career_year_insight({"year": 2026, "prompt": "bad"}),
+            api.get_career_year_insight({"year": 2026, "tone_preset": "freeform"}),
             api.get_career_year_insight({"year": True}),
             api.get_career_year_insight({"year": "bad"}),
             api.get_career_year_insight({"year": 1800}),
@@ -157,6 +158,7 @@ class TestCareerYearInsightReadApi(unittest.TestCase):
         method = methods["get_career_year_insight"]
         self.assertTrue(method["readonly"])
         self.assertIn("year", method["returns"])
+        self.assertIn("tone_preset", method["returns"])
         self.assertIn("local_fallback", method["returns"])
         self.assertIn("不调用 LLM", method["description"])
         self.assertIn("未知字段拒绝", method["description"])

@@ -35,7 +35,6 @@ FRONTEND_CAREER_API_METHODS = (
     "get_career_timeline",
     "get_career_races",
     "get_career_footprint",
-    "get_career_pb",
     "get_career_memory_gallery",
     "get_career_year_insight",
     "generate_career_year_insight",
@@ -106,6 +105,7 @@ class TestCareerPhase9MacosClosure(unittest.TestCase):
 
         self.assertNotIn("window.pywebview.api.get_latest_career_snapshot", self.track_html)
         self.assertNotIn("window.pywebview.api.save_career_snapshot", self.track_html)
+        self.assertNotIn("api.get_career_pb", self.track_html)
 
     def test_career_inline_handlers_are_defined(self):
         for handler_name in INLINE_CAREER_HANDLERS:

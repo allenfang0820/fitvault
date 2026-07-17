@@ -144,13 +144,16 @@ class TestTrackHtmlSyncLogic(unittest.TestCase):
         self.assertIn("new Set(['results', 'reserved'])", render_tab_body)
         self.assertNotIn("['results', 'honors', 'reserved']", render_tab_body)
 
-    def test_career_tab_refreshes_derived_events_before_loading_modules(self):
+    def test_career_tab_starts_derived_refresh_without_blocking_overview(self):
         switch_body = extract_function_body(self.source, "function switchTab(tabBtn)")
         load_body = extract_function_body(self.source, "async function loadCareerData()")
+        refresh_body = extract_function_body(self.source, "function refreshCareerDerivedEventsInBackground()")
 
         self.assertIn("loadCareerData().catch", switch_body)
-        self.assertIn("refresh_career_derived_events", load_body)
-        self.assertLess(load_body.find("refresh_career_derived_events"), load_body.find("loadCareerOverview()"))
+        self.assertIn("refresh_career_derived_events", refresh_body)
+        self.assertIn("refreshCareerDerivedEventsInBackground()", load_body)
+        self.assertLess(load_body.find("refreshCareerDerivedEventsInBackground()"), load_body.find("loadCareerOverview()"))
+        self.assertNotIn("await refreshCareerDerivedEventsInBackground()", load_body)
         for token in (
             "loadCareerOverview().catch",
             "loadCareerSeasons().catch",

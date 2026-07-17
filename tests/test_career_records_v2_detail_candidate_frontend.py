@@ -43,13 +43,16 @@ def test_records_v2_detail_panel_uses_backend_detail_viewmodel():
 
 def test_records_v2_activity_jump_uses_career_detail_link_contract():
     src = source()
-    card_body = extract_function_body(src, "function careerRecordCurrentCardHtml(record, index)")
+    detail_body = extract_function_body(src, "function careerRecordDetailPanelHtml(record, detail)")
+    candidate_body = extract_function_body(src, "function careerRecordCandidateCardHtml(candidate)")
     action_body = extract_function_body(src, "function careerRecordActivityActionHtml(detailLink, label)")
     jump_body = extract_function_body(src, "function openCareerRecordActivityFromElement(event, el)")
     shared_jump = extract_function_body(src, "function openCareerActivityDetailFromElement(el)")
 
-    assert "record.detailLink.activityId" in card_body
-    assert "record.detailLink.source || 'career'" in card_body
+    assert "function careerRecordCurrentCardHtml" not in src
+    assert "careerRecordActivityActionHtml(detailRecord.detailLink" in detail_body
+    assert "candidate.detailLink.activityId" in candidate_body
+    assert "candidate.detailLink.source || 'career'" in candidate_body
     assert "normalizeCareerDetailLink(detailLink)" in action_body
     assert 'data-career-source="' in action_body
     assert "openCareerActivityDetailFromElement(el)" in jump_body

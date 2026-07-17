@@ -270,6 +270,22 @@ class TestNormalizeRadarInsightJson(unittest.TestCase):
         # 成功解析时验证 error 值为空,而非断言 key 不存在
         self.assertEqual(result["error"], "")
 
+    def test_curly_quoted_json_with_inner_ascii_quotes_is_repaired(self):
+        raw = (
+            '{“summary”:“当前跑步能力呈现"高阈值、强恢复"的鲜明特征”,'
+            '“sport_type”:“running”,“sport_mode”:“running”,'
+            '“dimension_interpretation”:[{“key”:“threshold”,“label”:“阈值”,“score”:95,“comment”:“阈值优秀”}],'
+            '“load_status”:{“ctl”:27.7,“atl”:18.1,“tsb”:9.5,“status”:“状态轻松”}}'
+        )
+
+        result = normalize_radar_insight_json(raw)
+
+        self.assertEqual(result["error"], "")
+        self.assertIn('"高阈值、强恢复"', result["summary"])
+        self.assertEqual(result["sport_type"], "running")
+        self.assertEqual(result["dimension_interpretation"][0]["score"], 95)
+        self.assertEqual(result["load_status"]["ctl"], 27.7)
+
     def test_invalid_json_returns_empty_insight(self):
         result = normalize_radar_insight_json("not a json at all")
         self.assertIsInstance(result, dict)

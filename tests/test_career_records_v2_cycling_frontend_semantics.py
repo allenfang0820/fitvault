@@ -77,7 +77,7 @@ def test_cycling_catalog_cards_use_standard_distance_power_duration_then_enduran
     assert "validation_required" not in catalog_body
 
 
-def test_cycling_left_picker_stays_title_only_but_uses_catalog_keys():
+def test_cycling_left_picker_shows_backend_value_and_uses_catalog_keys():
     src = source()
     picker = extract_function_body(src, "function careerRecordPickerCardHtml(definition, currentRecord, index)")
     render_picker = extract_function_body(src, "function renderCareerRecordPicker(definitions, records, candidates, selectedView)")
@@ -85,13 +85,15 @@ def test_cycling_left_picker_stays_title_only_but_uses_catalog_keys():
 
     assert "data-career-record-key" in picker
     assert "definition.displayName" in picker
+    assert "currentRecord.metric.display" in picker
+    assert "career-record-picker-value" in picker
+    assert "career-record-picker-meta" in picker
+    assert "暂无记录" in picker
     assert "selectCareerRecordKeyForAnalysis" in picker
     assert "career-record-picker-section" in render_picker
     assert "标准距离" in section_label
     assert "功率时长" in section_label
     assert "整次活动" in section_label
-    assert "career-record-picker-value" not in src
-    assert "career-record-picker-meta" not in src
     assert "careerRecordAvailabilityBadge" not in picker
 
 

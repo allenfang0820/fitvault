@@ -1817,6 +1817,8 @@ class TestFitSync(unittest.TestCase):
         self.assertEqual(method["parameters"], [
             {"name": "activity_id", "type": "int", "required": True},
         ])
+        self.assertIn("region_admin1", method["returns"])
+        self.assertIn("region_admin1_code", method["returns"])
         for forbidden_surface in ("raw FIT", "points", "track_json", "file_path", "SQLite schema"):
             self.assertIn(forbidden_surface, method["description"])
 
@@ -2346,9 +2348,9 @@ class TestFitSync(unittest.TestCase):
         conn = profile_backend._conn()
         try:
             conn.execute(
-                "INSERT INTO geocode_cache (cache_key, lat_round, lon_round, city, country, display, provider, status, created_at, updated_at, last_used_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, 'nominatim', 'success', datetime('now'), datetime('now'), datetime('now'))",
-                ("30.67,104.06", 30.67, 104.06, "成都市", "中国", display),
+                "INSERT INTO geocode_cache (cache_key, lat_round, lon_round, city, country, display, admin1, admin1_code, provider, status, created_at, updated_at, last_used_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'nominatim', 'success', datetime('now'), datetime('now'), datetime('now'))",
+                ("30.67,104.06", 30.67, 104.06, "成都市", "中国", display, "四川省", "CN-SC"),
             )
             conn.commit()
         finally:
@@ -2361,13 +2363,15 @@ class TestFitSync(unittest.TestCase):
         conn = profile_backend._conn()
         try:
             row = conn.execute(
-                "SELECT region, region_status, region_error FROM activities WHERE id = ?",
+                "SELECT region, region_admin1, region_admin1_code, region_status, region_error FROM activities WHERE id = ?",
                 (result["id"],),
             ).fetchone()
         finally:
             conn.close()
 
         self.assertEqual(row["region"], display)
+        self.assertEqual(row["region_admin1"], "四川省")
+        self.assertEqual(row["region_admin1_code"], "CN-SC")
         self.assertEqual(row["region_status"], "success")
         self.assertIsNone(row["region_error"])
 
@@ -2383,7 +2387,7 @@ class TestFitSync(unittest.TestCase):
         result = main._persist_sync_activity(activity)
 
         def offline(lat, lon):
-            return {"city": "宇治市", "country": "日本", "display_name": "宇治市, 日本"}
+            return {"city": "宇治市", "state": "京都府", "country": "日本", "display_name": "宇治市, 日本"}
 
         done = threading.Event()
         completed: list[dict] = []
@@ -2437,6 +2441,8 @@ class TestFitSync(unittest.TestCase):
                     region_city = '成都市',
                     region_country = '中国',
                     region_display = '成都市/中国',
+                    region_admin1 = '四川省',
+                    region_admin1_code = 'CN-SC',
                     region_status = 'success',
                     region_source = 'nominatim',
                     region_confidence = 'high',
@@ -2459,6 +2465,8 @@ class TestFitSync(unittest.TestCase):
             "region_city": None,
             "region_country": None,
             "region_display": None,
+            "region_admin1": None,
+            "region_admin1_code": None,
             "region_status": "pending",
             "region_error": None,
             "region_updated_at": None,
@@ -2470,7 +2478,7 @@ class TestFitSync(unittest.TestCase):
         try:
             row = conn.execute(
                 """
-                SELECT title, title_source, region, region_city, region_status,
+                SELECT title, title_source, region, region_city, region_admin1, region_admin1_code, region_status,
                        region_source, region_confidence, region_attempt_count
                 FROM activities WHERE id = ?
                 """,
@@ -2484,6 +2492,8 @@ class TestFitSync(unittest.TestCase):
         self.assertEqual(row["title_source"], "auto_region_sport")
         self.assertEqual(row["region"], "成都市/中国")
         self.assertEqual(row["region_city"], "成都市")
+        self.assertEqual(row["region_admin1"], "四川省")
+        self.assertEqual(row["region_admin1_code"], "CN-SC")
         self.assertEqual(row["region_status"], "success")
         self.assertEqual(row["region_source"], "nominatim")
         self.assertEqual(row["region_confidence"], "high")
@@ -2505,6 +2515,8 @@ class TestFitSync(unittest.TestCase):
                     region_city = '宇治市',
                     region_country = '日本',
                     region_display = '宇治市/日本',
+                    region_admin1 = '京都府',
+                    region_admin1_code = NULL,
                     region_status = 'inferred',
                     region_source = 'offline_geocoder',
                     region_confidence = 'medium',
@@ -2525,6 +2537,8 @@ class TestFitSync(unittest.TestCase):
             "region_city": None,
             "region_country": None,
             "region_display": None,
+            "region_admin1": None,
+            "region_admin1_code": None,
             "region_status": "pending",
             "region_error": None,
             "region_updated_at": None,
@@ -2536,7 +2550,7 @@ class TestFitSync(unittest.TestCase):
         try:
             row = conn.execute(
                 """
-                SELECT region, region_city, region_status, region_source,
+                SELECT region, region_city, region_admin1, region_admin1_code, region_status, region_source,
                        region_confidence, region_attempt_count
                 FROM activities WHERE id = ?
                 """,
@@ -2548,6 +2562,8 @@ class TestFitSync(unittest.TestCase):
         self.assertEqual(updated["op"], "updated")
         self.assertEqual(row["region"], "宇治市/日本")
         self.assertEqual(row["region_city"], "宇治市")
+        self.assertEqual(row["region_admin1"], "京都府")
+        self.assertIsNone(row["region_admin1_code"])
         self.assertEqual(row["region_status"], "inferred")
         self.assertEqual(row["region_source"], "offline_geocoder")
         self.assertEqual(row["region_confidence"], "medium")
@@ -2661,6 +2677,50 @@ class TestFitSync(unittest.TestCase):
         self.assertEqual([row["region_city"] for row in rows], ["上海市", "上海市"])
         self.assertEqual([row["region_status"] for row in rows], ["success", "success"])
 
+    def test_region_enrichment_nominatim_success_writes_structured_admin1(self):
+        main.ensure_activity_sync_schema()
+        activity = self._activity("huangshi_admin1.fit")
+        activity["region"] = ""
+        activity["region_status"] = "pending"
+        activity["start_lat"] = 30.20
+        activity["start_lon"] = 115.03
+        result = main._persist_sync_activity(activity)
+
+        with mock.patch.object(
+            profile_backend,
+            "reverse_geocode",
+            return_value={"city": "黄石市", "state": "湖北省", "country": "中国", "display_name": "黄石市, 湖北省, 中国"},
+        ):
+            enrichment = profile_backend.run_region_enrichment_once(limit=5)
+
+        self.assertEqual(enrichment["success"], 1)
+        conn = profile_backend._conn()
+        try:
+            row = conn.execute(
+                """
+                SELECT region_city, region_display, region_admin1, region_admin1_code,
+                       region_status, region_source, region_confidence
+                FROM activities WHERE id = ?
+                """,
+                (result["id"],),
+            ).fetchone()
+            cache = conn.execute(
+                "SELECT city, country, display, admin1, admin1_code FROM geocode_cache WHERE cache_key = ?",
+                ("30.20,115.03",),
+            ).fetchone()
+        finally:
+            conn.close()
+
+        self.assertEqual(row["region_city"], "黄石市")
+        self.assertEqual(row["region_display"], "黄石市/中国")
+        self.assertEqual(row["region_admin1"], "湖北省")
+        self.assertEqual(row["region_admin1_code"], "CN-HB")
+        self.assertEqual(row["region_status"], "success")
+        self.assertEqual(row["region_source"], "nominatim")
+        self.assertEqual(row["region_confidence"], "high")
+        self.assertEqual(cache["admin1"], "湖北省")
+        self.assertEqual(cache["admin1_code"], "CN-HB")
+
     def test_region_enrichment_upgrades_auto_coros_title_after_cache_populated(self):
         main.ensure_activity_sync_schema()
         activity = self._activity("coros___activity-fit-files_3a4c7694c39941c98ef78f4fe33feae2.fit")
@@ -2752,33 +2812,35 @@ class TestFitSync(unittest.TestCase):
         result = main._persist_sync_activity(activity)
 
         def offline(lat, lon):
-            return {"city": "宇治市", "country": "日本", "display_name": "宇治市, 日本"}
+            return {"city": "宇治市", "state": "京都府", "country": "日本", "display_name": "宇治市, 日本"}
 
         with mock.patch.object(profile_backend, "reverse_geocode", side_effect=ConnectionError("Nominatim 不可达")):
             enrichment = profile_backend.run_region_enrichment_once(limit=5, offline_resolver=offline)
         self.assertEqual(enrichment["inferred"], 1)
         conn = profile_backend._conn()
         try:
-            row = conn.execute("SELECT title, title_source, region_city, region_status, region_source FROM activities WHERE id = ?", (result["id"],)).fetchone()
+            row = conn.execute("SELECT title, title_source, region_city, region_admin1, region_status, region_source FROM activities WHERE id = ?", (result["id"],)).fetchone()
         finally:
             conn.close()
         self.assertEqual(row["title"], "跑步")
         self.assertEqual(row["title_source"], "auto_sport")
         self.assertEqual(row["region_city"], "宇治市")
+        self.assertEqual(row["region_admin1"], "京都府")
         self.assertEqual(row["region_status"], "inferred")
         self.assertEqual(row["region_source"], "offline_geocoder")
 
-        with mock.patch.object(profile_backend, "reverse_geocode", return_value={"city": "京都府", "country": "日本", "display_name": "京都府, 日本"}):
+        with mock.patch.object(profile_backend, "reverse_geocode", return_value={"city": "京都市", "state": "京都府", "country": "日本", "display_name": "京都市, 日本"}):
             enrichment = profile_backend.run_region_enrichment_once(limit=5)
         self.assertEqual(enrichment["success"], 1)
         self.assertEqual(enrichment["requests"], 1)
         conn = profile_backend._conn()
         try:
-            row = conn.execute("SELECT title, region_city, region_status, region_source FROM activities WHERE id = ?", (result["id"],)).fetchone()
+            row = conn.execute("SELECT title, region_city, region_admin1, region_status, region_source FROM activities WHERE id = ?", (result["id"],)).fetchone()
         finally:
             conn.close()
-        self.assertEqual(row["title"], "京都府 跑步")
-        self.assertEqual(row["region_city"], "京都府")
+        self.assertEqual(row["title"], "京都市 跑步")
+        self.assertEqual(row["region_city"], "京都市")
+        self.assertEqual(row["region_admin1"], "京都府")
         self.assertEqual(row["region_status"], "success")
         self.assertEqual(row["region_source"], "nominatim")
 
@@ -3909,6 +3971,7 @@ class TestFitSync(unittest.TestCase):
                 "sub_sport_type", "file_path",
                 "start_time_utc", "start_lat", "start_lon",
                 "region", "region_city", "region_country", "region_display",
+                "region_admin1", "region_admin1_code",
                 "region_status", "region_error", "region_updated_at", "region_attempt_count",
                 "weather_json", "weather_status", "weather_updated_at",
                 "weather_attempt_count", "weather_error",
@@ -3922,6 +3985,9 @@ class TestFitSync(unittest.TestCase):
             }
             missing = expected - existing
             self.assertEqual(missing, set(), f"缺少列: {sorted(missing)}")
+
+            cache_cols = {str(row["name"]) for row in conn.execute("PRAGMA table_info(geocode_cache)").fetchall()}
+            self.assertTrue({"admin1", "admin1_code"}.issubset(cache_cols))
         finally:
             conn.close()
 

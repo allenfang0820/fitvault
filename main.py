@@ -4723,6 +4723,8 @@ def ensure_activity_sync_schema() -> None:
                 ("race_override", "INTEGER DEFAULT 0"),
                 ("region_source", "TEXT"),
                 ("region_confidence", "TEXT"),
+                ("region_admin1", "TEXT"),
+                ("region_admin1_code", "TEXT"),
                 ("device_vendor", "TEXT"),
                 ("device_product_key", "TEXT"),
                 ("device_product_id", "TEXT"),
@@ -6646,6 +6648,8 @@ def _parse_fit_activity_for_sync(file_path: Path) -> dict[str, Any]:
         "region_city": payload.get("region_city"),
         "region_country": payload.get("region_country"),
         "region_display": payload.get("region_display"),
+        "region_admin1": payload.get("region_admin1"),
+        "region_admin1_code": payload.get("region_admin1_code"),
         "region_status": payload.get("region_status"),
         "region_error": payload.get("region_error"),
         "region_updated_at": payload.get("region_updated_at"),
@@ -6869,7 +6873,7 @@ def _insert_activity_sync_row(conn: sqlite3.Connection, activity: dict[str, Any]
                 (file_name, filename, title, title_source, start_time, start_time_utc, sport_type, sub_sport_type,
                  distance, dist_km, duration, duration_sec, avg_pace, avg_hr, max_hr,
                  calories, track_json, points_json, file_path, gain_m, max_alt_m, start_lat, start_lon, region,
-                 region_city, region_country, region_display, region_status, region_error, region_updated_at, region_attempt_count,
+                 region_city, region_country, region_display, region_admin1, region_admin1_code, region_status, region_error, region_updated_at, region_attempt_count,
                  weather_json, weather_status, weather_updated_at, weather_attempt_count, weather_error,
                  file_mtime, file_size, advanced_metrics, avg_power, max_power, normalized_power, avg_stroke_distance, swolf, device_name,
                  device_vendor, device_product_key, device_product_id, device_serial, device_mapping_status,
@@ -6877,10 +6881,19 @@ def _insert_activity_sync_row(conn: sqlite3.Connection, activity: dict[str, Any]
                  min_alt_m, total_descent_m, up_count, down_count, max_single_climb_m, difficulty_score, report_metrics_version,
                  avg_grade_pct, max_slope_pct, min_slope_pct, uphill_pct, downhill_pct,
                  aerobic_training_effect, anaerobic_training_effect, processing_status, processing_error)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'fit_sdk', 0, NULL, datetime('now'), ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (
+                ?, ?, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?, ?,
+                'fit_sdk', 0, NULL, datetime('now'), ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?,
+                ?, ?, ?, ?
+            )
             """,
             (
                 activity.get("file_name"),
@@ -6910,6 +6923,8 @@ def _insert_activity_sync_row(conn: sqlite3.Connection, activity: dict[str, Any]
                 activity.get("region_city"),
                 activity.get("region_country"),
                 activity.get("region_display"),
+                activity.get("region_admin1"),
+                activity.get("region_admin1_code"),
                 activity.get("region_status"),
                 activity.get("region_error"),
                 activity.get("region_updated_at"),
@@ -6981,7 +6996,7 @@ def _update_activity_sync_row(conn: sqlite3.Connection, activity_id: int, activi
             sport_type = ?, sub_sport_type = ?, distance = ?, dist_km = ?, duration = ?, duration_sec = ?,
             avg_pace = ?, avg_hr = ?, max_hr = ?, calories = ?, track_json = ?, points_json = ?,
             file_path = ?, gain_m = ?, max_alt_m = ?, start_lat = ?, start_lon = ?, region = ?,
-            region_city = ?, region_country = ?, region_display = ?, region_status = ?, region_error = ?,
+            region_city = ?, region_country = ?, region_display = ?, region_admin1 = ?, region_admin1_code = ?, region_status = ?, region_error = ?,
             region_updated_at = ?, region_attempt_count = ?,
             weather_json = ?, weather_status = ?, weather_updated_at = ?, weather_attempt_count = ?, weather_error = ?,
             file_mtime = ?, file_size = ?, advanced_metrics = ?,
@@ -7023,6 +7038,8 @@ def _update_activity_sync_row(conn: sqlite3.Connection, activity_id: int, activi
             activity.get("region_city"),
             activity.get("region_country"),
             activity.get("region_display"),
+            activity.get("region_admin1"),
+            activity.get("region_admin1_code"),
             activity.get("region_status"),
             activity.get("region_error"),
             activity.get("region_updated_at"),
@@ -7540,7 +7557,7 @@ def _load_activity_sync_merge_context(conn: sqlite3.Connection, activity_id: int
         SELECT id, title, title_source,
                region, region_city, region_country, region_display, region_status,
                region_error, region_updated_at, region_attempt_count,
-               region_source, region_confidence
+               region_source, region_confidence, region_admin1, region_admin1_code
         FROM activities
         WHERE id = ?
         LIMIT 1
@@ -7567,6 +7584,8 @@ def _merge_activity_sync_update_fields(existing: dict[str, Any] | None, activity
             "region_city",
             "region_country",
             "region_display",
+            "region_admin1",
+            "region_admin1_code",
             "region_status",
             "region_error",
             "region_updated_at",
@@ -8974,21 +8993,21 @@ class Api:
         self._llm_cli_test_lock = threading.Lock()
         self._llm_cli_tests_in_flight: set[str] = set()
 
-    def on_loaded(self, *args) -> dict:
+    def on_loaded(self, *args) -> None:
         """页面加载完成后显示窗口，解决原生窗口先白屏的问题。"""
         try:
             if self._window_shown:
-                return {"ok": True, "already_shown": True}
+                return
             target = self._window
             if target is not None:
                 apply_macos_native_window_chrome(target)
                 target.show()
                 self._window_shown = True
                 _record_startup_event("window_show")
-                return {"ok": True}
+                return
         except Exception as exc:
             logger.debug("显示主窗口失败: %s", exc)
-        return {"ok": False}
+        return
 
     def bind_window(self, window) -> None:
         self._window = window
@@ -12309,6 +12328,14 @@ class Api:
             logger.exception("get_career_overview failed")
             return _api_error(API_CODE_DB, "运动生涯总览查询失败")
 
+    def get_career_overview_secondary_metrics(self) -> dict:
+        """Return delayed non-core ACS overview metrics without blocking first paint."""
+        try:
+            return _api_success(career_backend.get_career_overview_secondary_metrics())
+        except Exception:
+            logger.exception("get_career_overview_secondary_metrics failed")
+            return _api_error(API_CODE_DB, "运动生涯总览二级指标查询失败")
+
     def get_career_timeline(self, filters: dict | None = None) -> dict:
         """Return ACS timeline skeleton; Resolver-owned facts are not generated here."""
         try:
@@ -12416,6 +12443,17 @@ class Api:
             logger.exception("get_career_record_history failed")
             return _api_error(API_CODE_DB, "运动生涯记录历史查询失败")
 
+    def get_career_record_metric_series(self, payload: dict | str | None = None, filters: dict | None = None) -> dict:
+        """Return V3 activity-level record metric series ViewModel."""
+        try:
+            clean_filters = filters if isinstance(filters, dict) else None
+            if isinstance(payload, dict):
+                return _api_success(career_backend.get_career_record_metric_series(payload, clean_filters))
+            return _api_success(career_backend.get_career_record_metric_series(str(payload or ""), clean_filters))
+        except Exception:
+            logger.exception("get_career_record_metric_series failed")
+            return _api_error(API_CODE_DB, "运动生涯记录成绩序列查询失败")
+
     def get_career_record_curve(self, payload: dict | None = None) -> dict:
         """Return safe V2 derived curve ViewModel."""
         try:
@@ -12424,6 +12462,33 @@ class Api:
         except Exception:
             logger.exception("get_career_record_curve failed")
             return _api_error(API_CODE_DB, "运动生涯记录曲线查询失败")
+
+    def preview_career_records(self, payload: dict | None = None) -> dict:
+        """Return read-only Records V2 dry-run preview shell."""
+        started = time.perf_counter()
+        try:
+            clean_payload = payload if isinstance(payload, dict) else {}
+            if clean_payload.get("dry_run") is False or clean_payload.get("apply_to_real_db"):
+                return _api_error(API_CODE_VALIDATION, "当前仅允许记录预览 dry-run")
+            data = career_backend.preview_career_records(clean_payload)
+            logger.info(
+                "records_v2_preview %s",
+                career_backend.records_v2_safe_observation(
+                    "records_v2_preview",
+                    run_id=str(data.get("run_id") or ""),
+                    dry_run=True,
+                    action=str((data.get("summary") or {}).get("mode") or "adapter_dispatch_only"),
+                    processed=int((data.get("metrics") or {}).get("processed") or 0),
+                    returned_count=int((data.get("metrics") or {}).get("returned_count") or 0),
+                    by_sport=data.get("by_sport") if isinstance(data.get("by_sport"), dict) else {},
+                    by_reason=data.get("by_reason") if isinstance(data.get("by_reason"), dict) else {},
+                    elapsed_ms=round((time.perf_counter() - started) * 1000.0, 2),
+                ),
+            )
+            return _api_success(data)
+        except Exception:
+            logger.exception("preview_career_records failed")
+            return _api_error(API_CODE_DB, "运动生涯记录预览失败")
 
     def get_career_record_candidates(self, filters: dict | None = None) -> dict:
         """Return V2 record candidates without raw evidence payload."""
@@ -12619,10 +12684,10 @@ class Api:
         trace_id = _new_trace_id()
         try:
             clean_payload = payload if isinstance(payload, dict) else {}
-            allowed_keys = {"year"}
+            allowed_keys = {"year", "tone_preset"}
             unknown_keys = set(clean_payload) - allowed_keys
             if unknown_keys:
-                return _api_error(API_CODE_VALIDATION, "年度总结参数仅支持 year")
+                return _api_error(API_CODE_VALIDATION, "年度总结参数仅支持 year 和 tone_preset")
             raw_year = clean_payload.get("year")
             year = None
             if raw_year not in (None, ""):
@@ -12637,7 +12702,10 @@ class Api:
                         API_CODE_VALIDATION,
                         f"year 必须在 {career_backend.CAREER_YEAR_MIN}-{career_backend.CAREER_YEAR_MAX} 之间",
                     )
-            data = career_backend.get_career_year_insight(year)
+            tone_preset = career_backend.normalize_career_year_tone_preset(
+                clean_payload.get("tone_preset", career_backend.CAREER_YEAR_DEFAULT_TONE_PRESET)
+            )
+            data = career_backend.get_career_year_insight(year, tone_preset=tone_preset)
             elapsed_ms = round((time.perf_counter() - started) * 1000.0, 2)
             logger.info(
                 "get_career_year_insight ok year=%s traceId=%s state=%s elapsed_ms=%s",
@@ -12665,10 +12733,10 @@ class Api:
         trace_id = _new_trace_id()
         try:
             clean_payload = payload if isinstance(payload, dict) else {}
-            allowed_keys = {"year"}
+            allowed_keys = {"year", "tone_preset"}
             unknown_keys = set(clean_payload) - allowed_keys
             if unknown_keys:
-                return _api_error(API_CODE_VALIDATION, "年度总结生成参数仅支持 year")
+                return _api_error(API_CODE_VALIDATION, "年度总结生成参数仅支持 year 和 tone_preset")
             raw_year = clean_payload.get("year")
             if raw_year in (None, "") or isinstance(raw_year, bool):
                 return _api_error(API_CODE_VALIDATION, "year 必须是有效整数")
@@ -12681,7 +12749,10 @@ class Api:
                     API_CODE_VALIDATION,
                     f"year 必须在 {career_backend.CAREER_YEAR_MIN}-{career_backend.CAREER_YEAR_MAX} 之间",
                 )
-            data = career_backend.generate_career_year_insight(year)
+            tone_preset = career_backend.normalize_career_year_tone_preset(
+                clean_payload.get("tone_preset", career_backend.CAREER_YEAR_DEFAULT_TONE_PRESET)
+            )
+            data = career_backend.generate_career_year_insight(year, tone_preset=tone_preset)
             elapsed_ms = round((time.perf_counter() - started) * 1000.0, 2)
             logger.info(
                 "generate_career_year_insight ok year=%s traceId=%s state=%s generation=%s elapsed_ms=%s",
@@ -14934,6 +15005,34 @@ class Api:
             return _api_success(result)
         except Exception as e:
             logger.warning("get_region_enrichment_dry_run failed: %s", e)
+            return _api_error(API_CODE_DB, str(e))
+
+    def get_region_admin1_backfill_dry_run(self, payload: dict | None = None) -> dict:
+        try:
+            raw_limit = None
+            country_scope = None
+            if isinstance(payload, dict):
+                raw_limit = payload.get("limit")
+                country_scope = payload.get("country_scope")
+            limit = None if raw_limit in (None, "") else max(0, _safe_int(raw_limit, 500))
+            result = profile_backend.region_admin1_backfill_dry_run(limit=limit, country_scope=country_scope)
+            return _api_success(result)
+        except Exception as e:
+            logger.warning("get_region_admin1_backfill_dry_run failed: %s", e)
+            return _api_error(API_CODE_DB, str(e))
+
+    def run_region_admin1_backfill_once(self, payload: dict | None = None) -> dict:
+        try:
+            raw_limit = 500
+            country_scope = None
+            if isinstance(payload, dict):
+                raw_limit = payload.get("limit", 500)
+                country_scope = payload.get("country_scope")
+            limit = None if raw_limit in (None, "") else max(0, _safe_int(raw_limit, 500))
+            result = profile_backend.run_region_admin1_backfill_once(limit=limit, country_scope=country_scope)
+            return _api_success(result)
+        except Exception as e:
+            logger.warning("run_region_admin1_backfill_once failed: %s", e)
             return _api_error(API_CODE_DB, str(e))
 
     def get_device_product_mapping_dry_run(self, payload: dict | None = None) -> dict:

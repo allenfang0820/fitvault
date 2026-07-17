@@ -304,6 +304,9 @@ updated: 2026-07-09
 - [x] 代码闭环：`ACS-Next-04`：媒体缩略图与安全预览闭环。
   - 说明：已统一 Activity Detail 赛事照片、Overview Banner、Memory Gallery 的安全预览生成；后端仅从应用受控媒体目录读取图片并返回 `data:image` 或空字符串，前端只使用白名单预览字段渲染图片。
   - 边界：Memory Gallery 仍只读展示，不恢复上传/手填活动 ID 入口；不做复杂相册、媒体物理删除、云同步、轨迹截图自动生成或 AI 接入。
+- [x] 代码闭环：`ACS-Year-AI-09D`：年度报告语气预设与重新生成。
+  - 说明：年度 AI 总结支持 `warm`、`celebratory`、`professional`、`documentary`、`light`、`humorous` 六种后端白名单语气；前端只传枚举，不传自由 Prompt；同一年同 Snapshot 可按 `generation_options_hash` 保存多篇不同语气报告，切换语气后读取或生成对应报告。
+  - 边界：语气只影响年度 AI 总结 Prompt 与缓存键；Year Snapshot 仍是唯一事实输入；不开放用户自定义 Prompt，不改变 Race/PB/Achievement/Activity 事实表。
 - [ ] 未完成：真实 AI Career Insight 安全接入。
 - [ ] 未完成：macOS 打包产物验证。
 - [ ] 未完成：Windows 打包与真机验证。

@@ -37,6 +37,7 @@ updated: 2026-07-13
 - 前端不得根据标题、城市、日期或 DOM 文本推断地理区域。
 - 前端不得读取 raw FIT、`points_json`、`track_json`、本地路径、`storage_ref` 或 SQLite schema。
 - 生涯足迹覆盖所有有可靠地理信息的 Activity，不只限赛事。
+- 地图解析优先消费 `region_admin1_code` / `region_admin1`，但活动地区展示仍保持城市级 `region_city` / `region_display`。
 - Memory Gallery 必须按 Race Event / 赛事 Activity 组织相册。
 - Memory Gallery 必须复用 Activity Detail 已有赛事照片、排序与安全预览。
 - 相册封面必须复用第一张图逻辑，并与 Overview Banner 保持一致。
@@ -239,6 +240,9 @@ python3 -m pytest tests/test_career_race_map_api.py tests/test_career_race_map_f
 输入字段候选：
 
 - `region_country`
+- `region_admin1_code`
+- `region_admin1`
+- legacy `region_state` / `province` / `state`
 - `country`
 - `countryName`
 - `region`
@@ -252,6 +256,7 @@ python3 -m pytest tests/test_career_race_map_api.py tests/test_career_race_map_f
 实现要求：
 
 - 优先使用已有结构化国家 / 省州 / 城市字段。
+- 地区优先级为 `region_admin1_code` -> `region_admin1` -> legacy 省州字段 -> `region/region_display/region_city` + city hint。
 - 中国城市缺省份时，可使用受控城市到省份映射补齐。
 - 台湾必须归入中国地区地图的可渲染区域。
 - 海外缺州/省但有国家时，先归一到国家级区域。
@@ -266,6 +271,7 @@ python3 -m pytest tests/test_career_race_map_api.py tests/test_career_race_map_f
 验收标准：
 
 - 中国城市可映射到省级区域。
+- 有 `region_admin1` 的新城市不依赖 city hint 也可点亮省级区域。
 - 台湾区域可独立点亮。
 - 海外国家可触发 `map_mode = world`。
 - 缺失地理信息不会被误点亮。

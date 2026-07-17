@@ -119,6 +119,16 @@ class TestActivityAdviceFrontendContract(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, body)
 
+    def test_activity_advice_timeout_helper_exists(self):
+        helper_body = _slice_function_body(self.html, "withTimeout")
+        request_body = _slice_function_body(self.html, "requestActivityAdvice")
+
+        self.assertIn("Promise.race", helper_body)
+        self.assertIn("setTimeout", helper_body)
+        self.assertIn("reject(new Error('请求超时'))", helper_body)
+        self.assertIn("await withTimeout(", request_body)
+        self.assertIn("60000", request_body)
+
     def test_overview_route_facts_only_sync_through_track_context(self):
         apply_body = _slice_function_body(self.html, "applyDataAndRender", max_len=14000)
         self.assertIn("appState.currentOverviewStats = stats", apply_body)

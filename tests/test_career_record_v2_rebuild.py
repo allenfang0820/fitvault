@@ -13,7 +13,12 @@ def _create_activities(conn: sqlite3.Connection) -> None:
             sport_type TEXT,
             sub_sport_type TEXT,
             deleted_at TEXT,
-            updated_at TEXT
+            updated_at TEXT,
+            dist_km REAL,
+            duration_sec REAL,
+            gain_m REAL,
+            max_alt_m REAL,
+            points_json TEXT
         )
         """
     )
@@ -22,8 +27,8 @@ def _create_activities(conn: sqlite3.Connection) -> None:
 def _insert_activity(conn: sqlite3.Connection, activity_id: int, sport: str, *, deleted_at: str | None = None) -> None:
     conn.execute(
         """
-        INSERT INTO activities (id, sport_type, sub_sport_type, deleted_at, updated_at)
-        VALUES (?, ?, '', ?, '2026-07-14T00:00:00Z')
+        INSERT INTO activities (id, sport_type, sub_sport_type, deleted_at, updated_at, dist_km, duration_sec, gain_m, max_alt_m, points_json)
+        VALUES (?, ?, '', ?, '2026-07-14T00:00:00Z', 40.0, 5400, 600, 1200, '[{"distance_m":0,"t_sec":0},{"distance_m":40000,"t_sec":5400}]')
         """,
         (activity_id, sport, deleted_at),
     )
@@ -85,6 +90,7 @@ class CareerRecordV2RebuildTest(unittest.TestCase):
             self.assertEqual(plan["processed"], 2)
             self.assertGreater(plan["by_sport"]["cycling"], 0)
             self.assertIn("activity_total_record", plan["by_family"])
+            self.assertGreaterEqual(len(plan["preview_records"]), 1)
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM career_pb_records").fetchone()[0], before_records)
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM career_record_events").fetchone()[0], before_events)
         finally:

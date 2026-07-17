@@ -76,7 +76,7 @@ def _valid_response():
             "body_sections": [
                 {"type": "annual_story", "heading": "这一年的主线", "paragraphs": ["截至当前数据周期，跑步保持稳定。"], "evidence_ids": []},
                 {"type": "progress", "heading": "看得见的进步", "paragraphs": ["这次 PB 是清楚的节点。"], "evidence_ids": ["pb:1"]},
-                {"type": "footprints", "heading": "这一年的运动足迹", "paragraphs": ["成都因火锅闻名，而你留下的是运动坐标。"], "evidence_ids": ["city:成都:1"]},
+                {"type": "footprints", "heading": "这一年的运动足迹", "paragraphs": ["成都因火锅闻名，而你留下的是运动坐标。"], "evidence_ids": []},
                 {"type": "rhythm", "heading": "这一年的节奏", "paragraphs": ["上半年保持了自己的节奏。"], "evidence_ids": []},
                 {"type": "comparison", "heading": "和上一年相比", "paragraphs": ["记录比去年同期更连续。"], "evidence_ids": []},
             ],
@@ -95,6 +95,7 @@ class TestCareerYearLlmPrompt(unittest.TestCase):
         prompt_text = "\n".join(message["content"] for message in messages)
 
         self.assertIn(llm_backend.CAREER_YEAR_SUMMARY_PROMPT_VERSION, prompt_text)
+        self.assertIn("tone_preset=warm", prompt_text)
         self.assertIn("只能使用下方 Year Snapshot JSON", prompt_text)
         self.assertIn("截至当前数据周期", prompt_text)
         self.assertIn("禁止伤病", prompt_text)
@@ -107,6 +108,9 @@ class TestCareerYearLlmPrompt(unittest.TestCase):
         self.assertIn("不计算或复述精确数字", prompt_text)
         self.assertIn("highlight_moments", prompt_text)
         self.assertIn("city_moments", prompt_text)
+        self.assertIn("覆盖了几座城市、哪些城市", prompt_text)
+        self.assertIn("footprints 章节的 evidence_ids 必须留空或省略", prompt_text)
+        self.assertIn("不要写成链接", prompt_text)
         self.assertIn("受控城市文化提示", prompt_text)
         self.assertIn("不要在 opening 或第一段一次性公布", prompt_text)
         self.assertIn("不要编造游玩或饮食经历", prompt_text)
@@ -122,6 +126,39 @@ class TestCareerYearLlmPrompt(unittest.TestCase):
             "secret",
         ):
             self.assertNotIn(forbidden, prompt_text)
+
+    def test_prompt_tone_preset_is_backend_enum_only(self):
+        warm_text = "\n".join(
+            message["content"]
+            for message in llm_backend.build_career_year_summary_messages(_snapshot(), tone_preset="warm")
+        )
+        documentary_text = "\n".join(
+            message["content"]
+            for message in llm_backend.build_career_year_summary_messages(_snapshot(), tone_preset="documentary")
+        )
+        humorous_text = "\n".join(
+            message["content"]
+            for message in llm_backend.build_career_year_summary_messages(_snapshot(), tone_preset="humorous")
+        )
+
+        self.assertIn("tone_preset=warm", warm_text)
+        self.assertIn("温暖", warm_text)
+        self.assertIn("tone_preset=documentary", documentary_text)
+        self.assertIn("纪录片", documentary_text)
+        self.assertIn("不得编造 Snapshot 外场景", documentary_text)
+        self.assertIn("tone_preset=humorous", humorous_text)
+        self.assertIn("幽默", humorous_text)
+        self.assertIn("不得把严肃成就写成段子", humorous_text)
+        self.assertNotEqual(
+            llm_backend.career_year_generation_options_hash("warm"),
+            llm_backend.career_year_generation_options_hash("documentary"),
+        )
+        self.assertNotEqual(
+            llm_backend.career_year_generation_options_hash("light"),
+            llm_backend.career_year_generation_options_hash("humorous"),
+        )
+        with self.assertRaises(ValueError):
+            llm_backend.build_career_year_summary_messages(_snapshot(), tone_preset="write-anything")
 
     def test_fake_client_returns_valid_json_without_network(self):
         calls = []
@@ -145,6 +182,8 @@ class TestCareerYearLlmPrompt(unittest.TestCase):
         self.assertEqual(result["status"], "success")
         self.assertEqual(result["prompt_version"], llm_backend.CAREER_YEAR_SUMMARY_PROMPT_VERSION)
         self.assertEqual(result["model_id"], "model-from-config")
+        self.assertEqual(result["tone_preset"], "warm")
+        self.assertEqual(result["generation_options_hash"], llm_backend.career_year_generation_options_hash("warm"))
         self.assertEqual(result["content"]["title"], "2026，我把运动稳稳地留在了生活里")
         self.assertEqual(len(calls), 1)
         self.assertEqual(calls[0]["config"]["api_key"], "from-config")

@@ -52,6 +52,11 @@ class TestCareerYearInsightModeFrontend(unittest.TestCase):
         self.assertIn("年度 AI 总结", section)
         self.assertIn("年度总结", section)
         self.assertIn('id="career-year-selector"', section)
+        self.assertIn('id="career-year-tone-select"', section)
+        self.assertIn('value="warm"', section)
+        self.assertIn('value="light"', section)
+        self.assertIn('value="humorous"', section)
+        self.assertIn("报告语气", section)
         self.assertNotIn("生涯总结", section)
         self.assertNotIn("career-insight-mode", section)
         self.assertNotIn("setCareerInsightMode", section)
@@ -69,6 +74,7 @@ class TestCareerYearInsightModeFrontend(unittest.TestCase):
             "yearInsightGenerating",
             "yearInsightError",
             "yearInsightSelectedYear",
+            "yearInsightTonePreset: 'warm'",
             "yearInsightRequestId",
             "yearInsightGenerateRequestId",
         ):
@@ -80,8 +86,10 @@ class TestCareerYearInsightModeFrontend(unittest.TestCase):
         body = extract_function_body(self.source, "function renderCareerYearSelector(viewModel)")
 
         self.assertIn("vm.available_years", body)
+        self.assertIn("years.length ? years.map", body)
         self.assertIn("career-year-chip", body)
         self.assertIn("loadCareerYearInsight({ year:", body)
+        self.assertLess(body.index("years.map"), body.index("loadCareerYearInsight({ year:"))
         self.assertNotIn("representativeSeasons", body)
         self.assertNotIn("querySelectorAll", body)
         self.assertNotIn("careerSeason", body)
@@ -110,11 +118,44 @@ class TestCareerYearInsightModeFrontend(unittest.TestCase):
         body = extract_function_body(self.source, "async function loadCareerYearInsight(options)")
 
         self.assertIn("yearInsightByYear[cacheKey]", body)
+        self.assertIn("careerYearInsightCacheKey", body)
+        self.assertIn("tone_preset: requestedTonePreset", body)
         self.assertIn("!appState.career.yearInsightNeedsRefresh[cacheKey]", body)
         self.assertIn("if (cached && !force", body)
         self.assertLess(body.index("if (cached && !force"), body.index("get_career_year_insight"))
         self.assertIn("yearInsightByYear[responseKey] = data", body)
         self.assertIn("sourceChangedDuringRequest", body)
+
+    def test_year_load_updates_selector_before_waiting_for_backend(self):
+        body = extract_function_body(self.source, "async function loadCareerYearInsight(options)")
+
+        self.assertIn("renderCareerYearShell()", body)
+        self.assertLess(body.index("renderCareerYearShell()"), body.index("renderCareerYearInsightLoading"))
+        self.assertLess(body.index("renderCareerYearShell()"), body.index("get_career_year_insight"))
+
+    def test_year_load_does_not_treat_new_badge_or_stale_state_as_cache_invalidation(self):
+        body = extract_function_body(self.source, "async function loadCareerYearInsight(options)")
+
+        self.assertIn("appState.career.yearInsightNeedsRefresh[responseKey] = !!sourceChangedDuringRequest", body)
+        self.assertNotIn("data.has_source_changes", body)
+        self.assertNotIn("data.report_state === 'stale'", body)
+        self.assertNotIn("year_update_badges", body)
+        self.assertNotIn("updateMap", body)
+
+    def test_season_new_badges_do_not_invalidate_year_report_cache(self):
+        body = extract_function_body(self.source, "async function loadCareerSeasons(filters)")
+
+        self.assertIn("normalizeCareerSeasons", body)
+        self.assertNotIn("yearInsightNeedsRefresh", body)
+        self.assertNotIn("reportUpdateAvailable &&", body)
+
+    def test_generation_result_cache_refresh_depends_on_source_version_only(self):
+        body = extract_function_body(self.source, "async function generateCareerYearInsight()")
+
+        self.assertIn("const cacheKey = careerYearInsightCacheKey(selectedYear, responseTone)", body)
+        self.assertIn("appState.career.yearInsightNeedsRefresh[cacheKey] = !!sourceChangedDuringRequest", body)
+        self.assertNotIn("data.has_source_changes", body)
+        self.assertNotIn("data.report_state === 'stale'", body)
 
     def test_career_data_load_is_gated_and_does_not_preload_full_career_insight(self):
         body = extract_function_body(self.source, "async function loadCareerData()")
@@ -133,7 +174,9 @@ class TestCareerYearInsightModeFrontend(unittest.TestCase):
         self.assertIn("appState.career.suppressInsightAutoLoad = true", body)
         self.assertIn("yearInsightSelectedYear", body)
         self.assertIn("switchCareerPage('insight')", body)
-        self.assertIn("loadCareerYearInsight({ year:", body)
+        self.assertIn("return loadCareerYearInsight({", body)
+        self.assertIn("year: appState.career.yearInsightSelectedYear", body)
+        self.assertIn("tone_preset: appState.career.yearInsightTonePreset", body)
 
 
 if __name__ == "__main__":

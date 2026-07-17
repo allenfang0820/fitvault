@@ -8,6 +8,7 @@ from __future__ import annotations
 import io
 import csv
 import errno
+import hashlib
 import json
 import logging
 import math
@@ -36,15 +37,42 @@ DEFAULT_PROVIDER = "local_mcp"
 DEFAULT_AGENT_ID = ""
 DEFAULT_TRANSPORT = "http"
 DEFAULT_CLI_TIMEOUT_SEC = 300
-CAREER_YEAR_SUMMARY_PROMPT_VERSION = "acs.year.summary.zh-CN.v4"
+CAREER_YEAR_SUMMARY_PROMPT_VERSION = "acs.year.summary.zh-CN.v6"
 CAREER_YEAR_SUMMARY_TIMEOUT_SEC = 120
+CAREER_YEAR_DEFAULT_TONE_PRESET = "warm"
+CAREER_YEAR_TONE_PRESETS = {
+    "warm": {
+        "label": "温暖",
+        "prompt": "语气温暖、真诚、有光、有分量，像一个懂运动数据的朋友认真庆祝用户这一年做成的事。",
+    },
+    "celebratory": {
+        "label": "庆祝",
+        "prompt": "语气更有仪式感和庆祝感，突出完成、抵达和突破，但不得夸张、鸡血或制造焦虑。",
+    },
+    "professional": {
+        "label": "专业",
+        "prompt": "语气克制、专业、清晰，像一份面向运动者的年度回顾，但仍然要有可读性和成就感。",
+    },
+    "documentary": {
+        "label": "纪录片",
+        "prompt": "语气像运动纪录片旁白，画面感更强，重视时间、地点、节奏和关键节点，但不得编造 Snapshot 外场景。",
+    },
+    "light": {
+        "label": "轻松",
+        "prompt": "语气轻松、有亲近感，可以更口语，但不得玩梗过度、不得降低事实严肃性。",
+    },
+    "humorous": {
+        "label": "幽默",
+        "prompt": "语气幽默、机智、有松弛感，可以使用轻微自嘲和生活化比喻，但不得冒犯用户、不得编造 Snapshot 外事实、不得把严肃成就写成段子。",
+    },
+}
 CAREER_YEAR_SUMMARY_OUTPUT_SCHEMA = """{
   "schema_version": "acs.year.report.v3",
   "year": 2026,
   "title": "一句有年份感的年度故事标题",
   "subtitle": "一句克制的副标题",
   "opening": "先建立年度主线和成就感，不复述精确数字，不一次性公布全部数据",
-  "body_sections": [{"type": "annual_story|races|progress|footprints|rhythm|comparison", "heading": "章节标题", "paragraphs": ["连续叙事段落"], "evidence_ids": ["来自 evidence_catalog 或 highlight_moments 的 id"]}],
+  "body_sections": [{"type": "annual_story|races|progress|footprints|rhythm|comparison", "heading": "章节标题", "paragraphs": ["连续叙事段落"], "evidence_ids": ["仅 races/progress 使用；footprints 不需要 evidence_ids"]}],
   "closing": "回答这一年真正值得记住的是什么",
   "letter_to_next_year": "写给下一年的一段话",
   "share_caption": "未来分享图片可用的短句，不含精确事实",
@@ -1555,20 +1583,51 @@ def career_year_summary_prompt_payload(snapshot: dict[str, Any] | None) -> dict[
     return payload
 
 
-def build_career_year_summary_messages(snapshot: dict[str, Any] | None) -> list[dict[str, str]]:
+def normalize_career_year_tone_preset(value: Any = None) -> str:
+    clean = str(value or CAREER_YEAR_DEFAULT_TONE_PRESET).strip().lower()
+    if clean not in CAREER_YEAR_TONE_PRESETS:
+        raise ValueError(f"年度报告语气必须是 {', '.join(sorted(CAREER_YEAR_TONE_PRESETS))} 之一")
+    return clean
+
+
+def career_year_tone_label(value: Any = None) -> str:
+    clean = normalize_career_year_tone_preset(value)
+    return str(CAREER_YEAR_TONE_PRESETS[clean]["label"])
+
+
+def career_year_tone_prompt(value: Any = None) -> str:
+    clean = normalize_career_year_tone_preset(value)
+    return str(CAREER_YEAR_TONE_PRESETS[clean]["prompt"])
+
+
+def career_year_generation_options_hash(tone_preset: Any = None) -> str:
+    payload = {"tone_preset": normalize_career_year_tone_preset(tone_preset)}
+    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return "sha256:" + hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def build_career_year_summary_messages(
+    snapshot: dict[str, Any] | None,
+    *,
+    tone_preset: Any = None,
+) -> list[dict[str, str]]:
     payload = career_year_summary_prompt_payload(snapshot)
     payload_json = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+    clean_tone_preset = normalize_career_year_tone_preset(tone_preset)
+    tone_label = career_year_tone_label(clean_tone_preset)
+    tone_instruction = career_year_tone_prompt(clean_tone_preset)
     system_prompt = f"""你是脉图 ACS 年度总结写作器，只能基于系统提供的 Year Snapshot 事实写中文年度总结。
 
 【数据边界】
 你只能使用下方 Year Snapshot JSON。不得使用常识补全、不得使用用户前端 payload、不得假设 Snapshot 之外的伤病、心理、生活事件、训练动机、设备、照片、路线、医疗信息或详细训练计划。
 
 【语气与安全】
+- 本次报告语气预设是“{tone_label}”（tone_preset={clean_tone_preset}）：{tone_instruction}
 - 如果 period.is_partial_year=true，必须使用“截至当前数据周期”的语气。
 - 数据不足时必须降级表达，不补全故事。
 - 禁止伤病、心理、生活事件、训练动机、年度等级、人格判断、医疗建议和详细训练计划。
 - 目标读感是“用户读完会有成就感，也愿意截图分享”，不是审计报告，也不是训练周报。
-- 语气要温暖、真诚、有光、有分量，像一个懂运动数据的朋友认真庆祝用户这一年做成的事。
+- 默认语气基线是温暖、真诚、有光、有分量；当本次语气预设不同，可以调整节奏和措辞，但必须服从事实、安全和证据边界。
 - 允许使用有分享欲的表达，例如“点亮城市”“留下坐标”“跨过新的距离”“把运动带去更多地方”“值得发出来给自己看看”。
 - 承认努力，也尊重普通年份；鼓励用户看见持续、完成、抵达和突破，而不只崇拜 PB。
 - 禁止“封神”“王者”“炸裂”“逆天”等营销、鸡血或制造焦虑的表达。
@@ -1578,7 +1637,9 @@ def build_career_year_summary_messages(snapshot: dict[str, Any] | None) -> list[
 - 不要在 opening 或第一段一次性公布活动次数、总里程、总时长、赛事、PB、成就等全部年度数据；数据应随着文章逐步展开。
 - 每组数据都要回答“这对这一年意味着什么、为什么值得记住”，不要只做统计陈述。
 - highlight_moments 是后端可信高光候选池，你可以引用和解释，但不得自行新增 PB、赛事、海拔、距离或里程碑事实。
+- city_moments 是足迹章节的主要事实来源；必须围绕覆盖了几座城市、哪些城市、这些城市如何让年度运动坐标变得更丰富来写。
 - city_moments 的 culture_hint 是受控城市文化提示，只能克制提及“某城市因某文化符号闻名”；不得写用户实际吃了、去了、旅行了或发生了生活事件。
+- “首次点亮城市”这类事实不要写成链接、清单或让用户跳回活动详情；要把城市数量和城市名揉进连续叙事。
 - 不得写“春节假期”“旅行”“身体感受”“看世界的方式”等 Snapshot 外生活场景或心理感受；可以写“这座城市留下了运动坐标”。
 
 【文章结构】
@@ -1587,6 +1648,7 @@ def build_career_year_summary_messages(snapshot: dict[str, Any] | None) -> list[
 - annual_story 与 rhythm 必须出现；races 仅在有 race evidence 时出现；progress 仅在有 pb/achievement evidence 时出现；comparison 仅在 comparison.status=available 时出现。
 - footprints 仅在 city_moments 非空时出现，用于写运动足迹和城市记忆。
 - races/progress 的 evidence_ids 必须引用 evidence_catalog 中存在且类型匹配的 evidence_id；没有对应事实时省略章节，不写空洞补位。
+- footprints 章节的 evidence_ids 必须留空或省略；不要引用 first_city、city 或 achievement evidence。
 - 若引用 highlight_moments，必须使用其中已有 id；不要把普通数字编成新高光。
 - annual_story 要先抛出这一年的主线和成就感，再逐步展开数据，不要像流水账。
 - progress 和 races 要把高光写得郑重，让用户觉得“这件事值得被记住”。
@@ -1641,9 +1703,11 @@ def generate_career_year_summary(
     *,
     client: Any = None,
     config: dict[str, Any] | None = None,
+    tone_preset: Any = None,
     session_id: str = "career-year-summary",
 ) -> dict[str, Any]:
     """Generate an annual AI summary using only backend Year Snapshot facts."""
+    clean_tone_preset = normalize_career_year_tone_preset(tone_preset)
     prompt_payload = career_year_summary_prompt_payload(snapshot)
     year = prompt_payload.get("year")
     fingerprint = str(prompt_payload.get("source_fingerprint") or "")
@@ -1654,7 +1718,7 @@ def generate_career_year_summary(
         if cli_type:
             model_id = f"{cli_type}-default"
     timeout = min(_normalize_cli_timeout(cfg.get("cli_timeout_sec")), CAREER_YEAR_SUMMARY_TIMEOUT_SEC)
-    messages = build_career_year_summary_messages(prompt_payload)
+    messages = build_career_year_summary_messages(prompt_payload, tone_preset=clean_tone_preset)
     call = client or generate_text
     started = time.perf_counter()
     status = "unknown"
@@ -1672,6 +1736,9 @@ def generate_career_year_summary(
             "content": content,
             "prompt_version": CAREER_YEAR_SUMMARY_PROMPT_VERSION,
             "model_id": model_id,
+            "tone_preset": clean_tone_preset,
+            "tone_label": career_year_tone_label(clean_tone_preset),
+            "generation_options_hash": career_year_generation_options_hash(clean_tone_preset),
             "source_fingerprint": fingerprint,
             "status": "success",
         }
@@ -1946,6 +2013,49 @@ def empty_radar_insight(error: str = "") -> dict[str, Any]:
     }
 
 
+def _repair_curly_quoted_json_text(text: str) -> str:
+    """Best-effort repair for LLM pseudo JSON that uses Chinese quotes.
+
+    Models sometimes return JSON-like text with `“...”` delimiters and plain
+    ASCII quotes inside Chinese prose. Treat curly-quoted spans as JSON strings
+    and escape their content so json.loads can still validate the structure.
+    """
+    raw = str(text or "")
+    if "“" not in raw and "”" not in raw:
+        return raw
+
+    out: list[str] = []
+    i = 0
+    while i < len(raw):
+        ch = raw[i]
+        if ch != "“":
+            out.append('"' if ch == "”" else ch)
+            i += 1
+            continue
+
+        out.append('"')
+        i += 1
+        while i < len(raw) and raw[i] != "”":
+            inner = raw[i]
+            if inner == "\\":
+                out.append("\\\\")
+            elif inner == '"':
+                out.append('\\"')
+            elif inner == "\n":
+                out.append("\\n")
+            elif inner == "\r":
+                out.append("\\r")
+            elif inner == "\t":
+                out.append("\\t")
+            else:
+                out.append(inner)
+            i += 1
+        out.append('"')
+        if i < len(raw) and raw[i] == "”":
+            i += 1
+    return "".join(out)
+
+
 def normalize_radar_insight_json(raw_text: str) -> dict[str, Any]:
     """将 LLM 返回的原始文本标准化为 radar insight schema。
     失败时返回 empty_radar_insight,严禁抛异常至前端。
@@ -1962,7 +2072,11 @@ def normalize_radar_insight_json(raw_text: str) -> dict[str, Any]:
     try:
         data = json.loads(text)
     except json.JSONDecodeError:
-        return empty_radar_insight(f"JSON 解析失败: {text[:120]}")
+        repaired_text = _repair_curly_quoted_json_text(text)
+        try:
+            data = json.loads(repaired_text)
+        except json.JSONDecodeError:
+            return empty_radar_insight(f"JSON 解析失败: {text[:120]}")
 
     if not isinstance(data, dict):
         return empty_radar_insight("洞察结果格式错误")

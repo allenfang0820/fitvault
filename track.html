@@ -2543,6 +2543,29 @@
             gap: 6px;
             flex-wrap: wrap;
         }
+        .career-year-tone-field {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            color: #94a3b8;
+            font-size: 0.74rem;
+            white-space: nowrap;
+        }
+        .career-year-tone-select {
+            min-width: 92px;
+            height: 32px;
+            border: 1px solid rgba(148, 163, 184, 0.24);
+            border-radius: 8px;
+            background: rgba(15, 23, 42, 0.82);
+            color: #e2e8f0;
+            padding: 0 30px 0 10px;
+            font-size: 0.74rem;
+            outline: none;
+        }
+        .career-year-tone-select:focus {
+            border-color: rgba(45, 212, 191, 0.65);
+            box-shadow: 0 0 0 2px rgba(45, 212, 191, 0.15);
+        }
         .career-year-chip {
             display: inline-flex;
             align-items: center;
@@ -2693,26 +2716,30 @@
             font-size: 0.92rem;
             line-height: 1.45;
         }
-        .career-year-evidence-list {
-            display: grid;
-            gap: 8px;
-            margin-top: 14px;
+        .career-year-section {
+            margin-top: 18px;
+            padding-top: 14px;
+            border-top: 1px solid rgba(148, 163, 184, 0.12);
         }
-        .career-year-evidence {
-            border-left: 2px solid rgba(56, 189, 248, 0.42);
-            background: rgba(8, 47, 73, 0.12);
-            padding: 9px 11px;
-            cursor: pointer;
-        }
-        .career-year-evidence-title {
+        .career-year-section h3 {
+            margin: 0 0 8px;
             color: #e2e8f0;
-            font-size: 0.72rem;
-            font-weight: 820;
+            font-size: 0.78rem;
+            font-weight: 850;
+            line-height: 1.45;
         }
-        .career-year-evidence-meta {
-            margin-top: 3px;
-            color: #64748b;
-            font-size: 0.62rem;
+        .career-year-section-list {
+            display: grid;
+            gap: 7px;
+            margin: 0;
+            padding: 0;
+            list-style: none;
+        }
+        .career-year-section-list li {
+            color: #94a3b8;
+            font-size: 0.7rem;
+            line-height: 1.6;
+            overflow-wrap: anywhere;
         }
         .career-year-letter {
             margin-top: 28px;
@@ -3177,14 +3204,8 @@
             grid-template-columns: minmax(0, 1fr);
             gap: 16px;
         }
-        .career-record-current-list {
-            display: grid;
-            gap: 10px;
-            align-content: start;
-            min-width: 0;
-        }
         .career-record-picker-card,
-        .career-record-current-card {
+        .career-record-candidate-card {
             border: 1px solid rgba(42, 42, 64, 0.92);
             border-radius: 22px;
             background: rgba(26, 26, 46, 0.78);
@@ -3193,8 +3214,7 @@
             overflow-wrap: anywhere;
             transition: border-color 160ms ease, background 160ms ease, transform 160ms ease, box-shadow 160ms ease;
         }
-        .career-record-picker-card.is-selected,
-        .career-record-current-card.is-selected {
+        .career-record-picker-card.is-selected {
             border-color: rgba(79, 195, 247, 0.72);
             background: linear-gradient(145deg, rgba(30, 30, 50, 0.94), rgba(20, 37, 58, 0.74));
             box-shadow: 0 16px 36px rgba(0, 0, 0, 0.32), 0 0 0 1px rgba(79, 195, 247, 0.12) inset;
@@ -3214,7 +3234,7 @@
             padding-top: 0;
         }
         .career-record-picker-card:hover,
-        .career-record-current-card:hover {
+        .career-record-candidate-card:hover {
             border-color: rgba(79, 195, 247, 0.36);
             background: rgba(30, 30, 50, 0.92);
             transform: translateY(-1px);
@@ -3233,52 +3253,11 @@
             opacity: 1;
         }
         .career-record-picker-card:focus-visible,
-        .career-record-current-card:focus-visible,
+        .career-record-candidate-card:focus-visible,
         .career-record-tab:focus-visible,
         .career-record-action:focus-visible {
             outline: 2px solid rgba(79, 195, 247, 0.78);
             outline-offset: 3px;
-        }
-        .career-record-status-strip {
-            display: grid;
-            grid-template-columns: repeat(4, minmax(0, 1fr));
-            gap: 10px;
-            margin-top: 12px;
-        }
-        .career-record-status-card {
-            border: 1px solid rgba(148, 163, 184, 0.14);
-            border-radius: 16px;
-            background: rgba(26, 26, 46, 0.48);
-            padding: 10px;
-            min-width: 0;
-            overflow-wrap: anywhere;
-        }
-        .career-record-status-card[data-state="loading"],
-        .career-record-status-card[data-state="rebuilding"] {
-            border-color: rgba(56, 189, 248, 0.28);
-            background: rgba(8, 47, 73, 0.18);
-        }
-        .career-record-status-card[data-state="error"] {
-            border-color: rgba(248, 113, 113, 0.28);
-            background: rgba(127, 29, 29, 0.16);
-        }
-        .career-record-status-card[data-state="candidate"],
-        .career-record-status-card[data-state="validation_required"],
-        .career-record-status-card[data-state="partial"] {
-            border-color: rgba(251, 191, 36, 0.25);
-            background: rgba(113, 63, 18, 0.14);
-        }
-        .career-record-status-label {
-            color: #94a3b8;
-            font-size: 0.62rem;
-            font-weight: 760;
-        }
-        .career-record-status-value {
-            color: #f8fafc;
-            font-size: 0.78rem;
-            font-weight: 820;
-            margin-top: 4px;
-            line-height: 1.35;
         }
         .career-record-analysis-panel {
             border: 1px solid rgba(42, 42, 64, 0.92);
@@ -3351,49 +3330,46 @@
             color: #fca5a5;
         }
         .career-record-picker-title,
-        .career-record-current-title {
+        .career-record-panel-title {
             color: #f8fafc;
             font-weight: 800;
             font-size: 0.86rem;
         }
-        .career-record-current-meta,
+        .career-record-picker-value {
+            color: #e2e8f0;
+            font-size: 0.8rem;
+            font-weight: 850;
+            line-height: 1.2;
+            margin-top: 6px;
+            min-height: 1em;
+        }
+        .career-record-picker-value.is-empty {
+            color: #64748b;
+            font-weight: 760;
+        }
+        .career-record-picker-meta {
+            color: #8a8a9e;
+            font-size: 0.66rem;
+            font-weight: 720;
+            line-height: 1.35;
+            margin-top: 4px;
+            min-height: 0.9em;
+        }
+        .career-record-panel-meta,
         .career-record-scope {
             color: #94a3b8;
             font-size: 0.72rem;
             margin-top: 5px;
             line-height: 1.45;
         }
-        .career-record-current-value {
-            color: #67e8f9;
-            font-size: 1.7rem;
-            font-weight: 900;
-            margin-top: 8px;
-            letter-spacing: 0;
-            overflow-wrap: anywhere;
-        }
-        .career-record-current-card.is-hero {
-            min-height: 100%;
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-            background:
-                radial-gradient(circle at 0% 0%, rgba(79, 195, 247, 0.14), transparent 38%),
-                linear-gradient(150deg, rgba(30, 30, 50, 0.96), rgba(15, 15, 26, 0.84));
-        }
-        .career-record-current-card.is-hero .career-record-current-title {
-            font-size: 1rem;
-        }
-        .career-record-current-card.is-hero .career-record-current-value {
-            font-size: 2rem;
-        }
-        .career-record-secondary-list {
+        .career-record-candidate-list {
             display: grid;
             gap: 10px;
             max-height: 390px;
             overflow-y: auto;
             padding-right: 2px;
         }
-        .career-record-secondary-title {
+        .career-record-candidate-title {
             color: #8a8a9e;
             font-size: 0.66rem;
             font-weight: 860;
@@ -3495,138 +3471,6 @@
             font-size: 0.72rem;
             margin-top: 8px;
             min-height: 1em;
-        }
-        .career-pb-filter-row {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 6px;
-            align-items: center;
-        }
-        .career-pb-summary {
-            color: #94a3b8;
-            font-size: 0.68rem;
-            font-weight: 760;
-            min-height: 18px;
-            overflow-wrap: anywhere;
-        }
-        .career-pb-list {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 8px;
-        }
-        .career-pb-detail-panel {
-            margin-top: 10px;
-            border-radius: 10px;
-            border: 1px solid rgba(148, 163, 184, 0.16);
-            background: rgba(15, 23, 42, 0.45);
-            padding: 10px;
-        }
-        .career-pb-detail-title {
-            color: #f8fafc;
-            font-size: 0.82rem;
-            font-weight: 900;
-            margin-bottom: 5px;
-        }
-        .career-pb-detail-meta,
-        .career-pb-history-list {
-            color: #94a3b8;
-            font-size: 0.68rem;
-            line-height: 1.5;
-        }
-        .career-pb-history-list {
-            display: grid;
-            gap: 5px;
-            margin-top: 8px;
-        }
-        .career-pb-history-node {
-            display: flex;
-            justify-content: space-between;
-            gap: 8px;
-            border-top: 1px solid rgba(148, 163, 184, 0.12);
-            padding-top: 5px;
-        }
-        .career-pb-detail-action {
-            margin-top: 8px;
-            border: 1px solid rgba(52, 211, 153, 0.28);
-            background: rgba(16, 185, 129, 0.12);
-            color: #a7f3d0;
-            border-radius: 999px;
-            padding: 5px 9px;
-            font-size: 0.68rem;
-            font-weight: 800;
-            cursor: pointer;
-        }
-        .career-pb-detail-action:disabled {
-            cursor: wait;
-            opacity: 0.58;
-        }
-        .career-pb-card {
-            min-width: 0;
-            border-radius: 8px;
-            border: 1px solid rgba(52, 211, 153, 0.14);
-            background: rgba(6, 78, 59, 0.14);
-            padding: 11px;
-            cursor: default;
-        }
-        .career-pb-card.is-clickable {
-            cursor: pointer;
-        }
-        .career-pb-card.is-clickable:hover,
-        .career-pb-card.is-clickable:focus {
-            border-color: rgba(52, 211, 153, 0.34);
-            background: rgba(5, 150, 105, 0.18);
-            outline: none;
-        }
-        .career-pb-card-head {
-            display: flex;
-            align-items: flex-start;
-            justify-content: space-between;
-            gap: 10px;
-            margin-bottom: 7px;
-        }
-        .career-pb-title {
-            color: #f8fafc;
-            font-size: 0.82rem;
-            line-height: 1.35;
-            font-weight: 900;
-            overflow-wrap: anywhere;
-        }
-        .career-pb-date {
-            color: #86efac;
-            font-size: 0.62rem;
-            font-weight: 850;
-            white-space: nowrap;
-        }
-        .career-pb-value {
-            color: #bbf7d0;
-            font-size: 1rem;
-            font-weight: 900;
-            line-height: 1.25;
-            overflow-wrap: anywhere;
-        }
-        .career-pb-meta {
-            margin-top: 5px;
-            color: #94a3b8;
-            font-size: 0.66rem;
-            line-height: 1.45;
-            overflow-wrap: anywhere;
-        }
-        .career-pb-badges {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 5px;
-            margin-top: 8px;
-        }
-        .career-pb-badge {
-            border-radius: 999px;
-            border: 1px solid rgba(255,255,255,0.07);
-            background: rgba(15, 23, 42, 0.56);
-            color: #cbd5e1;
-            font-size: 0.6rem;
-            font-weight: 760;
-            padding: 4px 7px;
-            max-width: 100%;
-            overflow-wrap: anywhere;
         }
         .career-achievement-card {
             min-width: 0;
@@ -3783,7 +3627,6 @@
             background: rgba(14, 116, 144, 0.34);
         }
         @media (max-width: 1100px) {
-            .career-record-status-strip,
             .career-record-detail-grid {
                 grid-template-columns: repeat(2, minmax(0, 1fr));
             }
@@ -3795,13 +3638,9 @@
             .career-bucket-list,
             .career-season-strip,
             .career-race-list,
-            .career-pb-list,
             .career-records-v2-layout,
             .career-spotlight {
                 grid-template-columns: 1fr;
-            }
-            .career-pb-detail-panel {
-                margin-top: 8px;
             }
             .career-record-analysis-grid {
                 grid-template-columns: 1fr;
@@ -3950,7 +3789,6 @@
                 padding: 0 2px;
                 writing-mode: vertical-rl;
             }
-            .career-record-status-strip,
             .career-record-detail-grid {
                 grid-template-columns: 1fr;
             }
@@ -3974,9 +3812,6 @@
             .career-record-actions {
                 width: 100%;
             }
-            .career-record-current-value {
-                font-size: 1.12rem;
-            }
             .career-record-chart-box {
                 min-height: 190px;
             }
@@ -3984,7 +3819,7 @@
         @media (prefers-reduced-motion: reduce) {
             .career-record-tab,
             .career-record-action,
-            .career-record-current-card,
+            .career-record-candidate-card,
             .career-record-picker-card {
                 transition: none !important;
             }
@@ -9730,51 +9565,17 @@
                                     </div>
                                 </div>
                                 <div class="career-record-sport-tabs" id="career-record-sport-tabs" role="tablist" aria-label="记录中心运动类型"></div>
-                                <div class="career-record-status-strip" id="career-record-status-strip" aria-live="polite" aria-label="记录中心状态"></div>
                                 <div class="career-records-v2-layout">
                                     <div class="career-record-groups" id="career-record-groups" aria-label="记录分组">
                                         <div class="career-archive-empty">正在读取 Catalog...</div>
                                     </div>
                                     <section class="career-record-dashboard-main" aria-label="记录看板">
-                                        <div class="career-record-current-list" id="career-record-current-list" aria-live="polite">
-                                            <div class="career-archive-empty">正在加载当前纪录...</div>
-                                        </div>
                                         <div class="career-record-analysis-panel" id="career-record-analysis-panel" aria-live="polite">
                                             <div class="career-archive-empty">选择左侧记录后展示历年成绩折线图。</div>
                                         </div>
                                     </section>
                                 </div>
                             </div>
-                            <div class="career-pb-filter-row" role="group" aria-label="记录中心筛选">
-                                <select class="career-filter-select" id="career-pb-year-filter" aria-label="记录年份筛选" onchange="onCareerPbArchiveFilterChange()">
-                                    <option value="all">全部年份</option>
-                                </select>
-                                <select class="career-filter-select" id="career-pb-sport-filter" aria-label="记录运动类型筛选" onchange="onCareerPbArchiveFilterChange()">
-                                    <option value="all">全部运动</option>
-                                    <option value="running">跑步</option>
-                                    <option value="cycling">骑行</option>
-                                </select>
-                                <select class="career-filter-select" id="career-pb-type-filter" aria-label="记录类型筛选" onchange="onCareerPbArchiveFilterChange()">
-                                    <option value="all">全部记录</option>
-                                    <option value="running_5k">5K</option>
-                                    <option value="running_10k">10K</option>
-                                    <option value="running_half_marathon">半马</option>
-                                    <option value="running_marathon">全马</option>
-                                    <option value="cycling_distance">最长骑行</option>
-                                    <option value="cycling_ascent">最大爬升</option>
-                                </select>
-                            </div>
-                            <div class="career-pb-summary" id="career-pb-summary" aria-live="polite">当前纪录</div>
-                            <div class="career-pb-list" id="career-pb-list" data-career-archive-list="pbs">
-                                <div class="career-archive-empty">暂无当前纪录</div>
-                            </div>
-                            <div class="career-pb-detail-panel" id="career-pb-detail-panel" aria-live="polite">
-                                <div class="career-archive-empty">选择一条当前纪录查看详情与演进。</div>
-                            </div>
-                            <div class="career-pb-detail-panel" id="career-pb-candidate-panel" aria-live="polite">
-                                <div class="career-archive-empty">暂无待确认候选纪录。</div>
-                            </div>
-                            <div class="career-archive-empty" id="career-pb-empty" style="display:none;">暂无当前纪录数据。</div>
                         </div>
                     </section>
                     </div>
@@ -9789,6 +9590,17 @@
                             <div class="career-insight-toolbar">
                                 <div class="career-insight-controls">
                                     <div class="career-year-selector" id="career-year-selector" aria-label="年度总结年份"></div>
+                                    <label class="career-year-tone-field" for="career-year-tone-select">
+                                        <span>报告语气</span>
+                                    <select class="career-year-tone-select" id="career-year-tone-select" aria-label="年度总结语气" onchange="setCareerYearTonePreset(this.value)">
+                                        <option value="warm">温暖</option>
+                                        <option value="celebratory">庆祝</option>
+                                        <option value="professional">专业</option>
+                                        <option value="documentary">纪录片</option>
+                                        <option value="light">轻松</option>
+                                        <option value="humorous">幽默</option>
+                                    </select>
+                                    </label>
                                 </div>
                                 <div class="career-insight-status" id="career-insight-source">年度只读数据准备中</div>
                             </div>
@@ -10615,6 +10427,9 @@
             overview: null,
             overviewLoading: false,
             overviewError: '',
+            overviewSecondaryMetricsLoading: false,
+            overviewSecondaryMetricsError: '',
+            overviewSecondaryMetricsRequestId: 0,
             timeline: null,
             timelineLoading: false,
             timelineError: '',
@@ -10639,10 +10454,12 @@
             yearInsight: null,
             yearInsightByYear: {},
             yearInsightNeedsRefresh: {},
+            yearInsightUpdateBadgeMap: {},
             yearInsightLoading: false,
             yearInsightGenerating: false,
             yearInsightError: '',
             yearInsightSelectedYear: null,
+            yearInsightTonePreset: 'warm',
             yearInsightRequestId: 0,
             yearInsightGenerateRequestId: 0,
             careerDataLoaded: false,
@@ -12006,17 +11823,45 @@
         appState.career.careerSourceVersion = Number(appState.career.careerSourceVersion || 0) + 1;
         appState.career.timelineByFilter = {};
         appState.career.timelineAvailableYears = [];
+        appState.career.overviewSecondaryMetricsRequestId = Number(appState.career.overviewSecondaryMetricsRequestId || 0) + 1;
+        appState.career.overviewSecondaryMetricsLoading = false;
+        appState.career.overviewSecondaryMetricsError = '';
         appState.career.yearInsightByYear = appState.career.yearInsightByYear || {};
         appState.career.yearInsightNeedsRefresh = appState.career.yearInsightNeedsRefresh || {};
         const hasSpecificYear = year !== null && year !== undefined && year !== '';
         const numericYear = Number(year);
         if (hasSpecificYear && Number.isFinite(numericYear)) {
-            appState.career.yearInsightNeedsRefresh[String(numericYear)] = true;
+            const currentToneKey = careerYearInsightCacheKey(numericYear, appState.career.yearInsightTonePreset);
+            if (currentToneKey) appState.career.yearInsightNeedsRefresh[currentToneKey] = true;
+            Object.keys(appState.career.yearInsightByYear).forEach(function(key) {
+                if (String(key).indexOf(String(numericYear) + '::') === 0 || String(key) === String(numericYear)) {
+                    appState.career.yearInsightNeedsRefresh[key] = true;
+                }
+            });
             return;
         }
         Object.keys(appState.career.yearInsightByYear).forEach(function(key) {
             appState.career.yearInsightNeedsRefresh[key] = true;
         });
+    }
+
+    function refreshCareerDerivedEventsInBackground() {
+        const api = window.pywebview && window.pywebview.api ? window.pywebview.api : null;
+        if (!api || typeof api.refresh_career_derived_events !== 'function') {
+            return Promise.resolve(null);
+        }
+        const refreshPromise = api.refresh_career_derived_events().then(function(refreshRes) {
+            if (!refreshRes || refreshRes.code !== 0) {
+                console.warn('refresh_career_derived_events warning', refreshRes);
+            }
+            return refreshRes;
+        }).catch(function(e) {
+            console.warn('refresh_career_derived_events failed', e);
+            return null;
+        });
+        appState.career = appState.career || {};
+        appState.career.careerDerivedRefreshPromise = refreshPromise;
+        return refreshPromise;
     }
 
     async function loadCareerData() {
@@ -12029,17 +11874,7 @@
         }
         const sourceVersion = Number(appState.career.careerSourceVersion || 0);
         appState.career.careerDataLoadingPromise = (async function() {
-            const api = window.pywebview && window.pywebview.api ? window.pywebview.api : null;
-            if (api && typeof api.refresh_career_derived_events === 'function') {
-                try {
-                    const refreshRes = await api.refresh_career_derived_events();
-                    if (!refreshRes || refreshRes.code !== 0) {
-                        console.warn('refresh_career_derived_events warning', refreshRes);
-                    }
-                } catch (e) {
-                    console.warn('refresh_career_derived_events failed', e);
-                }
-            }
+            refreshCareerDerivedEventsInBackground();
             const secondaryLoads = Promise.all([
                 loadCareerTimeline().catch(function(e) { console.warn('loadCareerTimeline', e); }),
                 loadCareerArchives().catch(function(e) { console.warn('loadCareerArchives', e); }),
@@ -12323,11 +12158,26 @@
             achievementCount: Number(raw.achievement_count || 0),
             totalDurationSeconds: Number(raw['total_duration' + '_seconds'] || 0),
             coveredCityCount: Number(raw.covered_city_count || 0),
-            coveredCountryCount: Number(raw.covered_country_count || 0),
+            coveredCountryCount: raw.covered_country_count == null ? null : Number(raw.covered_country_count || 0),
             activeYearCount: Number(raw.active_year_count || 0),
             longestActivityDistanceKm: raw.longest_activity_distance_km == null ? null : Number(raw.longest_activity_distance_km),
             maxElevationGainM: raw.max_elevation_gain_m == null ? null : Number(raw.max_elevation_gain_m),
-            maxAltitudeM: raw.max_altitude_m == null ? null : Number(raw.max_altitude_m)
+            maxAltitudeM: raw.max_altitude_m == null ? null : Number(raw.max_altitude_m),
+            secondaryMetricsStatus: String(raw.secondary_metrics_status || (raw.covered_country_count == null && raw.max_elevation_gain_m == null && raw.max_altitude_m == null ? 'pending' : 'ready'))
+        };
+    }
+
+    function normalizeCareerOverviewSecondaryMetrics(payload) {
+        const data = payload && payload.data && typeof payload.data === 'object' ? payload.data : (payload || {});
+        const status = data.status && typeof data.status === 'object' ? data.status : {};
+        return {
+            coveredCountryCount: data.covered_country_count == null ? null : Number(data.covered_country_count || 0),
+            maxElevationGainM: data.max_elevation_gain_m == null ? null : Number(data.max_elevation_gain_m),
+            maxAltitudeM: data.max_altitude_m == null ? null : Number(data.max_altitude_m),
+            status: {
+                dataReady: !!status.data_ready,
+                message: String(status.message || '')
+            }
         };
     }
 
@@ -12733,7 +12583,8 @@
         setCareerOverviewField('swimmingDistanceKm', formatCareerDistanceKm(sportTotals.swimmingDistanceKm));
         setCareerOverviewField('strengthTotalWeightKg', formatCareerWeightKg(sportTotals.strengthTotalWeightKg, sportTotals.strengthTotalWeightStatus));
         setCareerOverviewField('maxAltitudeM', formatCareerElevationM(careerStats.maxAltitudeM));
-        setCareerOverviewField('locationFootprint', String(careerStats.coveredCityCount || summary.coveredCityCount || 0) + ' 城 / ' + String(careerStats.coveredCountryCount || 0) + ' 国');
+        const countryText = careerStats.coveredCountryCount === null || careerStats.coveredCountryCount === undefined ? '--' : String(careerStats.coveredCountryCount || 0);
+        setCareerOverviewField('locationFootprint', String(careerStats.coveredCityCount || summary.coveredCityCount || 0) + ' 城 / ' + countryText + ' 国');
         setCareerOverviewField('activityCount', formatCareerOverviewValue(careerStats.activityCount || summary.activityCount, '0'));
         setCareerOverviewField('totalDuration', formatCareerDurationSeconds(careerStats.totalDurationSeconds));
         setCareerOverviewField('raceCount', formatCareerOverviewValue(careerStats.raceCount || summary.raceCount, '0'));
@@ -12782,6 +12633,60 @@
         if (statusText) statusText.textContent = message || '生涯总览暂不可用';
     }
 
+    async function loadCareerOverviewSecondaryMetrics() {
+        appState.career = appState.career || {};
+        const api = window.pywebview && window.pywebview.api ? window.pywebview.api : null;
+        if (!api || typeof api.get_career_overview_secondary_metrics !== 'function') {
+            return {
+                ok: false,
+                skipped: true,
+                reason: 'career_overview_secondary_metrics_api_unavailable'
+            };
+        }
+        const requestId = Number(appState.career.overviewSecondaryMetricsRequestId || 0) + 1;
+        appState.career.overviewSecondaryMetricsRequestId = requestId;
+        appState.career.overviewSecondaryMetricsLoading = true;
+        appState.career.overviewSecondaryMetricsError = '';
+        try {
+            const res = await api.get_career_overview_secondary_metrics();
+            const metrics = normalizeCareerOverviewSecondaryMetrics(requireCareerApiData(res, '总览二级指标加载失败'));
+            if (appState.career.overviewSecondaryMetricsRequestId !== requestId) {
+                return {
+                    ok: false,
+                    ignored: true,
+                    reason: 'stale_career_overview_secondary_metrics_response'
+                };
+            }
+            appState.career.overviewSecondaryMetricsLoading = false;
+            if (appState.career.overview) {
+                appState.career.overview.careerStats = Object.assign({}, appState.career.overview.careerStats || normalizeCareerStats({}), {
+                    coveredCountryCount: metrics.coveredCountryCount,
+                    maxElevationGainM: metrics.maxElevationGainM,
+                    maxAltitudeM: metrics.maxAltitudeM,
+                    secondaryMetricsStatus: metrics.status && metrics.status.dataReady ? 'ready' : 'empty'
+                });
+                renderCareerOverview(appState.career.overview);
+            }
+            return metrics;
+        } catch (e) {
+            const message = e && e.message ? e.message : String(e || '总览二级指标加载失败');
+            if (appState.career.overviewSecondaryMetricsRequestId !== requestId) {
+                return {
+                    ok: false,
+                    ignored: true,
+                    reason: 'stale_career_overview_secondary_metrics_error'
+                };
+            }
+            appState.career.overviewSecondaryMetricsLoading = false;
+            appState.career.overviewSecondaryMetricsError = message;
+            console.warn('loadCareerOverviewSecondaryMetrics', message);
+            return {
+                ok: false,
+                error: message
+            };
+        }
+    }
+
     function renderCareerSeasonsLoading() {
         const statusEl = document.getElementById('career-seasons-status-text');
         const stripEl = document.getElementById('career-season-strip');
@@ -12807,12 +12712,6 @@
             const res = await window.pywebview.api.get_career_seasons(filters || {});
             const seasons = normalizeCareerSeasons(requireCareerApiData(res, '年度结构加载失败'));
             appState.career.seasons = seasons;
-            appState.career.yearInsightNeedsRefresh = appState.career.yearInsightNeedsRefresh || {};
-            seasons.seasons.forEach(function(season) {
-                if (season && season.reportUpdateAvailable && Number.isFinite(Number(season.year))) {
-                    appState.career.yearInsightNeedsRefresh[String(Number(season.year))] = true;
-                }
-            });
             appState.career.seasonsLoading = false;
             renderCareerSeasons(seasons);
             return seasons;
@@ -12843,6 +12742,7 @@
             appState.career.overview = overview;
             appState.career.overviewLoading = false;
             renderCareerOverview(overview);
+            loadCareerOverviewSecondaryMetrics().catch(function(e) { console.warn('loadCareerOverviewSecondaryMetrics', e); });
             return overview;
         } catch (e) {
             const message = e && e.message ? e.message : String(e || '生涯总览加载失败');
@@ -12900,50 +12800,6 @@
         };
     }
 
-    function normalizeCareerArchivePb(item) {
-        if (!item || typeof item !== 'object') return null;
-        return {
-            id: String(item.id || ''),
-            activityId: item.activity_id == null ? '' : String(item.activity_id),
-            sport: String(item.sport || ''),
-            sportLabel: String(item.sport_label || item.sport || ''),
-            pbType: String(item.pb_type || ''),
-            pbTypeLabel: String(item.pb_type_label || item.pb_type || ''),
-            pbTitle: String(item.pb_title || item.pb_type || '纪录'),
-            value: item.value == null ? null : item.value,
-            valueUnit: String(item.value_unit || ''),
-            valueDisplay: String(item.value_display || ''),
-            improvementSec: item.improvement_sec == null ? null : Number(item.improvement_sec),
-            improvementDisplay: String(item.improvement_display || ''),
-            eventDate: String(item.event_date || ''),
-            year: item.year == null ? null : Number(item.year),
-            month: item.month == null ? null : Number(item.month),
-            displayDate: String(item.display_date || item.event_date || ''),
-            source: String(item.source || ''),
-            sourceLabel: String(item.source_label || item.source || ''),
-            sourceMode: String(item.source_mode || ''),
-            sourceModeLabel: String(item.source_mode_label || item.source_mode || ''),
-            resolverVersion: String(item.resolver_version || ''),
-            recordStatus: String(item.status || ''),
-            confidenceLabel: String(item.confidence_label || ''),
-            detailLink: normalizeCareerDetailLink(item.detail_link)
-        };
-    }
-
-    function normalizeCareerRecordCandidate(item) {
-        if (!item || typeof item !== 'object') return null;
-        const detailLink = normalizeCareerDetailLink(item.detail_link);
-        return {
-            id: String(item.id || ''),
-            activityId: item.activity_id == null ? detailLink.activityId : String(item.activity_id),
-            title: String(item.title || '候选纪录'),
-            confidenceLabel: String(item.confidence_label || ''),
-            statusLabel: String(item.status_label || ''),
-            evidenceSummary: Array.isArray(item.evidence_summary) ? item.evidence_summary.map(function(value) { return String(value || ''); }).filter(Boolean) : [],
-            detailLink: detailLink
-        };
-    }
-
     function normalizeCareerArchiveAchievement(item) {
         if (!item || typeof item !== 'object') return null;
         return {
@@ -12975,31 +12831,21 @@
     function normalizeCareerArchives(payload) {
         const data = payload && typeof payload === 'object' ? payload : {};
         const raceData = data.races && typeof data.races === 'object' ? data.races : {};
-        const pbData = data.pbs && typeof data.pbs === 'object' ? data.pbs : {};
         const achievementData = data.achievements && typeof data.achievements === 'object' ? data.achievements : {};
-        const candidateData = data.pbCandidates && typeof data.pbCandidates === 'object' ? data.pbCandidates : {};
         const raceItems = Array.isArray(raceData.races) ? raceData.races : [];
-        const pbItems = Array.isArray(pbData.pb_records) ? pbData.pb_records : [];
         const achievementItems = Array.isArray(achievementData.achievements) ? achievementData.achievements : [];
-        const candidateItems = Array.isArray(candidateData.candidates) ? candidateData.candidates : [];
         const status = data.status && typeof data.status === 'object' ? data.status : {};
         return {
             races: raceItems.map(normalizeCareerArchiveRace).filter(Boolean),
-            pbs: pbItems.map(normalizeCareerArchivePb).filter(Boolean),
-            pbCandidates: candidateItems.map(normalizeCareerRecordCandidate).filter(Boolean),
             achievements: achievementItems.map(normalizeCareerArchiveAchievement).filter(Boolean),
             summary: {
                 raceCount: Number((raceData.summary && raceData.summary.total) || raceItems.length || 0),
                 raceByYear: raceData.summary && raceData.summary.by_year && typeof raceData.summary.by_year === 'object' ? raceData.summary.by_year : {},
-                pbCount: Number((pbData.summary && pbData.summary.total) || pbItems.length || 0),
-                pbByYear: pbData.summary && pbData.summary.by_year && typeof pbData.summary.by_year === 'object' ? pbData.summary.by_year : {},
-                pbCandidateCount: Number((pbData.status && pbData.status.candidate_count) || (candidateData.summary && candidateData.summary.total) || candidateItems.length || 0),
                 achievementCount: Number((achievementData.summary && achievementData.summary.total) || achievementItems.length || 0),
                 achievementByYear: achievementData.summary && achievementData.summary.by_year && typeof achievementData.summary.by_year === 'object' ? achievementData.summary.by_year : {},
                 achievementByCategory: achievementData.summary && achievementData.summary.by_category && typeof achievementData.summary.by_category === 'object' ? achievementData.summary.by_category : {}
             },
             filters: raceData.filters && typeof raceData.filters === 'object' ? raceData.filters : {},
-            pbFilters: pbData.filters && typeof pbData.filters === 'object' ? pbData.filters : {},
             achievementFilters: achievementData.filters && typeof achievementData.filters === 'object' ? achievementData.filters : {},
             status: {
                 dataReady: !!status.dataReady,
@@ -13113,6 +12959,79 @@
         };
     }
 
+    function normalizeCareerRecordMetricSeries(payload) {
+        const data = payload && typeof payload === 'object' ? payload : {};
+        const points = Array.isArray(data.points) ? data.points : [];
+        const progression = Array.isArray(data.record_progression) ? data.record_progression : [];
+        const normalizePoint = function(item) {
+            if (!item || typeof item !== 'object') return null;
+            const metric = item.metric && typeof item.metric === 'object' ? item.metric : {};
+            const scope = item.scope && typeof item.scope === 'object' ? item.scope : {};
+            const detailLink = normalizeCareerDetailLink(item.detail_link);
+            return {
+                id: String(item.id || ''),
+                activityId: item.activity_id == null ? '' : String(item.activity_id),
+                recordKey: String(item.record_key || ''),
+                sport: String(item.sport || ''),
+                eventDate: String(item.event_date || ''),
+                metric: {
+                    name: String(metric.name || ''),
+                    value: metric.value == null ? null : Number(metric.value),
+                    unit: String(metric.unit || ''),
+                    display: String(metric.display || '')
+                },
+                range: item.range && typeof item.range === 'object' ? item.range : {},
+                quality: item.quality && typeof item.quality === 'object' ? item.quality : {},
+                scope: {
+                    labels: Array.isArray(scope.labels) ? scope.labels.map(function(value) { return String(value || ''); }).filter(Boolean) : [],
+                    dimensions: scope.dimensions && typeof scope.dimensions === 'object' ? scope.dimensions : {},
+                    scopeHash: String(scope.scope_hash || '')
+                },
+                detailLink: detailLink,
+                sourceMode: String(item.source_mode || ''),
+                resolverVersion: String(item.resolver_version || ''),
+                ruleVersion: String(item.rule_version || ''),
+                status: String(item.status || ''),
+                eligibleForCurrentBest: item.eligible_for_current_best !== false,
+                isCurrentBest: !!item.is_current_best,
+                isRecordBreaking: !!item.is_record_breaking,
+                resultFingerprint: String(item.result_fingerprint || '')
+            };
+        };
+        return {
+            recordKey: String(data.record_key || ''),
+            sport: String(data.sport || ''),
+            displayName: String(data.display_name || data.record_key || ''),
+            comparison: String(data.comparison || ''),
+            axisDirection: String(data.axis_direction || ''),
+            points: points.map(normalizePoint).filter(Boolean),
+            currentBest: normalizePoint(data.current_best),
+            recordProgression: progression.map(function(item) {
+                const metric = item && item.metric && typeof item.metric === 'object' ? item.metric : {};
+                const detailLink = normalizeCareerDetailLink(item && item.detail_link);
+                return {
+                    metricResultId: String((item && item.metric_result_id) || ''),
+                    activityId: String((item && item.activity_id) || ''),
+                    recordKey: String((item && item.record_key) || ''),
+                    eventDate: String((item && item.event_date) || ''),
+                    metric: {
+                        name: String(metric.name || ''),
+                        value: metric.value == null ? null : Number(metric.value),
+                        unit: String(metric.unit || ''),
+                        display: String(metric.display || '')
+                    },
+                    previousBestMetric: item && item.previous_best_metric && typeof item.previous_best_metric === 'object' ? item.previous_best_metric : {},
+                    eventType: String((item && item.event_type) || ''),
+                    detailLink: detailLink
+                };
+            }),
+            summary: data.summary && typeof data.summary === 'object' ? data.summary : {},
+            filters: data.filters && typeof data.filters === 'object' ? data.filters : {},
+            metrics: data.metrics && typeof data.metrics === 'object' ? data.metrics : {},
+            status: data.status && typeof data.status === 'object' ? data.status : {}
+        };
+    }
+
     function careerRecordState() {
         appState.career = appState.career || {};
         appState.career.recordsCenter = appState.career.recordsCenter || {
@@ -13170,43 +13089,6 @@
             btn.classList.toggle('is-active', isActive);
             btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
         });
-    }
-
-    function careerRecordStatusCardHtml(state, label, value) {
-        return '<div class="career-record-status-card" data-state="' + safeHtml(state || 'ready') + '">'
-            + '<div class="career-record-status-label">' + safeHtml(label || '--') + '</div>'
-            + '<div class="career-record-status-value">' + safeHtml(value || '--') + '</div>'
-            + '</div>';
-    }
-
-    function renderCareerRecordStatusStrip(catalog, selectedSport) {
-        const el = document.getElementById('career-record-status-strip');
-        if (!el) return;
-        const state = careerRecordState();
-        const sport = ((catalog && catalog.sports) || []).find(function(item) { return item.sport === selectedSport; }) || {};
-        const status = (catalog && catalog.status) || {};
-        const records = (state.records || []).filter(function(item) { return !selectedSport || item.sport === selectedSport; });
-        const candidates = (state.candidates || []).filter(function(item) { return !selectedSport || item.sport === selectedSport; });
-        const groups = Array.isArray(sport.groups) ? sport.groups : [];
-        const availabilityStates = [];
-        groups.forEach(function(group) {
-            (group.records || []).forEach(function(record) {
-                const availability = String(record.availability_state || '');
-                if (availability && availabilityStates.indexOf(availability) < 0) availabilityStates.push(availability);
-            });
-        });
-        const rebuilding = String(status.state || '').indexOf('rebuild') >= 0 || !!status.rebuilding;
-        const partial = !!status.partial || availabilityStates.indexOf('unavailable') >= 0;
-        const validationRequired = availabilityStates.indexOf('validation_required') >= 0;
-        const cards = [];
-        if (state.loading) cards.push(careerRecordStatusCardHtml('loading', 'Loading', '正在读取后端 ViewModel'));
-        if (state.error) cards.push(careerRecordStatusCardHtml('error', 'Error', state.error));
-        if (rebuilding) cards.push(careerRecordStatusCardHtml('rebuilding', 'Rebuilding', status.message || '纪录正在重建'));
-        if (!state.loading && !records.length) cards.push(careerRecordStatusCardHtml('empty', 'Empty', '暂无当前纪录'));
-        if (partial) cards.push(careerRecordStatusCardHtml('partial', 'Partial', '部分运动或纪录暂不可用'));
-        if (validationRequired) cards.push(careerRecordStatusCardHtml('validation_required', 'Validation Required', '部分纪录需要真实数据验收'));
-        cards.push(careerRecordStatusCardHtml('candidate', 'Candidate', String(candidates.length || 0) + ' 条候选待复核'));
-        el.innerHTML = cards.join('');
     }
 
     function careerRecordSelectedGroupKeys(catalog, selectedSport, selectedGroup) {
@@ -13328,9 +13210,16 @@
         const state = careerRecordState();
         const selectedKey = state.selectedRecordKey || '';
         const isSelected = selectedKey ? definition.recordKey === selectedKey : index === 0;
-        const ariaLabel = [definition.displayName, currentRecord && currentRecord.metric ? currentRecord.metric.display : '', definition.sportLabel].filter(Boolean).join(' · ');
+        const metricDisplay = currentRecord && currentRecord.metric ? String(currentRecord.metric.display || '') : '';
+        const dateDisplay = currentRecord ? formatCareerDate(currentRecord.displayDate || currentRecord.eventDate) : '';
+        const statusText = currentRecord && currentRecord.status ? String(currentRecord.status) : '';
+        const metricText = metricDisplay || '暂无记录';
+        const metaText = metricDisplay ? [dateDisplay, statusText].filter(Boolean).join(' · ') : '';
+        const ariaLabel = [definition.displayName, metricText, dateDisplay, definition.sportLabel].filter(Boolean).join(' · ');
         return '<div class="career-record-picker-card' + (isSelected ? ' is-selected' : '') + '" data-career-record-key="' + safeHtml(definition.recordKey) + '" role="button" tabindex="0" aria-pressed="' + (isSelected ? 'true' : 'false') + '" aria-label="' + safeHtml(ariaLabel || definition.displayName) + '" onclick="selectCareerRecordKeyForAnalysis(\'' + safeHtml(definition.recordKey) + '\')" onkeydown="onCareerRecordPickerKeydown(event, this)">'
             + '<div class="career-record-picker-title">' + safeHtml(definition.displayName) + '</div>'
+            + '<div class="career-record-picker-value' + (metricDisplay ? '' : ' is-empty') + '">' + safeHtml(metricText) + '</div>'
+            + (metaText ? '<div class="career-record-picker-meta">' + safeHtml(metaText) + '</div>' : '')
             + '</div>';
     }
 
@@ -13378,32 +13267,6 @@
             : '<div class="career-archive-empty">该运动暂无记录定义。</div>';
     }
 
-    function careerRecordCurrentCardHtml(record, index) {
-        const scopeText = record.scope.labels.length ? record.scope.labels.join(' · ') : '默认 Scope';
-        const improvementText = record.improvement && record.improvement.display ? String(record.improvement.display) : '';
-        const selectedId = careerRecordState().selectedRecordId || '';
-        const isSelected = selectedId ? record.id === selectedId : index === 0;
-        const isHero = index === 0;
-        const badges = [
-            careerRecordAvailabilityBadge(record.catalogState, record.catalogState),
-            record.sourceMode ? '<span class="career-record-badge">' + safeHtml(record.sourceMode) + '</span>' : ''
-        ].filter(Boolean).join('');
-        const activityAttrs = record.detailLink && record.detailLink.activityId
-            ? ' data-activity-id="' + safeHtml(record.detailLink.activityId) + '" data-career-source="' + safeHtml(record.detailLink.source || 'career') + '"'
-            : '';
-        return '<div class="career-record-current-card' + (isSelected ? ' is-selected' : '') + (isHero ? ' is-hero' : '') + '" data-career-record-id="' + safeHtml(record.id) + '" role="button" tabindex="0" onclick="selectCareerRecordForAnalysis(\'' + safeHtml(record.id) + '\')" onkeydown="onCareerRecordAnalysisKeydown(event, this)">'
-            + '<div class="career-record-current-title">' + safeHtml(record.displayName) + '</div>'
-            + '<div class="career-record-current-meta">' + safeHtml([record.sportLabel, formatCareerDate(record.displayDate || record.eventDate)].filter(Boolean).join(' · ') || '--') + '</div>'
-            + '<div class="career-record-current-value">' + safeHtml(record.metric.display || '--') + '</div>'
-            + '<div class="career-record-scope">' + safeHtml(scopeText) + (improvementText ? ' · ' + safeHtml(improvementText) : '') + '</div>'
-            + '<div class="career-record-badges">' + badges + '</div>'
-            + '<div class="career-record-actions">'
-                + '<button type="button" class="career-record-action" data-career-record-detail-id="' + safeHtml(record.id) + '" aria-label="查看 ' + safeHtml(record.displayName) + ' 纪录详情" onclick="openCareerRecordDetailFromElementV2(event, this)">查看详情</button>'
-                + (activityAttrs ? '<button type="button" class="career-record-action secondary"' + activityAttrs + ' aria-label="打开 ' + safeHtml(record.displayName) + ' 来源 Activity" onclick="openCareerRecordActivityFromElement(event, this)">来源 Activity</button>' : '')
-            + '</div>'
-            + '</div>';
-    }
-
     function careerRecordCandidateCardHtml(candidate) {
         const state = careerRecordState();
         const meta = [candidate.sportLabel, candidate.metricDisplay, candidate.scopeLabels.join(' · ')].filter(Boolean).join(' · ');
@@ -13415,9 +13278,9 @@
             ? ' data-activity-id="' + safeHtml(candidate.detailLink.activityId) + '" data-career-source="' + safeHtml(candidate.detailLink.source || 'career') + '"'
             : '';
         const canOperate = candidate.canUserConfirm && candidate.candidateState === 'candidate';
-        return '<div class="career-record-current-card" data-career-record-candidate-id="' + safeHtml(candidate.id) + '">'
-            + '<div class="career-record-current-title">' + safeHtml(candidate.displayName) + '</div>'
-            + '<div class="career-record-current-meta">' + safeHtml([meta || '候选纪录', confidenceText, candidate.confidenceBand].filter(Boolean).join(' · ')) + '</div>'
+        return '<div class="career-record-candidate-card" data-career-record-candidate-id="' + safeHtml(candidate.id) + '">'
+            + '<div class="career-record-panel-title">' + safeHtml(candidate.displayName) + '</div>'
+            + '<div class="career-record-panel-meta">' + safeHtml([meta || '候选纪录', confidenceText, candidate.confidenceBand].filter(Boolean).join(' · ')) + '</div>'
             + '<div class="career-record-badges">'
                 + '<span class="career-record-badge" data-state="candidate_only">候选</span>'
                 + candidate.reasonCodes.slice(0, 2).map(function(code) { return '<span class="career-record-badge">' + safeHtml(code) + '</span>'; }).join('')
@@ -13431,6 +13294,22 @@
             + '</div>';
     }
 
+    function renderCareerRecordCandidatePanel(candidates) {
+        const panel = document.getElementById('career-record-analysis-panel');
+        if (!panel) return;
+        disposeCareerRecordCharts();
+        const safeCandidates = Array.isArray(candidates) ? candidates : [];
+        panel.innerHTML = '<div class="career-record-analysis-head">'
+            + '<div>'
+                + '<div class="career-record-analysis-title">候选纪录</div>'
+                + '<div class="career-record-analysis-subtitle">候选结果来自后端 ViewModel；前端只负责展示和提交确认/拒绝决策。</div>'
+            + '</div>'
+            + '</div>'
+            + (safeCandidates.length
+                ? '<div class="career-record-candidate-list">' + safeCandidates.map(careerRecordCandidateCardHtml).join('') + '</div>'
+                : '<div class="career-archive-empty">暂无待确认候选纪录。</div>');
+    }
+
     function renderCareerRecordsCenter(viewModel) {
         const state = careerRecordState();
         const catalog = viewModel && viewModel.catalog ? viewModel.catalog : state.catalog;
@@ -13440,19 +13319,6 @@
         const selectedSport = state.selectedSport || (sports[0] && sports[0].sport) || '';
         renderCareerRecordSportTabs(catalog, selectedSport);
         renderCareerRecordViewTabs(state.selectedView);
-        renderCareerRecordStatusStrip(catalog, selectedSport);
-        const listEl = document.getElementById('career-record-current-list');
-        if (!listEl) return;
-        if (state.loading) {
-            renderCareerRecordPicker([], [], [], state.selectedView);
-            listEl.innerHTML = '<div class="career-archive-empty">正在加载记录中心...</div>';
-            return;
-        }
-        if (state.error) {
-            renderCareerRecordPicker([], [], [], state.selectedView);
-            listEl.innerHTML = '<div class="career-archive-empty">' + safeHtml(state.error) + '</div>';
-            return;
-        }
         const definitions = careerRecordCatalogDefinitions(catalog, selectedSport);
         const records = (state.records || []).filter(function(item) {
             return !selectedSport || item.sport === selectedSport;
@@ -13463,11 +13329,29 @@
         if (!state.selectedRecordKey || !definitions.some(function(item) { return item.recordKey === state.selectedRecordKey; })) {
             state.selectedRecordKey = definitions[0] ? definitions[0].recordKey : '';
         }
+        if (state.loading) {
+            if (definitions.length) {
+                renderCareerRecordPicker(definitions, records, candidatesForGroup, state.selectedView);
+                const loadingDefinition = definitions.find(function(item) { return item.recordKey === state.selectedRecordKey; }) || definitions[0];
+                const loadingRecord = records.find(function(item) { return item.recordKey === loadingDefinition.recordKey; }) || careerRecordViewFromDefinition(loadingDefinition);
+                state.selectedRecordId = loadingRecord.id;
+                state.selectedRecordKey = loadingRecord.recordKey;
+                renderCareerRecordAnalysisPanel(loadingRecord, null);
+            } else {
+                renderCareerRecordPicker([], [], [], state.selectedView);
+                renderCareerRecordAnalysisPanel(null, null);
+            }
+            return;
+        }
+        if (state.error) {
+            renderCareerRecordPicker([], [], [], state.selectedView);
+            const panel = document.getElementById('career-record-analysis-panel');
+            if (panel) panel.innerHTML = '<div class="career-archive-empty">' + safeHtml(state.error) + '</div>';
+            return;
+        }
         renderCareerRecordPicker(definitions, records, candidatesForGroup, state.selectedView);
         if (state.selectedView === 'candidates') {
-            listEl.innerHTML = candidatesForGroup.length
-                ? '<div class="career-record-secondary-title">Candidate Review</div>' + candidatesForGroup.map(careerRecordCandidateCardHtml).join('')
-                : '<div class="career-archive-empty">暂无待确认候选纪录。</div>';
+            renderCareerRecordCandidatePanel(candidatesForGroup);
             return;
         }
         if (state.selectedView === 'history') {
@@ -13475,25 +13359,27 @@
             const historyFocus = selectedDefinition
                 ? (records.find(function(item) { return item.recordKey === selectedDefinition.recordKey; }) || careerRecordViewFromDefinition(selectedDefinition))
                 : null;
-            listEl.innerHTML = '';
             if (historyFocus && (!state.analysis || state.analysis.recordKey !== historyFocus.recordKey)) {
                 state.selectedRecordId = historyFocus.id;
                 state.selectedRecordKey = historyFocus.recordKey;
                 loadCareerRecordAnalysis(historyFocus).catch(function(e) { console.warn('loadCareerRecordAnalysis history', e); });
+            } else {
+                renderCareerRecordAnalysisPanel(historyFocus, state.analysis && state.analysis.metricSeries ? state.analysis.metricSeries : null);
             }
             return;
         }
         if (!definitions.length) {
-            listEl.innerHTML = '<div class="career-archive-empty">暂无记录定义；候选纪录不会被渲染为当前纪录。</div>';
+            renderCareerRecordAnalysisPanel(null, null);
             return;
         }
         const selectedDefinition = definitions.find(function(item) { return item.recordKey === state.selectedRecordKey; }) || definitions[0];
         const selectedRecord = records.find(function(item) { return item.recordKey === selectedDefinition.recordKey; }) || careerRecordViewFromDefinition(selectedDefinition);
         state.selectedRecordId = selectedRecord.id;
         state.selectedRecordKey = selectedRecord.recordKey;
-        listEl.innerHTML = '';
         if (selectedRecord && (!state.analysis || state.analysis.recordKey !== selectedRecord.recordKey)) {
             loadCareerRecordAnalysis(selectedRecord).catch(function(e) { console.warn('loadCareerRecordAnalysis initial', e); });
+        } else {
+                renderCareerRecordAnalysisPanel(selectedRecord, state.analysis && state.analysis.metricSeries ? state.analysis.metricSeries : null);
         }
     }
 
@@ -13528,6 +13414,11 @@
             const chart = window.echarts.init(el);
             chart.setOption(option || {});
             careerRecordChartInstances[containerId] = chart;
+            setTimeout(function() {
+                if (careerRecordChartInstances[containerId] === chart && chart && typeof chart.resize === 'function') {
+                    chart.resize();
+                }
+            }, 80);
             return;
         }
         el.innerHTML = fallbackHtml || '<div class="career-archive-empty">图表组件不可用，已切换为列表视图。</div>';
@@ -13566,7 +13457,9 @@
         return prefix + '；折线图展示自活动记录以来的历年相关纪录成绩。';
     }
 
-    function careerRecordHistoryEmptyText(record) {
+    function careerRecordSeriesEmptyText(record, metricSeries) {
+        const status = metricSeries && metricSeries.status && typeof metricSeries.status === 'object' ? metricSeries.status : {};
+        if (status.message) return String(status.message);
         if (careerRecordIsCyclingStandardDistanceRecord(record)) {
             return '暂无正式标准距离纪录。该记录定义已接入 Catalog，但距离-时间流契约仍待真实数据验收。';
         }
@@ -13579,14 +13472,15 @@
         return '暂无正式纪录历史。';
     }
 
-    function careerRecordHistoryListHtml(history, record) {
-        const records = history && Array.isArray(history.records) ? history.records.map(normalizeCareerRecordV2).filter(Boolean) : [];
-        if (!records.length) return '<div class="career-archive-empty">' + safeHtml(careerRecordHistoryEmptyText(record)) + '</div>';
+    function careerRecordSeriesListHtml(metricSeries, record) {
+        const points = metricSeries && Array.isArray(metricSeries.points) ? metricSeries.points : [];
+        if (!points.length) return '<div class="career-archive-empty">' + safeHtml(careerRecordSeriesEmptyText(record, metricSeries)) + '</div>';
         return '<div class="career-record-node-list" aria-label="可访问历史节点列表">'
-            + records.map(function(record) {
-                return '<div class="career-record-node" data-status="' + safeHtml(record.status) + '">'
-                    + '<span>' + safeHtml([formatCareerDate(record.displayDate || record.eventDate), record.status].filter(Boolean).join(' · ')) + '</span>'
-                    + '<strong>' + safeHtml(record.metric.display || '--') + '</strong>'
+            + points.map(function(point) {
+                const marker = point.isCurrentBest ? '当前最佳' : (point.isRecordBreaking ? '刷新记录' : '');
+                return '<div class="career-record-node" data-status="' + safeHtml(point.status) + '">'
+                    + '<span>' + safeHtml([formatCareerDate(point.eventDate), point.status, marker].filter(Boolean).join(' · ')) + '</span>'
+                    + '<strong>' + safeHtml(point.metric.display || '--') + '</strong>'
                     + '</div>';
             }).join('')
             + '</div>';
@@ -13661,8 +13555,8 @@
             careerRecordDetailFactHtml('历时', activity.duration_display || '--')
         ].join('');
         return '<div class="career-record-detail-card" data-career-record-detail-panel>'
-            + '<div class="career-record-current-title">' + safeHtml(detailRecord.displayName || '纪录详情') + '</div>'
-            + '<div class="career-record-current-meta">' + safeHtml([detailRecord.sportLabel, formatCareerDate(detailRecord.displayDate || detailRecord.eventDate), detailRecord.status].filter(Boolean).join(' · ')) + '</div>'
+            + '<div class="career-record-panel-title">' + safeHtml(detailRecord.displayName || '纪录详情') + '</div>'
+            + '<div class="career-record-panel-meta">' + safeHtml([detailRecord.sportLabel, formatCareerDate(detailRecord.displayDate || detailRecord.eventDate), detailRecord.status].filter(Boolean).join(' · ')) + '</div>'
             + '<div class="career-record-detail-grid">' + facts + '</div>'
             + '<div class="career-record-badges">' + careerRecordQualityBadges(detailRecord.quality) + '</div>'
             + '<div class="career-record-actions">'
@@ -13671,7 +13565,7 @@
             + '</div>';
     }
 
-    function renderCareerRecordAnalysisPanel(record, history) {
+    function renderCareerRecordAnalysisPanel(record, metricSeries) {
         const panel = document.getElementById('career-record-analysis-panel');
         if (!panel) return;
         if (!record) {
@@ -13679,10 +13573,17 @@
             panel.innerHTML = '<div class="career-archive-empty">选择左侧记录后展示历年成绩折线图。</div>';
             return;
         }
-        const axisDirection = record.axisDirection || 'lower';
+        const series = metricSeries && typeof metricSeries === 'object' ? metricSeries : null;
+        const points = series && Array.isArray(series.points) ? series.points : [];
+        const axisDirection = (series && series.axisDirection) || record.axisDirection || 'lower';
+        const currentBestId = series && series.currentBest ? String(series.currentBest.id || '') : '';
+        const progressionIds = (series && Array.isArray(series.recordProgression) ? series.recordProgression : []).reduce(function(acc, item) {
+            if (item && item.metricResultId) acc[String(item.metricResultId)] = item;
+            return acc;
+        }, {});
         panel.innerHTML = '<div class="career-record-analysis-head">'
             + '<div>'
-                + '<div class="career-record-analysis-title">' + safeHtml(record.displayName || '纪录演进') + (record.metric && record.metric.display ? ' · ' + safeHtml(record.metric.display) : '') + '</div>'
+                + '<div class="career-record-analysis-title">' + safeHtml((series && series.displayName) || record.displayName || '纪录演进') + (series && series.currentBest && series.currentBest.metric.display ? ' · ' + safeHtml(series.currentBest.metric.display) : (record.metric && record.metric.display ? ' · ' + safeHtml(record.metric.display) : '')) + '</div>'
                 + '<div class="career-record-analysis-subtitle">' + careerRecordAnalysisSubtitle(record) + '</div>'
             + '</div>'
             + '<div class="career-record-badges">' + careerRecordAvailabilityBadge(record.catalogState, record.catalogState) + '</div>'
@@ -13691,21 +13592,47 @@
             + '<div class="career-record-chart-box">'
                 + '<div class="career-record-chart-title">' + safeHtml(careerRecordChartTitle(record, axisDirection)) + '</div>'
                 + '<div class="career-record-chart-canvas" id="career-record-history-chart"></div>'
-                + careerRecordHistoryListHtml(history, record)
+                + careerRecordSeriesListHtml(series, record)
             + '</div>'
             + '</div>';
-        const historyRecords = history && Array.isArray(history.records) ? history.records.map(normalizeCareerRecordV2).filter(Boolean) : [];
+        const chartPoints = points.filter(function(item) { return item.metric && item.metric.value !== null && !Number.isNaN(item.metric.value); });
+        const progressionMarkers = chartPoints.map(function(point, index) {
+            const progression = progressionIds[String(point.id || '')];
+            if (!progression) return null;
+            return {
+                name: progression.eventType || 'record_progression',
+                coord: [index, point.metric.value],
+                value: point.metric.display || ''
+            };
+        }).filter(Boolean);
         renderCareerRecordChart('career-record-history-chart', {
             tooltip: { trigger: 'axis' },
-            xAxis: { type: 'category', data: historyRecords.map(function(item) { return formatCareerDate(item.displayDate || item.eventDate) || '--'; }) },
+            xAxis: { type: 'category', data: chartPoints.map(function(item) { return formatCareerDate(item.eventDate) || '--'; }) },
             yAxis: { type: 'value', inverse: axisDirection === 'lower' },
-            series: [{ type: 'line', step: 'end', data: historyRecords.map(function(item) { return item.metric.value; }) }]
-        }, careerRecordHistoryListHtml(history, record));
+            series: [{
+                type: 'line',
+                data: chartPoints.map(function(item) {
+                    return {
+                        value: item.metric.value,
+                        name: item.metric.display || '',
+                        symbolSize: item.isCurrentBest || (currentBestId && item.id === currentBestId) ? 11 : (item.isRecordBreaking ? 8 : 5),
+                        itemStyle: item.isCurrentBest || (currentBestId && item.id === currentBestId)
+                            ? { color: '#f59e0b', borderColor: '#fff7ed', borderWidth: 2 }
+                            : (item.isRecordBreaking ? { color: '#38bdf8' } : undefined)
+                    };
+                }),
+                markPoint: progressionMarkers.length ? { data: progressionMarkers } : undefined
+            }]
+        }, careerRecordSeriesListHtml(series, record));
     }
 
     async function loadCareerRecordAnalysis(record) {
         const state = careerRecordState();
         const api = window.pywebview && window.pywebview.api ? window.pywebview.api : null;
+        const requestId = Number(state.analysisRequestId || 0) + 1;
+        state.analysisRequestId = requestId;
+        const expectedRecordKey = record ? String(record.recordKey || '') : '';
+        const expectedSport = String(state.selectedSport || '');
         if (!record || !api) {
             renderCareerRecordAnalysisPanel(record, null);
             return null;
@@ -13717,39 +13644,43 @@
         } else {
             tasks.push(Promise.resolve(null));
         }
-        if (typeof api.get_career_record_history === 'function') {
-            tasks.push(api.get_career_record_history({ record_key: record.recordKey, scope_hash: record.scope.scopeHash, include_invalidated: true }));
+        if (typeof api.get_career_record_metric_series === 'function') {
+            tasks.push(api.get_career_record_metric_series({
+                record_key: record.recordKey,
+                sport: record.sport || expectedSport || 'all',
+                scope_hash: (record.scope && record.scope.scopeHash) || 'all',
+                status: 'available',
+                limit: 1000
+            }));
         } else {
             tasks.push(Promise.resolve(null));
         }
         try {
             const results = await Promise.all(tasks);
             const detail = results[0] ? requireCareerApiData(results[0], '纪录详情加载失败') : null;
-            const history = results[1] ? requireCareerApiData(results[1], '纪录演进加载失败') : null;
+            const metricSeries = results[1] ? normalizeCareerRecordMetricSeries(requireCareerApiData(results[1], '成绩序列加载失败')) : null;
+            if (
+                state.analysisRequestId !== requestId
+                || String(state.selectedRecordKey || '') !== expectedRecordKey
+                || String(state.selectedSport || '') !== expectedSport
+            ) {
+                return null;
+            }
             state.detail = detail;
-            state.analysis = { recordId: record.id, recordKey: record.recordKey, detail: detail, history: history };
-            renderCareerRecordAnalysisPanel(record, history);
+            state.analysis = { recordId: record.id, recordKey: record.recordKey, detail: detail, metricSeries: metricSeries };
+            renderCareerRecordAnalysisPanel(record, metricSeries);
             return state.analysis;
         } catch (error) {
-            renderCareerRecordAnalysisPanel(record, null);
+            if (
+                state.analysisRequestId === requestId
+                && String(state.selectedRecordKey || '') === expectedRecordKey
+                && String(state.selectedSport || '') === expectedSport
+            ) {
+                renderCareerRecordAnalysisPanel(record, null);
+            }
             console.warn('loadCareerRecordAnalysis failed', error);
             return null;
         }
-    }
-
-    function selectCareerRecordForAnalysis(recordId) {
-        const state = careerRecordState();
-        state.selectedRecordId = String(recordId || '');
-        const record = (state.records || []).find(function(item) { return item.id === state.selectedRecordId; }) || null;
-        if (record) {
-            state.selectedRecordKey = record.recordKey;
-            renderCareerRecordsCenter({ catalog: state.catalog });
-            return;
-        }
-        document.querySelectorAll('[data-career-record-id]').forEach(function(card) {
-            card.classList.toggle('is-selected', card.getAttribute('data-career-record-id') === state.selectedRecordId);
-        });
-        loadCareerRecordAnalysis(record).catch(function(e) { console.warn('selectCareerRecordForAnalysis', e); });
     }
 
     function selectCareerRecordKeyForAnalysis(recordKey) {
@@ -13757,14 +13688,9 @@
         state.selectedRecordKey = String(recordKey || '');
         const record = (state.records || []).find(function(item) { return item.recordKey === state.selectedRecordKey; }) || null;
         state.selectedRecordId = record ? record.id : ('catalog:' + state.selectedRecordKey);
+        state.detail = null;
+        state.analysis = null;
         renderCareerRecordsCenter({ catalog: state.catalog });
-    }
-
-    function openCareerRecordDetailFromElementV2(event, el) {
-        if (event && typeof event.stopPropagation === 'function') event.stopPropagation();
-        const recordId = el && el.getAttribute ? el.getAttribute('data-career-record-detail-id') : '';
-        if (!recordId) return;
-        selectCareerRecordForAnalysis(recordId);
     }
 
     function openCareerRecordActivityFromElement(event, el) {
@@ -13809,13 +13735,6 @@
         }
     }
 
-    function onCareerRecordAnalysisKeydown(event, el) {
-        if (!event || (event.key !== 'Enter' && event.key !== ' ')) return;
-        event.preventDefault();
-        const recordId = el && el.getAttribute ? el.getAttribute('data-career-record-id') : '';
-        selectCareerRecordForAnalysis(recordId);
-    }
-
     function onCareerRecordPickerKeydown(event, el) {
         if (!event || (event.key !== 'Enter' && event.key !== ' ')) return;
         event.preventDefault();
@@ -13829,7 +13748,13 @@
         state.selectedRecordId = '';
         state.selectedRecordKey = '';
         state.selectedGroup = '';
+        state.detail = null;
+        state.analysis = null;
+        state.analysisRequestId = Number(state.analysisRequestId || 0) + 1;
+        state.loading = true;
+        state.error = '';
         disposeCareerRecordCharts();
+        renderCareerRecordsCenter({ catalog: state.catalog });
         loadCareerRecordsCenter({ refresh: true }).catch(function(e) { console.warn('setCareerRecordSport', e); });
     }
 
@@ -13841,6 +13766,8 @@
 
     async function loadCareerRecordsCenter(options) {
         const state = careerRecordState();
+        const requestId = Number(state.recordsRequestId || 0) + 1;
+        state.recordsRequestId = requestId;
         state.loading = true;
         state.error = '';
         renderCareerRecordsCenter({ catalog: state.catalog });
@@ -13851,18 +13778,25 @@
             }
             const catalogRes = await api.get_career_record_catalog({ include_unavailable: true, include_analysis: true });
             const catalog = normalizeCareerRecordCatalog(requireCareerApiData(catalogRes, '记录目录加载失败'));
-            state.catalog = catalog;
-            if (!state.selectedSport && catalog.sports.length) state.selectedSport = catalog.sports[0].sport;
-            const recordsRes = await api.get_career_records({ sport: state.selectedSport || 'all' });
+            const selectedSport = state.selectedSport || (catalog.sports.length ? catalog.sports[0].sport : '');
+            const recordsRes = await api.get_career_records({ sport: selectedSport || 'all' });
             const candidatesRes = await api.get_career_record_candidates({ status: 'candidate' });
             const recordData = requireCareerApiData(recordsRes, '当前纪录加载失败');
             const candidateData = requireCareerApiData(candidatesRes, '候选纪录加载失败');
+            if (state.recordsRequestId !== requestId) {
+                return state;
+            }
+            state.catalog = catalog;
+            if (!state.selectedSport && catalog.sports.length) state.selectedSport = catalog.sports[0].sport;
             state.records = Array.isArray(recordData.records) ? recordData.records.map(normalizeCareerRecordV2).filter(Boolean) : [];
             state.candidates = Array.isArray(candidateData.candidates) ? candidateData.candidates.map(normalizeCareerRecordCandidateV2).filter(Boolean) : [];
             state.loading = false;
             renderCareerRecordsCenter({ catalog: state.catalog });
             return state;
         } catch (error) {
+            if (state.recordsRequestId !== requestId) {
+                return state;
+            }
             state.loading = false;
             state.error = String((error && error.message) || error || '记录中心加载失败');
             renderCareerRecordsCenter({ catalog: state.catalog });
@@ -14030,147 +13964,6 @@
         }
     }
 
-    function careerArchivePbHtml(item) {
-        const meta = [formatCareerDate(item && item.eventDate), item && item.sportLabel, item && item.valueDisplay].filter(Boolean).join(' · ');
-        return careerArchiveItemShell(item, item && item.pbTitle ? item.pbTitle : '当前纪录', meta);
-    }
-
-    function careerPbArchiveCardHtml(item) {
-        const activityId = item && item.detailLink && item.detailLink.activityId ? item.detailLink.activityId : (item && item.activityId ? item.activityId : '');
-        const recordId = item && item.detailLink && item.detailLink.recordId ? item.detailLink.recordId : (item && item.id ? item.id : '');
-        const source = item && item.detailLink && item.detailLink.source ? item.detailLink.source : 'career';
-        const title = item && item.pbTitle ? item.pbTitle : '当前纪录';
-        const date = formatCareerDate((item && (item.displayDate || item.eventDate)) || '');
-        const valueText = item && item.valueDisplay ? item.valueDisplay : careerArchiveValueText(item && item.value, item && item.valueUnit);
-        const meta = [
-            item && item.sportLabel,
-            item && item.pbTypeLabel,
-            item && item.improvementDisplay
-        ].filter(Boolean).join(' · ');
-        const badges = [
-            item && item.sourceModeLabel,
-            item && item.sourceLabel,
-            item && item.confidenceLabel
-        ].filter(Boolean);
-        const badgeHtml = badges.length
-            ? badges.map(function(value) { return '<span class="career-pb-badge">' + safeHtml(value) + '</span>'; }).join('')
-            : '<span class="career-pb-badge">正式纪录</span>';
-        const attrs = activityId
-            ? ' role="button" tabindex="0" onclick="openCareerActivityDetailFromElement(this)" onkeydown="onCareerActivityDetailKeydown(event, this)" data-activity-id="' + safeHtml(activityId) + '" data-career-source="' + safeHtml(source) + '"'
-            : '';
-        return '<div class="career-pb-card' + (activityId ? ' is-clickable' : '') + '"' + attrs + '>'
-            + '<div class="career-pb-card-head">'
-                + '<div class="career-pb-title">' + safeHtml(title) + '</div>'
-                + '<div class="career-pb-date">' + safeHtml(date) + '</div>'
-            + '</div>'
-            + '<div class="career-pb-value">' + safeHtml(valueText || '--') + '</div>'
-            + '<div class="career-pb-meta">' + safeHtml(meta || '记录信息待补齐') + '</div>'
-            + '<div class="career-pb-badges">' + badgeHtml + '</div>'
-            + '<button type="button" class="career-pb-detail-action" data-record-id="' + safeHtml(recordId) + '" data-pb-type="' + safeHtml(item && item.pbType) + '" aria-label="查看纪录详情与演进" title="查看纪录详情与演进" onclick="openCareerRecordDetailFromElement(event, this)">查看演进</button>'
-            + '</div>';
-    }
-
-    function renderCareerPbDetailPanel(detail, history) {
-        const panel = document.getElementById('career-pb-detail-panel');
-        if (!panel) return;
-        const record = detail && detail.record ? normalizeCareerArchivePb(detail.record) : null;
-        const records = history && Array.isArray(history.records) ? history.records.map(normalizeCareerArchivePb).filter(Boolean) : [];
-        if (!record) {
-            panel.innerHTML = '<div class="career-archive-empty">暂无纪录详情。</div>';
-            return;
-        }
-        const historyHtml = records.length
-            ? records.map(function(item) {
-                return '<div class="career-pb-history-node">'
-                    + '<span>' + safeHtml(formatCareerDate(item.eventDate) || '--') + ' · ' + safeHtml(item.status || item.recordStatus || 'history') + '</span>'
-                    + '<strong>' + safeHtml(item.valueDisplay || '--') + '</strong>'
-                    + '</div>';
-            }).join('')
-            : '<div class="career-archive-empty">暂无演进历史。</div>';
-        panel.innerHTML = '<div class="career-pb-detail-title">' + safeHtml(record.pbTitle || '纪录详情') + '</div>'
-            + '<div class="career-pb-detail-meta">'
-                + safeHtml([record.sportLabel, record.sourceModeLabel, record.resolverVersion].filter(Boolean).join(' · ') || '详情信息待补齐')
-            + '</div>'
-            + '<div class="career-pb-value">' + safeHtml(record.valueDisplay || '--') + '</div>'
-            + '<div class="career-pb-detail-meta">' + safeHtml(record.improvementDisplay || '') + '</div>'
-            + '<div class="career-pb-history-list" aria-label="纪录演进历史">' + historyHtml + '</div>';
-    }
-
-    async function loadCareerPbDetail(recordId, pbType) {
-        const panel = document.getElementById('career-pb-detail-panel');
-        if (panel) panel.innerHTML = '<div class="career-archive-empty">正在加载纪录详情...</div>';
-        const api = window.pywebview && window.pywebview.api ? window.pywebview.api : null;
-        if (!api || typeof api.get_career_pb_detail !== 'function' || typeof api.get_career_pb_history !== 'function') {
-            if (panel) panel.innerHTML = '<div class="career-archive-empty">纪录详情接口暂不可用。</div>';
-            return;
-        }
-        try {
-            const detailRes = await api.get_career_pb_detail(recordId);
-            const historyRes = await api.get_career_pb_history(pbType || 'all', {});
-            const detail = requireCareerApiData(detailRes, '纪录详情加载失败');
-            const history = requireCareerApiData(historyRes, '纪录演进加载失败');
-            renderCareerPbDetailPanel(detail, history);
-        } catch (error) {
-            console.warn('loadCareerPbDetail failed', error);
-            if (panel) panel.innerHTML = '<div class="career-archive-empty">纪录详情暂不可用。</div>';
-        }
-    }
-
-    function openCareerRecordDetailFromElement(event, el) {
-        if (event && typeof event.stopPropagation === 'function') event.stopPropagation();
-        const recordId = el && el.getAttribute ? el.getAttribute('data-record-id') : '';
-        const pbType = el && el.getAttribute ? el.getAttribute('data-pb-type') : '';
-        if (!recordId) return;
-        loadCareerPbDetail(recordId, pbType).catch(function(e) { console.warn('openCareerRecordDetailFromElement', e); });
-    }
-
-    function renderCareerPbCandidates(candidates) {
-        const panel = document.getElementById('career-pb-candidate-panel');
-        if (!panel) return;
-        const source = Array.isArray(candidates) ? candidates : [];
-        if (!source.length) {
-            panel.innerHTML = '<div class="career-archive-empty">暂无待确认候选纪录。</div>';
-            return;
-        }
-        const cards = source.map(function(item) {
-            const evidence = item.evidenceSummary.length ? item.evidenceSummary.join(' · ') : '等待用户确认后才会进入当前纪录';
-            const activityAttrs = item.activityId
-                ? ' data-activity-id="' + safeHtml(item.activityId) + '" data-career-source="' + safeHtml(item.detailLink.source || 'career') + '"'
-                : '';
-            return '<div class="career-pb-card" data-career-record-candidate-id="' + safeHtml(item.id) + '"' + activityAttrs + '>'
-                + '<div class="career-pb-card-head">'
-                    + '<div class="career-pb-title">' + safeHtml(item.title || '候选纪录') + '</div>'
-                    + '<div class="career-pb-date">' + safeHtml(item.confidenceLabel || item.statusLabel || '待确认') + '</div>'
-                + '</div>'
-                + '<div class="career-pb-meta">' + safeHtml(evidence) + '</div>'
-                + '<div class="career-pb-badges"><span class="career-pb-badge">候选</span></div>'
-                + '<button type="button" class="career-pb-detail-action" data-candidate-id="' + safeHtml(item.id) + '" data-decision="confirm" aria-label="确认候选纪录" title="确认候选纪录" onclick="decideCareerPbCandidateFromElement(event, this)">确认</button> '
-                + '<button type="button" class="career-pb-detail-action" data-candidate-id="' + safeHtml(item.id) + '" data-decision="reject" aria-label="拒绝候选纪录" title="拒绝候选纪录" onclick="decideCareerPbCandidateFromElement(event, this)">拒绝</button>'
-                + '</div>';
-        }).join('');
-        panel.innerHTML = '<div class="career-pb-detail-title">候选纪录</div>' + cards;
-    }
-
-    async function decideCareerPbCandidateFromElement(event, el) {
-        if (event && typeof event.stopPropagation === 'function') event.stopPropagation();
-        const candidateId = el && el.getAttribute ? el.getAttribute('data-candidate-id') : '';
-        const decision = el && el.getAttribute ? el.getAttribute('data-decision') : '';
-        const api = window.pywebview && window.pywebview.api ? window.pywebview.api : null;
-        if (!candidateId || !api || typeof api.decide_career_pb_candidate !== 'function') return;
-        const originalText = el.textContent || '';
-        el.disabled = true;
-        el.textContent = decision === 'confirm' ? '确认中...' : '处理中...';
-        try {
-            const res = await api.decide_career_pb_candidate({ candidate_id: candidateId, decision: decision });
-            requireCareerApiData(res, '候选纪录处理失败');
-            await loadCareerArchives();
-        } catch (error) {
-            console.warn('decideCareerPbCandidateFromElement failed', error);
-            el.disabled = false;
-            el.textContent = originalText || (decision === 'confirm' ? '确认' : '拒绝');
-        }
-    }
-
     function careerArchiveAchievementHtml(item) {
         const scoreText = item && item.score !== null && !Number.isNaN(item.score) ? '分值 ' + String(item.score) : '';
         const meta = [formatCareerDate(item && item.eventDate), item && item.achievementType, scoreText].filter(Boolean).join(' · ');
@@ -14213,7 +14006,7 @@
         const targets = document.querySelectorAll('[data-career-archive-list="' + name + '"]');
         if (!targets.length) return;
         const source = Array.isArray(items) ? items : [];
-        const list = name === 'races' || name === 'pbs' ? source : source.slice(0, 5);
+        const list = name === 'races' ? source : source.slice(0, 5);
         const html = list.length
             ? list.map(renderer).join('')
             : '<div class="career-archive-empty">' + safeHtml(emptyText || '暂无数据') + '</div>';
@@ -14254,42 +14047,6 @@
             'career-race-sport-filter': normalized.sport || 'all',
             'career-race-type-filter': normalized.event_type || 'all',
             'career-race-source-filter': normalized.source || 'all'
-        };
-        Object.keys(controlMap).forEach(function(id) {
-            const el = document.getElementById(id);
-            if (el) el.value = String(controlMap[id] || 'all');
-        });
-    }
-
-    function getCareerPbArchiveFilters() {
-        appState.career = appState.career || {};
-        const fallback = appState.career.pbArchiveFilters || {};
-        const yearEl = document.getElementById('career-pb-year-filter');
-        const sportEl = document.getElementById('career-pb-sport-filter');
-        const typeEl = document.getElementById('career-pb-type-filter');
-        return {
-            year: yearEl ? yearEl.value : (fallback.year || 'all'),
-            sport: sportEl ? sportEl.value : (fallback.sport || 'all'),
-            pb_type: typeEl ? typeEl.value : (fallback.pb_type || 'all')
-        };
-    }
-
-    function syncCareerPbArchiveFilters(filters, summary) {
-        const normalized = filters && typeof filters === 'object' ? filters : {};
-        const yearEl = document.getElementById('career-pb-year-filter');
-        if (yearEl) {
-            const currentValue = normalized.year == null ? 'all' : String(normalized.year);
-            const sourceYears = summary && summary.pbByYear && typeof summary.pbByYear === 'object' ? Object.keys(summary.pbByYear) : [];
-            const years = sourceYears.filter(function(year) { return /^\d{4}$/.test(String(year)); }).sort(function(a, b) { return Number(b) - Number(a); });
-            if (currentValue !== 'all' && years.indexOf(currentValue) < 0) years.unshift(currentValue);
-            yearEl.innerHTML = '<option value="all">全部年份</option>' + years.map(function(year) {
-                return '<option value="' + safeHtml(year) + '">' + safeHtml(year) + '</option>';
-            }).join('');
-            yearEl.value = currentValue;
-        }
-        const controlMap = {
-            'career-pb-sport-filter': normalized.sport || 'all',
-            'career-pb-type-filter': normalized.pb_type || 'all'
         };
         Object.keys(controlMap).forEach(function(id) {
             const el = document.getElementById(id);
@@ -15018,6 +14775,17 @@
         });
     }
 
+    function withTimeout(promise, timeoutMs) {
+        return Promise.race([
+            promise,
+            new Promise(function(_, reject) {
+                setTimeout(function() {
+                    reject(new Error('请求超时'));
+                }, timeoutMs);
+            })
+        ]);
+    }
+
     async function loadCareerFootprint(filters) {
         appState.career = appState.career || {};
         appState.career.footprintLoading = true;
@@ -15065,31 +14833,13 @@
         const statusText = document.getElementById('career-archives-status-text');
         const emptyEl = document.getElementById('career-archives-empty');
         const races = Array.isArray(vm.races) ? vm.races : [];
-        const pbs = Array.isArray(vm.pbs) ? vm.pbs : [];
-        const pbCandidates = Array.isArray(vm.pbCandidates) ? vm.pbCandidates : [];
         syncCareerRaceArchiveFilters(vm.filters, vm.summary);
-        syncCareerPbArchiveFilters(vm.pbFilters, vm.summary);
         renderCareerArchiveGroup('races', races, '暂无赛事', careerRaceArchiveCardHtml);
-        renderCareerArchiveGroup('pbs', pbs, '暂无当前纪录', careerPbArchiveCardHtml);
-        renderCareerPbCandidates(pbCandidates);
         const total = races.length;
-        const pbTotal = pbs.length;
         const raceSummaryEl = document.getElementById('career-race-summary');
         if (raceSummaryEl) raceSummaryEl.textContent = total ? '当前筛选下共 ' + String(total) + ' 场赛事' : '当前筛选下暂无赛事';
-        const pbSummaryEl = document.getElementById('career-pb-summary');
-        const pbCandidateCount = Number((vm.summary && vm.summary.pbCandidateCount) || 0);
-        if (pbSummaryEl) {
-            pbSummaryEl.textContent = pbTotal
-                ? '当前筛选下共 ' + String(pbTotal) + ' 项纪录 · 待确认 ' + String(pbCandidateCount) + ' 项'
-                : '当前筛选下暂无纪录 · 待确认 ' + String(pbCandidateCount) + ' 项';
-        }
         const pbStatusText = document.getElementById('career-pb-status-text');
-        if (pbStatusText) pbStatusText.textContent = pbTotal ? '记录中心已接入' : '等待记录数据';
-        const pbEmptyEl = document.getElementById('career-pb-empty');
-        if (pbEmptyEl) {
-            pbEmptyEl.style.display = pbTotal ? 'none' : '';
-            pbEmptyEl.textContent = pbTotal ? '' : '暂无当前纪录数据。';
-        }
+        if (pbStatusText) pbStatusText.textContent = '记录中心 V2 已接入';
         if (statusText) statusText.textContent = total ? '赛事档案已接入' : '等待赛事数据';
         if (emptyEl) {
             emptyEl.style.display = total ? 'none' : '';
@@ -15124,12 +14874,6 @@
         loadCareerArchives().catch(function(e) { console.warn('onCareerRaceArchiveFilterChange', e); });
     }
 
-    function onCareerPbArchiveFilterChange() {
-        appState.career = appState.career || {};
-        appState.career.pbArchiveFilters = getCareerPbArchiveFilters();
-        loadCareerArchives().catch(function(e) { console.warn('onCareerPbArchiveFilterChange', e); });
-    }
-
     async function loadCareerArchives() {
         appState.career = appState.career || {};
         appState.career.archivesLoading = true;
@@ -15138,27 +14882,21 @@
         const api = window.pywebview && window.pywebview.api ? window.pywebview.api : null;
         const raceFilters = appState.career.raceArchiveFilters || getCareerRaceArchiveFilters();
         appState.career.raceArchiveFilters = raceFilters;
-        const pbFilters = appState.career.pbArchiveFilters || getCareerPbArchiveFilters();
-        appState.career.pbArchiveFilters = pbFilters;
         let lastError = null;
         for (let attempt = 0; attempt < 2; attempt += 1) {
             try {
-                if (!api || typeof api.get_career_races !== 'function' || typeof api.get_career_pb !== 'function' || typeof api.get_career_event_candidates !== 'function') {
+                if (!api || typeof api.get_career_races !== 'function') {
                     throw new Error('生涯分区接口暂不可用');
                 }
                 const results = await Promise.all([
-                    api.get_career_races(raceFilters),
-                    api.get_career_pb(pbFilters),
-                    api.get_career_event_candidates({ candidate_type: 'pb_record', status: 'candidate' })
+                    api.get_career_races(raceFilters)
                 ]);
-                const labels = ['赛事档案', '记录中心', '候选纪录'];
+                const labels = ['赛事档案'];
                 const archiveData = results.map(function(res, index) {
                     return requireCareerApiData(res, labels[index] + '加载失败');
                 });
                 const archives = normalizeCareerArchives({
                     races: archiveData[0] || {},
-                    pbs: archiveData[1] || {},
-                    pbCandidates: archiveData[2] || {},
                     status: { dataReady: true, message: '' }
                 });
                 appState.career.archives = archives;
@@ -16132,6 +15870,53 @@
         };
     }
 
+    const CAREER_YEAR_TONE_LABELS = {
+        warm: '温暖',
+        celebratory: '庆祝',
+        professional: '专业',
+        documentary: '纪录片',
+        light: '轻松',
+        humorous: '幽默'
+    };
+
+    function careerYearTonePreset(value) {
+        const key = String(value || 'warm').trim().toLowerCase();
+        return Object.prototype.hasOwnProperty.call(CAREER_YEAR_TONE_LABELS, key) ? key : 'warm';
+    }
+
+    function careerYearToneLabel(value) {
+        return CAREER_YEAR_TONE_LABELS[careerYearTonePreset(value)] || CAREER_YEAR_TONE_LABELS.warm;
+    }
+
+    function careerYearInsightCacheKey(year, tonePreset) {
+        const numericYear = Number(year);
+        if (!Number.isFinite(numericYear)) return '';
+        return String(numericYear) + '::' + careerYearTonePreset(tonePreset);
+    }
+
+    function renderCareerYearToneSelector(viewModel) {
+        const toneEl = document.getElementById('career-year-tone-select');
+        if (!toneEl) return;
+        const vm = viewModel || appState.career.yearInsight || {};
+        const tone = careerYearTonePreset(
+            (appState.career && appState.career.yearInsightTonePreset)
+            || vm.tone_preset
+            || (vm.report && vm.report.tone_preset)
+        );
+        appState.career.yearInsightTonePreset = tone;
+        toneEl.value = tone;
+    }
+
+    function setCareerYearTonePreset(value) {
+        appState.career = appState.career || {};
+        const tone = careerYearTonePreset(value);
+        appState.career.yearInsightTonePreset = tone;
+        return loadCareerYearInsight({
+            year: appState.career.yearInsightSelectedYear,
+            tone_preset: tone
+        });
+    }
+
     function renderCareerYearSelector(viewModel) {
         const selectorEl = document.getElementById('career-year-selector');
         if (!selectorEl) return;
@@ -16141,18 +15926,45 @@
             ? Number(appState.career.yearInsightSelectedYear)
             : (vm.year != null ? Number(vm.year) : null);
         const updateBadges = vm.year_update_badges && typeof vm.year_update_badges === 'object' ? vm.year_update_badges : {};
-        const updateMap = updateBadges.year_map && typeof updateBadges.year_map === 'object' ? updateBadges.year_map : {};
+        const updateMap = mergeCareerYearUpdateBadges(vm);
         selectorEl.innerHTML = years.length ? years.map(function(year) {
             const numericYear = Number(year);
             const isActive = selectedYear !== null && numericYear === selectedYear;
             const hasNew = !!updateMap[String(numericYear)];
             const newBadge = hasNew ? '<span class="career-year-new-badge" aria-label="年度报告可更新">NEW</span>' : '';
-            return '<button type="button" class="career-year-chip' + (isActive ? ' is-active' : '') + (hasNew ? ' has-new' : '') + '" data-career-year="' + safeHtml(String(numericYear)) + '" aria-pressed="' + (isActive ? 'true' : 'false') + '" onclick="loadCareerYearInsight({ year: ' + safeHtml(String(numericYear)) + ' })"><span>' + safeHtml(String(numericYear)) + '</span>' + newBadge + '</button>';
+            return '<button type="button" class="career-year-chip' + (isActive ? ' is-active' : '') + (hasNew ? ' has-new' : '') + '" data-career-year="' + safeHtml(String(numericYear)) + '" aria-pressed="' + (isActive ? 'true' : 'false') + '" onclick="loadCareerYearInsight({ year: ' + safeHtml(String(numericYear)) + ', tone_preset: careerYearTonePreset(appState.career.yearInsightTonePreset) })"><span>' + safeHtml(String(numericYear)) + '</span>' + newBadge + '</button>';
         }).join('') : '<span class="career-insight-status">暂无年度数据</span>';
+    }
+
+    function mergeCareerYearUpdateBadges(viewModel) {
+        appState.career = appState.career || {};
+        appState.career.yearInsightUpdateBadgeMap = appState.career.yearInsightUpdateBadgeMap || {};
+        const vm = viewModel || {};
+        const updateBadges = vm.year_update_badges && typeof vm.year_update_badges === 'object' ? vm.year_update_badges : null;
+        if (!updateBadges) return appState.career.yearInsightUpdateBadgeMap;
+        const rawMap = updateBadges.year_map && typeof updateBadges.year_map === 'object' ? updateBadges.year_map : {};
+        const rawYears = Array.isArray(updateBadges.years) ? updateBadges.years : [];
+        const incomingMap = {};
+        Object.keys(rawMap).forEach(function(key) {
+            if (rawMap[key]) incomingMap[String(Number(key))] = true;
+        });
+        rawYears.forEach(function(year) {
+            const numericYear = Number(year);
+            if (Number.isFinite(numericYear)) incomingMap[String(numericYear)] = true;
+        });
+        Object.keys(incomingMap).forEach(function(key) {
+            appState.career.yearInsightUpdateBadgeMap[key] = true;
+        });
+        const responseYear = vm.year != null ? Number(vm.year) : null;
+        if (Number.isFinite(responseYear) && !incomingMap[String(responseYear)]) {
+            delete appState.career.yearInsightUpdateBadgeMap[String(responseYear)];
+        }
+        return appState.career.yearInsightUpdateBadgeMap;
     }
 
     function renderCareerYearShell() {
         renderCareerYearSelector(appState.career.yearInsight);
+        renderCareerYearToneSelector(appState.career.yearInsight);
     }
 
     function careerYearFactHtml(label, value) {
@@ -16208,28 +16020,15 @@
         return '<button type="button" class="career-insight-action" data-career-year-generate-action="' + safeHtml(key) + '" onclick="generateCareerYearInsight()"' + disabled + '>' + safeHtml(label) + '</button>';
     }
 
-    function careerYearEvidenceHtml(item) {
-        const evidence = item && typeof item === 'object' ? item : {};
-        const detailLink = evidence.detail_link && typeof evidence.detail_link === 'object' ? evidence.detail_link : {};
-        const activityId = String(detailLink.activity_id || evidence.activity_id || '');
-        const meta = [evidence.date, evidence.value].map(function(value) { return String(value || '').trim(); }).filter(Boolean).join(' · ');
-        return '<div class="career-year-evidence" role="button" tabindex="0" data-activity-id="' + safeHtml(activityId) + '" data-career-source="career" onclick="openCareerActivityDetailFromElement(this)" onkeydown="onCareerActivityDetailKeydown(event, this)">'
-            + '<div class="career-year-evidence-title">' + safeHtml(evidence.title || '值得记住的运动节点') + '</div>'
-            + (meta ? '<div class="career-year-evidence-meta">' + safeHtml(meta) + '</div>' : '')
-            + '</div>';
-    }
-
     function careerYearV2ArticleHtml(report) {
         const content = report && typeof report === 'object' ? report : {};
         const sections = Array.isArray(content.body_sections) ? content.body_sections : [];
         const factLeads = Array.isArray(content.fact_leads) ? content.fact_leads : [];
         const sectionHtml = sections.map(function(section) {
             const paragraphs = Array.isArray(section && section.paragraphs) ? section.paragraphs : [];
-            const evidence = Array.isArray(section && section.evidence) ? section.evidence : [];
             return '<section class="career-year-article-section" data-career-year-section="' + safeHtml(section && section.type || '') + '">'
                 + '<h3>' + safeHtml(section && section.heading || '') + '</h3>'
                 + paragraphs.map(function(paragraph) { return '<p class="career-year-article-paragraph">' + safeHtml(paragraph) + '</p>'; }).join('')
-                + (evidence.length ? '<div class="career-year-evidence-list">' + evidence.map(careerYearEvidenceHtml).join('') + '</div>' : '')
                 + '</section>';
         }).join('');
         return '<article class="career-year-article" data-career-year-report-schema="' + safeHtml(content.schema_version || 'acs.year.report.v2') + '">'
@@ -16243,6 +16042,32 @@
             + '</article>';
     }
 
+    function careerInsightListItemText(item) {
+        if (item === null || item === undefined) return '';
+        if (typeof item !== 'object') return String(item);
+        const title = String(item.title || item.headline || '').trim();
+        const description = String(item.description || item.summary || item.mainline || item.value || '').trim();
+        const date = String(item.date || '').trim();
+        const primary = title || description || String(item.type || '').trim();
+        if (!primary) return '';
+        const suffix = description && title && description !== title ? '：' + description : '';
+        return (date ? date + ' · ' : '') + primary + suffix;
+    }
+
+    function careerInsightListHtml(items, className, title) {
+        const rawItems = Array.isArray(items) ? items : [items];
+        const values = rawItems.map(careerInsightListItemText).map(function(item) {
+            return String(item || '').trim();
+        }).filter(Boolean);
+        if (!values.length) return '';
+        return '<section class="career-year-section ' + safeHtml(className || '') + '">'
+            + '<h3>' + safeHtml(title || '年度片段') + '</h3>'
+            + '<ul class="career-year-section-list">'
+            + values.map(function(item) { return '<li>' + safeHtml(item) + '</li>'; }).join('')
+            + '</ul>'
+            + '</section>';
+    }
+
     function careerYearLegacyReportHtml(report, fallback) {
         const keyEvents = Array.isArray(fallback.key_events) ? fallback.key_events.map(function(item) {
             return item && item.title ? String(item.title) : String((item && item.type) || '关键时刻');
@@ -16250,6 +16075,7 @@
         const rhythm = fallback.month_rhythm || {};
         const comparison = fallback.comparison || {};
         const sections = [
+            ['标题', report.headline || report.title || ''],
             ['主线', report.mainline || report.summary || fallback.summary || '年度主线将在 AI 报告生成后展示。'],
             ['关键时刻', Array.isArray(report.key_moments) ? report.key_moments.map(function(item) { return item && item.title ? item.title : item; }) : keyEvents],
             ['运动节奏', report.rhythm || ('活跃月份 ' + String(rhythm.active_month_count || 0) + ' 个')],
@@ -16263,8 +16089,10 @@
     }
 
     function careerYearReportSectionsHtml(vm) {
-        const report = vm && vm.report && vm.report.content ? vm.report.content : {};
+        const hasReport = !!(vm && vm.report && vm.report.content);
+        const report = hasReport ? vm.report.content : {};
         const fallback = vm && vm.local_fallback ? vm.local_fallback : {};
+        if (!hasReport) return careerYearLegacyReportHtml({}, fallback);
         if (['acs.year.report.v2', 'acs.year.report.v3'].indexOf(String(report.schema_version || '')) >= 0) return careerYearV2ArticleHtml(report);
         return careerYearLegacyReportHtml(report, fallback);
     }
@@ -16288,10 +16116,12 @@
         const cardEl = document.getElementById('career-insight-card');
         const emptyEl = document.getElementById('career-insight-empty');
         const year = vm.year != null ? Number(vm.year) : null;
+        const tone = careerYearTonePreset(vm.tone_preset || (vm.report && vm.report.tone_preset) || appState.career.yearInsightTonePreset);
         appState.career.yearInsightSelectedYear = Number.isFinite(year) ? year : appState.career.yearInsightSelectedYear;
+        appState.career.yearInsightTonePreset = tone;
         renderCareerYearShell();
         if (statusText) statusText.textContent = year ? String(year) + ' 年度总结' : '年度总结';
-        if (sourceEl) sourceEl.textContent = '年度只读数据 · ' + String(vm.report_state || 'no_data');
+        if (sourceEl) sourceEl.textContent = '年度只读数据 · ' + careerYearToneLabel(tone) + ' · ' + String(vm.report_state || 'no_data');
         const fallback = vm.local_fallback || {};
         const facts = vm.facts || {};
         const state = String(vm.report_state || 'not_generated');
@@ -16302,14 +16132,21 @@
         const partial = facts.period && facts.period.is_partial_year ? ' · 部分年度' : '';
         if (cardEl) {
             cardEl.style.display = '';
-            cardEl.innerHTML = '<div class="career-insight-title">' + safeHtml(year ? String(year) + ' 年度总结' : '年度总结') + '</div>'
-                + '<div class="career-insight-meta">' + safeHtml(String(vm.report_state || 'not_generated') + reportGeneratedAt + dataThrough + partial) + '</div>'
-                + '<div class="career-year-state">' + safeHtml(careerYearStateMessage(state)) + '</div>'
-                + (isV2Report ? '' : careerYearFactsHtml(facts))
-                + careerYearActionHtml(state, vm)
-                + (state === 'generating' ? careerYearGeneratingHtml(vm) : '')
-                + careerYearReportSectionsHtml(vm)
-                + '<div class="career-insight-disclaimer">' + safeHtml(fallback.disclaimer || '当前为本地年度事实摘要，不调用 AI。') + '</div>';
+            try {
+                cardEl.innerHTML = '<div class="career-insight-title">' + safeHtml(year ? String(year) + ' 年度总结' : '年度总结') + '</div>'
+                    + '<div class="career-insight-meta">' + safeHtml(careerYearToneLabel(tone) + '语气 · ' + String(vm.report_state || 'not_generated') + reportGeneratedAt + dataThrough + partial) + '</div>'
+                    + '<div class="career-year-state">' + safeHtml(careerYearStateMessage(state)) + '</div>'
+                    + (isV2Report ? '' : careerYearFactsHtml(facts))
+                    + careerYearActionHtml(state, vm)
+                    + (state === 'generating' ? careerYearGeneratingHtml(vm) : '')
+                    + careerYearReportSectionsHtml(vm)
+                    + '<div class="career-insight-disclaimer">' + safeHtml(fallback.disclaimer || '当前为本地年度事实摘要，不调用 AI。') + '</div>';
+            } catch (e) {
+                console.warn('renderCareerYearInsight card failed', e);
+                cardEl.innerHTML = '<div class="career-insight-title">' + safeHtml(year ? String(year) + ' 年度总结' : '年度总结') + '</div>'
+                    + '<div class="career-insight-meta">failed</div>'
+                    + '<div class="career-year-state">' + safeHtml('年度总结渲染失败，请稍后重试。') + '</div>';
+            }
         }
         if (emptyEl) {
             emptyEl.style.display = vm.status && vm.status.data_ready ? 'none' : '';
@@ -16329,19 +16166,28 @@
         if (!appState.career.yearInsight && !appState.career.yearInsightLoading) {
             loadCareerYearInsight({}).catch(function(e) { console.warn('loadCareerYearInsight', e); });
         } else if (appState.career.yearInsight) {
-            loadCareerYearInsight({ year: appState.career.yearInsightSelectedYear }).catch(function(e) { console.warn('loadCareerYearInsight', e); });
+            loadCareerYearInsight({ year: appState.career.yearInsightSelectedYear, tone_preset: appState.career.yearInsightTonePreset }).catch(function(e) { console.warn('loadCareerYearInsight', e); });
         }
     }
 
     function renderCareerYearInsightLoading(year) {
         const statusText = document.getElementById('career-insight-status-text');
         const sourceEl = document.getElementById('career-insight-source');
+        const cardEl = document.getElementById('career-insight-card');
         const emptyEl = document.getElementById('career-insight-empty');
+        const yearLabel = year ? String(year) + ' 年度' : '年度';
         if (statusText) statusText.textContent = year ? String(year) + ' 年度总结加载中' : '年度总结加载中';
         if (sourceEl) sourceEl.textContent = '年度只读数据加载中';
+        if (cardEl) {
+            cardEl.style.display = '';
+            cardEl.innerHTML = '<div class="career-insight-title">' + safeHtml(year ? String(year) + ' 年度总结' : '年度总结') + '</div>'
+                + '<div class="career-insight-meta">正在读取年度只读数据</div>'
+                + '<div class="career-year-state">' + safeHtml('正在读取 ' + yearLabel + '总结数据') + '</div>'
+                + '<div class="career-year-skeleton" aria-hidden="true"><span></span><span></span><span></span></div>';
+        }
         if (emptyEl) {
-            emptyEl.style.display = '';
-            emptyEl.textContent = '正在读取年度总结数据';
+            emptyEl.style.display = 'none';
+            emptyEl.textContent = '正在读取 ' + yearLabel + '总结数据';
         }
     }
 
@@ -16367,11 +16213,14 @@
         }, 1400);
     }
 
-    function renderCareerYearInsightGenerating(year) {
+    function renderCareerYearInsightGenerating(year, tonePreset) {
         const current = appState.career && appState.career.yearInsight ? appState.career.yearInsight : {};
         const selectedYear = Number.isFinite(Number(year)) ? Number(year) : (current.year != null ? Number(current.year) : null);
+        const selectedTone = careerYearTonePreset(tonePreset || appState.career.yearInsightTonePreset || current.tone_preset);
         const vm = Object.assign({}, current, {
             year: Number.isFinite(selectedYear) ? selectedYear : current.year,
+            tone_preset: selectedTone,
+            tone_label: careerYearToneLabel(selectedTone),
             report_state: 'generating'
         });
         const statusText = document.getElementById('career-insight-status-text');
@@ -16380,16 +16229,24 @@
         renderCareerYearInsight(vm);
         startCareerYearGeneratingProgress();
         if (statusText) statusText.textContent = Number.isFinite(selectedYear) ? String(selectedYear) + ' 年度总结生成中' : '年度总结生成中';
-        if (sourceEl) sourceEl.textContent = '年度 AI 生成中';
+        if (sourceEl) sourceEl.textContent = '年度 AI 生成中 · ' + careerYearToneLabel(selectedTone);
     }
 
     function renderCareerYearInsightError(message) {
         const statusText = document.getElementById('career-insight-status-text');
         const sourceEl = document.getElementById('career-insight-source');
+        const cardEl = document.getElementById('career-insight-card');
         const emptyEl = document.getElementById('career-insight-empty');
         stopCareerYearGeneratingProgress();
-        if (appState.career && appState.career.yearInsight) {
+        const selectedYear = appState.career && appState.career.yearInsightSelectedYear != null ? Number(appState.career.yearInsightSelectedYear) : null;
+        const currentYear = appState.career && appState.career.yearInsight && appState.career.yearInsight.year != null ? Number(appState.career.yearInsight.year) : null;
+        if (appState.career && appState.career.yearInsight && currentYear === selectedYear) {
             renderCareerYearInsight(Object.assign({}, appState.career.yearInsight, { report_state: 'failed' }));
+        } else if (cardEl) {
+            cardEl.style.display = '';
+            cardEl.innerHTML = '<div class="career-insight-title">' + safeHtml(Number.isFinite(selectedYear) ? String(selectedYear) + ' 年度总结' : '年度总结') + '</div>'
+                + '<div class="career-insight-meta">failed</div>'
+                + '<div class="career-year-state">' + safeHtml(message || '年度总结暂不可用') + '</div>';
         }
         if (statusText) statusText.textContent = message || '年度总结暂不可用';
         if (sourceEl) sourceEl.textContent = '年度只读数据暂不可用';
@@ -16417,23 +16274,27 @@
         }
         appState.career.insightMode = 'year';
         appState.career.yearInsightSelectedYear = selectedYear;
+        const selectedTone = careerYearTonePreset(appState.career.yearInsightTonePreset);
+        appState.career.yearInsightTonePreset = selectedTone;
         const requestId = Number(appState.career.yearInsightGenerateRequestId || 0) + 1;
         appState.career.yearInsightGenerateRequestId = requestId;
         const sourceVersion = Number(appState.career.careerSourceVersion || 0);
         appState.career.yearInsightGenerating = true;
         appState.career.yearInsightError = '';
-        renderCareerYearInsightGenerating(selectedYear);
+        renderCareerYearInsightGenerating(selectedYear, selectedTone);
         try {
             if (!window.pywebview || !window.pywebview.api || typeof window.pywebview.api.generate_career_year_insight !== 'function') {
                 throw new Error('年度总结生成接口暂不可用');
             }
-            const res = await window.pywebview.api.generate_career_year_insight({ year: selectedYear });
+            const res = await window.pywebview.api.generate_career_year_insight({ year: selectedYear, tone_preset: selectedTone });
             const data = requireCareerApiData(res, '年度总结生成失败');
             const responseYear = data && data.year != null ? Number(data.year) : null;
+            const responseTone = careerYearTonePreset(data && data.tone_preset);
             const stillCurrentRequest = appState.career.yearInsightGenerateRequestId === requestId;
             const stillYearMode = appState.career.insightMode === 'year';
             const stillSameYear = responseYear === selectedYear && appState.career.yearInsightSelectedYear === selectedYear;
-            if (!stillCurrentRequest || !stillYearMode || !stillSameYear) {
+            const stillSameTone = responseTone === selectedTone && careerYearTonePreset(appState.career.yearInsightTonePreset) === selectedTone;
+            if (!stillCurrentRequest || !stillYearMode || !stillSameYear || !stillSameTone) {
                 if (stillCurrentRequest) {
                     appState.career.yearInsightGenerating = false;
                     stopCareerYearGeneratingProgress();
@@ -16447,11 +16308,13 @@
             }
             appState.career.yearInsight = data;
             appState.career.yearInsightSelectedYear = data && data.year != null ? Number(data.year) : selectedYear;
+            appState.career.yearInsightTonePreset = responseTone;
             appState.career.yearInsightByYear = appState.career.yearInsightByYear || {};
             appState.career.yearInsightNeedsRefresh = appState.career.yearInsightNeedsRefresh || {};
-            appState.career.yearInsightByYear[String(selectedYear)] = data;
+            const cacheKey = careerYearInsightCacheKey(selectedYear, responseTone);
+            appState.career.yearInsightByYear[cacheKey] = data;
             const sourceChangedDuringRequest = Number(appState.career.careerSourceVersion || 0) !== sourceVersion;
-            appState.career.yearInsightNeedsRefresh[String(selectedYear)] = !!(sourceChangedDuringRequest || (data && (data.has_source_changes || data.report_state === 'stale')));
+            appState.career.yearInsightNeedsRefresh[cacheKey] = !!sourceChangedDuringRequest;
             appState.career.yearInsightGenerating = false;
             stopCareerYearGeneratingProgress();
             appState.career.yearInsightError = '';
@@ -16459,7 +16322,7 @@
             return data;
         } catch (e) {
             const message = e && e.message ? e.message : String(e || '年度总结生成失败');
-            if (appState.career.yearInsightGenerateRequestId !== requestId || appState.career.insightMode !== 'year' || appState.career.yearInsightSelectedYear !== selectedYear) {
+            if (appState.career.yearInsightGenerateRequestId !== requestId || appState.career.insightMode !== 'year' || appState.career.yearInsightSelectedYear !== selectedYear || careerYearTonePreset(appState.career.yearInsightTonePreset) !== selectedTone) {
                 return {
                     ok: false,
                     ignored: true,
@@ -16486,12 +16349,18 @@
         appState.career.yearInsightGenerateRequestId = Number(appState.career.yearInsightGenerateRequestId || 0) + 1;
         const force = !!(options && typeof options === 'object' && options.force);
         const rawYear = options && typeof options === 'object' ? options.year : options;
+        const requestedTone = careerYearTonePreset(
+            options && typeof options === 'object' && options.tone_preset
+                ? options.tone_preset
+                : appState.career.yearInsightTonePreset
+        );
         const year = rawYear == null || rawYear === '' ? null : Number(rawYear);
         appState.career.insightMode = 'year';
         appState.career.yearInsightSelectedYear = Number.isFinite(year) ? year : null;
+        appState.career.yearInsightTonePreset = requestedTone;
         appState.career.yearInsightByYear = appState.career.yearInsightByYear || {};
         appState.career.yearInsightNeedsRefresh = appState.career.yearInsightNeedsRefresh || {};
-        const cacheKey = appState.career.yearInsightSelectedYear === null ? '' : String(appState.career.yearInsightSelectedYear);
+        const cacheKey = careerYearInsightCacheKey(appState.career.yearInsightSelectedYear, requestedTone);
         const cached = cacheKey ? appState.career.yearInsightByYear[cacheKey] : null;
         if (cached && !force && !appState.career.yearInsightNeedsRefresh[cacheKey]) {
             appState.career.yearInsightRequestId = Number(appState.career.yearInsightRequestId || 0) + 1;
@@ -16505,22 +16374,26 @@
         appState.career.yearInsightRequestId = requestId;
         const sourceVersion = Number(appState.career.careerSourceVersion || 0);
         const requestedYear = appState.career.yearInsightSelectedYear;
+        const requestedTonePreset = requestedTone;
         appState.career.yearInsightLoading = true;
         appState.career.yearInsightError = '';
+        renderCareerYearShell();
         renderCareerYearInsightLoading(appState.career.yearInsightSelectedYear);
         try {
             if (!window.pywebview || !window.pywebview.api || typeof window.pywebview.api.get_career_year_insight !== 'function') {
                 throw new Error('年度总结只读接口暂不可用');
             }
-            const payload = {};
+            const payload = { tone_preset: requestedTonePreset };
             if (appState.career.yearInsightSelectedYear !== null) payload.year = appState.career.yearInsightSelectedYear;
             const res = await window.pywebview.api.get_career_year_insight(payload);
             const data = requireCareerApiData(res, '年度总结加载失败');
             const responseYear = data && data.year != null ? Number(data.year) : null;
+            const responseTone = careerYearTonePreset(data && data.tone_preset);
             const stillCurrentRequest = appState.career.yearInsightRequestId === requestId;
             const stillYearMode = appState.career.insightMode === 'year';
             const stillSameYear = requestedYear === null || responseYear === requestedYear;
-            if (!stillCurrentRequest || !stillYearMode || !stillSameYear) {
+            const stillSameTone = responseTone === requestedTonePreset && careerYearTonePreset(appState.career.yearInsightTonePreset) === requestedTonePreset;
+            if (!stillCurrentRequest || !stillYearMode || !stillSameYear || !stillSameTone) {
                 return {
                     ok: false,
                     ignored: true,
@@ -16530,25 +16403,20 @@
             }
             appState.career.yearInsight = data;
             appState.career.yearInsightSelectedYear = data && data.year != null ? Number(data.year) : appState.career.yearInsightSelectedYear;
-            const responseKey = data && data.year != null ? String(Number(data.year)) : '';
+            appState.career.yearInsightTonePreset = responseTone;
+            const responseKey = data && data.year != null ? careerYearInsightCacheKey(Number(data.year), responseTone) : '';
             if (responseKey) {
                 appState.career.yearInsightByYear[responseKey] = data;
                 const sourceChangedDuringRequest = Number(appState.career.careerSourceVersion || 0) !== sourceVersion;
-                appState.career.yearInsightNeedsRefresh[responseKey] = !!(sourceChangedDuringRequest || data.has_source_changes || data.report_state === 'stale');
+                appState.career.yearInsightNeedsRefresh[responseKey] = !!sourceChangedDuringRequest;
             }
-            const updateMap = data && data.year_update_badges && data.year_update_badges.year_map && typeof data.year_update_badges.year_map === 'object'
-                ? data.year_update_badges.year_map
-                : {};
-            Object.keys(updateMap).forEach(function(key) {
-                if (updateMap[key]) appState.career.yearInsightNeedsRefresh[String(key)] = true;
-            });
             appState.career.yearInsightLoading = false;
             appState.career.yearInsightError = '';
             renderCareerYearInsight(data);
             return data;
         } catch (e) {
             const message = e && e.message ? e.message : String(e || '年度总结加载失败');
-            if (appState.career.yearInsightRequestId !== requestId || appState.career.insightMode !== 'year') {
+            if (appState.career.yearInsightRequestId !== requestId || appState.career.insightMode !== 'year' || careerYearTonePreset(appState.career.yearInsightTonePreset) !== requestedTonePreset) {
                 return {
                     ok: false,
                     ignored: true,
@@ -16574,7 +16442,10 @@
         appState.career.yearInsightSelectedYear = Number.isFinite(cleanYear) ? cleanYear : null;
         appState.career.suppressInsightAutoLoad = true;
         switchCareerPage('insight');
-        return loadCareerYearInsight({ year: appState.career.yearInsightSelectedYear });
+        return loadCareerYearInsight({
+            year: appState.career.yearInsightSelectedYear,
+            tone_preset: appState.career.yearInsightTonePreset
+        });
     }
 
     function setCareerTimelineTypeFilter(type) {

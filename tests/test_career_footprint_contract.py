@@ -41,6 +41,7 @@ class TestCareerFootprintContractDocs(unittest.TestCase):
         for token in (
             "地图按省份 / 州 / 行政区域点亮，而不是散点图",
             "生涯足迹应覆盖所有有可靠地理信息的运动 Activity，而不只限赛事",
+            "地图解析优先消费 `region_admin1_code` / `region_admin1`",
             "普通 Activity 可进入生涯足迹，不依赖赛事身份",
             "没有可靠地理信息的 Activity 进入 `without_region`，不参与地图点亮",
         ):

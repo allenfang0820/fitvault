@@ -43,12 +43,14 @@ class TestCareerYearRequestIsolationFrontend(unittest.TestCase):
     def test_late_response_checks_request_mode_and_year_before_writing(self):
         body = extract_function_body(self.source, "async function loadCareerYearInsight(options)")
         write_index = body.index("appState.career.yearInsight = data")
-        guard_index = body.index("if (!stillCurrentRequest || !stillYearMode || !stillSameYear)")
+        guard_index = body.index("if (!stillCurrentRequest || !stillYearMode || !stillSameYear || !stillSameTone)")
 
         self.assertLess(guard_index, write_index)
         self.assertIn("appState.career.yearInsightRequestId === requestId", body)
         self.assertIn("appState.career.insightMode === 'year'", body)
         self.assertIn("responseYear === requestedYear", body)
+        self.assertIn("responseTone === requestedTonePreset", body)
+        self.assertIn("careerYearTonePreset(appState.career.yearInsightTonePreset) === requestedTonePreset", body)
         self.assertIn("stale_year_insight_response", body)
 
     def test_late_error_does_not_overwrite_current_page(self):
@@ -67,12 +69,13 @@ class TestCareerYearRequestIsolationFrontend(unittest.TestCase):
         self.assertNotIn("generate_career_insight", body)
         self.assertNotIn("call_llm", body)
 
-    def test_generation_action_calls_year_generate_api_with_year_only(self):
+    def test_generation_action_calls_year_generate_api_with_year_and_tone_only(self):
         body = extract_function_body(self.source, "async function generateCareerYearInsight()")
 
         self.assertIn("window.pywebview.api.generate_career_year_insight", body)
-        self.assertIn("generate_career_year_insight({ year: selectedYear })", body)
+        self.assertIn("generate_career_year_insight({ year: selectedYear, tone_preset: selectedTone })", body)
         self.assertIn("requireCareerApiData(res, '年度总结生成失败')", body)
+        self.assertIn("const selectedTone = careerYearTonePreset", body)
         self.assertNotIn("prompt", body)
         self.assertNotIn("model", body)
         self.assertNotIn("force", body)
@@ -84,7 +87,7 @@ class TestCareerYearRequestIsolationFrontend(unittest.TestCase):
     def test_generation_late_response_checks_request_mode_and_year_before_writing(self):
         body = extract_function_body(self.source, "async function generateCareerYearInsight()")
         write_index = body.index("appState.career.yearInsight = data")
-        guard_index = body.index("if (!stillCurrentRequest || !stillYearMode || !stillSameYear)")
+        guard_index = body.index("if (!stillCurrentRequest || !stillYearMode || !stillSameYear || !stillSameTone)")
 
         self.assertLess(guard_index, write_index)
         self.assertIn("yearInsightGenerateRequestId", body)
@@ -92,6 +95,8 @@ class TestCareerYearRequestIsolationFrontend(unittest.TestCase):
         self.assertIn("appState.career.insightMode === 'year'", body)
         self.assertIn("responseYear === selectedYear", body)
         self.assertIn("appState.career.yearInsightSelectedYear === selectedYear", body)
+        self.assertIn("responseTone === selectedTone", body)
+        self.assertIn("careerYearTonePreset(appState.career.yearInsightTonePreset) === selectedTone", body)
         self.assertIn("stale_year_insight_generation_response", body)
         self.assertIn("stale_year_insight_generation_error", body)
 

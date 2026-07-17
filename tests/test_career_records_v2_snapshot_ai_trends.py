@@ -147,7 +147,12 @@ class CareerRecordsV2SnapshotAiTrendsTest(unittest.TestCase):
         self.assertEqual(pdc["sample_count"], 1)
         self.assertEqual(pdc["algorithm_versions"], ["curve:v1"])
         self.assertFalse(pdc["creates_formal_record"])
-        self.assertEqual(curve_availability["by_curve_type"]["trail_pace_curve"]["state"], "unavailable")
+        self.assertEqual(
+            set(curve_availability["by_curve_type"]),
+            set(career_backend.RECORDS_SNAPSHOT_CURVE_TYPES),
+        )
+        self.assertEqual(curve_availability["by_curve_type"]["pool_swim_pace_curve"]["state"], "unavailable")
+        self.assertNotIn("trail_pace_curve", curve_availability["by_curve_type"])
 
         self.assertEqual(trend_inputs["interpretation"], "frequency_and_curve_availability_only")
         self.assertTrue(all(not item["creates_formal_record"] for item in trend_inputs["curve_inputs"]))

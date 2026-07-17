@@ -61,6 +61,8 @@ class TestCareerAiInsightsRepository(unittest.TestCase):
                     "snapshot_version",
                     "prompt_version",
                     "model_id",
+                    "tone_preset",
+                    "generation_options_hash",
                     "content_json",
                     "generated_at",
                     "created_at",
@@ -145,6 +147,58 @@ class TestCareerAiInsightsRepository(unittest.TestCase):
             "career_year", "2026", "sha256:same", "prompt.v2", "model-b"
         )
         self.assertNotEqual(first_id, second_id)
+
+    def test_same_cache_key_can_store_distinct_generation_options(self):
+        conn = sqlite3.connect(":memory:")
+        try:
+            warm_hash = career_backend.career_year_generation_options_hash("warm")
+            light_hash = career_backend.career_year_generation_options_hash("light")
+            warm = career_backend.save_ready_career_ai_insight(
+                scope="career_year",
+                scope_key="2026",
+                snapshot_fingerprint="sha256:same",
+                snapshot_version="acs.year.v2",
+                prompt_version="year.prompt.v5",
+                model_id="model-a",
+                tone_preset="warm",
+                generation_options_hash=warm_hash,
+                content={"headline": "温暖版"},
+                content_validated=True,
+                conn=conn,
+            )
+            light = career_backend.save_ready_career_ai_insight(
+                scope="career_year",
+                scope_key="2026",
+                snapshot_fingerprint="sha256:same",
+                snapshot_version="acs.year.v2",
+                prompt_version="year.prompt.v5",
+                model_id="model-a",
+                tone_preset="light",
+                generation_options_hash=light_hash,
+                content={"headline": "轻松版"},
+                content_validated=True,
+                conn=conn,
+            )
+
+            warm_current = career_backend.get_current_career_ai_insight(
+                scope="career_year",
+                scope_key="2026",
+                generation_options_hash=warm_hash,
+                conn=conn,
+            )
+            light_current = career_backend.get_current_career_ai_insight(
+                scope="career_year",
+                scope_key="2026",
+                generation_options_hash=light_hash,
+                conn=conn,
+            )
+
+            self.assertNotEqual(warm["id"], light["id"])
+            self.assertEqual(warm_current["content"]["headline"], "温暖版")
+            self.assertEqual(light_current["content"]["headline"], "轻松版")
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM career_ai_insights").fetchone()[0], 2)
+        finally:
+            conn.close()
 
     def test_ready_cache_allows_backend_detail_link_but_rejects_unsafe_content(self):
         conn = sqlite3.connect(":memory:")

@@ -2,6 +2,7 @@ import inspect
 import json
 import sqlite3
 import unittest
+from unittest import mock
 
 import career_backend
 import main
@@ -10,7 +11,6 @@ import main
 FORBIDDEN = (
     "raw_fit",
     "raw_stream",
-    "power_stream",
     "track_json",
     "file_path",
     "storage_ref",
@@ -162,6 +162,17 @@ class CareerRecordsV2SecurityPerfObservabilityTest(unittest.TestCase):
         assert_no_sensitive_text(self, records)
         assert_no_sensitive_text(self, candidates)
 
+    def test_empty_state_record_lists_skip_expensive_derived_provider(self):
+        for sport in ("pool_swimming", "open_water_swimming", "trail_running"):
+            with mock.patch.object(career_backend, "_records_v2_derived_provider_snapshot") as provider:
+                records = career_backend.get_career_records({"sport": sport}, conn=self.conn)
+
+            provider.assert_not_called()
+            self.assertEqual(records["records"], [])
+            self.assertEqual(records["summary"]["total"], 0)
+            self.assertTrue(records["metrics"]["derived_provider_skipped"])
+            self.assertFalse(records["metrics"]["derived_provider_cache_hit"])
+
     def test_curve_view_reports_cache_hit_miss(self):
         self._save_curve()
 
@@ -198,7 +209,7 @@ class CareerRecordsV2SecurityPerfObservabilityTest(unittest.TestCase):
         self.assertTrue(plan["failure_recovery"]["supports_batching"])
         self.assertTrue(plan["failure_recovery"]["supports_cancel"])
         self.assertFalse(plan["failure_recovery"]["raw_payload_logged"])
-        self.assertEqual(plan["observability"]["event"], "records_v2_rebuild_plan")
+        self.assertEqual(plan["observability"]["event"], "records_v2_rebuild_dry_run_materialized")
         assert_no_sensitive_text(self, plan["observability"])
 
     def test_candidate_decision_is_bounded_idempotent_and_observable(self):

@@ -39,7 +39,7 @@ class TestCareerYearInsightService(unittest.TestCase):
 
             self.assertEqual(states, ["not_generated"] * 8)
 
-    def test_one_read_reuses_activity_rows_for_years_badges_snapshot_and_comparison(self):
+    def test_year_read_uses_target_year_queries_without_full_activity_scan(self):
         conn = sqlite3.connect(":memory:")
         try:
             _create_tables(conn)
@@ -69,12 +69,34 @@ class TestCareerYearInsightService(unittest.TestCase):
             ) as activity_reader:
                 result = career_backend.get_career_year_insight(2026, conn=conn)
 
-            self.assertEqual(activity_reader.call_count, 1)
+            self.assertEqual(activity_reader.call_count, 0)
             self.assertEqual(result["available_years"], [2026, 2025, 2024])
-            self.assertEqual(result["year_update_badges"]["years"], [2025])
+            self.assertEqual(result["year_update_badges"]["years"], [])
             self.assertEqual(result["facts"]["summary"]["activity_count"], 1)
             self.assertEqual(result["facts"]["comparison"]["status"], "available")
             self.assertEqual(result["facts"]["comparison"]["activity_count_delta"], 0)
+        finally:
+            conn.close()
+
+    def test_not_generated_past_year_is_selectable_without_full_activity_scan(self):
+        conn = sqlite3.connect(":memory:")
+        try:
+            _create_tables(conn)
+            _insert_activity(conn, id=1, start_time="2021-05-01T07:00:00+08:00", dist_km=8.0)
+            _insert_activity(conn, id=2, start_time="2020-05-01T07:00:00+08:00", dist_km=6.0)
+
+            with mock.patch.object(
+                career_backend,
+                "_overview_activity_rows",
+                side_effect=AssertionError("_overview_activity_rows should not run for annual switching"),
+            ):
+                result = career_backend.get_career_year_insight(2020, conn=conn)
+
+            self.assertEqual(result["available_years"], [2021, 2020])
+            self.assertEqual(result["year"], 2020)
+            self.assertEqual(result["report_state"], "not_generated")
+            self.assertTrue(result["can_generate"])
+            self.assertTrue(result["status"]["data_ready"])
         finally:
             conn.close()
 
@@ -222,6 +244,35 @@ class TestCareerYearInsightService(unittest.TestCase):
             self.assertTrue(result["year_update_badges"]["year_map"]["2026"])
             self.assertEqual(result["report"]["content"]["headline"], "旧报告")
             self.assertEqual(result["facts"]["summary"]["activity_count"], 2)
+        finally:
+            conn.close()
+
+    def test_update_badges_include_other_ready_years_on_initial_read(self):
+        conn = sqlite3.connect(":memory:")
+        try:
+            _create_tables(conn)
+            _insert_activity(conn, id=1, start_time="2026-05-01T07:00:00+08:00", dist_km=10.0)
+            _insert_activity(conn, id=2, start_time="2025-05-01T07:00:00+08:00", dist_km=8.0)
+            snapshot = career_backend.build_career_year_snapshot(2025, conn=conn, as_of_date="2026-07-14")
+            career_backend.save_ready_career_ai_insight(
+                scope="career_year",
+                scope_key="2025",
+                snapshot_fingerprint=snapshot["source_fingerprint"],
+                snapshot_version=snapshot["snapshot_version"],
+                prompt_version="year.prompt.v1",
+                model_id="test-model",
+                content={"headline": "2025 旧报告"},
+                content_validated=True,
+                conn=conn,
+            )
+            _insert_activity(conn, id=3, start_time="2025-06-01T07:00:00+08:00", dist_km=5.0)
+
+            result = career_backend.get_career_year_insight(conn=conn)
+
+            self.assertEqual(result["year"], 2026)
+            self.assertEqual(result["report_state"], "not_generated")
+            self.assertTrue(result["year_update_badges"]["year_map"]["2025"])
+            self.assertFalse(result["year_update_badges"]["year_map"].get("2026", False))
         finally:
             conn.close()
 

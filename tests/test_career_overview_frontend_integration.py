@@ -63,8 +63,11 @@ class TestCareerOverviewFrontendIntegration(unittest.TestCase):
         self.assertIn("if (activePanel === 'career')", self.source)
         switch_body = extract_function_body(self.source, "function switchTab(tabBtn)")
         load_body = extract_function_body(self.source, "async function loadCareerData()")
+        refresh_body = extract_function_body(self.source, "function refreshCareerDerivedEventsInBackground()")
         self.assertIn("loadCareerData().catch", switch_body)
-        self.assertIn("refresh_career_derived_events", load_body)
+        self.assertIn("refresh_career_derived_events", refresh_body)
+        self.assertIn("refreshCareerDerivedEventsInBackground()", load_body)
+        self.assertNotIn("await refreshCareerDerivedEventsInBackground()", load_body)
         self.assertIn("loadCareerOverview().catch", load_body)
 
     def test_career_overview_normalizer_outputs_stable_view_model(self):
@@ -102,6 +105,7 @@ class TestCareerOverviewFrontendIntegration(unittest.TestCase):
                 "function normalizeCareerHeroBanner(hero)",
                 "function normalizeCareerSportTotals(totals)",
                 "function normalizeCareerStats(stats)",
+                "function normalizeCareerOverviewSecondaryMetrics(payload)",
             )
         )
         self.assertIn("detailLink", helper_bodies)
@@ -111,6 +115,24 @@ class TestCareerOverviewFrontendIntegration(unittest.TestCase):
         self.assertNotIn("...item", helper_bodies)
         for token in FORBIDDEN_FRONTEND_TOKENS:
             self.assertNotIn(token, helper_bodies)
+
+    def test_career_overview_secondary_metrics_loads_after_first_render(self):
+        load_body = extract_function_body(self.source, "async function loadCareerOverview()")
+        secondary_body = extract_function_body(self.source, "async function loadCareerOverviewSecondaryMetrics()")
+        normalizer_body = extract_function_body(self.source, "function normalizeCareerOverviewSecondaryMetrics(payload)")
+
+        self.assertIn("loadCareerOverviewSecondaryMetrics().catch", load_body)
+        self.assertLess(load_body.find("renderCareerOverview(overview)"), load_body.find("loadCareerOverviewSecondaryMetrics().catch"))
+        self.assertIn("get_career_overview_secondary_metrics", secondary_body)
+        self.assertIn("overviewSecondaryMetricsRequestId", secondary_body)
+        self.assertIn("stale_career_overview_secondary_metrics_response", secondary_body)
+        self.assertIn("Object.assign", secondary_body)
+        self.assertIn("renderCareerOverview(appState.career.overview)", secondary_body)
+        self.assertIn("coveredCountryCount", normalizer_body)
+        self.assertIn("maxElevationGainM", normalizer_body)
+        self.assertIn("maxAltitudeM", normalizer_body)
+        for token in FORBIDDEN_FRONTEND_TOKENS:
+            self.assertNotIn(token, secondary_body + normalizer_body)
 
     def test_career_overview_load_handles_loading_error_and_empty_states(self):
         load_body = extract_function_body(self.source, "async function loadCareerOverview()")
@@ -185,6 +207,7 @@ class TestCareerOverviewFrontendIntegration(unittest.TestCase):
         methods = {item["name"]: item for item in contract["methods"]}
         for name in (
             "get_career_overview",
+            "get_career_overview_secondary_metrics",
             "get_career_timeline",
             "get_career_races",
             "get_career_pb",

@@ -153,6 +153,7 @@ AI 只写叙事，不写事实。
 | `ACS-Year-AI-09A` | 完整长文、语气、迁移与生成态契约冻结 | Product / Contract | P0 | `08C` | Done |
 | `ACS-Year-AI-09B` | v2 Prompt、schema 校验与后端文章 ViewModel | LLM / Backend | P0 | `09A` | Done |
 | `ACS-Year-AI-09C` | v1 缓存兼容与一次性格式升级 | Backend / Cache | P0 | `09B` | Done |
+| `ACS-Year-AI-09D` | 年度报告语气预设、按语气缓存隔离与重新生成 | Frontend / Cache / LLM | P0 | `09C` | Done |
 | `ACS-Year-AI-09D` | 文章式报告渲染与明确生成过渡 | Frontend | P0 | `09C` | Done |
 | `ACS-Year-AI-09E` | 叙事 v2 回归、真实链路验收与文档收口 | Quality | P0 | `09D` | Done |
 | `ACS-Year-AI-FIX-01` | 年度报告生成时间按设备当地时区展示 | Time / Display | P0 | `09E` | Done |

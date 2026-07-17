@@ -61,12 +61,24 @@ class TestCareerYearCardNavigationFrontend(unittest.TestCase):
         self.assertIn("appState.career.insightMode = 'year'", open_body)
         self.assertIn("yearInsightSelectedYear", open_body)
         self.assertIn("switchCareerPage('insight')", open_body)
-        self.assertIn("loadCareerYearInsight({ year:", open_body)
+        self.assertIn("return loadCareerYearInsight({", open_body)
+        self.assertIn("year: appState.career.yearInsightSelectedYear", open_body)
+        self.assertIn("tone_preset: appState.career.yearInsightTonePreset", open_body)
         self.assertIn("window.pywebview.api.get_career_year_insight", load_body)
         self.assertIn("requireCareerApiData(res, '年度总结加载失败')", load_body)
         self.assertNotIn("generate_career_year_insight", open_body + load_body)
         self.assertNotIn("generate_career_insight", open_body + load_body)
         self.assertNotIn("call_llm", open_body + load_body)
+
+    def test_season_card_navigation_does_not_depend_on_new_badge(self):
+        body = extract_function_body(self.source, "function careerSeasonCardHtml(season)")
+
+        click_index = body.index("openCareerYearInsight")
+        badge_index = body.index("reportUpdateAvailable")
+        self.assertLess(badge_index, click_index)
+        self.assertIn("openCareerYearInsight(' + safeHtml(JSON.stringify(yearText))", body)
+        self.assertNotIn("reportUpdateAvailable && openCareerYearInsight", body)
+        self.assertNotIn("if (season && season.reportUpdateAvailable)", body)
 
     def test_season_card_focus_style_keeps_existing_hover_motion(self):
         self.assertIn(".career-season-card:hover,", self.source)

@@ -15,9 +15,11 @@ Hard boundaries:
 from __future__ import annotations
 
 import base64
+from bisect import bisect_left, bisect_right
 import calendar
 import copy
 import hashlib
+import inspect
 import json
 import logging
 import re
@@ -34,7 +36,7 @@ import profile_backend
 
 logger = logging.getLogger(__name__)
 
-CAREER_SCHEMA_VERSION = "2026-07-14.records-v2.10"
+CAREER_SCHEMA_VERSION = "2026-07-16.year-tone-v1"
 CAREER_SCHEMA_ENSURE_LOCK = threading.RLock()
 CAREER_DEFAULT_SCHEMA_READY = False
 CAREER_DEFAULT_SCHEMA_READY_PATH = ""
@@ -85,6 +87,18 @@ CAREER_BANNER_IMAGE_MIME_BY_SUFFIX = {
 }
 CAREER_TIMELINE_MILESTONE_TYPES = {"milestone"}
 CAREER_TIMELINE_MILESTONE_ALIASES = {"achievement", "achievements"}
+CAREER_TIMELINE_RECORD_TYPES = {"record"}
+CAREER_TIMELINE_RECORD_FORMAL_EVENT_TYPES = {"activated", "activated_from_rebuild", "user_confirmed"}
+RECORD_DERIVED_ACHIEVEMENT_SOURCE = "record_derived"
+RECORD_DERIVED_ACHIEVEMENT_RULE_VERSION = "records-v2-achievement-0.1"
+RECORD_DERIVED_ACHIEVEMENT_FORMAL_EVENT_TYPES = CAREER_TIMELINE_RECORD_FORMAL_EVENT_TYPES
+RECORD_DERIVED_ACHIEVEMENT_FIRST_EVENT_TYPES = {"activated", "user_confirmed"}
+RECORD_DERIVED_ACHIEVEMENT_TYPES = {
+    "record_first_formal_record",
+    "record_sport_coverage_3",
+    "record_multi_sport_coverage_3",
+    "record_family_coverage_3",
+}
 
 RACE_RESOLVER_ACTIVITY_COLUMNS = (
     "id",
@@ -368,11 +382,38 @@ CAREER_AI_INSIGHT_STATUSES = (
     "superseded",
     "failed",
 )
+CAREER_YEAR_DEFAULT_TONE_PRESET = "warm"
+CAREER_YEAR_TONE_PRESETS = {
+    "warm": {
+        "label": "温暖",
+        "prompt": "语气温暖、真诚、有光、有分量，像一个懂运动数据的朋友认真庆祝用户这一年做成的事。",
+    },
+    "celebratory": {
+        "label": "庆祝",
+        "prompt": "语气更有仪式感和庆祝感，突出完成、抵达和突破，但不得夸张、鸡血或制造焦虑。",
+    },
+    "professional": {
+        "label": "专业",
+        "prompt": "语气克制、专业、清晰，像一份面向运动者的年度回顾，但仍然要有可读性和成就感。",
+    },
+    "documentary": {
+        "label": "纪录片",
+        "prompt": "语气像运动纪录片旁白，画面感更强，重视时间、地点、节奏和关键节点，但不得编造 Snapshot 外场景。",
+    },
+    "light": {
+        "label": "轻松",
+        "prompt": "语气轻松、有亲近感，可以更口语，但不得玩梗过度、不得降低事实严肃性。",
+    },
+    "humorous": {
+        "label": "幽默",
+        "prompt": "语气幽默、机智、有松弛感，可以使用轻微自嘲和生活化比喻，但不得冒犯用户、不得编造 Snapshot 外事实、不得把严肃成就写成段子。",
+    },
+}
 CAREER_YEAR_AI_REPORT_SCHEMA_VERSION = "acs.year.report.v3"
 CAREER_YEAR_AI_SECTION_ORDER = ("annual_story", "races", "progress", "footprints", "rhythm", "comparison")
 CAREER_YEAR_AI_UNKNOWN_EVIDENCE_FAILURE_THRESHOLD = 2
 CAREER_YEAR_GENERATION_FLIGHT_LOCK = threading.Lock()
-CAREER_YEAR_GENERATION_FLIGHTS: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+CAREER_YEAR_GENERATION_FLIGHTS: dict[tuple[str, str, str, str, str], dict[str, Any]] = {}
 CAREER_YEAR_CITY_CULTURE_HINTS = {
     "成都": "火锅",
     "成都市": "火锅",
@@ -513,6 +554,10 @@ CAREER_FOOTPRINT_CITY_REGION_HINTS = {
     "广州": ("CN-GD", "广东"),
     "广州市": ("CN-GD", "广东"),
     "深圳": ("CN-GD", "广东"),
+    "黄石": ("CN-HB", "湖北"),
+    "黄石市": ("CN-HB", "湖北"),
+    "瑞昌": ("CN-JX", "江西"),
+    "瑞昌市": ("CN-JX", "江西"),
     "台北": ("CN-TW", "台湾"),
     "台北市": ("CN-TW", "台湾"),
     "臺北": ("CN-TW", "台湾"),
@@ -1117,6 +1162,656 @@ def iter_record_definitions(
     )
 
 
+ACTIVITY_RECORD_FACTS_SCHEMA_VERSION = "activity-record-facts-v1"
+ACTIVITY_RECORD_FACTS_SAFE_KEYS = {
+    "facts_schema_version",
+    "activity_id",
+    "sport",
+    "raw_sport_type",
+    "raw_sub_sport_type",
+    "event_date",
+    "start_time",
+    "elapsed_time_sec",
+    "distance_m",
+    "ascent_m",
+    "max_altitude_m",
+    "indoor_scope",
+    "water_scope",
+    "is_deleted",
+    "is_mock",
+    "is_ebike",
+    "distance_time_stream_available",
+    "power_stream_available",
+    "lap_length_stream_available",
+    "elevation_available",
+    "quality_flags",
+    "reason_codes",
+}
+ACTIVITY_RECORD_FACTS_FORBIDDEN_KEYS = ACS_PUBLIC_METADATA_FORBIDDEN_KEYS | {
+    "absolute_path",
+    "device_serial",
+    "fit_file",
+    "full_track",
+    "gps_points",
+    "laps_json",
+    "local_path",
+    "points_json",
+    "power_points",
+    "power_stream",
+    "raw_fit",
+    "raw_laps",
+    "raw_path",
+    "raw_points",
+    "raw_power",
+    "raw_stream",
+    "samples",
+    "serial_number",
+    "track_json",
+}
+
+
+def _clean_activity_text(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _clean_activity_token(value: Any) -> str:
+    return _clean_activity_text(value).lower().replace("-", "_").replace(" ", "_")
+
+
+def _activity_truthy(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return float(value) != 0.0
+    return str(value or "").strip().lower() in {"1", "true", "yes", "y"}
+
+
+def _activity_distance_m(activity: dict[str, Any]) -> float | None:
+    dist_km = _safe_float(activity.get("dist_km"))
+    if dist_km is not None and dist_km > 0:
+        return round(dist_km * 1000.0, 3)
+    distance = _safe_float(activity.get("distance"))
+    if distance is None or distance <= 0:
+        return None
+    if distance > 1000:
+        return round(distance, 3)
+    return round(distance * 1000.0, 3)
+
+
+def _activity_elapsed_time_sec(activity: dict[str, Any]) -> float | None:
+    for key in ("duration_sec", "duration", "elapsed_time_sec"):
+        value = _safe_float(activity.get(key))
+        if value is not None and value > 0:
+            return round(value, 3)
+    return None
+
+
+def _activity_event_date(activity: dict[str, Any]) -> str:
+    for key in ("start_time", "start_time_utc", "event_date", "date"):
+        value = _clean_activity_text(activity.get(key))
+        if value:
+            return value[:10]
+    return ""
+
+
+def _activity_stream_list(activity: dict[str, Any], *keys: str) -> list[Any]:
+    for key in keys:
+        value = activity.get(key)
+        if isinstance(value, list):
+            return value
+        parsed = _json_loads_list(value)
+        if parsed:
+            return parsed
+    return []
+
+
+def _activity_stream_available(activity: dict[str, Any], *keys: str) -> bool:
+    return bool(_activity_stream_list(activity, *keys))
+
+
+def _activity_power_stream_available(activity: dict[str, Any]) -> bool:
+    if _safe_float(activity.get("avg_power")) not in (None, 0.0):
+        return True
+    if _safe_float(activity.get("max_power")) not in (None, 0.0):
+        return True
+    if _safe_float(activity.get("normalized_power")) not in (None, 0.0):
+        return True
+    for point in _activity_stream_list(activity, "power_points", "points_json", "track_json"):
+        if not isinstance(point, dict):
+            continue
+        for key in ("power", "power_w", "watts", "pwr"):
+            value = _safe_float(point.get(key))
+            if value is not None:
+                return True
+    advanced = _json_loads_object(activity.get("advanced_metrics"))
+    if advanced:
+        for key in ("power_points", "power_stream", "power_curve"):
+            if _json_loads_list(advanced.get(key)):
+                return True
+    return False
+
+
+def _activity_lap_length_stream_available(activity: dict[str, Any]) -> bool:
+    laps = _activity_stream_list(activity, "laps_json", "lengths_json")
+    return bool(laps)
+
+
+def _activity_pool_length_available(activity: dict[str, Any]) -> bool:
+    for key in ("pool_length_m", "pool_length", "pool_length_scope"):
+        value = activity.get(key)
+        if _safe_float(value) is not None or _clean_activity_text(value):
+            return True
+    for lap in _activity_stream_list(activity, "laps_json", "lengths_json"):
+        if isinstance(lap, dict):
+            for key in ("pool_length_m", "pool_length", "length_m"):
+                value = lap.get(key)
+                if _safe_float(value) is not None:
+                    return True
+    return False
+
+
+def normalize_activity_record_sport(activity: dict[str, Any] | None) -> dict[str, Any]:
+    raw = activity if isinstance(activity, dict) else {}
+    raw_sport = _clean_activity_token(raw.get("sport_type") or raw.get("sport"))
+    raw_sub = _clean_activity_token(raw.get("sub_sport_type") or raw.get("sub_sport"))
+    combined = " ".join(part for part in (raw_sport, raw_sub) if part)
+    is_ebike = raw_sport in {"e_biking", "ebike", "e_bike"} or "e_bike" in combined or "ebike" in combined
+    is_deleted = bool(_clean_activity_text(raw.get("deleted_at")))
+    is_mock = _activity_truthy(raw.get("is_mock"))
+    sport = "unsupported"
+    reason_codes: list[str] = []
+    if not raw:
+        reason_codes.append("activity_missing")
+    elif is_deleted:
+        reason_codes.append("activity_deleted")
+    elif is_mock:
+        reason_codes.append("mock_activity_excluded")
+    elif is_ebike:
+        reason_codes.append("ebike_scope_excluded")
+    elif raw_sport in {"running", "run"}:
+        sport = "running"
+    elif raw_sport in {"cycling", "road_cycling", "biking", "bike", "virtual_ride", "indoor_cycling"}:
+        sport = "cycling"
+    elif raw_sport == "hiking":
+        sport = "hiking"
+    elif raw_sport in {"trail_running", "trail_run"}:
+        sport = "trail_running"
+    elif raw_sport in {"swimming", "swim"} and raw_sub in {"open_water", "open_water_swimming"}:
+        sport = "open_water_swimming"
+    elif raw_sport in {"pool_swimming", "lap_swimming"} or (raw_sport in {"swimming", "swim"} and raw_sub in {"pool", "pool_swimming", "lap_swimming"}):
+        sport = "pool_swimming"
+    else:
+        reason_codes.append("unsupported_sport")
+    return {
+        "sport": sport,
+        "raw_sport_type": raw_sport,
+        "raw_sub_sport_type": raw_sub,
+        "is_deleted": is_deleted,
+        "is_mock": is_mock,
+        "is_ebike": is_ebike,
+        "reason_codes": list(_dedupe_reason_codes(tuple(reason_codes))),
+    }
+
+
+def build_activity_record_facts(activity: dict[str, Any] | None) -> dict[str, Any]:
+    raw = activity if isinstance(activity, dict) else {}
+    sport_info = normalize_activity_record_sport(raw)
+    reason_codes = list(sport_info.get("reason_codes") or [])
+    quality_flags: list[str] = []
+    elapsed_time_sec = _activity_elapsed_time_sec(raw)
+    distance_m = _activity_distance_m(raw)
+    ascent_m = _safe_float(raw.get("gain_m") if raw.get("gain_m") is not None else raw.get("ascent_m"))
+    max_altitude_m = _safe_float(raw.get("max_alt_m") if raw.get("max_alt_m") is not None else raw.get("max_altitude_m"))
+    distance_time_stream_available = _activity_stream_available(raw, "points_json", "track_json")
+    power_stream_available = _activity_power_stream_available(raw)
+    lap_length_stream_available = _activity_lap_length_stream_available(raw)
+    elevation_available = ascent_m is not None or max_altitude_m is not None
+    sport = str(sport_info.get("sport") or "unsupported")
+    raw_sport = str(sport_info.get("raw_sport_type") or "")
+    raw_sub = str(sport_info.get("raw_sub_sport_type") or "")
+    indoor_scope = "indoor" if any(token in {raw_sport, raw_sub} for token in ("indoor_cycling", "virtual_ride", "trainer", "treadmill")) else "outdoor"
+    water_scope = "open_water" if sport == "open_water_swimming" else ("pool" if sport == "pool_swimming" else "")
+    if elapsed_time_sec is None:
+        reason_codes.append("elapsed_time_missing")
+    if distance_m is None and sport in {"running", "cycling", "hiking", "open_water_swimming", "trail_running"}:
+        reason_codes.append("distance_missing")
+    if not distance_time_stream_available and sport in {"running", "cycling", "open_water_swimming", "trail_running"}:
+        reason_codes.append("distance_time_stream_missing")
+    if not power_stream_available and sport == "cycling":
+        reason_codes.append("power_stream_missing")
+    if not lap_length_stream_available and sport == "pool_swimming":
+        reason_codes.append("lap_length_stream_missing")
+    if sport == "pool_swimming" and not _activity_pool_length_available(raw):
+        reason_codes.append("pool_length_missing")
+    if not elevation_available and sport in {"hiking", "trail_running"}:
+        reason_codes.append("elevation_missing")
+    if sport == "trail_running":
+        reason_codes.append("trail_sample_missing")
+    if elapsed_time_sec is not None:
+        quality_flags.append("elapsed_time_available")
+    if distance_m is not None:
+        quality_flags.append("distance_available")
+    if distance_time_stream_available:
+        quality_flags.append("distance_time_available")
+    if power_stream_available:
+        quality_flags.append("power_available")
+    if lap_length_stream_available:
+        quality_flags.append("lap_length_available")
+    if elevation_available:
+        quality_flags.append("elevation_available")
+    facts = {
+        "facts_schema_version": ACTIVITY_RECORD_FACTS_SCHEMA_VERSION,
+        "activity_id": _clean_activity_text(raw.get("id") or raw.get("activity_id")),
+        "sport": sport,
+        "raw_sport_type": raw_sport,
+        "raw_sub_sport_type": raw_sub,
+        "event_date": _activity_event_date(raw),
+        "start_time": _clean_activity_text(raw.get("start_time") or raw.get("start_time_utc")),
+        "elapsed_time_sec": elapsed_time_sec,
+        "distance_m": distance_m,
+        "ascent_m": round(ascent_m, 3) if ascent_m is not None else None,
+        "max_altitude_m": round(max_altitude_m, 3) if max_altitude_m is not None else None,
+        "indoor_scope": indoor_scope,
+        "water_scope": water_scope,
+        "is_deleted": bool(sport_info.get("is_deleted")),
+        "is_mock": bool(sport_info.get("is_mock")),
+        "is_ebike": bool(sport_info.get("is_ebike")),
+        "distance_time_stream_available": distance_time_stream_available,
+        "power_stream_available": power_stream_available,
+        "lap_length_stream_available": lap_length_stream_available,
+        "elevation_available": elevation_available,
+        "quality_flags": list(_dedupe_reason_codes(tuple(quality_flags))),
+        "reason_codes": list(_dedupe_reason_codes(tuple(reason_codes))),
+    }
+    return activity_record_facts_safe_public_summary(facts)
+
+
+def activity_record_facts_safe_public_summary(facts: dict[str, Any]) -> dict[str, Any]:
+    clean = {
+        key: copy.deepcopy(value)
+        for key, value in (facts or {}).items()
+        if key in ACTIVITY_RECORD_FACTS_SAFE_KEYS
+    }
+    _assert_record_evidence_safe_json(clean, path="activity_record_facts")
+    return clean
+
+
+BEST_EFFORT_DISTANCE_RESOLVER_VERSION = "best-effort-distance-v1"
+BEST_EFFORT_DISTANCE_DEFAULT_MAX_GAP_SEC = 1800.0
+BEST_EFFORT_DISTANCE_DEFAULT_MAX_SPEED_MPS = 35.0
+
+
+def _distance_time_point_elapsed_sec(point: dict[str, Any]) -> tuple[float | None, bool]:
+    for key in ("t_sec", "elapsed_time_sec", "elapsed_sec", "time_sec", "timer_time_sec", "timestamp", "time", "t"):
+        if key not in point:
+            continue
+        parsed = _parse_record_timestamp_seconds(point.get(key))
+        if parsed is not None:
+            return parsed, key in {"timestamp", "time"}
+    return None, False
+
+
+def _distance_time_point_distance_m(point: dict[str, Any]) -> float | None:
+    for key in ("distance_m", "dist_m", "enhanced_distance", "total_distance"):
+        if key in point:
+            parsed = _finite_float(point.get(key))
+            if parsed is not None:
+                return parsed
+    if "dist_km" in point:
+        parsed = _finite_float(point.get("dist_km"))
+        if parsed is not None:
+            return parsed * 1000.0
+    if "distance" in point:
+        parsed = _finite_float(point.get("distance"))
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def normalize_distance_time_points(
+    stream: Any,
+    *,
+    max_gap_sec: float = BEST_EFFORT_DISTANCE_DEFAULT_MAX_GAP_SEC,
+    max_segment_speed_mps: float = BEST_EFFORT_DISTANCE_DEFAULT_MAX_SPEED_MPS,
+) -> dict[str, Any]:
+    """Normalize distance/time samples into safe contiguous monotonic segments."""
+    raw_points = stream if isinstance(stream, list) else _json_loads_list(stream)
+    parsed_points: list[dict[str, Any]] = []
+    reason_codes: list[str] = []
+    absolute_time_seen = False
+    for index, point in enumerate(raw_points):
+        if not isinstance(point, dict):
+            reason_codes.append("invalid_distance_time_point")
+            parsed_points.append({"invalid": True, "raw_index": index})
+            continue
+        elapsed_sec, is_absolute_time = _distance_time_point_elapsed_sec(point)
+        distance_m = _distance_time_point_distance_m(point)
+        if is_absolute_time:
+            absolute_time_seen = True
+        if elapsed_sec is None or elapsed_sec < 0 or distance_m is None or distance_m < 0:
+            reason_codes.append("invalid_distance_time_point")
+            parsed_points.append({"invalid": True, "raw_index": index})
+            continue
+        parsed_points.append({
+            "raw_index": index,
+            "elapsed_sec": float(elapsed_sec),
+            "distance_m": float(distance_m),
+        })
+
+    valid_times = [point["elapsed_sec"] for point in parsed_points if not point.get("invalid")]
+    time_offset = min(valid_times) if absolute_time_seen and valid_times else 0.0
+    if time_offset:
+        for point in parsed_points:
+            if not point.get("invalid"):
+                point["elapsed_sec"] = float(point["elapsed_sec"]) - time_offset
+
+    segments: list[list[dict[str, Any]]] = []
+    current: list[dict[str, Any]] = []
+    previous: dict[str, Any] | None = None
+    clean_max_gap = max(0.0, float(max_gap_sec or 0.0))
+    clean_max_speed = max(0.0, float(max_segment_speed_mps or 0.0))
+
+    def close_current() -> None:
+        nonlocal current
+        if current:
+            segments.append(current)
+            current = []
+
+    for point in parsed_points:
+        if point.get("invalid"):
+            reason_codes.append("distance_time_invalid_break")
+            close_current()
+            previous = None
+            continue
+        if previous is not None:
+            time_delta = float(point["elapsed_sec"]) - float(previous["elapsed_sec"])
+            distance_delta = float(point["distance_m"]) - float(previous["distance_m"])
+            if time_delta <= 0:
+                reason_codes.append("time_not_increasing")
+                close_current()
+                previous = None
+            elif distance_delta < 0:
+                reason_codes.append("distance_rollback")
+                close_current()
+                previous = None
+            elif clean_max_gap and time_delta > clean_max_gap:
+                reason_codes.append("time_gap_break")
+                close_current()
+                previous = None
+            elif clean_max_speed and distance_delta / time_delta > clean_max_speed:
+                reason_codes.append("distance_jump_break")
+                close_current()
+                previous = None
+        current.append({
+            "index": len(current),
+            "raw_index": int(point["raw_index"]),
+            "elapsed_sec": round(float(point["elapsed_sec"]), 6),
+            "distance_m": round(float(point["distance_m"]), 6),
+        })
+        previous = point
+    close_current()
+
+    normalized_segments: list[dict[str, Any]] = []
+    normalized_points: list[dict[str, Any]] = []
+    for segment_index, segment in enumerate(segments):
+        if len(segment) < 2:
+            reason_codes.append("distance_time_segment_too_short")
+            continue
+        segment_points: list[dict[str, Any]] = []
+        for point_index, point in enumerate(segment):
+            clean = {
+                "segment_index": segment_index,
+                "point_index": point_index,
+                "raw_index": point["raw_index"],
+                "elapsed_sec": point["elapsed_sec"],
+                "distance_m": point["distance_m"],
+            }
+            segment_points.append(clean)
+            normalized_points.append(clean)
+        normalized_segments.append({
+            "segment_index": segment_index,
+            "points": segment_points,
+            "start_sec": segment_points[0]["elapsed_sec"],
+            "end_sec": segment_points[-1]["elapsed_sec"],
+            "start_distance_m": segment_points[0]["distance_m"],
+            "end_distance_m": segment_points[-1]["distance_m"],
+        })
+
+    if not raw_points:
+        reason_codes.append("distance_time_stream_missing")
+    if not normalized_segments:
+        reason_codes.append("no_valid_distance_time_segment")
+    return {
+        "points": normalized_points,
+        "segments": normalized_segments,
+        "reason_codes": list(_dedupe_reason_codes(tuple(reason_codes))),
+    }
+
+
+def _interpolate_segment_time_at_distance(
+    segment_points: list[dict[str, Any]],
+    target_distance_m: float,
+) -> tuple[float | None, int | None]:
+    distances = [float(point["distance_m"]) for point in segment_points]
+    elapsed = [float(point["elapsed_sec"]) for point in segment_points]
+    return _interpolate_segment_time_at_distance_arrays(distances, elapsed, target_distance_m)
+
+
+def _interpolate_segment_time_at_distance_arrays(
+    distances: list[float],
+    elapsed: list[float],
+    target_distance_m: float,
+) -> tuple[float | None, int | None]:
+    if not distances or len(distances) != len(elapsed):
+        return None, None
+    if target_distance_m < distances[0] or target_distance_m > distances[-1]:
+        return None, None
+    index = bisect_left(distances, target_distance_m)
+    if index < len(distances) and abs(distances[index] - target_distance_m) <= 1e-6:
+        return elapsed[index], index
+    right_index = index
+    left_index = index - 1
+    while left_index >= 0 and right_index < len(distances):
+        left_distance = distances[left_index]
+        right_distance = distances[right_index]
+        if right_distance > left_distance:
+            fraction = (target_distance_m - left_distance) / (right_distance - left_distance)
+            interpolated = elapsed[left_index] + fraction * (elapsed[right_index] - elapsed[left_index])
+            return interpolated, right_index
+        left_index -= 1
+    return None, None
+
+
+def best_effort_distance_window(
+    stream: Any,
+    target_distance_m: Any,
+    *,
+    max_gap_sec: float = BEST_EFFORT_DISTANCE_DEFAULT_MAX_GAP_SEC,
+    max_segment_speed_mps: float = BEST_EFFORT_DISTANCE_DEFAULT_MAX_SPEED_MPS,
+) -> dict[str, Any]:
+    """Return the fastest activity-internal contiguous window for a target distance."""
+    target = _finite_float(target_distance_m)
+    if target is None or target <= 0:
+        return {
+            "ok": False,
+            "status": "unavailable",
+            "target_distance_m": target_distance_m,
+            "reason_codes": ["target_distance_invalid"],
+        }
+    normalized = normalize_distance_time_points(
+        stream,
+        max_gap_sec=max_gap_sec,
+        max_segment_speed_mps=max_segment_speed_mps,
+    )
+    best: dict[str, Any] | None = None
+    reason_codes = list(normalized.get("reason_codes") or [])
+    for segment in normalized.get("segments") or []:
+        segment_points = list(segment.get("points") or [])
+        if len(segment_points) < 2:
+            continue
+        distances = [float(point["distance_m"]) for point in segment_points]
+        elapsed = [float(point["elapsed_sec"]) for point in segment_points]
+        segment_distance = distances[-1] - distances[0]
+        if segment_distance + 1e-6 < target:
+            reason_codes.append("activity_shorter_than_target")
+            continue
+        starts = {distance for distance in distances if distance + target <= distances[-1] + 1e-6}
+        starts.update(
+            distance - target
+            for distance in distances
+            if distance - target >= distances[0] - 1e-6
+        )
+        starts.add(distances[0])
+        for start_distance in sorted(starts):
+            end_distance = start_distance + target
+            start_sec, start_index = _interpolate_segment_time_at_distance_arrays(distances, elapsed, start_distance)
+            end_sec, end_index = _interpolate_segment_time_at_distance_arrays(distances, elapsed, end_distance)
+            if start_sec is None or end_sec is None or end_sec <= start_sec:
+                continue
+            elapsed_sec = end_sec - start_sec
+            candidate = {
+                "ok": True,
+                "status": "window_found",
+                "source_mode": "best_effort_distance",
+                "resolver_version": BEST_EFFORT_DISTANCE_RESOLVER_VERSION,
+                "target_distance_m": round(target, 3),
+                "elapsed_time_sec": round(elapsed_sec, 3),
+                "range": {
+                    "start_sec": round(start_sec, 3),
+                    "end_sec": round(end_sec, 3),
+                    "duration_sec": round(elapsed_sec, 3),
+                    "start_distance_m": round(start_distance, 3),
+                    "end_distance_m": round(end_distance, 3),
+                    "distance_m": round(target, 3),
+                    "start_index": start_index,
+                    "end_index": end_index,
+                },
+                "quality": {
+                    "confidence": 0.92,
+                    "confidence_band": "high",
+                    "decision": "preview",
+                    "source": "best_effort_distance",
+                    "quality_policy": BEST_EFFORT_DISTANCE_RESOLVER_VERSION,
+                    "reason_codes": ["best_effort_distance_window"],
+                    "can_user_confirm": True,
+                    "blocks_active": False,
+                    "log_safety": "safe_summary_only",
+                },
+                "normalization": {
+                    "segment_index": segment.get("segment_index"),
+                    "segments": len(normalized.get("segments") or []),
+                    "reason_codes": reason_codes,
+                },
+            }
+            if best is None or candidate["elapsed_time_sec"] < best["elapsed_time_sec"]:
+                best = candidate
+    if best is not None:
+        return best
+    return {
+        "ok": False,
+        "status": "unavailable",
+        "source_mode": "best_effort_distance",
+        "resolver_version": BEST_EFFORT_DISTANCE_RESOLVER_VERSION,
+        "target_distance_m": round(target, 3),
+        "reason_codes": list(_dedupe_reason_codes(tuple(reason_codes or ["best_effort_distance_window_missing"]))),
+        "normalization": normalized,
+    }
+
+
+def best_effort_distance_or_fallback(
+    stream: Any,
+    target_distance_m: Any,
+    *,
+    activity: dict[str, Any] | None = None,
+    fallback_tolerance_ratio: float | None = None,
+    max_gap_sec: float = BEST_EFFORT_DISTANCE_DEFAULT_MAX_GAP_SEC,
+    max_segment_speed_mps: float = BEST_EFFORT_DISTANCE_DEFAULT_MAX_SPEED_MPS,
+) -> dict[str, Any]:
+    """Resolve Best Effort Distance, falling back only to lower-confidence whole-activity evidence."""
+    window = best_effort_distance_window(
+        stream,
+        target_distance_m,
+        max_gap_sec=max_gap_sec,
+        max_segment_speed_mps=max_segment_speed_mps,
+    )
+    if window.get("ok"):
+        return window
+    target = _finite_float(target_distance_m)
+    raw_activity = activity if isinstance(activity, dict) else {}
+    distance_m = _activity_distance_m(raw_activity)
+    elapsed_time_sec = _activity_elapsed_time_sec(raw_activity)
+    tolerance = _finite_float(fallback_tolerance_ratio)
+    reason_codes = list(window.get("reason_codes") or [])
+    reason_codes.append("fallback_activity_total")
+    if target is None or target <= 0:
+        reason_codes.append("target_distance_invalid")
+    if distance_m is None or distance_m <= 0:
+        reason_codes.append("distance_missing")
+    if elapsed_time_sec is None or elapsed_time_sec <= 0:
+        reason_codes.append("elapsed_time_missing")
+    if target is None or target <= 0 or distance_m is None or distance_m <= 0 or elapsed_time_sec is None or elapsed_time_sec <= 0:
+        return {
+            "ok": False,
+            "status": "unavailable",
+            "source_mode": "fallback_activity_total",
+            "target_distance_m": target_distance_m,
+            "reason_codes": list(_dedupe_reason_codes(tuple(reason_codes))),
+        }
+    if distance_m + 1e-6 < target:
+        reason_codes.append("activity_shorter_than_target")
+        return {
+            "ok": False,
+            "status": "unavailable",
+            "source_mode": "fallback_activity_total",
+            "target_distance_m": round(target, 3),
+            "activity_distance_m": round(distance_m, 3),
+            "reason_codes": list(_dedupe_reason_codes(tuple(reason_codes))),
+        }
+    tolerance_ratio = max(0.0, tolerance if tolerance is not None else 0.0)
+    distance_error_ratio = abs(distance_m - target) / target
+    if tolerance_ratio <= 0 or distance_error_ratio > tolerance_ratio:
+        reason_codes.append("activity_total_outside_tolerance")
+        return {
+            "ok": False,
+            "status": "validation_required",
+            "source_mode": "fallback_activity_total",
+            "target_distance_m": round(target, 3),
+            "activity_distance_m": round(distance_m, 3),
+            "distance_error_ratio": round(distance_error_ratio, 6),
+            "reason_codes": list(_dedupe_reason_codes(tuple(reason_codes))),
+        }
+    reason_codes.extend(("distance_time_stream_missing", "legacy_distance_tolerance_match", "blocks_active"))
+    return {
+        "ok": True,
+        "status": "fallback_activity_total",
+        "source_mode": "fallback_activity_total",
+        "resolver_version": BEST_EFFORT_DISTANCE_RESOLVER_VERSION,
+        "target_distance_m": round(target, 3),
+        "activity_distance_m": round(distance_m, 3),
+        "distance_error_ratio": round(distance_error_ratio, 6),
+        "elapsed_time_sec": round(elapsed_time_sec, 3),
+        "range": {
+            "start_sec": 0.0,
+            "end_sec": round(elapsed_time_sec, 3),
+            "duration_sec": round(elapsed_time_sec, 3),
+            "start_distance_m": 0.0,
+            "end_distance_m": round(distance_m, 3),
+            "distance_m": round(distance_m, 3),
+        },
+        "quality": {
+            "confidence": 0.45,
+            "confidence_band": "lower",
+            "decision": "validation_required",
+            "source": "fallback_activity_total",
+            "quality_policy": BEST_EFFORT_DISTANCE_RESOLVER_VERSION,
+            "reason_codes": list(_dedupe_reason_codes(tuple(reason_codes))),
+            "can_user_confirm": True,
+            "blocks_active": True,
+            "log_safety": "safe_summary_only",
+        },
+    }
+
+
 RECORD_SPORT_ORDER = ("running", "cycling", "hiking", "pool_swimming", "open_water_swimming", "trail_running")
 RECORD_SPORT_LABELS = {
     "running": "跑步",
@@ -1436,11 +2131,13 @@ def _career_year_report_update_available(
     year: int,
     *,
     conn: sqlite3.Connection,
+    generation_options_hash: Any = None,
     activity_rows: list[dict[str, Any]] | None = None,
 ) -> bool:
     cached_report = get_current_career_ai_insight(
         scope=CAREER_AI_INSIGHT_SCOPE_YEAR,
         scope_key=str(year),
+        generation_options_hash=generation_options_hash,
         conn=conn,
     )
     if not cached_report or str(cached_report.get("status") or "") != "ready":
@@ -1453,6 +2150,7 @@ def _career_year_update_badges(
     available_years: list[int],
     *,
     conn: sqlite3.Connection,
+    generation_options_hash: Any = None,
     activity_rows: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     years: list[int] = []
@@ -1462,6 +2160,7 @@ def _career_year_update_badges(
             if _career_year_report_update_available(
                 clean_year,
                 conn=conn,
+                generation_options_hash=generation_options_hash,
                 activity_rows=activity_rows,
             ):
                 years.append(clean_year)
@@ -1473,10 +2172,106 @@ def _career_year_update_badges(
     }
 
 
+def _current_career_year_reports_by_year(
+    available_years: list[int],
+    *,
+    conn: sqlite3.Connection,
+    generation_options_hash: Any = None,
+) -> dict[int, dict[str, Any]]:
+    """Return current ready annual reports for available years only."""
+    valid_years = {
+        _validate_career_year(year)
+        for year in available_years
+    }
+    if not valid_years or not _table_exists(conn, "career_ai_insights"):
+        return {}
+    optional_where = ""
+    params: list[Any] = [CAREER_AI_INSIGHT_SCOPE_YEAR]
+    if generation_options_hash is not None:
+        optional_where = "AND generation_options_hash = ?"
+        params.append(_normalize_career_ai_insight_text(generation_options_hash, "generation_options_hash"))
+    rows = conn.execute(
+        f"""
+        SELECT {_select_career_ai_insight_columns()}
+        FROM career_ai_insights
+        WHERE scope = ?
+          AND status = 'ready'
+          {optional_where}
+        ORDER BY generated_at DESC, updated_at DESC, id DESC
+        """,
+        tuple(params),
+    ).fetchall()
+    reports: dict[int, dict[str, Any]] = {}
+    for row in rows:
+        report = _career_ai_insight_row(row)
+        if not report:
+            continue
+        try:
+            report_year = _validate_career_year(report.get("scope_key"))
+        except Exception:
+            continue
+        if report_year in valid_years and report_year not in reports:
+            reports[report_year] = report
+    return reports
+
+
+def _career_year_update_badges_from_reports(
+    available_years: list[int],
+    reports_by_year: dict[int, dict[str, Any]],
+    *,
+    conn: sqlite3.Connection,
+    activity_rows: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    years: list[int] = []
+    for year in available_years:
+        try:
+            clean_year = _validate_career_year(year)
+            cached_report = reports_by_year.get(clean_year)
+            if not cached_report:
+                continue
+            snapshot = build_career_year_snapshot(clean_year, conn=conn, activity_rows=activity_rows)
+            if str(snapshot.get("source_fingerprint") or "") != str(cached_report.get("snapshot_fingerprint") or ""):
+                years.append(clean_year)
+        except Exception:
+            continue
+    return {
+        "years": years,
+        "year_map": {str(year): True for year in years},
+    }
+
+
+def normalize_career_year_tone_preset(value: Any = None) -> str:
+    clean = str(value or CAREER_YEAR_DEFAULT_TONE_PRESET).strip().lower()
+    if clean not in CAREER_YEAR_TONE_PRESETS:
+        raise ValueError(f"年度报告语气必须是 {', '.join(sorted(CAREER_YEAR_TONE_PRESETS))} 之一")
+    return clean
+
+
+def career_year_tone_label(value: Any = None) -> str:
+    clean = normalize_career_year_tone_preset(value)
+    return str(CAREER_YEAR_TONE_PRESETS[clean]["label"])
+
+
+def career_year_tone_prompt(value: Any = None) -> str:
+    clean = normalize_career_year_tone_preset(value)
+    return str(CAREER_YEAR_TONE_PRESETS[clean]["prompt"])
+
+
+def career_year_generation_options(tone_preset: Any = None) -> dict[str, str]:
+    return {"tone_preset": normalize_career_year_tone_preset(tone_preset)}
+
+
+def career_year_generation_options_hash(tone_preset: Any = None) -> str:
+    payload = career_year_generation_options(tone_preset)
+    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return "sha256:" + hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
 def _annotate_career_season_report_updates(
     seasons: list[dict[str, Any]],
     *,
     conn: sqlite3.Connection,
+    activity_rows: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """Attach report refresh eligibility to Season cards from Year Snapshot facts."""
     if not seasons:
@@ -1490,7 +2285,7 @@ def _annotate_career_season_report_updates(
         except Exception:
             continue
         if year not in year_map:
-            year_map[year] = _career_year_report_update_available(year, conn=conn)
+            year_map[year] = _career_year_report_update_available(year, conn=conn, activity_rows=activity_rows)
         season["report_update_available"] = bool(year_map.get(year))
     return seasons
 
@@ -2055,6 +2850,59 @@ def _integrate_power_intervals(
     return total
 
 
+def _power_group_prefix(group: list[dict[str, float]]) -> dict[str, Any]:
+    starts: list[float] = []
+    ends: list[float] = []
+    powers: list[float] = []
+    prefix_energy: list[float] = [0.0]
+    total = 0.0
+    for interval in group:
+        start = float(interval["start_sec"])
+        end = float(interval["end_sec"])
+        power = float(interval["power_w"])
+        starts.append(start)
+        ends.append(end)
+        powers.append(power)
+        total += (end - start) * power
+        prefix_energy.append(total)
+    return {
+        "starts": starts,
+        "ends": ends,
+        "powers": powers,
+        "prefix_energy": prefix_energy,
+    }
+
+
+def _power_group_energy_at(prefix: dict[str, Any], at_sec: float) -> float | None:
+    starts = prefix.get("starts") or []
+    ends = prefix.get("ends") or []
+    powers = prefix.get("powers") or []
+    prefix_energy = prefix.get("prefix_energy") or []
+    if not starts or at_sec < starts[0] - 1e-6 or at_sec > ends[-1] + 1e-6:
+        return None
+    if abs(at_sec - starts[0]) <= 1e-6:
+        return 0.0
+    index = bisect_right(ends, at_sec)
+    if index > 0 and abs(ends[index - 1] - at_sec) <= 1e-6:
+        return float(prefix_energy[index])
+    interval_index = bisect_right(starts, at_sec) - 1
+    if interval_index < 0 or interval_index >= len(starts):
+        return None
+    if at_sec > ends[interval_index] + 1e-6:
+        return None
+    return float(prefix_energy[interval_index]) + (at_sec - starts[interval_index]) * powers[interval_index]
+
+
+def _integrate_power_group_prefix(prefix: dict[str, Any], *, start_sec: float, end_sec: float) -> float | None:
+    if end_sec <= start_sec:
+        return None
+    start_energy = _power_group_energy_at(prefix, start_sec)
+    end_energy = _power_group_energy_at(prefix, end_sec)
+    if start_energy is None or end_energy is None:
+        return None
+    return end_energy - start_energy
+
+
 def _best_cycling_power_window(
     intervals: list[dict[str, float]],
     *,
@@ -2067,6 +2915,7 @@ def _best_cycling_power_window(
         group_end = float(group[-1]["end_sec"])
         if group_end - group_start + epsilon < duration_sec:
             continue
+        prefix = _power_group_prefix(group)
         candidate_starts = {group_start}
         for interval in group:
             start = float(interval["start_sec"])
@@ -2080,7 +2929,7 @@ def _best_cycling_power_window(
             candidate_end = candidate_start + duration_sec
             if candidate_end > group_end + epsilon:
                 continue
-            total = _integrate_power_intervals(group, start_sec=candidate_start, end_sec=candidate_end)
+            total = _integrate_power_group_prefix(prefix, start_sec=candidate_start, end_sec=candidate_end)
             if total is None:
                 continue
             average = total / duration_sec
@@ -3853,69 +4702,92 @@ def _activity_summary(conn: sqlite3.Connection) -> dict[str, Any]:
             "total_distance_km": None,
         }
 
-    where_sql = _deleted_filter(conn)
-    activity_count = _count_rows(conn, "activities", where_sql)
-
+    available_columns = _activity_available_columns(conn)
+    where_sql = _overview_activity_deleted_filter(available_columns)
     start_year = None
-    start_time_expr = None
-    has_start_time = _column_exists(conn, "activities", "start_time")
-    has_start_time_utc = _column_exists(conn, "activities", "start_time_utc")
-    if has_start_time and has_start_time_utc:
-        start_time_expr = "COALESCE(NULLIF(start_time, ''), NULLIF(start_time_utc, ''))"
-    elif has_start_time:
-        start_time_expr = "start_time"
-    elif has_start_time_utc:
-        start_time_expr = "start_time_utc"
-    if start_time_expr:
+    activity_count = 0
+    total_distance_km = None
+    start_time_expr = _activity_date_expr_from_columns(available_columns)
+    if "dist_km" in available_columns:
         row = conn.execute(
             f"""
-            SELECT MIN(substr({start_time_expr}, 1, 4))
+            SELECT COUNT(*) AS activity_count,
+                   MIN(CASE
+                       WHEN COALESCE({start_time_expr}, '') != ''
+                       THEN substr({start_time_expr}, 1, 4)
+                   END) AS start_year,
+                   SUM(CASE WHEN dist_km IS NOT NULL AND dist_km > 0 THEN dist_km ELSE 0 END) AS dist_km_sum,
+                   SUM(CASE WHEN dist_km IS NULL OR dist_km <= 0 THEN 1 ELSE 0 END) AS missing_dist_km_count
             FROM activities
             WHERE {where_sql}
-              AND COALESCE({start_time_expr}, '') != ''
             """
         ).fetchone()
-        raw_year = row[0] if row else None
+        activity_count = int(row[0] or 0) if row else 0
+        raw_year = row[1] if row else None
         if raw_year and str(raw_year).isdigit():
             start_year = int(raw_year)
+        distance_sum = float(row[2] or 0.0) if row else 0.0
+        distance_seen = distance_sum > 0
+        missing_dist_km_count = int(row[3] or 0) if row else 0
+        if missing_dist_km_count > 0 and "distance" in available_columns:
+            fallback_row = conn.execute(
+                f"""
+                SELECT SUM(CASE
+                    WHEN distance IS NOT NULL AND distance > 1000 THEN distance / 1000.0
+                    WHEN distance IS NOT NULL AND distance > 0 THEN distance
+                    ELSE NULL
+                END)
+                FROM activities
+                WHERE {where_sql}
+                  AND (dist_km IS NULL OR dist_km <= 0)
+                """
+            ).fetchone()
+            if fallback_row and fallback_row[0] is not None:
+                distance_sum += float(fallback_row[0])
+                distance_seen = True
+        total_distance_km = round(distance_sum, 2) if distance_seen else None
+    else:
+        distance_expr = _activity_distance_expr_from_columns(available_columns)
+        row = conn.execute(
+            f"""
+            SELECT COUNT(*) AS activity_count,
+                   MIN(CASE
+                       WHEN COALESCE({start_time_expr}, '') != ''
+                       THEN substr({start_time_expr}, 1, 4)
+                   END) AS start_year,
+                   SUM({distance_expr}) AS distance_sum
+            FROM activities
+            WHERE {where_sql}
+            """
+        ).fetchone()
+        activity_count = int(row[0] or 0) if row else 0
+        raw_year = row[1] if row else None
+        if raw_year and str(raw_year).isdigit():
+            start_year = int(raw_year)
+        if row and row[2] is not None:
+            total_distance_km = round(float(row[2]), 2)
 
     covered_city_count = 0
     city_expr = None
     for column_name in ("region_city", "city", "cityName"):
-        if _column_exists(conn, "activities", column_name):
+        if column_name in available_columns:
             city_expr = column_name
             break
     if city_expr:
+        table_ref = (
+            "activities INDEXED BY idx_activities_location_display"
+            if city_expr == "region_city" and _index_exists(conn, "idx_activities_location_display")
+            else "activities"
+        )
         row = conn.execute(
             f"""
             SELECT COUNT(DISTINCT TRIM({city_expr}))
-            FROM activities
+            FROM {table_ref}
             WHERE {where_sql}
               AND TRIM(COALESCE({city_expr}, '')) != ''
             """
         ).fetchone()
         covered_city_count = int(row[0] or 0) if row else 0
-
-    total_distance_km = None
-    distance_expr = None
-    has_dist_km = _column_exists(conn, "activities", "dist_km")
-    has_distance = _column_exists(conn, "activities", "distance")
-    if has_dist_km and has_distance:
-        distance_expr = "COALESCE(dist_km, distance / 1000.0)"
-    elif has_dist_km:
-        distance_expr = "dist_km"
-    elif has_distance:
-        distance_expr = "distance / 1000.0"
-    if distance_expr:
-        row = conn.execute(
-            f"""
-            SELECT SUM({distance_expr})
-            FROM activities
-            WHERE {where_sql}
-            """
-        ).fetchone()
-        if row and row[0] is not None:
-            total_distance_km = round(float(row[0]), 2)
 
     return {
         "career_start_year": start_year,
@@ -3925,20 +4797,311 @@ def _activity_summary(conn: sqlite3.Connection) -> dict[str, Any]:
     }
 
 
+def _activity_summary_from_overview_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    years: list[int] = []
+    cities: set[str] = set()
+    distances: list[float] = []
+    for row in rows:
+        activity_year = _safe_activity_year(_overview_activity_date(row))
+        if activity_year is not None:
+            years.append(activity_year)
+        city = _overview_activity_city(row)
+        if city:
+            cities.add(city)
+        distance_km = _activity_distance_km(row)
+        if distance_km is not None:
+            distances.append(float(distance_km))
+    return {
+        "career_start_year": min(years) if years else None,
+        "activity_count": len(rows),
+        "covered_city_count": len(cities),
+        "total_distance_km": round(sum(distances), 2) if distances else None,
+    }
+
+
 def _activity_select_alias(available_columns: set[str], column_name: str) -> str:
     if column_name in available_columns:
         return column_name
     return f"NULL AS {column_name}"
 
 
-def _overview_activity_rows(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+def _activity_available_columns(conn: sqlite3.Connection) -> set[str]:
     if not _table_exists(conn, "activities"):
-        return []
-    available_columns = {
+        return set()
+    return {
         str(row[1])
         for row in conn.execute("PRAGMA table_info(activities)").fetchall()
         if len(row) > 1 and row[1]
     }
+
+
+def _overview_activity_deleted_filter(available_columns: set[str]) -> str:
+    return "deleted_at IS NULL" if "deleted_at" in available_columns else "1=1"
+
+
+def _activity_date_expr_from_columns(available_columns: set[str]) -> str:
+    if "start_time" in available_columns and "start_time_utc" in available_columns:
+        return "COALESCE(NULLIF(start_time, ''), NULLIF(start_time_utc, ''))"
+    if "start_time" in available_columns:
+        return "start_time"
+    if "start_time_utc" in available_columns:
+        return "start_time_utc"
+    return "''"
+
+
+def _activity_distance_expr_from_columns(available_columns: set[str]) -> str:
+    if "dist_km" in available_columns and "distance" in available_columns:
+        return (
+            "CASE "
+            "WHEN dist_km IS NOT NULL AND dist_km > 0 THEN dist_km "
+            "WHEN distance IS NOT NULL AND distance > 1000 THEN distance / 1000.0 "
+            "WHEN distance IS NOT NULL AND distance > 0 THEN distance "
+            "ELSE NULL END"
+        )
+    if "dist_km" in available_columns:
+        return "CASE WHEN dist_km IS NOT NULL AND dist_km > 0 THEN dist_km ELSE NULL END"
+    if "distance" in available_columns:
+        return (
+            "CASE "
+            "WHEN distance IS NOT NULL AND distance > 1000 THEN distance / 1000.0 "
+            "WHEN distance IS NOT NULL AND distance > 0 THEN distance "
+            "ELSE NULL END"
+        )
+    return "NULL"
+
+
+def _activity_duration_expr_from_columns(available_columns: set[str]) -> str:
+    if "duration" in available_columns and "duration_sec" in available_columns:
+        return (
+            "CASE "
+            "WHEN duration IS NOT NULL AND duration > 0 THEN duration "
+            "WHEN duration_sec IS NOT NULL AND duration_sec > 0 THEN duration_sec "
+            "ELSE NULL END"
+        )
+    if "duration" in available_columns:
+        return "CASE WHEN duration IS NOT NULL AND duration > 0 THEN duration ELSE NULL END"
+    if "duration_sec" in available_columns:
+        return "CASE WHEN duration_sec IS NOT NULL AND duration_sec > 0 THEN duration_sec ELSE NULL END"
+    return "NULL"
+
+
+def _activity_ascent_expr_from_columns(available_columns: set[str]) -> str:
+    parts = [
+        f"WHEN {column} IS NOT NULL AND {column} > 0 THEN {column}"
+        for column in ("total_ascent", "ascent", "elev_gain", "gain_m")
+        if column in available_columns
+    ]
+    return f"CASE {' '.join(parts)} ELSE NULL END" if parts else "NULL"
+
+
+def _activity_text_expr_from_columns(available_columns: set[str], columns: tuple[str, ...]) -> str:
+    parts = [
+        f"NULLIF(TRIM({column}), '')"
+        for column in columns
+        if column in available_columns
+    ]
+    return f"COALESCE({', '.join(parts)}, '')" if parts else "''"
+
+
+def _activity_strength_weight_expr_from_columns(available_columns: set[str]) -> tuple[str, bool]:
+    parts = [
+        f"WHEN {column} IS NOT NULL AND {column} > 0 THEN {column}"
+        for column in CAREER_OVERVIEW_STRENGTH_WEIGHT_COLUMNS
+        if column in available_columns
+    ]
+    return (f"CASE {' '.join(parts)} ELSE NULL END", bool(parts)) if parts else ("NULL", False)
+
+
+def _overview_activity_metric_rows(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    if not _table_exists(conn, "activities"):
+        return []
+    available_columns = _activity_available_columns(conn)
+    columns = (
+        "id",
+        "sport_type",
+        "sub_sport_type",
+        "sport",
+        "activity_type",
+        "start_time",
+        "start_time_utc",
+        "dist_km",
+        "distance",
+        "duration",
+        "duration_sec",
+        "total_ascent",
+        "ascent",
+        "elev_gain",
+        "gain_m",
+        "max_alt_m",
+        "region_city",
+        "city",
+        "cityName",
+        "region_country",
+        "country",
+        "countryName",
+    ) + CAREER_OVERVIEW_STRENGTH_WEIGHT_COLUMNS
+    select_sql = ", ".join(_activity_select_alias(available_columns, column) for column in columns)
+    cursor = conn.execute(
+        f"""
+        SELECT {select_sql}
+        FROM activities
+        WHERE {_overview_activity_deleted_filter(available_columns)}
+        """
+    )
+    return _rows_to_dicts(cursor)
+
+
+def _overview_activity_rows(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    if not _table_exists(conn, "activities"):
+        return []
+    available_columns = _activity_available_columns(conn)
+    columns = _OVERVIEW_ACTIVITY_ROW_COLUMNS
+    select_sql = ", ".join(_activity_select_alias(available_columns, column) for column in columns)
+    cursor = conn.execute(
+        f"""
+        SELECT {select_sql}
+        FROM activities
+        WHERE {_overview_activity_deleted_filter(available_columns)}
+        ORDER BY COALESCE(NULLIF(start_time, ''), NULLIF(start_time_utc, '')) DESC, id DESC
+        """
+    )
+    return _rows_to_dicts(cursor)
+
+
+_OVERVIEW_ACTIVITY_ROW_COLUMNS = (
+    "id",
+    "title",
+    "name",
+    "file_name",
+    "filename",
+    "sport_type",
+    "sub_sport_type",
+    "sport",
+    "activity_type",
+    "start_time",
+    "start_time_utc",
+    "dist_km",
+    "distance",
+    "duration",
+    "duration_sec",
+    "total_ascent",
+    "ascent",
+    "elev_gain",
+    "gain_m",
+    "max_alt_m",
+    "region_city",
+    "city",
+    "cityName",
+    "region_country",
+    "country",
+    "countryName",
+) + CAREER_OVERVIEW_STRENGTH_WEIGHT_COLUMNS
+
+
+def _overview_activity_rows_for_year(
+    conn: sqlite3.Connection,
+    year: int,
+    end_date: str | None = None,
+) -> list[dict[str, Any]]:
+    if not _table_exists(conn, "activities"):
+        return []
+    available_columns = _activity_available_columns(conn)
+    date_expr = _activity_date_expr_from_columns(available_columns)
+    year_expr = f"substr({date_expr}, 1, 4)"
+    columns = _OVERVIEW_ACTIVITY_ROW_COLUMNS
+    select_sql = ", ".join(_activity_select_alias(available_columns, column) for column in columns)
+    start_bound, end_bound = _career_year_activity_time_bounds(year, end_date)
+    deleted_filter = _overview_activity_deleted_filter(available_columns)
+    rows_by_id: dict[str, dict[str, Any]] = {}
+
+    def add_rows(time_column: str, extra_where: str = "") -> None:
+        where_parts = [
+            deleted_filter,
+            f"{time_column} >= ?",
+            f"{time_column} < ?",
+        ]
+        if extra_where:
+            where_parts.append(extra_where)
+        cursor = conn.execute(
+            f"""
+            SELECT {select_sql}
+            FROM activities
+            WHERE {' AND '.join(where_parts)}
+            ORDER BY {time_column} ASC, id ASC
+            """,
+            (start_bound, end_bound),
+        )
+        for row in _rows_to_dicts(cursor):
+            activity_id = str(row.get("id") or "")
+            if activity_id:
+                rows_by_id.setdefault(activity_id, row)
+
+    if "start_time" in available_columns:
+        add_rows("start_time")
+    if "start_time_utc" in available_columns:
+        extra = "(start_time IS NULL OR TRIM(start_time) = '')" if "start_time" in available_columns else ""
+        add_rows("start_time_utc", extra_where=extra)
+    if not rows_by_id and "start_time" not in available_columns and "start_time_utc" not in available_columns:
+        cursor = conn.execute(
+            f"""
+            SELECT {select_sql}
+            FROM activities
+            WHERE {deleted_filter}
+              AND {year_expr} = ?
+            ORDER BY {date_expr} ASC, id ASC
+            """,
+            (str(int(year)),),
+        )
+        for row in _rows_to_dicts(cursor):
+            activity_id = str(row.get("id") or "")
+            if activity_id:
+                rows_by_id.setdefault(activity_id, row)
+    return sorted(rows_by_id.values(), key=lambda item: (str(_overview_activity_date(item)), str(item.get("id") or "")))
+
+
+def _career_year_activity_time_bounds(year: int, end_date: str | None = None) -> tuple[str, str]:
+    start_bound = f"{int(year):04d}-01-01"
+    if end_date:
+        try:
+            end_day = datetime.fromisoformat(str(end_date)[:10]).date() + timedelta(days=1)
+            end_bound = end_day.isoformat()
+        except ValueError:
+            end_bound = f"{int(year) + 1:04d}-01-01"
+    else:
+        end_bound = f"{int(year) + 1:04d}-01-01"
+    return start_bound, end_bound
+
+
+def _overview_activity_available_years_query(conn: sqlite3.Connection) -> list[int]:
+    if not _table_exists(conn, "activities"):
+        return []
+    available_columns = _activity_available_columns(conn)
+    date_expr = _activity_date_expr_from_columns(available_columns)
+    year_expr = f"substr({date_expr}, 1, 4)"
+    cursor = conn.execute(
+        f"""
+        SELECT DISTINCT {year_expr} AS activity_year
+        FROM activities
+        WHERE {_overview_activity_deleted_filter(available_columns)}
+          AND {year_expr} GLOB '[0-9][0-9][0-9][0-9]'
+        ORDER BY activity_year DESC
+        """
+    )
+    years: list[int] = []
+    for row in cursor.fetchall():
+        year = _safe_activity_year(row[0])
+        if year is not None and CAREER_YEAR_MIN <= year <= CAREER_YEAR_MAX:
+            years.append(year)
+    return years
+
+
+def _overview_hero_activity_rows(
+    conn: sqlite3.Connection,
+    activity_ids: list[Any] | tuple[Any, ...] | set[Any] | None = None,
+) -> list[dict[str, Any]]:
+    if not _table_exists(conn, "activities"):
+        return []
+    available_columns = _activity_available_columns(conn)
     columns = (
         "id",
         "title",
@@ -3966,18 +5129,48 @@ def _overview_activity_rows(conn: sqlite3.Connection) -> list[dict[str, Any]]:
         "region_country",
         "country",
         "countryName",
-    ) + CAREER_OVERVIEW_STRENGTH_WEIGHT_COLUMNS
+    )
     select_sql = ", ".join(_activity_select_alias(available_columns, column) for column in columns)
-    deleted_filter = "deleted_at IS NULL" if "deleted_at" in available_columns else "1=1"
+    deleted_filter = _overview_activity_deleted_filter(available_columns)
+    rows_by_id: dict[str, dict[str, Any]] = {}
+    clean_ids = [
+        str(activity_id or "").strip()
+        for activity_id in (activity_ids or [])
+        if str(activity_id or "").strip()
+    ]
+    if clean_ids:
+        placeholders = ", ".join("?" for _ in clean_ids)
+        cursor = conn.execute(
+            f"""
+            SELECT {select_sql}
+            FROM activities
+            WHERE {deleted_filter}
+              AND CAST(id AS TEXT) IN ({placeholders})
+            """,
+            tuple(clean_ids),
+        )
+        rows_by_id.update({
+            str(row.get("id") or ""): row
+            for row in _rows_to_dicts(cursor)
+            if str(row.get("id") or "")
+        })
+
+    date_expr = _activity_date_expr_from_columns(available_columns)
+    distance_expr = _activity_distance_expr_from_columns(available_columns)
     cursor = conn.execute(
         f"""
         SELECT {select_sql}
         FROM activities
         WHERE {deleted_filter}
-        ORDER BY COALESCE(NULLIF(start_time, ''), NULLIF(start_time_utc, '')) DESC, id DESC
+        ORDER BY {distance_expr} DESC, {date_expr} DESC, id DESC
+        LIMIT 1
         """
     )
-    return _rows_to_dicts(cursor)
+    for row in _rows_to_dicts(cursor):
+        activity_id = str(row.get("id") or "")
+        if activity_id:
+            rows_by_id.setdefault(activity_id, row)
+    return list(rows_by_id.values())
 
 
 def _overview_activity_title(row: dict[str, Any]) -> str:
@@ -4135,6 +5328,27 @@ def _footprint_china_region_from_city(value: Any) -> tuple[str, str] | None:
     return None
 
 
+def _footprint_region_from_admin1_code(value: Any, country_code: str | None = None) -> tuple[str, str] | None:
+    text = _footprint_clean_text(value).upper()
+    if not text:
+        return None
+    country = str(country_code or "").upper()
+    if text.startswith("CN-") or (country == "CN" and len(text) == 2):
+        code = text if text.startswith("CN-") else f"CN-{text}"
+        for region_key, name, _aliases in CAREER_FOOTPRINT_CHINA_REGION_SPECS:
+            if region_key == code:
+                return region_key, name
+    if text.startswith("JP-") or (country == "JP" and text.isdigit()):
+        code = text if text.startswith("JP-") else f"JP-{int(text):02d}"
+        for region_key, name, _aliases in CAREER_FOOTPRINT_JAPAN_REGION_SPECS:
+            if region_key == code:
+                return region_key, name
+    if text.startswith("US-") or (country == "US" and len(text) == 2 and text.isalpha()):
+        postal = text.replace("US-", "")
+        return CAREER_FOOTPRINT_US_POSTAL_REGION_MAP.get(postal)
+    return None
+
+
 def _footprint_japan_region_from_text(value: Any) -> tuple[str, str] | None:
     text = _footprint_clean_text(value)
     if not text:
@@ -4181,15 +5395,44 @@ def _footprint_us_region_from_city(value: Any) -> tuple[str, str] | None:
 def _resolve_career_footprint_region(row: dict[str, Any]) -> dict[str, Any] | None:
     """Resolve one Activity row into a safe map region without using title or track points."""
     country_values = _footprint_text_candidates(row, ("region_country", "country", "countryName"))
-    region_values = _footprint_text_candidates(row, ("region", "region_display", "region_state", "state", "province"))
+    admin1_code_values = _footprint_text_candidates(row, ("region_admin1_code", "admin1_code"))
+    admin1_values = _footprint_text_candidates(row, ("region_admin1", "admin1"))
+    legacy_admin_values = _footprint_text_candidates(row, ("region_state", "state", "province"))
+    region_values = _footprint_text_candidates(row, ("region", "region_display"))
     city_values = _footprint_text_candidates(row, ("region_city", "city", "cityName"))
-    all_location_text = country_values + region_values + city_values
+    all_location_text = country_values + admin1_code_values + admin1_values + legacy_admin_values + region_values + city_values
     country = next((_footprint_country_record(value) for value in country_values if _footprint_country_record(value)), None)
     china_hint = bool(country and country.get("country_code") == "CN") or any(
         _footprint_is_china_country(value) for value in all_location_text
     )
 
     if china_hint or not country_values:
+        for value in admin1_code_values:
+            region = _footprint_region_from_admin1_code(value, "CN")
+            if region:
+                region_key, name = region
+                return {
+                    "region_key": region_key,
+                    "name": name,
+                    "country": "中国",
+                    "country_code": "CN",
+                    "level": "province",
+                    "map_mode": "china",
+                    "city": city_values[0][:80] if city_values else "",
+                }
+        for value in admin1_values + legacy_admin_values:
+            region = _footprint_china_region_from_text(value)
+            if region:
+                region_key, name = region
+                return {
+                    "region_key": region_key,
+                    "name": name,
+                    "country": "中国",
+                    "country_code": "CN",
+                    "level": "province",
+                    "map_mode": "china",
+                    "city": city_values[0][:80] if city_values else "",
+                }
         for value in city_values + region_values + country_values:
             region = _footprint_china_region_from_text(value) or _footprint_china_region_from_city(value)
             if region:
@@ -4206,7 +5449,20 @@ def _resolve_career_footprint_region(row: dict[str, Any]) -> dict[str, Any] | No
 
     japan_hint = bool(country and country.get("country_code") == "JP")
     if japan_hint:
-        for value in region_values + city_values:
+        for value in admin1_code_values:
+            region = _footprint_region_from_admin1_code(value, "JP")
+            if region:
+                region_key, name = region
+                return {
+                    "region_key": region_key,
+                    "name": name,
+                    "country": "日本",
+                    "country_code": "JP",
+                    "level": "prefecture",
+                    "map_mode": "japan",
+                    "city": city_values[0][:80] if city_values else "",
+                }
+        for value in admin1_values + legacy_admin_values + region_values + city_values:
             region = _footprint_japan_region_from_text(value)
             if region:
                 region_key, name = region
@@ -4222,7 +5478,20 @@ def _resolve_career_footprint_region(row: dict[str, Any]) -> dict[str, Any] | No
 
     us_hint = bool(country and country.get("country_code") == "US")
     if us_hint:
-        for value in region_values:
+        for value in admin1_code_values:
+            region = _footprint_region_from_admin1_code(value, "US")
+            if region:
+                region_key, name = region
+                return {
+                    "region_key": region_key,
+                    "name": name,
+                    "country": "美国",
+                    "country_code": "US",
+                    "level": "state" if region_key != "US-DC" else "district",
+                    "map_mode": "us",
+                    "city": city_values[0][:80] if city_values else "",
+                }
+        for value in admin1_values + legacy_admin_values + region_values:
             region = _footprint_us_region_from_text(value)
             if region:
                 region_key, name = region
@@ -4264,7 +5533,7 @@ def _resolve_career_footprint_region(row: dict[str, Any]) -> dict[str, Any] | No
 
 
 def _career_footprint_missing_reason(row: dict[str, Any]) -> str:
-    if _footprint_text_candidates(row, ("region_country", "country", "countryName", "region", "region_display", "region_city", "city", "cityName")):
+    if _footprint_text_candidates(row, ("region_country", "country", "countryName", "region_admin1_code", "region_admin1", "region_state", "state", "province", "region", "region_display", "region_city", "city", "cityName")):
         return "unmapped_region"
     return "missing_region"
 
@@ -4340,6 +5609,164 @@ def _build_sport_totals(rows: list[dict[str, Any]]) -> dict[str, Any]:
     return totals
 
 
+def _overview_sport_totals_query(conn: sqlite3.Connection) -> dict[str, Any]:
+    totals = {
+        "running_distance_km": 0.0,
+        "cycling_distance_km": 0.0,
+        "walking_distance_km": 0.0,
+        "hiking_distance_km": 0.0,
+        "walking_hiking_distance_km": 0.0,
+        "swimming_distance_km": 0.0,
+        "strength_total_weight_kg": None,
+        "strength_total_weight_status": "unavailable",
+    }
+    if not _table_exists(conn, "activities"):
+        return totals
+    available_columns = _activity_available_columns(conn)
+    if (
+        "sport_type" in available_columns
+        and "sub_sport_type" in available_columns
+        and "dist_km" in available_columns
+        and _index_exists(conn, "idx_activities_dedupe_lookup")
+    ):
+        cursor = conn.execute(
+            f"""
+            SELECT sport_type, sub_sport_type,
+                   SUM(CASE WHEN dist_km IS NOT NULL AND dist_km > 0 THEN dist_km ELSE 0 END) AS distance_km
+            FROM activities INDEXED BY idx_activities_dedupe_lookup
+            WHERE {_overview_activity_deleted_filter(available_columns)}
+            GROUP BY sport_type, sub_sport_type
+            """
+        )
+        for row in _rows_to_dicts(cursor):
+            sport = _overview_activity_sport(row)
+            distance_km = float(row.get("distance_km") or 0.0)
+            if sport == "running":
+                totals["running_distance_km"] += distance_km
+            elif sport == "cycling":
+                totals["cycling_distance_km"] += distance_km
+            elif sport == "walking":
+                totals["walking_distance_km"] += distance_km
+                totals["walking_hiking_distance_km"] += distance_km
+            elif sport == "hiking":
+                totals["hiking_distance_km"] += distance_km
+                totals["walking_hiking_distance_km"] += distance_km
+            elif sport == "swimming":
+                totals["swimming_distance_km"] += distance_km
+        for key in ("running_distance_km", "cycling_distance_km", "walking_distance_km", "hiking_distance_km", "walking_hiking_distance_km", "swimming_distance_km"):
+            totals[key] = round(float(totals[key]), 2)
+        strength_totals = _overview_strength_totals_query(conn, available_columns)
+        totals.update(strength_totals)
+        return totals
+
+    sport_columns = ("sport_type", "sub_sport_type", "sport", "activity_type")
+    sport_select = ", ".join(_activity_select_alias(available_columns, column) for column in sport_columns)
+    distance_expr = _activity_distance_expr_from_columns(available_columns)
+    strength_expr, has_strength_columns = _activity_strength_weight_expr_from_columns(available_columns)
+    strength_presence_parts = [
+        f"WHEN {column} IS NOT NULL AND TRIM(CAST({column} AS TEXT)) != '' THEN 1"
+        for column in CAREER_OVERVIEW_STRENGTH_WEIGHT_COLUMNS
+        if column in available_columns
+    ]
+    strength_presence_expr = (
+        f"CASE {' '.join(strength_presence_parts)} ELSE 0 END"
+        if strength_presence_parts
+        else "0"
+    )
+    cursor = conn.execute(
+        f"""
+        SELECT {sport_select},
+               SUM(COALESCE({distance_expr}, 0)) AS distance_km,
+               SUM(COALESCE({strength_expr}, 0)) AS strength_weight_kg,
+               SUM(CASE WHEN {strength_expr} IS NOT NULL THEN 1 ELSE 0 END) AS strength_positive_count,
+               SUM({strength_presence_expr}) AS strength_value_count
+        FROM activities
+        WHERE {_overview_activity_deleted_filter(available_columns)}
+        GROUP BY sport_type, sub_sport_type, sport, activity_type
+        """
+    )
+    strength_sum = 0.0
+    strength_seen = False
+    strength_value_seen = False
+    for row in _rows_to_dicts(cursor):
+        sport = _overview_activity_sport(row)
+        distance_km = float(row.get("distance_km") or 0.0)
+        if sport == "running":
+            totals["running_distance_km"] += distance_km
+        elif sport == "cycling":
+            totals["cycling_distance_km"] += distance_km
+        elif sport == "walking":
+            totals["walking_distance_km"] += distance_km
+            totals["walking_hiking_distance_km"] += distance_km
+        elif sport == "hiking":
+            totals["hiking_distance_km"] += distance_km
+            totals["walking_hiking_distance_km"] += distance_km
+        elif sport == "swimming":
+            totals["swimming_distance_km"] += distance_km
+        if int(row.get("strength_value_count") or 0) > 0:
+            strength_value_seen = True
+        if sport == "strength" and int(row.get("strength_positive_count") or 0) > 0:
+            strength_sum += float(row.get("strength_weight_kg") or 0.0)
+            strength_seen = True
+    for key in ("running_distance_km", "cycling_distance_km", "walking_distance_km", "hiking_distance_km", "walking_hiking_distance_km", "swimming_distance_km"):
+        totals[key] = round(float(totals[key]), 2)
+    if has_strength_columns and strength_value_seen:
+        totals["strength_total_weight_kg"] = round(strength_sum, 1) if strength_seen else None
+        totals["strength_total_weight_status"] = "available" if strength_seen else "partial"
+    return totals
+
+
+def _overview_strength_totals_query(
+    conn: sqlite3.Connection,
+    available_columns: set[str] | None = None,
+) -> dict[str, Any]:
+    result = {
+        "strength_total_weight_kg": None,
+        "strength_total_weight_status": "unavailable",
+    }
+    columns = available_columns if available_columns is not None else _activity_available_columns(conn)
+    strength_expr, has_strength_columns = _activity_strength_weight_expr_from_columns(columns)
+    if not has_strength_columns or not _table_exists(conn, "activities"):
+        return result
+    strength_presence_parts = [
+        f"WHEN {column} IS NOT NULL AND TRIM(CAST({column} AS TEXT)) != '' THEN 1"
+        for column in CAREER_OVERVIEW_STRENGTH_WEIGHT_COLUMNS
+        if column in columns
+    ]
+    strength_presence_expr = f"CASE {' '.join(strength_presence_parts)} ELSE 0 END"
+    sport_clauses: list[str] = []
+    params: list[Any] = []
+    if "sport_type" in columns:
+        sport_clauses.append(f"sport_type IN ({', '.join('?' for _ in STRENGTH_SPORT_TYPES)})")
+        params.extend(sorted(STRENGTH_SPORT_TYPES))
+    if "sub_sport_type" in columns:
+        sport_clauses.append(f"sub_sport_type IN ({', '.join('?' for _ in STRENGTH_SPORT_TYPES)})")
+        params.extend(sorted(STRENGTH_SPORT_TYPES))
+    if not sport_clauses:
+        return result
+    row = conn.execute(
+        f"""
+        SELECT SUM(COALESCE({strength_expr}, 0)) AS strength_weight_kg,
+               SUM(CASE WHEN {strength_expr} IS NOT NULL THEN 1 ELSE 0 END) AS strength_positive_count,
+               SUM({strength_presence_expr}) AS strength_value_count
+        FROM activities
+        WHERE {_overview_activity_deleted_filter(columns)}
+          AND ({' OR '.join(sport_clauses)})
+        """,
+        tuple(params),
+    ).fetchone()
+    if not row:
+        return result
+    if int(row[2] or 0) <= 0:
+        return result
+    if int(row[1] or 0) > 0:
+        result["strength_total_weight_kg"] = round(float(row[0] or 0.0), 1)
+        result["strength_total_weight_status"] = "available"
+    else:
+        result["strength_total_weight_status"] = "partial"
+    return result
+
+
 def _build_career_stats(
     rows: list[dict[str, Any]],
     summary: dict[str, Any],
@@ -4383,6 +5810,128 @@ def _build_career_stats(
         "max_elevation_gain_m": round(max_gain, 1) if max_gain > 0 else None,
         "max_altitude_m": round(max_altitude, 1) if max_altitude is not None else None,
     }
+
+
+def _overview_career_stats_query(
+    conn: sqlite3.Connection,
+    summary: dict[str, Any],
+    race_count: int,
+    pb_count: int,
+    achievement_count: int,
+) -> dict[str, Any]:
+    stats = {
+        "activity_count": _safe_int(summary.get("activity_count")),
+        "race_count": race_count,
+        "pb_count": pb_count,
+        "achievement_count": achievement_count,
+        "total_duration_seconds": 0,
+        "covered_city_count": _safe_int(summary.get("covered_city_count")),
+        "covered_country_count": None,
+        "active_year_count": 0,
+        "longest_activity_distance_km": None,
+        "max_elevation_gain_m": None,
+        "max_altitude_m": None,
+        "secondary_metrics_status": "pending",
+    }
+    if not _table_exists(conn, "activities"):
+        return stats
+    available_columns = _activity_available_columns(conn)
+    date_expr = _activity_date_expr_from_columns(available_columns)
+    distance_expr = _activity_distance_expr_from_columns(available_columns)
+    duration_expr = _activity_duration_expr_from_columns(available_columns)
+    row = conn.execute(
+        f"""
+        SELECT SUM(COALESCE({duration_expr}, 0)) AS total_duration_seconds,
+               COUNT(DISTINCT CASE
+                   WHEN substr({date_expr}, 1, 4) GLOB '[0-9][0-9][0-9][0-9]'
+                   THEN substr({date_expr}, 1, 4)
+               END) AS active_year_count,
+               MAX({distance_expr}) AS longest_activity_distance_km
+        FROM activities
+        WHERE {_overview_activity_deleted_filter(available_columns)}
+        """
+    ).fetchone()
+    if not row:
+        return stats
+    total_duration, active_years, longest = row
+    stats["total_duration_seconds"] = int(total_duration or 0)
+    stats["active_year_count"] = int(active_years or 0)
+    stats["longest_activity_distance_km"] = round(float(longest), 2) if longest is not None and float(longest) > 0 else None
+    return stats
+
+
+def _overview_secondary_metrics_query(conn: sqlite3.Connection) -> dict[str, Any]:
+    metrics = {
+        "covered_country_count": 0,
+        "max_elevation_gain_m": None,
+        "max_altitude_m": None,
+        "status": {
+            "schema_ready": True,
+            "data_ready": False,
+            "message": "总览二级指标暂无活动数据",
+        },
+    }
+    if not _table_exists(conn, "activities"):
+        return metrics
+    available_columns = _activity_available_columns(conn)
+    ascent_expr = _activity_ascent_expr_from_columns(available_columns)
+    max_alt_expr = "max_alt_m" if "max_alt_m" in available_columns else "NULL"
+    row = conn.execute(
+        f"""
+        SELECT MAX({ascent_expr}) AS max_elevation_gain_m,
+               MAX({max_alt_expr}) AS max_altitude_m,
+               COUNT(*) AS activity_count
+        FROM activities
+        WHERE {_overview_activity_deleted_filter(available_columns)}
+        """
+    ).fetchone()
+    max_gain = row[0] if row else None
+    max_altitude = row[1] if row else None
+    activity_count = int(row[2] or 0) if row else 0
+    metrics["covered_country_count"] = _overview_country_count_query(conn, available_columns)
+    metrics["max_elevation_gain_m"] = round(float(max_gain), 1) if max_gain is not None and float(max_gain) > 0 else None
+    metrics["max_altitude_m"] = round(float(max_altitude), 1) if max_altitude is not None else None
+    metrics["status"] = {
+        "schema_ready": True,
+        "data_ready": activity_count > 0,
+        "message": "总览二级指标已生成" if activity_count > 0 else "总览二级指标暂无活动数据",
+    }
+    return metrics
+
+
+def _overview_country_count_query(
+    conn: sqlite3.Connection,
+    available_columns: set[str],
+) -> int:
+    if "region_display" in available_columns and _index_exists(conn, "idx_activities_location_display"):
+        cursor = conn.execute(
+            f"""
+            SELECT DISTINCT region_display
+            FROM activities INDEXED BY idx_activities_location_display
+            WHERE {_overview_activity_deleted_filter(available_columns)}
+              AND TRIM(COALESCE(region_display, '')) != ''
+            """
+        )
+        countries: set[str] = set()
+        for row in cursor.fetchall():
+            text = str(row[0] or "").strip()
+            country = text.rsplit("/", 1)[-1].strip() if "/" in text else ""
+            if country and country not in {"室内运动", "室内训练", "室内"}:
+                countries.add(country)
+        if countries:
+            return len(countries)
+    country_expr = _activity_text_expr_from_columns(available_columns, ("region_country", "country", "countryName"))
+    row = conn.execute(
+        f"""
+        SELECT COUNT(DISTINCT CASE
+            WHEN {country_expr} != ''
+            THEN {country_expr}
+        END)
+        FROM activities
+        WHERE {_overview_activity_deleted_filter(available_columns)}
+        """
+    ).fetchone()
+    return int(row[0] or 0) if row else 0
 
 
 def _best_pb_summary(pb_records: list[dict[str, Any]]) -> dict[str, Any] | None:
@@ -4873,6 +6422,113 @@ def _normalize_timeline_filters(filters: dict[str, Any] | None) -> dict[str, Any
     }
 
 
+def _record_timeline_event_label(event_type: Any) -> str:
+    return {
+        "activated": "纪录刷新",
+        "activated_from_rebuild": "纪录重建",
+        "user_confirmed": "用户确认",
+    }.get(str(event_type or ""), "纪录")
+
+
+def _record_timeline_title(record_key: Any, event_type: Any) -> str:
+    definition = get_record_definition(str(record_key or ""))
+    display_name = definition.display_name if definition else _pb_type_label(record_key)
+    label = _record_timeline_event_label(event_type)
+    return f"{label}：{display_name}" if display_name else label
+
+
+def _record_timeline_node(row: dict[str, Any]) -> dict[str, Any] | None:
+    event_id = str(row.get("id") or "").strip()
+    event_type = str(row.get("event_type") or "").strip()
+    record_id = str(row.get("record_id") or "").strip()
+    activity_id = str(row.get("activity_id") or "").strip()
+    if not event_id or not record_id or event_type not in CAREER_TIMELINE_RECORD_FORMAL_EVENT_TYPES:
+        return None
+    record_key = str(row.get("record_key") or row.get("pb_type") or "").strip()
+    definition = get_record_definition(record_key)
+    sport = str(row.get("sport") or (definition.sport if definition else "")).strip()
+    family = str(row.get("record_family") or (_record_definition_family(definition) if definition else "")).strip()
+    catalog_state = str(row.get("catalog_state") or (definition.availability_state if definition else "")).strip()
+    if family in {"analysis_curve", "model_estimate"}:
+        return None
+    if catalog_state in {"analysis_only", "model_only", "unavailable"}:
+        return None
+    event_at = str(row.get("event_at") or row.get("event_date") or "").strip()
+    event_date = event_at[:10] if event_at else str(row.get("event_date") or "").strip()[:10]
+    year, month, day = _timeline_date_parts(event_date)
+    if year is None or month is None or day is None:
+        return None
+    metric_display = _record_metric_display(row.get("metric_value_num") if row.get("metric_value_num") is not None else row.get("value"), row.get("value_unit"))
+    return {
+        "id": event_id,
+        "type": "record",
+        "subtype": event_type,
+        "activity_id": activity_id,
+        "record_id": record_id,
+        "record_key": record_key,
+        "title": _record_timeline_title(record_key, event_type),
+        "badge": _record_timeline_event_label(event_type),
+        "value": metric_display,
+        "meta": " · ".join(part for part in (_career_sport_label(sport), family) if part),
+        "event_type": event_type,
+        "sport": sport,
+        "family": family,
+        "scope_hash": str(row.get("scope_hash") or ""),
+        "decision": str(row.get("decision") or ""),
+        "date": event_date,
+        "year": year,
+        "month": month,
+        "day": day,
+        "track": "record",
+        "priority": 84,
+        "source": str(row.get("source") or "resolver"),
+        "detail_link": {
+            "activity_id": activity_id,
+            "source": "career",
+            "record_id": record_id,
+        },
+    }
+
+
+def _timeline_record_event_nodes(db: sqlite3.Connection, year: int | None = None) -> list[dict[str, Any]]:
+    if not _table_exists(db, "career_record_events"):
+        return []
+    placeholders = ", ".join("?" for _ in CAREER_TIMELINE_RECORD_FORMAL_EVENT_TYPES)
+    params: list[Any] = list(sorted(CAREER_TIMELINE_RECORD_FORMAL_EVENT_TYPES))
+    where_parts = [
+        f"e.event_type IN ({placeholders})",
+        "e.record_id IS NOT NULL",
+        "TRIM(CAST(e.record_id AS TEXT)) != ''",
+    ]
+    if year is not None:
+        where_parts.append("substr(e.event_at, 1, 4) = ?")
+        params.append(str(year))
+    rows = _rows_to_dicts(
+        db.execute(
+            f"""
+            SELECT e.id, e.record_id, e.activity_id, e.pb_type, e.event_type,
+                   e.event_at, e.source, e.record_key, e.scope_hash, e.decision,
+                   r.sport, r.record_family, r.catalog_state, r.value, r.value_unit,
+                   r.metric_value_num, r.event_date
+            FROM career_record_events e
+            LEFT JOIN career_pb_records r ON r.id = e.record_id
+            WHERE {' AND '.join(where_parts)}
+            ORDER BY e.event_at DESC, e.id DESC
+            """,
+            tuple(params),
+        )
+    )
+    nodes: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    for row in rows:
+        node = _record_timeline_node(row)
+        if not node or node["id"] in seen_ids:
+            continue
+        seen_ids.add(node["id"])
+        nodes.append(node)
+    return nodes
+
+
 def _normalize_race_filters(filters: dict[str, Any] | None) -> dict[str, Any]:
     raw = filters if isinstance(filters, dict) else {}
     sport = str(raw.get("sport") or "all").strip() or "all"
@@ -5276,7 +6932,10 @@ def build_record_evidence(
         raise ValueError(f"unknown record_key: {clean_record_key}")
     clean_source_mode = _validate_record_source_mode(source_mode)
     if definition.source_mode != clean_source_mode:
-        raise ValueError(f"source_mode mismatch for {clean_record_key}: expected {definition.source_mode}")
+        candidate_write_policy = globals().get("RECORDS_V2_CANDIDATE_WRITE_POLICY_BY_KEY", {}).get(clean_record_key, {})
+        candidate_write_source_modes = set(candidate_write_policy.get("source_modes") or ()) if isinstance(candidate_write_policy, dict) else set()
+        if clean_source_mode not in candidate_write_source_modes:
+            raise ValueError(f"source_mode mismatch for {clean_record_key}: expected {definition.source_mode}")
     clean_activity_id = str(activity_id or "").strip()
     if not clean_activity_id:
         raise ValueError("activity_id is required")
@@ -5898,6 +7557,8 @@ def _memory_gallery_activity_region_row(conn: sqlite3.Connection, activity_id: s
         "region_city",
         "region_country",
         "region_display",
+        "region_admin1",
+        "region_admin1_code",
         "region_state",
         "state",
         "province",
@@ -6601,7 +8262,7 @@ def _best_pb_by_type(candidates: list[dict[str, Any]]) -> dict[str, dict[str, An
 def _active_pb_row(conn: sqlite3.Connection, pb_type: str) -> dict[str, Any] | None:
     row = conn.execute(
         """
-        SELECT id, activity_id, value
+        SELECT id, activity_id, value, source_mode, resolver_version, record_key, metric_value_num
         FROM career_pb_records
         WHERE pb_type = ? AND status = 'active'
         ORDER BY CAST(value AS INTEGER) ASC, event_date ASC, id ASC
@@ -6613,7 +8274,15 @@ def _active_pb_row(conn: sqlite3.Connection, pb_type: str) -> dict[str, Any] | N
         return None
     if isinstance(row, sqlite3.Row):
         return dict(row)
-    return {"id": row[0], "activity_id": row[1], "value": row[2]}
+    return {
+        "id": row[0],
+        "activity_id": row[1],
+        "value": row[2],
+        "source_mode": row[3],
+        "resolver_version": row[4],
+        "record_key": row[5],
+        "metric_value_num": row[6],
+    }
 
 
 def _active_record_row(
@@ -6946,6 +8615,10 @@ def _record_evidence_payload(evidence: RecordEvidence | dict[str, Any]) -> dict[
         payload = copy.deepcopy(evidence)
     else:
         raise ValueError("record evidence must be RecordEvidence or dict")
+    if "range_json" not in payload and isinstance(payload.get("range"), dict):
+        payload["range_json"] = copy.deepcopy(payload.get("range") or {})
+    if "scope_json" not in payload and isinstance(payload.get("scope"), dict):
+        payload["scope_json"] = copy.deepcopy(payload.get("scope") or {})
     _assert_record_evidence_safe_json(payload, path="evidence")
     if str(payload.get("evidence_schema_version") or "") != RECORD_EVIDENCE_SCHEMA_VERSION:
         raise ValueError("unsupported record evidence schema")
@@ -7038,6 +8711,58 @@ def _active_v2_record_row(
     return dict(row) if isinstance(row, sqlite3.Row) else dict(zip(columns, row))
 
 
+def _active_v2_legacy_record_row_for_all02_running(
+    conn: sqlite3.Connection,
+    record_key: str,
+) -> dict[str, Any] | None:
+    if record_key not in globals().get("RECORDS_V2_ALL02_RUNNING_CANDIDATE_WRITE_KEYS", set()):
+        return None
+    row = conn.execute(
+        """
+        SELECT id, activity_id, sport, pb_type, value, value_unit, improvement,
+               event_date, confidence, source, status, evidence_key, source_mode,
+               sport_scope, previous_record_id, resolver_version, record_key,
+               scope_json, scope_key, scope_hash, range_json, quality_json,
+               metric_value_num, metric_name, catalog_state, rule_version
+        FROM career_pb_records
+        WHERE record_key = ?
+          AND status = 'active'
+        ORDER BY
+          CASE WHEN source_mode = 'activity_total' THEN 0 ELSE 1 END,
+          event_date DESC,
+          updated_at DESC,
+          id ASC
+        LIMIT 1
+        """,
+        (record_key,),
+    ).fetchone()
+    if row is None:
+        return None
+    columns = (
+        "id", "activity_id", "sport", "pb_type", "value", "value_unit", "improvement",
+        "event_date", "confidence", "source", "status", "evidence_key", "source_mode",
+        "sport_scope", "previous_record_id", "resolver_version", "record_key",
+        "scope_json", "scope_key", "scope_hash", "range_json", "quality_json",
+        "metric_value_num", "metric_name", "catalog_state", "rule_version",
+    )
+    return dict(row) if isinstance(row, sqlite3.Row) else dict(zip(columns, row))
+
+
+def _active_v2_current_record_for_evidence(
+    conn: sqlite3.Connection,
+    evidence: dict[str, Any],
+) -> dict[str, Any] | None:
+    record_key = str(evidence.get("record_key") or "")
+    source_mode = str(evidence.get("source_mode") or "activity_total")
+    scope_hash = str(evidence.get("scope_hash") or "")
+    current = _active_v2_record_row(conn, record_key, source_mode, scope_hash)
+    if current is not None:
+        return current
+    if source_mode == "best_effort_distance" and record_key in globals().get("RECORDS_V2_ALL02_RUNNING_CANDIDATE_WRITE_KEYS", set()):
+        return _active_v2_legacy_record_row_for_all02_running(conn, record_key)
+    return None
+
+
 def _record_event_v2_id(event_type: str, evidence: dict[str, Any], *, record_id: str = "", new_status: str = "") -> str:
     stable = {
         "event_type": event_type,
@@ -7070,7 +8795,7 @@ def _insert_record_event_v2(
         "scope_hash": evidence.get("scope_hash"),
         "scope_key": evidence.get("scope_key"),
         "metric": evidence.get("metric"),
-        "range": evidence.get("range_json") or {},
+        "range": evidence.get("range_json") or evidence.get("range") or {},
         "quality": evidence.get("quality") or {},
     }
     _assert_record_evidence_safe_json(safe_payload, path="record_event_payload")
@@ -7123,6 +8848,7 @@ def _candidate_payload_from_record_evidence(evidence: dict[str, Any], decision: 
             "record_family": evidence.get("record_family"),
             "activity_id": evidence.get("activity_id"),
             "sport": evidence.get("sport"),
+            "event_date": evidence.get("event_date"),
             "source_mode": evidence.get("source_mode"),
             "scope": evidence.get("scope_json") or {},
             "scope_key": evidence.get("scope_key"),
@@ -7276,7 +9002,7 @@ def apply_record_evidence_state(
     record_key = str(payload.get("record_key") or "")
     source_mode = str(payload.get("source_mode") or "activity_total")
     scope_hash = str(payload.get("scope_hash") or "")
-    current = _active_v2_record_row(conn, record_key, source_mode, scope_hash)
+    current = _active_v2_current_record_for_evidence(conn, payload)
     comparison = compare_record_metric(record_key, metric_value, (current or {}).get("metric_value_num") or (current or {}).get("value"))
     if not comparison["is_valid"] or not comparison["is_new_record"]:
         _insert_record_event_v2(
@@ -7412,6 +9138,376 @@ def apply_record_evidence_state(
     return {"action": "activated", "comparison": comparison, "record_id": record_id, "previous_record_id": previous_record_id}
 
 
+def _records_v2_candidate_write_filters(payload: dict[str, Any] | None) -> dict[str, Any]:
+    raw = payload if isinstance(payload, dict) else {}
+    sport = str(raw.get("sport") or "all").strip() or "all"
+    if sport not in {"all", *RECORD_ALLOWED_SPORTS}:
+        sport = "all"
+    try:
+        max_activities = int(raw.get("max_activities") or RECORDS_V2_DERIVED_MAX_ACTIVITIES)
+    except (TypeError, ValueError):
+        max_activities = RECORDS_V2_DERIVED_MAX_ACTIVITIES
+    record_keys = raw.get("record_keys")
+    if isinstance(record_keys, str):
+        requested_keys = {item.strip() for item in record_keys.split(",") if item.strip()}
+    elif isinstance(record_keys, (list, tuple, set)):
+        requested_keys = {str(item or "").strip() for item in record_keys if str(item or "").strip()}
+    else:
+        requested_keys = set(RECORDS_V2_CANDIDATE_WRITE_ALLOWED_KEYS)
+    allowed_keys = sorted(requested_keys & RECORDS_V2_CANDIDATE_WRITE_ALLOWED_KEYS)
+    if not allowed_keys:
+        allowed_keys = sorted(RECORDS_V2_CANDIDATE_WRITE_ALLOWED_KEYS)
+    return {
+        "sport": sport,
+        "max_activities": max(1, min(max_activities, RECORDS_V2_DERIVED_MAX_ACTIVITIES)),
+        "record_keys": allowed_keys,
+    }
+
+
+def _records_v2_candidate_write_scope(item: dict[str, Any], definition: RecordDefinition) -> dict[str, Any]:
+    raw_scope = item.get("scope") if isinstance(item.get("scope"), dict) else {}
+    scope = _canonical_record_scope(raw_scope)
+    if scope:
+        return scope
+    if "water_scope" in definition.scope_dimensions:
+        return {"water_scope": "open_water"} if definition.sport == "open_water_swimming" else {"water_scope": "pool"}
+    if "sport_scope" in definition.scope_dimensions:
+        return {"sport_scope": "default"}
+    return {}
+
+
+def _records_v2_candidate_write_evidence_from_item(item: dict[str, Any]) -> dict[str, Any]:
+    record_key = str(item.get("record_key") or "")
+    definition = get_record_definition(record_key)
+    if definition is None:
+        raise ValueError("record definition not found")
+    metric = item.get("metric") if isinstance(item.get("metric"), dict) else {}
+    quality = canonicalize_record_quality(item.get("quality") if isinstance(item.get("quality"), dict) else {})
+    evidence = build_record_evidence(
+        record_key=record_key,
+        activity_id=str(item.get("activity_id") or ""),
+        sport=str(item.get("sport") or definition.sport),
+        source_mode=str(item.get("source_mode") or definition.source_mode),
+        metric_name=str(metric.get("name") or definition.metric),
+        metric_value=metric.get("value"),
+        metric_unit=str(metric.get("unit") or definition.canonical_unit),
+        event_date=str(item.get("event_date") or "")[:10],
+        scope=_records_v2_candidate_write_scope(item, definition),
+        range_data=item.get("range") if isinstance(item.get("range"), dict) else {},
+        quality=quality,
+        resolver_version=str(item.get("resolver_version") or RECORDS_V2_RULE_VERSION),
+        rule_version=definition.rule_version,
+    ).to_dict()
+    return evidence
+
+
+def _records_v2_candidate_write_rejection_reasons(
+    item: dict[str, Any],
+    *,
+    allowed_record_keys: set[str],
+) -> list[str]:
+    record_key = str(item.get("record_key") or "")
+    definition = get_record_definition(record_key)
+    quality = item.get("quality") if isinstance(item.get("quality"), dict) else {}
+    reason_codes = set(str(code or "").strip() for code in (quality.get("reason_codes") or []) if str(code or "").strip())
+    reasons: list[str] = []
+    if record_key not in allowed_record_keys:
+        reasons.append("record_key_not_in_first_batch")
+    if str(item.get("status") or "") != "preview_record":
+        reasons.append("not_best_for_record_key")
+    if definition is None:
+        reasons.append("record_definition_not_matched")
+    else:
+        policy = RECORDS_V2_CANDIDATE_WRITE_POLICY_BY_KEY.get(record_key)
+        allowed_source_modes = set(policy.get("source_modes") or ()) if isinstance(policy, dict) else {definition.source_mode}
+        expected_source_modes = allowed_source_modes or {definition.source_mode}
+        if str(item.get("source_mode") or definition.source_mode) not in expected_source_modes:
+            reasons.append("source_mode_mismatch")
+        range_required = (
+            bool(policy.get("range_required")) if isinstance(policy, dict) and "range_required" in policy
+            else definition.source_mode in {"best_effort_duration", "best_effort_distance"}
+        )
+        if range_required and not (
+            isinstance(item.get("range"), dict) and bool(item.get("range"))
+        ):
+            reasons.append("range_required")
+    confidence = _safe_float(quality.get("confidence"))
+    min_confidence = 0.98
+    allowed_decisions = {"auto_confirm"}
+    policy = RECORDS_V2_CANDIDATE_WRITE_POLICY_BY_KEY.get(record_key)
+    if isinstance(policy, dict):
+        min_confidence = float(policy.get("min_confidence", min_confidence))
+        allowed_decisions = set(policy.get("decisions") or allowed_decisions)
+    if confidence is None or confidence < min_confidence:
+        reasons.append("confidence_below_first_batch_threshold")
+    if str(quality.get("decision") or "") not in allowed_decisions:
+        reasons.append("decision_not_auto_confirm")
+    if bool(quality.get("blocks_active")):
+        reasons.append("blocks_active")
+    reasons.extend(sorted(reason_codes & RECORDS_V2_CANDIDATE_WRITE_FORBIDDEN_REASON_CODES))
+    return list(_dedupe_reason_codes(tuple(reasons)))
+
+
+def _records_v2_candidate_write_idempotency_key(run_id: str, evidence: dict[str, Any]) -> str:
+    range_hash = _record_stable_hash("range", evidence.get("range_json") or {})
+    return "records_v2_candidate:{run_id}:{record_key}:{activity_id}:{source_mode}:{scope_hash}:{range_hash}:{resolver_version}".format(
+        run_id=str(run_id or ""),
+        record_key=str(evidence.get("record_key") or ""),
+        activity_id=str(evidence.get("activity_id") or ""),
+        source_mode=str(evidence.get("source_mode") or ""),
+        scope_hash=str(evidence.get("scope_hash") or ""),
+        range_hash=range_hash,
+        resolver_version=str(evidence.get("resolver_version") or RECORDS_V2_RULE_VERSION),
+    )
+
+
+def _records_v2_candidate_write_candidate_id(idempotency_key: str) -> str:
+    digest = hashlib.sha1(str(idempotency_key or "").encode("utf-8")).hexdigest()[:18]
+    return f"records_v2_candidate:{digest}"
+
+
+def _records_v2_candidate_write_plan_item(item: dict[str, Any], *, run_id: str) -> dict[str, Any]:
+    evidence = _records_v2_candidate_write_evidence_from_item(item)
+    idempotency_key = _records_v2_candidate_write_idempotency_key(run_id, evidence)
+    candidate_id = _records_v2_candidate_write_candidate_id(idempotency_key)
+    payload = _candidate_payload_from_record_evidence(evidence, "candidate", [])
+    payload["candidate_write"] = {
+        "version": "records-v2-g11-candidate-write-v1",
+        "run_id": run_id,
+        "idempotency_key": idempotency_key,
+        "write_scope": "career_event_candidates_only",
+    }
+    _assert_record_evidence_safe_json(payload, path="record_candidate_write_payload")
+    return {
+        "action": "would_insert",
+        "candidate_id": candidate_id,
+        "idempotency_key": idempotency_key,
+        "record_key": str(evidence.get("record_key") or ""),
+        "activity_id": str(evidence.get("activity_id") or ""),
+        "source_mode": str(evidence.get("source_mode") or ""),
+        "scope_hash": str(evidence.get("scope_hash") or ""),
+        "range_hash": _record_stable_hash("range", evidence.get("range_json") or {}),
+        "confidence": _safe_float((evidence.get("quality") or {}).get("confidence")) or 0.0,
+        "evidence": evidence,
+        "candidate_payload": payload,
+    }
+
+
+def plan_records_v2_candidate_write(
+    conn: sqlite3.Connection,
+    payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build a G11 candidate write plan without writing database state."""
+    start = time.perf_counter()
+    filters = _records_v2_candidate_write_filters(payload)
+    preview = preview_career_records(
+        {
+            "sport": filters["sport"],
+            "max_activities": filters["max_activities"],
+            "include_candidates": True,
+        },
+        conn=conn,
+    )
+    allowed_record_keys = set(filters["record_keys"])
+    candidates: list[dict[str, Any]] = []
+    rejected: list[dict[str, Any]] = []
+    seen_candidate_ids: set[str] = set()
+    for item in [*(preview.get("preview_records") or []), *(preview.get("preview_candidates") or [])]:
+        if not isinstance(item, dict):
+            continue
+        reasons = _records_v2_candidate_write_rejection_reasons(item, allowed_record_keys=allowed_record_keys)
+        if reasons:
+            rejected.append({
+                "record_key": str(item.get("record_key") or ""),
+                "activity_id": str(item.get("activity_id") or ""),
+                "status": str(item.get("status") or ""),
+                "reason_codes": reasons,
+            })
+            continue
+        try:
+            candidate = _records_v2_candidate_write_plan_item(item, run_id=str(preview.get("run_id") or ""))
+        except ValueError as exc:
+            rejected.append({
+                "record_key": str(item.get("record_key") or ""),
+                "activity_id": str(item.get("activity_id") or ""),
+                "status": str(item.get("status") or ""),
+                "reason_codes": [str(exc)],
+            })
+            continue
+        if candidate["candidate_id"] in seen_candidate_ids:
+            rejected.append({
+                "record_key": candidate["record_key"],
+                "activity_id": candidate["activity_id"],
+                "status": "duplicate_in_plan",
+                "reason_codes": ["duplicate_idempotency_key"],
+            })
+            continue
+        seen_candidate_ids.add(candidate["candidate_id"])
+        candidates.append(candidate)
+    return _records_api_safe({
+        "ok": True,
+        "dry_run": True,
+        "run_id": str(preview.get("run_id") or ""),
+        "filters": filters,
+        "candidates": candidates,
+        "rejected": rejected,
+        "summary": {
+            "planned": len(candidates),
+            "rejected": len(rejected),
+            "allowed_record_keys": sorted(allowed_record_keys),
+            "write_scope": "career_event_candidates_only",
+        },
+        "metrics": {"elapsed_ms": _elapsed_ms(start)},
+        "status": {
+            "schema_ready": True,
+            "data_ready": bool(candidates),
+            "message": "候选写入计划已生成" if candidates else "没有可写入候选",
+        },
+    })
+
+
+def _insert_records_v2_candidate_write_row(conn: sqlite3.Connection, candidate: dict[str, Any]) -> str:
+    candidate_id = str(candidate.get("candidate_id") or "")
+    existing = conn.execute(
+        """
+        SELECT id, status
+        FROM career_event_candidates
+        WHERE id = ? AND candidate_type = 'pb_record'
+        LIMIT 1
+        """,
+        (candidate_id,),
+    ).fetchone()
+    if existing is not None:
+        return "skipped_existing_candidate"
+    evidence = candidate.get("evidence") if isinstance(candidate.get("evidence"), dict) else {}
+    payload = candidate.get("candidate_payload") if isinstance(candidate.get("candidate_payload"), dict) else {}
+    _assert_record_evidence_safe_json(payload, path="record_candidate_write_payload")
+    conn.execute(
+        """
+        INSERT INTO career_event_candidates
+            (id, activity_id, candidate_type, title, evidence_json, confidence, status, updated_at)
+        VALUES
+            (?, ?, 'pb_record', ?, ?, ?, 'candidate', CURRENT_TIMESTAMP)
+        """,
+        (
+            candidate_id,
+            str(candidate.get("activity_id") or ""),
+            _record_v2_candidate_title(evidence),
+            _json_dumps(payload),
+            float(candidate.get("confidence") or 0.0),
+        ),
+    )
+    return "inserted"
+
+
+def _records_v2_candidate_write_targets_default_real_db(conn: sqlite3.Connection) -> bool:
+    try:
+        identity = Path(_records_v2_connection_cache_identity(conn)).expanduser()
+        default_db = Path("~/.fitvault/user_profile.db").expanduser()
+        return identity == default_db
+    except Exception:
+        return False
+
+
+def apply_records_v2_candidate_write(
+    payload: dict[str, Any] | None = None,
+    conn: sqlite3.Connection | None = None,
+) -> dict[str, Any]:
+    """Apply the G11 first-batch candidate write plan to an explicit test/staging connection."""
+    start = time.perf_counter()
+    raw = payload if isinstance(payload, dict) else {}
+    dry_run = bool(raw.get("dry_run", True))
+    if conn is None:
+        return _records_api_safe({
+            "ok": False,
+            "code": "explicit_connection_required",
+            "dry_run": dry_run,
+            "summary": {"inserted": 0, "skipped": 0, "rejected": 0},
+            "metrics": {"elapsed_ms": _elapsed_ms(start)},
+            "status": {
+                "schema_ready": False,
+                "data_ready": False,
+                "message": "候选写入必须传入显式测试或 staging 连接；本函数不会默认连接真实库。",
+            },
+        })
+    if not dry_run and _records_v2_candidate_write_targets_default_real_db(conn) and not bool(raw.get("allow_real_db_write")):
+        return _records_api_safe({
+            "ok": False,
+            "code": "real_db_write_not_authorized",
+            "dry_run": False,
+            "summary": {"inserted": 0, "skipped": 0, "rejected": 0},
+            "metrics": {"elapsed_ms": _elapsed_ms(start)},
+            "status": {
+                "schema_ready": False,
+                "data_ready": False,
+                "message": "真实库候选写入需要 DA12 明确授权。",
+            },
+        })
+    plan = plan_records_v2_candidate_write(conn, raw)
+    if dry_run:
+        response = copy.deepcopy(plan)
+        response["dry_run"] = True
+        response["apply"] = {"inserted": [], "skipped": [], "rejected": plan.get("rejected") or []}
+        response["summary"] = {
+            **dict(response.get("summary") or {}),
+            "inserted": 0,
+            "skipped": 0,
+        }
+        response["metrics"]["elapsed_ms"] = _elapsed_ms(start)
+        return _records_api_safe(response)
+    ensure_career_schema(conn)
+    inserted: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+    savepoint_name = "records_v2_candidate_write_g11"
+    try:
+        conn.execute(f"SAVEPOINT {savepoint_name}")
+        for candidate in plan.get("candidates") or []:
+            result = _insert_records_v2_candidate_write_row(conn, candidate)
+            item = {
+                "candidate_id": str(candidate.get("candidate_id") or ""),
+                "record_key": str(candidate.get("record_key") or ""),
+                "activity_id": str(candidate.get("activity_id") or ""),
+                "action": result,
+            }
+            if result == "inserted":
+                inserted.append(item)
+            else:
+                skipped.append(item)
+        conn.execute(f"RELEASE SAVEPOINT {savepoint_name}")
+    except Exception:
+        try:
+            conn.execute(f"ROLLBACK TO SAVEPOINT {savepoint_name}")
+            conn.execute(f"RELEASE SAVEPOINT {savepoint_name}")
+        except sqlite3.Error:
+            pass
+        raise
+    response = {
+        "ok": True,
+        "dry_run": False,
+        "run_id": plan.get("run_id"),
+        "filters": plan.get("filters"),
+        "apply": {
+            "inserted": inserted,
+            "skipped": skipped,
+            "rejected": plan.get("rejected") or [],
+        },
+        "summary": {
+            "planned": int((plan.get("summary") or {}).get("planned") or 0),
+            "inserted": len(inserted),
+            "skipped": len(skipped),
+            "rejected": len(plan.get("rejected") or []),
+            "write_scope": "career_event_candidates_only",
+        },
+        "metrics": {"elapsed_ms": _elapsed_ms(start)},
+        "status": {
+            "schema_ready": True,
+            "data_ready": bool(inserted or skipped),
+            "message": "候选写入已应用到显式连接",
+        },
+    }
+    return _records_api_safe(response)
+
+
 def decide_career_record_v2_candidate(
     candidate_id: str,
     decision: str,
@@ -7457,30 +9553,19 @@ def decide_career_record_v2_candidate(
         elif decision == "confirm":
             if status == "rejected":
                 return {"ok": False, "code": "already_rejected", "data": None}
-            result = apply_record_evidence_state(
-                db,
-                record_evidence,
-                decision="auto_confirm",
-                confidence=_safe_float((record_evidence.get("quality") or {}).get("confidence")) or 1.0,
-                decision_source="user",
+            active_result = apply_records_v2_active_write(
+                {
+                    "candidate_ids": [candidate_id],
+                    "dry_run": False,
+                    "strict_da12_batch": False,
+                },
+                conn=db,
             )
-            db.execute(
-                """
-                UPDATE career_event_candidates
-                SET status = 'confirmed', updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?
-                """,
-                (candidate_id,),
-            )
-            _insert_record_event_v2(
-                db,
-                "user_confirmed",
-                record_evidence,
-                record_id=str(result.get("record_id") or ""),
-                decision="confirm",
-                new_status="confirmed",
-                source="user",
-            )
+            if not active_result.get("ok"):
+                return active_result
+            result = _records_v2_active_write_single_result(active_result)
+            if result.get("action") == "rejected":
+                return {"ok": False, "code": "active_write_rejected", "data": result}
         else:
             return {"ok": False, "code": "invalid_decision", "data": None}
         if owns_conn:
@@ -7503,6 +9588,448 @@ def decide_career_record_v2_candidate(
     finally:
         if owns_conn:
             db.close()
+
+
+RECORDS_V2_ACTIVE_WRITE_FORBIDDEN_CATALOG_STATES = {
+    "validation_required",
+    "candidate_only",
+    "analysis_only",
+    "model_only",
+    "unavailable",
+}
+
+
+def _records_v2_active_write_candidate_ids(payload: dict[str, Any]) -> list[str]:
+    raw_ids: list[Any] = []
+    for key in ("candidate_id", "id"):
+        if str(payload.get(key) or "").strip():
+            raw_ids.append(payload.get(key))
+    if isinstance(payload.get("candidate_ids"), list):
+        raw_ids.extend(payload.get("candidate_ids") or [])
+    if isinstance(payload.get("ids"), list):
+        raw_ids.extend(payload.get("ids") or [])
+    if isinstance(payload.get("candidates"), list):
+        for item in payload.get("candidates") or []:
+            if isinstance(item, dict):
+                raw_ids.append(item.get("candidate_id") or item.get("id"))
+            else:
+                raw_ids.append(item)
+    clean: list[str] = []
+    seen: set[str] = set()
+    for value in raw_ids:
+        candidate_id = str(value or "").strip()
+        if not candidate_id or candidate_id in seen:
+            continue
+        seen.add(candidate_id)
+        clean.append(candidate_id)
+    return clean
+
+
+def _records_v2_active_write_run_id(candidate_ids: list[str]) -> str:
+    seed = _json_dumps({"candidate_ids": sorted(candidate_ids), "version": "records-v2-da14-active-write-v1"})
+    return "records_v2_active_write:" + hashlib.sha1(seed.encode("utf-8")).hexdigest()[:16]
+
+
+def _records_v2_active_record_id_from_evidence(evidence: dict[str, Any]) -> str:
+    return "record:v2:" + hashlib.sha1(str(evidence.get("evidence_key") or "").encode("utf-8")).hexdigest()[:20]
+
+
+def _records_v2_active_existing_record_by_id(conn: sqlite3.Connection, record_id: str) -> dict[str, Any] | None:
+    if not record_id:
+        return None
+    row = conn.execute(
+        """
+        SELECT id, activity_id, sport, pb_type, value, value_unit, improvement,
+               event_date, confidence, source, status, evidence_key, source_mode,
+               sport_scope, previous_record_id, resolver_version, record_key,
+               scope_json, scope_key, scope_hash, range_json, quality_json,
+               metric_value_num, metric_name, catalog_state, rule_version
+        FROM career_pb_records
+        WHERE id = ?
+        LIMIT 1
+        """,
+        (record_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    columns = (
+        "id", "activity_id", "sport", "pb_type", "value", "value_unit", "improvement",
+        "event_date", "confidence", "source", "status", "evidence_key", "source_mode",
+        "sport_scope", "previous_record_id", "resolver_version", "record_key",
+        "scope_json", "scope_key", "scope_hash", "range_json", "quality_json",
+        "metric_value_num", "metric_name", "catalog_state", "rule_version",
+    )
+    return dict(row) if isinstance(row, sqlite3.Row) else dict(zip(columns, row))
+
+
+def _records_v2_active_write_candidate_row(
+    conn: sqlite3.Connection,
+    candidate_id: str,
+) -> dict[str, Any] | None:
+    if not _table_exists(conn, "career_event_candidates"):
+        return None
+    row = conn.execute(
+        """
+        SELECT id, activity_id, candidate_type, title, evidence_json, confidence, status, updated_at
+        FROM career_event_candidates
+        WHERE id = ? AND candidate_type = 'pb_record'
+        LIMIT 1
+        """,
+        (candidate_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    columns = ("id", "activity_id", "candidate_type", "title", "evidence_json", "confidence", "status", "updated_at")
+    return dict(row) if isinstance(row, sqlite3.Row) else dict(zip(columns, row))
+
+
+def _records_v2_active_write_payload_from_row(row: dict[str, Any]) -> dict[str, Any]:
+    return _json_loads_object(row.get("evidence_json"))
+
+
+def _records_v2_active_write_rejection_reasons(
+    conn: sqlite3.Connection,
+    *,
+    row: dict[str, Any] | None,
+    candidate_payload: dict[str, Any],
+    record_evidence: dict[str, Any],
+    strict_da12_batch: bool,
+) -> list[str]:
+    if row is None:
+        return ["candidate_not_found"]
+    reasons: list[str] = []
+    status = str(row.get("status") or "")
+    if status == "rejected":
+        reasons.append("candidate_rejected")
+    elif status not in {"candidate", "confirmed"}:
+        reasons.append("candidate_status_not_eligible")
+    if not isinstance(record_evidence, dict) or not record_evidence:
+        reasons.append("invalid_candidate_evidence")
+        return reasons
+    try:
+        _record_evidence_payload(record_evidence)
+    except ValueError as exc:
+        reasons.append(str(exc))
+    record_key = str(record_evidence.get("record_key") or candidate_payload.get("record_key") or "")
+    definition = get_record_definition(record_key)
+    if definition is None:
+        reasons.append("record_definition_not_matched")
+    else:
+        if definition.availability_state in RECORDS_V2_ACTIVE_WRITE_FORBIDDEN_CATALOG_STATES:
+            reasons.append(f"{definition.availability_state}_registry")
+        if definition.family in {"analysis_curve", "model_estimate"}:
+            reasons.append("record_family_not_active_eligible")
+    if strict_da12_batch:
+        if record_key not in RECORDS_V2_FIRST_BATCH_CANDIDATE_WRITE_KEYS:
+            reasons.append("record_key_not_in_first_batch")
+        candidate_write = candidate_payload.get("candidate_write") if isinstance(candidate_payload.get("candidate_write"), dict) else {}
+        if str(candidate_write.get("write_scope") or "") != "career_event_candidates_only":
+            reasons.append("candidate_write_scope_missing")
+        confidence = _safe_float(row.get("confidence"))
+        if confidence is None or confidence < 0.98:
+            reasons.append("confidence_below_active_threshold")
+    quality = record_evidence.get("quality") if isinstance(record_evidence.get("quality"), dict) else {}
+    if bool(quality.get("blocks_active")):
+        reasons.append("blocks_active")
+    reason_codes = set(str(code or "").strip() for code in (quality.get("reason_codes") or []) if str(code or "").strip())
+    reason_codes.update(str(code or "").strip() for code in (candidate_payload.get("reason_codes") or []) if str(code or "").strip())
+    reasons.extend(sorted(reason_codes & RECORDS_V2_CANDIDATE_WRITE_FORBIDDEN_REASON_CODES))
+    return list(_dedupe_reason_codes(tuple(reasons)))
+
+
+def _records_v2_active_write_plan_item(
+    conn: sqlite3.Connection,
+    candidate_id: str,
+    *,
+    strict_da12_batch: bool,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    row = _records_v2_active_write_candidate_row(conn, candidate_id)
+    candidate_payload = _records_v2_active_write_payload_from_row(row or {}) if row else {}
+    record_evidence = candidate_payload.get("record_evidence") if isinstance(candidate_payload.get("record_evidence"), dict) else {}
+    reasons = _records_v2_active_write_rejection_reasons(
+        conn,
+        row=row,
+        candidate_payload=candidate_payload,
+        record_evidence=record_evidence,
+        strict_da12_batch=strict_da12_batch,
+    )
+    if row is None or reasons:
+        return None, {
+            "candidate_id": candidate_id,
+            "record_key": str(record_evidence.get("record_key") or candidate_payload.get("record_key") or ""),
+            "status": str((row or {}).get("status") or ""),
+            "reason_codes": reasons,
+        }
+    metric = record_evidence.get("metric") if isinstance(record_evidence.get("metric"), dict) else {}
+    record_key = str(record_evidence.get("record_key") or "")
+    source_mode = str(record_evidence.get("source_mode") or "activity_total")
+    scope_hash = str(record_evidence.get("scope_hash") or "")
+    record_id = _records_v2_active_record_id_from_evidence(record_evidence)
+    existing_record = _records_v2_active_existing_record_by_id(conn, record_id)
+    current = _active_v2_current_record_for_evidence(conn, record_evidence)
+    existing_status = str((existing_record or {}).get("status") or "")
+    if existing_record is not None and existing_status == "active" and str((row or {}).get("status") or "") == "confirmed":
+        action = "skipped_existing_active"
+        comparison = {"is_valid": True, "is_new_record": False, "reason": "already_confirmed"}
+    else:
+        comparison = compare_record_metric(record_key, metric.get("value"), (current or {}).get("metric_value_num") or (current or {}).get("value"))
+        if not comparison.get("is_valid"):
+            action = "rejected"
+        elif not comparison.get("is_new_record"):
+            action = "unchanged"
+        else:
+            action = "would_activate"
+    if action == "rejected":
+        return None, {
+            "candidate_id": candidate_id,
+            "record_key": record_key,
+            "status": str((row or {}).get("status") or ""),
+            "reason_codes": [str(comparison.get("reason") or "comparison_not_valid")],
+        }
+    item = {
+        "candidate_id": candidate_id,
+        "record_key": record_key,
+        "activity_id": str(record_evidence.get("activity_id") or ""),
+        "source_mode": source_mode,
+        "scope_hash": scope_hash,
+        "record_id": record_id,
+        "current_record_id": str((current or {}).get("id") or ""),
+        "action": action,
+        "will_supersede": bool(action == "would_activate" and current),
+        "comparison": comparison,
+        "confidence": _safe_float(row.get("confidence")) or _safe_float((record_evidence.get("quality") or {}).get("confidence")) or 1.0,
+        "record_evidence": record_evidence,
+    }
+    _assert_record_evidence_safe_json(item, path="record_active_write_plan_item")
+    return item, None
+
+
+def plan_records_v2_active_write(
+    conn: sqlite3.Connection,
+    payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build a DA14 active write plan without writing database state."""
+    start = time.perf_counter()
+    raw = payload if isinstance(payload, dict) else {}
+    candidate_ids = _records_v2_active_write_candidate_ids(raw)
+    strict_da12_batch = bool(raw.get("strict_da12_batch", True))
+    run_id = str(raw.get("run_id") or _records_v2_active_write_run_id(candidate_ids))
+    items: list[dict[str, Any]] = []
+    rejected: list[dict[str, Any]] = []
+    if not candidate_ids:
+        return _records_api_safe({
+            "ok": False,
+            "code": "candidate_ids_required",
+            "dry_run": True,
+            "run_id": run_id,
+            "items": [],
+            "rejected": [],
+            "summary": {
+                "planned": 0,
+                "would_activate": 0,
+                "would_supersede": 0,
+                "unchanged": 0,
+                "skipped": 0,
+                "rejected": 0,
+            },
+            "metrics": {"elapsed_ms": _elapsed_ms(start)},
+            "status": {"schema_ready": _table_exists(conn, "career_event_candidates"), "data_ready": False, "message": "active 写入计划需要明确 candidate_id 列表。"},
+        })
+    for candidate_id in candidate_ids:
+        item, rejection = _records_v2_active_write_plan_item(conn, candidate_id, strict_da12_batch=strict_da12_batch)
+        if item is not None:
+            items.append(item)
+        if rejection is not None:
+            rejected.append(rejection)
+    summary = {
+        "planned": len(items),
+        "would_activate": sum(1 for item in items if item.get("action") == "would_activate"),
+        "would_supersede": sum(1 for item in items if item.get("will_supersede")),
+        "unchanged": sum(1 for item in items if item.get("action") == "unchanged"),
+        "skipped": sum(1 for item in items if str(item.get("action") or "").startswith("skipped")),
+        "rejected": len(rejected),
+        "write_scope": "active_records_gate_only",
+    }
+    return _records_api_safe({
+        "ok": True,
+        "dry_run": True,
+        "run_id": run_id,
+        "filters": {"candidate_ids": candidate_ids, "strict_da12_batch": strict_da12_batch},
+        "items": items,
+        "rejected": rejected,
+        "summary": summary,
+        "metrics": {"elapsed_ms": _elapsed_ms(start)},
+        "status": {
+            "schema_ready": _table_exists(conn, "career_event_candidates"),
+            "data_ready": bool(items),
+            "message": "active 写入计划已生成" if items else "没有可 active 的候选",
+        },
+    })
+
+
+def _records_v2_active_write_single_result(result: dict[str, Any]) -> dict[str, Any]:
+    apply = result.get("apply") if isinstance(result.get("apply"), dict) else {}
+    for key in ("activated", "unchanged", "skipped"):
+        values = apply.get(key) if isinstance(apply.get(key), list) else []
+        if values:
+            item = dict(values[0])
+            if key == "skipped":
+                item.setdefault("action", "skipped")
+            return item
+    rejected = apply.get("rejected") if isinstance(apply.get("rejected"), list) else []
+    if rejected:
+        item = dict(rejected[0])
+        item["action"] = "rejected"
+        return item
+    return {
+        "action": "unchanged",
+        "summary": result.get("summary") or {},
+    }
+
+
+def apply_records_v2_active_write(
+    payload: dict[str, Any] | None = None,
+    conn: sqlite3.Connection | None = None,
+) -> dict[str, Any]:
+    """Apply DA14 active writes to an explicit non-real connection unless DA15 authorization is present."""
+    start = time.perf_counter()
+    raw = payload if isinstance(payload, dict) else {}
+    dry_run = bool(raw.get("dry_run", True))
+    if conn is None:
+        return _records_api_safe({
+            "ok": False,
+            "code": "explicit_connection_required",
+            "dry_run": dry_run,
+            "summary": {"activated": 0, "superseded": 0, "unchanged": 0, "skipped": 0, "rejected": 0},
+            "metrics": {"elapsed_ms": _elapsed_ms(start)},
+            "status": {"schema_ready": False, "data_ready": False, "message": "active 写入必须传入显式测试或 staging 连接。"},
+        })
+    if not dry_run and _records_v2_candidate_write_targets_default_real_db(conn) and not bool(raw.get("allow_real_db_active_write")):
+        return _records_api_safe({
+            "ok": False,
+            "code": "real_db_active_write_not_authorized",
+            "dry_run": False,
+            "summary": {"activated": 0, "superseded": 0, "unchanged": 0, "skipped": 0, "rejected": 0},
+            "metrics": {"elapsed_ms": _elapsed_ms(start)},
+            "status": {"schema_ready": False, "data_ready": False, "message": "真实库 active 写入需要 DA15 明确授权。"},
+        })
+    plan = plan_records_v2_active_write(conn, raw)
+    if dry_run or not plan.get("ok"):
+        response = copy.deepcopy(plan)
+        response["dry_run"] = True
+        response["apply"] = {"activated": [], "superseded": [], "unchanged": [], "skipped": [], "rejected": plan.get("rejected") or []}
+        response["metrics"]["elapsed_ms"] = _elapsed_ms(start)
+        return _records_api_safe(response)
+    ensure_career_schema(conn)
+    activated: list[dict[str, Any]] = []
+    superseded: list[dict[str, Any]] = []
+    unchanged: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+    savepoint_name = "records_v2_active_write"
+    try:
+        conn.execute(f"SAVEPOINT {savepoint_name}")
+        for item in plan.get("items") or []:
+            action = str(item.get("action") or "")
+            if action.startswith("skipped"):
+                skipped.append({
+                    "candidate_id": str(item.get("candidate_id") or ""),
+                    "record_key": str(item.get("record_key") or ""),
+                    "record_id": str(item.get("record_id") or ""),
+                    "action": action,
+                })
+                continue
+            status = conn.execute(
+                "SELECT status FROM career_event_candidates WHERE id = ? AND candidate_type = 'pb_record' LIMIT 1",
+                (str(item.get("candidate_id") or ""),),
+            ).fetchone()
+            current_status = status[0] if status and not isinstance(status, sqlite3.Row) else (status["status"] if status else "")
+            if current_status not in {"candidate", "confirmed"}:
+                skipped.append({
+                    "candidate_id": str(item.get("candidate_id") or ""),
+                    "record_key": str(item.get("record_key") or ""),
+                    "record_id": str(item.get("record_id") or ""),
+                    "action": "skipped_candidate_status_changed",
+                })
+                continue
+            result = apply_record_evidence_state(
+                conn,
+                item.get("record_evidence") or {},
+                decision="auto_confirm",
+                confidence=_safe_float(item.get("confidence")) or 1.0,
+                decision_source="user",
+                run_id=str(plan.get("run_id") or ""),
+            )
+            if current_status == "candidate":
+                conn.execute(
+                    """
+                    UPDATE career_event_candidates
+                    SET status = 'confirmed', updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ? AND status = 'candidate'
+                    """,
+                    (str(item.get("candidate_id") or ""),),
+                )
+                _insert_record_event_v2(
+                    conn,
+                    "user_confirmed",
+                    item.get("record_evidence") or {},
+                    record_id=str(result.get("record_id") or ""),
+                    decision="confirm",
+                    run_id=str(plan.get("run_id") or ""),
+                    new_status="confirmed",
+                    source="user",
+                )
+            applied = {
+                "candidate_id": str(item.get("candidate_id") or ""),
+                "record_key": str(item.get("record_key") or ""),
+                "record_id": str(result.get("record_id") or ""),
+                "action": str(result.get("action") or ""),
+            }
+            if result.get("action") == "activated":
+                activated.append(applied)
+                if result.get("previous_record_id"):
+                    superseded.append({
+                        "candidate_id": str(item.get("candidate_id") or ""),
+                        "record_key": str(item.get("record_key") or ""),
+                        "record_id": str(result.get("previous_record_id") or ""),
+                        "action": "superseded",
+                    })
+            elif result.get("action") == "unchanged":
+                unchanged.append(applied)
+            else:
+                skipped.append(applied)
+        conn.execute(f"RELEASE SAVEPOINT {savepoint_name}")
+    except Exception:
+        try:
+            conn.execute(f"ROLLBACK TO SAVEPOINT {savepoint_name}")
+            conn.execute(f"RELEASE SAVEPOINT {savepoint_name}")
+        except sqlite3.Error:
+            pass
+        raise
+    response = {
+        "ok": True,
+        "dry_run": False,
+        "run_id": plan.get("run_id"),
+        "filters": plan.get("filters") or {},
+        "apply": {
+            "activated": activated,
+            "superseded": superseded,
+            "unchanged": unchanged,
+            "skipped": skipped,
+            "rejected": plan.get("rejected") or [],
+        },
+        "summary": {
+            "planned": int((plan.get("summary") or {}).get("planned") or 0),
+            "activated": len(activated),
+            "superseded": len(superseded),
+            "unchanged": len(unchanged),
+            "skipped": len(skipped),
+            "rejected": len(plan.get("rejected") or []),
+            "write_scope": "active_records_gate_only",
+        },
+        "metrics": {"elapsed_ms": _elapsed_ms(start)},
+        "status": {"schema_ready": True, "data_ready": bool(activated or unchanged or skipped), "message": "active 写入已应用到显式连接"},
+    }
+    return _records_api_safe(response)
 
 
 def _activity_sport_for_record_dispatch(row: dict[str, Any]) -> str:
@@ -7826,66 +10353,81 @@ def plan_career_records_v2_rebuild(
     max_activities: int | None = None,
     cancel_after: int | None = None,
 ) -> dict[str, Any]:
-    """Build a V2 rebuild dispatch plan without writing records or generating evidence."""
+    """Build a V2 rebuild dry-run preview without writing records."""
     start = time.perf_counter()
-    ensure_career_schema(conn)
-    limit = max_activities if max_activities is not None else None
-    rows = _fetch_record_dispatch_activity_rows(conn, limit=limit)
-    items: list[dict[str, Any]] = []
-    summary = {"dispatch_planned": 0, "ignored": 0, "cancelled": 0}
-    by_sport: dict[str, int] = {}
+    total_available = 0
+    if _table_exists(conn, "activities"):
+        try:
+            total_available = int(conn.execute("SELECT COUNT(*) FROM activities").fetchone()[0] or 0)
+        except sqlite3.Error:
+            total_available = 0
+    clean_batch_size = max(1, int(batch_size or 500))
+    clean_max_activities = int(max_activities) if max_activities is not None else max(total_available, clean_batch_size)
+    clean_max_activities = max(1, clean_max_activities)
+    if cancel_after is not None:
+        clean_cancel_after = max(0, int(cancel_after))
+        limit = max(1, min(clean_max_activities, clean_cancel_after))
+    else:
+        clean_cancel_after = None
+        limit = clean_max_activities
+    cancelled = bool(clean_cancel_after is not None and total_available > clean_cancel_after)
+    preview = preview_career_records({"max_activities": limit}, conn=conn)
+    preview_records = list(preview.get("preview_records") or [])
+    preview_candidates = list(preview.get("preview_candidates") or [])
+    ignored = list(preview.get("ignored") or [])
+    processed = int((preview.get("metrics") or {}).get("processed") or (preview.get("summary") or {}).get("scanned") or 0)
+    by_sport = dict(preview.get("by_sport") or {})
+    by_reason = dict(preview.get("by_reason") or {})
     by_family: dict[str, int] = {}
-    by_reason: dict[str, int] = {}
-    cancelled = False
-    for index, row in enumerate(rows):
-        if cancel_after is not None and index >= int(cancel_after):
-            cancelled = True
-            break
-        item = plan_activity_record_v2_dispatch(conn, row.get("id"), available_only=True)
-        items.append(item)
-        action = str(item.get("action") or "ignored")
-        summary[action] = int(summary.get(action) or 0) + 1
-        sport = str(item.get("sport") or "unknown")
-        by_sport[sport] = int(by_sport.get(sport) or 0) + 1
-        reason = str(item.get("reason") or "unknown")
-        by_reason[reason] = int(by_reason.get(reason) or 0) + 1
-        for definition in item.get("definitions") or []:
-            family = str(definition.get("family") or "unknown")
-            by_family[family] = int(by_family.get(family) or 0) + 1
-    if cancelled:
-        summary["cancelled"] = 1
+    for item in [*preview_records, *preview_candidates]:
+        definition = get_record_definition(str(item.get("record_key") or ""))
+        family = _record_definition_family(definition) if definition else "unknown"
+        by_family[family] = int(by_family.get(family) or 0) + 1
     cache_observability = _records_v2_cache_observability(conn)
     seed = _json_dumps({
         "resolver_version": resolver_version,
-        "batch_size": int(batch_size),
-        "items": [(item.get("activity_id"), item.get("sport"), item.get("reason")) for item in items],
+        "batch_size": clean_batch_size,
+        "records": [(item.get("record_key"), item.get("activity_id"), item.get("status")) for item in [*preview_records, *preview_candidates]],
+        "processed": processed,
         "cancelled": cancelled,
     })
     run_id = "records_v2_rebuild:" + hashlib.sha1(seed.encode("utf-8")).hexdigest()[:16]
+    summary = {
+        "mode": "multi_sport_dry_run_materialized",
+        "preview_records": len(preview_records),
+        "preview_candidates": len(preview_candidates),
+        "ignored": len(ignored),
+        "cancelled": 1 if cancelled else 0,
+        "writes": 0,
+    }
     return {
         "ok": True,
         "dry_run": True,
         "run_id": run_id,
         "resolver_version": resolver_version,
-        "batch_size": int(batch_size),
-        "processed": len(items),
+        "batch_size": clean_batch_size,
+        "processed": processed,
         "cancelled": cancelled,
         "summary": summary,
         "by_sport": by_sport,
         "by_family": by_family,
         "by_reason": by_reason,
-        "items": items,
+        "by_record_key": dict(preview.get("by_record_key") or {}),
+        "preview_records": preview_records,
+        "preview_candidates": preview_candidates,
+        "ignored": ignored,
+        "items": [*preview_records, *preview_candidates, *ignored],
         "metrics": {
             "elapsed_ms": _elapsed_ms(start),
-            "processed": len(items),
+            "processed": processed,
             "performance_target_ms": RECORDS_V2_PERFORMANCE_TARGETS_MS["rebuild_plan"],
             **cache_observability,
         },
         "observability": records_v2_safe_observation(
-            "records_v2_rebuild_plan",
+            "records_v2_rebuild_dry_run_materialized",
             run_id=run_id,
             dry_run=True,
-            processed=len(items),
+            processed=processed,
             by_sport=by_sport,
             by_family=by_family,
             by_reason=by_reason,
@@ -7924,6 +10466,7 @@ def rebuild_career_records_v2(
         )
         if dry_run:
             return plan
+        ensure_career_schema(conn)
         savepoint_name = "records_v2_rebuild_apply"
         try:
             conn.execute(f"SAVEPOINT {savepoint_name}")
@@ -7960,9 +10503,11 @@ def _upsert_active_pb_record(
     conn: sqlite3.Connection,
     candidate: dict[str, Any],
     previous: dict[str, Any] | None,
-) -> None:
+) -> bool:
     pb_type = str(candidate["pb_type"])
     activity_id = str(candidate["activity_id"])
+    if previous and str(previous.get("source_mode") or "activity_total") != "activity_total":
+        return False
     previous_activity_id = str(previous.get("activity_id") or "") if previous else None
     previous_value = _safe_int(previous.get("value")) if previous else None
     improvement_sec = None
@@ -8020,6 +10565,7 @@ def _upsert_active_pb_record(
             _json_dumps(metadata),
         ),
     )
+    return True
 
 
 def resolve_pb_records(conn: sqlite3.Connection | None = None) -> dict[str, Any]:
@@ -8039,8 +10585,8 @@ def resolve_pb_records(conn: sqlite3.Connection | None = None) -> dict[str, Any]
             previous = _active_pb_row(db, pb_type)
             if previous and str(previous.get("activity_id") or "") == str(candidate.get("activity_id") or ""):
                 previous = None
-            _upsert_active_pb_record(db, candidate, previous)
-            pb_records_upserted += 1
+            if _upsert_active_pb_record(db, candidate, previous):
+                pb_records_upserted += 1
         skipped = processed - len(candidates)
 
         if owns_conn:
@@ -8060,6 +10606,309 @@ def resolve_pb_records(conn: sqlite3.Connection | None = None) -> dict[str, Any]
         if owns_conn:
             db.rollback()
         raise
+    finally:
+        if owns_conn:
+            db.close()
+
+
+def _record_derived_active_records(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    if not _table_exists(conn, "career_pb_records"):
+        return []
+    rows = _rows_to_dicts(
+        conn.execute(
+            """
+            SELECT id, activity_id, sport, pb_type, record_key, record_family,
+                   event_date, status, source_mode, catalog_state, scope_hash
+            FROM career_pb_records
+            WHERE status = 'active'
+              AND id IS NOT NULL
+              AND TRIM(CAST(id AS TEXT)) != ''
+            ORDER BY event_date ASC, id ASC
+            """
+        )
+    )
+    eligible: list[dict[str, Any]] = []
+    for row in rows:
+        record_key = str(row.get("record_key") or row.get("pb_type") or "").strip()
+        if not record_key:
+            continue
+        definition = get_record_definition(record_key)
+        sport = str(row.get("sport") or (definition.sport if definition else "")).strip()
+        family = str(row.get("record_family") or (_record_definition_family(definition) if definition else "")).strip()
+        catalog_state = str(row.get("catalog_state") or (definition.availability_state if definition else "")).strip()
+        if family in {"analysis_curve", "model_estimate"}:
+            continue
+        if catalog_state in {"analysis_only", "model_only", "unavailable"}:
+            continue
+        enriched = dict(row)
+        enriched["record_id"] = str(row.get("id") or "").strip()
+        enriched["record_key"] = record_key
+        enriched["sport"] = sport
+        enriched["family"] = family
+        enriched["catalog_state"] = catalog_state
+        eligible.append(enriched)
+    return eligible
+
+
+def _record_derived_formal_events(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    if not _table_exists(conn, "career_record_events"):
+        return []
+    placeholders = ", ".join("?" for _ in RECORD_DERIVED_ACHIEVEMENT_FORMAL_EVENT_TYPES)
+    return _rows_to_dicts(
+        conn.execute(
+            f"""
+            SELECT id, record_id, activity_id, pb_type, event_type, event_at,
+                   source, record_key, scope_hash, decision
+            FROM career_record_events
+            WHERE event_type IN ({placeholders})
+              AND record_id IS NOT NULL
+              AND TRIM(CAST(record_id AS TEXT)) != ''
+            ORDER BY event_at ASC, id ASC
+            """,
+            tuple(sorted(RECORD_DERIVED_ACHIEVEMENT_FORMAL_EVENT_TYPES)),
+        )
+    )
+
+
+def _record_derived_existing_active_achievement_ids(conn: sqlite3.Connection) -> set[str]:
+    if not _table_exists(conn, "career_achievement_events"):
+        return set()
+    placeholders = ", ".join("?" for _ in RECORD_DERIVED_ACHIEVEMENT_TYPES)
+    rows = conn.execute(
+        f"""
+        SELECT id
+        FROM career_achievement_events
+        WHERE status = 'active'
+          AND achievement_type IN ({placeholders})
+        """,
+        tuple(sorted(RECORD_DERIVED_ACHIEVEMENT_TYPES)),
+    ).fetchall()
+    return {str(row[0] or "") for row in rows if str(row[0] or "").strip()}
+
+
+def _record_derived_plan_status(plan_id: str, existing_active_ids: set[str], unsupported: bool = False) -> str:
+    if unsupported:
+        return "unsupported"
+    if plan_id in existing_active_ids:
+        return "already_active"
+    return "planned"
+
+
+def _record_derived_plan(
+    *,
+    plan_id: str,
+    rule_id: str,
+    achievement_type: str,
+    title: str,
+    description: str,
+    score: int,
+    trigger: str,
+    records: list[dict[str, Any]],
+    events: list[dict[str, Any]],
+    existing_active_ids: set[str],
+    unsupported: bool = False,
+) -> dict[str, Any]:
+    record_ids = sorted({str(record.get("record_id") or record.get("id") or "") for record in records if str(record.get("record_id") or record.get("id") or "").strip()})
+    record_keys = sorted({str(record.get("record_key") or "") for record in records if str(record.get("record_key") or "").strip()})
+    source_event_ids = sorted({str(event.get("id") or "") for event in events if str(event.get("id") or "").strip()})
+    sports = sorted({str(record.get("sport") or "") for record in records if str(record.get("sport") or "").strip()})
+    families = sorted({str(record.get("family") or "") for record in records if str(record.get("family") or "").strip()})
+    representative_event = sorted(
+        events,
+        key=lambda event: (str(event.get("event_at") or ""), str(event.get("id") or "")),
+    )[-1] if events else {}
+    event_at = str(representative_event.get("event_at") or "").strip()
+    status = _record_derived_plan_status(plan_id, existing_active_ids, unsupported)
+    return {
+        "id": plan_id,
+        "rule_id": rule_id,
+        "achievement_type": achievement_type,
+        "status": status,
+        "title": title,
+        "description": description,
+        "score": int(score),
+        "source": RECORD_DERIVED_ACHIEVEMENT_SOURCE,
+        "trigger": trigger,
+        "record_ids": record_ids,
+        "record_keys": record_keys,
+        "source_event_ids": source_event_ids,
+        "sports": sports,
+        "families": families,
+        "activity_id": str(representative_event.get("activity_id") or ""),
+        "event_date": event_at[:10] if event_at else "",
+        "is_writable": status == "planned",
+        "metadata": {
+            "resolver": "record_derived_achievement",
+            "rule_version": RECORD_DERIVED_ACHIEVEMENT_RULE_VERSION,
+            "record_ids": record_ids,
+            "record_keys": record_keys,
+            "source_event_ids": source_event_ids,
+            "sports": sports,
+            "families": families,
+            "trigger": trigger,
+        },
+    }
+
+
+def _record_derived_events_by_record_id(events: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for event in events:
+        record_id = str(event.get("record_id") or "").strip()
+        if not record_id:
+            continue
+        grouped.setdefault(record_id, []).append(event)
+    return grouped
+
+
+def _record_derived_plans(
+    records: list[dict[str, Any]],
+    events_by_record_id: dict[str, list[dict[str, Any]]],
+    existing_active_ids: set[str],
+) -> list[dict[str, Any]]:
+    eligible_records = [
+        record
+        for record in records
+        if events_by_record_id.get(str(record.get("record_id") or ""))
+    ]
+    plans: list[dict[str, Any]] = []
+    if not eligible_records:
+        return plans
+
+    events_for_record = [
+        event
+        for record in eligible_records
+        for event in events_by_record_id.get(str(record.get("record_id") or ""), [])
+    ]
+    first_events = [
+        event
+        for event in events_for_record
+        if str(event.get("event_type") or "") in RECORD_DERIVED_ACHIEVEMENT_FIRST_EVENT_TYPES
+    ]
+    if first_events:
+        first_event = sorted(first_events, key=lambda event: (str(event.get("event_at") or ""), str(event.get("id") or "")))[0]
+        first_record_id = str(first_event.get("record_id") or "")
+        first_records = [record for record in eligible_records if str(record.get("record_id") or "") == first_record_id]
+        plans.append(_record_derived_plan(
+            plan_id="achievement:record:first_formal_record",
+            rule_id="record_first_formal_record",
+            achievement_type="record_first_formal_record",
+            title="首次建立正式记录",
+            description="记录中心首次拥有可确认的正式个人记录",
+            score=70,
+            trigger="first_formal_record",
+            records=first_records,
+            events=[first_event],
+            existing_active_ids=existing_active_ids,
+        ))
+
+    records_by_sport: dict[str, list[dict[str, Any]]] = {}
+    for record in eligible_records:
+        sport = str(record.get("sport") or "").strip()
+        record_key = str(record.get("record_key") or "").strip()
+        if not sport or not record_key:
+            continue
+        records_by_sport.setdefault(sport, []).append(record)
+    for sport, sport_records in sorted(records_by_sport.items()):
+        unique_keys = sorted({str(record.get("record_key") or "") for record in sport_records if str(record.get("record_key") or "").strip()})
+        if len(unique_keys) < 3:
+            continue
+        selected_records = sorted(sport_records, key=lambda record: (str(record.get("record_key") or ""), str(record.get("record_id") or "")))
+        selected_events = [
+            event
+            for record in selected_records
+            for event in events_by_record_id.get(str(record.get("record_id") or ""), [])
+        ]
+        sport_label = _career_sport_label(sport)
+        plans.append(_record_derived_plan(
+            plan_id=f"achievement:record:sport_coverage_3:{sport}",
+            rule_id=f"record_sport_coverage_3:{sport}",
+            achievement_type="record_sport_coverage_3",
+            title=f"{sport_label}记录覆盖 3 项",
+            description=f"{sport_label}已有至少 3 项正式记录",
+            score=75,
+            trigger="sport_coverage",
+            records=selected_records,
+            events=selected_events,
+            existing_active_ids=existing_active_ids,
+        ))
+
+    records_by_sport_for_multi = {
+        sport: sorted(items, key=lambda record: (str(record.get("event_date") or ""), str(record.get("record_id") or "")))[0]
+        for sport, items in records_by_sport.items()
+        if sport
+    }
+    if len(records_by_sport_for_multi) >= 3:
+        selected_records = [records_by_sport_for_multi[sport] for sport in sorted(records_by_sport_for_multi)]
+        selected_events = [
+            event
+            for record in selected_records
+            for event in events_by_record_id.get(str(record.get("record_id") or ""), [])
+        ]
+        plans.append(_record_derived_plan(
+            plan_id="achievement:record:multi_sport_coverage_3",
+            rule_id="record_multi_sport_coverage_3",
+            achievement_type="record_multi_sport_coverage_3",
+            title="三项运动记录覆盖",
+            description="已有至少 3 个运动类型拥有正式记录",
+            score=85,
+            trigger="multi_sport_coverage",
+            records=selected_records,
+            events=selected_events,
+            existing_active_ids=existing_active_ids,
+        ))
+
+    families = sorted({str(record.get("family") or "") for record in eligible_records if str(record.get("family") or "").strip()})
+    if len(families) >= 3:
+        plans.append(_record_derived_plan(
+            plan_id="achievement:record:family_coverage_3",
+            rule_id="record_family_coverage_3",
+            achievement_type="record_family_coverage_3",
+            title="记录家族覆盖 3 类",
+            description="记录 family 语义仍需稳定，当前仅返回不可写计划",
+            score=80,
+            trigger="family_coverage",
+            records=eligible_records,
+            events=events_for_record,
+            existing_active_ids=existing_active_ids,
+            unsupported=True,
+        ))
+
+    return sorted(plans, key=lambda plan: (plan["is_writable"], plan["achievement_type"], plan["id"]), reverse=True)
+
+
+def plan_record_derived_achievements(
+    filters: dict[str, Any] | None = None,
+    conn: sqlite3.Connection | None = None,
+) -> dict[str, Any]:
+    """Return a read-only plan for sparse Records V2 derived achievements."""
+    _ = filters or {}
+    owns_conn = conn is None
+    db = conn or _connect_default()
+    try:
+        records = _record_derived_active_records(db)
+        events = _record_derived_formal_events(db)
+        events_by_record_id = _record_derived_events_by_record_id(events)
+        existing_active_ids = _record_derived_existing_active_achievement_ids(db)
+        plans = _record_derived_plans(records, events_by_record_id, existing_active_ids)
+        summary = {
+            "total": len(plans),
+            "planned": sum(1 for plan in plans if plan.get("status") == "planned"),
+            "already_active": sum(1 for plan in plans if plan.get("status") == "already_active"),
+            "unsupported": sum(1 for plan in plans if plan.get("status") == "unsupported"),
+            "writable": sum(1 for plan in plans if plan.get("is_writable")),
+        }
+        return {
+            "ok": True,
+            "plans": plans,
+            "summary": summary,
+            "status": {
+                "resolver": "record_derived_achievement_planner",
+                "rule_version": RECORD_DERIVED_ACHIEVEMENT_RULE_VERSION,
+                "data_ready": bool(plans),
+                "read_only": True,
+                "message": "记录派生成就规划完成" if plans else "暂无可规划的记录派生成就",
+            },
+        }
     finally:
         if owns_conn:
             db.close()
@@ -8681,12 +11530,14 @@ def _ensure_career_business_tables(conn: sqlite3.Connection, created: list[str])
             snapshot_version TEXT NOT NULL,
             prompt_version TEXT NOT NULL,
             model_id TEXT NOT NULL,
+            tone_preset TEXT NOT NULL DEFAULT 'warm',
+            generation_options_hash TEXT NOT NULL,
             content_json TEXT NOT NULL DEFAULT '{}',
             generated_at TEXT NOT NULL,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             status TEXT NOT NULL,
-            UNIQUE(scope, scope_key, snapshot_fingerprint, prompt_version, model_id),
+            UNIQUE(scope, scope_key, snapshot_fingerprint, prompt_version, model_id, generation_options_hash),
             CHECK(status IN ('candidate', 'ready', 'superseded', 'failed'))
         )
         """,
@@ -8765,6 +11616,59 @@ def _ensure_career_light_memory_columns(conn: sqlite3.Connection, migrated: list
     _add_column_if_missing(conn, "career_memory_items", "title", "TEXT NOT NULL DEFAULT ''", migrated)
     _add_column_if_missing(conn, "career_memory_items", "event_date", "TEXT NOT NULL DEFAULT ''", migrated)
     _add_column_if_missing(conn, "career_memory_items", "status", "TEXT NOT NULL DEFAULT 'active'", migrated)
+
+
+def _ensure_career_ai_insight_generation_option_schema(conn: sqlite3.Connection, migrated: list[str]) -> None:
+    if not _table_exists(conn, "career_ai_insights"):
+        return
+    columns = {
+        str(row[1])
+        for row in conn.execute("PRAGMA table_info(career_ai_insights)").fetchall()
+    }
+    if {"tone_preset", "generation_options_hash"}.issubset(columns):
+        return
+    warm_hash = career_year_generation_options_hash(CAREER_YEAR_DEFAULT_TONE_PRESET)
+    conn.execute(
+        """
+        CREATE TABLE career_ai_insights__generation_options_migration (
+            id TEXT PRIMARY KEY,
+            scope TEXT NOT NULL,
+            scope_key TEXT NOT NULL,
+            snapshot_fingerprint TEXT NOT NULL,
+            snapshot_version TEXT NOT NULL,
+            prompt_version TEXT NOT NULL,
+            model_id TEXT NOT NULL,
+            tone_preset TEXT NOT NULL DEFAULT 'warm',
+            generation_options_hash TEXT NOT NULL,
+            content_json TEXT NOT NULL DEFAULT '{}',
+            generated_at TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            status TEXT NOT NULL,
+            UNIQUE(scope, scope_key, snapshot_fingerprint, prompt_version, model_id, generation_options_hash),
+            CHECK(status IN ('candidate', 'ready', 'superseded', 'failed'))
+        )
+        """
+    )
+    conn.execute(
+        """
+        INSERT OR REPLACE INTO career_ai_insights__generation_options_migration
+            (
+                id, scope, scope_key, snapshot_fingerprint, snapshot_version,
+                prompt_version, model_id, tone_preset, generation_options_hash,
+                content_json, generated_at, created_at, updated_at, status
+            )
+        SELECT
+            id, scope, scope_key, snapshot_fingerprint, snapshot_version,
+            prompt_version, model_id, 'warm', ?,
+            content_json, generated_at, created_at, updated_at, status
+        FROM career_ai_insights
+        """,
+        (warm_hash,),
+    )
+    conn.execute("DROP TABLE career_ai_insights")
+    conn.execute("ALTER TABLE career_ai_insights__generation_options_migration RENAME TO career_ai_insights")
+    migrated.append("career_ai_insights.generation_options")
 
 
 def _ensure_career_pb_record_columns(conn: sqlite3.Connection, migrated: list[str]) -> None:
@@ -8989,6 +11893,12 @@ def _ensure_career_indexes(conn: sqlite3.Connection) -> None:
         """
         CREATE INDEX IF NOT EXISTS idx_career_ai_insights_scope_key_status_generated
         ON career_ai_insights(scope, scope_key, status, generated_at)
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_career_ai_insights_scope_key_options_status_generated
+        ON career_ai_insights(scope, scope_key, generation_options_hash, status, generated_at)
         """
     )
     conn.execute(
@@ -9639,6 +12549,7 @@ def ensure_career_schema(conn: sqlite3.Connection | None = None) -> dict[str, An
                     (CAREER_SCHEMA_VERSION, _utc_now_iso()),
                 )
             _ensure_career_business_tables(db, created)
+            _ensure_career_ai_insight_generation_option_schema(db, migrated)
             _ensure_career_pb_record_columns(db, migrated)
             _ensure_career_record_event_columns(db, migrated)
             _ensure_career_light_memory_columns(db, migrated)
@@ -10086,6 +12997,8 @@ def _career_footprint_activity_rows(conn: sqlite3.Connection, filters: dict[str,
         "region_city",
         "region_country",
         "region_display",
+        "region_admin1",
+        "region_admin1_code",
         "region_state",
         "state",
         "province",
@@ -10477,7 +13390,93 @@ RECORDS_V2_PERFORMANCE_TARGETS_MS = {
     "record_curve": 150,
     "record_candidates": 200,
     "rebuild_plan": 1000,
+    "metric_series": 400,
 }
+RECORDS_V2_DERIVED_CACHE_TTL_SEC = 300
+RECORDS_V2_DERIVED_MAX_ACTIVITIES = 2000
+RECORDS_V2_DERIVED_CACHE_MAX_ENTRIES = 16
+RECORDS_V2_DERIVED_CANDIDATE_RECORD_KEYS = {
+    "cycling_longest_distance",
+    "cycling_longest_elapsed_time",
+    "cycling_max_ascent",
+    "cycling_power_10m",
+    "cycling_power_20m",
+    "hiking_longest_distance",
+    "hiking_longest_elapsed_time",
+    "hiking_max_ascent",
+    "hiking_max_altitude",
+}
+RECORDS_V2_FIRST_BATCH_CANDIDATE_WRITE_KEYS = {
+    "cycling_longest_distance",
+    "cycling_longest_elapsed_time",
+    "cycling_max_ascent",
+    "cycling_power_10m",
+    "cycling_power_20m",
+    "hiking_longest_distance",
+    "hiking_longest_elapsed_time",
+    "hiking_max_ascent",
+    "hiking_max_altitude",
+}
+RECORDS_V2_ALL02_RUNNING_CANDIDATE_WRITE_KEYS = {
+    "running_5k",
+    "running_10k",
+}
+RECORDS_V2_CANDIDATE_WRITE_ALLOWED_KEYS = (
+    RECORDS_V2_FIRST_BATCH_CANDIDATE_WRITE_KEYS
+    | RECORDS_V2_ALL02_RUNNING_CANDIDATE_WRITE_KEYS
+)
+RECORDS_V2_CANDIDATE_WRITE_POLICY_BY_KEY = {
+    key: {
+        "source_modes": {"best_effort_distance"},
+        "min_confidence": 0.92,
+        "decisions": {"preview"},
+        "range_required": True,
+    }
+    for key in RECORDS_V2_ALL02_RUNNING_CANDIDATE_WRITE_KEYS
+}
+RECORDS_V2_CANDIDATE_WRITE_FORBIDDEN_REASON_CODES = {
+    "not_best_for_record_key",
+    "validation_required",
+    "blocks_active",
+    "fallback_activity_total",
+    "legacy_distance_tolerance_match",
+    "distance_time_stream_contract_required",
+    "open_water_sample_limited",
+    "missing_power_stream_sample",
+    "power_spike_detected",
+    "power_stream_gap",
+    "power_stream_missing",
+    "metric_missing",
+    "activity_shorter_than_target",
+    "activity_shorter_than_window",
+    "distance_jump_break",
+    "distance_rollback",
+    "distance_time_invalid_break",
+    "no_valid_distance_time_segment",
+    "unsupported_sport",
+    "ebike_scope_excluded",
+    "pool_length_missing",
+    "real_data_sample_missing",
+}
+RECORDS_V2_FAST_LIST_SPORTS = {"cycling", "hiking", "open_water_swimming", "trail_running"}
+RECORDS_V2_SKIP_DERIVED_LIST_EMPTY_SPORTS = {"open_water_swimming", "pool_swimming", "trail_running"}
+RECORDS_V2_FAST_LIST_RECORD_KEYS = {
+    "cycling_longest_distance",
+    "cycling_longest_elapsed_time",
+    "cycling_max_ascent",
+    "hiking_longest_distance",
+    "hiking_longest_elapsed_time",
+    "hiking_max_ascent",
+    "hiking_max_altitude",
+    "open_water_longest_distance",
+    "open_water_longest_elapsed_time",
+    "trail_longest_distance",
+    "trail_longest_elapsed_time",
+    "trail_max_ascent",
+    "trail_max_altitude",
+}
+_RECORDS_V2_DERIVED_CACHE: dict[str, dict[str, Any]] = {}
+_RECORDS_V2_ACTIVITY_FINGERPRINT_CACHE: dict[str, dict[str, Any]] = {}
 RECORDS_V2_OBSERVABILITY_ALLOWED_FIELDS = {
     "event",
     "run_id",
@@ -10611,6 +13610,31 @@ def _records_v2_status(
     }
 
 
+def _ensure_career_schema_for_records_read(conn: sqlite3.Connection) -> dict[str, Any]:
+    try:
+        return ensure_career_schema(conn)
+    except sqlite3.OperationalError as exc:
+        if "readonly" not in str(exc).lower() and "read-only" not in str(exc).lower():
+            raise
+        required = (
+            "activities",
+            "career_pb_records",
+            "career_event_candidates",
+            "career_record_curve_cache",
+            "career_record_events",
+        )
+        missing = [table for table in required if not _table_exists(conn, table)]
+        return {
+            "ok": not missing,
+            "schema_version": CAREER_SCHEMA_VERSION,
+            "created": [],
+            "migrated": [],
+            "cached": False,
+            "readonly": True,
+            "missing_tables": missing,
+        }
+
+
 def _normalize_records_filters(filters: dict[str, Any] | None) -> dict[str, Any]:
     raw = filters if isinstance(filters, dict) else {}
     year = None
@@ -10629,6 +13653,38 @@ def _normalize_records_filters(filters: dict[str, Any] | None) -> dict[str, Any]
         "scope_hash": str(raw.get("scope_hash") or "all").strip() or "all",
         "status": str(raw.get("status") or "active").strip() or "active",
         "year": year,
+    }
+
+
+def _normalize_record_metric_series_filters(
+    record_key: str,
+    filters: dict[str, Any] | None,
+) -> dict[str, Any]:
+    raw = filters if isinstance(filters, dict) else {}
+    definition = get_record_definition(record_key)
+    sport = str(raw.get("sport") or (definition.sport if definition else "all") or "all").strip() or "all"
+    scope_hash = str(raw.get("scope_hash") or "all").strip() or "all"
+    status = str(raw.get("status") or "available").strip() or "available"
+    year = None
+    year_value = raw.get("year")
+    if year_value not in (None, "", "all"):
+        try:
+            parsed_year = int(year_value)
+            if 1900 <= parsed_year <= 3000:
+                year = parsed_year
+        except (TypeError, ValueError):
+            year = None
+    try:
+        limit = int(raw.get("limit") or 1000)
+    except (TypeError, ValueError):
+        limit = 1000
+    return {
+        "record_key": record_key,
+        "sport": sport,
+        "scope_hash": scope_hash,
+        "status": status,
+        "year": year,
+        "limit": max(1, min(limit, 5000)),
     }
 
 
@@ -10834,6 +13890,7 @@ def _summarize_career_records(records: list[dict[str, Any]], candidate_count: in
     by_family: dict[str, int] = {}
     by_record_key: dict[str, int] = {}
     active_count = 0
+    derived_count = 0
     validation_required_count = 0
     for record in records:
         _increment_counter(by_sport, record.get("sport"))
@@ -10841,16 +13898,487 @@ def _summarize_career_records(records: list[dict[str, Any]], candidate_count: in
         _increment_counter(by_record_key, record.get("record_key"))
         if record.get("status") == "active":
             active_count += 1
+        if record.get("status") in {"derived", "derived_candidate", "validation_required"}:
+            derived_count += 1
         if record.get("catalog_state") == "validation_required":
             validation_required_count += 1
     return {
         "total": len(records),
         "active_count": active_count,
+        "derived_count": derived_count,
         "candidate_count": candidate_count,
         "validation_required_count": validation_required_count,
         "by_sport": by_sport,
         "by_family": by_family,
         "by_record_key": by_record_key,
+    }
+
+
+def _records_v2_connection_cache_identity(conn: sqlite3.Connection) -> str:
+    try:
+        rows = conn.execute("PRAGMA database_list").fetchall()
+        for row in rows:
+            data = dict(row) if isinstance(row, sqlite3.Row) else {"name": row[1], "file": row[2]}
+            if str(data.get("name") or "") == "main" and str(data.get("file") or ""):
+                return str(Path(str(data.get("file") or "")).expanduser())
+    except sqlite3.Error:
+        pass
+    return f"connection:{id(conn)}"
+
+
+def _records_v2_activity_fingerprint(conn: sqlite3.Connection) -> str:
+    identity = _records_v2_connection_cache_identity(conn)
+    now = time.monotonic()
+    cached = _RECORDS_V2_ACTIVITY_FINGERPRINT_CACHE.get(identity)
+    if cached and now - float(cached.get("created_monotonic") or 0.0) <= RECORDS_V2_DERIVED_CACHE_TTL_SEC:
+        return str(cached.get("fingerprint") or "")
+    if not _table_exists(conn, "activities"):
+        return "activities:missing"
+    available = _activity_available_columns(conn)
+    updated_expr = "''"
+    for column in ("updated_at", "start_time", "start_time_utc"):
+        if column in available:
+            updated_expr = f"COALESCE({column}, '')"
+            break
+    id_expr = "CAST(id AS TEXT)" if "id" in available else "''"
+    try:
+        row = conn.execute(
+            f"""
+            SELECT COUNT(*) AS count,
+                   MAX({updated_expr}) AS latest_marker,
+                   MAX({id_expr}) AS latest_id
+            FROM activities
+            """
+        ).fetchone()
+    except sqlite3.Error as exc:
+        return f"activities:error:{type(exc).__name__}"
+    data = dict(row) if isinstance(row, sqlite3.Row) else {
+        "count": row[0] if row else 0,
+        "latest_marker": row[1] if row and len(row) > 1 else "",
+        "latest_id": row[2] if row and len(row) > 2 else "",
+    }
+    seed = _json_dumps({
+        "count": int(data.get("count") or 0),
+        "latest_marker": str(data.get("latest_marker") or ""),
+        "latest_id": str(data.get("latest_id") or ""),
+    })
+    fingerprint = "activities:sha1:" + hashlib.sha1(seed.encode("utf-8")).hexdigest()[:16]
+    _RECORDS_V2_ACTIVITY_FINGERPRINT_CACHE[identity] = {
+        "created_monotonic": now,
+        "fingerprint": fingerprint,
+    }
+    return fingerprint
+
+
+def _records_v2_derived_cache_key(
+    conn: sqlite3.Connection,
+    *,
+    max_activities: int,
+    sport: str,
+    record_key: str,
+    profile: str,
+) -> str:
+    seed = _json_dumps({
+        "identity": _records_v2_connection_cache_identity(conn),
+        "fingerprint": _records_v2_activity_fingerprint(conn),
+        "max_activities": int(max_activities),
+        "sport": str(sport or "all"),
+        "record_key": str(record_key or "all"),
+        "profile": str(profile or "full"),
+        "provider_version": "derived-provider-v1",
+    })
+    return "records_v2_derived:" + hashlib.sha1(seed.encode("utf-8")).hexdigest()[:16]
+
+
+def _records_v2_fast_list_activity_rows(conn: sqlite3.Connection, *, limit: int, sport: str) -> list[dict[str, Any]]:
+    if not _table_exists(conn, "activities"):
+        return []
+    available = _activity_available_columns(conn)
+    columns = (
+        "id",
+        "activity_id",
+        "sport_type",
+        "sport",
+        "activity_type",
+        "sub_sport_type",
+        "sub_sport",
+        "start_time",
+        "start_time_utc",
+        "dist_km",
+        "distance",
+        "duration_sec",
+        "duration",
+        "gain_m",
+        "ascent_m",
+        "max_alt_m",
+        "max_altitude_m",
+        "deleted_at",
+        "is_mock",
+    )
+    select_parts = [_activity_select_alias(available, column) for column in columns]
+    where_parts = ["1=1"]
+    clean_sport = str(sport or "all").strip() or "all"
+    if clean_sport != "all":
+        sport_columns = [column for column in ("sport_type", "sport", "activity_type") if column in available]
+        sub_columns = [column for column in ("sub_sport_type", "sub_sport") if column in available]
+        sport_coalesce = ", ".join([*sport_columns, "''"])
+        sub_coalesce = ", ".join([*sub_columns, "''"])
+        sport_expr = f"LOWER(REPLACE(REPLACE(COALESCE({sport_coalesce}), '-', '_'), ' ', '_'))"
+        sub_expr = f"LOWER(REPLACE(REPLACE(COALESCE({sub_coalesce}), '-', '_'), ' ', '_'))"
+        if clean_sport == "cycling":
+            where_parts.append(f"{sport_expr} IN ('cycling', 'cycle', 'road_cycling', 'road_biking', 'mountain_biking', 'biking', 'bike', 'virtual_ride', 'indoor_cycling')")
+        elif clean_sport == "hiking":
+            where_parts.append(f"{sport_expr} IN ('hiking', 'hike', 'trekking')")
+        elif clean_sport == "open_water_swimming":
+            where_parts.append(f"({sport_expr} IN ('open_water_swimming', 'openwater_swimming') OR ({sport_expr} IN ('swimming', 'swim') AND {sub_expr} IN ('open_water', 'open_water_swimming')))")
+        elif clean_sport == "trail_running":
+            where_parts.append(f"{sport_expr} IN ('trail_running', 'trail_run')")
+    cursor = conn.execute(
+        f"""
+        SELECT {', '.join(select_parts)}
+        FROM activities
+        WHERE {' AND '.join(where_parts)}
+        ORDER BY COALESCE(start_time, start_time_utc, '') DESC, id DESC
+        LIMIT ?
+        """,
+        (int(limit),),
+    )
+    return _rows_to_dicts(cursor)
+
+
+def _records_v2_fast_list_preview(
+    conn: sqlite3.Connection,
+    *,
+    sport: str,
+    max_activities: int,
+) -> dict[str, Any]:
+    start = time.perf_counter()
+    rows = _records_v2_fast_list_activity_rows(conn, limit=max_activities, sport=sport)
+    materialized_items: list[dict[str, Any]] = []
+    ignored: list[dict[str, Any]] = []
+    by_sport: dict[str, int] = {}
+    by_reason: dict[str, int] = {}
+    for row in rows:
+        if str(row.get("deleted_at") or "").strip() or _activity_truthy(row.get("is_mock")):
+            continue
+        normalized_sport = _activity_sport_for_record_dispatch(row)
+        if normalized_sport != sport:
+            continue
+        _increment_counter(by_sport, normalized_sport)
+        activity_id = str(row.get("activity_id") or row.get("id") or "")
+        event_date = _activity_event_date(row)
+        distance_m = _activity_distance_m(row)
+        elapsed_time_sec = _activity_elapsed_time_sec(row)
+        ascent_m = _safe_float(row.get("gain_m"))
+        if ascent_m is None:
+            ascent_m = _safe_float(row.get("ascent_m"))
+        max_altitude_m = _safe_float(row.get("max_alt_m"))
+        if max_altitude_m is None:
+            max_altitude_m = _safe_float(row.get("max_altitude_m"))
+        fact_specs: list[tuple[str, Any]] = []
+        if sport == "cycling":
+            fact_specs = [
+                ("cycling_longest_distance", distance_m),
+                ("cycling_max_ascent", ascent_m),
+                ("cycling_longest_elapsed_time", elapsed_time_sec),
+            ]
+        elif sport == "hiking":
+            fact_specs = [
+                ("hiking_longest_distance", distance_m),
+                ("hiking_max_ascent", ascent_m),
+                ("hiking_longest_elapsed_time", elapsed_time_sec),
+                ("hiking_max_altitude", max_altitude_m),
+            ]
+        elif sport == "open_water_swimming":
+            fact_specs = [
+                ("open_water_longest_distance", distance_m),
+                ("open_water_longest_elapsed_time", elapsed_time_sec),
+            ]
+        elif sport == "trail_running":
+            fact_specs = [
+                ("trail_longest_distance", distance_m),
+                ("trail_max_ascent", ascent_m),
+                ("trail_longest_elapsed_time", elapsed_time_sec),
+                ("trail_max_altitude", max_altitude_m),
+            ]
+        for record_key, value in fact_specs:
+            definition = get_record_definition(record_key)
+            metric_value = _finite_float(value)
+            if definition is None or metric_value is None or metric_value <= 0:
+                continue
+            quality = {
+                "confidence": 0.98,
+                "confidence_band": "high",
+                "decision": "auto_confirm" if definition.availability_state == "available" else "validation_required",
+                "reason_codes": ["activity_total_fast_list"],
+                "source": "activity_total",
+                "quality_policy": definition.quality_policy,
+                "can_user_confirm": False,
+                "blocks_active": definition.availability_state != "available",
+            }
+            materialized_items.append({
+                "status": "preview_record" if definition.availability_state == "available" else "preview_candidate",
+                "record_key": definition.key,
+                "display_name": definition.display_name,
+                "sport": definition.sport,
+                "activity_id": activity_id,
+                "event_date": event_date,
+                "source_mode": definition.source_mode,
+                "metric": {
+                    "name": definition.metric,
+                    "value": round(metric_value, 3),
+                    "unit": definition.canonical_unit,
+                },
+                "scope": {"sport_scope": "default"} if "sport_scope" in definition.scope_dimensions else {},
+                "quality": quality,
+                "resolver_version": RECORDS_V2_RULE_VERSION,
+                "dry_run": True,
+            })
+    for item in ignored:
+        for reason in item.get("reason_codes") or []:
+            _increment_counter(by_reason, reason)
+    preview_records, other_candidates = _select_best_preview_records(materialized_items)
+    preview_candidates = [item for item in preview_records if item.get("status") != "preview_record"]
+    preview_records = [item for item in preview_records if item.get("status") == "preview_record"]
+    preview_candidates.extend(_mark_non_best_preview_candidate(item) for item in other_candidates)
+    seed = _json_dumps({
+        "sport": sport,
+        "records": [(item.get("record_key"), item.get("activity_id"), item.get("status")) for item in [*preview_records, *preview_candidates]],
+    })
+    return {
+        "ok": True,
+        "dry_run": True,
+        "readonly": True,
+        "run_id": "records_v2_fast_list:" + hashlib.sha1(seed.encode("utf-8")).hexdigest()[:16],
+        "preview_records": preview_records,
+        "preview_candidates": preview_candidates,
+        "ignored": ignored,
+        "summary": {
+            "mode": "derived_fast_list",
+            "resolver_connected": True,
+            "scanned": len(rows),
+            "preview_records": len(preview_records),
+            "preview_candidates": len(preview_candidates),
+            "ignored": len(ignored),
+        },
+        "by_sport": by_sport,
+        "by_record_key": {},
+        "by_reason": by_reason,
+        "metrics": {"elapsed_ms": _elapsed_ms(start), "processed": len(rows), "returned_count": len(rows)},
+    }
+
+
+def _records_v2_derived_scope(item: dict[str, Any], definition: RecordDefinition) -> dict[str, Any]:
+    raw_scope = item.get("scope") if isinstance(item.get("scope"), dict) else {}
+    if raw_scope:
+        return _canonical_record_scope(raw_scope)
+    if "water_scope" in definition.scope_dimensions:
+        if definition.sport == "pool_swimming":
+            return {"water_scope": "pool"}
+        if definition.sport == "open_water_swimming":
+            return {"water_scope": "open_water"}
+    return {"sport_scope": "default"} if "sport_scope" in definition.scope_dimensions else {}
+
+
+def _records_v2_derived_status(item: dict[str, Any], definition: RecordDefinition) -> str:
+    quality = item.get("quality") if isinstance(item.get("quality"), dict) else {}
+    decision = str(quality.get("decision") or "")
+    if definition.availability_state == "validation_required" or decision == "validation_required":
+        return "validation_required"
+    if definition.availability_state == "candidate_only" or bool(quality.get("blocks_active")):
+        return "derived_candidate"
+    return "derived"
+
+
+def _records_v2_derived_row_from_item(item: dict[str, Any]) -> dict[str, Any] | None:
+    record_key = str(item.get("record_key") or "")
+    definition = get_record_definition(record_key)
+    metric = item.get("metric") if isinstance(item.get("metric"), dict) else {}
+    value = _finite_float(metric.get("value"))
+    if definition is None or value is None:
+        return None
+    scope = _records_v2_derived_scope(item, definition)
+    scope_hash = _record_scope_hash(scope)
+    range_json = canonicalize_record_range(item.get("range") if isinstance(item.get("range"), dict) else {})
+    range_hash = _record_stable_hash("range", range_json)
+    status = _records_v2_derived_status(item, definition)
+    quality = canonicalize_record_quality(item.get("quality") if isinstance(item.get("quality"), dict) else {})
+    reason_codes = list(quality.get("reason_codes") or [])
+    reason_codes.append("derived_from_readonly_materializer")
+    quality["reason_codes"] = list(_dedupe_reason_codes(tuple(reason_codes)))
+    quality.setdefault("can_user_confirm", False)
+    quality.setdefault("log_safety", "safe_summary_only")
+    record_id = f"derived:{record_key}:{item.get('activity_id')}:{item.get('source_mode')}:{scope_hash}:{range_hash}"
+    return {
+        "id": record_id,
+        "activity_id": str(item.get("activity_id") or ""),
+        "sport": definition.sport,
+        "pb_type": record_key,
+        "value": str(value),
+        "value_unit": str(metric.get("unit") or definition.canonical_unit),
+        "improvement": None,
+        "event_date": str(item.get("event_date") or "")[:10],
+        "confidence": _safe_float(quality.get("confidence")) or 0.0,
+        "source": "derived_provider",
+        "status": status,
+        "display_metadata_json": "{}",
+        "evidence_key": record_id,
+        "source_mode": str(item.get("source_mode") or definition.source_mode),
+        "sport_scope": str(scope.get("sport_scope") or "default"),
+        "previous_record_id": None,
+        "resolver_version": str(item.get("resolver_version") or RECORDS_V2_RULE_VERSION),
+        "record_key": record_key,
+        "record_family": _record_definition_family(definition),
+        "scope_json": _json_dumps(scope),
+        "scope_key": _record_scope_key(scope),
+        "scope_hash": scope_hash,
+        "range_json": _json_dumps(range_json),
+        "quality_json": _json_dumps(quality),
+        "metric_value_num": value,
+        "metric_name": str(metric.get("name") or definition.metric),
+        "catalog_state": definition.availability_state,
+        "rule_version": definition.rule_version,
+        "_derived_candidate_allowed": record_key in RECORDS_V2_DERIVED_CANDIDATE_RECORD_KEYS
+            and status == "derived"
+            and "not_best_for_record_key" not in quality.get("reason_codes", []),
+    }
+
+
+def _records_v2_derived_provider_snapshot(
+    conn: sqlite3.Connection,
+    *,
+    max_activities: int = RECORDS_V2_DERIVED_MAX_ACTIVITIES,
+    sport: str = "all",
+    record_key: str = "all",
+    profile: str = "full",
+) -> dict[str, Any]:
+    clean_max = max(1, min(int(max_activities or RECORDS_V2_DERIVED_MAX_ACTIVITIES), RECORDS_V2_DERIVED_MAX_ACTIVITIES))
+    clean_sport = str(sport or "all").strip() or "all"
+    if clean_sport not in {"all", *RECORD_ALLOWED_SPORTS}:
+        clean_sport = "all"
+    clean_record_key = str(record_key or "all").strip() or "all"
+    clean_profile = "list" if str(profile or "") == "list" else "full"
+    cache_key = _records_v2_derived_cache_key(conn, max_activities=clean_max, sport=clean_sport, record_key=clean_record_key, profile=clean_profile)
+    now = time.monotonic()
+    cached = _RECORDS_V2_DERIVED_CACHE.get(cache_key)
+    if cached and now - float(cached.get("created_monotonic") or 0.0) <= RECORDS_V2_DERIVED_CACHE_TTL_SEC:
+        snapshot = copy.deepcopy(cached["snapshot"])
+        snapshot["cache"] = {"hit": True, "key": cache_key, "ttl_sec": RECORDS_V2_DERIVED_CACHE_TTL_SEC}
+        return snapshot
+    if (
+        clean_profile == "list"
+        and clean_sport in RECORDS_V2_FAST_LIST_SPORTS
+        and (clean_record_key == "all" or clean_record_key in RECORDS_V2_FAST_LIST_RECORD_KEYS)
+    ):
+        preview = _records_v2_fast_list_preview(conn, sport=clean_sport, max_activities=clean_max)
+    else:
+        preview = preview_career_records({"max_activities": clean_max, "sport": clean_sport, "record_key": clean_record_key}, conn=conn)
+    rows = [
+        row
+        for row in (
+            _records_v2_derived_row_from_item(item)
+            for item in [*(preview.get("preview_records") or []), *(preview.get("preview_candidates") or [])]
+            if isinstance(item, dict)
+        )
+        if row is not None
+    ]
+    rows.sort(key=lambda row: (str(row.get("record_key") or ""), str(row.get("event_date") or ""), str(row.get("id") or "")))
+    snapshot = {
+        "rows": rows,
+        "run_id": str(preview.get("run_id") or ""),
+        "summary": {
+            "source": "preview_career_records",
+            "profile": clean_profile,
+            "readonly": True,
+            "writes": 0,
+            "derived_rows": len(rows),
+            "preview_records": len(preview.get("preview_records") or []),
+            "preview_candidates": len(preview.get("preview_candidates") or []),
+            "ignored": len(preview.get("ignored") or []),
+            "by_record_key": dict(preview.get("by_record_key") or {}),
+        },
+        "cache": {"hit": False, "key": cache_key, "ttl_sec": RECORDS_V2_DERIVED_CACHE_TTL_SEC},
+    }
+    if len(_RECORDS_V2_DERIVED_CACHE) >= RECORDS_V2_DERIVED_CACHE_MAX_ENTRIES:
+        oldest_key = min(
+            _RECORDS_V2_DERIVED_CACHE,
+            key=lambda key: float(_RECORDS_V2_DERIVED_CACHE[key].get("created_monotonic") or 0.0),
+        )
+        _RECORDS_V2_DERIVED_CACHE.pop(oldest_key, None)
+    _RECORDS_V2_DERIVED_CACHE[cache_key] = {
+        "created_monotonic": now,
+        "snapshot": copy.deepcopy(snapshot),
+    }
+    return snapshot
+
+
+def _filter_records_v2_derived_rows(rows: list[dict[str, Any]], filters: dict[str, Any]) -> list[dict[str, Any]]:
+    filtered: list[dict[str, Any]] = []
+    status_filter = str(filters.get("status") or "active")
+    for row in rows:
+        if filters.get("sport") != "all" and row.get("sport") != filters.get("sport"):
+            continue
+        if filters.get("record_key") != "all" and row.get("record_key") != filters.get("record_key"):
+            continue
+        if filters.get("family") != "all" and row.get("record_family") != filters.get("family"):
+            continue
+        if filters.get("scope_hash") != "all" and row.get("scope_hash") != filters.get("scope_hash"):
+            continue
+        if filters.get("year") is not None and str(row.get("event_date") or "")[:4] != str(filters.get("year")):
+            continue
+        if status_filter not in {"all", "active"} and row.get("status") != status_filter:
+            continue
+        filtered.append(row)
+    return filtered
+
+
+def _records_v2_should_skip_derived_records_list(filters: dict[str, Any]) -> bool:
+    sport = str(filters.get("sport") or "all")
+    record_key = str(filters.get("record_key") or "all")
+    if sport in RECORDS_V2_SKIP_DERIVED_LIST_EMPTY_SPORTS and record_key == "all":
+        return True
+    if record_key != "all":
+        definition = get_record_definition(record_key)
+        return bool(definition and definition.sport in RECORDS_V2_SKIP_DERIVED_LIST_EMPTY_SPORTS)
+    return False
+
+
+def _records_v2_merge_rows_for_list(formal_rows: list[dict[str, Any]], derived_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    formal_keys = {str(row.get("record_key") or row.get("pb_type") or "") for row in formal_rows}
+    best_by_key: dict[str, dict[str, Any]] = {}
+    for row in derived_rows:
+        key = str(row.get("record_key") or "")
+        if not key or key in formal_keys:
+            continue
+        current = best_by_key.get(key)
+        if current is None or _preview_record_better(
+            {"record_key": key, "metric": {"value": row.get("metric_value_num")}},
+            {"record_key": key, "metric": {"value": current.get("metric_value_num")}},
+        ):
+            best_by_key[key] = row
+    return [*formal_rows, *best_by_key.values()]
+
+
+def _records_v2_derived_candidate_view(row: dict[str, Any]) -> dict[str, Any]:
+    record = _build_career_record_view(row)
+    quality = dict(record.get("quality") or {})
+    quality["can_user_confirm"] = False
+    reason_codes = list(quality.get("reason_codes") or [])
+    reason_codes.append("not_written_to_candidate_store")
+    quality["reason_codes"] = list(_dedupe_reason_codes(tuple(reason_codes)))
+    return {
+        "id": "derived-candidate:" + str(row.get("id") or ""),
+        "activity_id": record["activity_id"],
+        "record_key": record["record_key"],
+        "display_name": record["display_name"],
+        "sport": record["sport"],
+        "sport_label": record["sport_label"],
+        "metric": record["metric"],
+        "scope": record["scope"],
+        "quality": quality,
+        "candidate_state": "derived_candidate",
+        "created_at": record["event_date"],
+        "detail_link": record["detail_link"],
     }
 
 
@@ -11568,6 +15096,8 @@ def _build_timeline_nodes_for_type(
         nodes.extend(_build_timeline_race_node(race, pb_scope_by_activity) for race in races)
     if node_type == "all" or node_type in CAREER_TIMELINE_MILESTONE_TYPES:
         nodes.extend(_timeline_milestone_nodes(db, year=year))
+    if node_type == "all" or node_type in CAREER_TIMELINE_RECORD_TYPES:
+        nodes.extend(_timeline_record_event_nodes(db, year=year))
     return nodes
 
 
@@ -11930,6 +15460,22 @@ def _add_season_activity_buckets(
         sport_counts[sport] = int(sport_counts.get(sport) or 0) + 1
 
 
+def _filter_preloaded_season_activity_rows(
+    rows: list[dict[str, Any]],
+    filters: dict[str, Any],
+) -> list[dict[str, Any]]:
+    filtered: list[dict[str, Any]] = []
+    sport_filter = str(filters.get("sport") or "all")
+    for row in rows:
+        year = _safe_activity_year(_season_activity_date(row))
+        if filters.get("year") is not None and int(filters["year"]) != year:
+            continue
+        if sport_filter != "all" and _season_activity_sport(row) != sport_filter:
+            continue
+        filtered.append(row)
+    return filtered
+
+
 def _season_primary_sport(bucket: dict[str, Any]) -> str:
     counts = {
         key: int(value)
@@ -12043,14 +15589,135 @@ def _add_derived_season_counts(conn: sqlite3.Connection, buckets: dict[int, dict
     if _table_exists(conn, "career_achievement_events"):
         for row in conn.execute("SELECT event_date FROM career_achievement_events WHERE status = 'active'").fetchall():
             _increment_year_counter(buckets, _safe_activity_year(row[0]), "achievement_count", filters)
-def _build_career_seasons(conn: sqlite3.Connection, filters: dict[str, Any]) -> list[dict[str, Any]]:
+def _build_career_seasons(
+    conn: sqlite3.Connection,
+    filters: dict[str, Any],
+    activity_rows: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
     buckets: dict[int, dict[str, Any]] = {}
-    _add_season_activity_buckets(buckets, _season_activity_rows(conn, filters), filters)
+    rows = (
+        _filter_preloaded_season_activity_rows(activity_rows, filters)
+        if activity_rows is not None
+        else _season_activity_rows(conn, filters)
+    )
+    _add_season_activity_buckets(buckets, rows, filters)
     _add_derived_season_counts(conn, buckets, filters)
     return [
         _build_season_record(buckets[year])
         for year in sorted(buckets.keys(), reverse=True)
     ]
+
+
+def _overview_representative_seasons_query(conn: sqlite3.Connection, limit: int = 3) -> list[dict[str, Any]]:
+    if not _table_exists(conn, "activities"):
+        return []
+    clean_limit = max(0, int(limit))
+    if clean_limit <= 0:
+        return []
+    available_columns = _activity_available_columns(conn)
+    sport_columns = ("sport_type", "sub_sport_type", "sport", "activity_type")
+    sport_select = ", ".join(_activity_select_alias(available_columns, column) for column in sport_columns)
+    date_expr = _activity_date_expr_from_columns(available_columns)
+    distance_expr = _activity_distance_expr_from_columns(available_columns)
+    duration_expr = _activity_duration_expr_from_columns(available_columns)
+    city_expr = _activity_text_expr_from_columns(available_columns, ("region_city", "city", "cityName"))
+    year_expr = f"substr({date_expr}, 1, 4)"
+    year_rows = conn.execute(
+        f"""
+        SELECT DISTINCT {year_expr} AS activity_year
+        FROM activities
+        WHERE {_overview_activity_deleted_filter(available_columns)}
+          AND {year_expr} GLOB '[0-9][0-9][0-9][0-9]'
+        ORDER BY activity_year DESC
+        LIMIT ?
+        """,
+        (clean_limit,),
+    ).fetchall()
+    representative_years = [str(row[0] or "") for row in year_rows if str(row[0] or "")]
+    if not representative_years:
+        return []
+    placeholders = ", ".join("?" for _ in representative_years)
+    if (
+        "sport_type" in available_columns
+        and "sub_sport_type" in available_columns
+        and "dist_km" in available_columns
+        and "duration_sec" in available_columns
+        and _index_exists(conn, "idx_activities_dedupe_lookup")
+    ):
+        cursor = conn.execute(
+            f"""
+            SELECT {year_expr} AS activity_year,
+                   sport_type,
+                   sub_sport_type,
+                   COUNT(*) AS activity_count,
+                   SUM(CASE WHEN dist_km IS NOT NULL AND dist_km > 0 THEN dist_km ELSE 0 END) AS total_distance_km,
+                   SUM(CASE WHEN duration_sec IS NOT NULL AND duration_sec > 0 THEN duration_sec ELSE 0 END) AS total_duration_seconds
+            FROM activities INDEXED BY idx_activities_dedupe_lookup
+            WHERE {_overview_activity_deleted_filter(available_columns)}
+              AND {year_expr} IN ({placeholders})
+            GROUP BY activity_year, sport_type, sub_sport_type
+            ORDER BY activity_year DESC
+            """,
+            tuple(representative_years),
+        )
+        buckets: dict[int, dict[str, Any]] = {}
+        for row in _rows_to_dicts(cursor):
+            year = _safe_activity_year(row.get("activity_year"))
+            if year is None:
+                continue
+            bucket = buckets.setdefault(year, _empty_season_bucket(year))
+            activity_count = int(row.get("activity_count") or 0)
+            bucket["activity_count"] = int(bucket.get("activity_count") or 0) + activity_count
+            bucket["total_distance_km"] = float(bucket.get("total_distance_km") or 0.0) + float(row.get("total_distance_km") or 0.0)
+            bucket["total_duration_seconds"] = int(bucket.get("total_duration_seconds") or 0) + int(row.get("total_duration_seconds") or 0)
+            sport_name = _overview_activity_sport(row)
+            sport_counts = bucket["sport_counts"]
+            sport_counts[sport_name] = int(sport_counts.get(sport_name) or 0) + activity_count
+        _add_derived_season_counts(conn, buckets, {"year": None, "sport": "all"})
+        return [
+            _build_season_record(buckets[year])
+            for year in sorted(buckets.keys(), reverse=True)
+        ][:clean_limit]
+
+    cursor = conn.execute(
+        f"""
+        SELECT {year_expr} AS activity_year,
+               {sport_select},
+               {city_expr} AS activity_city,
+               COUNT(*) AS activity_count,
+               SUM(COALESCE({distance_expr}, 0)) AS total_distance_km,
+               SUM(COALESCE({duration_expr}, 0)) AS total_duration_seconds
+        FROM activities
+        WHERE {_overview_activity_deleted_filter(available_columns)}
+          AND {year_expr} GLOB '[0-9][0-9][0-9][0-9]'
+          AND {year_expr} IN ({placeholders})
+        GROUP BY activity_year, sport_type, sub_sport_type, sport, activity_type, activity_city
+        ORDER BY activity_year DESC
+        """,
+        tuple(representative_years),
+    )
+    buckets: dict[int, dict[str, Any]] = {}
+    for row in _rows_to_dicts(cursor):
+        year = _safe_activity_year(row.get("activity_year"))
+        if year is None:
+            continue
+        bucket = buckets.setdefault(year, _empty_season_bucket(year))
+        activity_count = int(row.get("activity_count") or 0)
+        bucket["activity_count"] = int(bucket.get("activity_count") or 0) + activity_count
+        bucket["total_distance_km"] = float(bucket.get("total_distance_km") or 0.0) + float(row.get("total_distance_km") or 0.0)
+        bucket["total_duration_seconds"] = int(bucket.get("total_duration_seconds") or 0) + int(row.get("total_duration_seconds") or 0)
+        city = str(row.get("activity_city") or "").strip()
+        if city:
+            bucket["cities"].add(city)
+        sport_name = _overview_activity_sport(row)
+        sport_counts = bucket["sport_counts"]
+        sport_counts[sport_name] = int(sport_counts.get(sport_name) or 0) + activity_count
+    _add_derived_season_counts(conn, buckets, {"year": None, "sport": "all"})
+    seasons = [
+        _build_season_record(buckets[year])
+        for year in sorted(buckets.keys(), reverse=True)
+    ]
+    return seasons[:clean_limit]
 
 
 def _summarize_seasons(seasons: list[dict[str, Any]]) -> dict[str, Any]:
@@ -12875,7 +16542,9 @@ def _career_year_snapshot_activity_rows(
     activity_rows: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    source_rows = activity_rows if activity_rows is not None else _overview_activity_rows(conn)
+    if activity_rows is None:
+        return _overview_activity_rows_for_year(conn, year, end_date=end_date)
+    source_rows = activity_rows
     for row in source_rows:
         activity_date = _overview_activity_date(row)
         if _safe_activity_year(activity_date) == year:
@@ -13749,6 +17418,7 @@ def _career_ai_insight_id(
     snapshot_fingerprint: Any,
     prompt_version: Any,
     model_id: Any,
+    generation_options_hash: Any = None,
 ) -> str:
     # Cache identity intentionally includes prompt/model. Do not reuse the
     # snapshot fingerprint canonicalizer, which excludes those runtime fields.
@@ -13759,6 +17429,10 @@ def _career_ai_insight_id(
             "snapshot_fingerprint": _normalize_career_ai_insight_text(snapshot_fingerprint, "snapshot_fingerprint"),
             "prompt_version": _normalize_career_ai_insight_text(prompt_version, "prompt_version"),
             "model_id": _normalize_career_ai_insight_text(model_id, "model_id"),
+            "generation_options_hash": _normalize_career_ai_insight_text(
+                generation_options_hash or career_year_generation_options_hash(),
+                "generation_options_hash",
+            ),
         },
         ensure_ascii=False,
         sort_keys=True,
@@ -13785,19 +17459,21 @@ def _career_ai_insight_row(row: sqlite3.Row | tuple[Any, ...] | None) -> dict[st
         "snapshot_version": str(row[4] or ""),
         "prompt_version": str(row[5] or ""),
         "model_id": str(row[6] or ""),
-        "content": _json_loads_object(row[7]),
-        "generated_at": str(row[8] or ""),
-        "created_at": str(row[9] or ""),
-        "updated_at": str(row[10] or ""),
-        "status": str(row[11] or ""),
+        "tone_preset": str(row[7] or CAREER_YEAR_DEFAULT_TONE_PRESET),
+        "generation_options_hash": str(row[8] or career_year_generation_options_hash()),
+        "content": _json_loads_object(row[9]),
+        "generated_at": str(row[10] or ""),
+        "created_at": str(row[11] or ""),
+        "updated_at": str(row[12] or ""),
+        "status": str(row[13] or ""),
     }
 
 
 def _select_career_ai_insight_columns() -> str:
     return """
         id, scope, scope_key, snapshot_fingerprint, snapshot_version,
-        prompt_version, model_id, content_json, generated_at, created_at,
-        updated_at, status
+        prompt_version, model_id, tone_preset, generation_options_hash,
+        content_json, generated_at, created_at, updated_at, status
     """
 
 
@@ -13810,6 +17486,8 @@ def insert_career_ai_insight(
     prompt_version: Any,
     model_id: Any,
     content: dict[str, Any],
+    tone_preset: Any = None,
+    generation_options_hash: Any = None,
     status: str = "candidate",
     generated_at: Any = None,
     conn: sqlite3.Connection | None = None,
@@ -13821,6 +17499,11 @@ def insert_career_ai_insight(
     clean_snapshot_version = _normalize_career_ai_insight_text(snapshot_version, "snapshot_version")
     clean_prompt_version = _normalize_career_ai_insight_text(prompt_version, "prompt_version")
     clean_model_id = _normalize_career_ai_insight_text(model_id, "model_id")
+    clean_tone_preset = normalize_career_year_tone_preset(tone_preset)
+    clean_options_hash = _normalize_career_ai_insight_text(
+        generation_options_hash or career_year_generation_options_hash(clean_tone_preset),
+        "generation_options_hash",
+    )
     clean_status = _validate_career_ai_insight_status(status)
     if clean_status == "ready":
         raise ValueError("ready AI Insight 必须通过 save_ready_career_ai_insight 或 activate_career_ai_insight 写入")
@@ -13834,6 +17517,7 @@ def insert_career_ai_insight(
         clean_fingerprint,
         clean_prompt_version,
         clean_model_id,
+        clean_options_hash,
     )
     now = _utc_now_iso()
     generated = str(generated_at or now)
@@ -13846,14 +17530,16 @@ def insert_career_ai_insight(
             INSERT INTO career_ai_insights
                 (
                     id, scope, scope_key, snapshot_fingerprint, snapshot_version,
-                    prompt_version, model_id, content_json, generated_at,
+                    prompt_version, model_id, tone_preset, generation_options_hash,
+                    content_json, generated_at,
                     created_at, updated_at, status
                 )
             VALUES
-                (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(scope, scope_key, snapshot_fingerprint, prompt_version, model_id)
+                (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(scope, scope_key, snapshot_fingerprint, prompt_version, model_id, generation_options_hash)
             DO UPDATE SET
                 snapshot_version = excluded.snapshot_version,
+                tone_preset = excluded.tone_preset,
                 content_json = excluded.content_json,
                 generated_at = excluded.generated_at,
                 updated_at = excluded.updated_at,
@@ -13867,6 +17553,8 @@ def insert_career_ai_insight(
                 clean_snapshot_version,
                 clean_prompt_version,
                 clean_model_id,
+                clean_tone_preset,
+                clean_options_hash,
                 _json_dumps(content),
                 generated,
                 now,
@@ -13882,6 +17570,7 @@ def insert_career_ai_insight(
             snapshot_fingerprint=clean_fingerprint,
             prompt_version=clean_prompt_version,
             model_id=clean_model_id,
+            generation_options_hash=clean_options_hash,
             conn=db,
         ) or {"id": insight_id, "status": clean_status}
     except Exception:
@@ -13931,10 +17620,11 @@ def activate_career_ai_insight(
                 updated_at = ?
             WHERE scope = ?
               AND scope_key = ?
+              AND generation_options_hash = ?
               AND status = 'ready'
               AND id != ?
             """,
-            (now, current["scope"], current["scope_key"], clean_id),
+            (now, current["scope"], current["scope_key"], current["generation_options_hash"], clean_id),
         )
         db.execute(
             """
@@ -13974,6 +17664,8 @@ def save_ready_career_ai_insight(
     model_id: Any,
     content: dict[str, Any],
     content_validated: bool,
+    tone_preset: Any = None,
+    generation_options_hash: Any = None,
     generated_at: Any = None,
     conn: sqlite3.Connection | None = None,
 ) -> dict[str, Any]:
@@ -13993,6 +17685,8 @@ def save_ready_career_ai_insight(
             snapshot_version=snapshot_version,
             prompt_version=prompt_version,
             model_id=model_id,
+            tone_preset=tone_preset,
+            generation_options_hash=generation_options_hash,
             content=content,
             status="candidate",
             generated_at=generated_at,
@@ -14052,6 +17746,7 @@ def get_career_ai_insight_by_cache_key(
     snapshot_fingerprint: Any,
     prompt_version: Any,
     model_id: Any,
+    generation_options_hash: Any = None,
     conn: sqlite3.Connection | None = None,
 ) -> dict[str, Any] | None:
     clean_scope = _normalize_career_ai_insight_scope(scope)
@@ -14059,6 +17754,10 @@ def get_career_ai_insight_by_cache_key(
     clean_fingerprint = _normalize_career_ai_insight_text(snapshot_fingerprint, "snapshot_fingerprint")
     clean_prompt_version = _normalize_career_ai_insight_text(prompt_version, "prompt_version")
     clean_model_id = _normalize_career_ai_insight_text(model_id, "model_id")
+    clean_options_hash = _normalize_career_ai_insight_text(
+        generation_options_hash or career_year_generation_options_hash(),
+        "generation_options_hash",
+    )
     owns_conn = conn is None
     db = conn or _connect_default()
     try:
@@ -14072,6 +17771,7 @@ def get_career_ai_insight_by_cache_key(
               AND snapshot_fingerprint = ?
               AND prompt_version = ?
               AND model_id = ?
+              AND generation_options_hash = ?
             LIMIT 1
             """,
             (
@@ -14080,6 +17780,7 @@ def get_career_ai_insight_by_cache_key(
                 clean_fingerprint,
                 clean_prompt_version,
                 clean_model_id,
+                clean_options_hash,
             ),
         ).fetchone()
         return _career_ai_insight_row(row)
@@ -14094,6 +17795,7 @@ def get_current_career_ai_insight(
     scope_key: Any,
     prompt_version: Any = None,
     model_id: Any = None,
+    generation_options_hash: Any = None,
     conn: sqlite3.Connection | None = None,
 ) -> dict[str, Any] | None:
     clean_scope = _normalize_career_ai_insight_scope(scope)
@@ -14106,6 +17808,9 @@ def get_current_career_ai_insight(
     if model_id is not None:
         optional_where += " AND model_id = ?"
         filters.append(_normalize_career_ai_insight_text(model_id, "model_id"))
+    if generation_options_hash is not None:
+        optional_where += " AND generation_options_hash = ?"
+        filters.append(_normalize_career_ai_insight_text(generation_options_hash, "generation_options_hash"))
     owns_conn = conn is None
     db = conn or _connect_default()
     try:
@@ -14138,6 +17843,8 @@ def get_career_year_snapshot_available_years(
     owns_conn = conn is None
     db = conn or _connect_default()
     try:
+        if activity_rows is None:
+            return _overview_activity_available_years_query(db)
         source_rows = activity_rows if activity_rows is not None else _overview_activity_rows(db)
         years = {
             int(year)
@@ -14502,51 +18209,78 @@ def _career_year_report_view(cached_report: dict[str, Any] | None) -> dict[str, 
         "snapshot_version": str(cached_report.get("snapshot_version") or ""),
         "prompt_version": str(cached_report.get("prompt_version") or ""),
         "model_id": str(cached_report.get("model_id") or ""),
+        "tone_preset": normalize_career_year_tone_preset(cached_report.get("tone_preset")),
+        "tone_label": career_year_tone_label(cached_report.get("tone_preset")),
+        "generation_options_hash": str(cached_report.get("generation_options_hash") or career_year_generation_options_hash()),
         "generated_at": _career_year_display_time(cached_report.get("generated_at")),
     }
+
+
+def _career_year_apply_dynamic_fact_leads(
+    report: dict[str, Any] | None,
+    snapshot: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if not isinstance(report, dict) or not isinstance(snapshot, dict):
+        return report
+    content = report.get("content")
+    if not isinstance(content, dict):
+        return report
+    refreshed = dict(content)
+    refreshed["fact_leads"] = _career_year_fact_leads(snapshot)
+    refreshed["fact_lead"] = _career_year_fact_lead(snapshot)
+    return {**report, "content": refreshed}
 
 
 def get_career_year_insight(
     year: Any = None,
     *,
+    tone_preset: Any = None,
     ai_available: bool = True,
     runtime: dict[str, Any] | None = None,
     conn: sqlite3.Connection | None = None,
 ) -> dict[str, Any]:
     """Return the annual insight read model without calling LLM or writing AI cache."""
+    clean_tone_preset = normalize_career_year_tone_preset(tone_preset)
+    options_hash = career_year_generation_options_hash(clean_tone_preset)
     owns_conn = conn is None
     db = conn or _connect_default()
     try:
         ensure_career_schema(db)
-        activity_rows = _overview_activity_rows(db)
         available_years = get_career_year_snapshot_available_years(
             conn=db,
-            activity_rows=activity_rows,
         )
-        update_badges = _career_year_update_badges(
-            available_years,
-            conn=db,
-            activity_rows=activity_rows,
+        include_all_update_badges = year is None or year == ""
+        reports_by_year = (
+            _current_career_year_reports_by_year(
+                available_years,
+                conn=db,
+                generation_options_hash=options_hash,
+            )
+            if include_all_update_badges
+            else {}
         )
-        if year is None or year == "":
+        if include_all_update_badges:
             clean_year = available_years[0] if available_years else None
         else:
             clean_year = _validate_career_year(year)
 
         snapshot = (
-            build_career_year_snapshot(clean_year, conn=db, activity_rows=activity_rows)
+            build_career_year_snapshot(clean_year, conn=db)
             if clean_year is not None
             else None
         )
-        cached_report = (
-            get_current_career_ai_insight(
-                scope=CAREER_AI_INSIGHT_SCOPE_YEAR,
-                scope_key=str(clean_year),
-                conn=db,
+        cached_report = None
+        if clean_year is not None:
+            cached_report = (
+                reports_by_year.get(clean_year)
+                if include_all_update_badges
+                else get_current_career_ai_insight(
+                    scope=CAREER_AI_INSIGHT_SCOPE_YEAR,
+                    scope_key=str(clean_year),
+                    generation_options_hash=options_hash,
+                    conn=db,
+                )
             )
-            if clean_year is not None
-            else None
-        )
         state_report = None
         if cached_report:
             state_report = {
@@ -14559,8 +18293,21 @@ def get_career_year_insight(
             runtime=runtime,
             ai_available=ai_available,
         )
+        if include_all_update_badges:
+            update_badges = _career_year_update_badges_from_reports(
+                available_years,
+                reports_by_year,
+                conn=db,
+            )
+        else:
+            update_years = [clean_year] if clean_year is not None and state.get("has_source_changes") else []
+            update_badges = {
+                "years": update_years,
+                "year_map": {str(item): True for item in update_years},
+            }
         facts = _career_year_facts_view(snapshot)
         report = _career_year_report_view(cached_report) if state.get("report_available") else None
+        report = _career_year_apply_dynamic_fact_leads(report, snapshot)
         format_upgrade_available = bool(
             state.get("status") == "ready"
             and ai_available
@@ -14572,6 +18319,9 @@ def get_career_year_insight(
             "available_years": available_years,
             "year_update_badges": update_badges,
             "year": clean_year,
+            "tone_preset": clean_tone_preset,
+            "tone_label": career_year_tone_label(clean_tone_preset),
+            "generation_options_hash": options_hash,
             "report_state": state["status"],
             "can_generate": bool(state.get("can_generate")),
             "can_refresh": bool(state.get("can_refresh")),
@@ -14597,6 +18347,7 @@ def get_career_year_insight(
 def _career_year_generation_view(
     year: Any,
     *,
+    tone_preset: Any = None,
     generation_status: str,
     message: str,
     ai_available: bool = True,
@@ -14605,7 +18356,14 @@ def _career_year_generation_view(
     conn: sqlite3.Connection,
 ) -> dict[str, Any]:
     runtime = {"state": runtime_state} if runtime_state else None
-    view = get_career_year_insight(year, ai_available=ai_available, runtime=runtime, conn=conn)
+    clean_tone_preset = normalize_career_year_tone_preset(tone_preset)
+    view = get_career_year_insight(
+        year,
+        tone_preset=clean_tone_preset,
+        ai_available=ai_available,
+        runtime=runtime,
+        conn=conn,
+    )
     generation: dict[str, Any] = {
         "status": str(generation_status or ""),
         "message": str(message or ""),
@@ -14616,6 +18374,9 @@ def _career_year_generation_view(
             "snapshot_fingerprint": str(insight.get("snapshot_fingerprint") or ""),
             "prompt_version": str(insight.get("prompt_version") or ""),
             "model_id": str(insight.get("model_id") or ""),
+            "tone_preset": normalize_career_year_tone_preset(insight.get("tone_preset")),
+            "tone_label": career_year_tone_label(insight.get("tone_preset")),
+            "generation_options_hash": str(insight.get("generation_options_hash") or career_year_generation_options_hash(clean_tone_preset)),
             "generated_at": _career_year_display_time(insight.get("generated_at")),
         })
     view["generation"] = generation
@@ -14651,14 +18412,25 @@ def _call_career_year_generator(
     snapshot: dict[str, Any],
     *,
     config: dict[str, Any] | None,
+    tone_preset: Any = None,
 ) -> dict[str, Any]:
-    if config is None:
-        return generator(snapshot)
-    return generator(snapshot, config=config)
+    kwargs: dict[str, Any] = {}
+    try:
+        signature = inspect.signature(generator)
+        parameters = signature.parameters
+        accepts_kwargs = any(param.kind == inspect.Parameter.VAR_KEYWORD for param in parameters.values())
+        if config is not None and ("config" in parameters or accepts_kwargs):
+            kwargs["config"] = config
+        if "tone_preset" in parameters or accepts_kwargs:
+            kwargs["tone_preset"] = normalize_career_year_tone_preset(tone_preset)
+    except (TypeError, ValueError):
+        if config is not None:
+            kwargs["config"] = config
+    return generator(snapshot, **kwargs)
 
 
 def _career_year_generation_flight_start(
-    key: tuple[str, str, str, str],
+    key: tuple[str, str, str, str, str],
 ) -> tuple[bool, dict[str, Any]]:
     with CAREER_YEAR_GENERATION_FLIGHT_LOCK:
         existing = CAREER_YEAR_GENERATION_FLIGHTS.get(key)
@@ -14685,7 +18457,7 @@ def _career_year_generation_flight_wait(flight: dict[str, Any]) -> dict[str, Any
 
 
 def _career_year_generation_flight_finish(
-    key: tuple[str, str, str, str],
+    key: tuple[str, str, str, str, str],
     flight: dict[str, Any],
     result: dict[str, Any],
 ) -> None:
@@ -14734,6 +18506,7 @@ def _career_year_generation_failure_status(exc: BaseException, phase: str) -> tu
 def generate_career_year_insight(
     year: Any,
     *,
+    tone_preset: Any = None,
     generator: Any = None,
     prompt_version: Any = None,
     model_id: Any = None,
@@ -14742,6 +18515,8 @@ def generate_career_year_insight(
     """Generate or refresh a year-scoped ACS AI report under backend state gates."""
     started = time.perf_counter()
     clean_year = _validate_career_year(year)
+    clean_tone_preset = normalize_career_year_tone_preset(tone_preset)
+    options_hash = career_year_generation_options_hash(clean_tone_preset)
     owns_conn = conn is None
     db = conn or _connect_default()
     try:
@@ -14750,6 +18525,7 @@ def generate_career_year_insight(
         cached_report = get_current_career_ai_insight(
             scope=CAREER_AI_INSIGHT_SCOPE_YEAR,
             scope_key=str(clean_year),
+            generation_options_hash=options_hash,
             conn=db,
         )
         state_report = None
@@ -14766,6 +18542,7 @@ def generate_career_year_insight(
         if state["status"] == "no_data":
             return _career_year_generation_view(
                 clean_year,
+                tone_preset=clean_tone_preset,
                 generation_status="not_allowed",
                 message="该年度暂无可生成年度总结的活动数据",
                 conn=db,
@@ -14773,6 +18550,7 @@ def generate_career_year_insight(
         if state["status"] == "ready" and not format_upgrade:
             return _career_year_generation_view(
                 clean_year,
+                tone_preset=clean_tone_preset,
                 generation_status="already_ready",
                 message="年度总结已是最新",
                 insight=cached_report,
@@ -14781,6 +18559,7 @@ def generate_career_year_insight(
         if state["status"] not in {"not_generated", "stale"} and not format_upgrade:
             return _career_year_generation_view(
                 clean_year,
+                tone_preset=clean_tone_preset,
                 generation_status="not_allowed",
                 message="当前状态不允许生成年度总结",
                 conn=db,
@@ -14796,12 +18575,13 @@ def generate_career_year_insight(
             clean_prompt_version = clean_prompt_version or default_prompt_version
             clean_model_id = clean_model_id or default_model_id
         else:
-            clean_prompt_version = clean_prompt_version or "acs.year.summary.zh-CN.v4"
+            clean_prompt_version = clean_prompt_version or "acs.year.summary.zh-CN.v6"
             clean_model_id = clean_model_id or "test-model"
 
         if not llm_available or not clean_prompt_version or not clean_model_id:
             return _career_year_generation_view(
                 clean_year,
+                tone_preset=clean_tone_preset,
                 generation_status="ai_unavailable",
                 message="AI 配置不可用，暂不能生成年度总结",
                 ai_available=False,
@@ -14814,6 +18594,7 @@ def generate_career_year_insight(
             snapshot_fingerprint=snapshot["source_fingerprint"],
             prompt_version=clean_prompt_version,
             model_id=clean_model_id,
+            generation_options_hash=options_hash,
             conn=db,
         )
         if exact_cached and exact_cached.get("status") in {"ready", "superseded"}:
@@ -14828,6 +18609,7 @@ def generate_career_year_insight(
                     db.commit()
             return _career_year_generation_view(
                 clean_year,
+                tone_preset=clean_tone_preset,
                 generation_status="cache_hit",
                 message="已复用年度总结缓存",
                 insight=ready,
@@ -14839,6 +18621,7 @@ def generate_career_year_insight(
             str(snapshot.get("source_fingerprint") or ""),
             clean_prompt_version,
             clean_model_id,
+            options_hash,
         )
         is_leader, flight = _career_year_generation_flight_start(flight_key)
         if not is_leader:
@@ -14852,6 +18635,7 @@ def generate_career_year_insight(
                 snapshot_fingerprint=snapshot["source_fingerprint"],
                 prompt_version=clean_prompt_version,
                 model_id=clean_model_id,
+                generation_options_hash=options_hash,
                 conn=db,
             )
             if exact_cached and exact_cached.get("status") in {"ready", "superseded"}:
@@ -14866,6 +18650,7 @@ def generate_career_year_insight(
                         db.commit()
                 result = _career_year_generation_view(
                     clean_year,
+                    tone_preset=clean_tone_preset,
                     generation_status="cache_hit",
                     message="已复用年度总结缓存",
                     insight=ready,
@@ -14879,6 +18664,7 @@ def generate_career_year_insight(
                     active_generator,
                     snapshot,
                     config=llm_config,
+                    tone_preset=clean_tone_preset,
                 )
                 if not isinstance(generated, dict):
                     raise ValueError("年度 AI 生成结果必须是对象")
@@ -14886,6 +18672,7 @@ def generate_career_year_insight(
                 if latest_snapshot.get("source_fingerprint") != snapshot.get("source_fingerprint"):
                     result = _career_year_generation_view(
                         clean_year,
+                        tone_preset=clean_tone_preset,
                         generation_status="source_changed",
                         message="年度事实已变化，本次生成结果已丢弃，请重新生成",
                         conn=db,
@@ -14896,6 +18683,13 @@ def generate_career_year_insight(
                 validated = validate_career_year_ai_report(draft, snapshot)
                 result_prompt_version = str(generated.get("prompt_version") or clean_prompt_version).strip()
                 result_model_id = str(generated.get("model_id") or clean_model_id).strip()
+                result_tone_preset = normalize_career_year_tone_preset(generated.get("tone_preset") or clean_tone_preset)
+                result_options_hash = _normalize_career_ai_insight_text(
+                    generated.get("generation_options_hash") or career_year_generation_options_hash(result_tone_preset),
+                    "generation_options_hash",
+                )
+                if result_options_hash != options_hash:
+                    raise ValueError("年度 AI 生成结果语气缓存键不匹配")
                 if not result_prompt_version or not result_model_id:
                     raise ValueError("年度 AI 生成结果缺少 prompt_version 或 model_id")
                 phase = "persistence"
@@ -14906,6 +18700,8 @@ def generate_career_year_insight(
                     snapshot_version=snapshot["snapshot_version"],
                     prompt_version=result_prompt_version,
                     model_id=result_model_id,
+                    tone_preset=result_tone_preset,
+                    generation_options_hash=result_options_hash,
                     content=validated,
                     content_validated=True,
                     conn=db,
@@ -14914,6 +18710,7 @@ def generate_career_year_insight(
                     db.commit()
                 result = _career_year_generation_view(
                     clean_year,
+                    tone_preset=clean_tone_preset,
                     generation_status="generated",
                     message="年度总结已生成",
                     insight=saved,
@@ -14937,6 +18734,7 @@ def generate_career_year_insight(
                 )
                 result = _career_year_generation_view(
                     clean_year,
+                    tone_preset=clean_tone_preset,
                     generation_status=failure_status,
                     message=failure_message,
                     ai_available=failure_ai_available,
@@ -14947,6 +18745,9 @@ def generate_career_year_insight(
         finally:
             _career_year_generation_flight_finish(flight_key, flight, locals().get("result", {
                 "year": clean_year,
+                "tone_preset": clean_tone_preset,
+                "tone_label": career_year_tone_label(clean_tone_preset),
+                "generation_options_hash": options_hash,
                 "report_state": "ai_unavailable",
                 "generation": {"status": "ai_unavailable", "message": "年度总结生成未完成"},
             }))
@@ -15032,6 +18833,15 @@ def _career_year_highlight_map(snapshot: dict[str, Any]) -> dict[str, dict[str, 
     return highlights
 
 
+def _career_year_is_city_achievement_fact(fact: dict[str, Any] | None) -> bool:
+    if not isinstance(fact, dict):
+        return False
+    evidence_id = str(fact.get("evidence_id") or fact.get("id") or "").lower()
+    title = str(fact.get("title") or "")
+    fact_type = str(fact.get("type") or "").lower()
+    return fact_type == "city" or "first_city" in evidence_id or "首次点亮城市" in title
+
+
 def _career_year_fact_leads(snapshot: dict[str, Any]) -> list[str]:
     summary = snapshot.get("summary") if isinstance(snapshot.get("summary"), dict) else {}
     period = snapshot.get("period") if isinstance(snapshot.get("period"), dict) else {}
@@ -15061,10 +18871,22 @@ def _career_year_fact_leads(snapshot: dict[str, Any]) -> list[str]:
     if achievement_count > 0:
         achievements.append(f"{achievement_count} 项成就或里程碑")
     if achievements:
-        leads.append("其中真正发亮的部分，是 " + "、".join(achievements) + "，这些可以回跳到活动详情的节点。")
+        leads.append("其中真正发亮的部分，是 " + "、".join(achievements) + "，它们让这一年的高光变得更具体。")
     city_count = int(summary.get("covered_city_count") or 0)
     if city_count > 0:
-        leads.append(f"这一年的运动足迹也覆盖了 {city_count} 座城市。每一座城市，只记录你确实留下过的运动坐标。")
+        city_moments = [
+            str(item.get("city") or "").strip()
+            for item in (snapshot.get("city_moments") or [])
+            if isinstance(item, dict) and str(item.get("city") or "").strip()
+        ]
+        city_names = "、".join(dict.fromkeys(city_moments))
+        if city_names:
+            if len(city_moments) < city_count:
+                leads.append(f"这一年的运动足迹覆盖了 {city_count} 座城市，代表城市包括 {city_names}。这些名字让年度报告有了真实坐标。")
+            else:
+                leads.append(f"这一年的运动足迹覆盖了 {city_count} 座城市：{city_names}。这些名字让年度报告有了真实坐标。")
+        else:
+            leads.append(f"这一年的运动足迹也覆盖了 {city_count} 座城市。每一座城市，只记录你确实留下过的运动坐标。")
     if not leads:
         leads.append(f"{prefix}，年度事实还不多，但已经有了可以继续积累的起点。")
     return leads[:5]
@@ -15104,7 +18926,6 @@ def validate_career_year_ai_report(
             "max_altitude_5000m",
             "annual_ascent_milestone",
         },
-        "footprints": {"city", "achievement", "milestone"},
     }
     section_defaults = {
         "annual_story": "这一年的主线",
@@ -15159,6 +18980,8 @@ def validate_career_year_ai_report(
                 continue
             fact = evidence_by_id.get(evidence_id) or highlight_by_id.get(evidence_id)
             allowed_types = allowed_evidence_types.get(section_type)
+            if section_type in {"progress", "footprints"} and _career_year_is_city_achievement_fact(fact):
+                continue
             if fact is None or (allowed_types is not None and fact.get("type") not in allowed_types):
                 unknown_evidence += 1
                 continue
@@ -15563,6 +19386,320 @@ def get_career_pb_history(
             db.close()
 
 
+RECORD_METRIC_SERIES_RESOLVER_VERSION = "records-v3-series-running-standard-distance-v1"
+RUNNING_STANDARD_DISTANCE_METRIC_SERIES_KEYS = {
+    "running_5k",
+    "running_10k",
+    "running_half_marathon",
+    "running_marathon",
+}
+
+
+def _record_metric_series_unsupported_response(
+    *,
+    record_key: str,
+    filters: dict[str, Any],
+    start: float,
+    state: str = "unsupported",
+    message: str = "该记录指标暂未接入 metric series",
+) -> dict[str, Any]:
+    definition = get_record_definition(record_key)
+    response = {
+        "record_key": record_key,
+        "sport": definition.sport if definition else str(filters.get("sport") or "all"),
+        "display_name": definition.display_name if definition else record_key,
+        "comparison": definition.comparison if definition else "",
+        "axis_direction": _record_axis_direction(definition) if definition else "",
+        "points": [],
+        "current_best": None,
+        "record_progression": [],
+        "summary": {
+            "point_count": 0,
+            "eligible_count": 0,
+            "record_breaking_count": 0,
+            "current_best_activity_id": "",
+            "first_point_date": "",
+            "last_point_date": "",
+            "status_counts": {},
+        },
+        "filters": filters,
+        "metrics": {
+            "elapsed_ms": _elapsed_ms(start),
+            "scanned": 0,
+            "returned_count": 0,
+            "performance_target_ms": RECORDS_V2_PERFORMANCE_TARGETS_MS["metric_series"],
+            "readonly": True,
+        },
+        "status": {
+            "schema_ready": True,
+            "data_ready": False,
+            "state": state,
+            "message": message,
+            "resolver_version": RECORD_METRIC_SERIES_RESOLVER_VERSION,
+        },
+    }
+    return _records_api_safe(response)
+
+
+def _record_metric_series_activity_rows(
+    conn: sqlite3.Connection,
+    *,
+    sport: str,
+    limit: int,
+) -> list[dict[str, Any]]:
+    rows = _preview_career_record_activity_rows(conn, limit=limit, sport=sport)
+    return rows
+
+
+def _record_metric_series_scope_view(scope: dict[str, Any], scope_hash: str) -> dict[str, Any]:
+    return {
+        "scope_hash": scope_hash,
+        "scope_key": _record_scope_key(scope),
+        "labels": [_scope_label(key, value) for key, value in sorted(scope.items())],
+        "dimensions": scope,
+    }
+
+
+def _running_standard_distance_metric_result_from_activity(
+    activity: dict[str, Any],
+    definition: RecordDefinition,
+) -> dict[str, Any] | None:
+    if definition.standard_distance_m is None:
+        return None
+    facts = build_activity_record_facts(activity)
+    if str(facts.get("sport") or "") != "running":
+        return None
+    activity_id = str(facts.get("activity_id") or activity.get("id") or activity.get("activity_id") or "").strip()
+    event_date = str(facts.get("event_date") or "")[:10]
+    if not activity_id or not event_date:
+        return None
+    stream = _activity_stream_list(activity, "points_json", "track_json")
+    result = best_effort_distance_window(stream, definition.standard_distance_m)
+    if not result.get("ok"):
+        return None
+    metric_value = _finite_float(result.get("elapsed_time_sec"))
+    if metric_value is None or metric_value <= 0:
+        return None
+    range_json = canonicalize_record_range(result.get("range") if isinstance(result.get("range"), dict) else {})
+    raw_quality = result.get("quality") if isinstance(result.get("quality"), dict) else {}
+    quality = canonicalize_record_quality({
+        **raw_quality,
+        "reason_codes": list(raw_quality.get("reason_codes") or ["best_effort_distance_window"]),
+    })
+    quality["state"] = "high_confidence"
+    quality["fallback"] = False
+    quality["eligible_for_current_best"] = True
+    scope: dict[str, Any] = {}
+    scope_hash = _record_scope_hash(scope)
+    metric = {
+        "name": definition.metric,
+        "value": round(float(metric_value), 3),
+        "unit": definition.canonical_unit,
+        "display": _record_metric_display(metric_value, definition.canonical_unit),
+    }
+    result_seed = {
+        "activity_id": activity_id,
+        "record_key": definition.key,
+        "event_date": event_date,
+        "metric": metric,
+        "range": range_json,
+        "quality": quality,
+        "resolver_version": RECORD_METRIC_SERIES_RESOLVER_VERSION,
+    }
+    metric_result_id = "metric_result:v3:" + hashlib.sha1(_json_dumps({
+        "activity_id": activity_id,
+        "record_key": definition.key,
+        "scope_hash": scope_hash,
+        "resolver_version": RECORD_METRIC_SERIES_RESOLVER_VERSION,
+    }).encode("utf-8")).hexdigest()[:24]
+    return {
+        "id": metric_result_id,
+        "activity_id": activity_id,
+        "record_key": definition.key,
+        "sport": definition.sport,
+        "event_date": event_date,
+        "metric": metric,
+        "range": range_json,
+        "quality": quality,
+        "scope": _record_metric_series_scope_view(scope, scope_hash),
+        "detail_link": {"activity_id": activity_id, "source": "career"},
+        "source_mode": "best_effort_distance",
+        "resolver_version": RECORD_METRIC_SERIES_RESOLVER_VERSION,
+        "rule_version": "records-v3-series",
+        "status": "available",
+        "eligible_for_current_best": True,
+        "is_current_best": False,
+        "is_record_breaking": False,
+        "result_fingerprint": _record_stable_hash("metric_result", result_seed),
+    }
+
+
+def _record_metric_point_value(point: dict[str, Any]) -> float | None:
+    metric = point.get("metric") if isinstance(point.get("metric"), dict) else {}
+    return _finite_float(metric.get("value"))
+
+
+def _record_metric_point_is_better(
+    point: dict[str, Any],
+    current: dict[str, Any] | None,
+    *,
+    comparison: str,
+) -> bool:
+    value = _record_metric_point_value(point)
+    if value is None:
+        return False
+    if current is None:
+        return True
+    current_value = _record_metric_point_value(current)
+    if current_value is None:
+        return True
+    return value > current_value if comparison == "higher_is_better" else value < current_value
+
+
+def _derive_record_metric_series(points: list[dict[str, Any]], definition: RecordDefinition) -> tuple[list[dict[str, Any]], dict[str, Any] | None, list[dict[str, Any]]]:
+    ordered = sorted(points, key=lambda item: (str(item.get("event_date") or ""), str(item.get("activity_id") or ""), str(item.get("id") or "")))
+    eligible = [point for point in ordered if bool(point.get("eligible_for_current_best"))]
+    current_best: dict[str, Any] | None = None
+    for point in eligible:
+        if _record_metric_point_is_better(point, current_best, comparison=definition.comparison):
+            current_best = point
+    progression: list[dict[str, Any]] = []
+    best_so_far: dict[str, Any] | None = None
+    for point in eligible:
+        if not _record_metric_point_is_better(point, best_so_far, comparison=definition.comparison):
+            continue
+        previous_metric = copy.deepcopy((best_so_far or {}).get("metric") or {})
+        event_type = "first_record" if best_so_far is None else "record_breaking"
+        progress_item = {
+            "metric_result_id": str(point.get("id") or ""),
+            "activity_id": str(point.get("activity_id") or ""),
+            "record_key": definition.key,
+            "event_date": str(point.get("event_date") or ""),
+            "metric": copy.deepcopy(point.get("metric") or {}),
+            "previous_best_metric": previous_metric,
+            "event_type": event_type,
+            "detail_link": copy.deepcopy(point.get("detail_link") or {}),
+        }
+        progression.append(progress_item)
+        best_so_far = point
+    current_best_id = str((current_best or {}).get("id") or "")
+    progression_ids = {str(item.get("metric_result_id") or "") for item in progression}
+    decorated: list[dict[str, Any]] = []
+    for point in ordered:
+        item = copy.deepcopy(point)
+        item["is_current_best"] = bool(current_best_id and str(item.get("id") or "") == current_best_id)
+        item["is_record_breaking"] = str(item.get("id") or "") in progression_ids
+        decorated.append(item)
+        if item["is_current_best"]:
+            current_best = copy.deepcopy(item)
+    return decorated, current_best, progression
+
+
+def _record_metric_series_summary(points: list[dict[str, Any]], current_best: dict[str, Any] | None, progression: list[dict[str, Any]]) -> dict[str, Any]:
+    status_counts: dict[str, int] = {}
+    for point in points:
+        _increment_counter(status_counts, point.get("status") or "available")
+    dates = [str(point.get("event_date") or "") for point in points if str(point.get("event_date") or "")]
+    return {
+        "point_count": len(points),
+        "eligible_count": sum(1 for point in points if bool(point.get("eligible_for_current_best"))),
+        "record_breaking_count": len(progression),
+        "current_best_activity_id": str((current_best or {}).get("activity_id") or ""),
+        "first_point_date": min(dates) if dates else "",
+        "last_point_date": max(dates) if dates else "",
+        "status_counts": status_counts,
+    }
+
+
+def get_career_record_metric_series(
+    record_key_or_payload: str | dict[str, Any] | None = None,
+    filters: dict[str, Any] | None = None,
+    conn: sqlite3.Connection | None = None,
+) -> dict[str, Any]:
+    """Return V3 activity-level metric series ViewModel without writing record state."""
+    start = time.perf_counter()
+    if isinstance(record_key_or_payload, dict):
+        payload = record_key_or_payload
+        record_key = str(payload.get("record_key") or payload.get("pb_type") or "").strip()
+        raw_filters = {**payload, **(filters if isinstance(filters, dict) else {})}
+    else:
+        record_key = str(record_key_or_payload or "").strip()
+        raw_filters = filters if isinstance(filters, dict) else {}
+    normalized_filters = _normalize_record_metric_series_filters(record_key, raw_filters)
+    definition = get_record_definition(record_key)
+    if definition is None:
+        return _record_metric_series_unsupported_response(
+            record_key=record_key,
+            filters=normalized_filters,
+            start=start,
+            state="unsupported",
+            message="未知记录指标",
+        )
+    if record_key not in RUNNING_STANDARD_DISTANCE_METRIC_SERIES_KEYS:
+        return _record_metric_series_unsupported_response(
+            record_key=record_key,
+            filters=normalized_filters,
+            start=start,
+            state="unsupported",
+            message="该记录指标暂未接入 metric series",
+        )
+    if normalized_filters["sport"] not in {"all", "running"}:
+        return _record_metric_series_unsupported_response(
+            record_key=record_key,
+            filters=normalized_filters,
+            start=start,
+            state="sample_missing",
+            message=f"筛选运动与 {record_key} 不匹配",
+        )
+    owns_conn = conn is None
+    db = conn or _connect_default()
+    try:
+        rows = _record_metric_series_activity_rows(db, sport="running", limit=int(normalized_filters["limit"]))
+        points: list[dict[str, Any]] = []
+        for row in rows:
+            point = _running_standard_distance_metric_result_from_activity(row, definition)
+            if point is None:
+                continue
+            if normalized_filters["year"] is not None and str(point.get("event_date") or "")[:4] != str(normalized_filters["year"]):
+                continue
+            if normalized_filters["scope_hash"] != "all" and str((point.get("scope") or {}).get("scope_hash") or "") != normalized_filters["scope_hash"]:
+                continue
+            if normalized_filters["status"] not in {"all", str(point.get("status") or "available")}:
+                continue
+            points.append(point)
+        decorated_points, current_best, progression = _derive_record_metric_series(points, definition)
+        response = {
+            "record_key": definition.key,
+            "sport": definition.sport,
+            "display_name": definition.display_name,
+            "comparison": definition.comparison,
+            "axis_direction": _record_axis_direction(definition),
+            "points": decorated_points,
+            "current_best": current_best,
+            "record_progression": progression,
+            "summary": _record_metric_series_summary(decorated_points, current_best, progression),
+            "filters": normalized_filters,
+            "metrics": {
+                "elapsed_ms": _elapsed_ms(start),
+                "scanned": len(rows),
+                "returned_count": len(decorated_points),
+                "performance_target_ms": RECORDS_V2_PERFORMANCE_TARGETS_MS["metric_series"],
+                "readonly": True,
+            },
+            "status": {
+                "schema_ready": _table_exists(db, "activities"),
+                "data_ready": bool(decorated_points),
+                "state": "ready" if decorated_points else "sample_missing",
+                "message": "metric series 已生成" if decorated_points else f"暂无可计算 {record_key} 成绩点",
+                "resolver_version": RECORD_METRIC_SERIES_RESOLVER_VERSION,
+            },
+        }
+        return _records_api_safe(response)
+    finally:
+        if owns_conn:
+            db.close()
+
+
 def get_career_records(
     filters: dict[str, Any] | None = None,
     conn: sqlite3.Connection | None = None,
@@ -15572,9 +19709,23 @@ def get_career_records(
     owns_conn = conn is None
     db = conn or _connect_default()
     try:
-        schema = ensure_career_schema(db)
+        schema = _ensure_career_schema_for_records_read(db)
         normalized_filters = _normalize_records_filters(filters)
-        rows = _career_record_rows(db, normalized_filters)
+        formal_rows = _career_record_rows(db, normalized_filters)
+        derived_snapshot = {"rows": [], "cache": {"hit": False}}
+        derived_rows: list[dict[str, Any]] = []
+        derived_skipped = False
+        if not formal_rows and _records_v2_should_skip_derived_records_list(normalized_filters):
+            derived_skipped = True
+        elif not formal_rows:
+            derived_snapshot = _records_v2_derived_provider_snapshot(
+                db,
+                sport=str(normalized_filters.get("sport") or "all"),
+                record_key=str(normalized_filters.get("record_key") or "all"),
+                profile="list",
+            )
+            derived_rows = _filter_records_v2_derived_rows(list(derived_snapshot.get("rows") or []), normalized_filters)
+        rows = _records_v2_merge_rows_for_list(formal_rows, derived_rows)
         records = [_build_career_record_view(row) for row in rows]
         candidate_count = _count_rows(db, "career_event_candidates", "candidate_type = 'pb_record' AND status = 'candidate'")
         summary = _summarize_career_records(records, candidate_count=candidate_count)
@@ -15586,12 +19737,15 @@ def get_career_records(
                 "elapsed_ms": _elapsed_ms(start),
                 "returned_count": len(records),
                 "performance_target_ms": RECORDS_V2_PERFORMANCE_TARGETS_MS["records_list"],
+                "derived_provider_cache_hit": bool((derived_snapshot.get("cache") or {}).get("hit")),
+                "derived_provider_skipped": bool(derived_skipped),
             },
             "status": _records_v2_status(
                 schema,
                 data_ready=bool(records),
                 message="记录已生成" if records else "暂无记录",
                 candidate_count=candidate_count,
+                warnings=["derived_records_readonly"] if summary.get("derived_count") else [],
             ),
         }
         return _records_api_safe(response)
@@ -15644,7 +19798,7 @@ def get_career_record_detail(
     owns_conn = conn is None
     db = conn or _connect_default()
     try:
-        schema = ensure_career_schema(db)
+        schema = _ensure_career_schema_for_records_read(db)
         raw = payload if isinstance(payload, dict) else {}
         record_id = str(raw.get("record_id") or raw.get("id") or "").strip()
         filters = {
@@ -15656,8 +19810,35 @@ def get_career_record_detail(
             "year": None,
         }
         rows = _career_record_rows(db, filters)
+        if record_id.startswith("derived:"):
+            record_key_from_id = record_id.split(":", 2)[1] if len(record_id.split(":", 2)) > 1 else ""
+            record_key_filter = str(raw.get("record_key") or record_key_from_id or "all").strip() or "all"
+            definition = get_record_definition(record_key_filter) if record_key_filter != "all" else None
+            derived_snapshot = _records_v2_derived_provider_snapshot(
+                db,
+                sport=definition.sport if definition else "all",
+                record_key="all" if record_key_filter != "all" else record_key_filter,
+                profile="list" if record_key_filter != "all" else "full",
+            )
+            derived_filters = {
+                **filters,
+                "status": "all",
+            }
+            rows = [
+                row
+                for row in _filter_records_v2_derived_rows(list(derived_snapshot.get("rows") or []), derived_filters)
+                if str(row.get("id") or "") == record_id
+            ]
         if record_id:
             rows = [row for row in rows if str(row.get("id") or "") == record_id]
+        if not rows and filters["record_key"] != "all":
+            definition = get_record_definition(str(filters["record_key"] or ""))
+            derived_snapshot = _records_v2_derived_provider_snapshot(
+                db,
+                sport=definition.sport if definition else "all",
+                record_key=str(filters["record_key"] or "all"),
+            )
+            rows = _filter_records_v2_derived_rows(list(derived_snapshot.get("rows") or []), {**filters, "status": "all"})
         record = _build_career_record_view(rows[0]) if rows else None
         response = {
             "record": record,
@@ -15690,7 +19871,7 @@ def get_career_record_history(
     owns_conn = conn is None
     db = conn or _connect_default()
     try:
-        schema = ensure_career_schema(db)
+        schema = _ensure_career_schema_for_records_read(db)
         raw = filters if isinstance(filters, dict) else {}
         record_key = str(raw.get("record_key") or raw.get("pb_type") or "").strip()
         scope_hash = str(raw.get("scope_hash") or "all").strip() or "all"
@@ -15710,6 +19891,45 @@ def get_career_record_history(
             for row in _career_record_rows(db, query_filters)
             if str(row.get("status") or "") in statuses
         ]
+        if record_key and scope_hash != "all" and rows:
+            all_scope_rows = [
+                row
+                for row in _career_record_rows(db, {**query_filters, "scope_hash": "all"})
+                if str(row.get("status") or "") in statuses
+            ]
+            rows_by_id = {str(row.get("id") or ""): row for row in all_scope_rows if str(row.get("id") or "")}
+            chain_ids = {str(row.get("id") or "") for row in rows if str(row.get("id") or "")}
+            frontier = [str(row.get("previous_record_id") or "") for row in rows if str(row.get("previous_record_id") or "")]
+            while frontier:
+                previous_id = frontier.pop()
+                if not previous_id or previous_id in chain_ids:
+                    continue
+                previous_row = rows_by_id.get(previous_id)
+                if not previous_row:
+                    continue
+                chain_ids.add(previous_id)
+                next_previous = str(previous_row.get("previous_record_id") or "")
+                if next_previous:
+                    frontier.append(next_previous)
+            if len(chain_ids) > len(rows):
+                rows = [row for row in all_scope_rows if str(row.get("id") or "") in chain_ids]
+        derived_snapshot = {"rows": [], "cache": {"hit": False}}
+        derived_rows: list[dict[str, Any]] = []
+        if not rows:
+            definition_for_provider = get_record_definition(record_key) if record_key else None
+            derived_snapshot = _records_v2_derived_provider_snapshot(
+                db,
+                sport=definition_for_provider.sport if definition_for_provider else "all",
+                record_key=record_key or "all",
+                profile="list" if record_key in RECORDS_V2_FAST_LIST_RECORD_KEYS else "full",
+            )
+            derived_rows = _filter_records_v2_derived_rows(list(derived_snapshot.get("rows") or []), {**query_filters, "status": "all"})
+            if not derived_rows and scope_hash != "all":
+                derived_rows = _filter_records_v2_derived_rows(
+                    list(derived_snapshot.get("rows") or []),
+                    {**query_filters, "scope_hash": "all", "status": "all"},
+                )
+        rows.extend(derived_rows)
         rows.sort(key=lambda row: (str(row.get("event_date") or ""), str(row.get("id") or "")))
         records = [_build_career_record_view(row) for row in rows]
         definition = get_record_definition(record_key) if record_key else (_record_definition_for_row(rows[0]) if rows else None)
@@ -15760,8 +19980,14 @@ def get_career_record_history(
                 "elapsed_ms": _elapsed_ms(start),
                 "returned_count": len(records),
                 "performance_target_ms": RECORDS_V2_PERFORMANCE_TARGETS_MS["record_history"],
+                "derived_provider_cache_hit": bool((derived_snapshot.get("cache") or {}).get("hit")),
             },
-            "status": _records_v2_status(schema, data_ready=bool(records), message="纪录历史已生成" if records else "暂无纪录历史"),
+            "status": _records_v2_status(
+                schema,
+                data_ready=bool(records),
+                message="纪录历史已生成" if records else "暂无纪录历史",
+                warnings=["derived_records_readonly"] if derived_rows else [],
+            ),
         }
         return _records_api_safe(response)
     finally:
@@ -15778,7 +20004,7 @@ def get_career_record_curve(
     owns_conn = conn is None
     db = conn or _connect_default()
     try:
-        schema = ensure_career_schema(db)
+        schema = _ensure_career_schema_for_records_read(db)
         raw = payload if isinstance(payload, dict) else {}
         where_parts = ["invalidated_at IS NULL"]
         params: list[Any] = []
@@ -15888,11 +20114,12 @@ def get_career_record_candidates(
     owns_conn = conn is None
     db = conn or _connect_default()
     try:
-        schema = ensure_career_schema(db)
+        schema = _ensure_career_schema_for_records_read(db)
         raw = filters if isinstance(filters, dict) else {}
         status = str(raw.get("status") or "candidate").strip() or "candidate"
         record_key = str(raw.get("record_key") or "all").strip() or "all"
         sport = str(raw.get("sport") or "all").strip() or "all"
+        include_derived = bool(raw.get("include_derived"))
         where_parts = ["candidate_type = 'pb_record'"]
         params: list[Any] = []
         if status != "all":
@@ -15908,6 +20135,25 @@ def get_career_record_candidates(
             tuple(params),
         )
         candidates = [_build_record_candidate_view(row) for row in _rows_to_dicts(cursor)]
+        derived_snapshot = {"rows": [], "cache": {"hit": False}}
+        derived_filters = {
+            "sport": sport,
+            "record_key": record_key,
+            "family": "all",
+            "scope_hash": "all",
+            "status": "all",
+            "year": None,
+        }
+        derived_rows: list[dict[str, Any]] = []
+        if include_derived:
+            derived_snapshot = _records_v2_derived_provider_snapshot(db, sport=sport, record_key=record_key)
+            derived_rows = [
+                row
+                for row in _filter_records_v2_derived_rows(list(derived_snapshot.get("rows") or []), derived_filters)
+                if bool(row.get("_derived_candidate_allowed"))
+            ]
+        if include_derived and status in {"candidate", "all", "derived_candidate"}:
+            candidates.extend(_records_v2_derived_candidate_view(row) for row in derived_rows)
         if record_key != "all":
             candidates = [candidate for candidate in candidates if candidate.get("record_key") == record_key]
         if sport != "all":
@@ -15921,13 +20167,737 @@ def get_career_record_candidates(
         response = {
             "candidates": candidates,
             "summary": {"total": len(candidates), "by_sport": by_sport, "by_reason_code": by_reason_code},
-            "filters": {"sport": sport, "record_key": record_key, "status": status},
+            "filters": {"sport": sport, "record_key": record_key, "status": status, "include_derived": include_derived},
             "metrics": {
                 "elapsed_ms": _elapsed_ms(start),
                 "returned_count": len(candidates),
                 "performance_target_ms": RECORDS_V2_PERFORMANCE_TARGETS_MS["record_candidates"],
+                "derived_provider_cache_hit": bool((derived_snapshot.get("cache") or {}).get("hit")),
             },
             "status": _records_v2_status(schema, data_ready=bool(candidates), message="候选纪录已生成" if candidates else "暂无候选纪录", candidate_count=len(candidates)),
+        }
+        return _records_api_safe(response)
+    finally:
+        if owns_conn:
+            db.close()
+
+
+def _preview_career_records_filters(payload: dict[str, Any] | None) -> dict[str, Any]:
+    raw = payload if isinstance(payload, dict) else {}
+    sport = str(raw.get("sport") or "all").strip() or "all"
+    if sport not in {"all", *RECORD_ALLOWED_SPORTS}:
+        sport = "all"
+    record_key = str(raw.get("record_key") or raw.get("pb_type") or "all").strip() or "all"
+    try:
+        max_activities = int(raw.get("max_activities") or 500)
+    except (TypeError, ValueError):
+        max_activities = 500
+    max_activities = max(1, min(max_activities, 2000))
+    return {
+        "sport": sport,
+        "record_key": record_key,
+        "max_activities": max_activities,
+        "include_candidates": bool(raw.get("include_candidates", True)),
+    }
+
+
+def _preview_career_record_activity_rows(conn: sqlite3.Connection, *, limit: int, sport: str = "all") -> list[dict[str, Any]]:
+    if not _table_exists(conn, "activities"):
+        return []
+    available = _activity_available_columns(conn)
+    columns = (
+        "id",
+        "activity_id",
+        "sport_type",
+        "sub_sport_type",
+        "start_time",
+        "start_time_utc",
+        "dist_km",
+        "distance",
+        "duration_sec",
+        "duration",
+        "gain_m",
+        "ascent_m",
+        "max_alt_m",
+        "max_altitude_m",
+        "avg_power",
+        "max_power",
+        "normalized_power",
+        "power_points",
+        "points_json",
+        "track_json",
+        "laps_json",
+        "lengths_json",
+        "pool_length_m",
+        "pool_length",
+        "stroke_scope",
+        "swim_stroke",
+        "advanced_metrics",
+        "deleted_at",
+        "is_mock",
+    )
+    select_parts = [column if column in available else f"NULL AS {column}" for column in columns]
+    where_parts = ["1=1"]
+    params: list[Any] = []
+    clean_sport = str(sport or "all").strip() or "all"
+    if clean_sport != "all" and "sport_type" in available:
+        sport_expr = "LOWER(REPLACE(REPLACE(COALESCE(sport_type, ''), '-', '_'), ' ', '_'))"
+        sub_expr = "LOWER(REPLACE(REPLACE(COALESCE(sub_sport_type, ''), '-', '_'), ' ', '_'))" if "sub_sport_type" in available else "''"
+        if clean_sport == "running":
+            where_parts.append(f"{sport_expr} IN ('running', 'run')")
+        elif clean_sport == "cycling":
+            where_parts.append(f"{sport_expr} IN ('cycling', 'road_cycling', 'biking', 'bike', 'virtual_ride', 'indoor_cycling')")
+        elif clean_sport == "hiking":
+            where_parts.append(f"{sport_expr} = 'hiking'")
+        elif clean_sport == "trail_running":
+            where_parts.append(f"{sport_expr} IN ('trail_running', 'trail_run')")
+        elif clean_sport == "pool_swimming":
+            where_parts.append(f"({sport_expr} IN ('pool_swimming', 'lap_swimming') OR ({sport_expr} IN ('swimming', 'swim') AND {sub_expr} IN ('pool', 'pool_swimming', 'lap_swimming')))")
+        elif clean_sport == "open_water_swimming":
+            where_parts.append(f"({sport_expr} IN ('open_water_swimming', 'openwater_swimming') OR ({sport_expr} IN ('swimming', 'swim') AND {sub_expr} IN ('open_water', 'open_water_swimming')))")
+    cursor = conn.execute(
+        f"""
+        SELECT {', '.join(select_parts)}
+        FROM activities
+        WHERE {' AND '.join(where_parts)}
+        ORDER BY COALESCE(start_time, start_time_utc, '') DESC, id DESC
+        LIMIT ?
+        """,
+        (*params, int(limit)),
+    )
+    return _rows_to_dicts(cursor)
+
+
+def _preview_activity_item_from_facts(facts: dict[str, Any]) -> dict[str, Any]:
+    reason_codes = list(facts.get("reason_codes") or [])
+    hard_block_reasons = {
+        "activity_deleted",
+        "activity_missing",
+        "mock_activity_excluded",
+        "unsupported_sport",
+        "ebike_scope_excluded",
+    }
+    status = "ignored" if any(reason in hard_block_reasons for reason in reason_codes) else "adapter_ready"
+    return {
+        "activity_id": str(facts.get("activity_id") or ""),
+        "sport": str(facts.get("sport") or "unsupported"),
+        "event_date": str(facts.get("event_date") or ""),
+        "distance_m": facts.get("distance_m"),
+        "elapsed_time_sec": facts.get("elapsed_time_sec"),
+        "ascent_m": facts.get("ascent_m"),
+        "max_altitude_m": facts.get("max_altitude_m"),
+        "indoor_scope": str(facts.get("indoor_scope") or ""),
+        "water_scope": str(facts.get("water_scope") or ""),
+        "availability": {
+            "distance_time_available": bool(facts.get("distance_time_stream_available")),
+            "power_available": bool(facts.get("power_stream_available")),
+            "lap_length_available": bool(facts.get("lap_length_stream_available")),
+            "elevation": bool(facts.get("elevation_available")),
+        },
+        "reason_codes": reason_codes,
+        "quality_flags": list(facts.get("quality_flags") or []),
+        "status": status,
+        "message": "Activity Adapter 已接入；阶段 A 仅返回 dry-run preview",
+    }
+
+
+def _preview_activity_for_resolver(row: dict[str, Any], facts: dict[str, Any]) -> dict[str, Any]:
+    activity = dict(row or {})
+    activity["activity_id"] = str(facts.get("activity_id") or activity.get("id") or activity.get("activity_id") or "")
+    activity["event_date"] = str(facts.get("event_date") or "")
+    activity["distance_m"] = facts.get("distance_m")
+    activity["elapsed_time_sec"] = facts.get("elapsed_time_sec")
+    activity["ascent_m"] = facts.get("ascent_m")
+    activity["max_altitude_m"] = facts.get("max_altitude_m")
+    activity["indoor_scope"] = str(facts.get("indoor_scope") or "")
+    activity["water_scope"] = str(facts.get("water_scope") or "")
+    return activity
+
+
+def _preview_record_quality(quality: dict[str, Any] | None) -> dict[str, Any]:
+    raw = quality if isinstance(quality, dict) else {}
+    source = str(raw.get("source") or "")
+    if source == "power_stream":
+        source = "power_available"
+    clean = {
+        "confidence": raw.get("confidence"),
+        "confidence_band": str(raw.get("confidence_band") or ""),
+        "decision": str(raw.get("decision") or ""),
+        "reason_codes": list(_dedupe_reason_codes(tuple(raw.get("reason_codes") or []))),
+        "source": source,
+        "quality_policy": str(raw.get("quality_policy") or ""),
+        "can_user_confirm": bool(raw.get("can_user_confirm")),
+        "blocks_active": bool(raw.get("blocks_active")),
+        "log_safety": str(raw.get("log_safety") or "safe_summary_only"),
+    }
+    return {key: value for key, value in clean.items() if value not in (None, "", [])}
+
+
+def _preview_item_from_distance_result(
+    *,
+    definition: RecordDefinition,
+    activity: dict[str, Any],
+    result: dict[str, Any],
+) -> dict[str, Any] | None:
+    if not result.get("ok"):
+        return None
+    quality = _preview_record_quality(result.get("quality") if isinstance(result.get("quality"), dict) else {})
+    if definition.availability_state in {"candidate_only", "validation_required"}:
+        quality["decision"] = "validation_required"
+        quality["blocks_active"] = True
+        quality["can_user_confirm"] = True
+        quality["reason_codes"] = list(_dedupe_reason_codes(tuple([
+            *(quality.get("reason_codes") or []),
+            definition.availability_reason or definition.availability_state,
+        ])))
+    status = "preview_candidate" if quality.get("blocks_active") or quality.get("decision") in {"candidate", "validation_required"} else "preview_record"
+    metric_value = _finite_float(result.get("elapsed_time_sec"))
+    if metric_value is None:
+        return None
+    return {
+        "status": status,
+        "record_key": definition.key,
+        "display_name": definition.display_name,
+        "sport": definition.sport,
+        "activity_id": str(activity.get("activity_id") or activity.get("id") or ""),
+        "event_date": str(activity.get("event_date") or "")[:10],
+        "source_mode": str(result.get("source_mode") or definition.source_mode),
+        "metric": {
+            "name": definition.metric,
+            "value": round(metric_value, 3),
+            "unit": definition.canonical_unit,
+        },
+        "standard_distance_m": definition.standard_distance_m,
+        "range": dict(result.get("range") or {}),
+        "quality": quality,
+        "resolver_version": str(result.get("resolver_version") or BEST_EFFORT_DISTANCE_RESOLVER_VERSION),
+        "dry_run": True,
+    }
+
+
+def _preview_item_from_evidence(evidence: RecordEvidence | dict[str, Any]) -> dict[str, Any] | None:
+    payload = evidence.to_dict() if isinstance(evidence, RecordEvidence) else dict(evidence or {})
+    definition = get_record_definition(str(payload.get("record_key") or ""))
+    metric = payload.get("metric") if isinstance(payload.get("metric"), dict) else {}
+    value = _finite_float(metric.get("value"))
+    if definition is None or value is None:
+        return None
+    quality = _preview_record_quality(payload.get("quality") if isinstance(payload.get("quality"), dict) else {})
+    status = "preview_candidate" if quality.get("blocks_active") or quality.get("decision") in {"candidate", "validation_required"} else "preview_record"
+    return {
+        "status": status,
+        "record_key": definition.key,
+        "display_name": definition.display_name,
+        "sport": definition.sport,
+        "activity_id": str(payload.get("activity_id") or ""),
+        "event_date": str(payload.get("event_date") or "")[:10],
+        "source_mode": str(payload.get("source_mode") or definition.source_mode),
+        "metric": {
+            "name": str(metric.get("name") or definition.metric),
+            "value": round(value, 3),
+            "unit": str(metric.get("unit") or definition.canonical_unit),
+        },
+        "range": dict(payload.get("range_json") or {}),
+        "scope": dict(payload.get("scope_json") or {}),
+        "quality": quality,
+        "resolver_version": str(payload.get("resolver_version") or RECORDS_V2_RULE_VERSION),
+        "dry_run": True,
+    }
+
+
+def _preview_ignored_item(
+    *,
+    activity: dict[str, Any],
+    sport: str,
+    record_key: str,
+    reason_codes: list[str] | tuple[str, ...],
+    source_mode: str = "",
+) -> dict[str, Any]:
+    definition = get_record_definition(record_key)
+    return {
+        "status": "ignored",
+        "record_key": record_key,
+        "display_name": definition.display_name if definition else record_key,
+        "sport": sport,
+        "activity_id": str(activity.get("activity_id") or activity.get("id") or ""),
+        "event_date": str(activity.get("event_date") or "")[:10],
+        "source_mode": source_mode or (definition.source_mode if definition else ""),
+        "reason_codes": list(_dedupe_reason_codes(tuple(reason_codes))),
+        "dry_run": True,
+    }
+
+
+def _preview_running_distance_items(activity: dict[str, Any], filters: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    stream = _activity_stream_list(activity, "points_json", "track_json")
+    records: list[dict[str, Any]] = []
+    ignored: list[dict[str, Any]] = []
+    for definition in RUNNING_RECORD_DEFINITIONS:
+        if filters["record_key"] not in {"all", definition.key}:
+            continue
+        result = best_effort_distance_or_fallback(
+            stream,
+            definition.standard_distance_m,
+            activity=activity,
+            fallback_tolerance_ratio=definition.tolerance_ratio,
+        )
+        item = _preview_item_from_distance_result(definition=definition, activity=activity, result=result)
+        if item:
+            records.append(item)
+        else:
+            ignored.append(_preview_ignored_item(
+                activity=activity,
+                sport="running",
+                record_key=definition.key,
+                reason_codes=list(result.get("reason_codes") or ["best_effort_distance_unavailable"]),
+                source_mode=str(result.get("source_mode") or "best_effort_distance"),
+            ))
+    return {"records": records, "ignored": ignored}
+
+
+def _preview_cycling_standard_distance_items(activity: dict[str, Any], filters: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    stream = _activity_stream_list(activity, "points_json", "track_json")
+    records: list[dict[str, Any]] = []
+    ignored: list[dict[str, Any]] = []
+    for definition in CYCLING_STANDARD_DISTANCE_RECORD_DEFINITIONS:
+        if filters["record_key"] not in {"all", definition.key}:
+            continue
+        result = best_effort_distance_or_fallback(
+            stream,
+            definition.standard_distance_m,
+            activity=activity,
+            fallback_tolerance_ratio=None,
+        )
+        item = _preview_item_from_distance_result(definition=definition, activity=activity, result=result)
+        if item:
+            records.append(item)
+        else:
+            ignored.append(_preview_ignored_item(
+                activity=activity,
+                sport="cycling",
+                record_key=definition.key,
+                reason_codes=list(result.get("reason_codes") or ["best_effort_distance_unavailable"]),
+                source_mode=str(result.get("source_mode") or "best_effort_distance"),
+            ))
+    return {"records": records, "ignored": ignored}
+
+
+def _preview_cycling_activity_total_items(activity: dict[str, Any], filters: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    power_points = _activity_stream_list(activity, "power_points", "points_json", "track_json")
+    if not _activity_point_power_available(power_points):
+        power_points = []
+    plan = build_cycling_activity_total_record_evidences(activity=activity, power_points=power_points)
+    records: list[dict[str, Any]] = []
+    ignored: list[dict[str, Any]] = []
+    for evidence in plan.get("evidences") or []:
+        item = _preview_item_from_evidence(evidence)
+        if not item or filters["record_key"] not in {"all", item["record_key"]}:
+            continue
+        records.append(item)
+    for skipped in plan.get("skipped") or []:
+        if not isinstance(skipped, dict):
+            continue
+        record_key = str(skipped.get("record_key") or "cycling_activity_total")
+        if filters["record_key"] not in {"all", record_key}:
+            continue
+        ignored.append(_preview_ignored_item(
+            activity=activity,
+            sport="cycling",
+            record_key=record_key,
+            reason_codes=[str(skipped.get("reason") or "metric_missing")],
+            source_mode="activity_total",
+        ))
+    return {"records": records, "ignored": ignored}
+
+
+def _activity_point_power_available(points: list[Any]) -> bool:
+    for point in points:
+        if not isinstance(point, dict):
+            continue
+        for key in ("power", "power_w", "watts", "pwr", "enhanced_power", "Power"):
+            value = _finite_float(point.get(key))
+            if value is not None:
+                return True
+    return False
+
+
+def _preview_cycling_power_items(activity: dict[str, Any], filters: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    power_points = _activity_stream_list(activity, "power_points", "points_json", "track_json")
+    if not _activity_point_power_available(power_points):
+        ignored = []
+        for duration_sec, record_key in CYCLING_POWER_RECORD_KEY_BY_DURATION.items():
+            if filters["record_key"] not in {"all", record_key}:
+                continue
+            ignored.append(_preview_ignored_item(
+                activity=activity,
+                sport="cycling",
+                record_key=record_key,
+                reason_codes=["power_stream_missing"],
+                source_mode="best_effort_duration",
+            ))
+        return {"records": [], "ignored": ignored}
+    plan = build_cycling_power_record_evidences(
+        power_points,
+        activity=activity,
+        conn=None,
+        use_cache=False,
+    )
+    records: list[dict[str, Any]] = []
+    ignored: list[dict[str, Any]] = []
+    for evidence in plan.get("evidences") or []:
+        item = _preview_item_from_evidence(evidence)
+        if not item or filters["record_key"] not in {"all", item["record_key"]}:
+            continue
+        records.append(item)
+    for skipped in plan.get("skipped") or []:
+        if not isinstance(skipped, dict):
+            continue
+        duration = _safe_int(skipped.get("duration_sec"))
+        record_key = str(skipped.get("record_key") or CYCLING_POWER_RECORD_KEY_BY_DURATION.get(duration) or "cycling_power")
+        if filters["record_key"] not in {"all", record_key}:
+            continue
+        ignored.append(_preview_ignored_item(
+            activity=activity,
+            sport="cycling",
+            record_key=record_key,
+            reason_codes=list(skipped.get("reason_codes") or [skipped.get("reason") or "power_stream_missing"]),
+            source_mode="best_effort_duration",
+        ))
+    return {"records": records, "ignored": ignored}
+
+
+def _preview_hiking_items(activity: dict[str, Any], filters: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    records: list[dict[str, Any]] = []
+    ignored: list[dict[str, Any]] = []
+    total_plan = build_hiking_activity_total_record_evidences(activity=activity)
+    for evidence in total_plan.get("evidences") or []:
+        item = _preview_item_from_evidence(evidence)
+        if item and filters["record_key"] in {"all", item["record_key"]}:
+            records.append(item)
+    track_points = _activity_stream_list(activity, "points_json", "track_json")
+    climb_plan = build_hiking_single_climb_record_evidence(activity=activity, track_points=track_points)
+    evidence = climb_plan.get("evidence")
+    item = _preview_item_from_evidence(evidence) if isinstance(evidence, RecordEvidence) else None
+    if item and filters["record_key"] in {"all", item["record_key"]}:
+        records.append(item)
+    for skipped in [*(total_plan.get("skipped") or []), *(climb_plan.get("skipped") or [])]:
+        if not isinstance(skipped, dict):
+            continue
+        record_key = str(skipped.get("record_key") or "hiking_activity_total")
+        if filters["record_key"] not in {"all", record_key}:
+            continue
+        ignored.append(_preview_ignored_item(
+            activity=activity,
+            sport="hiking",
+            record_key=record_key,
+            reason_codes=[str(skipped.get("reason") or "metric_missing")],
+            source_mode="activity_total",
+        ))
+    return {"records": records, "ignored": ignored}
+
+
+def _preview_pool_swim_items(activity: dict[str, Any], filters: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    lengths = _activity_stream_list(activity, "lengths_json", "laps_json")
+    plan = build_pool_swim_best_effort_evidences(activity=activity, lengths=lengths)
+    records: list[dict[str, Any]] = []
+    ignored: list[dict[str, Any]] = []
+    for evidence in plan.get("evidences") or []:
+        item = _preview_item_from_evidence(evidence)
+        if item and filters["record_key"] in {"all", item["record_key"]}:
+            records.append(item)
+    for skipped in plan.get("skipped") or []:
+        if not isinstance(skipped, dict):
+            continue
+        record_key = str(skipped.get("record_key") or "pool_swim")
+        if filters["record_key"] not in {"all", record_key}:
+            continue
+        ignored.append(_preview_ignored_item(
+            activity=activity,
+            sport="pool_swimming",
+            record_key=record_key,
+            reason_codes=[str(skipped.get("reason") or "range_missing")],
+            source_mode="best_effort_distance",
+        ))
+    return {"records": records, "ignored": ignored}
+
+
+def _preview_open_water_items(activity: dict[str, Any], filters: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    stream = _activity_stream_list(activity, "points_json", "track_json")
+    records: list[dict[str, Any]] = []
+    ignored: list[dict[str, Any]] = []
+    for distance_m, record_key in OPEN_WATER_RECORD_KEY_BY_DISTANCE.items():
+        definition = get_record_definition(record_key)
+        if definition is None or filters["record_key"] not in {"all", record_key}:
+            continue
+        result = best_effort_distance_or_fallback(
+            stream,
+            distance_m,
+            activity=activity,
+            fallback_tolerance_ratio=0.05,
+            max_segment_speed_mps=8.0,
+        )
+        item = _preview_item_from_distance_result(definition=definition, activity=activity, result=result)
+        if item:
+            records.append(item)
+        else:
+            ignored.append(_preview_ignored_item(
+                activity=activity,
+                sport="open_water_swimming",
+                record_key=record_key,
+                reason_codes=list(result.get("reason_codes") or ["best_effort_distance_unavailable"]),
+                source_mode=str(result.get("source_mode") or "best_effort_distance"),
+            ))
+    total_plan = build_open_water_record_evidences(activity=activity, track_points_xy=[])
+    for evidence in total_plan.get("evidences") or []:
+        payload = evidence.to_dict() if isinstance(evidence, RecordEvidence) else {}
+        if str(payload.get("record_key") or "") not in {"open_water_longest_distance", "open_water_longest_elapsed_time"}:
+            continue
+        item = _preview_item_from_evidence(evidence)
+        if item and filters["record_key"] in {"all", item["record_key"]}:
+            records.append(item)
+    for skipped in total_plan.get("skipped") or []:
+        if not isinstance(skipped, dict):
+            continue
+        record_key = str(skipped.get("record_key") or "open_water")
+        if record_key not in {"open_water_longest_distance", "open_water_longest_elapsed_time"}:
+            continue
+        if filters["record_key"] not in {"all", record_key}:
+            continue
+        ignored.append(_preview_ignored_item(
+            activity=activity,
+            sport="open_water_swimming",
+            record_key=record_key,
+            reason_codes=[str(skipped.get("reason") or "metric_missing")],
+            source_mode="activity_total",
+        ))
+    return {"records": records, "ignored": ignored}
+
+
+def _preview_trail_items(activity: dict[str, Any], filters: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    track_points = _activity_stream_list(activity, "points_json", "track_json")
+    plan = build_trail_activity_total_record_evidences(activity=activity, track_points=track_points)
+    records: list[dict[str, Any]] = []
+    ignored: list[dict[str, Any]] = []
+    for evidence in plan.get("evidences") or []:
+        item = _preview_item_from_evidence(evidence)
+        if item and filters["record_key"] in {"all", item["record_key"]}:
+            records.append(item)
+    for skipped in plan.get("skipped") or []:
+        if not isinstance(skipped, dict):
+            continue
+        record_key = str(skipped.get("record_key") or "trail_activity_total")
+        if filters["record_key"] not in {"all", record_key}:
+            continue
+        ignored.append(_preview_ignored_item(
+            activity=activity,
+            sport="trail_running",
+            record_key=record_key,
+            reason_codes=[str(skipped.get("reason") or "metric_missing")],
+            source_mode="activity_total",
+        ))
+    return {"records": records, "ignored": ignored}
+
+
+def _preview_running_cycling_materialization(row: dict[str, Any], facts: dict[str, Any], filters: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    sport = str(facts.get("sport") or "unsupported")
+    activity = _preview_activity_for_resolver(row, facts)
+    records: list[dict[str, Any]] = []
+    ignored: list[dict[str, Any]] = []
+    if sport == "running":
+        result = _preview_running_distance_items(activity, filters)
+        records.extend(result["records"])
+        ignored.extend(result["ignored"])
+    elif sport == "cycling":
+        for resolver in (
+            _preview_cycling_standard_distance_items,
+            _preview_cycling_activity_total_items,
+            _preview_cycling_power_items,
+        ):
+            result = resolver(activity, filters)
+            records.extend(result["records"])
+            ignored.extend(result["ignored"])
+    elif sport == "hiking":
+        result = _preview_hiking_items(activity, filters)
+        records.extend(result["records"])
+        ignored.extend(result["ignored"])
+    elif sport == "pool_swimming":
+        result = _preview_pool_swim_items(activity, filters)
+        records.extend(result["records"])
+        ignored.extend(result["ignored"])
+    elif sport == "open_water_swimming":
+        result = _preview_open_water_items(activity, filters)
+        records.extend(result["records"])
+        ignored.extend(result["ignored"])
+    elif sport == "trail_running":
+        result = _preview_trail_items(activity, filters)
+        records.extend(result["records"])
+        ignored.extend(result["ignored"])
+    return {"records": records, "ignored": ignored}
+
+
+def _preview_record_better(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    definition = get_record_definition(str(left.get("record_key") or ""))
+    left_value = _finite_float(((left.get("metric") or {}).get("value") if isinstance(left.get("metric"), dict) else None))
+    right_value = _finite_float(((right.get("metric") or {}).get("value") if isinstance(right.get("metric"), dict) else None))
+    if left_value is None:
+        return False
+    if right_value is None:
+        return True
+    if definition and definition.comparison == "higher_is_better":
+        return left_value > right_value
+    return left_value < right_value
+
+
+def _select_best_preview_records(items: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    best_by_key: dict[str, dict[str, Any]] = {}
+    others: list[dict[str, Any]] = []
+    for item in items:
+        key = str(item.get("record_key") or "")
+        current = best_by_key.get(key)
+        if current is None:
+            best_by_key[key] = item
+        elif _preview_record_better(item, current):
+            others.append(current)
+            best_by_key[key] = item
+        else:
+            others.append(item)
+    return list(best_by_key.values()), others
+
+
+def _mark_non_best_preview_candidate(item: dict[str, Any]) -> dict[str, Any]:
+    candidate = copy.deepcopy(item)
+    candidate["status"] = "preview_candidate"
+    quality = candidate.get("quality") if isinstance(candidate.get("quality"), dict) else {}
+    quality["decision"] = "candidate"
+    quality["blocks_active"] = True
+    quality["can_user_confirm"] = True
+    quality["reason_codes"] = list(_dedupe_reason_codes(tuple([
+        *(quality.get("reason_codes") or []),
+        "not_best_for_record_key",
+    ])))
+    candidate["quality"] = quality
+    return candidate
+
+
+def preview_career_records(
+    payload: dict[str, Any] | None = None,
+    conn: sqlite3.Connection | None = None,
+) -> dict[str, Any]:
+    """Return a read-only Records V2 preview from Activity Adapter facts."""
+    start = time.perf_counter()
+    filters = _preview_career_records_filters(payload)
+    owns_conn = conn is None
+    db = conn or _connect_default()
+    try:
+        rows = _preview_career_record_activity_rows(db, limit=int(filters["max_activities"]), sport=str(filters["sport"]))
+        items: list[dict[str, Any]] = []
+        materialized_items: list[dict[str, Any]] = []
+        resolver_ignored: list[dict[str, Any]] = []
+        by_sport: dict[str, int] = {}
+        by_reason: dict[str, int] = {}
+        for row in rows:
+            facts = build_activity_record_facts(row)
+            sport = str(facts.get("sport") or "unsupported")
+            if filters["sport"] != "all" and sport != filters["sport"]:
+                continue
+            item = _preview_activity_item_from_facts(facts)
+            items.append(item)
+            _increment_counter(by_sport, sport)
+            for reason in item.get("reason_codes") or []:
+                _increment_counter(by_reason, reason)
+            if item.get("status") == "adapter_ready" and sport in RECORD_ALLOWED_SPORTS:
+                materialized = _preview_running_cycling_materialization(row, facts, filters)
+                materialized_items.extend(materialized.get("records") or [])
+                resolver_ignored.extend(materialized.get("ignored") or [])
+        ignored = [item for item in items if item.get("status") == "ignored"]
+        ignored.extend(resolver_ignored)
+        for ignored_item in resolver_ignored:
+            for reason in ignored_item.get("reason_codes") or []:
+                _increment_counter(by_reason, reason)
+        adapter_ready = [item for item in items if item.get("status") == "adapter_ready"]
+        best_records, other_candidates = _select_best_preview_records(materialized_items)
+        preview_records = [item for item in best_records if item.get("status") == "preview_record"]
+        preview_candidates = [item for item in best_records if item.get("status") != "preview_record"]
+        preview_candidates.extend(_mark_non_best_preview_candidate(item) for item in other_candidates)
+        by_record_key: dict[str, dict[str, Any]] = {}
+        for item in [*preview_records, *preview_candidates]:
+            key = str(item.get("record_key") or "")
+            if not key:
+                continue
+            bucket = by_record_key.setdefault(key, {
+                "preview_records": 0,
+                "preview_candidates": 0,
+                "ignored": 0,
+                "best_activity_id": "",
+            })
+            field = "preview_records" if item.get("status") == "preview_record" else "preview_candidates"
+            bucket[field] = int(bucket.get(field) or 0) + 1
+            if not bucket.get("best_activity_id"):
+                bucket["best_activity_id"] = str(item.get("activity_id") or "")
+        for item in ignored:
+            key = str(item.get("record_key") or "")
+            if not key:
+                continue
+            bucket = by_record_key.setdefault(key, {
+                "preview_records": 0,
+                "preview_candidates": 0,
+                "ignored": 0,
+                "best_activity_id": "",
+            })
+            bucket["ignored"] = int(bucket.get("ignored") or 0) + 1
+        seed = _json_dumps({
+            "filters": filters,
+            "items": [(item.get("activity_id"), item.get("sport"), item.get("status")) for item in items],
+            "records": [(item.get("record_key"), item.get("activity_id"), item.get("status")) for item in [*preview_records, *preview_candidates]],
+        })
+        run_id = "records_v2_preview:" + hashlib.sha1(seed.encode("utf-8")).hexdigest()[:16]
+        response = {
+            "ok": True,
+            "dry_run": True,
+            "readonly": True,
+            "run_id": run_id,
+            "preview_records": preview_records,
+            "preview_candidates": preview_candidates,
+            "ignored": ignored,
+            "summary": {
+                "mode": "multi_sport_dry_run_materialized",
+                "resolver_connected": True,
+                "scanned": len(rows),
+                "returned": len(items),
+                "adapter_ready": len(adapter_ready),
+                "ignored": len(ignored),
+                "preview_records": len(preview_records),
+                "preview_candidates": len(preview_candidates),
+                "message": "多运动 dry-run resolver 已接入 preview；阶段 A 不写真实库。",
+            },
+            "by_sport": by_sport,
+            "by_record_key": by_record_key,
+            "by_reason": by_reason,
+            "filters": filters,
+            "status": {
+                "schema_ready": True,
+                "data_ready": bool(items),
+                "state": "dry_run_preview",
+                "message": "只读预览已接入多运动 Resolver。",
+                "records_version": "records-v2",
+                "resolver_version": RECORDS_V2_RULE_VERSION,
+            },
+            "metrics": {
+                "elapsed_ms": _elapsed_ms(start),
+                "processed": len(rows),
+                "returned_count": len(items),
+                "performance_target_ms": RECORDS_V2_PERFORMANCE_TARGETS_MS["rebuild_plan"],
+            },
+            "observability": records_v2_safe_observation(
+                "records_v2_preview",
+                run_id=run_id,
+                dry_run=True,
+                action="multi_sport_dry_run_materialized",
+                processed=len(rows),
+                returned_count=len(items),
+                by_sport=by_sport,
+                by_reason=by_reason,
+                elapsed_ms=_elapsed_ms(start),
+            ),
         }
         return _records_api_safe(response)
     finally:
@@ -17217,6 +22187,7 @@ def save_career_race_photo(
 def get_career_seasons(
     filters: dict[str, Any] | None = None,
     conn: sqlite3.Connection | None = None,
+    activity_rows: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Return annual ACS Season view models from safe Activity summaries and derived events."""
     owns_conn = conn is None
@@ -17224,8 +22195,8 @@ def get_career_seasons(
     try:
         schema = ensure_career_schema(db)
         normalized_filters = _normalize_season_filters(filters)
-        seasons = _build_career_seasons(db, normalized_filters)
-        _annotate_career_season_report_updates(seasons, conn=db)
+        seasons = _build_career_seasons(db, normalized_filters, activity_rows=activity_rows)
+        _annotate_career_season_report_updates(seasons, conn=db, activity_rows=activity_rows)
         summary = _summarize_seasons(seasons)
         data_ready = bool(seasons)
         return {
@@ -17250,7 +22221,6 @@ def get_career_overview(conn: sqlite3.Connection | None = None) -> dict[str, Any
     try:
         schema = ensure_career_schema(db)
         activity_summary = _activity_summary(db)
-        activity_rows = _overview_activity_rows(db)
         race_count = _count_rows(db, "career_race_events", "status = 'active'")
         pb_count = _count_rows(db, "career_pb_records", "status = 'active'")
         achievement_count = _count_rows(db, "career_achievement_events", "status = 'active'")
@@ -17270,12 +22240,25 @@ def get_career_overview(conn: sqlite3.Connection | None = None) -> dict[str, Any
         pb_records = pb_payload.get("pb_records", [])
         achievement_payload = get_career_achievements(conn=db)
         achievements = achievement_payload.get("achievements", [])
-        season_payload = get_career_seasons(conn=db)
-        seasons = season_payload.get("seasons", [])
+        seasons = _overview_representative_seasons_query(db, limit=3)
         latest_pb = _latest_pb_record(pb_records)
+        race_rows = race_payload.get("races", []) if isinstance(race_payload.get("races"), list) else []
+        hero_activity_ids = [
+            race.get("activity_id")
+            for race in race_rows
+            if isinstance(race, dict)
+            and _sanitize_career_media_preview(
+                (race.get("media") if isinstance(race.get("media"), dict) else {}).get("image_ref")
+            )
+        ]
+        if latest_race:
+            hero_activity_ids.append(latest_race.get("activity_id"))
+        if latest_pb:
+            hero_activity_ids.append(latest_pb.get("activity_id"))
+        hero_activity_rows = _overview_hero_activity_rows(db, hero_activity_ids)
         hero_photo_refs = _load_hero_photo_refs(db)
-        hero_banner = _build_hero_banner(activity_rows, latest_race, latest_pb, hero_photo_refs)
-        hero_slides = _build_hero_banner_slides(race_payload.get("races", []), activity_rows, latest_pb)
+        hero_banner = _build_hero_banner(hero_activity_rows, latest_race, latest_pb, hero_photo_refs)
+        hero_slides = _build_hero_banner_slides(race_rows, hero_activity_rows, latest_pb)
         if hero_slides:
             hero_banner["slides"] = hero_slides
             if not hero_banner.get("media", {}).get("has_photo"):
@@ -17284,10 +22267,10 @@ def get_career_overview(conn: sqlite3.Connection | None = None) -> dict[str, Any
             "summary": summary,
             "identity": identity,
             "hero_banner": hero_banner,
-            "sport_totals": _build_sport_totals(activity_rows),
-            "career_stats": _build_career_stats(activity_rows, summary, race_count, pb_count, achievement_count),
+            "sport_totals": _overview_sport_totals_query(db),
+            "career_stats": _overview_career_stats_query(db, summary, race_count, pb_count, achievement_count),
             "best_pb": _best_pb_summary(pb_records),
-            "representative_seasons": seasons[:3],
+            "representative_seasons": seasons,
             "latest_race": latest_race,
             "latest_pb": latest_pb,
             "representative_pb_records": _representative_pb_records(pb_records),
@@ -17301,6 +22284,22 @@ def get_career_overview(conn: sqlite3.Connection | None = None) -> dict[str, Any
                 "message": CAREER_EMPTY_STATUS_MESSAGE,
             },
         }
+    finally:
+        if owns_conn:
+            db.close()
+
+
+def get_career_overview_secondary_metrics(conn: sqlite3.Connection | None = None) -> dict[str, Any]:
+    """Return delayed non-core ACS overview metrics from safe Activity aggregates."""
+    owns_conn = conn is None
+    db = conn or _connect_default()
+    try:
+        schema = ensure_career_schema(db)
+        metrics = _overview_secondary_metrics_query(db)
+        status = metrics.get("status") if isinstance(metrics.get("status"), dict) else {}
+        status["schema_ready"] = bool(schema.get("ok"))
+        metrics["status"] = status
+        return metrics
     finally:
         if owns_conn:
             db.close()

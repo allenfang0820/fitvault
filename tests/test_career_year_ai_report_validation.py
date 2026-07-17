@@ -88,6 +88,8 @@ class TestCareerYearAiReportValidation(unittest.TestCase):
         self.assertEqual(result["year"], 2026)
         self.assertIn("积累成了 12 次运动", result["fact_lead"])
         self.assertIn("120.5 公里", result["fact_lead"])
+        self.assertIn("覆盖了 2 座城市", result["fact_lead"])
+        self.assertIn("成都", result["fact_lead"])
         self.assertIn("fact_leads", result)
         self.assertGreaterEqual(len(result["fact_leads"]), 3)
         self.assertEqual([item["type"] for item in result["body_sections"]], ["annual_story", "races", "progress", "footprints", "rhythm", "comparison"])
@@ -98,7 +100,7 @@ class TestCareerYearAiReportValidation(unittest.TestCase):
         self.assertEqual(result["key_moments"][0]["activity_id"], "1")
         self.assertEqual(result["key_moments"][0]["detail_link"], {"activity_id": "1", "source": "activity"})
         self.assertEqual(result["key_moments"][1]["value"], "45:00")
-        self.assertEqual(result["key_moments"][2]["type"], "city")
+        self.assertNotIn("city", [item["type"] for item in result["key_moments"]])
 
     def test_rejects_non_object_wrong_schema_and_wrong_year(self):
         with self.assertRaises(ValueError):
@@ -119,7 +121,7 @@ class TestCareerYearAiReportValidation(unittest.TestCase):
 
         result = career_backend.validate_career_year_ai_report(draft, _snapshot())
 
-        self.assertEqual([item["evidence_id"] for item in result["key_moments"]], ["race:1", "pb:1", "city:成都:2"])
+        self.assertEqual([item["evidence_id"] for item in result["key_moments"]], ["race:1", "pb:1"])
 
     def test_unknown_evidence_at_failure_threshold_rejects_report(self):
         draft = _draft()
@@ -158,7 +160,7 @@ class TestCareerYearAiReportValidation(unittest.TestCase):
 
         result = career_backend.validate_career_year_ai_report(draft, snap)
 
-        self.assertEqual([item["type"] for item in result["key_moments"]], ["race", "city"])
+        self.assertEqual([item["type"] for item in result["key_moments"]], ["race"])
 
     def test_progress_section_accepts_backend_activity_highlight_moments(self):
         snap = copy.deepcopy(_snapshot())
@@ -182,7 +184,7 @@ class TestCareerYearAiReportValidation(unittest.TestCase):
 
         self.assertIn("longest_distance", [item["type"] for item in result["key_moments"]])
 
-    def test_footprints_section_accepts_first_city_achievement_evidence(self):
+    def test_footprints_section_ignores_first_city_achievement_evidence(self):
         draft = _draft()
         draft["body_sections"][3]["evidence_ids"] = ["achievement:first_city:海口市:99"]
         snap = copy.deepcopy(_snapshot())
@@ -202,7 +204,8 @@ class TestCareerYearAiReportValidation(unittest.TestCase):
         result = career_backend.validate_career_year_ai_report(draft, snap)
 
         footprints = [section for section in result["body_sections"] if section["type"] == "footprints"][0]
-        self.assertEqual(footprints["evidence"][0]["evidence_id"], "achievement:first_city:海口市:99")
+        self.assertEqual(footprints["evidence"], [])
+        self.assertNotIn("achievement:first_city:海口市:99", [item.get("evidence_id") for item in result["key_moments"]])
 
     def test_missing_base_section_rejects_and_optional_sections_require_matching_facts(self):
         draft = _draft()

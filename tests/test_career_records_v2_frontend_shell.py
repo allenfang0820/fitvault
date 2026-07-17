@@ -51,14 +51,17 @@ def test_records_v2_visual_reference_is_dashboard_not_plain_list():
 
     assert "const definitions = careerRecordCatalogDefinitions(catalog, selectedSport)" in render_body
     assert "renderCareerRecordPicker(definitions, records, candidatesForGroup, state.selectedView)" in render_body
-    assert "listEl.innerHTML = ''" in render_body
+    assert 'id="career-record-current-list"' not in src
+    assert "renderCareerRecordCandidatePanel(candidatesForGroup)" in render_body
     assert "analysis_only" in catalog_body
     assert "candidate_only" not in catalog_body
     assert "validation_required" not in catalog_body
     assert "career-record-picker-card" in picker_card_body
     assert "careerRecordPickerCardHtml" in picker_body
-    assert "career-record-picker-value" not in src
-    assert "career-record-picker-meta" not in src
+    assert "career-record-picker-value" in picker_card_body
+    assert "career-record-picker-meta" in picker_card_body
+    assert "currentRecord.metric.display" in picker_card_body
+    assert "暂无记录" in picker_card_body
     assert "careerRecordAvailabilityBadge" not in picker_card_body
     assert "career-record-dashboard-stats" not in src
     assert "renderCareerRecordDashboardStats" not in src
@@ -93,22 +96,51 @@ def test_records_v2_frontend_consumes_catalog_and_viewmodels():
     assert "api.get_career_record_catalog" in load_body
     assert "api.get_career_records" in load_body
     assert "api.get_career_record_candidates" in load_body
+    assert "api.preview_career_records" not in load_body
+    assert "max_activities: 300" not in load_body
     assert "normalizeCareerRecordCatalog" in load_body
+    assert "normalizeCareerRecordPreviewV2" not in src
     assert "renderCareerRecordSportTabs(catalog, selectedSport)" in render_body
-    assert "候选纪录不会被渲染为当前纪录" in render_body
+    assert "renderCareerRecordCandidatePanel(candidatesForGroup)" in render_body
+    assert "careerRecordViewFromDefinition(selectedDefinition)" in render_body
 
 
-def test_records_v2_cards_render_backend_fields_without_recomputing():
+def test_records_v2_preview_does_not_render_main_area_cards():
+    src = source()
+    render_body = extract_function_body(src, "function renderCareerRecordsCenter(viewModel)")
+    analysis_body = extract_function_body(src, "async function loadCareerRecordAnalysis(record)")
+
+    assert "function careerRecordPreviewCardHtml" not in src
+    assert "function renderCareerRecordPreviewPanel" not in src
+    assert "function careerRecordPreviewMetricDisplay" not in src
+    assert "function normalizeCareerRecordPreviewV2" not in src
+    assert "career-record-preview-grid" not in src
+    assert "data-career-record-preview-id" not in src
+    assert "preview_career_records" not in src
+    assert "renderCareerRecordPreviewPanel" not in render_body
+    assert "previewForGroup" not in render_body
+    assert "records.map(careerRecordCurrentCardHtml)" not in render_body
+    assert "career-record-current-list" not in src
+    assert "career-record-current-card" not in src
+    assert "renderCareerRecordCandidatePanel(candidatesForGroup)" in render_body
+    assert "careerRecordViewFromDefinition(selectedDefinition)" in render_body
+    assert "loadCareerRecordAnalysis(selectedRecord)" in render_body
+    assert "preview" not in analysis_body.lower()
+
+
+def test_records_v2_current_card_garbage_code_is_removed_without_frontend_recomputing():
     src = source()
     normalize_body = extract_function_body(src, "function normalizeCareerRecordV2(item)")
-    card_body = extract_function_body(src, "function careerRecordCurrentCardHtml(record, index)")
+    render_body = extract_function_body(src, "function renderCareerRecordsCenter(viewModel)")
 
+    assert "function careerRecordCurrentCardHtml" not in src
+    assert "data-career-record-id" not in src
+    assert "openCareerRecordDetailFromElementV2" not in src
+    assert "selectCareerRecordForAnalysis" not in src
+    assert "onCareerRecordAnalysisKeydown" not in src
     assert "metric.display" in normalize_body
     assert "scope.labels" in normalize_body
     assert "item.improvement" in normalize_body
-    assert "record.metric.display" in card_body
-    assert "record.scope.labels" in card_body
-    assert "record.improvement.display" in card_body
     forbidden_frontend_calculations = [
         "totalImprovement +=",
         "axisDirection =",
@@ -116,7 +148,7 @@ def test_records_v2_cards_render_backend_fields_without_recomputing():
         "metric.value -",
         "metric.value +",
     ]
-    combined = normalize_body + card_body
+    combined = normalize_body + render_body
     for token in forbidden_frontend_calculations:
         assert token not in combined
 

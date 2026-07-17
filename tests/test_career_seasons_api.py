@@ -2,6 +2,7 @@ import json
 import sqlite3
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 import career_backend
@@ -271,6 +272,75 @@ class TestCareerSeasonsApi(unittest.TestCase):
             self.assertEqual(result["seasons"][0]["total_distance_km"], 10.0)
             self.assertEqual(result["seasons"][0]["race_count"], 1)
             _assert_forbidden_keys_absent(self, result)
+        finally:
+            conn.close()
+
+    def test_preloaded_activity_rows_keep_year_and_sport_filters_without_rescan(self):
+        conn = sqlite3.connect(":memory:")
+        try:
+            _create_activity_table(conn)
+            career_backend.ensure_career_schema(conn)
+            _insert_activity(conn, id=1, start_time="2026-01-01T08:00:00+08:00", sport_type="running", dist_km=10.0)
+            _insert_activity(conn, id=2, start_time="2026-02-01T08:00:00+08:00", sport_type="cycling", dist_km=40.0)
+            _insert_activity(conn, id=3, start_time="2025-01-01T08:00:00+08:00", sport_type="running", dist_km=5.0)
+            activity_rows = career_backend._overview_activity_rows(conn)
+
+            with mock.patch.object(
+                career_backend,
+                "_season_activity_rows",
+                side_effect=AssertionError("_season_activity_rows should not run with preloaded rows"),
+            ):
+                result = career_backend.get_career_seasons(
+                    {"year": "2026", "sport": "running"},
+                    conn=conn,
+                    activity_rows=activity_rows,
+                )
+
+            self.assertEqual(result["filters"], {"year": 2026, "sport": "running"})
+            self.assertEqual(len(result["seasons"]), 1)
+            self.assertEqual(result["seasons"][0]["year"], 2026)
+            self.assertEqual(result["seasons"][0]["activity_count"], 1)
+            self.assertEqual(result["seasons"][0]["total_distance_km"], 10.0)
+        finally:
+            conn.close()
+
+    def test_preloaded_activity_rows_are_reused_for_report_update_annotation(self):
+        conn = sqlite3.connect(":memory:")
+        try:
+            _create_activity_table(conn)
+            career_backend.ensure_career_schema(conn)
+            _insert_activity(conn, id=1, start_time="2026-01-01T08:00:00+08:00", dist_km=10.0, duration=3600, sport_type="running", region_city="北京")
+            snapshot = career_backend.build_career_year_snapshot(2026, conn=conn, as_of_date="2026-07-14")
+            career_backend.save_ready_career_ai_insight(
+                scope="career_year",
+                scope_key="2026",
+                snapshot_fingerprint=snapshot["source_fingerprint"],
+                snapshot_version=snapshot["snapshot_version"],
+                prompt_version="acs.year.summary.zh-CN.v4",
+                model_id="test-model",
+                content={"schema_version": "acs.year.report.v3", "title": "旧报告"},
+                content_validated=True,
+                conn=conn,
+            )
+            _insert_activity(conn, id=2, start_time="2026-02-01T08:00:00+08:00", dist_km=5.0, duration=1800, sport_type="running", region_city="上海")
+            activity_rows = career_backend._overview_activity_rows(conn)
+
+            with (
+                mock.patch.object(
+                    career_backend,
+                    "_overview_activity_rows",
+                    side_effect=AssertionError("_overview_activity_rows should not run during annotation"),
+                ),
+                mock.patch.object(
+                    career_backend,
+                    "_season_activity_rows",
+                    side_effect=AssertionError("_season_activity_rows should not run with preloaded rows"),
+                ),
+            ):
+                result = career_backend.get_career_seasons(conn=conn, activity_rows=activity_rows)
+
+            season_2026 = next(season for season in result["seasons"] if season["year"] == 2026)
+            self.assertTrue(season_2026["report_update_available"])
         finally:
             conn.close()
 

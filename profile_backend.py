@@ -1034,6 +1034,8 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             city TEXT,
             country TEXT,
             display TEXT,
+            admin1 TEXT,
+            admin1_code TEXT,
             provider TEXT,
             status TEXT,
             error TEXT,
@@ -1042,6 +1044,22 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             last_used_at TEXT
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS app_migrations (
+            key TEXT PRIMARY KEY,
+            status TEXT,
+            updated_at TEXT,
+            details_json TEXT
+        )
+    """)
+    for col, dtype in [
+        ("admin1", "TEXT"),
+        ("admin1_code", "TEXT"),
+    ]:
+        try:
+            conn.execute(f"ALTER TABLE geocode_cache ADD COLUMN {col} {dtype}")
+        except Exception:
+            pass
     conn.execute("""
         CREATE TABLE IF NOT EXISTS device_product_mappings (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1116,7 +1134,7 @@ def _init_schema(conn: sqlite3.Connection) -> None:
         "advanced_metrics",
         "file_path",    "start_time",  "title",       "title_source",
         "start_time_utc","start_lat",  "start_lon",   "region",
-        "region_city",  "region_country","region_display",
+        "region_city",  "region_country","region_display","region_admin1","region_admin1_code",
         "region_status","region_error","region_updated_at","region_attempt_count",
         "region_source","region_confidence",
         "weather_json", "weather_status", "weather_updated_at", "weather_attempt_count", "weather_error",
@@ -1138,7 +1156,7 @@ def _init_schema(conn: sqlite3.Connection) -> None:
         "TEXT",
         "TEXT", "TEXT", "TEXT", "TEXT",
         "TEXT", "REAL", "REAL", "TEXT",
-        "TEXT", "TEXT", "TEXT",
+        "TEXT", "TEXT", "TEXT", "TEXT", "TEXT",
         "TEXT DEFAULT 'pending'", "TEXT", "TEXT", "INTEGER DEFAULT 0",
         "TEXT", "TEXT",
         "TEXT", "TEXT DEFAULT 'pending'", "TEXT", "INTEGER DEFAULT 0", "TEXT",
@@ -1208,6 +1226,8 @@ def _init_schema(conn: sqlite3.Connection) -> None:
         ("region_city", "TEXT"),
         ("region_country", "TEXT"),
         ("region_display", "TEXT"),
+        ("region_admin1", "TEXT"),
+        ("region_admin1_code", "TEXT"),
         ("region_status", "TEXT DEFAULT 'pending'"),
         ("region_error", "TEXT"),
         ("region_updated_at", "TEXT"),
@@ -1602,15 +1622,22 @@ def save_activity(data: dict[str, Any]) -> int:
                     (filename, title, title_source, sport_type, sub_sport_type, dist_km, duration_sec, gain_m, max_alt_m,
                      avg_hr, max_hr, avg_cadence, hr_decoupling, tss, points_json, file_path, start_time, start_time_utc,
                      start_lat, start_lon, region, region_city, region_country, region_display, region_status, region_error,
-                     region_updated_at, region_attempt_count, weather_json, weather_status, weather_updated_at,
+                     region_admin1, region_admin1_code, region_updated_at, region_attempt_count, weather_json, weather_status, weather_updated_at,
                      weather_attempt_count, weather_error, avg_pace, calories, avg_power, max_power,
                      normalized_power, avg_stroke_distance, swolf, shadow_diff_json,
                      min_alt_m, total_descent_m, up_count, down_count, max_single_climb_m, difficulty_score, report_metrics_version,
                      avg_grade_pct, max_slope_pct, min_slope_pct, uphill_pct, downhill_pct)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                        ?, ?, ?, ?,
-                        ?, ?, ?, ?, ?, ?, ?,
-                        ?, ?, ?, ?, ?)
+                VALUES (
+                    ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?
+                )
                 """,
                 (
                     data.get("filename"),
@@ -1639,6 +1666,8 @@ def save_activity(data: dict[str, Any]) -> int:
                     data.get("region_display"),
                     data.get("region_status"),
                     data.get("region_error"),
+                    data.get("region_admin1"),
+                    data.get("region_admin1_code"),
                     data.get("region_updated_at"),
                     data.get("region_attempt_count", 0),
                     data.get("weather_json"),
@@ -2366,6 +2395,8 @@ def build_initial_region_fields(lat: Any, lon: Any) -> dict[str, Any]:
             "region_city": None,
             "region_country": None,
             "region_display": "室内运动",
+            "region_admin1": None,
+            "region_admin1_code": None,
             "region_status": "none",
             "region_error": None,
             "region_updated_at": datetime.now().isoformat(),
@@ -2376,6 +2407,8 @@ def build_initial_region_fields(lat: Any, lon: Any) -> dict[str, Any]:
         "region_city": None,
         "region_country": None,
         "region_display": None,
+        "region_admin1": None,
+        "region_admin1_code": None,
         "region_status": "pending",
         "region_error": None,
         "region_updated_at": None,
@@ -2400,6 +2433,70 @@ def _format_city_country(city: str | None, country: str | None) -> str:
     return city_text or country_text
 
 
+_CHINA_ADMIN1_CODE_BY_ALIAS: dict[str, str] = {
+    "北京": "CN-BJ", "北京市": "CN-BJ",
+    "天津": "CN-TJ", "天津市": "CN-TJ",
+    "河北": "CN-HE", "河北省": "CN-HE",
+    "山西": "CN-SX", "山西省": "CN-SX",
+    "内蒙古": "CN-NM", "内蒙古自治区": "CN-NM",
+    "辽宁": "CN-LN", "辽宁省": "CN-LN",
+    "吉林": "CN-JL", "吉林省": "CN-JL",
+    "黑龙江": "CN-HL", "黑龙江省": "CN-HL",
+    "上海": "CN-SH", "上海市": "CN-SH",
+    "江苏": "CN-JS", "江苏省": "CN-JS",
+    "浙江": "CN-ZJ", "浙江省": "CN-ZJ",
+    "安徽": "CN-AH", "安徽省": "CN-AH",
+    "福建": "CN-FJ", "福建省": "CN-FJ",
+    "江西": "CN-JX", "江西省": "CN-JX",
+    "山东": "CN-SD", "山东省": "CN-SD",
+    "河南": "CN-HA", "河南省": "CN-HA",
+    "湖北": "CN-HB", "湖北省": "CN-HB",
+    "湖南": "CN-HN", "湖南省": "CN-HN",
+    "广东": "CN-GD", "广东省": "CN-GD",
+    "广西": "CN-GX", "广西壮族自治区": "CN-GX",
+    "海南": "CN-HI", "海南省": "CN-HI",
+    "重庆": "CN-CQ", "重庆市": "CN-CQ",
+    "四川": "CN-SC", "四川省": "CN-SC",
+    "贵州": "CN-GZ", "贵州省": "CN-GZ",
+    "云南": "CN-YN", "云南省": "CN-YN",
+    "西藏": "CN-XZ", "西藏自治区": "CN-XZ",
+    "陕西": "CN-SN", "陕西省": "CN-SN",
+    "甘肃": "CN-GS", "甘肃省": "CN-GS",
+    "青海": "CN-QH", "青海省": "CN-QH",
+    "宁夏": "CN-NX", "宁夏回族自治区": "CN-NX",
+    "新疆": "CN-XJ", "新疆维吾尔自治区": "CN-XJ",
+    "台湾": "CN-TW", "台灣": "CN-TW", "台湾省": "CN-TW", "台灣省": "CN-TW",
+    "香港": "CN-HK", "香港特别行政区": "CN-HK",
+    "澳门": "CN-MO", "澳門": "CN-MO", "澳门特别行政区": "CN-MO",
+}
+
+
+def _normalize_country_for_admin1(country: Any) -> str:
+    text = str(country or "").strip().lower()
+    if text in {"中国", "中华人民共和国", "china", "cn", "prc", "台湾", "台灣", "taiwan", "香港", "hong kong", "澳门", "澳門", "macau", "macao"}:
+        return "CN"
+    if text in {"日本", "japan", "jp"}:
+        return "JP"
+    if text in {"美国", "美國", "us", "usa", "united states", "united states of america"}:
+        return "US"
+    return text.upper() if len(text) == 2 and text.isalpha() else ""
+
+
+def _admin1_code_from_components(admin1: Any, country: Any) -> str | None:
+    admin1_text = str(admin1 or "").strip()
+    if not admin1_text:
+        return None
+    upper = admin1_text.upper()
+    if "-" in upper and len(upper) <= 12:
+        return upper
+    country_code = _normalize_country_for_admin1(country)
+    if country_code == "CN":
+        return _CHINA_ADMIN1_CODE_BY_ALIAS.get(admin1_text)
+    if country_code == "US" and len(upper) == 2 and upper.isalpha():
+        return f"US-{upper}"
+    return None
+
+
 def _first_geo_text(geo: dict[str, Any], keys: tuple[str, ...]) -> str | None:
     for key in keys:
         value = str(geo.get(key) or "").strip()
@@ -2422,9 +2519,9 @@ def _display_name_fallback(display_name: str, country: str | None) -> str | None
     return parts[0]
 
 
-def _extract_city_country(geo: dict[str, Any] | None) -> tuple[str | None, str | None, str]:
+def _extract_region_components(geo: dict[str, Any] | None) -> dict[str, str | None]:
     if not geo:
-        return None, None, ""
+        return {"city": None, "country": None, "display": "", "admin1": None, "admin1_code": None}
     city = _first_geo_text(
         geo,
         (
@@ -2435,9 +2532,6 @@ def _extract_city_country(geo: dict[str, Any] | None) -> tuple[str | None, str |
             "village",
             "hamlet",
             "district",
-            "state",
-            "province",
-            "region",
             "suburb",
             "neighbourhood",
             "locality",
@@ -2451,9 +2545,206 @@ def _extract_city_country(geo: dict[str, Any] | None) -> tuple[str | None, str |
         ),
     )
     country = str(geo.get("country") or "").strip() or None
+    admin1 = _first_geo_text(geo, ("state", "province", "region"))
     if not city:
-        city = _display_name_fallback(str(geo.get("display_name") or ""), country)
-    return city, country, _format_city_country(city, country)
+        city = _display_name_fallback(str(geo.get("display_name") or ""), country) or admin1
+    display = _format_city_country(city, country)
+    return {
+        "city": city,
+        "country": country,
+        "display": display,
+        "admin1": admin1,
+        "admin1_code": _admin1_code_from_components(admin1, country),
+    }
+
+
+def _extract_city_country(geo: dict[str, Any] | None) -> tuple[str | None, str | None, str]:
+    components = _extract_region_components(geo)
+    return components["city"], components["country"], str(components["display"] or "")
+
+
+REGION_ADMIN1_BACKFILL_VERSION_KEY = "region_admin1_backfill_v1"
+_REGION_ADMIN1_SUPPORTED_SCOPES = ("CN", "JP")
+_REGION_ADMIN1_GEOJSON_ASSETS = {
+    "CN": "career_footprint_china.geo.json",
+    "JP": "career_footprint_japan.geo.json",
+}
+_REGION_ADMIN1_MAP_CACHE: dict[str, list[dict[str, Any]]] = {}
+_REGION_ADMIN1_MAP_LOCK = threading.Lock()
+
+
+def _app_base_dir() -> Path:
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        return Path(sys._MEIPASS)
+    return Path(__file__).resolve().parent
+
+
+def _region_admin1_asset_path(scope: str) -> Path:
+    return _app_base_dir() / "assets" / _REGION_ADMIN1_GEOJSON_ASSETS[scope]
+
+
+def _iter_region_admin1_polygons(geometry: dict[str, Any]) -> list[list[list[float]]]:
+    geo_type = str((geometry or {}).get("type") or "")
+    coordinates = (geometry or {}).get("coordinates") or []
+    if geo_type == "Polygon":
+        return coordinates if isinstance(coordinates, list) else []
+    if geo_type == "MultiPolygon":
+        polygons: list[list[list[float]]] = []
+        for polygon in coordinates:
+            if isinstance(polygon, list):
+                polygons.append(polygon)
+        return polygons
+    return []
+
+
+def _ring_bbox(ring: list[Any]) -> tuple[float, float, float, float] | None:
+    points: list[tuple[float, float]] = []
+    for point in ring:
+        if not isinstance(point, (list, tuple)) or len(point) < 2:
+            continue
+        try:
+            points.append((float(point[0]), float(point[1])))
+        except (TypeError, ValueError):
+            continue
+    if not points:
+        return None
+    lons = [point[0] for point in points]
+    lats = [point[1] for point in points]
+    return min(lons), min(lats), max(lons), max(lats)
+
+
+def _polygon_bbox(polygon: list[Any]) -> tuple[float, float, float, float] | None:
+    bboxes = [_ring_bbox(ring) for ring in polygon if isinstance(ring, list)]
+    clean = [bbox for bbox in bboxes if bbox is not None]
+    if not clean:
+        return None
+    return (
+        min(bbox[0] for bbox in clean),
+        min(bbox[1] for bbox in clean),
+        max(bbox[2] for bbox in clean),
+        max(bbox[3] for bbox in clean),
+    )
+
+
+def _point_in_ring(lon: float, lat: float, ring: list[Any]) -> bool:
+    inside = False
+    points: list[tuple[float, float]] = []
+    for item in ring:
+        if not isinstance(item, (list, tuple)) or len(item) < 2:
+            continue
+        try:
+            points.append((float(item[0]), float(item[1])))
+        except (TypeError, ValueError):
+            continue
+    if len(points) < 3:
+        return False
+    j = len(points) - 1
+    for i, point in enumerate(points):
+        xi, yi = point
+        xj, yj = points[j]
+        intersects = ((yi > lat) != (yj > lat)) and (
+            lon < (xj - xi) * (lat - yi) / ((yj - yi) or 1e-12) + xi
+        )
+        if intersects:
+            inside = not inside
+        j = i
+    return inside
+
+
+def _point_in_polygon(lon: float, lat: float, polygon: list[Any]) -> bool:
+    if not polygon:
+        return False
+    outer = polygon[0]
+    if not isinstance(outer, list) or not _point_in_ring(lon, lat, outer):
+        return False
+    for hole in polygon[1:]:
+        if isinstance(hole, list) and _point_in_ring(lon, lat, hole):
+            return False
+    return True
+
+
+def _load_region_admin1_map(scope: str) -> list[dict[str, Any]]:
+    clean_scope = str(scope or "").strip().upper()
+    if clean_scope not in _REGION_ADMIN1_GEOJSON_ASSETS:
+        return []
+    with _REGION_ADMIN1_MAP_LOCK:
+        cached = _REGION_ADMIN1_MAP_CACHE.get(clean_scope)
+        if cached is not None:
+            return cached
+        path = _region_admin1_asset_path(clean_scope)
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            logger.warning("admin1 backfill map asset load failed: scope=%s path=%s error=%s", clean_scope, path, exc)
+            _REGION_ADMIN1_MAP_CACHE[clean_scope] = []
+            return []
+        regions: list[dict[str, Any]] = []
+        for feature in data.get("features") or []:
+            if not isinstance(feature, dict):
+                continue
+            props = feature.get("properties") if isinstance(feature.get("properties"), dict) else {}
+            region_key = str(props.get("region_key") or props.get("key") or "").strip()
+            if not region_key:
+                continue
+            admin1 = str(props.get("source_name") or props.get("name") or "").strip()
+            if not admin1:
+                continue
+            polygons = _iter_region_admin1_polygons(feature.get("geometry") if isinstance(feature.get("geometry"), dict) else {})
+            prepared = []
+            for polygon in polygons:
+                bbox = _polygon_bbox(polygon)
+                if bbox:
+                    prepared.append({"rings": polygon, "bbox": bbox})
+            if prepared:
+                regions.append({"admin1_code": region_key, "admin1": admin1, "polygons": prepared})
+        _REGION_ADMIN1_MAP_CACHE[clean_scope] = regions
+        return regions
+
+
+def _normalize_region_admin1_scopes(country_scope: Any = None, country_hint: Any = None) -> list[str]:
+    raw_values: list[Any]
+    if country_scope is None or country_scope == "":
+        hint = _normalize_country_for_admin1(country_hint)
+        return [hint] if hint in _REGION_ADMIN1_SUPPORTED_SCOPES else list(_REGION_ADMIN1_SUPPORTED_SCOPES)
+    if isinstance(country_scope, (list, tuple, set)):
+        raw_values = list(country_scope)
+    else:
+        raw_values = [country_scope]
+    scopes: list[str] = []
+    for item in raw_values:
+        token = str(item or "").strip().upper()
+        if token in {"ALL", "*"}:
+            return list(_REGION_ADMIN1_SUPPORTED_SCOPES)
+        normalized = _normalize_country_for_admin1(token) or token
+        if normalized in _REGION_ADMIN1_SUPPORTED_SCOPES and normalized not in scopes:
+            scopes.append(normalized)
+    return scopes
+
+
+def _resolve_admin1_from_local_maps(
+    lat: Any,
+    lon: Any,
+    *,
+    country_scope: Any = None,
+    country_hint: Any = None,
+) -> dict[str, str] | None:
+    coord = _coerce_lat_lon(lat, lon)
+    if coord is None:
+        return None
+    lat_val, lon_val = coord
+    for scope in _normalize_region_admin1_scopes(country_scope, country_hint):
+        for region in _load_region_admin1_map(scope):
+            for polygon in region.get("polygons") or []:
+                min_lon, min_lat, max_lon, max_lat = polygon["bbox"]
+                if lon_val < min_lon or lon_val > max_lon or lat_val < min_lat or lat_val > max_lat:
+                    continue
+                if _point_in_polygon(lon_val, lat_val, polygon["rings"]):
+                    return {
+                        "admin1": str(region["admin1"]),
+                        "admin1_code": str(region["admin1_code"]),
+                        "country_code": scope,
+                    }
+    return None
 
 
 def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -2539,7 +2830,7 @@ def resolve_preview_region(lat: Any, lon: Any) -> dict[str, Any]:
         conn = _conn()
         try:
             row = conn.execute(
-                "SELECT city, country, display FROM geocode_cache WHERE cache_key = ? AND status = 'success' LIMIT 1",
+                "SELECT city, country, display, admin1, admin1_code FROM geocode_cache WHERE cache_key = ? AND status = 'success' LIMIT 1",
                 (cache_key,),
             ).fetchone()
             if row:
@@ -2555,6 +2846,8 @@ def resolve_preview_region(lat: Any, lon: Any) -> dict[str, Any]:
                         "region_city": row["city"],
                         "region_country": row["country"],
                         "region_display": display,
+                        "region_admin1": row["admin1"],
+                        "region_admin1_code": row["admin1_code"],
                         "region_status": "success",
                         "region_error": None,
                         "region_updated_at": now,
@@ -2566,14 +2859,29 @@ def resolve_preview_region(lat: Any, lon: Any) -> dict[str, Any]:
 
     try:
         geo = reverse_geocode(lat_round, lon_round)
-        city, country, display = _extract_city_country(geo)
+        components = _extract_region_components(geo)
+        city = components["city"]
+        country = components["country"]
+        display = str(components["display"] or "")
         if not display:
             raise RuntimeError("未返回城市/国家")
 
         try:
             conn = _conn()
             try:
-                _write_geocode_cache(conn, cache_key, lat_round, lon_round, city, country, display, "success", None)
+                _write_geocode_cache(
+                    conn,
+                    cache_key,
+                    lat_round,
+                    lon_round,
+                    city,
+                    country,
+                    display,
+                    "success",
+                    None,
+                    admin1=components["admin1"],
+                    admin1_code=components["admin1_code"],
+                )
                 conn.commit()
             finally:
                 conn.close()
@@ -2587,6 +2895,8 @@ def resolve_preview_region(lat: Any, lon: Any) -> dict[str, Any]:
             "region_city": city,
             "region_country": country,
             "region_display": display,
+            "region_admin1": components["admin1"],
+            "region_admin1_code": components["admin1_code"],
             "region_status": "success",
             "region_error": None,
             "region_updated_at": datetime.now().isoformat(),
@@ -2615,23 +2925,38 @@ def resolve_preview_region(lat: Any, lon: Any) -> dict[str, Any]:
         }
 
 
-def _write_geocode_cache(conn: sqlite3.Connection, cache_key: str, lat_round: float, lon_round: float, city: str | None, country: str | None, display: str, status: str, error: str | None) -> None:
+def _write_geocode_cache(
+    conn: sqlite3.Connection,
+    cache_key: str,
+    lat_round: float,
+    lon_round: float,
+    city: str | None,
+    country: str | None,
+    display: str,
+    status: str,
+    error: str | None,
+    *,
+    admin1: str | None = None,
+    admin1_code: str | None = None,
+) -> None:
     now = datetime.now().isoformat()
     conn.execute(
         """
-        INSERT INTO geocode_cache (cache_key, lat_round, lon_round, city, country, display, provider, status, error, created_at, updated_at, last_used_at)
-        VALUES (?, ?, ?, ?, ?, ?, 'nominatim', ?, ?, ?, ?, ?)
+        INSERT INTO geocode_cache (cache_key, lat_round, lon_round, city, country, display, admin1, admin1_code, provider, status, error, created_at, updated_at, last_used_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'nominatim', ?, ?, ?, ?, ?)
         ON CONFLICT(cache_key) DO UPDATE SET
             city = excluded.city,
             country = excluded.country,
             display = excluded.display,
+            admin1 = excluded.admin1,
+            admin1_code = excluded.admin1_code,
             provider = excluded.provider,
             status = excluded.status,
             error = excluded.error,
             updated_at = excluded.updated_at,
             last_used_at = excluded.last_used_at
         """,
-        (cache_key, lat_round, lon_round, city, country, display, status, error, now, now, now),
+        (cache_key, lat_round, lon_round, city, country, display, admin1, admin1_code, status, error, now, now, now),
     )
 
 
@@ -2656,6 +2981,7 @@ def _region_enrich_activity_update_sql(*, include_title: bool, inferred: bool = 
         UPDATE activities
         SET {title_sql}
             region_city = ?, region_country = ?, region_display = ?, region = ?,
+            region_admin1 = ?, region_admin1_code = ?,
             region_status = '{status}', region_error = NULL, {source_sql}
             region_updated_at = ?, updated_at = updated_at
         WHERE id = ?
@@ -2670,6 +2996,8 @@ def _region_enrich_apply_to_matching_activities(
     city: Any,
     country: Any,
     display: Any,
+    admin1: Any = None,
+    admin1_code: Any = None,
     source: str = "nominatim",
 ) -> dict[str, int]:
     display_text = str(display or "").strip()
@@ -2705,10 +3033,10 @@ def _region_enrich_apply_to_matching_activities(
                     sub_sport_type=row["sub_sport_type"],
                     region_display=display_text,
                 )
-                params = (title, title_source, city, country, display_text, display_text, now, int(row["id"]))
+                params = (title, title_source, city, country, display_text, display_text, admin1, admin1_code, now, int(row["id"]))
                 title_updated += 1
             else:
-                params = (city, country, display_text, display_text, now, int(row["id"]))
+                params = (city, country, display_text, display_text, admin1, admin1_code, now, int(row["id"]))
                 if str(row["title"] or "").strip():
                     title_protected += 1
             conn.execute(_region_enrich_activity_update_sql(include_title=allow_title_update, inferred=inferred), params)
@@ -2732,7 +3060,10 @@ def _region_enrich_apply_offline_fallback(
         return {"updated": 0, "title_updated": 0, "title_protected": 0}
     try:
         offline = offline_resolver(lat_round, lon_round)
-        city, country, display = _extract_city_country(offline)
+        components = _extract_region_components(offline)
+        city = components["city"]
+        country = components["country"]
+        display = str(components["display"] or "")
         if not display:
             return {"updated": 0, "title_updated": 0, "title_protected": 0}
         return _region_enrich_apply_to_matching_activities(
@@ -2742,6 +3073,8 @@ def _region_enrich_apply_offline_fallback(
             city=city,
             country=country,
             display=display,
+            admin1=components["admin1"],
+            admin1_code=components["admin1_code"],
             source="offline_geocoder",
         )
     except Exception as exc:
@@ -2836,6 +3169,235 @@ def region_enrichment_dry_run(years: list[int] | None = None, conn: sqlite3.Conn
             db.close()
 
 
+def _region_admin1_backfill_base_result(*, dry_run: bool, limit: int | None, country_scope: Any) -> dict[str, Any]:
+    scopes = _normalize_region_admin1_scopes(country_scope)
+    return {
+        "ok": True,
+        "dry_run": dry_run,
+        "limit": limit,
+        "country_scope": scopes or list(_REGION_ADMIN1_SUPPORTED_SCOPES),
+        "supported_country_scopes": list(_REGION_ADMIN1_SUPPORTED_SCOPES),
+        "version_key": REGION_ADMIN1_BACKFILL_VERSION_KEY,
+        "version_marked": False,
+        "scanned_cache_count": 0,
+        "updated_cache_count": 0,
+        "unresolved_cache_count": 0,
+        "scanned_activity_count": 0,
+        "updated_activity_count": 0,
+        "unresolved_activity_count": 0,
+    }
+
+
+def _cache_key_from_row(row: sqlite3.Row | dict[str, Any]) -> tuple[str, float, float] | None:
+    cache_key = str(row["cache_key"] or "").strip()
+    lat = row["lat_round"] if "lat_round" in row.keys() else None
+    lon = row["lon_round"] if "lon_round" in row.keys() else None
+    coord = _coerce_lat_lon(lat, lon)
+    if coord is not None and cache_key:
+        return cache_key, coord[0], coord[1]
+    if cache_key and "," in cache_key:
+        parts = cache_key.split(",", 1)
+        coord = _coerce_lat_lon(parts[0], parts[1])
+        if coord is not None:
+            return cache_key, coord[0], coord[1]
+    return None
+
+
+def _select_region_admin1_cache_candidates(db: sqlite3.Connection, limit: int | None) -> list[sqlite3.Row]:
+    limit_sql = "" if limit is None else "LIMIT ?"
+    params: tuple[Any, ...] = () if limit is None else (max(0, int(limit)),)
+    return db.execute(
+        f"""
+        SELECT cache_key, lat_round, lon_round, city, country, display, admin1, admin1_code
+        FROM geocode_cache
+        WHERE status = 'success'
+          AND cache_key IS NOT NULL
+          AND cache_key != ''
+          AND (
+            admin1 IS NULL OR admin1 = ''
+            OR admin1_code IS NULL OR admin1_code = ''
+          )
+        ORDER BY COALESCE(updated_at, created_at, last_used_at, '') ASC, cache_key ASC
+        {limit_sql}
+        """,
+        params,
+    ).fetchall()
+
+
+def _select_region_admin1_activity_candidates(db: sqlite3.Connection, limit: int | None) -> list[sqlite3.Row]:
+    limit_sql = "" if limit is None else "LIMIT ?"
+    params: tuple[Any, ...] = () if limit is None else (max(0, int(limit)),)
+    return db.execute(
+        f"""
+        SELECT id, start_lat, start_lon, region_country, region_city, region_display,
+               region_admin1, region_admin1_code
+        FROM activities
+        WHERE COALESCE(deleted_at, '') = ''
+          AND region_status = 'success'
+          AND start_lat IS NOT NULL
+          AND start_lon IS NOT NULL
+          AND (
+            region_admin1 IS NULL OR region_admin1 = ''
+            OR region_admin1_code IS NULL OR region_admin1_code = ''
+          )
+        ORDER BY COALESCE(region_updated_at, start_time, updated_at, '') ASC, id ASC
+        {limit_sql}
+        """,
+        params,
+    ).fetchall()
+
+
+def _load_cache_admin1_by_key(db: sqlite3.Connection) -> dict[str, dict[str, str]]:
+    rows = db.execute(
+        """
+        SELECT cache_key, admin1, admin1_code
+        FROM geocode_cache
+        WHERE status = 'success'
+          AND COALESCE(admin1, '') != ''
+          AND COALESCE(admin1_code, '') != ''
+        """
+    ).fetchall()
+    return {
+        str(row["cache_key"]): {
+            "admin1": str(row["admin1"]),
+            "admin1_code": str(row["admin1_code"]),
+        }
+        for row in rows
+        if str(row["cache_key"] or "").strip()
+    }
+
+
+def _mark_region_admin1_backfill_version(db: sqlite3.Connection, result: dict[str, Any]) -> None:
+    now = datetime.now().isoformat()
+    db.execute(
+        """
+        INSERT INTO app_migrations (key, status, updated_at, details_json)
+        VALUES (?, 'done', ?, ?)
+        ON CONFLICT(key) DO UPDATE SET
+            status = excluded.status,
+            updated_at = excluded.updated_at,
+            details_json = excluded.details_json
+        """,
+        (REGION_ADMIN1_BACKFILL_VERSION_KEY, now, json.dumps(result, ensure_ascii=False, default=str)),
+    )
+    result["version_marked"] = True
+
+
+def region_admin1_backfill_dry_run(limit: int | None = None, country_scope: Any = None) -> dict[str, Any]:
+    return run_region_admin1_backfill_once(limit=limit, country_scope=country_scope, dry_run=True)
+
+
+def run_region_admin1_backfill_once(
+    limit: int | None = 500,
+    country_scope: Any = None,
+    *,
+    dry_run: bool = False,
+    conn: sqlite3.Connection | None = None,
+) -> dict[str, Any]:
+    """Backfill structured admin1 fields from bundled map assets only.
+
+    This migration is intentionally separate from normal region enrichment: it
+    does not call network geocoding, does not alter city-level display fields,
+    and only fills missing admin1/admin1_code columns for old successful rows.
+    """
+    owns_conn = conn is None
+    db = conn or _conn()
+    result = _region_admin1_backfill_base_result(dry_run=dry_run, limit=limit, country_scope=country_scope)
+    simulated_cache: dict[str, dict[str, str]] = {}
+    try:
+        cache_rows = _select_region_admin1_cache_candidates(db, limit)
+        result["scanned_cache_count"] = len(cache_rows)
+        for row in cache_rows:
+            cache_info = _cache_key_from_row(row)
+            if cache_info is None:
+                result["unresolved_cache_count"] += 1
+                continue
+            cache_key, lat_round, lon_round = cache_info
+            resolved = _resolve_admin1_from_local_maps(
+                lat_round,
+                lon_round,
+                country_scope=country_scope,
+                country_hint=row["country"],
+            )
+            if not resolved:
+                result["unresolved_cache_count"] += 1
+                continue
+            simulated_cache[cache_key] = resolved
+            result["updated_cache_count"] += 1
+            if not dry_run:
+                db.execute(
+                    """
+                    UPDATE geocode_cache
+                    SET admin1 = COALESCE(NULLIF(admin1, ''), ?),
+                        admin1_code = COALESCE(NULLIF(admin1_code, ''), ?),
+                        updated_at = ?,
+                        last_used_at = COALESCE(last_used_at, ?)
+                    WHERE cache_key = ?
+                      AND status = 'success'
+                      AND (
+                        admin1 IS NULL OR admin1 = ''
+                        OR admin1_code IS NULL OR admin1_code = ''
+                      )
+                    """,
+                    (
+                        resolved["admin1"],
+                        resolved["admin1_code"],
+                        datetime.now().isoformat(),
+                        datetime.now().isoformat(),
+                        cache_key,
+                    ),
+                )
+
+        cache_admin = _load_cache_admin1_by_key(db)
+        cache_admin.update(simulated_cache)
+        activity_rows = _select_region_admin1_activity_candidates(db, limit)
+        result["scanned_activity_count"] = len(activity_rows)
+        for row in activity_rows:
+            cache_info = _region_cache_key(row["start_lat"], row["start_lon"])
+            cache_key = cache_info[0] if cache_info else ""
+            resolved = cache_admin.get(cache_key)
+            if not resolved:
+                resolved = _resolve_admin1_from_local_maps(
+                    row["start_lat"],
+                    row["start_lon"],
+                    country_scope=country_scope,
+                    country_hint=row["region_country"],
+                )
+            if not resolved:
+                result["unresolved_activity_count"] += 1
+                continue
+            result["updated_activity_count"] += 1
+            if not dry_run:
+                db.execute(
+                    """
+                    UPDATE activities
+                    SET region_admin1 = COALESCE(NULLIF(region_admin1, ''), ?),
+                        region_admin1_code = COALESCE(NULLIF(region_admin1_code, ''), ?),
+                        updated_at = updated_at
+                    WHERE id = ?
+                      AND COALESCE(deleted_at, '') = ''
+                      AND region_status = 'success'
+                      AND (
+                        region_admin1 IS NULL OR region_admin1 = ''
+                        OR region_admin1_code IS NULL OR region_admin1_code = ''
+                      )
+                    """,
+                    (resolved["admin1"], resolved["admin1_code"], int(row["id"])),
+                )
+        if not dry_run:
+            if limit is None:
+                _mark_region_admin1_backfill_version(db, result)
+            db.commit()
+    except Exception:
+        if not dry_run:
+            db.rollback()
+        raise
+    finally:
+        if owns_conn:
+            db.close()
+    return result
+
+
 def run_region_enrichment_once(limit: int = REGION_ENRICH_LIMIT, max_requests: int = REGION_ENRICH_MAX_REQUESTS, offline_resolver: Any | None = None) -> dict[str, Any]:
     if not _REGION_ENRICH_LOCK.acquire(blocking=False):
         return {"ok": True, "skipped": True, "reason": "running"}
@@ -2866,7 +3428,7 @@ def run_region_enrichment_once(limit: int = REGION_ENRICH_LIMIT, max_requests: i
             conn = _conn()
             try:
                 cached = conn.execute(
-                    "SELECT city, country, display FROM geocode_cache WHERE cache_key = ? AND status = 'success' LIMIT 1",
+                    "SELECT city, country, display, admin1, admin1_code FROM geocode_cache WHERE cache_key = ? AND status = 'success' LIMIT 1",
                     (cache_key,),
                 ).fetchone()
                 if cached:
@@ -2877,6 +3439,8 @@ def run_region_enrichment_once(limit: int = REGION_ENRICH_LIMIT, max_requests: i
                         city=cached["city"],
                         country=cached["country"],
                         display=cached["display"],
+                        admin1=cached["admin1"],
+                        admin1_code=cached["admin1_code"],
                     )
                     cache_hits += int(result["updated"])
                     success += int(result["updated"])
@@ -2918,12 +3482,27 @@ def run_region_enrichment_once(limit: int = REGION_ENRICH_LIMIT, max_requests: i
             requests_count += 1
             try:
                 geo = reverse_geocode(lat_round, lon_round)
-                city, country, display = _extract_city_country(geo)
+                components = _extract_region_components(geo)
+                city = components["city"]
+                country = components["country"]
+                display = str(components["display"] or "")
                 if not display:
                     raise RuntimeError("未返回城市/国家")
                 conn = _conn()
                 try:
-                    _write_geocode_cache(conn, cache_key, lat_round, lon_round, city, country, display, "success", None)
+                    _write_geocode_cache(
+                        conn,
+                        cache_key,
+                        lat_round,
+                        lon_round,
+                        city,
+                        country,
+                        display,
+                        "success",
+                        None,
+                        admin1=components["admin1"],
+                        admin1_code=components["admin1_code"],
+                    )
                     conn.commit()
                 finally:
                     conn.close()
@@ -2934,6 +3513,8 @@ def run_region_enrichment_once(limit: int = REGION_ENRICH_LIMIT, max_requests: i
                     city=city,
                     country=country,
                     display=display,
+                    admin1=components["admin1"],
+                    admin1_code=components["admin1_code"],
                 )
                 with _REGION_CACHE_LOCK:
                     _REGION_CACHE[(lat_round, lon_round)] = display
@@ -3045,6 +3626,8 @@ def refresh_activity_region(activity_id: int) -> dict[str, Any]:
             "ok": True,
             "region": "室内运动（无GPS）",
             "region_display": "室内运动",
+            "region_admin1": None,
+            "region_admin1_code": None,
             "region_status": "none",
         }
 
@@ -3054,7 +3637,7 @@ def refresh_activity_region(activity_id: int) -> dict[str, Any]:
     conn = _conn()
     try:
         cached = conn.execute(
-            "SELECT city, country, display FROM geocode_cache WHERE cache_key = ? AND status = 'success' LIMIT 1",
+            "SELECT city, country, display, admin1, admin1_code FROM geocode_cache WHERE cache_key = ? AND status = 'success' LIMIT 1",
             (cache_key,),
         ).fetchone()
         if cached and str(cached["display"] or "").strip():
@@ -3071,6 +3654,7 @@ def refresh_activity_region(activity_id: int) -> dict[str, Any]:
                 UPDATE activities
                 SET title = ?, title_source = ?,
                     region_city = ?, region_country = ?, region_display = ?, region = ?,
+                    region_admin1 = ?, region_admin1_code = ?,
                     region_status = 'success',
                     region_source = 'nominatim',
                     region_confidence = 'high',
@@ -3078,7 +3662,7 @@ def refresh_activity_region(activity_id: int) -> dict[str, Any]:
                     updated_at = updated_at
                 WHERE id = ?
                 """,
-                (title, title_source, cached["city"], cached["country"], display, display, now, aid),
+                (title, title_source, cached["city"], cached["country"], display, display, cached["admin1"], cached["admin1_code"], now, aid),
             )
             conn.execute("UPDATE geocode_cache SET last_used_at = ? WHERE cache_key = ?", (now, cache_key))
             conn.commit()
@@ -3090,6 +3674,8 @@ def refresh_activity_region(activity_id: int) -> dict[str, Any]:
                 "region_city": cached["city"],
                 "region_country": cached["country"],
                 "region_display": display,
+                "region_admin1": cached["admin1"],
+                "region_admin1_code": cached["admin1_code"],
                 "region_status": "success",
                 "cache_hit": True,
             }
@@ -3098,7 +3684,10 @@ def refresh_activity_region(activity_id: int) -> dict[str, Any]:
 
     try:
         geo = reverse_geocode(lat_round, lon_round)
-        city, country, display = _extract_city_country(geo)
+        components = _extract_region_components(geo)
+        city = components["city"]
+        country = components["country"]
+        display = str(components["display"] or "")
         if not display:
             raise RuntimeError("未返回城市/国家")
         title, title_source = build_activity_display_title(
@@ -3110,12 +3699,25 @@ def refresh_activity_region(activity_id: int) -> dict[str, Any]:
         )
         conn = _conn()
         try:
-            _write_geocode_cache(conn, cache_key, lat_round, lon_round, city, country, display, "success", None)
+            _write_geocode_cache(
+                conn,
+                cache_key,
+                lat_round,
+                lon_round,
+                city,
+                country,
+                display,
+                "success",
+                None,
+                admin1=components["admin1"],
+                admin1_code=components["admin1_code"],
+            )
             conn.execute(
                 """
                 UPDATE activities
                 SET title = ?, title_source = ?,
                     region_city = ?, region_country = ?, region_display = ?, region = ?,
+                    region_admin1 = ?, region_admin1_code = ?,
                     region_status = 'success',
                     region_source = 'nominatim',
                     region_confidence = 'high',
@@ -3123,7 +3725,7 @@ def refresh_activity_region(activity_id: int) -> dict[str, Any]:
                     updated_at = updated_at
                 WHERE id = ?
                 """,
-                (title, title_source, city, country, display, display, datetime.now().isoformat(), aid),
+                (title, title_source, city, country, display, display, components["admin1"], components["admin1_code"], datetime.now().isoformat(), aid),
             )
             conn.commit()
         finally:
@@ -3136,6 +3738,8 @@ def refresh_activity_region(activity_id: int) -> dict[str, Any]:
             "region_city": city,
             "region_country": country,
             "region_display": display,
+            "region_admin1": components["admin1"],
+            "region_admin1_code": components["admin1_code"],
             "region_status": "success",
             "cache_hit": False,
         }

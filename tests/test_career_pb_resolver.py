@@ -231,6 +231,63 @@ class TestCareerPbResolver(unittest.TestCase):
         finally:
             conn.close()
 
+    def test_legacy_resolver_does_not_overwrite_v2_active_record(self):
+        conn = sqlite3.connect(":memory:")
+        try:
+            _create_activity_table(conn)
+            _insert_activity(conn, id=167, dist_km=5.111, duration=1628)
+            career_backend.resolve_pb_records(conn)
+            career_backend._backfill_career_pb_record_v2_columns(conn)
+
+            evidence = career_backend.build_record_evidence(
+                record_key="running_5k",
+                activity_id="108",
+                sport="running",
+                source_mode="best_effort_distance",
+                metric_name="elapsed_time_sec",
+                metric_value=1212.156,
+                metric_unit="seconds",
+                event_date="2025-05-03",
+                scope={},
+                range_data={
+                    "start_sec": 1188.0,
+                    "end_sec": 2400.156,
+                    "duration_sec": 1212.156,
+                    "start_distance_m": 4379.64,
+                    "end_distance_m": 9379.64,
+                    "distance_m": 5000.0,
+                },
+                quality={
+                    "confidence": 0.92,
+                    "confidence_band": "high",
+                    "decision": "preview",
+                    "reason_codes": ["best_effort_distance_window"],
+                    "blocks_active": False,
+                },
+                resolver_version="best-effort-distance-v1",
+            ).to_dict()
+            career_backend.apply_record_evidence_state(conn, evidence, decision="auto_confirm", confidence=0.92)
+
+            result = career_backend.resolve_pb_records(conn)
+
+            self.assertEqual(result["pb_records_upserted"], 0)
+            rows = conn.execute(
+                """
+                SELECT id, value, status, source_mode
+                FROM career_pb_records
+                WHERE pb_type = 'running_5k'
+                ORDER BY status, value
+                """
+            ).fetchall()
+            by_id = {row[0]: row for row in rows}
+            v2_rows = [row for row in rows if row[3] == "best_effort_distance"]
+            self.assertEqual(len(v2_rows), 1)
+            self.assertEqual(v2_rows[0][1], "1212.156")
+            self.assertEqual(v2_rows[0][2], "active")
+            self.assertEqual(by_id["pb:running_5k:167"][2], "superseded")
+        finally:
+            conn.close()
+
     def test_overview_pb_count_reflects_active_records(self):
         conn = sqlite3.connect(":memory:")
         try:

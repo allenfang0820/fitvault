@@ -95,13 +95,16 @@ updated: 2026-07-12
 ```text
 Activity
   -> country / region_country
-  -> province_or_state / region_province / region_state
+  -> region_admin1_code / region_admin1
+  -> legacy province_or_state / region_province / region_state
   -> city / region_city
   -> footprint_region_key
 ```
 
 最小可用闭环：
 
+- 地区展示保持城市级：`region_city`、`region_display`、`region` 不因地图点亮改成省级
+- Nominatim / geocode_cache 成功时优先落库 `region_admin1` / `region_admin1_code`
 - 有中国城市但无省份时，后端可以通过受控映射补齐省份
 - 有海外国家但无州/省时，可先点亮国家级区域
 - 没有可靠地理信息的 Activity 进入 `without_region`，不参与地图点亮

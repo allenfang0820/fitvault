@@ -25,25 +25,16 @@ def extract_function_body(src: str, signature: str) -> str:
     raise AssertionError(f"function not closed: {signature}")
 
 
-def test_records_v2_status_strip_covers_required_states():
+def test_records_v2_does_not_restore_redundant_status_strip_cards():
     src = source()
-    render_body = extract_function_body(src, "function renderCareerRecordStatusStrip(catalog, selectedSport)")
 
-    assert 'id="career-record-status-strip"' in src
-    assert 'aria-live="polite"' in src
-    for state in (
-        "loading",
-        "empty",
-        "partial",
-        "candidate",
-        "rebuilding",
-        "error",
-        "validation_required",
-    ):
-        assert state in render_body
-    assert "state.records" in render_body
-    assert "state.candidates" in render_body
-    assert "availability_state" in render_body
+    assert 'id="career-record-status-strip"' not in src
+    assert "career-record-status-card" not in src
+    assert "careerRecordStatusCardHtml" not in src
+    assert "renderCareerRecordStatusStrip" not in src
+    assert "renderCareerRecordPreviewPanel" not in src
+    assert "careerRecordPreviewCardHtml" not in src
+    assert "data-career-record-preview-id" not in src
 
 
 def test_records_v2_responsive_breakpoints_and_no_hidden_overflow_mask():
@@ -57,15 +48,17 @@ def test_records_v2_responsive_breakpoints_and_no_hidden_overflow_mask():
     ):
         assert breakpoint in src
     assert ".career-record-groups" in src
+    assert ".career-record-preview-grid" not in src
     assert "overflow-x: auto" in src
     assert "scroll-snap-type: x proximity" in src
     assert ".career-record-analysis-grid" in src
     assert "grid-template-columns: 1fr" in src
     assert "overflow-wrap: anywhere" in src
     records_css_start = src.find(".career-records-v2-shell")
-    records_css_end = src.find(".career-pb-filter-row", records_css_start)
+    records_css_end = src.find("@media (max-width: 1100px)", records_css_start)
     records_css = src[records_css_start:records_css_end]
     assert "overflow: hidden" not in records_css
+    assert ".career-pb-list" not in src
 
 
 def test_records_v2_keyboard_focus_and_group_selection_accessibility():
@@ -87,12 +80,10 @@ def test_records_v2_keyboard_focus_and_group_selection_accessibility():
 
 def test_records_v2_actions_have_labels_and_busy_feedback():
     src = source()
-    card_body = extract_function_body(src, "function careerRecordCurrentCardHtml(record, index)")
     candidate_body = extract_function_body(src, "function careerRecordCandidateCardHtml(candidate)")
     decide_body = extract_function_body(src, "async function decideCareerRecordCandidateFromElement(event, el)")
 
-    assert "aria-label=\"查看 " in card_body
-    assert "aria-label=\"打开 " in card_body
+    assert "function careerRecordCurrentCardHtml" not in src
     assert "aria-label=\"确认候选纪录 " in candidate_body
     assert "aria-label=\"拒绝候选纪录 " in candidate_body
     assert "setAttribute('aria-busy', 'true')" in decide_body

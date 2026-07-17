@@ -113,7 +113,6 @@ class TestCareerGapP109PageIntegrity(unittest.TestCase):
             "career-archives-status-text",
             "career-archives-empty",
             "career-pb-status-text",
-            "career-pb-empty",
             "career-insight-status-text",
             "career-insight-empty",
             "career-memory-status-text",
@@ -121,6 +120,8 @@ class TestCareerGapP109PageIntegrity(unittest.TestCase):
         )
         for target in required_targets:
             self.assertIn(f'id="{target}"', self.career_panel)
+        self.assertNotIn('id="career-pb-empty"', self.career_panel)
+        self.assertNotIn('id="career-pb-list"', self.career_panel)
 
         for signature in (
             "function renderCareerArchivesLoading()",

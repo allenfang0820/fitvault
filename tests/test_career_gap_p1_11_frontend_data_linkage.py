@@ -71,7 +71,7 @@ class TestCareerGapP111FrontendDataLinkage(unittest.TestCase):
             "async function loadCareerOverview()": ("get_career_overview",),
             "async function loadCareerSeasons(filters)": ("get_career_seasons",),
             "async function loadCareerTimeline(filters)": ("get_career_timeline",),
-            "async function loadCareerArchives()": ("get_career_races", "get_career_pb"),
+            "async function loadCareerArchives()": ("get_career_races",),
             "async function loadCareerMemory(filters)": ("get_career_memory_gallery",),
             "async function loadCareerYearInsight(options)": ("get_career_year_insight",),
         }
@@ -125,15 +125,15 @@ class TestCareerGapP111FrontendDataLinkage(unittest.TestCase):
             extract_function_body(self.source, signature)
             for signature in (
                 "function normalizeCareerArchiveRace(item)",
-                "function normalizeCareerArchivePb(item)",
                 "function normalizeCareerArchiveAchievement(item)",
                 "function normalizeCareerTimelineNode(item)",
                 "function careerTimelineNodeMeta(node)",
                 "function careerRaceArchiveCardHtml(item)",
-                "function careerPbArchiveCardHtml(item)",
                 "function careerAchievementArchiveCardHtml(item)",
             )
         )
+        self.assertNotIn("function normalizeCareerArchivePb(item)", self.source)
+        self.assertNotIn("function careerPbArchiveCardHtml(item)", self.source)
         for forbidden in (
             "points",
             "points_json",

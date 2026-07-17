@@ -112,7 +112,6 @@ class TestCareerArchivesFrontendRender(unittest.TestCase):
             extract_function_body(cls.source, signature)
             for signature in (
                 "function normalizeCareerArchiveRace(item)",
-                "function normalizeCareerArchivePb(item)",
                 "function normalizeCareerArchiveAchievement(item)",
                 "function normalizeCareerArchives(payload)",
                 "function careerArchiveItemShell(item, title, meta)",
@@ -121,20 +120,15 @@ class TestCareerArchivesFrontendRender(unittest.TestCase):
                 "function careerRaceMetricsHtml(item)",
                 "function careerRaceJudgementHtml(item)",
                 "function careerRaceArchiveCardHtml(item)",
-                "function careerArchivePbHtml(item)",
-                "function careerPbArchiveCardHtml(item)",
                 "function careerArchiveAchievementHtml(item)",
                 "function careerAchievementArchiveCardHtml(item)",
                 "function renderCareerArchiveGroup(name, items, emptyText, renderer)",
                 "function getCareerRaceArchiveFilters()",
                 "function syncCareerRaceArchiveFilters(filters, summary)",
-                "function getCareerPbArchiveFilters()",
-                "function syncCareerPbArchiveFilters(filters, summary)",
                 "function renderCareerArchives(viewModel)",
                 "function renderCareerArchivesLoading()",
                 "function renderCareerArchivesError(message)",
                 "function onCareerRaceArchiveFilterChange()",
-                "function onCareerPbArchiveFilterChange()",
                 "async function loadCareerArchives()",
             )
         )
@@ -164,15 +158,19 @@ class TestCareerArchivesFrontendRender(unittest.TestCase):
         self.assertIn('id="career-pb-archive-shell"', pb_section)
         for token in (
             'id="career-records-v2-shell"',
-            'id="career-record-current-list" aria-live="polite"',
             'id="career-record-analysis-panel" aria-live="polite"',
-            'id="career-pb-summary" aria-live="polite"',
-            'id="career-pb-list"',
-            'id="career-pb-detail-panel" aria-live="polite"',
-            'id="career-pb-candidate-panel" aria-live="polite"',
-            'data-career-archive-list="pbs"',
         ):
             self.assertIn(token, self.source)
+        for token in (
+            'id="career-record-current-list"',
+            'id="career-pb-summary"',
+            'id="career-pb-list"',
+            'id="career-pb-detail-panel"',
+            'id="career-pb-candidate-panel"',
+            'id="career-pb-empty"',
+            'data-career-archive-list="pbs"',
+        ):
+            self.assertNotIn(token, self.source)
         self.assertNotIn('id="career-record-dashboard-stats"', self.source)
         for label in ("记录中心", "当前纪录", "演进", "候选"):
             self.assertIn(label, pb_section)
@@ -203,9 +201,10 @@ class TestCareerArchivesFrontendRender(unittest.TestCase):
     def test_loader_calls_existing_readonly_apis_only(self):
         body = extract_function_body(self.source, "async function loadCareerArchives()")
         self.assertIn("api.get_career_races(raceFilters)", body)
-        self.assertIn("api.get_career_pb(pbFilters)", body)
         self.assertIn("getCareerRaceArchiveFilters()", body)
-        self.assertIn("getCareerPbArchiveFilters()", body)
+        self.assertNotIn("api.get_career_pb", body)
+        self.assertNotIn("api.get_career_event_candidates", body)
+        self.assertNotIn("getCareerPbArchiveFilters()", body)
         self.assertNotIn("api.get_career_achievements", body)
         self.assertNotIn("getCareerAchievementArchiveFilters()", body)
         self.assertIn("for (let attempt = 0; attempt < 2; attempt += 1)", body)
@@ -229,13 +228,6 @@ class TestCareerArchivesFrontendRender(unittest.TestCase):
             "is_system_detected",
             "needs_user_judgement",
             "confidence_level",
-            "pb_type",
-            "pb_type_label",
-            "pb_title",
-            "value_unit",
-            "value_display",
-            "improvement_sec",
-            "improvement_display",
             "achievement_type",
             "achievement_type_label",
             "achievement_title",
@@ -254,11 +246,11 @@ class TestCareerArchivesFrontendRender(unittest.TestCase):
 
     def test_renderers_include_formal_race_archive_and_bucket_states(self):
         self.assertIn("renderCareerArchiveGroup('races'", self.relevant_js)
-        self.assertIn("renderCareerArchiveGroup('pbs'", self.relevant_js)
+        self.assertNotIn("renderCareerArchiveGroup('pbs'", self.relevant_js)
         self.assertNotIn("renderCareerArchiveGroup('achievements'", self.relevant_js)
-        self.assertIn("name === 'races' || name === 'pbs' ? source : source.slice(0, 5)", self.relevant_js)
+        self.assertIn("name === 'races' ? source : source.slice(0, 5)", self.relevant_js)
         self.assertIn("careerRaceArchiveCardHtml", self.relevant_js)
-        self.assertIn("careerPbArchiveCardHtml", self.relevant_js)
+        self.assertNotIn("careerPbArchiveCardHtml", self.source)
         self.assertNotIn("careerAchievementArchiveCardHtml", self.relevant_js)
         self.assertIn("career-race-card", self.source)
         self.assertIn("repeat(auto-fill, minmax(270px, 1fr))", self.source)
@@ -275,14 +267,13 @@ class TestCareerArchivesFrontendRender(unittest.TestCase):
         self.assertIn("cardMetrics", self.relevant_js)
         self.assertIn("linear-gradient(180deg, rgba(2, 6, 23, 0.08)", self.source)
         self.assertIn("career-race-badge", self.source)
-        self.assertIn("career-pb-card", self.source)
-        self.assertIn("career-pb-badge", self.source)
+        self.assertNotIn("career-pb-card", self.source)
+        self.assertNotIn("career-pb-badge", self.source)
         self.assertIn("career-achievement-card", self.source)
         self.assertIn("career-achievement-badge", self.source)
         self.assertIn("暂无赛事", self.relevant_js)
-        self.assertIn("暂无当前纪录", self.relevant_js)
-        self.assertIn("待确认", self.relevant_js)
-        self.assertIn("记录中心已接入", self.relevant_js)
+        self.assertNotIn("暂无当前纪录", self.relevant_js)
+        self.assertIn("记录中心 V2 已接入", self.relevant_js)
         self.assertIn("正在加载赛事档案", self.relevant_js)
         self.assertIn("赛事档案暂不可用", self.relevant_js)
         self.assertIn("当前筛选下共", self.relevant_js)
@@ -374,74 +365,45 @@ class TestCareerArchivesFrontendRender(unittest.TestCase):
         self.assertIn("career-race-year-filter", sync_body)
         self.assertIn("raceByYear", sync_body)
 
-    def test_pb_filters_reload_backend_view_model(self):
-        body = extract_function_body(self.source, "function onCareerPbArchiveFilterChange()")
-        self.assertIn("getCareerPbArchiveFilters()", body)
-        self.assertIn("loadCareerArchives()", body)
-        sync_body = extract_function_body(self.source, "function syncCareerPbArchiveFilters(filters, summary)")
-        self.assertIn("career-pb-year-filter", sync_body)
-        self.assertIn("pbByYear", sync_body)
-        card_body = extract_function_body(self.source, "function careerPbArchiveCardHtml(item)")
+    def test_legacy_pb_filters_and_cards_are_removed_from_records_page(self):
         for token in (
-            'role="button"',
-            'data-activity-id="',
-            'data-record-id="',
-            'data-pb-type="',
-            'openCareerRecordDetailFromElement(event, this)',
-            'aria-label="查看纪录详情与演进"',
-            'title="查看纪录详情与演进"',
-            'career-pb-value',
-            'career-pb-badge',
+            "function onCareerPbArchiveFilterChange()",
+            "function getCareerPbArchiveFilters()",
+            "function syncCareerPbArchiveFilters(filters, summary)",
+            "function careerPbArchiveCardHtml(item)",
+            "career-pb-year-filter",
+            "career-pb-sport-filter",
+            "career-pb-type-filter",
+            "openCareerRecordDetailFromElement(event, this)",
+            "career-pb-value",
+            "career-pb-badge",
         ):
-            self.assertIn(token, card_body)
+            self.assertNotIn(token, self.source)
 
     def test_pb_page_is_labeled_as_records_center(self):
         self.assertIn("pb: '记录中心'", self.source)
         self.assertIn("data-career-page-target=\"pb\" aria-pressed=\"false\" onclick=\"switchCareerPage('pb')\">记录</button>", self.source)
 
-    def test_pb_detail_and_history_view_calls_backend_contract(self):
+    def test_legacy_pb_detail_and_history_view_is_removed(self):
         for function_name in (
             "function renderCareerPbDetailPanel(detail, history)",
             "async function loadCareerPbDetail(recordId, pbType)",
             "function openCareerRecordDetailFromElement(event, el)",
-        ):
-            self.assertIn(function_name, self.source)
-        load_body = extract_function_body(self.source, "async function loadCareerPbDetail(recordId, pbType)")
-        self.assertIn("api.get_career_pb_detail(recordId)", load_body)
-        self.assertIn("api.get_career_pb_history(pbType || 'all', {})", load_body)
-        render_body = extract_function_body(self.source, "function renderCareerPbDetailPanel(detail, history)")
-        self.assertIn("career-pb-history-list", render_body)
-        self.assertIn("career-pb-history-node", render_body)
-        self.assertIn("record.valueDisplay", render_body)
-
-    def test_pb_candidate_view_calls_backend_contract(self):
-        for function_name in (
             "function normalizeCareerRecordCandidate(item)",
             "function renderCareerPbCandidates(candidates)",
             "async function decideCareerPbCandidateFromElement(event, el)",
         ):
-            self.assertIn(function_name, self.source)
+            self.assertNotIn(function_name, self.source)
         load_body = extract_function_body(self.source, "async function loadCareerArchives()")
-        self.assertIn("api.get_career_event_candidates({ candidate_type: 'pb_record', status: 'candidate' })", load_body)
-        self.assertIn("pbCandidates: archiveData[2] || {}", load_body)
-        render_body = extract_function_body(self.source, "function renderCareerPbCandidates(candidates)")
-        self.assertIn("data-career-record-candidate-id", render_body)
-        self.assertIn("data-decision=\"confirm\"", render_body)
-        self.assertIn("data-decision=\"reject\"", render_body)
-        self.assertIn("aria-label=\"确认候选纪录\"", render_body)
-        self.assertIn("aria-label=\"拒绝候选纪录\"", render_body)
-        decide_body = extract_function_body(self.source, "async function decideCareerPbCandidateFromElement(event, el)")
-        self.assertIn("el.disabled = true", decide_body)
-        self.assertIn("确认中...", decide_body)
-        self.assertIn("el.disabled = false", decide_body)
-        self.assertIn("api.decide_career_pb_candidate({ candidate_id: candidateId, decision: decision })", decide_body)
-        self.assertIn("await loadCareerArchives()", decide_body)
+        self.assertNotIn("api.get_career_pb_detail", load_body)
+        self.assertNotIn("api.get_career_pb_history", load_body)
+        self.assertNotIn("api.get_career_event_candidates", load_body)
 
     def test_records_center_responsive_and_accessible_states_are_defined(self):
-        self.assertIn(".career-pb-detail-action:disabled", self.source)
-        self.assertIn(".career-pb-detail-panel", self.source)
         self.assertIn("@media (max-width: 980px)", self.source)
-        self.assertIn(".career-pb-list", self.source)
+        self.assertNotIn(".career-pb-detail-action", self.source)
+        self.assertNotIn(".career-pb-detail-panel", self.source)
+        self.assertNotIn(".career-pb-list", self.source)
 
     def test_achievement_archive_card_helper_has_no_dedicated_page_entry(self):
         self.assertNotIn("function onCareerAchievementArchiveFilterChange()", self.source)

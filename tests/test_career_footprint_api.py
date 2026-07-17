@@ -38,6 +38,8 @@ def _create_activities_table(conn: sqlite3.Connection) -> None:
             region_city TEXT,
             region_country TEXT,
             region_display TEXT,
+            region_admin1 TEXT,
+            region_admin1_code TEXT,
             deleted_at TEXT,
             points_json TEXT,
             track_json TEXT,
@@ -60,6 +62,8 @@ def _insert_activity(conn: sqlite3.Connection, **overrides) -> None:
         "region_city": "成都市",
         "region_country": "中国",
         "region_display": "成都市/中国",
+        "region_admin1": None,
+        "region_admin1_code": None,
         "deleted_at": None,
         "points_json": "[forbidden]",
         "track_json": "[forbidden]",
@@ -117,6 +121,30 @@ class TestCareerFootprintRegionResolver(unittest.TestCase):
         self.assertEqual(region["country"], "中国")
         self.assertEqual(region["level"], "province")
         self.assertEqual(region["map_mode"], "china")
+
+    def test_resolves_structured_admin1_before_city_hint(self):
+        region = career_backend._resolve_career_footprint_region({
+            "region_country": "中国",
+            "region_city": "黄石市",
+            "region_display": "黄石市/中国",
+            "region_admin1": "湖北省",
+        })
+
+        self.assertEqual(region["region_key"], "CN-HB")
+        self.assertEqual(region["name"], "湖北")
+        self.assertEqual(region["city"], "黄石市")
+
+    def test_resolves_structured_admin1_code_before_text(self):
+        region = career_backend._resolve_career_footprint_region({
+            "region_country": "中国",
+            "region_city": "未知城市",
+            "region_display": "未知城市/中国",
+            "region_admin1": "四川省",
+            "region_admin1_code": "CN-HB",
+        })
+
+        self.assertEqual(region["region_key"], "CN-HB")
+        self.assertEqual(region["name"], "湖北")
 
     def test_resolves_taiwan_as_china_map_region(self):
         region = career_backend._resolve_career_footprint_region({
@@ -318,6 +346,37 @@ class TestCareerFootprintApi(unittest.TestCase):
             self.assertEqual(regions["CN-JS"]["activity_count"], 1)
             self.assertEqual(regions["CN-SC"]["detail_link"], {"activity_id": "1", "source": "career"})
             _assert_forbidden_tokens_absent(self, result)
+        finally:
+            conn.close()
+
+    def test_get_career_footprint_uses_admin1_and_legacy_city_hints(self):
+        conn = sqlite3.connect(":memory:")
+        try:
+            _create_activities_table(conn)
+            career_backend.ensure_career_schema(conn)
+            _insert_activity(
+                conn,
+                id=1,
+                region_city="黄石市",
+                region_country="中国",
+                region_display="黄石市/中国",
+                region_admin1="湖北省",
+            )
+            _insert_activity(
+                conn,
+                id=2,
+                region_city="瑞昌市",
+                region_country="中国",
+                region_display="瑞昌市/中国",
+            )
+
+            result = career_backend.get_career_footprint(conn=conn)
+
+            regions = {item["region_key"]: item for item in result["regions"]}
+            self.assertEqual(result["map_mode"], "china")
+            self.assertEqual(regions["CN-HB"]["activity_count"], 1)
+            self.assertEqual(regions["CN-JX"]["activity_count"], 1)
+            self.assertEqual(regions["CN-HB"]["cities"], ["黄石市"])
         finally:
             conn.close()
 

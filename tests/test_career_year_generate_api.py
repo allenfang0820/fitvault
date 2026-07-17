@@ -81,6 +81,42 @@ class TestCareerYearGenerateApi(unittest.TestCase):
         finally:
             conn.close()
 
+    def test_same_year_can_generate_and_read_distinct_tone_reports(self):
+        conn = sqlite3.connect(":memory:")
+        try:
+            _create_tables(conn)
+            _insert_activity(conn, id=1, start_time="2026-05-01T07:00:00+08:00", dist_km=10.0)
+            calls: list[int] = []
+
+            warm = career_backend.generate_career_year_insight(
+                2026,
+                tone_preset="warm",
+                generator=_fake_generator(calls, headline="温暖版报告"),
+                prompt_version=PROMPT_VERSION,
+                model_id=MODEL_ID,
+                conn=conn,
+            )
+            light = career_backend.generate_career_year_insight(
+                2026,
+                tone_preset="light",
+                generator=_fake_generator(calls, headline="轻松版报告"),
+                prompt_version=PROMPT_VERSION,
+                model_id=MODEL_ID,
+                conn=conn,
+            )
+            warm_read = career_backend.get_career_year_insight(2026, tone_preset="warm", conn=conn)
+            light_read = career_backend.get_career_year_insight(2026, tone_preset="light", conn=conn)
+
+            self.assertEqual(calls, [2026, 2026])
+            self.assertEqual(warm["report"]["content"]["headline"], "温暖版报告")
+            self.assertEqual(light["report"]["content"]["headline"], "轻松版报告")
+            self.assertEqual(warm_read["report"]["content"]["headline"], "温暖版报告")
+            self.assertEqual(light_read["report"]["content"]["headline"], "轻松版报告")
+            self.assertNotEqual(warm["generation_options_hash"], light["generation_options_hash"])
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM career_ai_insights").fetchone()[0], 2)
+        finally:
+            conn.close()
+
     def test_ready_returns_cache_without_calling_llm(self):
         conn = sqlite3.connect(":memory:")
         try:
@@ -743,6 +779,7 @@ class TestCareerYearGenerateApi(unittest.TestCase):
             responses = (
                 api.generate_career_year_insight({}),
                 api.generate_career_year_insight({"year": 2026, "prompt": "bad"}),
+                api.generate_career_year_insight({"year": 2026, "tone_preset": "freeform"}),
                 api.generate_career_year_insight({"year": True}),
                 api.generate_career_year_insight({"year": "bad"}),
                 api.generate_career_year_insight({"year": 1800}),
@@ -764,12 +801,12 @@ class TestCareerYearGenerateApi(unittest.TestCase):
             "report": {"content": {"headline": "ok"}},
         }
         with mock.patch.object(career_backend, "generate_career_year_insight", return_value=backend_result) as mocked:
-            response = api.generate_career_year_insight({"year": "2026"})
+            response = api.generate_career_year_insight({"year": "2026", "tone_preset": "light"})
 
         self.assertTrue(response["ok"])
         self.assertEqual(response["code"], main.API_CODE_OK)
         self.assertEqual(response["data"]["generation"]["status"], "generated")
-        mocked.assert_called_once_with(2026)
+        mocked.assert_called_once_with(2026, tone_preset="light")
 
         contract = json.loads(Path("docs/js_api_contract.json").read_text(encoding="utf-8"))
         methods = {entry["name"]: entry for entry in contract.get("methods", [])}
@@ -777,6 +814,7 @@ class TestCareerYearGenerateApi(unittest.TestCase):
         method = methods["generate_career_year_insight"]
         self.assertFalse(method["readonly"])
         self.assertIn("仅支持 year", method["description"])
+        self.assertIn("tone_preset", method["description"])
         self.assertIn("v3 ready、no_data 和非法 payload 不调用 LLM", method["description"])
         self.assertIn("旧格式升级失败继续展示旧报告", method["description"])
 

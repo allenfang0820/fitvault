@@ -2,6 +2,7 @@ import json
 import sqlite3
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 import career_backend
@@ -280,8 +281,15 @@ class TestCareerOverviewApiClosure(unittest.TestCase):
             self.assertEqual(result["sport_totals"]["strength_total_weight_status"], "unavailable")
             self.assertEqual(result["career_stats"]["activity_count"], 4)
             self.assertEqual(result["career_stats"]["race_count"], 2)
-            self.assertEqual(result["career_stats"]["covered_country_count"], 0)
-            self.assertEqual(result["career_stats"]["max_altitude_m"], 3840.2)
+            self.assertIsNone(result["career_stats"]["covered_country_count"])
+            self.assertIsNone(result["career_stats"]["max_elevation_gain_m"])
+            self.assertIsNone(result["career_stats"]["max_altitude_m"])
+            self.assertEqual(result["career_stats"]["secondary_metrics_status"], "pending")
+            secondary = career_backend.get_career_overview_secondary_metrics(conn)
+            self.assertEqual(secondary["covered_country_count"], 0)
+            self.assertIsNone(secondary["max_elevation_gain_m"])
+            self.assertEqual(secondary["max_altitude_m"], 3840.2)
+            self.assertTrue(secondary["status"]["data_ready"])
             self.assertEqual(result["best_pb"]["title"], "5K PB")
             self.assertEqual(result["latest_race"]["detail_link"], {"activity_id": "2", "source": "career"})
             _assert_forbidden_metadata_absent(self, result["latest_race"]["display_metadata"])
@@ -336,6 +344,27 @@ class TestCareerOverviewApiClosure(unittest.TestCase):
             self.assertEqual(result["representative_achievements"], [])
             self.assertTrue(result["status"]["data_ready"])
             _assert_forbidden_keys_absent(self, result)
+        finally:
+            conn.close()
+
+    def test_overview_uses_aggregate_queries_without_materializing_activity_rows(self):
+        conn = sqlite3.connect(":memory:")
+        try:
+            _create_activity_table(conn)
+            career_backend.ensure_career_schema(conn)
+            _insert_activity(conn, id=1, start_time="2025-01-01T08:00:00+08:00", dist_km=5.0, region_city="北京")
+            _insert_activity(conn, id=2, start_time="2026-01-01T08:00:00+08:00", dist_km=10.0, region_city="上海")
+
+            with (
+                mock.patch.object(career_backend, "_overview_activity_rows", side_effect=AssertionError("_overview_activity_rows should not run")),
+                mock.patch.object(career_backend, "_overview_activity_metric_rows", side_effect=AssertionError("_overview_activity_metric_rows should not run")),
+                mock.patch.object(career_backend, "_season_activity_rows", side_effect=AssertionError("_season_activity_rows should not run")),
+            ):
+                result = career_backend.get_career_overview(conn)
+
+            self.assertEqual(result["summary"]["activity_count"], 2)
+            self.assertEqual(result["summary"]["career_start_year"], 2025)
+            self.assertEqual([season["year"] for season in result["representative_seasons"]], [2026, 2025])
         finally:
             conn.close()
 
@@ -465,8 +494,15 @@ class TestCareerOverviewApiClosure(unittest.TestCase):
             self.assertEqual(result["hero_banner"]["media"], {"has_photo": False, "image_ref": ""})
             self.assertEqual(result["sport_totals"]["swimming_distance_km"], 0.0)
             self.assertEqual(result["sport_totals"]["strength_total_weight_status"], "unavailable")
-            self.assertEqual(result["career_stats"]["covered_country_count"], 0)
+            self.assertIsNone(result["career_stats"]["covered_country_count"])
+            self.assertIsNone(result["career_stats"]["max_elevation_gain_m"])
             self.assertIsNone(result["career_stats"]["max_altitude_m"])
+            self.assertEqual(result["career_stats"]["secondary_metrics_status"], "pending")
+            secondary = career_backend.get_career_overview_secondary_metrics(conn)
+            self.assertEqual(secondary["covered_country_count"], 0)
+            self.assertIsNone(secondary["max_elevation_gain_m"])
+            self.assertIsNone(secondary["max_altitude_m"])
+            self.assertFalse(secondary["status"]["data_ready"])
             self.assertEqual(result["identity"], {
                 "primary_sport": "unknown",
                 "primary_sport_label": "未知",
@@ -532,11 +568,34 @@ class TestCareerOverviewApiClosure(unittest.TestCase):
             self.assertEqual(result["sport_totals"]["walking_hiking_distance_km"], 12.0)
             self.assertEqual(result["sport_totals"]["strength_total_weight_kg"], 5200.0)
             self.assertEqual(result["sport_totals"]["strength_total_weight_status"], "available")
-            self.assertEqual(result["career_stats"]["covered_country_count"], 2)
             self.assertEqual(result["career_stats"]["total_duration_seconds"], 12600)
-            self.assertEqual(result["career_stats"]["max_elevation_gain_m"], 650.0)
-            self.assertEqual(result["career_stats"]["max_altitude_m"], 3776.2)
+            self.assertIsNone(result["career_stats"]["covered_country_count"])
+            self.assertIsNone(result["career_stats"]["max_elevation_gain_m"])
+            self.assertIsNone(result["career_stats"]["max_altitude_m"])
+            self.assertEqual(result["career_stats"]["secondary_metrics_status"], "pending")
+            secondary = career_backend.get_career_overview_secondary_metrics(conn)
+            self.assertEqual(secondary["covered_country_count"], 2)
+            self.assertEqual(secondary["max_elevation_gain_m"], 650.0)
+            self.assertEqual(secondary["max_altitude_m"], 3776.2)
+            self.assertTrue(secondary["status"]["data_ready"])
             _assert_forbidden_keys_absent(self, result)
+        finally:
+            conn.close()
+
+    def test_overview_does_not_block_on_secondary_metrics_query(self):
+        conn = sqlite3.connect(":memory:")
+        try:
+            _create_activity_table(conn)
+            _insert_activity(conn, id=1, start_time="2026-01-01T08:00:00+08:00", dist_km=5.0, region_city="北京", max_alt_m=100.0)
+
+            with mock.patch.object(career_backend, "_overview_secondary_metrics_query") as query:
+                result = career_backend.get_career_overview(conn)
+
+            query.assert_not_called()
+            self.assertEqual(result["summary"]["activity_count"], 1)
+            self.assertIsNone(result["career_stats"]["covered_country_count"])
+            self.assertIsNone(result["career_stats"]["max_altitude_m"])
+            self.assertEqual(result["career_stats"]["secondary_metrics_status"], "pending")
         finally:
             conn.close()
 

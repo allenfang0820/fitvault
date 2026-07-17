@@ -140,8 +140,11 @@ class TestCareerPhase8CrossPlatformVisualContract(unittest.TestCase):
     def test_switching_to_career_loads_modules_independently(self):
         body = extract_function_body(self.source, "function switchTab(tabBtn)")
         load_body = extract_function_body(self.source, "async function loadCareerData()")
+        refresh_body = extract_function_body(self.source, "function refreshCareerDerivedEventsInBackground()")
         self.assertIn("loadCareerData().catch", body)
-        self.assertIn("refresh_career_derived_events", load_body)
+        self.assertIn("refresh_career_derived_events", refresh_body)
+        self.assertIn("refreshCareerDerivedEventsInBackground()", load_body)
+        self.assertNotIn("await refreshCareerDerivedEventsInBackground()", load_body)
         for token in (
             "loadCareerOverview().catch",
             "loadCareerTimeline().catch",
