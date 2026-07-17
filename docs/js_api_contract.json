@@ -533,7 +533,7 @@
       "returns": "{ ok, code, msg, data: {records, history_summary: {record_key, scope_hash, axis_direction, comparison, first_value, current_value, total_improvement, record_count, invalidated_count, last_record_at}, chart, filters, metrics, status}, traceId }",
       "high_risk": false,
       "readonly": true,
-      "description": "Records Center V2 历史演进 API；history_summary.total_improvement 和 chart axis direction 必须由后端提供，前端不得重算累计提升或自行决定 y 轴方向。chart.points 是安全绘图点，不是运动轨迹点。"
+      "description": "Records Center V2 legacy 历史演进 API；仅作为兼容读接口保留，不得作为 V3 记录中心右侧主折线图数据源。V3 主图必须调用 get_career_record_metric_series，并消费其 points/current_best/record_progression ViewModel。history_summary.total_improvement 和 chart axis direction 必须由后端提供，前端不得重算累计提升或自行决定 y 轴方向。chart.points 是安全绘图点，不是运动轨迹点。"
     },
     {
       "name": "get_career_record_metric_series",
@@ -596,7 +596,7 @@
       "returns": "{ ok, code, msg, data: {ok, dry_run: true, readonly: true, run_id, preview_records: [], preview_candidates: [], ignored: [{activity_id, sport, event_date, distance_m, elapsed_time_sec, ascent_m, max_altitude_m, indoor_scope, water_scope, availability: {distance_time_available, power_available, lap_length_available, elevation}, reason_codes, quality_flags, status, message}], summary: {mode, resolver_connected, scanned, returned, adapter_ready, ignored, preview_records, preview_candidates, message}, by_sport, by_record_key, by_reason, filters, status, metrics, observability}, traceId }",
       "high_risk": false,
       "readonly": true,
-      "description": "Records Center V2 dry-run preview API 骨架；当前只执行 Activity Adapter 分发与安全摘要，Resolver 尚未接入，preview_records/preview_candidates 暂为空。该 API 不写 career_pb_records、career_event_candidates、career_record_events，不接受 dry_run=false 或 apply_to_real_db。不得返回 raw FIT、points、track_json、power_stream、laps_json、storage_ref、file_path、本地路径、设备标识、体重历史或 SQLite schema。"
+      "description": "Records Center V2 diagnostic dry-run preview API；只允许作为只读诊断/迁移辅助，不得被前端记录中心右侧主折线图调用，不得作为 V3 metric series 或 current best 的事实源。该 API 不写 career_pb_records、career_event_candidates、career_record_events，不接受 dry_run=false 或 apply_to_real_db。不得返回 raw FIT、points、track_json、power_stream、laps_json、storage_ref、file_path、本地路径、设备标识、体重历史或 SQLite schema。"
     },
     {
       "name": "get_career_record_candidates",
@@ -615,7 +615,7 @@
       "returns": "{ ok, code, msg, data: {candidates: [{id, activity_id, record_key, display_name, sport, metric, scope, quality, candidate_state, created_at, detail_link}], summary, filters, metrics, status}, traceId }",
       "high_risk": false,
       "readonly": true,
-      "description": "Records Center V2 候选列表 API；只返回安全候选 ViewModel，不透传内部 raw evidence payload。前端只能展示并提交 confirm/reject，不能修改成绩、scope、range 或 reason。"
+      "description": "Records Center V2 compat 候选列表 API；仅供候选区兼容展示，不得作为 V3 记录中心右侧主折线图、metric series、current best 或 record progression 的数据源。只返回安全候选 ViewModel，不透传内部 raw evidence payload。前端只能展示并提交 confirm/reject，不能修改成绩、scope、range 或 reason。"
     },
     {
       "name": "decide_career_record_candidate",
@@ -633,7 +633,7 @@
       "returns": "{ ok, code, msg, data: {action, candidate_id?, record_id?, comparison?}, traceId }",
       "high_risk": true,
       "readonly": false,
-      "description": "Records Center V2 候选决策 API；confirm 后后端使用原始安全 Evidence 重新比较，前端不得提交修改后的成绩、距离、时间、scope、range 或 reason。真实库写入仍受发布门禁约束。"
+      "description": "Records Center V2 compat 候选决策 API；confirm/reject 只属于旧 candidate/active 兼容状态机，不得作为 V3 metric result 生成链路。confirm 后后端使用原始安全 Evidence 重新比较，前端不得提交修改后的成绩、距离、时间、scope、range 或 reason。真实库写入仍受发布门禁约束。"
     },
     {
       "name": "rebuild_career_records",
@@ -652,7 +652,7 @@
       "returns": "{ ok, code, msg, data: {dry_run, run_id, resolver_version, batch_size, processed, cancelled, summary, by_sport, by_family, by_reason, items, metrics: {elapsed_ms, processed, performance_target_ms, curve_cache_count}, observability, failure_recovery, applied?, applied_count?}, traceId }",
       "high_risk": true,
       "readonly": false,
-      "description": "Records Center V2 rebuild API；dry_run=true 默认只预览不写库。main.py bridge 对 dry_run=false 增加 apply_to_real_db 显式门禁；没有用户授权不得真实库 apply。返回仅包含安全摘要、分发计划、by_sport/by_family/by_reason、cache 计数、elapsed metrics、observability 白名单字段和 savepoint/cancel/batch failure_recovery 说明；日志只记录 run_id、dry_run、processed、by_sport/by_family/by_reason、elapsed_ms 等安全字段。不返回 raw evidence、candidate evidence、raw FIT、raw streams、points_json、track_json、route signature、file_path、本地路径、SQLite schema、设备标识或体重详情。"
+      "description": "Records Center V2 legacy rebuild API；dry_run=true 默认只预览不写库，不得作为 V3 metric series、current best 或右侧主折线图的数据源。main.py bridge 对 dry_run=false 增加 apply_to_real_db 显式门禁；没有用户授权不得真实库 apply。返回仅包含安全摘要、分发计划、by_sport/by_family/by_reason、cache 计数、elapsed metrics、observability 白名单字段和 savepoint/cancel/batch failure_recovery 说明；日志只记录 run_id、dry_run、processed、by_sport/by_family/by_reason、elapsed_ms 等安全字段。不返回 raw evidence、candidate evidence、raw FIT、raw streams、points_json、track_json、route signature、file_path、本地路径、SQLite schema、设备标识或体重详情。"
     },
     {
       "name": "get_career_record_rebuild_status",
@@ -708,7 +708,7 @@
       "returns": "{ ok, code, msg, data: {dry_run, run_id, resolver_version, processed, progress, summary, metrics: {elapsed_ms, processed, reason_counts, applied_summary?}, items, applied?, applied_count?}, traceId }",
       "high_risk": true,
       "readonly": false,
-      "description": "ACS PB Records 全量 dry-run/rebuild API；dry_run=true 只预览不写入，dry_run=false 事务化应用后端 rebuild plan。失败必须保留旧 active；返回 metrics 与安全运行摘要；日志只记录 run_id、resolver_version、处理/激活/候选/拒绝/失效/跳过数量、原因计数和耗时，不记录 payload、raw FIT、points、track_json、storage_ref、file_path、本地路径或 SQLite schema。不得返回 raw FIT、points、track_json、storage_ref、file_path、本地路径或 SQLite schema。"
+      "description": "ACS PB Records 全量 dry-run/rebuild API；属于 ACS/PB archive 兼容维护入口，不得作为 V3 记录中心 metric series、current best 或右侧主折线图的数据源。dry_run=true 只预览不写入，dry_run=false 事务化应用后端 rebuild plan。失败必须保留旧 active；返回 metrics 与安全运行摘要；日志只记录 run_id、resolver_version、处理/激活/候选/拒绝/失效/跳过数量、原因计数和耗时，不记录 payload、raw FIT、points、track_json、storage_ref、file_path、本地路径或 SQLite schema。不得返回 raw FIT、points、track_json、storage_ref、file_path、本地路径或 SQLite schema。"
     },
     {
       "name": "get_career_record_events",

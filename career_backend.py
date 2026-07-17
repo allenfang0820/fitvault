@@ -19866,7 +19866,7 @@ def get_career_record_history(
     filters: dict[str, Any] | None = None,
     conn: sqlite3.Connection | None = None,
 ) -> dict[str, Any]:
-    """Return V2 history and backend-computed history summary."""
+    """Return legacy V2 history; V3 main charts must use metric series instead."""
     start = time.perf_counter()
     owns_conn = conn is None
     db = conn or _connect_default()
@@ -20782,7 +20782,7 @@ def preview_career_records(
     payload: dict[str, Any] | None = None,
     conn: sqlite3.Connection | None = None,
 ) -> dict[str, Any]:
-    """Return a read-only Records V2 preview from Activity Adapter facts."""
+    """Return read-only V2 diagnostic preview from Activity facts, never main-chart data."""
     start = time.perf_counter()
     filters = _preview_career_records_filters(payload)
     owns_conn = conn is None
@@ -20909,7 +20909,7 @@ def decide_career_record_candidate(
     payload: dict[str, Any] | None = None,
     conn: sqlite3.Connection | None = None,
 ) -> dict[str, Any]:
-    """Confirm/reject a V2 record candidate; fallback to V1 PB candidate handler for legacy payloads."""
+    """Confirm/reject a compat V2 candidate; not a V3 metric result generation path."""
     raw = payload if isinstance(payload, dict) else {}
     candidate_id = str(raw.get("candidate_id") or raw.get("id") or "").strip()
     action = str(raw.get("action") or raw.get("decision") or "").strip().lower()
@@ -21117,7 +21117,7 @@ def rebuild_career_records(
     payload: dict[str, Any] | None = None,
     conn: sqlite3.Connection | None = None,
 ) -> dict[str, Any]:
-    """V2 rebuild wrapper; dry-run is the default safe behavior."""
+    """Legacy V2 rebuild wrapper; dry-run is default and not a V3 series source."""
     raw = payload if isinstance(payload, dict) else {}
     dry_run = bool(raw.get("dry_run", True))
     resolver_version = str(raw.get("resolver_version") or RECORDS_V2_RULE_VERSION)

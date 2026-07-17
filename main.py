@@ -12435,7 +12435,7 @@ class Api:
             return _api_error(API_CODE_DB, "运动生涯记录详情查询失败")
 
     def get_career_record_history(self, filters: dict | None = None) -> dict:
-        """Return one V2 record history ViewModel."""
+        """Return legacy V2 record history ViewModel; not a V3 main chart source."""
         try:
             clean_filters = filters if isinstance(filters, dict) else None
             return _api_success(career_backend.get_career_record_history(clean_filters))
@@ -12464,7 +12464,7 @@ class Api:
             return _api_error(API_CODE_DB, "运动生涯记录曲线查询失败")
 
     def preview_career_records(self, payload: dict | None = None) -> dict:
-        """Return read-only Records V2 dry-run preview shell."""
+        """Return read-only Records V2 diagnostic preview; never feed the V3 main chart."""
         started = time.perf_counter()
         try:
             clean_payload = payload if isinstance(payload, dict) else {}
@@ -12491,7 +12491,7 @@ class Api:
             return _api_error(API_CODE_DB, "运动生涯记录预览失败")
 
     def get_career_record_candidates(self, filters: dict | None = None) -> dict:
-        """Return V2 record candidates without raw evidence payload."""
+        """Return compat V2 record candidates without raw evidence payload."""
         try:
             clean_filters = filters if isinstance(filters, dict) else None
             return _api_success(career_backend.get_career_record_candidates(clean_filters))
@@ -12500,7 +12500,7 @@ class Api:
             return _api_error(API_CODE_DB, "运动生涯记录候选查询失败")
 
     def decide_career_record_candidate(self, payload: dict | None = None) -> dict:
-        """Confirm or reject a V2 record candidate."""
+        """Confirm/reject a compat V2 candidate; not a V3 metric result generator."""
         started = time.perf_counter()
         try:
             clean_payload = payload if isinstance(payload, dict) else {}
@@ -12525,7 +12525,7 @@ class Api:
             return _api_error(API_CODE_DB, "运动生涯记录候选处理失败")
 
     def rebuild_career_records(self, payload: dict | None = None) -> dict:
-        """Run V2 Records rebuild; dry-run is default and real DB apply is gated."""
+        """Run legacy V2 Records rebuild; not a V3 metric series source."""
         started = time.perf_counter()
         try:
             clean_payload = payload if isinstance(payload, dict) else {}

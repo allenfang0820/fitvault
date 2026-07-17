@@ -47,7 +47,7 @@ def test_records_v2_visual_reference_is_dashboard_not_plain_list():
     catalog_body = extract_function_body(src, "function careerRecordCatalogDefinitions(catalog, selectedSport)")
     picker_card_body = extract_function_body(src, "function careerRecordPickerCardHtml(definition, currentRecord, index)")
     picker_body = extract_function_body(src, "function renderCareerRecordPicker(definitions, records, candidates, selectedView)")
-    analysis_body = extract_function_body(src, "function renderCareerRecordAnalysisPanel(record, history)")
+    analysis_body = extract_function_body(src, "function renderCareerRecordAnalysisPanel(record, metricSeries)")
 
     assert "const definitions = careerRecordCatalogDefinitions(catalog, selectedSport)" in render_body
     assert "renderCareerRecordPicker(definitions, records, candidatesForGroup, state.selectedView)" in render_body
@@ -69,6 +69,8 @@ def test_records_v2_visual_reference_is_dashboard_not_plain_list():
     assert "焦点来源" not in src
     assert "career-record-analysis-head" in analysis_body
     assert "career-record-chart-box:first-child" in src
+    assert "career-record-detail-card" not in src
+    assert "careerRecordDetailPanelHtml" not in src
     assert "Personal Records" in src
     assert "Record Families" not in src
     assert "career-record-group-card" not in src

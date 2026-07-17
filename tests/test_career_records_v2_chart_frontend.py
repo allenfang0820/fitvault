@@ -58,6 +58,9 @@ def test_records_analysis_loads_only_backend_viewmodels():
 
     assert "api.get_career_record_metric_series" in load_body
     assert "api.get_career_record_history" not in load_body
+    assert "api.preview_career_records" not in load_body
+    assert "api.rebuild_career_records" not in load_body
+    assert "api.rebuild_career_pb_records" not in load_body
     assert "api.get_career_record_detail" in load_body
     assert "state.analysisRequestId = requestId" in load_body
     assert "String(state.selectedRecordKey || '') !== expectedRecordKey" in load_body
@@ -182,3 +185,30 @@ def test_records_center_initial_load_ignores_stale_requests():
     assert "api.get_career_records({ sport: selectedSport || 'all' })" in load_body
     assert "state.analysis = null" in select_body
     assert "state.detail = null" in select_body
+
+
+def test_records_center_keeps_compat_paths_out_of_main_chart_source():
+    src = source()
+    center_body = extract_function_body(src, "async function loadCareerRecordsCenter(options)")
+    analysis_body = extract_function_body(src, "async function loadCareerRecordAnalysis(record)")
+    candidate_body = extract_function_body(src, "async function decideCareerRecordCandidateFromElement(event, el)")
+
+    assert "api.get_career_record_catalog" in center_body
+    assert "api.get_career_records" in center_body
+    assert "api.get_career_record_candidates" in center_body
+    assert "api.decide_career_record_candidate" in candidate_body
+
+    for compat_token in (
+        "api.get_career_records",
+        "api.get_career_record_candidates",
+        "api.decide_career_record_candidate",
+    ):
+        assert compat_token not in analysis_body
+
+    for legacy_source in (
+        "api.get_career_record_history",
+        "api.preview_career_records",
+        "api.rebuild_career_records",
+        "api.rebuild_career_pb_records",
+    ):
+        assert legacy_source not in analysis_body
