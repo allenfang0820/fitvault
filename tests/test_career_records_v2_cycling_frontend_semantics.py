@@ -80,7 +80,7 @@ def test_cycling_catalog_cards_use_standard_distance_power_duration_then_enduran
 def test_cycling_left_picker_shows_backend_value_and_uses_catalog_keys():
     src = source()
     picker = extract_function_body(src, "function careerRecordPickerCardHtml(definition, currentRecord, index)")
-    render_picker = extract_function_body(src, "function renderCareerRecordPicker(definitions, records, candidates, selectedView)")
+    render_picker = extract_function_body(src, "function renderCareerRecordPicker(definitions, records)")
     section_label = extract_function_body(src, "function careerRecordPickerSectionLabel(definition)")
 
     assert "data-career-record-key" in picker
@@ -101,8 +101,8 @@ def test_cycling_chart_titles_and_empty_states_match_platform_semantics():
     src = source()
     title_body = extract_function_body(src, "function careerRecordChartTitle(record, axisDirection)")
     subtitle_body = extract_function_body(src, "function careerRecordAnalysisSubtitle(record)")
-    empty_body = extract_function_body(src, "function careerRecordHistoryEmptyText(record)")
-    render_body = extract_function_body(src, "function renderCareerRecordAnalysisPanel(record, history)")
+    empty_body = extract_function_body(src, "function careerRecordSeriesEmptyText(record, metricSeries)")
+    render_body = extract_function_body(src, "function renderCareerRecordAnalysisPanel(record, metricSeries)")
 
     assert "careerRecordIsCyclingStandardDistanceRecord(record)" in title_body
     assert "历年最快成绩 · 越低越好" in title_body
@@ -112,13 +112,15 @@ def test_cycling_chart_titles_and_empty_states_match_platform_semantics():
     assert "该标准距离的历年最快成绩" in subtitle_body
     assert "该时长的历年最佳平均功率" in subtitle_body
     assert "该骑行纪录的历年最佳成绩" in subtitle_body
-    assert "暂无正式标准距离纪录" in empty_body
-    assert "距离-时间流契约仍待真实数据验收" in empty_body
-    assert "暂无正式功率纪录" in empty_body
-    assert "缺少功率计数据" in empty_body
-    assert "暂无正式骑行纪录" in empty_body
+    assert "暂无标准距离纪录" in empty_body
+    assert "完成更多相关活动后，这里会展示你的最快成绩" in empty_body
+    assert "暂无功率纪录" in empty_body
+    assert "记录包含功率数据后，这里会展示你的最佳功率" in empty_body
+    assert "暂无骑行纪录" in empty_body
+    assert "距离-时间流契约" not in empty_body
+    assert "真实数据验收" not in empty_body
     assert "careerRecordChartTitle(record, axisDirection)" in render_body
-    assert "careerRecordHistoryListHtml(history, record)" in render_body
+    assert "careerRecordSeriesFallbackHtml(series, record)" in render_body
 
 
 def test_cycling_records_center_main_view_does_not_restore_curve_or_route_modules():

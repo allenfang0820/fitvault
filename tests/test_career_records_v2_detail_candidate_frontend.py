@@ -25,94 +25,55 @@ def extract_function_body(src: str, signature: str) -> str:
     raise AssertionError(f"function not closed: {signature}")
 
 
-def test_records_v2_detail_panel_uses_backend_detail_viewmodel():
+def test_records_v2_analysis_still_uses_backend_record_viewmodels():
     src = source()
     load_body = extract_function_body(src, "async function loadCareerRecordAnalysis(record)")
-    detail_body = extract_function_body(src, "function careerRecordDetailPanelHtml(record, detail)")
 
     assert "api.get_career_record_detail" in load_body
     assert "record_id: record.id" in load_body
-    assert "rawDetail.record" in detail_body
-    assert "activity_summary" in detail_body
-    assert "detailRecord.improvement" in detail_body
-    assert "detailRecord.scope.labels" in detail_body
-    assert "detailRecord.sourceModeLabel" in detail_body
-    assert "careerRecordRangeSummary(detailRecord.range)" in detail_body
-    assert "careerRecordActivityActionHtml(detailRecord.detailLink" in detail_body
+    assert "api.get_career_record_metric_series" in load_body
+    assert "normalizeCareerRecordMetricSeries" in load_body
+    assert "api.get_career_record_candidates" not in load_body
+    assert "api.decide_career_record_candidate" not in load_body
 
 
-def test_records_v2_activity_jump_uses_career_detail_link_contract():
+def test_records_v2_removes_candidate_review_surface():
     src = source()
-    detail_body = extract_function_body(src, "function careerRecordDetailPanelHtml(record, detail)")
-    candidate_body = extract_function_body(src, "function careerRecordCandidateCardHtml(candidate)")
-    action_body = extract_function_body(src, "function careerRecordActivityActionHtml(detailLink, label)")
-    jump_body = extract_function_body(src, "function openCareerRecordActivityFromElement(event, el)")
-    shared_jump = extract_function_body(src, "function openCareerActivityDetailFromElement(el)")
 
-    assert "function careerRecordCurrentCardHtml" not in src
-    assert "careerRecordActivityActionHtml(detailRecord.detailLink" in detail_body
-    assert "candidate.detailLink.activityId" in candidate_body
-    assert "candidate.detailLink.source || 'career'" in candidate_body
-    assert "normalizeCareerDetailLink(detailLink)" in action_body
-    assert 'data-career-source="' in action_body
-    assert "openCareerActivityDetailFromElement(el)" in jump_body
-    assert "source !== 'career'" in shared_jump
-    assert "openActivityDetailModal(activityId)" in shared_jump
+    for forbidden in (
+        "normalizeCareerRecordCandidateV2",
+        "careerRecordCandidatePickerCardHtml",
+        "careerRecordCandidateCardHtml",
+        "renderCareerRecordCandidatePanel",
+        "setCareerRecordCandidateFeedback",
+        "decideCareerRecordCandidateFromElement",
+        "data-career-record-candidate-id",
+        "data-career-record-feedback",
+        "data-decision=\"confirm\"",
+        "data-decision=\"reject\"",
+    ):
+        assert forbidden not in src
 
 
-def test_records_v2_candidate_cards_show_backend_reason_confidence_and_actions():
+def test_records_v2_loads_without_candidate_api_dependency():
     src = source()
-    normalize_body = extract_function_body(src, "function normalizeCareerRecordCandidateV2(item)")
-    card_body = extract_function_body(src, "function careerRecordCandidateCardHtml(candidate)")
+    load_body = extract_function_body(src, "async function loadCareerRecordsCenter(options)")
 
-    assert "quality.reason_codes" in normalize_body
-    assert "quality.confidence" in normalize_body
-    assert "quality.confidence_band" in normalize_body
-    assert "quality.can_user_confirm !== false" in normalize_body
-    assert "normalizeCareerDetailLink(item.detail_link)" in normalize_body
-    assert "candidate.reasonCodes" in card_body
-    assert "candidate.confidence" in card_body
-    assert "data-decision=\"confirm\"" in card_body
-    assert "data-decision=\"reject\"" in card_body
-    assert "data-career-record-feedback" in card_body
+    assert "typeof api.get_career_record_catalog !== 'function'" in load_body
+    assert "typeof api.get_career_records !== 'function'" in load_body
+    assert "get_career_record_candidates" not in load_body
+    assert "decide_career_record_candidate" not in load_body
+    assert "await api.get_career_records({ sport: selectedSport || 'all' })" in load_body
+    assert "state.records = Array.isArray(recordData.records)" in load_body
 
 
-def test_records_v2_candidate_decision_uses_v2_api_and_fixed_payload_only():
+def test_records_v2_keeps_current_record_picker_and_history_analysis():
     src = source()
-    decide_body = extract_function_body(src, "async function decideCareerRecordCandidateFromElement(event, el)")
+    render_body = extract_function_body(src, "function renderCareerRecordsCenter(viewModel)")
+    picker_body = extract_function_body(src, "function renderCareerRecordPicker(definitions, records)")
 
-    assert "api.decide_career_record_candidate" in decide_body
-    assert "api.decide_career_pb_candidate" not in decide_body
-    assert "{ candidate_id: candidateId, decision: decision }" in decide_body
-    assert "btn.disabled = true" in decide_body
-    assert "setAttribute('aria-busy', 'true')" in decide_body
-    assert "loadCareerRecordsCenter({ refresh: true })" in decide_body
-
-    forbidden_mutable_fields = [
-        "metric:",
-        "value:",
-        "distance",
-        "elapsed",
-        "power",
-        "scope:",
-        "range:",
-        "reason",
-        "evidence",
-        "activity_id:",
-        "record_key:",
-    ]
-    payload_slice = decide_body[decide_body.find("api.decide_career_record_candidate"):]
-    for token in forbidden_mutable_fields:
-        assert token not in payload_slice
-
-
-def test_records_v2_range_summary_is_whitelisted_and_has_no_raw_tokens():
-    src = source()
-    range_body = extract_function_body(src, "function careerRecordRangeSummary(range)")
-
-    assert "const allowed =" in range_body
-    assert "start_sec" in range_body
-    assert "end_sec" in range_body
-    assert "segment_key" in range_body
-    for token in ("track", "raw", "gps", "polyline", "power_stream", "file_path", "sqlite"):
-        assert token not in range_body.lower()
+    assert "renderCareerRecordPicker(definitions, records)" in render_body
+    assert "careerRecordPickerCardHtml" in picker_body
+    assert "loadCareerRecordAnalysis(selectedRecord)" in render_body
+    assert "renderCareerRecordAnalysisPanel(selectedRecord" in render_body
+    assert "selectedView" not in render_body

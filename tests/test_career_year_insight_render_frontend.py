@@ -44,6 +44,7 @@ class TestCareerYearInsightRenderFrontend(unittest.TestCase):
         self.assertIn("vm.data_through", body)
         self.assertIn("is_partial_year", body)
         self.assertIn("careerYearFactsHtml(facts)", body)
+        self.assertIn("isV2Report ? '' : careerYearFactsHtml(facts)", body)
         for token in (
             "activity_count",
             "total_distance_km",
@@ -51,25 +52,75 @@ class TestCareerYearInsightRenderFrontend(unittest.TestCase):
             "race_count",
             "pb_count",
             "achievement_count",
+            "record_milestone_count",
             "covered_city_count",
         ):
             self.assertIn(token, facts_body)
+        self.assertIn("刷新纪录", facts_body)
 
     def test_v2_year_report_renders_as_continuous_article_with_backend_evidence(self):
         body = extract_function_body(self.source, "function careerYearReportSectionsHtml(vm)")
         article_body = extract_function_body(self.source, "function careerYearV2ArticleHtml(report)")
+        highlight_body = extract_function_body(self.source, "function careerYearHighlightedTextHtml(value)")
+        tone_body = extract_function_body(self.source, "function careerYearNumberTone(token)")
 
         self.assertIn("const hasReport", body)
-        self.assertIn("if (!hasReport) return careerYearLegacyReportHtml({}, fallback)", body)
+        self.assertIn("if (!hasReport) return careerYearFallbackSummaryHtml(fallback)", body)
         self.assertIn("acs.year.report.v2", body)
         self.assertIn("acs.year.report.v3", body)
         for token in ("content.title", "content.subtitle", "content.fact_leads", "content.fact_lead", "content.opening", "content.body_sections", "content.closing", "content.letter_to_next_year"):
             self.assertIn(token, article_body)
+        self.assertIn("+ factLeadHtml", article_body)
+        self.assertIn("+ sectionHtml", article_body)
+        self.assertIn("aria-label=\"全年总结\"", article_body)
         self.assertIn("career-year-article", article_body)
         self.assertIn("safeHtml(paragraph)", article_body)
+        self.assertIn("safeHtml(content.opening)", article_body)
+        self.assertIn("careerYearHighlightedTextHtml(item)", article_body)
+        self.assertIn("career-year-number", highlight_body)
+        self.assertIn("safeHtml(source.slice", highlight_body)
+        self.assertIn("小时|分钟|秒", tone_body)
+        self.assertIn("公里|km|米", tone_body)
+        self.assertNotIn("|年", highlight_body)
+        self.assertNotIn("|月", highlight_body)
+        self.assertNotIn("|日", highlight_body)
+        self.assertNotIn("|天", highlight_body)
+        self.assertIn("tone-count", self.source)
+        self.assertIn("tone-distance", self.source)
+        self.assertIn("tone-duration", self.source)
+        self.assertIn("tone-rate", self.source)
         self.assertNotIn("career-year-evidence-list", article_body)
         self.assertNotIn("openCareerActivityDetailFromElement", article_body)
         self.assertNotIn("onCareerActivityDetailKeydown", article_body)
+
+    def test_local_fallback_is_two_short_fact_paragraphs_not_a_fake_ai_article(self):
+        report_body = extract_function_body(self.source, "function careerYearReportSectionsHtml(vm)")
+        fallback_body = extract_function_body(self.source, "function careerYearFallbackSummaryHtml(fallback)")
+        render_body = extract_function_body(self.source, "function renderCareerYearInsight(viewModel)")
+
+        self.assertIn("careerYearFallbackSummaryHtml(fallback)", report_body)
+        self.assertNotIn("careerYearLegacyReportHtml({}, fallback)", report_body)
+        self.assertIn("data-career-year-report-mode=\"local-fallback\"", fallback_body)
+        self.assertIn("paragraphs.slice(0, 2)", fallback_body)
+        self.assertIn("先看看这一年的运动事实", fallback_body)
+        self.assertIn("careerYearHighlightedTextHtml(paragraph)", fallback_body)
+        self.assertIn("!vm.report", render_body)
+        self.assertIn("career-insight-disclaimer", render_body)
+
+    def test_year_report_highlights_only_summary_numbers_not_ai_story_dates(self):
+        article_body = extract_function_body(self.source, "function careerYearV2ArticleHtml(report)")
+        highlight_body = extract_function_body(self.source, "function careerYearHighlightedTextHtml(value)")
+
+        self.assertIn("factLeadItems", article_body)
+        self.assertIn("careerYearHighlightedTextHtml(item)", article_body)
+        self.assertNotIn("careerYearHighlightedTextHtml(section && section.heading", article_body)
+        self.assertNotIn("careerYearHighlightedTextHtml(paragraph)", article_body)
+        self.assertNotIn("careerYearHighlightedTextHtml(content.title", article_body)
+        self.assertNotIn("careerYearHighlightedTextHtml(content.opening", article_body)
+        self.assertIn("公里|km|KM|m|米|小时|分钟|秒|次|项|场|座|城|个|%", highlight_body)
+        self.assertNotIn("年|", highlight_body)
+        self.assertNotIn("月|", highlight_body)
+        self.assertNotIn("日|", highlight_body)
 
     def test_v1_report_keeps_compatibility_view(self):
         body = extract_function_body(self.source, "function careerYearLegacyReportHtml(report, fallback)")

@@ -27,7 +27,6 @@ FORBIDDEN_RESPONSE_KEYS = {
     "storage_ref",
     "path",
     "thumbnail_url",
-    "detail_link",
 }
 
 

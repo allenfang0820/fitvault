@@ -80,6 +80,27 @@ class TestCareerYearSnapshotFingerprint(unittest.TestCase):
             career_backend.compute_career_year_source_fingerprint(changed),
         )
 
+    def test_record_milestone_fact_change_changes_fingerprint(self):
+        snapshot = self._snapshot()
+        changed = copy.deepcopy(snapshot)
+        changed["record_milestones"]["count"] = 1
+        changed["record_milestones"]["items"] = [
+            {
+                "id": "record_milestone:1",
+                "activity_id": "1",
+                "record_key": "running_5k",
+                "date": "2026-07-11",
+                "new_record": {"display": "28:20"},
+                "previous_record": {"display": "30:00"},
+                "improvement": {"relative_delta_ratio": 0.055556},
+            }
+        ]
+
+        self.assertNotEqual(
+            snapshot["source_fingerprint"],
+            career_backend.compute_career_year_source_fingerprint(changed),
+        )
+
     def test_photo_ui_and_model_fields_do_not_change_fingerprint(self):
         snapshot = self._snapshot()
         changed = copy.deepcopy(snapshot)

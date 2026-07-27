@@ -204,6 +204,7 @@ class TestCareerTimelineFrontendVisualContract(unittest.TestCase):
 
     def test_timeline_compact_nodes_use_type_tones_without_inner_type_labels(self):
         node_css = css_block(self.source, ".career-timeline-node")
+        clickable_css = css_block(self.source, ".career-timeline-node.is-clickable")
         position_body = extract_function_body(self.source, "function careerTimelineNodePositionStyle(node, month)")
         node_body = extract_function_body(self.source, "function careerTimelineNodeHtml(node)")
         tone_body = extract_function_body(self.source, "function careerTimelineNodeTone(node)")
@@ -213,17 +214,32 @@ class TestCareerTimelineFrontendVisualContract(unittest.TestCase):
         self.assertIn("box-sizing: border-box", node_css)
         self.assertIn("width: clamp(112px, 18%, 156px)", node_css)
         self.assertIn("display: block", node_css)
+        self.assertIn("cursor: default", node_css)
+        self.assertIn("cursor: pointer", clickable_css)
         self.assertIn("tone-race", self.source)
         self.assertIn("tone-first", self.source)
         self.assertIn("tone-cumulative", self.source)
         self.assertIn("tone-annual", self.source)
         self.assertIn("tone-achievement", self.source)
+        self.assertIn("tone-record-breaking", self.source)
         self.assertIn("badge.indexOf('首次')", tone_body)
         self.assertIn("badge.indexOf('累计')", tone_body)
         self.assertIn("badge.indexOf('年度')", tone_body)
+        self.assertIn("isCareerTimelineRecordBreakingNode(node)", tone_body)
         self.assertIn("careerTimelineNodeLeftPercent(node, month)", position_body)
         self.assertIn("lane * CAREER_TIMELINE_LANE_HEIGHT", position_body)
         self.assertIn("careerTimelineNodeAriaLabel(node)", node_body)
+
+    def test_record_breaking_tone_uses_record_chart_red_without_label_noise(self):
+        record_css = css_block(self.source, ".career-timeline-node.tone-record-breaking")
+        node_body = extract_function_body(self.source, "function careerTimelineNodeHtml(node)")
+        title_body = extract_function_body(self.source, "function careerTimelineNodeDisplayTitle(node)")
+
+        self.assertIn("rgba(244, 63, 94", record_css)
+        self.assertIn("careerTimelineNodeDisplayTitle(node)", node_body)
+        self.assertIn("刷新纪录", title_body)
+        self.assertNotIn("record_breaking", node_body)
+        self.assertNotIn("metric_series", node_body + title_body)
 
     def test_date_points_and_card_left_edges_share_one_anchor(self):
         anchor_body = extract_function_body(self.source, "function careerTimelineDayAnchorPercent(dayValue, daysInMonthValue)")

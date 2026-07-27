@@ -277,6 +277,32 @@ class TestContextTagsCapabilityRouting:
         assert "热应激 (Heat Stress)" in tags, "running 应注入热应激"
         assert "High" in tags["热应激 (Heat Stress)"]
 
+    def test_running_under_25c_does_not_inject_heat_stress_tag(self):
+        """Task 3:21.7°C 是中性天气事实，不是热应激压力标签。"""
+        resolver = self._build_resolver()
+        session = self._build_minimal_session("running", temp=21.7)
+        result = resolver.resolve(session, {"device_meta": {}})
+
+        assert "热应激 (Heat Stress)" not in result["context_tags"]
+
+    def test_cycling_under_25c_high_humidity_does_not_inject_heat_stress_tag(self):
+        """Task 3:高湿不改变 cycling 的 <25°C 热应激标签阈值。"""
+        resolver = self._build_resolver()
+        session = self._build_minimal_session("cycling", temp=21.7)
+        session["weather"] = {"humidity": 89}
+        result = resolver.resolve(session, {"device_meta": {}})
+
+        assert "热应激 (Heat Stress)" not in result["context_tags"]
+
+    def test_swimming_variants_do_not_inject_heat_stress_from_air_temperature(self):
+        """Task 3:池泳和开放水域都不得仅因气温获得热应激标签。"""
+        resolver = self._build_resolver()
+        for sport in ("swimming", "lap_swimming", "open_water", "open_water_swimming"):
+            session = self._build_minimal_session(sport, temp=32.0)
+            result = resolver.resolve(session, {"device_meta": {}})
+
+            assert "热应激 (Heat Stress)" not in result["context_tags"], sport
+
     def test_swimming_no_altitude_tag(self):
         """swimming uses_altitude=False,即使 max_alt=2000m 也不注入。"""
         resolver = self._build_resolver()

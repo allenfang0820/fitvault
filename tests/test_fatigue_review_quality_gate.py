@@ -75,6 +75,7 @@ class TestP5FrontendZeroInferenceGate(unittest.TestCase):
         self.assertIn("data.fatigue_zones", body)
         self.assertIn("data.collapse_events", body)
         self.assertIn("data.context_tags", body)
+        self.assertIn("data.environment_factors", body)
         for forbidden in (
             "querySelector",
             "getOption",
@@ -115,6 +116,7 @@ class TestP5SnapshotWhitelistGate(unittest.TestCase):
         "display_meta",
         "context_tags",
         "environment_context",
+        "environment_factors",
         "review_mode",
         "capabilities",
         "cycling_explanation_signals",
@@ -416,9 +418,9 @@ class TestP5P4UiStructureGate(unittest.TestCase):
 
     def test_p8_1_context_factors_move_into_side_summary(self):
         for text in (
-            "_renderFatigueReviewContextFactors(contextTags)",
+            "_renderFatigueReviewContextFactors(environmentFactors, contextTags)",
             "影响因素",
-            "温度偏高，心率更容易上浮",
+            "后端热压力标签可作为本次波动的背景参考",
             "能量消耗偏高，后程可能更吃补给",
             "本次心肺压力偏高",
             "心率储备占用约",
@@ -429,6 +431,7 @@ class TestP5P4UiStructureGate(unittest.TestCase):
             "AI 洞察弹窗",
         ):
             self.assertIn(text, self.html)
+        self.assertNotIn("温度偏高，心率更容易上浮", self.html)
         for removed in (
             'id="fr-context-panel"',
             'id="fr-context-boundary"',
@@ -861,7 +864,8 @@ class TestP5P4UiStructureGate(unittest.TestCase):
             "var collapseEvents = Array.isArray(data.collapse_events) ? data.collapse_events : []",
             "var fatigueZones = Array.isArray(data.fatigue_zones) ? data.fatigue_zones : []",
             "var contextTags = data.context_tags || {}",
-            "var contextFactorsHtml = _renderFatigueReviewContextFactors(contextTags)",
+            "var environmentFactors = _fatigueReviewEnvironmentFactorEntries(data.environment_factors)",
+            "var contextFactorsHtml = _renderFatigueReviewContextFactors(environmentFactors, contextTags)",
             "fr-context-factor-card",
             "var candidates = []",
             "var topImpactItems = candidates.slice(0, 3)",
@@ -869,6 +873,7 @@ class TestP5P4UiStructureGate(unittest.TestCase):
             self.assertIn(text, self.html)
         helper = _extract_js_function(self.html, "_renderFatigueReviewSideSummary")
         self.assertIn("contextTags", helper)
+        self.assertIn("environmentFactors", helper)
         self.assertIn("contextFactorsHtml", helper)
         for forbidden in (
             "curves.",

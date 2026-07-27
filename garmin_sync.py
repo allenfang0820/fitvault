@@ -437,6 +437,92 @@ def sync_profile_json(
     return _sync_profile_in_process(paths, region=resolved_region, refresh=refresh)
 
 
+_FIT_DOWNLOAD_STATUSES = {"downloaded", "skipped", "failed"}
+
+
+def _normalize_garmin_fit_candidate(
+    raw: Any,
+    *,
+    output_dir: Path | str,
+    default_status: str = "downloaded",
+) -> dict[str, Any] | None:
+    item = raw if isinstance(raw, dict) else {"file": raw, "status": default_status}
+    status = str(item.get("status") or default_status).strip().lower()
+    if status not in _FIT_DOWNLOAD_STATUSES:
+        return None
+
+    raw_file = str(item.get("file") or item.get("path") or item.get("file_path") or "").strip()
+    file_path = ""
+    if raw_file:
+        target = Path(raw_file).expanduser()
+        if not target.is_absolute():
+            target = Path(output_dir).expanduser() / target
+        target = target.resolve()
+        if target.suffix.lower() == ".fit":
+            file_path = str(target)
+    if status in {"downloaded", "skipped"} and not file_path:
+        return None
+
+    provider_activity_id = str(
+        item.get("provider_activity_id") or item.get("activity_id") or ""
+    ).strip()
+    if not provider_activity_id and file_path:
+        match = re.search(r"_(\d+)\.fit$", Path(file_path).name, re.IGNORECASE)
+        if match:
+            provider_activity_id = match.group(1)
+
+    raw_bytes = item.get("bytes")
+    try:
+        byte_count = max(0, int(raw_bytes)) if raw_bytes is not None else None
+    except (TypeError, ValueError):
+        byte_count = None
+    reason = _redact_sensitive_text(
+        _error_snippet(str(item.get("reason") or item.get("message") or item.get("error") or ""))
+    )
+    return {
+        "provider": "garmin",
+        "provider_activity_id": provider_activity_id,
+        "file": file_path,
+        "filename": Path(file_path).name if file_path else Path(str(item.get("filename") or "")).name,
+        "status": status,
+        "reason": reason,
+        "bytes": byte_count,
+    }
+
+
+def normalize_garmin_fit_download_summary(
+    summary: dict[str, Any],
+    *,
+    output_dir: Path | str,
+) -> dict[str, Any]:
+    normalized = dict(summary)
+    normalized["provider"] = "garmin"
+    candidates: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str]] = set()
+
+    raw_candidates = normalized.get("candidates")
+    sources = list(raw_candidates) if isinstance(raw_candidates, list) else []
+    raw_files = normalized.get("files")
+    if isinstance(raw_files, list):
+        sources.extend(raw_files)
+
+    for raw in sources:
+        candidate = _normalize_garmin_fit_candidate(raw, output_dir=output_dir)
+        if candidate is None:
+            continue
+        key = (
+            candidate["status"],
+            candidate["provider_activity_id"],
+            candidate["file"],
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        candidates.append(candidate)
+    normalized["candidates"] = candidates
+    return normalized
+
+
 def download_fit_json(
     *,
     start_date: str,
@@ -463,7 +549,7 @@ def download_fit_json(
     parsed = _parse_json_stdout(result.stdout)
     if not isinstance(parsed, dict):
         raise GarminJsonParseError("Garmin FIT 下载返回的不是 JSON 对象")
-    return parsed
+    return normalize_garmin_fit_download_summary(parsed, output_dir=output_dir)
 
 
 def login_command(*, region: str | None = None, base_dir: Path | str | None = None) -> list[str]:

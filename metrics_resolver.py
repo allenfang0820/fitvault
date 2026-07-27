@@ -120,6 +120,53 @@ DEVICE_PRODUCT_MAPPING_SEEDS: tuple[dict[str, str], ...] = (
 _DEVICE_PRODUCT_FALLBACK_RE = re.compile(r"^\s*Garmin\s+Product\s+\d+\s*$", re.IGNORECASE)
 
 
+def _stringify_product_value(value: Any) -> str:
+    if value is None:
+        return ""
+    text = str(value).strip()
+    if not text:
+        return ""
+    try:
+        if re.fullmatch(r"\d+(?:\.0+)?", text):
+            return str(int(float(text)))
+    except (TypeError, ValueError, OverflowError):
+        pass
+    return text
+
+
+def _is_numeric_product_id(value: Any) -> bool:
+    return bool(re.fullmatch(r"\d+", _stringify_product_value(value)))
+
+
+def _normalize_product_id(value: Any) -> str:
+    text = _stringify_product_value(value)
+    return text if _is_numeric_product_id(text) else ""
+
+
+def _slug_device_product_name(value: Any) -> str:
+    text = _stringify_product_value(value).lower()
+    text = re.sub(r"[^a-z0-9]+", "_", text).strip("_")
+    return text[:80]
+
+
+def _garmin_symbolic_to_product_id(symbol: Any) -> str:
+    """Resolve Garmin SDK symbolic names such as ``fenix8`` to numeric ids.
+
+    The canonical Garmin product key is always numeric (``garmin:<id>``). When
+    the SDK decoder gives a symbolic ``garmin_product`` value, reverse-lookup
+    the shipped Garmin profile and only accept an unambiguous match.
+    """
+    token = _stringify_product_value(symbol).strip().lower()
+    if not token or _is_numeric_product_id(token):
+        return _normalize_product_id(token)
+    matches = [
+        str(pid)
+        for pid, name in _garmin_device_name_dict().items()
+        if str(name).strip().lower() == token
+    ]
+    return matches[0] if len(matches) == 1 else ""
+
+
 def ensure_device_product_mapping_seed(conn: sqlite3.Connection) -> None:
     """Seed built-in device product mappings without overwriting user mappings."""
     now = datetime.now(timezone.utc).isoformat()
@@ -211,28 +258,36 @@ def extract_device_identity_from_fit_file_id(file_id_mesgs: Any) -> dict[str, An
     manufacturer_lower = manufacturer.lower()
     garmin_product = file_id.get("garmin_product")
     product = file_id.get("product")
+    product_name = str(file_id.get("product_name") or "").strip()
     serial = file_id.get("serial_number")
 
     if garmin_product is not None or manufacturer_lower == "garmin":
-        product_id = str(garmin_product if garmin_product is not None else product or "").strip()
-        product_id = str(int(float(product_id))) if product_id.replace(".", "", 1).isdigit() else product_id
+        product_id = _normalize_product_id(product) or _normalize_product_id(garmin_product)
+        if not product_id:
+            product_id = _garmin_symbolic_to_product_id(garmin_product)
+        product_hint = _stringify_product_value(garmin_product)
         return {
             "vendor": "garmin",
             "product_key": f"garmin:{product_id}" if product_id else "",
             "product_id": product_id,
             "serial": str(serial or "").strip(),
             "manufacturer": manufacturer or "garmin",
+            "product_name": product_name,
+            "product_hint": product_hint,
             "raw": file_id,
         }
 
-    product_id = str(product or "").strip()
     vendor = manufacturer_lower or "unknown"
+    product_id = _stringify_product_value(product)
+    product_key_id = product_id or _slug_device_product_name(product_name)
     return {
         "vendor": vendor,
-        "product_key": f"{vendor}:{product_id}" if product_id else "",
+        "product_key": f"{vendor}:{product_key_id}" if vendor != "unknown" and product_key_id else "",
         "product_id": product_id,
         "serial": str(serial or "").strip(),
         "manufacturer": manufacturer,
+        "product_name": product_name,
+        "product_hint": product_name,
         "raw": file_id,
     }
 
@@ -250,6 +305,8 @@ def extract_device_identity_from_persisted_fields(row: dict[str, Any]) -> dict[s
     product_id = str(row.get("device_product_id") or "").strip()
     serial = str(row.get("device_serial") or "").strip()
     device_name = str(row.get("device_name") or "").strip()
+    product_name = str(row.get("device_product_name") or "").strip()
+    product_hint = str(row.get("device_product_hint") or "").strip()
 
     fallback_match = _DEVICE_PRODUCT_FALLBACK_RE.match(device_name)
     if fallback_match:
@@ -267,12 +324,24 @@ def extract_device_identity_from_persisted_fields(row: dict[str, Any]) -> dict[s
         vendor = vendor or key_vendor.strip().lower()
         product_id = product_id or key_product_id.strip()
 
+    if (vendor or "").lower() == "garmin":
+        numeric_product_id = _normalize_product_id(product_id)
+        if not numeric_product_id and product_key.startswith("garmin:"):
+            numeric_product_id = _garmin_symbolic_to_product_id(product_key.split(":", 1)[1])
+        if not numeric_product_id:
+            numeric_product_id = _garmin_symbolic_to_product_id(product_hint or product_name)
+        if numeric_product_id:
+            product_id = numeric_product_id
+            product_key = f"garmin:{product_id}"
+
     return {
         "vendor": vendor or "unknown",
         "product_key": product_key,
         "product_id": product_id,
         "serial": serial,
         "manufacturer": vendor or "",
+        "product_name": product_name,
+        "product_hint": product_hint,
         "raw": {
             "device_name": device_name,
             "device_mapping_status": row.get("device_mapping_status"),
@@ -317,6 +386,8 @@ def resolve_device_display_name(identity: dict[str, Any], conn: sqlite3.Connecti
     product_key = str(identity.get("product_key") or "").strip()
     product_id = str(identity.get("product_id") or "").strip()
     serial = str(identity.get("serial") or "").strip()
+    product_name = str(identity.get("product_name") or "").strip()
+    product_hint = str(identity.get("product_hint") or "").strip()
 
     mapping = _lookup_device_mapping(conn, vendor, product_key)
     if mapping and str(mapping.get("display_name") or "").strip():
@@ -327,6 +398,8 @@ def resolve_device_display_name(identity: dict[str, Any], conn: sqlite3.Connecti
             "product_key": product_key,
             "product_id": product_id,
             "serial": serial,
+            "product_name": product_name,
+            "product_hint": product_hint,
             "source": str(mapping.get("source") or "mapping_table"),
         }
 
@@ -345,7 +418,22 @@ def resolve_device_display_name(identity: dict[str, Any], conn: sqlite3.Connecti
             "product_key": product_key,
             "product_id": product_id,
             "serial": serial,
+            "product_name": product_name,
+            "product_hint": product_hint,
             "source": "profile",
+        }
+
+    if product_name:
+        return {
+            "device_name": product_name,
+            "mapping_status": "resolved",
+            "vendor": vendor,
+            "product_key": product_key,
+            "product_id": product_id,
+            "serial": serial,
+            "product_name": product_name,
+            "product_hint": product_hint,
+            "source": "fit_product_name",
         }
 
     return {
@@ -355,6 +443,8 @@ def resolve_device_display_name(identity: dict[str, Any], conn: sqlite3.Connecti
         "product_key": product_key,
         "product_id": product_id,
         "serial": serial,
+        "product_name": product_name,
+        "product_hint": product_hint,
         "source": "fallback",
     }
 
@@ -487,14 +577,12 @@ class MetricsResolver:
         # 严禁硬 sport 字符串排除,必须通过 capability 决定是否注入
         dimension = _classify_sport_dimension(sport_type)
 
-        # 1. 热应激标签判定(V7.8:仅对 uses_heat=True 的 sport 注入)
+        # 1. 热应激标签判定(V7.8:仅对 uses_heat=True 且 >=25°C 的 sport 注入)
         if dimension["uses_heat"] and avg_temp is not None and avg_temp > 0:
             if avg_temp >= 30.0:
                 context_tags["热应激 (Heat Stress)"] = f"Extreme (极端，{avg_temp:.1f}°C) - 极其严峻的散热压力，必定引发严重的心率血管漂移，不要因此批评用户耐力。"
             elif avg_temp >= 25.0:
                 context_tags["热应激 (Heat Stress)"] = f"High (高，{avg_temp:.1f}°C) - 会导致散热受阻，后半程心率显著偏高属正常生理代偿。"
-            elif avg_temp >= 20.0:
-                context_tags["热应激 (Heat Stress)"] = f"Moderate (中度，{avg_temp:.1f}°C) - 轻微影响心率稳定性。"
 
         # 2. 海拔缺氧标签判定(V7.8:仅对 uses_altitude=True 的 sport 注入)
         if dimension["uses_altitude"]:
@@ -3058,6 +3146,13 @@ class MetricsResolver:
             if "deleted_at" in cols:
                 time_where += " AND deleted_at IS NULL"
             time_order = "COALESCE(start_time_utc, start_time) DESC" if has_utc else "start_time DESC"
+            time_expr = (
+                "COALESCE(NULLIF(start_time_utc, ''), NULLIF(start_time, ''))"
+                if has_utc
+                else "NULLIF(start_time, '')"
+            )
+            lower_bound = (window_start - timedelta(days=3)).date().isoformat()
+            upper_bound = (as_of_dt + timedelta(days=3)).date().isoformat()
             cursor.execute(
                 f"""
                 SELECT {time_select}, avg_hr, avg_pace, duration_sec
@@ -3068,9 +3163,11 @@ class MetricsResolver:
                   AND avg_hr IS NOT NULL
                   AND avg_pace IS NOT NULL
                   AND duration_sec > ?
+                  AND {time_expr} >= ?
+                  AND {time_expr} < ?
                 ORDER BY {time_order}
                 """,
-                (sport_type, current_activity_id, 15 * 60),
+                (sport_type, current_activity_id, 15 * 60, lower_bound, upper_bound),
             )
             rows = cursor.fetchall()
             conn.close()

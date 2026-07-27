@@ -1,3 +1,4 @@
+import json
 import sqlite3
 import unittest
 
@@ -119,6 +120,47 @@ class CareerRecordsV2DownstreamIntegrationTest(unittest.TestCase):
         self.assertNotIn("candidate_created", {event["event_type"] for event in events})
         self.assertNotIn("recalculated", {event["event_type"] for event in events})
         self.assertEqual(summary["timeline"]["idempotency_key"], "career_record_events.id")
+
+    def test_downstream_includes_record_breaking_metric_series_events_without_record_id(self):
+        career_backend.ensure_career_schema(self.conn)
+        self.conn.execute(
+            """
+            INSERT INTO career_record_events (
+                id, record_id, activity_id, pb_type, event_type, event_at,
+                evidence_key, resolver_version, source, record_key, scope_hash,
+                scope_key, run_id, decision, reason_codes_json, payload_json
+            )
+            VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "record_event:record_breaking:test",
+                "run-2",
+                "running_5k",
+                career_backend.RECORD_BREAKING_EVENT_TYPE,
+                "2026-07-19",
+                "metric_result:v3:test",
+                career_backend.RECORD_METRIC_SERIES_RESOLVER_VERSION,
+                "metric_series",
+                "running_5k",
+                "scope:default",
+                "default",
+                "record_metric_results_rebuild",
+                career_backend.RECORD_BREAKING_EVENT_TYPE,
+                json.dumps(["record_progression"], ensure_ascii=False),
+                json.dumps({"detail_link": {"activity_id": "run-2", "source": "career"}}, ensure_ascii=False),
+            ),
+        )
+
+        summary = career_backend.get_career_records_downstream_integration(self.conn)
+
+        self.assertEqual(summary["timeline"]["formal_event_count"], 1)
+        self.assertEqual(summary["achievement"]["formal_trigger_count"], 1)
+        self.assertIn(career_backend.RECORD_BREAKING_EVENT_TYPE, summary["timeline"]["formal_event_types"])
+        event = summary["timeline"]["events"][0]
+        self.assertEqual(event["event_type"], career_backend.RECORD_BREAKING_EVENT_TYPE)
+        self.assertEqual(event["record_id"], "")
+        self.assertEqual(event["activity_id"], "run-2")
+        self.assertEqual(event["detail_link"], {"activity_id": "run-2", "source": "career", "record_id": ""})
 
     def test_race_archive_boundary_and_curve_model_exclusions_are_explicit(self):
         career_backend.apply_record_evidence_state(self.conn, cycling_distance("activity-1", 100000, "2026-07-14"))

@@ -1889,6 +1889,52 @@ def _download_url_to_fit(output_dir: Path, url: str, index: int, timeout: int) -
     return {"file": str(path), "status": "downloaded", "bytes": len(data), "url": url}
 
 
+def _normalize_coros_fit_candidate(
+    raw: dict[str, Any],
+    *,
+    output_dir: Path,
+) -> dict[str, Any] | None:
+    status = str(raw.get("status") or "failed").strip().lower()
+    if status not in {"downloaded", "skipped", "failed"}:
+        return None
+    raw_file = str(raw.get("file") or raw.get("path") or raw.get("file_path") or "").strip()
+    file_path = ""
+    if raw_file:
+        target = Path(raw_file).expanduser()
+        if not target.is_absolute():
+            target = output_dir / target
+        target = target.resolve()
+        if target.suffix.lower() == ".fit":
+            file_path = str(target)
+    if status in {"downloaded", "skipped"} and not file_path:
+        return None
+
+    raw_bytes = raw.get("bytes")
+    try:
+        byte_count = max(0, int(raw_bytes)) if raw_bytes is not None else None
+    except (TypeError, ValueError):
+        byte_count = None
+    candidate = {
+        "provider": "coros",
+        "provider_activity_id": str(
+            raw.get("provider_activity_id") or raw.get("labelId") or ""
+        ).strip(),
+        "file": file_path,
+        "filename": Path(file_path).name if file_path else Path(str(raw.get("filename") or "")).name,
+        "status": status,
+        "reason": _sanitize_coros_text(
+            raw.get("reason") or raw.get("error") or raw.get("message") or "",
+            max_chars=ERROR_SNIPPET_CHARS,
+        ),
+        "bytes": byte_count,
+    }
+    if raw.get("sportType") is not None:
+        candidate["sport_type"] = raw.get("sportType")
+    if raw.get("source"):
+        candidate["source"] = str(raw.get("source"))
+    return candidate
+
+
 def _summarize_fit_records(
     *,
     provider: str,
@@ -1904,6 +1950,26 @@ def _summarize_fit_records(
     searched: int | None = None,
 ) -> dict[str, Any]:
     error_items = errors or [item for item in records if item.get("status") == "failed"]
+    candidate_sources = list(records)
+    for item in error_items:
+        if item not in candidate_sources:
+            candidate_sources.append(item)
+    candidates: list[dict[str, Any]] = []
+    seen_candidates: set[tuple[str, str, str, str]] = set()
+    for item in candidate_sources:
+        candidate = _normalize_coros_fit_candidate(item, output_dir=output_dir)
+        if candidate is None:
+            continue
+        key = (
+            candidate["status"],
+            candidate["provider_activity_id"],
+            candidate["file"],
+            candidate["reason"],
+        )
+        if key in seen_candidates:
+            continue
+        seen_candidates.add(key)
+        candidates.append(candidate)
     return {
         "ok": not any(item.get("status") == "failed" for item in records) and not any(item.get("status") == "failed" for item in error_items),
         "provider": provider,
@@ -1919,6 +1985,7 @@ def _summarize_fit_records(
         "failed": sum(1 for item in records if item.get("status") == "failed") + sum(1 for item in error_items if item.get("status") == "failed"),
         "output_dir": str(output_dir),
         "files": records,
+        "candidates": candidates,
         "errors": error_items,
     }
 

@@ -20,7 +20,6 @@ FORBIDDEN_RESPONSE_KEYS = {
     "storage_ref",
     "path",
     "thumbnail_url",
-    "detail_link",
 }
 
 
@@ -151,6 +150,48 @@ def _insert_achievement(conn: sqlite3.Connection, **overrides) -> None:
     conn.execute(
         f"INSERT INTO career_achievement_events ({', '.join(columns)}) VALUES ({placeholders})",
         [data[column] for column in columns],
+    )
+
+
+def _insert_record_breaking_event(conn: sqlite3.Connection, **overrides) -> None:
+    data = {
+        "id": "record_event:record_breaking:1",
+        "record_id": None,
+        "activity_id": "1",
+        "pb_type": "running_5k",
+        "event_type": "record_breaking",
+        "event_at": "2026-05-19",
+        "evidence_key": "metric_result:v3:1",
+        "resolver_version": career_backend.RECORD_METRIC_SERIES_RESOLVER_VERSION,
+        "source": "metric_series",
+        "record_key": "running_5k",
+        "scope_hash": "scope:default",
+        "scope_key": "default",
+        "run_id": "record_metric_results_rebuild",
+        "decision": "record_breaking",
+        "reason_codes_json": json.dumps(["record_progression"], ensure_ascii=False),
+        "payload_json": json.dumps(
+            {
+                "activity_id": "1",
+                "record_key": "running_5k",
+                "sport": "running",
+                "event_date": "2026-05-19",
+                "metric": {"value": 1700.0, "unit": "seconds", "display": "28:20"},
+                "previous_best_metric": {"value": 1800.0, "unit": "seconds", "display": "30:00"},
+                "detail_link": {"activity_id": "1", "source": "career"},
+                "source_mode": "activity_total",
+                "resolver_version": career_backend.RECORD_METRIC_SERIES_RESOLVER_VERSION,
+            },
+            ensure_ascii=False,
+        ),
+    }
+    data.update(overrides)
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(career_record_events)").fetchall()}
+    payload = {key: value for key, value in data.items() if key in columns}
+    placeholders = ", ".join("?" for _ in payload)
+    conn.execute(
+        f"INSERT INTO career_record_events ({', '.join(payload)}) VALUES ({placeholders})",
+        tuple(payload.values()),
     )
 
 
@@ -341,6 +382,66 @@ class TestCareerSnapshotBuilder(unittest.TestCase):
                 all(not item["creates_formal_record"] for item in records_summary["trend_inputs"]["curve_inputs"])
             )
             self.assertNotIn("record_decision", json.dumps(records_summary, ensure_ascii=False))
+            _assert_forbidden_absent(self, snapshot)
+        finally:
+            conn.close()
+
+    def test_record_breaking_timeline_digest_becomes_safe_record_milestone_material(self):
+        conn = sqlite3.connect(":memory:")
+        try:
+            _create_activities_table(conn)
+            career_backend.ensure_career_schema(conn)
+            _insert_activity(conn, id=1)
+            _insert_record_breaking_event(conn)
+            _insert_record_breaking_event(
+                conn,
+                id="record_event:record_breaking:without-activity",
+                activity_id="",
+                event_at="2026-05-20",
+                payload_json=json.dumps(
+                    {
+                        "activity_id": "",
+                        "record_key": "running_5k",
+                        "sport": "running",
+                        "event_date": "2026-05-20",
+                        "metric": {"value": 1650.0, "unit": "seconds", "display": "27:30"},
+                        "previous_best_metric": {"value": 1700.0, "unit": "seconds", "display": "28:20"},
+                        "detail_link": {"activity_id": "", "source": "career"},
+                        "source_mode": "activity_total",
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+
+            snapshot = career_backend.build_career_snapshot(conn=conn)
+            record_items = [
+                item
+                for item in snapshot["timeline_digest"]
+                if item.get("source_category") == "record_milestone"
+            ]
+            payload_text = json.dumps(snapshot, ensure_ascii=False)
+
+            self.assertEqual(len(record_items), 2)
+            with_activity = next(item for item in record_items if item["activity_id"] == "1")
+            without_activity = next(item for item in record_items if item["activity_id"] == "")
+            self.assertTrue(with_activity["id"].startswith("record_milestone:"))
+            self.assertEqual(with_activity["title"], "刷新纪录：5K")
+            self.assertEqual(with_activity["type"], "record")
+            self.assertEqual(with_activity["record_key"], "running_5k")
+            self.assertEqual(with_activity["sport"], "running")
+            self.assertEqual(with_activity["value"], "28:20")
+            self.assertEqual(with_activity["previous_best_value"], "30:00")
+            self.assertEqual(with_activity["detail_link"], {"activity_id": "1", "source": "career"})
+            self.assertNotIn("detail_link", without_activity)
+            for forbidden in (
+                "record_breaking",
+                "metric_series",
+                "resolver_version",
+                "payload_json",
+                "file_path",
+                "points_json",
+            ):
+                self.assertNotIn(forbidden, payload_text)
             _assert_forbidden_absent(self, snapshot)
         finally:
             conn.close()

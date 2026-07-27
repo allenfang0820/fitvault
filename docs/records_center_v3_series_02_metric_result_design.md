@@ -1,6 +1,6 @@
 # Records Center V3 SERIES-02 Metric Result Design
 
-更新时间：2026-07-17
+更新时间：2026-07-18
 
 ## 1. 任务边界
 
@@ -470,3 +470,27 @@ RCV3-SERIES-02 完成标准：
 - 已明确 running 5K 只读落地方案。
 - 已明确后续代码改造和测试清单。
 - 已明确旧 PB active/superseded、candidate/active、preview/rebuild、AI 路径的冻结边界。
+
+## 11. 当前实现状态（截至 RCV3-SERIES-18）
+
+已实现的只读 V3 主链：
+
+```text
+Activity -> Record Metric Result -> Metric Series -> Current Best -> Chart
+```
+
+当前代码状态：
+
+- `get_career_record_metric_series()` 已支持 running 标准距离首批四项：`running_5k`、`running_10k`、`running_half_marathon`、`running_marathon`。
+- `points[]` 从历史跑步 Activity 的距离-时间流计算，每个点代表一条活动的对应标准距离 Best Effort 成绩。
+- `current_best` 与 `record_progression` 均由后端从完整 `points[]` 派生。
+- 右侧图表已消费 `get_career_record_metric_series().points/current_best/record_progression`，不再以 `get_career_record_history()` 作为主折线图数据源。
+- `get_career_records()` 对 running 标准距离左侧摘要已从 metric series `current_best` 派生，并保持左侧/右侧通过同一 `record_key + scope_hash` 串联。
+- 前端仍只渲染后端 ViewModel，不计算窗口、current best、record progression、scope、confidence、quality 或 axis direction。
+
+仍然冻结的兼容路径：
+
+- `career_pb_records` active/superseded 仅作为旧 PB / ACS / 兼容维护路径，不能作为 V3 主图或 running 标准距离左侧 Current Best 的主数据源。
+- `career_event_candidates` 与 candidate -> active 写入状态机不参与 V3 metric series 生成链路。
+- `preview_career_records()` 与 rebuild/materializer 不得被记录中心主图区前端调用。
+- 当前阶段仍不写真实 `career_record_metric_results` 表，不写 `career_ai_insights`，不调用 AI / LLM。

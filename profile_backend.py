@@ -76,6 +76,9 @@ SQLITE_CONNECT_TIMEOUT_SEC = SQLITE_BUSY_TIMEOUT_MS / 1000.0
 SQLITE_LOCK_RETRY_ATTEMPTS = 6
 SQLITE_LOCK_RETRY_BASE_DELAY_SEC = 0.25
 PROFILE_SYNC_RETRY_COOLDOWN_SEC = 30 * 60
+ACTIVITY_SOURCE_FILE_STATUSES = ("pending", "parsed", "skipped", "failed")
+ACTIVITY_SOURCE_FILE_ERROR_MAX_LENGTH = 500
+PROFILE_SCHEMA_SENTINEL_KEY = "profile_backend_schema_ready_v20260723_task03"
 REGION_CACHE_PRECISION = 2
 REGION_ENRICH_LIMIT = 20
 REGION_ENRICH_MAX_REQUESTS = 50
@@ -178,6 +181,37 @@ PROFILE_FIELD_LABELS: dict[str, str] = {
     "total_swim_km": "游泳累计", "swimming_100m_pb": "100m 游泳",
 }
 
+_ACTIVITY_LIST_LIGHT_HAS_TRACK_SQL = """
+CASE
+    WHEN TRIM(COALESCE(NULLIF(file_path, ''), '')) != ''
+         AND (
+             COALESCE(NULLIF(file_name, ''), NULLIF(filename, '')) IS NULL
+             OR file_path LIKE '%' || COALESCE(NULLIF(file_name, ''), NULLIF(filename, ''))
+         )
+    THEN 1
+    ELSE 0
+END
+"""
+
+_ACTIVITY_LIST_DEDUPE_KEY_SQL = f"""
+CASE
+    WHEN COALESCE(NULLIF(start_time_utc, ''), NULLIF(start_time, '')) != ''
+         AND COALESCE(COALESCE(dist_km, ROUND(distance / 1000.0, 2)), 0) > 0
+         AND COALESCE(COALESCE(duration_sec, duration), 0) > 0
+    THEN
+        CASE
+            WHEN COALESCE(({_ACTIVITY_LIST_LIGHT_HAS_TRACK_SQL}), 0) = 0
+            THEN 'file:' || COALESCE(NULLIF(filename, ''), NULLIF(file_name, ''), NULLIF(file_path, ''), CAST(id AS TEXT))
+            ELSE 'semantic:' ||
+                 COALESCE(NULLIF(sub_sport_type, ''), NULLIF(sport_type, ''), 'unknown') || ':' ||
+                 COALESCE(NULLIF(start_time_utc, ''), NULLIF(start_time, '')) || ':' ||
+                 printf('%.3f', ROUND(COALESCE(dist_km, ROUND(distance / 1000.0, 2)), 3)) || ':' ||
+                 CAST(ROUND(COALESCE(duration_sec, duration)) AS INTEGER)
+        END
+    ELSE 'file:' || COALESCE(NULLIF(filename, ''), NULLIF(file_name, ''), NULLIF(file_path, ''), CAST(id AS TEXT))
+END
+"""
+
 ACTIVITY_LIST_INDEX_SQL: tuple[tuple[str, str], ...] = (
     (
         "idx_activities_list_sort_expr",
@@ -238,12 +272,260 @@ ACTIVITY_LIST_INDEX_SQL: tuple[tuple[str, str], ...] = (
         )
         """,
     ),
+    (
+        "idx_activities_list_light_page_cover",
+        f"""
+        CREATE INDEX IF NOT EXISTS idx_activities_list_light_page_cover
+        ON activities(
+            COALESCE(source_type, 'fit_sdk'),
+            COALESCE(is_mock, 0),
+            deleted_at,
+            COALESCE(NULLIF(processing_status, ''), 'ready'),
+            start_time_utc,
+            start_time,
+            dist_km,
+            distance,
+            duration_sec,
+            duration,
+            sub_sport_type,
+            sport_type,
+            filename,
+            file_name,
+            file_path,
+            updated_at,
+            id
+        )
+        """,
+    ),
+    (
+        "idx_activities_list_dedupe_key",
+        f"""
+        CREATE INDEX IF NOT EXISTS idx_activities_list_dedupe_key
+        ON activities(
+            COALESCE(source_type, 'fit_sdk'),
+            COALESCE(is_mock, 0),
+            deleted_at,
+            COALESCE(NULLIF(processing_status, ''), 'ready'),
+            ({_ACTIVITY_LIST_DEDUPE_KEY_SQL}),
+            COALESCE(start_time, updated_at) DESC,
+            id DESC
+        )
+        """,
+    ),
 )
 
 
 def _ensure_activity_list_indexes(conn: sqlite3.Connection) -> None:
     for _name, sql in ACTIVITY_LIST_INDEX_SQL:
         conn.execute(sql)
+
+
+def app_migration_done(conn: sqlite3.Connection, key: str) -> bool:
+    migration_key = str(key or "").strip()
+    if not migration_key:
+        return False
+    try:
+        row = conn.execute(
+            "SELECT status FROM app_migrations WHERE key = ? LIMIT 1",
+            (migration_key,),
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return False
+    if row is None:
+        return False
+    try:
+        status = dict(row).get("status")
+    except Exception:
+        status = row[0]
+    return str(status or "").strip().lower() == "done"
+
+
+def mark_app_migration_done(
+    conn: sqlite3.Connection,
+    key: str,
+    *,
+    details_json: str | None = None,
+) -> None:
+    migration_key = str(key or "").strip()
+    if not migration_key:
+        return
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS app_migrations (
+            key TEXT PRIMARY KEY,
+            status TEXT,
+            updated_at TEXT,
+            details_json TEXT
+        )
+    """)
+    conn.execute(
+        """
+        INSERT INTO app_migrations (key, status, updated_at, details_json)
+        VALUES (?, 'done', datetime('now'), ?)
+        ON CONFLICT(key) DO UPDATE SET
+            status = excluded.status,
+            updated_at = excluded.updated_at,
+            details_json = excluded.details_json
+        """,
+        (migration_key, details_json),
+    )
+
+
+def _sanitize_activity_source_file_error(error: Any) -> str | None:
+    """Store a short diagnostic without credentials or unbounded provider text."""
+    if error is None:
+        return None
+    text = str(error).strip()
+    if not text:
+        return None
+    text = re.sub(r"(?i)(authorization\s*[:=]\s*(?:bearer\s+)?)[^\s,;]+", r"\1[REDACTED]", text)
+    text = re.sub(r"(?i)(\b(?:token|password|passwd|secret|api[_-]?key)\s*[:=]\s*)[^\s,;]+", r"\1[REDACTED]", text)
+    return text[:ACTIVITY_SOURCE_FILE_ERROR_MAX_LENGTH]
+
+
+def get_activity_source_file_by_provider_activity_id(
+    conn: sqlite3.Connection,
+    provider: str,
+    provider_activity_id: str,
+) -> dict[str, Any] | None:
+    provider_value = str(provider or "").strip()
+    activity_id_value = str(provider_activity_id or "").strip()
+    if not provider_value or not activity_id_value:
+        return None
+    row = conn.execute(
+        """
+        SELECT * FROM activity_source_files
+        WHERE provider = ? AND provider_activity_id = ?
+        LIMIT 1
+        """,
+        (provider_value, activity_id_value),
+    ).fetchone()
+    return dict(row) if row is not None else None
+
+
+def get_activity_source_file_by_sha256(
+    conn: sqlite3.Connection,
+    sha256: str,
+    provider: str | None = None,
+) -> dict[str, Any] | None:
+    digest = str(sha256 or "").strip().lower()
+    if not digest:
+        return None
+    sql = "SELECT * FROM activity_source_files WHERE sha256 = ?"
+    params: list[Any] = [digest]
+    if provider:
+        sql += " AND provider = ?"
+        params.append(str(provider).strip())
+    sql += " ORDER BY id DESC LIMIT 1"
+    row = conn.execute(sql, tuple(params)).fetchone()
+    return dict(row) if row is not None else None
+
+
+def get_activity_source_files_by_sha256(
+    conn: sqlite3.Connection,
+    sha256: str,
+) -> list[dict[str, Any]]:
+    digest = str(sha256 or "").strip().lower()
+    if not digest:
+        return []
+    rows = conn.execute(
+        """
+        SELECT * FROM activity_source_files
+        WHERE sha256 = ?
+        ORDER BY id DESC
+        """,
+        (digest,),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def upsert_activity_source_file(
+    conn: sqlite3.Connection,
+    *,
+    provider: str,
+    file_path: str,
+    filename: str,
+    provider_activity_id: str | None = None,
+    sha256: str | None = None,
+    file_size: int | None = None,
+    file_mtime: float | None = None,
+    activity_id: int | None = None,
+    ingest_status: str = "pending",
+    error: Any = None,
+    source_file_id: int | None = None,
+) -> int:
+    """Insert or update one source ledger row without owning the transaction."""
+    provider_value = str(provider or "").strip()
+    path_value = str(file_path or "").strip()
+    filename_value = str(filename or "").strip()
+    provider_activity_value = str(provider_activity_id or "").strip() or None
+    digest_value = str(sha256 or "").strip().lower() or None
+    status_value = str(ingest_status or "").strip().lower()
+    if not provider_value or not path_value or not filename_value:
+        raise ValueError("provider、file_path、filename 不能为空")
+    if status_value not in ACTIVITY_SOURCE_FILE_STATUSES:
+        raise ValueError(f"不支持的来源账本状态: {status_value}")
+
+    existing: dict[str, Any] | None = None
+    if source_file_id is not None:
+        row = conn.execute(
+            "SELECT * FROM activity_source_files WHERE id = ? LIMIT 1",
+            (int(source_file_id),),
+        ).fetchone()
+        existing = dict(row) if row is not None else None
+    if existing is None and provider_activity_value:
+        existing = get_activity_source_file_by_provider_activity_id(
+            conn, provider_value, provider_activity_value
+        )
+    if existing is None and digest_value:
+        row = conn.execute(
+            """
+            SELECT * FROM activity_source_files
+            WHERE provider = ? AND sha256 = ? AND file_path = ?
+            ORDER BY id DESC LIMIT 1
+            """,
+            (provider_value, digest_value, path_value),
+        ).fetchone()
+        existing = dict(row) if row is not None else None
+
+    now = datetime.now(timezone.utc).isoformat()
+    error_value = _sanitize_activity_source_file_error(error)
+    values = (
+        provider_value,
+        provider_activity_value,
+        path_value,
+        filename_value,
+        digest_value,
+        file_size,
+        file_mtime,
+        activity_id,
+        status_value,
+        error_value,
+        now,
+    )
+    if existing is not None:
+        conn.execute(
+            """
+            UPDATE activity_source_files
+            SET provider = ?, provider_activity_id = ?, file_path = ?, filename = ?,
+                sha256 = ?, file_size = ?, file_mtime = ?, activity_id = ?,
+                ingest_status = ?, error = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (*values, int(existing["id"])),
+        )
+        return int(existing["id"])
+
+    cursor = conn.execute(
+        """
+        INSERT INTO activity_source_files
+            (provider, provider_activity_id, file_path, filename, sha256,
+             file_size, file_mtime, activity_id, ingest_status, error,
+             created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (*values[:-1], now, now),
+    )
+    return int(cursor.lastrowid)
 
 
 def _dedupe_float(value: Any) -> float | None:
@@ -968,6 +1250,9 @@ def _ensure_schema_initialized() -> None:
 
         conn = _raw_connect()
         try:
+            if app_migration_done(conn, PROFILE_SCHEMA_SENTINEL_KEY):
+                _SCHEMA_READY_FOR = db_path
+                return
             _init_schema(conn)
         finally:
             conn.close()
@@ -1142,7 +1427,7 @@ def _init_schema(conn: sqlite3.Connection) -> None:
         "avg_pace",     "calories",    "avg_power",   "max_power",
         "normalized_power","avg_stroke_distance","swolf","list_metric_backfill_version",
         "device_name",  "source_type", "is_mock",     "shadow_diff_json",
-        "device_vendor", "device_product_key", "device_product_id", "device_serial", "device_mapping_status",
+        "device_vendor", "device_product_key", "device_product_id", "device_product_name", "device_product_hint", "device_serial", "device_mapping_status",
         "hr_curve",     "speed_curve",
         "gain_m",       "max_alt_m",   "max_hr",      "avg_cadence",
         "hr_decoupling","tss",         "points_json", "updated_at",
@@ -1164,7 +1449,7 @@ def _init_schema(conn: sqlite3.Connection) -> None:
         "REAL", "INTEGER", "REAL", "REAL",
         "REAL", "REAL", "REAL", "INTEGER DEFAULT 0",
         "TEXT", "TEXT", "INTEGER", "TEXT",
-        "TEXT", "TEXT", "TEXT", "TEXT", "TEXT",
+        "TEXT", "TEXT", "TEXT", "TEXT", "TEXT", "TEXT", "TEXT",
         "TEXT", "TEXT",
         "REAL", "REAL", "INTEGER", "REAL",
         "REAL", "REAL", "TEXT", "TEXT DEFAULT (datetime('now'))",
@@ -1254,6 +1539,8 @@ def _init_schema(conn: sqlite3.Connection) -> None:
         ("device_vendor", "TEXT"),
         ("device_product_key", "TEXT"),
         ("device_product_id", "TEXT"),
+        ("device_product_name", "TEXT"),
+        ("device_product_hint", "TEXT"),
         ("device_serial", "TEXT"),
         ("device_mapping_status", "TEXT"),
         ("source_type", "TEXT"),
@@ -1351,7 +1638,47 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             conn.execute(f"ALTER TABLE user_profile ADD COLUMN {col} {dtype}")
         except Exception:
             pass
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS activity_source_files (
+            id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+            provider             TEXT NOT NULL,
+            provider_activity_id TEXT,
+            file_path            TEXT NOT NULL,
+            filename             TEXT NOT NULL,
+            sha256               TEXT,
+            file_size            INTEGER,
+            file_mtime           REAL,
+            activity_id          INTEGER,
+            ingest_status        TEXT NOT NULL DEFAULT 'pending'
+                                 CHECK (ingest_status IN ('pending', 'parsed', 'skipped', 'failed')),
+            error                TEXT,
+            created_at           TEXT NOT NULL,
+            updated_at           TEXT NOT NULL
+        )
+    """)
+    conn.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_activity_source_files_provider_activity
+        ON activity_source_files(provider, provider_activity_id)
+        WHERE provider_activity_id IS NOT NULL
+    """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_activity_source_files_sha256
+        ON activity_source_files(sha256)
+    """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_activity_source_files_activity_id
+        ON activity_source_files(activity_id)
+    """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_activity_source_files_file_path
+        ON activity_source_files(file_path)
+    """)
     _ensure_activity_list_indexes(conn)
+    mark_app_migration_done(
+        conn,
+        PROFILE_SCHEMA_SENTINEL_KEY,
+        details_json='{"scope":"profile_backend._init_schema"}',
+    )
     conn.commit()
 
 
@@ -1769,7 +2096,8 @@ SPORT_TYPE_CN_MAP: dict[str, str] = {
     "hand_cycling": "手摇车",
     "swimming": "游泳",
     "lap_swimming": "泳池游泳",
-    "open_water": "公开水域",
+    "open_water": "公开水域游泳",
+    "open_water_swimming": "公开水域游泳",
     "horseback_riding": "骑马",
     "equestrian": "骑马",
     "golf": "高尔夫",
@@ -2071,71 +2399,142 @@ def get_activity_list_filtered(
 
     where_sql = "WHERE " + " AND ".join(where_parts)
 
-    select_fields = (
-        "id, "
-        "COALESCE(file_name, filename) AS file_name, "
-        "filename, "
-        "title, "
-        "title_source, "
-        "start_time, "
-        "start_time_utc, "
-        "sport_type, "
-        "sub_sport_type, "
-        "distance, "
-        "dist_km, "
-        "COALESCE(dist_km, ROUND(distance / 1000.0, 2)) AS distance_km_clean, "
-        "COALESCE(duration, duration_sec) AS duration, "
-        "avg_pace, "
-        "avg_hr, "
-        "max_hr, "
-        "calories, "
-        "gain_m, "
-        "normalized_power, "
-        "swolf, "
-        "device_name, "
-        "file_path, "
-        "start_lat, "
-        "start_lon, "
-        "region, "
-        "region_city, "
-        "region_country, "
-        "region_display, "
-        "region_status, "
-        "region_error, "
-        "region_updated_at, "
-        "region_attempt_count, "
-        "weather_json, "
-        "source_type, "
-        "is_mock, "
-        "is_race, "
-        "race_source, "
-        "race_confirmed_at, "
-        "race_confidence, "
-        "race_override, "
-        "updated_at, "
-        "CASE WHEN TRIM(COALESCE(NULLIF(track_json, ''), NULLIF(points_json, ''), '')) NOT IN ('', '[]', '{}') THEN 1 ELSE 0 END AS has_track"
-    )
+    select_fields = """
+        id,
+        file_name,
+        filename,
+        title,
+        title_source,
+        start_time,
+        start_time_utc,
+        sport_type,
+        sub_sport_type,
+        distance,
+        dist_km,
+        distance_km_clean,
+        duration,
+        avg_pace,
+        avg_hr,
+        max_hr,
+        calories,
+        gain_m,
+        normalized_power,
+        swolf,
+        device_name,
+        file_path,
+        start_lat,
+        start_lon,
+        region,
+        region_city,
+        region_country,
+        region_display,
+        region_status,
+        region_error,
+        region_updated_at,
+        region_attempt_count,
+        weather_json,
+        source_type,
+        is_mock,
+        is_race,
+        race_source,
+        race_confirmed_at,
+        race_confidence,
+        race_override,
+        updated_at,
+        has_track
+    """
+
+    # The activity list must be cheap: derive the track hint from light metadata only.
+    page_cte = f"""
+        WITH page_ids AS (
+            SELECT
+                MAX(id) AS id,
+                MAX(COALESCE(start_time, updated_at)) AS activity_sort_time
+            FROM activities
+            {where_sql}
+            GROUP BY ({_ACTIVITY_LIST_DEDUPE_KEY_SQL})
+            ORDER BY activity_sort_time DESC, id DESC
+            LIMIT ? OFFSET ?
+        ),
+        deduped AS (
+            SELECT
+                a.id,
+                COALESCE(a.file_name, a.filename) AS file_name,
+                a.filename,
+                a.title,
+                a.title_source,
+                a.start_time,
+                a.start_time_utc,
+                a.sport_type,
+                a.sub_sport_type,
+                a.distance,
+                a.dist_km,
+                COALESCE(a.dist_km, ROUND(a.distance / 1000.0, 2)) AS distance_km_clean,
+                COALESCE(a.duration, a.duration_sec) AS duration,
+                a.avg_pace,
+                a.avg_hr,
+                a.max_hr,
+                a.calories,
+                a.gain_m,
+                a.normalized_power,
+                a.swolf,
+                a.device_name,
+                a.file_path,
+                a.start_lat,
+                a.start_lon,
+                a.region,
+                a.region_city,
+                a.region_country,
+                a.region_display,
+                a.region_status,
+                a.region_error,
+                a.region_updated_at,
+                a.region_attempt_count,
+                a.weather_json,
+                a.source_type,
+                a.is_mock,
+                a.is_race,
+                a.race_source,
+                a.race_confirmed_at,
+                a.race_confidence,
+                a.race_override,
+                a.updated_at,
+                CASE
+                    WHEN TRIM(COALESCE(NULLIF(a.file_path, ''), '')) != ''
+                         AND (
+                             COALESCE(NULLIF(a.file_name, ''), NULLIF(a.filename, '')) IS NULL
+                             OR a.file_path LIKE '%' || COALESCE(NULLIF(a.file_name, ''), NULLIF(a.filename, ''))
+                         )
+                    THEN 1
+                    ELSE 0
+                END AS has_track,
+                page_ids.activity_sort_time
+            FROM activities a
+            INNER JOIN page_ids ON a.id = page_ids.id
+        )
+    """
 
     conn = _conn()
     try:
+        safe_offset = max(0, int(offset or 0))
+        safe_limit = max(0, int(limit or 0))
+        total_count = int(conn.execute(
+            f"SELECT COUNT(DISTINCT ({_ACTIVITY_LIST_DEDUPE_KEY_SQL})) FROM activities {where_sql}",
+            tuple(params),
+        ).fetchone()[0] or 0)
         rows = conn.execute(
             f"""
+            {page_cte}
             SELECT {select_fields}
-            FROM activities
-            {where_sql}
-            ORDER BY COALESCE(start_time, updated_at) DESC, id DESC
+            FROM deduped
+            ORDER BY activity_sort_time DESC, id DESC
             """,
-            tuple(params),
-        ).fetchall()
+            tuple(params) + (safe_limit, safe_offset),
+        ).fetchall() if safe_limit else []
     finally:
         conn.close()
 
-    all_rows_dicts = [dict(r) for r in rows]
-    deduped_all_rows = _dedupe_activity_list_rows(all_rows_dicts)
-    total_count = len(deduped_all_rows)
-    safe_offset = max(0, int(offset or 0))
-    safe_limit = max(0, int(limit or 0))
-    rows_dicts = deduped_all_rows[safe_offset:safe_offset + safe_limit] if safe_limit else []
+    rows_dicts = [dict(r) for r in rows]
     # §契约 §二/§五:Resolver 层在响应中注入 sport_type_cn,前端不再做翻译
     for _row in rows_dicts:
         _resolved = (str(_row.get("sub_sport_type") or "").strip() or _row.get("sport_type"))
@@ -4370,6 +4769,7 @@ def check_duplicate_activity(
     from datetime import datetime
 
     logger = _duplicate_check_logger()
+    started_at = time.perf_counter()
 
     deleted_clause = "" if include_deleted else "WHERE deleted_at IS NULL"
     conn = _conn()
@@ -4404,6 +4804,11 @@ def check_duplicate_activity(
 
     best_match = None
     max_score = 0.0
+    excluded_by_time = 0
+    excluded_by_duration = 0
+    excluded_by_distance = 0
+    spatial_error_count = 0
+    scored_count = 0
     
     target_local = _parse_time(start_time)
     target_utc = _parse_time(start_time_utc)
@@ -4411,7 +4816,14 @@ def check_duplicate_activity(
         target_utc = _parse_time(points_json[0].get("time"))
 
     scope = "active+deleted" if include_deleted else "active"
-    logger.info(f"--- 开始查重 --- scope={scope}, 目标: start={start_time}, utc={start_time_utc}, dist={dist_km}km, dur={duration_sec}s, points={len(points_json) if points_json else 0}")
+    logger.info(
+        "--- 开始查重 --- scope=%s candidates=%d dist=%skm dur=%ss points=%d",
+        scope,
+        len(rows),
+        dist_km,
+        duration_sec,
+        len(points_json) if points_json else 0,
+    )
 
     for r in rows:
         r_dict = dict(r)
@@ -4442,7 +4854,8 @@ def check_duplicate_activity(
             
         if time_diff_sec is not None:
             if time_diff_sec > 300: # 5分钟
-                logger.info(f"[{r_dict['filename']}] 排除: 开始时间相差 {time_diff_sec}s > 300s")
+                excluded_by_time += 1
+                logger.debug("activity_id=%s 排除: 开始时间相差 %ss > 300s", r_dict["id"], time_diff_sec)
                 continue
         else:
             # 两个都没有时间，或者无法比较，扣分但不断然排除
@@ -4453,15 +4866,17 @@ def check_duplicate_activity(
         if duration_sec > 0 and db_dur > 0:
             dur_diff_ratio = abs(db_dur - duration_sec) / max(duration_sec, 1)
             if dur_diff_ratio > 0.1:
-                logger.info(f"[{r_dict['filename']}] 排除: 时长差异 {dur_diff_ratio*100:.1f}% > 10%")
+                excluded_by_duration += 1
+                logger.debug("activity_id=%s 排除: 时长差异 %.1f%% > 10%%", r_dict["id"], dur_diff_ratio * 100)
                 continue
 
         # 里程差异
         db_dist = r_dict.get("dist_km") or 0.0
         dist_diff_ratio = abs(db_dist - dist_km) / max(dist_km, 0.1) if dist_km > 0 else 0
         if dist_diff_ratio > 0.15: # 放宽一点到15%作为粗筛
-             logger.info(f"[{r_dict['filename']}] 排除: 里程差异 {dist_diff_ratio*100:.1f}% > 15%")
-             continue
+            excluded_by_distance += 1
+            logger.debug("activity_id=%s 排除: 里程差异 %.1f%% > 15%%", r_dict["id"], dist_diff_ratio * 100)
+            continue
 
         # 2. 空间匹配
         overlap_ratio = 0.0
@@ -4494,7 +4909,8 @@ def check_duplicate_activity(
                             
                     overlap_ratio = match_count / len(sample1) if sample1 else 0.0
             except Exception as e:
-                logger.warning(f"[{r_dict['filename']}] 空间匹配异常: {e}")
+                spatial_error_count += 1
+                logger.debug("activity_id=%s 空间匹配异常: %s", r_dict["id"], type(e).__name__)
 
         # 计算综合分数
         score = 0.0
@@ -4534,16 +4950,39 @@ def check_duplicate_activity(
             score = max(score, 85.0)
 
         record_status = "history/deleted" if r_dict.get("deleted_at") else "active"
-        logger.info(f"[{r_dict['filename']}] 查重得分: {score} ({record_status}, 时间差: {time_diff_sec if time_diff_sec is not None else 'N/A'}s, 里程差: {dist_diff_ratio*100:.1f}%, 时长差: {dur_diff_ratio*100 if duration_sec>0 and db_dur>0 else 'N/A'}%, 重合度: {overlap_ratio*100:.1f}%)")
+        scored_count += 1
+        logger.debug(
+            "activity_id=%s 查重得分: %s (%s, 时间差: %ss, 里程差: %.1f%%, 时长差: %s%%, 重合度: %.1f%%)",
+            r_dict["id"],
+            score,
+            record_status,
+            time_diff_sec if time_diff_sec is not None else "N/A",
+            dist_diff_ratio * 100,
+            dur_diff_ratio * 100 if duration_sec > 0 and db_dur > 0 else "N/A",
+            overlap_ratio * 100,
+        )
 
         if score > max_score:
             max_score = score
             best_match = r_dict
 
     # 设置阈值 80 为重复
+    elapsed_ms = round((time.perf_counter() - started_at) * 1000.0, 2)
+    is_duplicate = bool(max_score >= 80.0 and best_match)
+    logger.info(
+        "--- 查重结果 --- duplicate=%s best_activity_id=%s best_score=%s candidates=%d scored=%d excluded_time=%d excluded_duration=%d excluded_distance=%d spatial_errors=%d elapsed_ms=%.2f",
+        is_duplicate,
+        (best_match or {}).get("id"),
+        max_score,
+        len(rows),
+        scored_count,
+        excluded_by_time,
+        excluded_by_duration,
+        excluded_by_distance,
+        spatial_error_count,
+        elapsed_ms,
+    )
     if max_score >= 80.0 and best_match:
-        match_status = "history/deleted" if best_match.get("deleted_at") else "active"
-        logger.info(f"--- 查重结果: 发现重复 --- 匹配记录: {best_match['filename']}, 状态: {match_status}, 分数: {max_score}")
         # 不返回完整的 points_json 以免日志过大
         best_match.pop("points_json", None)
         return {
@@ -4552,7 +4991,6 @@ def check_duplicate_activity(
             "duplicate_record": best_match
         }
         
-    logger.info(f"--- 查重结果: 无重复 --- 最高分: {max_score}")
     if best_match:
         best_match.pop("points_json", None)
     return {

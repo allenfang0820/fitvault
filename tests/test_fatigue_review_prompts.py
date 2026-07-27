@@ -54,6 +54,17 @@ def mock_snapshot():
             "pressure_level": "none",
             "summary": "天气阴，17.1°C，湿度77%，风速0.8km/h；未识别到明显外部环境压力。",
         },
+        "environment_factors": [
+            {
+                "key": "humidity",
+                "category": "weather",
+                "severity": "mild",
+                "label": "湿度偏高",
+                "comment": "温度本身不高,但湿度偏高,体感可能偏闷。",
+                "basis": {"temperature_c": 21.7, "humidity": 89.0},
+                "confidence": "medium",
+            }
+        ],
         "ai_insight": None,
         "advice": "下次类似路线...",
         "disclaimer": "AI 生成仅供参考...",
@@ -252,6 +263,65 @@ class TestSnapshotDataPassthrough:
         assert "已有天气快照" in system
         assert "未识别到明显外部环境压力" in system
         assert "不得写\"未提供环境标签数据\"" in system
+
+    def test_environment_factors_are_primary_ai_explanation_layer(self, mock_snapshot):
+        from llm_backend import build_fatigue_review_messages
+        messages = build_fatigue_review_messages(mock_snapshot, "running", "跑步")
+        system = messages[0]["content"]
+        payload = _extract_payload(system)
+        assert "environment_factors" in payload
+        assert "湿度偏高" in payload
+        for required in [
+            "environment_factors 是后端已识别的用户可见外部影响解释",
+            "优先引用 environment_factors 的 label / comment",
+            "AI 只能消费,不得补算或改写 canonical 环境事实",
+            "environment_context 是中性事实层",
+            "context_tags 是压力/宽容标签层",
+        ]:
+            assert required in system
+
+    def test_prompt_binds_humidity_and_under_25c_temperature_semantics(self, mock_snapshot):
+        from llm_backend import build_fatigue_review_messages
+        messages = build_fatigue_review_messages(mock_snapshot, "cycling", "骑行")
+        system = messages[0]["content"]
+        for required in [
+            "<25°C",
+            "不得写\"温度偏高\"",
+            "20-25°C 且高湿",
+            "湿度偏高 / 体感偏闷",
+            "不得因温度或高湿自行推断顺逆风",
+        ]:
+            assert required in system
+
+    def test_prompt_binds_open_water_swimming_without_water_temperature(self, mock_snapshot):
+        from llm_backend import build_fatigue_review_messages
+        swim_snapshot = {
+            **mock_snapshot,
+            "sport_type": "open_water_swimming",
+            "context_tags": {},
+            "environment_context": {"has_weather": True, "temperature_c": 21.0, "humidity": 89},
+            "environment_factors": [
+                {
+                    "key": "missing_water_temperature",
+                    "category": "water",
+                    "severity": "info",
+                    "label": "缺少水温",
+                    "comment": "缺少水温记录,开放水域环境判断有限。",
+                    "basis": {"temperature_c": 21.0},
+                    "confidence": "low",
+                }
+            ],
+        }
+        messages = build_fatigue_review_messages(swim_snapshot, "open_water_swimming", "户外游泳")
+        system = messages[0]["content"]
+        payload = _extract_payload(system)
+        assert "缺少水温" in payload
+        for required in [
+            "只讨论开放水域/户外游泳",
+            "无 water_temperature_c 时不得推断水温压力",
+            "不得把泳池游泳纳入此规则",
+        ]:
+            assert required in system
 
     def test_collapse_event_descriptions_in_prompt(self, mock_snapshot):
         from llm_backend import build_fatigue_review_messages

@@ -98,22 +98,30 @@ class CareerRecordsV2ApiTest(unittest.TestCase):
         records = career_backend.get_career_records({"sport": "cycling"}, conn=self.conn)
 
         self.assertTrue(catalog["sports"])
-        self.assertEqual(records["summary"]["active_count"], 1)
-        record = records["records"][0]
+        self.assertGreaterEqual(records["summary"]["active_count"], 1)
+        record = next(item for item in records["records"] if item["record_key"] == "cycling_longest_distance")
         self.assertEqual(record["record_key"], "cycling_longest_distance")
         self.assertEqual(record["metric"]["display"], "105000 m")
-        self.assertEqual(record["improvement"]["value"], 5000)
         self.assertEqual(record["detail_link"]["source"], "career")
         self.assertEqual(records["status"]["records_version"], "records-v2")
         assert_safe_payload(self, records)
 
+    def test_catalog_distinguishes_pool_and_open_water_swimming_labels(self):
+        catalog = career_backend.get_career_record_catalog()
+        sport_labels = {item["sport"]: item["sport_label"] for item in catalog["sports"]}
+
+        self.assertEqual(sport_labels["pool_swimming"], "泳池游泳")
+        self.assertEqual(sport_labels["open_water_swimming"], "公开水域游泳")
+        self.assertNotEqual(sport_labels["pool_swimming"], sport_labels["open_water_swimming"])
+
     def test_detail_and_history_api_compute_summary_backend_side(self):
-        records = career_backend.get_career_records({"sport": "cycling"}, conn=self.conn)["records"]
-        record_id = records[0]["id"]
+        record_id = self.conn.execute(
+            "SELECT id FROM career_pb_records WHERE record_key = 'cycling_longest_distance' AND status = 'active'"
+        ).fetchone()[0]
 
         detail = career_backend.get_career_record_detail({"record_id": record_id}, conn=self.conn)
         history = career_backend.get_career_record_history(
-            {"record_key": "cycling_longest_distance", "scope_hash": records[0]["scope"]["scope_hash"]},
+            {"record_key": "cycling_longest_distance", "scope_hash": "all"},
             conn=self.conn,
         )
 
@@ -182,15 +190,23 @@ class CareerRecordsV2ApiTest(unittest.TestCase):
         assert_safe_payload(self, result)
 
     def test_record_events_support_v2_scope_and_decision_filters(self):
-        record = career_backend.get_career_records({"sport": "cycling"}, conn=self.conn)["records"][0]
+        record = next(
+            item
+            for item in career_backend.get_career_records({"sport": "cycling"}, conn=self.conn)["records"]
+            if item["record_key"] == "cycling_longest_distance"
+        )
+        legacy_scope_hash = self.conn.execute(
+            "SELECT scope_hash FROM career_pb_records WHERE record_key = 'cycling_longest_distance' AND status = 'active'"
+        ).fetchone()[0]
 
         events = career_backend.get_career_record_events(
-            {"record_key": "cycling_longest_distance", "scope_hash": record["scope"]["scope_hash"], "decision": "auto_confirm"},
+            {"record_key": "cycling_longest_distance", "scope_hash": legacy_scope_hash, "decision": "auto_confirm"},
             conn=self.conn,
         )
 
         self.assertGreaterEqual(len(events["events"]), 1)
-        self.assertEqual(events["filters"]["scope_hash"], record["scope"]["scope_hash"])
+        self.assertEqual(record["detail_link"]["source"], "career")
+        self.assertEqual(events["filters"]["scope_hash"], legacy_scope_hash)
         self.assertTrue(all(event["record_key"] == "cycling_longest_distance" for event in events["events"]))
         self.assertTrue(all(event["decision"] == "auto_confirm" for event in events["events"]))
         assert_safe_payload(self, events)

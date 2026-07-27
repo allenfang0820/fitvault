@@ -86,6 +86,7 @@ def _summary(
 ) -> dict[str, Any]:
     return {
         "ok": True,
+        "provider": "garmin",
         "region": region,
         "output_dir": output_dir,
         "mode": mode,
@@ -96,12 +97,48 @@ def _summary(
         "skipped": 0,
         "failed": 0,
         "files": [],
+        "candidates": [],
         "errors": [],
+    }
+
+
+def _sanitize_candidate_reason(value: Any) -> str:
+    text = str(value or "").strip()
+    text = re.sub(
+        r"(?i)(password|passwd|mfa|otp|token|access_token|refresh_token|authorization|api[_-]?key|secret)(\s*[:=]\s*)([^\s,;]+)",
+        r"\1\2***",
+        text,
+    )
+    text = re.sub(r"(?i)(bearer\s+)[A-Za-z0-9._~+/=-]+", r"\1***", text)
+    text = re.sub(r"(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", "***", text)
+    return text[:800]
+
+
+def _candidate_from_result(result: dict[str, Any]) -> dict[str, Any]:
+    raw_file = str(result.get("file") or "").strip()
+    file_path = str(Path(raw_file).expanduser().resolve()) if raw_file else ""
+    raw_bytes = result.get("bytes")
+    try:
+        byte_count = max(0, int(raw_bytes)) if raw_bytes is not None else None
+    except (TypeError, ValueError):
+        byte_count = None
+    status = str(result.get("status") or "failed").strip().lower()
+    if status not in {"downloaded", "skipped", "failed"}:
+        status = "failed"
+    return {
+        "provider": "garmin",
+        "provider_activity_id": str(result.get("activity_id") or ""),
+        "file": file_path,
+        "filename": Path(file_path).name if file_path else "",
+        "status": status,
+        "reason": _sanitize_candidate_reason(result.get("reason") or result.get("message")),
+        "bytes": byte_count,
     }
 
 
 def _merge_result(summary: dict[str, Any], result: dict[str, Any]) -> None:
     status = result.get("status")
+    summary["candidates"].append(_candidate_from_result(result))
     if status == "downloaded":
         summary["downloaded"] += 1
         if result.get("file"):
@@ -152,16 +189,22 @@ def sanitize_filename(name: str) -> str:
 
 def list_existing_ids(output_dir: str) -> set[int]:
     """扫描目录中已有的 FIT 文件，返回已下载的活动ID集合"""
-    ids: set[int] = set()
+    return set(existing_fit_paths_by_id(output_dir))
+
+
+def existing_fit_paths_by_id(output_dir: str) -> dict[int, str]:
+    """Return deterministic absolute FIT paths keyed by Garmin activity id."""
+    paths: dict[int, str] = {}
     if not os.path.isdir(output_dir):
-        return ids
-    pattern = re.compile(r"_(\d+)\.fit$")
-    for fname in os.listdir(output_dir):
-        if fname.endswith(".fit"):
+        return paths
+    pattern = re.compile(r"_(\d+)\.fit$", re.IGNORECASE)
+    for fname in sorted(os.listdir(output_dir)):
+        if fname.lower().endswith(".fit"):
             m = pattern.search(fname)
             if m:
-                ids.add(int(m.group(1)))
-    return ids
+                activity_id = int(m.group(1))
+                paths.setdefault(activity_id, str((Path(output_dir).expanduser() / fname).resolve()))
+    return paths
 
 
 def get_activity_detail(ctx: RuntimeContext, activity_id: int, *, json_mode: bool = False) -> dict[str, Any] | None:
@@ -183,11 +226,22 @@ def download_and_save(
     """下载并保存 FIT 文件，返回结构化结果。"""
     os.makedirs(ctx.output_dir, exist_ok=True)
 
-    existing = list_existing_ids(ctx.output_dir)
+    existing = existing_fit_paths_by_id(ctx.output_dir)
     if activity_id in existing:
         message = f"已存在，跳过 {activity_id}"
         log(f"  ⏭️  {message}", json_mode=json_mode)
-        return {"status": "skipped", "activity_id": activity_id, "file": None, "message": message}
+        existing_path = existing[activity_id]
+        try:
+            byte_count = os.path.getsize(existing_path)
+        except OSError:
+            byte_count = None
+        return {
+            "status": "skipped",
+            "activity_id": activity_id,
+            "file": existing_path,
+            "bytes": byte_count,
+            "message": message,
+        }
 
     log(f"\n📥 正在下载活动 {activity_id}...", json_mode=json_mode)
 
@@ -234,7 +288,13 @@ def download_and_save(
         f.write(fit_data)
 
     log(f"  ✅ 已保存: {filename}", json_mode=json_mode)
-    return {"status": "downloaded", "activity_id": activity_id, "file": filepath, "message": "已保存"}
+    return {
+        "status": "downloaded",
+        "activity_id": activity_id,
+        "file": str(Path(filepath).expanduser().resolve()),
+        "bytes": len(fit_data),
+        "message": "已保存",
+    }
 
 
 def get_latest_downloaded_date(ctx: RuntimeContext, *, json_mode: bool = False) -> str | None:

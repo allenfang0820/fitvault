@@ -120,6 +120,17 @@ class TestP80BackendPreflight(unittest.TestCase):
             },
             "context_tags": {"weather": "晴", "track_points": [{"bad": True}]},
             "environment_context": {"has_weather": True, "temperature_c": 18.0, "points": [{"bad": True}]},
+            "environment_factors": [
+                {
+                    "key": "humidity",
+                    "category": "weather",
+                    "severity": "info",
+                    "label": "湿度偏高",
+                    "comment": "温度不高,但湿度偏高。",
+                    "basis": {"humidity": 88, "records": [{"bad": True}]},
+                    "confidence": "medium",
+                }
+            ],
             "cycling_explanation_signals": {
                 "status": "unavailable",
                 "intensity_signal": {
@@ -144,6 +155,8 @@ class TestP80BackendPreflight(unittest.TestCase):
             {
                 "activity_id",
                 "sport_type",
+                "review_mode",
+                "capabilities",
                 "metrics",
                 "summary",
                 "fatigue_zones",
@@ -151,6 +164,7 @@ class TestP80BackendPreflight(unittest.TestCase):
                 "curves_summary",
                 "context_tags",
                 "environment_context",
+                "environment_factors",
                 "cycling_explanation_signals",
                 "advice",
                 "disclaimer",

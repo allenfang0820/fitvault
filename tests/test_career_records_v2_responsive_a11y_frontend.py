@@ -25,6 +25,16 @@ def extract_function_body(src: str, signature: str) -> str:
     raise AssertionError(f"function not closed: {signature}")
 
 
+def extract_css_block(src: str, selector: str) -> str:
+    start = src.find(selector)
+    assert start >= 0, selector
+    brace = src.find("{", start)
+    assert brace >= 0, selector
+    end = src.find("}", brace)
+    assert end >= 0, selector
+    return src[brace:end + 1]
+
+
 def test_records_v2_does_not_restore_redundant_status_strip_cards():
     src = source()
 
@@ -54,9 +64,7 @@ def test_records_v2_responsive_breakpoints_and_no_hidden_overflow_mask():
     assert ".career-record-analysis-grid" in src
     assert "grid-template-columns: 1fr" in src
     assert "overflow-wrap: anywhere" in src
-    records_css_start = src.find(".career-records-v2-shell")
-    records_css_end = src.find("@media (max-width: 1100px)", records_css_start)
-    records_css = src[records_css_start:records_css_end]
+    records_css = extract_css_block(src, ".career-records-v2-shell")
     assert "overflow: hidden" not in records_css
     assert ".career-pb-list" not in src
 
@@ -78,23 +86,21 @@ def test_records_v2_keyboard_focus_and_group_selection_accessibility():
     assert "renderCareerRecordsCenter({ catalog: state.catalog })" in select_body
 
 
-def test_records_v2_actions_have_labels_and_busy_feedback():
+def test_records_v2_has_no_candidate_review_actions():
     src = source()
-    candidate_body = extract_function_body(src, "function careerRecordCandidateCardHtml(candidate)")
-    decide_body = extract_function_body(src, "async function decideCareerRecordCandidateFromElement(event, el)")
 
     assert "function careerRecordCurrentCardHtml" not in src
-    assert "aria-label=\"确认候选纪录 " in candidate_body
-    assert "aria-label=\"拒绝候选纪录 " in candidate_body
-    assert "setAttribute('aria-busy', 'true')" in decide_body
-    assert "removeAttribute('aria-busy')" in decide_body
-    assert "data-career-record-feedback" in candidate_body
+    assert "careerRecordCandidateCardHtml" not in src
+    assert "decideCareerRecordCandidateFromElement" not in src
+    assert "data-career-record-feedback" not in src
+    assert "确认候选纪录" not in src
+    assert "拒绝候选纪录" not in src
 
 
 def test_records_v2_record_picker_uses_backend_records_not_catalog_group_cards():
     src = source()
     render_body = extract_function_body(src, "function renderCareerRecordsCenter(viewModel)")
-    picker_body = extract_function_body(src, "function renderCareerRecordPicker(definitions, records, candidates, selectedView)")
+    picker_body = extract_function_body(src, "function renderCareerRecordPicker(definitions, records)")
     catalog_body = extract_function_body(src, "function careerRecordCatalogDefinitions(catalog, selectedSport)")
 
     assert "item.sport === selectedSport" in render_body
@@ -102,7 +108,7 @@ def test_records_v2_record_picker_uses_backend_records_not_catalog_group_cards()
     assert "group.records" in catalog_body
     assert "item.record_key" in catalog_body
     assert "careerRecordPickerCardHtml" in picker_body
-    assert "careerRecordCandidatePickerCardHtml" in picker_body
+    assert "careerRecordCandidatePickerCardHtml" not in picker_body
     assert "career-record-group-card" not in src
     assert "Record Families" not in src
     assert "setCareerRecordGroup" not in src
@@ -123,6 +129,7 @@ def test_records_v2_reduced_motion_and_accessible_fallback_lists_remain():
 
     assert "@media (prefers-reduced-motion: reduce)" in src
     assert "transition: none !important" in src
-    assert 'aria-label="可访问历史节点列表"' in src
+    assert "careerRecordSeriesFallbackHtml" in src
+    assert 'aria-label="可访问历史节点列表"' not in src
     assert 'aria-label="曲线锚点列表"' not in src
     assert 'aria-label="路线对比列表"' not in src

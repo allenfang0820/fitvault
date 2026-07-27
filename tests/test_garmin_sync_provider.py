@@ -1,4 +1,5 @@
 import json
+import importlib.util
 import os
 import subprocess
 import sys
@@ -8,6 +9,19 @@ from pathlib import Path
 from unittest import mock
 
 import garmin_sync
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+GARMIN_DOWNLOAD_SCRIPT = PROJECT_ROOT / "skills" / "garmin-stats" / "scripts" / "download_fit.py"
+
+
+def load_garmin_download_script():
+    spec = importlib.util.spec_from_file_location("_test_garmin_download_fit", GARMIN_DOWNLOAD_SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    assert spec and spec.loader
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 class TestGarminSyncProvider(unittest.TestCase):
@@ -233,7 +247,17 @@ class TestGarminSyncProvider(unittest.TestCase):
                 region="cn",
             )
 
-        self.assertEqual(parsed, payload)
+        self.assertEqual(parsed["files"], payload["files"])
+        self.assertEqual(parsed["provider"], "garmin")
+        self.assertEqual(parsed["candidates"], [{
+            "provider": "garmin",
+            "provider_activity_id": "",
+            "file": str((output_dir / "a.fit").resolve()),
+            "filename": "a.fit",
+            "status": "downloaded",
+            "reason": "",
+            "bytes": None,
+        }])
         command = run_mock.call_args.args[0]
         self.assertIn("download_fit.py", command[1])
         self.assertEqual(
@@ -273,7 +297,8 @@ class TestGarminSyncProvider(unittest.TestCase):
                 region="cn",
             )
 
-        self.assertEqual(parsed, payload)
+        self.assertEqual(parsed["files"], payload["files"])
+        self.assertEqual(parsed["candidates"][0]["file"], str((output_dir / "a.fit").resolve()))
         command = run_mock.call_args.args[0]
         self.assertEqual(command[0], str(app_exe))
         self.assertEqual(command[1], "--garmin-script")
@@ -294,6 +319,74 @@ class TestGarminSyncProvider(unittest.TestCase):
                     end_date="2026-05-31",
                     output_dir=self.base_dir / "tracks",
                 )
+
+    def test_download_script_keeps_skipped_existing_fit_as_candidate(self):
+        module = load_garmin_download_script()
+        output_dir = self.base_dir / "tracks"
+        output_dir.mkdir()
+        existing = output_dir / "Morning_Run_123456.fit"
+        existing.write_bytes(b"fit-data")
+        ctx = module.RuntimeContext(
+            client=None,
+            garminconnect=None,
+            output_dir=str(output_dir.resolve()),
+            region="cn",
+        )
+
+        result = module.download_and_save(ctx, 123456, json_mode=True)
+        summary = module._summary(mode="date_range", region="cn", output_dir=str(output_dir.resolve()))
+        module._merge_result(summary, result)
+
+        self.assertEqual(summary["files"], [])
+        self.assertEqual(summary["skipped"], 1)
+        self.assertEqual(summary["provider"], "garmin")
+        self.assertEqual(summary["candidates"][0]["provider_activity_id"], "123456")
+        self.assertEqual(summary["candidates"][0]["file"], str(existing.resolve()))
+        self.assertEqual(summary["candidates"][0]["filename"], existing.name)
+        self.assertEqual(summary["candidates"][0]["status"], "skipped")
+        self.assertIn("已存在", summary["candidates"][0]["reason"])
+        self.assertEqual(summary["candidates"][0]["bytes"], len(b"fit-data"))
+
+    def test_download_script_candidates_preserve_legacy_files_and_redact_failures(self):
+        module = load_garmin_download_script()
+        output_dir = self.base_dir / "tracks"
+        downloaded = output_dir / "Ride_987.fit"
+        summary = module._summary(mode="date_range", region="global", output_dir=str(output_dir.resolve()))
+
+        module._merge_result(summary, {
+            "status": "downloaded",
+            "activity_id": 987,
+            "file": str(downloaded),
+            "bytes": 42,
+            "message": "已保存",
+        })
+        module._merge_result(summary, {
+            "status": "failed",
+            "activity_id": 654,
+            "file": None,
+            "message": "Authorization Bearer secret-token password=hunter2",
+        })
+
+        self.assertEqual(summary["files"], [str(downloaded)])
+        self.assertEqual([item["status"] for item in summary["candidates"]], ["downloaded", "failed"])
+        self.assertEqual(summary["candidates"][0]["provider_activity_id"], "987")
+        self.assertNotIn("secret-token", summary["candidates"][1]["reason"])
+        self.assertNotIn("hunter2", summary["candidates"][1]["reason"])
+
+    def test_old_garmin_summary_does_not_fabricate_skipped_candidates(self):
+        output_dir = self.base_dir / "tracks"
+        normalized = garmin_sync.normalize_garmin_fit_download_summary(
+            {
+                "ok": True,
+                "downloaded": 0,
+                "skipped": 2,
+                "files": [],
+            },
+            output_dir=output_dir,
+        )
+
+        self.assertEqual(normalized["provider"], "garmin")
+        self.assertEqual(normalized["candidates"], [])
 
     def test_login_command_returns_command_without_running(self):
         with mock.patch.object(garmin_sync.subprocess, "run") as run_mock:

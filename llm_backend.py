@@ -1569,6 +1569,7 @@ def career_year_summary_prompt_payload(snapshot: dict[str, Any] | None) -> dict[
         "sport_breakdown",
         "month_digest",
         "evidence_catalog",
+        "record_milestones",
         "highlight_moments",
         "city_moments",
         "comparison",
@@ -1636,7 +1637,8 @@ def build_career_year_summary_messages(
 - AI 只写叙事，不计算或复述精确数字、日期和成绩；这些事实由后端导语和 evidence 节点呈现。
 - 不要在 opening 或第一段一次性公布活动次数、总里程、总时长、赛事、PB、成就等全部年度数据；数据应随着文章逐步展开。
 - 每组数据都要回答“这对这一年意味着什么、为什么值得记住”，不要只做统计陈述。
-- highlight_moments 是后端可信高光候选池，你可以引用和解释，但不得自行新增 PB、赛事、海拔、距离或里程碑事实。
+- highlight_moments 和 record_milestones 都是后端可信事实；你可以引用和解释，但不得自行新增 PB、赛事、海拔、距离、刷新纪录或突破事实。
+- record_milestones 只表示已经由后端判定的刷新纪录；不得根据曲线、成绩文本或前端数据自行计算、推断或补造突破。
 - city_moments 是足迹章节的主要事实来源；必须围绕覆盖了几座城市、哪些城市、这些城市如何让年度运动坐标变得更丰富来写。
 - city_moments 的 culture_hint 是受控城市文化提示，只能克制提及“某城市因某文化符号闻名”；不得写用户实际吃了、去了、旅行了或发生了生活事件。
 - “首次点亮城市”这类事实不要写成链接、清单或让用户跳回活动详情；要把城市数量和城市名揉进连续叙事。
@@ -1645,10 +1647,11 @@ def build_career_year_summary_messages(
 【文章结构】
 - 最终读感必须是一篇连续的年度故事，不是数据分析表或字段解释。
 - body_sections.type 仅允许 annual_story、races、progress、footprints、rhythm、comparison，且按此顺序排列。
-- annual_story 与 rhythm 必须出现；races 仅在有 race evidence 时出现；progress 仅在有 pb/achievement evidence 时出现；comparison 仅在 comparison.status=available 时出现。
+- annual_story 与 rhythm 必须出现；races 仅在有 race evidence 时出现；progress 仅在有 pb/achievement/record_milestone evidence 时出现；comparison 仅在 comparison.status=available 时出现。
 - footprints 仅在 city_moments 非空时出现，用于写运动足迹和城市记忆。
 - races/progress 的 evidence_ids 必须引用 evidence_catalog 中存在且类型匹配的 evidence_id；没有对应事实时省略章节，不写空洞补位。
-- footprints 章节的 evidence_ids 必须留空或省略；不要引用 first_city、city 或 achievement evidence。
+- annual_story、footprints、rhythm、comparison 的 evidence_ids 必须留空或省略；不要在这些章节引用 first_city、city、achievement、pb 或 race evidence。
+- footprints 章节的 evidence_ids 必须留空或省略，城市事实只从 city_moments 写入连续叙事。
 - 若引用 highlight_moments，必须使用其中已有 id；不要把普通数字编成新高光。
 - annual_story 要先抛出这一年的主线和成就感，再逐步展开数据，不要像流水账。
 - progress 和 races 要把高光写得郑重，让用户觉得“这件事值得被记住”。
@@ -2344,12 +2347,22 @@ def build_fatigue_review_messages(
 - 骑行不得自行计算或推断 VI、FTP、IF、TSS、W/kg、左右平衡、扭矩或齿比;除非 snapshot 明确提供,否则这些维度必须视为不可用。
 - 不得编造补给、天气、设备、路况等 snapshot 未提供的缺失事实;若 environment_context 或 context_tags 未提供依据,只能说明外部因素证据不足。
 
+【外部影响语义边界】
+- environment_factors 是后端已识别的用户可见外部影响解释;若 snapshot 中存在 environment_factors,必须优先引用 environment_factors 的 label / comment,并尊重 confidence 与缺失信息。AI 只能消费,不得补算或改写 canonical 环境事实。
+- environment_context 是中性事实层,只表示天气、温度、湿度、风速、观测时间等事实;天气存在不等于存在环境压力,不得仅凭 temperature_c / humidity / weather_label 扩写压力结论。
+- context_tags 是压力/宽容标签层,只在后端已识别压力或宽容因素时辅助解释;不得把 context_tags 当作事实层,也不得替代 environment_factors 的用户可见解释。
+- 无 environment_factors 且无 context_tags 时,不得从 environment_context 自行推导外部压力;可以说明"已有天气快照,但未识别到明显外部环境压力"或"环境影响线索有限"。
+- 跑步、越野跑、骑行和山地车: <25°C 不得写"温度偏高";20-25°C 且高湿只能沿用后端给出的"湿度偏高 / 体感偏闷"语义,不得补写热应激、高温压力或散热受阻。
+- 骑行:不得因温度或高湿自行推断顺逆风、路况、额外热应激或其他未在 environment_factors / context_tags 中出现的环境结论。
+- 徒步和登山:不得套用跑步式热应激叙述;只能遵从后端提供的爬升、海拔、低温、风寒或长时间暴露解释。
+- 户外游泳:只讨论开放水域/户外游泳;水温优先于气温。无 water_temperature_c 时不得推断水温压力,只能按后端低置信度或信息不足说明环境判断有限;不得把泳池游泳纳入此规则。
+
 【必须输出维度】
 key_dimensions 数组必须严格包含 overall_stability / fatigue_progression / risk_triggers / context_impact 四个维度(无数据时 comment 写"暂无足够数据"而非略过)。
 - overall_stability / 全程稳定性:按运动类型解释整体稳定性;跑步解释心率、配速、效率、步频和节奏;骑行解释功率输出、心率反应、踏频组织、坡度/爬升背景下的节奏,无可用功率时必须说明稳定性判断受限;游泳/通用运动均衡解释心率、速度/节奏与环境背景。可指出波动发生在前段/中段/后段,但禁止重新计算。
 - fatigue_progression / 疲劳阶段:解释 fatigue_zones 中疲劳是否出现、从哪里出现、是否持续或加重。
 - risk_triggers / 风险触发:解释 bonk_risk、collapse_events、训练负荷或后端已识别事件中真正值得注意的风险线索。
-- context_impact / 外部影响:同时参考 environment_context 的环境事实摘要与 context_tags 的压力标签。context_tags 表示已识别的影响因素/压力标签,environment_context 表示天气、温度、湿度、风速等事实。若 environment_context.has_weather=true 且 context_tags 为空,不得写"未提供环境标签数据"、"无法评估天气温度湿度"或同义表达,应说明"已有天气快照,但未识别到明显外部环境压力"。只有 environment_context.has_weather=false 且 context_tags 为空时,才允许表达环境数据不足。
+- context_impact / 外部影响:优先参考 environment_factors 的后端解释,再参考 context_tags 的压力/宽容标签与 environment_context 的中性事实摘要。若 environment_context.has_weather=true 且 environment_factors/context_tags 为空,不得写"未提供环境标签数据"、"无法评估天气温度湿度"或同义表达,应说明"已有天气快照,但未识别到明显外部环境压力"。只有 environment_context.has_weather=false 且 environment_factors/context_tags 为空时,才允许表达环境数据不足。
 
 【强行约束 — 绝对禁止行为】
 你 MUST NOT:
@@ -2362,7 +2375,7 @@ key_dimensions 数组必须严格包含 overall_stability / fatigue_progression 
 - 生成任何 canonical 指标或写回字段建议
 - 跨运动类比或跨运动误称(例如把跑步写成徒步/骑行,把骑行写成跑步)
 - 输出 markdown 代码块标记
-- 凭空捏造事件或数值
+- 凭空捏造事件、数值或 environment_factors 未提供的外部影响结论
 
 【输出格式 — 严格 JSON】
 只输出一个合法 JSON 对象,格式必须严格遵循:
@@ -2373,7 +2386,7 @@ key_dimensions 数组必须严格包含 overall_stability / fatigue_progression 
 2. key_dimensions 数组必须覆盖 4 维度
 3. 输出必须是纯 JSON,不要包含 markdown 代码块标记
 4. 所有数值字段必须填数字,文本字段必须是自然中文
-5. event_interpretation 必须结合 context_tags 与 environment_context 中环境背景,体现宽容度
+5. event_interpretation 必须优先结合 environment_factors,再结合 context_tags 与 environment_context 中环境背景,体现宽容度
 6. training_advice 必须针对本场数据,避免泛泛而谈
 7. 用户可见文本不得直接输出 good / warn / bad / unknown / declining / caution / Bonk / collapse 等英文枚举、原始字段名或代码词；如需表达,请写成 良好 / 需关注 / 风险较高 / 数据不足 / 下降 / 需谨慎 / 能量断档 / 状态下滑
 """

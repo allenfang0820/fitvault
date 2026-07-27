@@ -81,6 +81,58 @@ class TestCareerYearGenerateApi(unittest.TestCase):
         finally:
             conn.close()
 
+    def test_generate_and_read_preserve_llm_body_content(self):
+        conn = sqlite3.connect(":memory:")
+        try:
+            _create_tables(conn)
+            _insert_activity(conn, id=1, start_time="2026-05-01T07:00:00+08:00", dist_km=10.0)
+            expected = _draft(2026, headline="完整保留的一年")
+            expected["opening"] = "这一年完成了 99 次运动，但正文必须按 LLM 原文保留。"
+            expected["body_sections"][0]["paragraphs"] = [
+                "第一段正文，不能被压缩。",
+                "第二段正文，不能被裁剪。",
+                "第三段正文，仍然保留。",
+                "第四段正文，过去可能被丢掉。",
+            ]
+            expected["body_sections"][1]["paragraphs"] = [
+                "节奏第一段。\n\n这里保留原始换行。",
+                "节奏第二段。",
+                "节奏第三段。",
+                "节奏第四段。",
+            ]
+            expected["closing"] = "这一年值得庆祝；"
+            expected["letter_to_next_year"] = "继续出发，继续抵达："
+            expected["share_caption"] = "值得发出来看看；"
+            expected["caveats"] = ["第一条", "第二条", "第三条", "第四条", "第五条"]
+
+            def generator(snapshot: dict) -> dict:
+                return {
+                    "content": expected,
+                    "prompt_version": PROMPT_VERSION,
+                    "model_id": MODEL_ID,
+                    "status": "success",
+                }
+
+            generated = career_backend.generate_career_year_insight(
+                2026,
+                generator=generator,
+                prompt_version=PROMPT_VERSION,
+                model_id=MODEL_ID,
+                conn=conn,
+            )
+            read = career_backend.get_career_year_insight(2026, conn=conn)
+
+            self.assertEqual(generated["report"]["content"]["opening"], expected["opening"])
+            self.assertEqual(read["report"]["content"]["opening"], expected["opening"])
+            self.assertEqual(read["report"]["content"]["body_sections"][0]["paragraphs"], expected["body_sections"][0]["paragraphs"])
+            self.assertEqual(read["report"]["content"]["body_sections"][1]["paragraphs"], expected["body_sections"][1]["paragraphs"])
+            self.assertEqual(read["report"]["content"]["closing"], expected["closing"])
+            self.assertEqual(read["report"]["content"]["letter_to_next_year"], expected["letter_to_next_year"])
+            self.assertEqual(read["report"]["content"]["share_caption"], expected["share_caption"])
+            self.assertEqual(read["report"]["content"]["caveats"], expected["caveats"])
+        finally:
+            conn.close()
+
     def test_same_year_can_generate_and_read_distinct_tone_reports(self):
         conn = sqlite3.connect(":memory:")
         try:
@@ -545,29 +597,22 @@ class TestCareerYearGenerateApi(unittest.TestCase):
             conn.close()
 
     def test_failure_matrix_preserves_facts_and_does_not_pollute_canonical_tables(self):
+        def evidence_failed_generator(snapshot: dict) -> dict:
+            draft = _draft(snapshot["year"])
+            draft["body_sections"] = [
+                draft["body_sections"][0],
+                {"type": "progress", "heading": "看得见的进步", "paragraphs": ["这段正文不会因为非法证据被静默改写。"], "evidence_ids": ["unknown:1"]},
+                draft["body_sections"][1],
+            ]
+            return {"content": draft, "prompt_version": PROMPT_VERSION, "model_id": MODEL_ID}
+
         cases = [
             ("network_failed", lambda _snapshot: (_ for _ in ()).throw(RuntimeError("token=SECRET raw response"))),
             ("timeout", lambda _snapshot: (_ for _ in ()).throw(TimeoutError("timeout with api_key=SECRET"))),
             ("format_failed", lambda _snapshot: (_ for _ in ()).throw(ValueError("LLM JSON 解析失败 raw=SECRET"))),
             ("schema_failed", lambda snapshot: {"content": {**_draft(snapshot["year"]), "schema_version": "bad"}, "prompt_version": PROMPT_VERSION, "model_id": MODEL_ID}),
             ("schema_failed", lambda snapshot: {"content": {**_draft(snapshot["year"] + 1)}, "prompt_version": PROMPT_VERSION, "model_id": MODEL_ID}),
-            (
-                "evidence_failed",
-                lambda snapshot: {
-                    "content": {
-                        **_draft(snapshot["year"]),
-                        "body_sections": [
-                            {
-                                **_draft(snapshot["year"])["body_sections"][0],
-                                "evidence_ids": ["unknown:1", "unknown:2"],
-                            },
-                            _draft(snapshot["year"])["body_sections"][1],
-                        ],
-                    },
-                    "prompt_version": PROMPT_VERSION,
-                    "model_id": MODEL_ID,
-                },
-            ),
+            ("evidence_failed", evidence_failed_generator),
         ]
         for expected_status, generator in cases:
             with self.subTest(expected_status=expected_status):
@@ -605,7 +650,7 @@ class TestCareerYearGenerateApi(unittest.TestCase):
                 finally:
                     conn.close()
 
-    def test_oversized_output_is_sanitized_without_leaking_raw_text(self):
+    def test_dangerous_output_fails_without_leaking_raw_text(self):
         conn = sqlite3.connect(":memory:")
         try:
             _create_tables(conn)
@@ -630,9 +675,11 @@ class TestCareerYearGenerateApi(unittest.TestCase):
                 conn=conn,
             )
 
-            self.assertEqual(result["generation"]["status"], "generated")
-            self.assertLessEqual(len(result["report"]["content"]["headline"]), 60)
+            self.assertEqual(result["generation"]["status"], "format_failed")
+            self.assertIsNone(result["report"])
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM career_ai_insights").fetchone()[0], 0)
             serialized = json.dumps(result, ensure_ascii=False)
+            self.assertNotIn("SECRET", serialized)
             self.assertNotIn("<script", serialized)
             self.assertNotIn("```", serialized)
         finally:

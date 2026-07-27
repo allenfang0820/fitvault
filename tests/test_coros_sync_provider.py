@@ -1210,6 +1210,11 @@ class TestCorosSyncProvider(unittest.TestCase):
         url_mock.assert_called_once()
         self.assertEqual(result["downloaded"], 1)
         self.assertEqual(result["region"], "eu")
+        self.assertEqual(result["candidates"][0]["provider"], "coros")
+        self.assertEqual(result["candidates"][0]["provider_activity_id"], "")
+        self.assertEqual(result["candidates"][0]["file"], str(Path("/tmp/a.fit").resolve()))
+        self.assertEqual(result["candidates"][0]["filename"], "a.fit")
+        self.assertEqual(result["candidates"][0]["status"], "downloaded")
 
     def test_download_fit_json_falls_back_to_sport_records_single_activity_binary(self):
         sport_records_text = json.dumps(
@@ -1260,6 +1265,9 @@ class TestCorosSyncProvider(unittest.TestCase):
         self.assertEqual(result["searched"], 1)
         self.assertEqual(result["downloaded"], 1)
         self.assertEqual(result["files"][0]["labelId"], "478587344962748420")
+        self.assertEqual(result["candidates"][0]["provider_activity_id"], "478587344962748420")
+        self.assertEqual(result["candidates"][0]["sport_type"], 100)
+        self.assertEqual(result["candidates"][0]["source"], "downloadActivityFitFiles")
 
     def test_download_fit_json_tolerates_text_mcp_outputs(self):
         sport_records_text = (
@@ -1330,6 +1338,40 @@ class TestCorosSyncProvider(unittest.TestCase):
         self.assertEqual(result["downloaded"], 0)
         self.assertEqual(result["strategy"], "sport_records_url")
         self.assertEqual(result["errors"][0]["labelId"], "478587344962748420")
+
+    def test_fit_summary_candidates_normalize_paths_statuses_and_sensitive_reasons(self):
+        output_dir = self.base_dir / "tracks"
+        records = [
+            {"file": "downloaded.fit", "status": "downloaded", "bytes": 12},
+            {"file": "existing.fit", "status": "skipped", "reason": "exists"},
+            {
+                "file": "failed.fit",
+                "status": "failed",
+                "error": "authorization=Bearer-secret password=hunter2",
+                "labelId": "activity-3",
+                "sportType": 100,
+            },
+        ]
+
+        result = coros_sync._summarize_fit_records(
+            provider="coros",
+            region="cn",
+            mode="date_range",
+            strategy="test",
+            start_date="2026-05-01",
+            end_date="2026-05-02",
+            output_dir=output_dir,
+            records=records,
+        )
+
+        self.assertIs(result["files"], records)
+        self.assertEqual([item["status"] for item in result["candidates"]], ["downloaded", "skipped", "failed"])
+        self.assertEqual(result["candidates"][0]["file"], str((output_dir / "downloaded.fit").resolve()))
+        self.assertEqual(result["candidates"][1]["reason"], "exists")
+        self.assertEqual(result["candidates"][2]["provider_activity_id"], "activity-3")
+        self.assertEqual(result["candidates"][2]["sport_type"], 100)
+        self.assertNotIn("Bearer-secret", result["candidates"][2]["reason"])
+        self.assertNotIn("hunter2", result["candidates"][2]["reason"])
 
 
 if __name__ == "__main__":

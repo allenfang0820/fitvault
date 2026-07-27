@@ -1,3 +1,4 @@
+import json
 import sqlite3
 import unittest
 
@@ -121,6 +122,48 @@ def _insert_achievement(conn: sqlite3.Connection, **overrides) -> None:
     )
 
 
+def _insert_record_breaking_event(conn: sqlite3.Connection, **overrides) -> None:
+    data = {
+        "id": "record_event:record_breaking:2026",
+        "record_id": None,
+        "activity_id": "1",
+        "pb_type": "running_5k",
+        "event_type": "record_breaking",
+        "event_at": "2026-06-01",
+        "evidence_key": "metric_result:v3:1",
+        "resolver_version": career_backend.RECORD_METRIC_SERIES_RESOLVER_VERSION,
+        "source": "metric_series",
+        "record_key": "running_5k",
+        "scope_hash": "scope:default",
+        "scope_key": "default",
+        "run_id": "record_metric_results_rebuild",
+        "decision": "record_breaking",
+        "reason_codes_json": json.dumps(["record_progression"], ensure_ascii=False),
+        "payload_json": json.dumps(
+            {
+                "activity_id": "1",
+                "record_key": "running_5k",
+                "sport": "running",
+                "event_date": "2026-06-01",
+                "metric": {"value": 1700.0, "unit": "seconds", "display": "28:20"},
+                "previous_best_metric": {"value": 1800.0, "unit": "seconds", "display": "30:00"},
+                "detail_link": {"activity_id": "1", "source": "career"},
+                "source_mode": "activity_total",
+                "resolver_version": career_backend.RECORD_METRIC_SERIES_RESOLVER_VERSION,
+            },
+            ensure_ascii=False,
+        ),
+    }
+    data.update(overrides)
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(career_record_events)").fetchall()}
+    payload = {key: value for key, value in data.items() if key in columns}
+    placeholders = ", ".join("?" for _ in payload)
+    conn.execute(
+        f"INSERT INTO career_record_events ({', '.join(payload)}) VALUES ({placeholders})",
+        tuple(payload.values()),
+    )
+
+
 class TestCareerYearSnapshotEvidence(unittest.TestCase):
     def test_active_resolver_events_enter_evidence_catalog_and_summary_counts(self):
         conn = sqlite3.connect(":memory:")
@@ -220,6 +263,136 @@ class TestCareerYearSnapshotEvidence(unittest.TestCase):
             self.assertNotIn("storage_ref", serialized)
             self.assertNotIn("file_path", serialized)
             self.assertNotIn("/Users/example", serialized)
+        finally:
+            conn.close()
+
+    def test_record_breaking_events_enter_year_snapshot_as_safe_record_milestones_readonly(self):
+        conn = sqlite3.connect(":memory:")
+        try:
+            _create_tables(conn)
+            _insert_activity(conn, id=1, start_time="2026-05-19T07:00:00+08:00")
+            _insert_activity(conn, id=2, start_time="2025-05-19T07:00:00+08:00")
+            _insert_record_breaking_event(conn)
+            _insert_record_breaking_event(
+                conn,
+                id="record_event:record_breaking:2025",
+                activity_id="2",
+                event_at="2025-06-01",
+                payload_json=json.dumps(
+                    {
+                        "activity_id": "2",
+                        "record_key": "running_5k",
+                        "sport": "running",
+                        "event_date": "2025-06-01",
+                        "metric": {"value": 1750.0, "unit": "seconds", "display": "29:10"},
+                        "previous_best_metric": {"value": 1800.0, "unit": "seconds", "display": "30:00"},
+                        "detail_link": {"activity_id": "2", "source": "career"},
+                        "source_mode": "activity_total",
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+            before_events = conn.execute("SELECT COUNT(*) FROM career_record_events").fetchone()[0]
+            before_metric_results = conn.execute("SELECT COUNT(*) FROM career_record_metric_results").fetchone()[0]
+
+            snapshot = career_backend.build_career_year_snapshot(2026, conn=conn, as_of_date="2026-07-13")
+
+            after_events = conn.execute("SELECT COUNT(*) FROM career_record_events").fetchone()[0]
+            after_metric_results = conn.execute("SELECT COUNT(*) FROM career_record_metric_results").fetchone()[0]
+            record_items = [
+                item for item in snapshot["evidence_catalog"]
+                if item["type"] == "record_milestone"
+            ]
+            serialized = json.dumps(snapshot, ensure_ascii=False)
+
+            self.assertEqual(before_events, after_events)
+            self.assertEqual(before_metric_results, after_metric_results)
+            self.assertEqual(len(record_items), 1)
+            self.assertEqual(snapshot["summary"]["record_milestone_count"], 1)
+            self.assertEqual(snapshot["record_milestones"]["count"], 1)
+            milestone = snapshot["record_milestones"]["items"][0]
+            self.assertTrue(record_items[0]["evidence_id"].startswith("record_milestone:"))
+            self.assertEqual(record_items[0]["activity_id"], "1")
+            self.assertEqual(record_items[0]["title"], "刷新纪录：5K")
+            self.assertEqual(record_items[0]["date"], "2026-06-01")
+            self.assertEqual(record_items[0]["value"], "北京 · 28:20 / 上一纪录 30:00")
+            self.assertEqual(record_items[0]["location_label"], "北京")
+            self.assertEqual(milestone["activity_id"], "1")
+            self.assertEqual(milestone["record_key"], "running_5k")
+            self.assertEqual(milestone["location_label"], "北京")
+            self.assertEqual(milestone["location"]["city"], "北京")
+            self.assertEqual(milestone["new_record"]["display"], "28:20")
+            self.assertEqual(milestone["previous_record"]["display"], "30:00")
+            self.assertEqual(milestone["improvement"]["value"], 100.0)
+            self.assertEqual(milestone["improvement"]["relative_delta_percent"], 5.56)
+            self.assertIn(record_items[0]["evidence_id"], {item["id"] for item in snapshot["highlight_moments"]})
+            for forbidden in (
+                "record_breaking",
+                "metric_series",
+                "resolver_version",
+                "payload_json",
+                "detail_link",
+                "file_path",
+                "points_json",
+            ):
+                self.assertNotIn(forbidden, serialized)
+            self.assertTrue(career_backend.validate_career_year_snapshot_contract(snapshot))
+        finally:
+            conn.close()
+
+    def test_record_milestones_group_first_and_largest_breakthroughs(self):
+        conn = sqlite3.connect(":memory:")
+        try:
+            _create_tables(conn)
+            _insert_activity(conn, id=1, start_time="2026-05-19T07:00:00+08:00")
+            _insert_activity(conn, id=2, start_time="2026-06-19T07:00:00+08:00")
+            _insert_record_breaking_event(
+                conn,
+                activity_id="1",
+                event_at="2026-05-19",
+                payload_json=json.dumps(
+                    {
+                        "activity_id": "1",
+                        "record_key": "running_5k",
+                        "sport": "running",
+                        "event_date": "2026-05-19",
+                        "metric": {"value": 1700.0, "unit": "seconds", "display": "28:20"},
+                        "previous_best_metric": {"value": 1800.0, "unit": "seconds", "display": "30:00"},
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+            _insert_record_breaking_event(
+                conn,
+                id="record_event:record_breaking:second",
+                activity_id="2",
+                event_at="2026-06-19",
+                payload_json=json.dumps(
+                    {
+                        "activity_id": "2",
+                        "record_key": "running_5k",
+                        "sport": "running",
+                        "event_date": "2026-06-19",
+                        "metric": {"value": 1500.0, "unit": "seconds", "display": "25:00"},
+                        "previous_best_metric": {"value": 1700.0, "unit": "seconds", "display": "28:20"},
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+
+            snapshot = career_backend.build_career_year_snapshot(2026, conn=conn, as_of_date="2026-07-13")
+            milestones = snapshot["record_milestones"]
+
+            self.assertEqual(milestones["count"], 2)
+            self.assertEqual(milestones["record_keys"], ["running_5k"])
+            self.assertEqual(milestones["by_record_key"][0]["count"], 2)
+            self.assertEqual(milestones["first_breakthroughs"][0]["date"], "2026-05-19")
+            self.assertEqual(milestones["largest_breakthrough"]["activity_id"], "2")
+            self.assertEqual(milestones["representative_breakthrough"]["activity_id"], "2")
+            self.assertEqual(
+                [item["date"] for item in milestones["items"]],
+                ["2026-05-19", "2026-06-19"],
+            )
         finally:
             conn.close()
 

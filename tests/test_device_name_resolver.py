@@ -20,6 +20,7 @@ from metrics_resolver import (
     MetricsResolver,
     ensure_device_product_mapping_seed,
     extract_device_identity_from_fit_file_id,
+    extract_device_identity_from_persisted_fields,
     is_device_name_unresolved,
     resolve_device_display_name,
 )
@@ -116,6 +117,79 @@ class TestDeviceNameResolver(unittest.TestCase):
         self.assertEqual(identity["product_key"], "garmin:3515")
         self.assertEqual(identity["product_id"], "3515")
         self.assertEqual(identity["serial"], "3365282831")
+
+    def test_garmin_symbolic_product_prefers_numeric_product(self):
+        identity = extract_device_identity_from_fit_file_id(
+            [{"manufacturer": "garmin", "product": 4536, "garmin_product": "fenix8", "serial_number": 3510683807}]
+        )
+        resolved = resolve_device_display_name(identity)
+
+        self.assertEqual(identity["vendor"], "garmin")
+        self.assertEqual(identity["product_key"], "garmin:4536")
+        self.assertEqual(identity["product_id"], "4536")
+        self.assertEqual(identity["product_hint"], "fenix8")
+        self.assertEqual(resolved["device_name"], "Fenix 8")
+        self.assertEqual(resolved["mapping_status"], "resolved")
+
+    def test_garmin_symbolic_product_only_reverse_lookups_sdk_profile(self):
+        identity = extract_device_identity_from_fit_file_id(
+            [{"manufacturer": "garmin", "garmin_product": "fenix8"}]
+        )
+        self.assertEqual(identity["product_key"], "garmin:4536")
+        self.assertEqual(identity["product_id"], "4536")
+
+    def test_unknown_garmin_symbolic_product_does_not_create_symbolic_key(self):
+        identity = extract_device_identity_from_fit_file_id(
+            [{"manufacturer": "garmin", "garmin_product": "future_watch_x"}]
+        )
+        resolved = resolve_device_display_name(identity)
+
+        self.assertEqual(identity["product_key"], "")
+        self.assertEqual(identity["product_id"], "")
+        self.assertEqual(identity["product_hint"], "future_watch_x")
+        self.assertEqual(resolved["device_name"], "Unknown Device")
+        self.assertEqual(resolved["mapping_status"], "unknown")
+
+    def test_persisted_malformed_garmin_symbolic_key_is_normalized(self):
+        identity = extract_device_identity_from_persisted_fields(
+            {
+                "device_name": "Unknown Device",
+                "device_vendor": "garmin",
+                "device_product_key": "garmin:fenix8",
+                "device_product_id": "fenix8",
+                "device_product_hint": "fenix8",
+                "device_mapping_status": "unresolved",
+            }
+        )
+        resolved = resolve_device_display_name(identity)
+
+        self.assertEqual(identity["product_key"], "garmin:4536")
+        self.assertEqual(identity["product_id"], "4536")
+        self.assertEqual(resolved["device_name"], "Fenix 8")
+
+    def test_coros_product_name_resolves_without_global_mapping(self):
+        identity = extract_device_identity_from_fit_file_id(
+            [{"manufacturer": "coros", "product": 861, "product_name": "COROS NOMAD"}]
+        )
+        resolved = resolve_device_display_name(identity)
+
+        self.assertEqual(identity["vendor"], "coros")
+        self.assertEqual(identity["product_key"], "coros:861")
+        self.assertEqual(identity["product_id"], "861")
+        self.assertEqual(resolved["device_name"], "COROS NOMAD")
+        self.assertEqual(resolved["mapping_status"], "resolved")
+        self.assertEqual(resolved["source"], "fit_product_name")
+
+    def test_generic_provider_product_name_resolves_without_guessing_from_title(self):
+        identity = extract_device_identity_from_fit_file_id(
+            [{"manufacturer": "suunto", "product": "race_s", "product_name": "Suunto Race S"}]
+        )
+        resolved = resolve_device_display_name(identity)
+
+        self.assertEqual(identity["vendor"], "suunto")
+        self.assertEqual(identity["product_key"], "suunto:race_s")
+        self.assertEqual(resolved["device_name"], "Suunto Race S")
+        self.assertEqual(resolved["mapping_status"], "resolved")
 
     def test_import_device_fallback_still_delegates_to_resolver(self):
         src = inspect.getsource(main._parse_fit_activity_for_sync)

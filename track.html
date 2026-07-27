@@ -1677,11 +1677,14 @@
             border-left-width: 3px;
             background: rgba(15, 23, 42, 0.88);
             padding: 5px 8px;
-            cursor: pointer;
+            cursor: default;
             display: block;
             min-height: 32px;
             box-shadow: 0 8px 18px rgba(2, 6, 23, 0.16);
             transition: border-color 0.16s ease, background 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+        }
+        .career-timeline-node.is-clickable {
+            cursor: pointer;
         }
         .career-timeline-track-lane .career-timeline-node {
             position: absolute;
@@ -1714,6 +1717,10 @@
         .career-timeline-node.tone-achievement {
             border-color: rgba(244, 114, 182, 0.8);
             box-shadow: inset 3px 0 0 rgba(244, 114, 182, 0.16), 0 8px 18px rgba(2, 6, 23, 0.16);
+        }
+        .career-timeline-node.tone-record-breaking {
+            border-color: rgba(244, 63, 94, 0.82);
+            box-shadow: inset 3px 0 0 rgba(244, 63, 94, 0.18), 0 8px 18px rgba(2, 6, 23, 0.16);
         }
         .career-timeline-node.tone-milestone {
             border-color: rgba(148, 163, 184, 0.72);
@@ -2696,6 +2703,39 @@
             font-weight: 720;
             line-height: 1.9;
         }
+        .career-year-fact-leads {
+            margin-top: 20px;
+            padding-bottom: 18px;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+        }
+        .career-year-fact-leads .career-year-article-lead {
+            margin-top: 14px;
+        }
+        .career-year-fact-leads .career-year-article-lead:first-child {
+            margin-top: 0;
+        }
+        .career-year-number {
+            display: inline-block;
+            font-family: "DIN Condensed", "Avenir Next", "SF Pro Display", sans-serif;
+            font-size: 1.14em;
+            font-weight: 860;
+            font-variant-numeric: tabular-nums;
+            line-height: 1;
+            letter-spacing: 0;
+            text-shadow: 0 0 10px rgba(255, 255, 255, 0.16);
+        }
+        .career-year-number.tone-count {
+            color: #fbbf24;
+        }
+        .career-year-number.tone-distance {
+            color: #67e8f9;
+        }
+        .career-year-number.tone-duration {
+            color: #86efac;
+        }
+        .career-year-number.tone-rate {
+            color: #fda4af;
+        }
         .career-year-article-opening,
         .career-year-article-paragraph,
         .career-year-article-closing {
@@ -2715,6 +2755,23 @@
             color: #f8fafc;
             font-size: 0.92rem;
             line-height: 1.45;
+        }
+        .career-year-fallback-summary {
+            margin-top: 18px;
+            padding-top: 16px;
+            border-top: 1px solid rgba(148, 163, 184, 0.12);
+        }
+        .career-year-fallback-summary p {
+            margin: 10px 0 0;
+            color: #cbd5e1;
+            font-size: 0.78rem;
+            line-height: 1.85;
+            overflow-wrap: anywhere;
+        }
+        .career-year-fallback-summary p:first-child {
+            margin-top: 0;
+            color: #e2e8f0;
+            font-weight: 680;
         }
         .career-year-section {
             margin-top: 18px;
@@ -3149,8 +3206,7 @@
             background: #4fc3f7;
             box-shadow: 0 0 18px rgba(79, 195, 247, 0.72);
         }
-        .career-record-sport-tabs,
-        .career-record-view-tabs {
+        .career-record-sport-tabs {
             display: flex;
             gap: 8px;
             flex-wrap: wrap;
@@ -3190,7 +3246,7 @@
             padding-right: 4px;
         }
         .career-record-groups::before {
-            content: "Personal Records";
+            content: "我的记录";
             color: #8a8a9e;
             font-size: 0.64rem;
             font-weight: 860;
@@ -3204,8 +3260,7 @@
             grid-template-columns: minmax(0, 1fr);
             gap: 16px;
         }
-        .career-record-picker-card,
-        .career-record-candidate-card {
+        .career-record-picker-card {
             border: 1px solid rgba(42, 42, 64, 0.92);
             border-radius: 22px;
             background: rgba(26, 26, 46, 0.78);
@@ -3233,8 +3288,7 @@
         .career-record-picker-section:first-child {
             padding-top: 0;
         }
-        .career-record-picker-card:hover,
-        .career-record-candidate-card:hover {
+        .career-record-picker-card:hover {
             border-color: rgba(79, 195, 247, 0.36);
             background: rgba(30, 30, 50, 0.92);
             transform: translateY(-1px);
@@ -3253,9 +3307,7 @@
             opacity: 1;
         }
         .career-record-picker-card:focus-visible,
-        .career-record-candidate-card:focus-visible,
-        .career-record-tab:focus-visible,
-        .career-record-action:focus-visible {
+        .career-record-tab:focus-visible {
             outline: 2px solid rgba(79, 195, 247, 0.78);
             outline-offset: 3px;
         }
@@ -3310,24 +3362,89 @@
         }
         .career-record-chart-canvas {
             width: 100%;
-            height: 220px;
+            height: 300px;
         }
-        .career-record-node-list {
-            display: grid;
-            gap: 6px;
-            margin-top: 8px;
-        }
-        .career-record-node {
+        .career-record-chart-legend {
             display: flex;
-            justify-content: space-between;
-            gap: 10px;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 8px;
             color: #cbd5e1;
-            font-size: 0.72rem;
-            border-top: 1px solid rgba(148, 163, 184, 0.10);
-            padding-top: 6px;
+            font-size: 0.68rem;
+            margin-bottom: 10px;
         }
-        .career-record-node[data-status="invalidated"] {
-            color: #fca5a5;
+        .career-record-chart-legend-item {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 3px 8px;
+            border-radius: 999px;
+            border: 1px solid rgba(148, 163, 184, 0.18);
+            background: rgba(15, 23, 42, 0.58);
+            color: #cbd5e1;
+        }
+        .career-record-chart-legend-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 999px;
+            background: #64748b;
+        }
+        .career-record-chart-legend-dot.best {
+            background: #facc15;
+            box-shadow: 0 0 0 3px rgba(250, 204, 21, 0.14);
+        }
+        .career-record-chart-legend-dot.progression {
+            background: #f43f5e;
+        }
+        .career-record-series-fallback {
+            display: grid;
+            gap: 8px;
+            color: #cbd5e1;
+        }
+        .career-record-series-fallback-row {
+            min-width: 0;
+        }
+        .career-record-series-fallback-item {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 10px;
+            border-radius: 10px;
+            border: 1px solid rgba(148, 163, 184, 0.14);
+            background: rgba(15, 23, 42, 0.42);
+        }
+        .career-record-series-fallback-item.is-clickable {
+            cursor: pointer;
+        }
+        .career-record-series-fallback-item.is-clickable:hover,
+        .career-record-series-fallback-item.is-clickable:focus {
+            border-color: rgba(250, 204, 21, 0.34);
+            background: rgba(30, 41, 59, 0.58);
+        }
+        .career-record-series-fallback-badge {
+            border-radius: 999px;
+            padding: 2px 7px;
+            font-size: 0.66rem;
+            font-weight: 760;
+            background: rgba(96, 165, 250, 0.18);
+            color: #bfdbfe;
+        }
+        .career-record-series-fallback-badge[data-kind="record_breaking"] {
+            background: rgba(244, 63, 94, 0.18);
+            color: #fecdd3;
+        }
+        .career-record-series-fallback-badge[data-kind="current_best"] {
+            background: rgba(250, 204, 21, 0.18);
+            color: #fde68a;
+        }
+        .career-record-series-fallback-value {
+            color: #f8fafc;
+            font-weight: 820;
+        }
+        .career-record-series-fallback-meta {
+            color: #94a3b8;
+            font-size: 0.68rem;
         }
         .career-record-picker-title,
         .career-record-panel-title {
@@ -3361,83 +3478,6 @@
             font-size: 0.72rem;
             margin-top: 5px;
             line-height: 1.45;
-        }
-        .career-record-candidate-list {
-            display: grid;
-            gap: 10px;
-            max-height: 390px;
-            overflow-y: auto;
-            padding-right: 2px;
-        }
-        .career-record-candidate-title {
-            color: #8a8a9e;
-            font-size: 0.66rem;
-            font-weight: 860;
-            letter-spacing: 0.12em;
-            text-transform: uppercase;
-            margin-bottom: 2px;
-        }
-        .career-record-badges {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 6px;
-            margin-top: 9px;
-        }
-        .career-record-badge {
-            border-radius: 999px;
-            border: 1px solid rgba(148, 163, 184, 0.18);
-            color: #cbd5e1;
-            background: rgba(15, 23, 42, 0.7);
-            padding: 3px 7px;
-            font-size: 0.66rem;
-        }
-        .career-record-badge[data-state="candidate_only"],
-        .career-record-badge[data-state="validation_required"] {
-            color: #fde68a;
-            border-color: rgba(251, 191, 36, 0.24);
-        }
-        .career-record-badge[data-state="analysis_only"] {
-            color: #bae6fd;
-            border-color: rgba(56, 189, 248, 0.24);
-        }
-        .career-record-actions {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-            margin-top: 10px;
-        }
-        .career-record-action {
-            border: 1px solid rgba(45, 212, 191, 0.28);
-            border-radius: 999px;
-            background: rgba(20, 184, 166, 0.12);
-            color: #ccfbf1;
-            cursor: pointer;
-            font-size: 0.7rem;
-            font-weight: 800;
-            padding: 6px 10px;
-        }
-        .career-record-action.secondary {
-            border-color: rgba(148, 163, 184, 0.18);
-            background: rgba(15, 23, 42, 0.62);
-            color: #cbd5e1;
-        }
-        .career-record-action.danger {
-            border-color: rgba(248, 113, 113, 0.24);
-            background: rgba(127, 29, 29, 0.18);
-            color: #fecaca;
-        }
-        .career-record-action:disabled {
-            opacity: 0.55;
-            cursor: not-allowed;
-        }
-        .career-record-action[aria-busy="true"] {
-            border-color: rgba(56, 189, 248, 0.38);
-        }
-        .career-record-candidate-feedback {
-            color: #fde68a;
-            font-size: 0.72rem;
-            margin-top: 8px;
-            min-height: 1em;
         }
         .career-achievement-card {
             min-width: 0;
@@ -3761,14 +3801,11 @@
             }
         }
         @media (max-width: 520px) {
-            .career-record-tab,
-            .career-record-action {
+            .career-record-tab {
                 width: 100%;
                 justify-content: center;
             }
-            .career-record-view-tabs,
-            .career-record-sport-tabs,
-            .career-record-actions {
+            .career-record-sport-tabs {
                 width: 100%;
             }
             .career-record-chart-box {
@@ -3777,8 +3814,6 @@
         }
         @media (prefers-reduced-motion: reduce) {
             .career-record-tab,
-            .career-record-action,
-            .career-record-candidate-card,
             .career-record-picker-card {
                 transition: none !important;
             }
@@ -9513,20 +9548,15 @@
                             <div class="career-records-v2-shell" id="career-records-v2-shell" data-career-records-v2-shell>
                                 <div class="career-records-v2-head">
                                     <div>
-                                        <div class="career-record-board-kicker">Records Dashboard</div>
+                                        <div class="career-record-board-kicker">运动记录</div>
                                         <div class="career-records-v2-title">多运动记录中心</div>
-                                        <div class="career-records-v2-subtitle">由后端 Catalog 驱动；当前纪录、候选与分析曲线保持边界。</div>
-                                    </div>
-                                    <div class="career-record-view-tabs" id="career-record-view-tabs" role="tablist" aria-label="记录中心视图">
-                                        <button type="button" class="career-record-tab is-active" data-career-record-view="current" aria-pressed="true" onclick="setCareerRecordView('current')">当前纪录</button>
-                                        <button type="button" class="career-record-tab" data-career-record-view="history" aria-pressed="false" onclick="setCareerRecordView('history')">演进</button>
-                                        <button type="button" class="career-record-tab" data-career-record-view="candidates" aria-pressed="false" onclick="setCareerRecordView('candidates')">候选</button>
+                                        <div class="career-records-v2-subtitle">按运动类型查看当前最佳与历史成绩曲线。</div>
                                     </div>
                                 </div>
                                 <div class="career-record-sport-tabs" id="career-record-sport-tabs" role="tablist" aria-label="记录中心运动类型"></div>
                                 <div class="career-records-v2-layout">
                                     <div class="career-record-groups" id="career-record-groups" aria-label="记录分组">
-                                        <div class="career-archive-empty">正在读取 Catalog...</div>
+                                        <div class="career-archive-empty">正在读取记录...</div>
                                     </div>
                                     <section class="career-record-dashboard-main" aria-label="记录看板">
                                         <div class="career-record-analysis-panel" id="career-record-analysis-panel" aria-live="polite">
@@ -10606,7 +10636,7 @@
     }
 
     // §5.4 规则 1/2/7 + §5.6 Modal 化:渲染函数只接 data 参数 + 写 modal body,不读雷达图状态、不调后端、不写 DB。
-    // 设计接受 innerHTML XSS 风险(LLM 是本地 / 受信);生产硬化候选 P3(改 textContent 或 DOMPurify)。
+    // 设计接受 innerHTML XSS 风险(LLM 是本地 / 受信);后续硬化 P3(改 textContent 或 DOMPurify)。
     // §5.6 术语本地化:V9.4.4 删除 SPORT_TYPE_CN 重复定义,统一调 getDynamicSportMeta(type).label
     // (16+ 运动覆盖,含 strength/yoga/pilates/hiit/breathing/flexibility)
 
@@ -12525,7 +12555,7 @@
                 ? seasons.map(careerSeasonCardHtml).join('')
                 : '<div class="career-season-empty">' + safeHtml((vm.status && vm.status.message) || '年度生涯将在活动记录与派生事件生成后展示。') + '</div>';
         }
-        if (statusEl) statusEl.textContent = seasons.length ? '年度结构已接入' : '等待年度数据';
+        if (statusEl) statusEl.textContent = seasons.length ? '年度结构已生成' : '等待年度数据';
     }
 
     function renderCareerOverview(viewModel) {
@@ -12554,7 +12584,7 @@
         if (!(appState.career && appState.career.seasons) && Array.isArray(vm.representativeSeasons) && vm.representativeSeasons.length) {
             renderCareerSeasons({ seasons: vm.representativeSeasons, status: { dataReady: true, message: '' } });
         }
-        if (statusText) statusText.textContent = vm.status && vm.status.dataReady ? '生涯总览已接入' : '等待活动数据';
+        if (statusText) statusText.textContent = vm.status && vm.status.dataReady ? '生涯总览已生成' : '等待活动数据';
         if (emptyEl) emptyEl.style.display = vm.status && vm.status.dataReady ? 'none' : '';
     }
 
@@ -12825,7 +12855,6 @@
                     availabilityState: String(sport.availability_state || 'unavailable'),
                     stateLabel: String(sport.state_label || sport.availability_state || ''),
                     recordCount: Number(sport.record_count || 0),
-                    candidateCount: Number(sport.candidate_count || 0),
                     capabilities: sport.capabilities && typeof sport.capabilities === 'object' ? sport.capabilities : {},
                     groups: groups.map(function(group) {
                         return {
@@ -12851,7 +12880,7 @@
             id: String(item.id || ''),
             activityId: item.activity_id == null ? '' : String(item.activity_id),
             recordKey: String(item.record_key || item.pb_type || ''),
-            displayName: String(item.display_name || item.pb_type || '当前纪录'),
+            displayName: String(item.display_name || item.pb_type || '当前最佳'),
             sport: String(item.sport || ''),
             sportLabel: String(item.sport_label || item.sport || ''),
             family: String(item.family || ''),
@@ -12877,43 +12906,6 @@
             },
             range: item.range && typeof item.range === 'object' ? item.range : {},
             quality: quality,
-            detailLink: detailLink
-        };
-    }
-
-    function normalizeCareerRecordCandidateV2(item) {
-        if (!item || typeof item !== 'object') return null;
-        const metric = item.metric && typeof item.metric === 'object' ? item.metric : {};
-        const scope = item.scope && typeof item.scope === 'object' ? item.scope : {};
-        const quality = item.quality && typeof item.quality === 'object' ? item.quality : {};
-        const detailLink = normalizeCareerDetailLink(item.detail_link);
-        return {
-            id: String(item.id || ''),
-            activityId: item.activity_id == null ? '' : String(item.activity_id),
-            recordKey: String(item.record_key || ''),
-            displayName: String(item.display_name || item.record_key || '候选纪录'),
-            sport: String(item.sport || ''),
-            sportLabel: String(item.sport_label || item.sport || ''),
-            metric: {
-                name: String(metric.name || ''),
-                value: metric.value == null ? null : Number(metric.value),
-                unit: String(metric.unit || ''),
-                display: String(metric.display || '')
-            },
-            metricDisplay: String(metric.display || ''),
-            scopeLabels: Array.isArray(scope.labels) ? scope.labels.map(function(value) { return String(value || ''); }).filter(Boolean) : [],
-            scope: {
-                labels: Array.isArray(scope.labels) ? scope.labels.map(function(value) { return String(value || ''); }).filter(Boolean) : [],
-                dimensions: scope.dimensions && typeof scope.dimensions === 'object' ? scope.dimensions : {},
-                scopeHash: String(scope.scope_hash || '')
-            },
-            quality: quality,
-            confidence: quality.confidence == null ? null : Number(quality.confidence),
-            confidenceBand: String(quality.confidence_band || ''),
-            canUserConfirm: quality.can_user_confirm !== false,
-            reasonCodes: Array.isArray(quality.reason_codes) ? quality.reason_codes.map(function(value) { return String(value || ''); }).filter(Boolean) : [],
-            candidateState: String(item.candidate_state || 'candidate'),
-            createdAt: String(item.created_at || ''),
             detailLink: detailLink
         };
     }
@@ -12995,14 +12987,17 @@
         appState.career = appState.career || {};
         appState.career.recordsCenter = appState.career.recordsCenter || {
             selectedSport: '',
-            selectedView: 'current',
             selectedGroup: '',
             selectedRecordKey: '',
             catalog: normalizeCareerRecordCatalog({}),
             records: [],
-            candidates: [],
             detail: null,
-            candidateFeedback: {},
+            analysisCache: {},
+            recordsBySport: {},
+            loaded: false,
+            loadedSport: '',
+            loadedSourceVersion: null,
+            loadedAt: 0,
             loading: false,
             error: ''
         };
@@ -13011,19 +13006,14 @@
 
     function careerRecordSportLabel(sport) {
         const key = String(sport || '');
-        if (key === 'pool_swimming' || key === 'open_water_swimming') return '游泳';
         return {
             running: '跑步',
             cycling: '骑行',
             trail_running: '越野跑',
-            hiking: '徒步'
+            hiking: '徒步',
+            pool_swimming: '泳池游泳',
+            open_water_swimming: '公开水域游泳'
         }[key] || key || '运动';
-    }
-
-    function careerRecordAvailabilityBadge(state, label) {
-        const cleanState = String(state || 'available');
-        const text = String(label || cleanState || '');
-        return text ? '<span class="career-record-badge" data-state="' + safeHtml(cleanState) + '">' + safeHtml(text) + '</span>' : '';
     }
 
     function renderCareerRecordSportTabs(catalog, selectedSport) {
@@ -13031,23 +13021,16 @@
         if (!el) return;
         const sports = catalog && Array.isArray(catalog.sports) ? catalog.sports : [];
         if (!sports.length) {
-            el.innerHTML = '<div class="career-archive-empty">Catalog 暂无运动项</div>';
+            el.innerHTML = '<div class="career-archive-empty">暂无可展示记录</div>';
             return;
         }
         el.innerHTML = sports.map(function(sport) {
             const isActive = sport.sport === selectedSport;
+            const label = String(sport.sportLabel || sport.sport_label || careerRecordSportLabel(sport.sport));
             return '<button type="button" class="career-record-tab' + (isActive ? ' is-active' : '') + '" data-career-record-sport="' + safeHtml(sport.sport) + '" aria-pressed="' + (isActive ? 'true' : 'false') + '" onclick="setCareerRecordSport(\'' + safeHtml(sport.sport) + '\')">'
-                + safeHtml(careerRecordSportLabel(sport.sport))
+                + safeHtml(label)
                 + '</button>';
         }).join('');
-    }
-
-    function renderCareerRecordViewTabs(selectedView) {
-        document.querySelectorAll('[data-career-record-view]').forEach(function(btn) {
-            const isActive = btn.getAttribute('data-career-record-view') === selectedView;
-            btn.classList.toggle('is-active', isActive);
-            btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
-        });
     }
 
     function careerRecordSelectedGroupKeys(catalog, selectedSport, selectedGroup) {
@@ -13171,20 +13154,13 @@
         const isSelected = selectedKey ? definition.recordKey === selectedKey : index === 0;
         const metricDisplay = currentRecord && currentRecord.metric ? String(currentRecord.metric.display || '') : '';
         const dateDisplay = currentRecord ? formatCareerDate(currentRecord.displayDate || currentRecord.eventDate) : '';
-        const statusText = currentRecord && currentRecord.status ? String(currentRecord.status) : '';
         const metricText = metricDisplay || '暂无记录';
-        const metaText = metricDisplay ? [dateDisplay, statusText].filter(Boolean).join(' · ') : '';
+        const metaText = metricDisplay ? dateDisplay : '';
         const ariaLabel = [definition.displayName, metricText, dateDisplay, definition.sportLabel].filter(Boolean).join(' · ');
         return '<div class="career-record-picker-card' + (isSelected ? ' is-selected' : '') + '" data-career-record-key="' + safeHtml(definition.recordKey) + '" role="button" tabindex="0" aria-pressed="' + (isSelected ? 'true' : 'false') + '" aria-label="' + safeHtml(ariaLabel || definition.displayName) + '" onclick="selectCareerRecordKeyForAnalysis(\'' + safeHtml(definition.recordKey) + '\')" onkeydown="onCareerRecordPickerKeydown(event, this)">'
             + '<div class="career-record-picker-title">' + safeHtml(definition.displayName) + '</div>'
             + '<div class="career-record-picker-value' + (metricDisplay ? '' : ' is-empty') + '">' + safeHtml(metricText) + '</div>'
             + (metaText ? '<div class="career-record-picker-meta">' + safeHtml(metaText) + '</div>' : '')
-            + '</div>';
-    }
-
-    function careerRecordCandidatePickerCardHtml(candidate) {
-        return '<div class="career-record-picker-card" data-career-record-candidate-id="' + safeHtml(candidate.id) + '">'
-            + '<div class="career-record-picker-title">' + safeHtml(candidate.displayName) + '</div>'
             + '</div>';
     }
 
@@ -13197,22 +13173,15 @@
         return String(definition.groupLabel || '');
     }
 
-    function renderCareerRecordPicker(definitions, records, candidates, selectedView) {
+    function renderCareerRecordPicker(definitions, records) {
         const el = document.getElementById('career-record-groups');
         if (!el) return;
         const safeDefinitions = Array.isArray(definitions) ? definitions : [];
         const safeRecords = Array.isArray(records) ? records : [];
-        const safeCandidates = Array.isArray(candidates) ? candidates : [];
         const currentByKey = safeRecords.reduce(function(acc, record) {
             if (record && record.recordKey && !acc[record.recordKey]) acc[record.recordKey] = record;
             return acc;
         }, {});
-        if (selectedView === 'candidates') {
-            el.innerHTML = safeCandidates.length
-                ? safeCandidates.map(careerRecordCandidatePickerCardHtml).join('')
-                : '<div class="career-archive-empty">暂无待确认候选纪录。</div>';
-            return;
-        }
         let previousSection = '';
         el.innerHTML = safeDefinitions.length
             ? safeDefinitions.map(function(definition, index) {
@@ -13223,50 +13192,7 @@
                 if (section) previousSection = section;
                 return sectionHtml + careerRecordPickerCardHtml(definition, currentByKey[definition.recordKey] || null, index);
             }).join('')
-            : '<div class="career-archive-empty">该运动暂无记录定义。</div>';
-    }
-
-    function careerRecordCandidateCardHtml(candidate) {
-        const state = careerRecordState();
-        const meta = [candidate.sportLabel, candidate.metricDisplay, candidate.scopeLabels.join(' · ')].filter(Boolean).join(' · ');
-        const confidenceText = candidate.confidence == null || Number.isNaN(candidate.confidence)
-            ? ''
-            : '置信度 ' + String(Math.round(candidate.confidence * 100)) + '%';
-        const feedback = state.candidateFeedback && state.candidateFeedback[candidate.id] ? String(state.candidateFeedback[candidate.id]) : '';
-        const activityAttrs = candidate.detailLink && candidate.detailLink.activityId
-            ? ' data-activity-id="' + safeHtml(candidate.detailLink.activityId) + '" data-career-source="' + safeHtml(candidate.detailLink.source || 'career') + '"'
-            : '';
-        const canOperate = candidate.canUserConfirm && candidate.candidateState === 'candidate';
-        return '<div class="career-record-candidate-card" data-career-record-candidate-id="' + safeHtml(candidate.id) + '">'
-            + '<div class="career-record-panel-title">' + safeHtml(candidate.displayName) + '</div>'
-            + '<div class="career-record-panel-meta">' + safeHtml([meta || '候选纪录', confidenceText, candidate.confidenceBand].filter(Boolean).join(' · ')) + '</div>'
-            + '<div class="career-record-badges">'
-                + '<span class="career-record-badge" data-state="candidate_only">候选</span>'
-                + candidate.reasonCodes.slice(0, 2).map(function(code) { return '<span class="career-record-badge">' + safeHtml(code) + '</span>'; }).join('')
-            + '</div>'
-            + '<div class="career-record-actions">'
-                + (activityAttrs ? '<button type="button" class="career-record-action secondary"' + activityAttrs + ' aria-label="打开候选纪录来源 Activity" onclick="openCareerRecordActivityFromElement(event, this)">来源 Activity</button>' : '')
-                + '<button type="button" class="career-record-action" data-candidate-id="' + safeHtml(candidate.id) + '" data-decision="confirm" aria-label="确认候选纪录 ' + safeHtml(candidate.displayName) + '" onclick="decideCareerRecordCandidateFromElement(event, this)"' + (canOperate ? '' : ' disabled') + '>确认</button>'
-                + '<button type="button" class="career-record-action danger" data-candidate-id="' + safeHtml(candidate.id) + '" data-decision="reject" aria-label="拒绝候选纪录 ' + safeHtml(candidate.displayName) + '" onclick="decideCareerRecordCandidateFromElement(event, this)"' + (canOperate ? '' : ' disabled') + '>拒绝</button>'
-            + '</div>'
-            + '<div class="career-record-candidate-feedback" data-career-record-feedback="' + safeHtml(candidate.id) + '">' + safeHtml(feedback) + '</div>'
-            + '</div>';
-    }
-
-    function renderCareerRecordCandidatePanel(candidates) {
-        const panel = document.getElementById('career-record-analysis-panel');
-        if (!panel) return;
-        disposeCareerRecordCharts();
-        const safeCandidates = Array.isArray(candidates) ? candidates : [];
-        panel.innerHTML = '<div class="career-record-analysis-head">'
-            + '<div>'
-                + '<div class="career-record-analysis-title">候选纪录</div>'
-                + '<div class="career-record-analysis-subtitle">候选结果来自后端 ViewModel；前端只负责展示和提交确认/拒绝决策。</div>'
-            + '</div>'
-            + '</div>'
-            + (safeCandidates.length
-                ? '<div class="career-record-candidate-list">' + safeCandidates.map(careerRecordCandidateCardHtml).join('') + '</div>'
-                : '<div class="career-archive-empty">暂无待确认候选纪录。</div>');
+            : '<div class="career-archive-empty">该运动暂无可展示记录。</div>';
     }
 
     function renderCareerRecordsCenter(viewModel) {
@@ -13274,15 +13200,10 @@
         const catalog = viewModel && viewModel.catalog ? viewModel.catalog : state.catalog;
         const sports = catalog && Array.isArray(catalog.sports) ? catalog.sports : [];
         if (!state.selectedSport && sports.length) state.selectedSport = sports[0].sport;
-        if (!state.selectedView) state.selectedView = 'current';
         const selectedSport = state.selectedSport || (sports[0] && sports[0].sport) || '';
         renderCareerRecordSportTabs(catalog, selectedSport);
-        renderCareerRecordViewTabs(state.selectedView);
         const definitions = careerRecordCatalogDefinitions(catalog, selectedSport);
         const records = (state.records || []).filter(function(item) {
-            return !selectedSport || item.sport === selectedSport;
-        });
-        const candidatesForGroup = (state.candidates || []).filter(function(item) {
             return !selectedSport || item.sport === selectedSport;
         });
         if (!state.selectedRecordKey || !definitions.some(function(item) { return item.recordKey === state.selectedRecordKey; })) {
@@ -13290,43 +13211,25 @@
         }
         if (state.loading) {
             if (definitions.length) {
-                renderCareerRecordPicker(definitions, records, candidatesForGroup, state.selectedView);
+                renderCareerRecordPicker(definitions, records);
                 const loadingDefinition = definitions.find(function(item) { return item.recordKey === state.selectedRecordKey; }) || definitions[0];
                 const loadingRecord = records.find(function(item) { return item.recordKey === loadingDefinition.recordKey; }) || careerRecordViewFromDefinition(loadingDefinition);
                 state.selectedRecordId = loadingRecord.id;
                 state.selectedRecordKey = loadingRecord.recordKey;
                 renderCareerRecordAnalysisPanel(loadingRecord, null);
             } else {
-                renderCareerRecordPicker([], [], [], state.selectedView);
+                renderCareerRecordPicker([], []);
                 renderCareerRecordAnalysisPanel(null, null);
             }
             return;
         }
         if (state.error) {
-            renderCareerRecordPicker([], [], [], state.selectedView);
+            renderCareerRecordPicker([], []);
             const panel = document.getElementById('career-record-analysis-panel');
             if (panel) panel.innerHTML = '<div class="career-archive-empty">' + safeHtml(state.error) + '</div>';
             return;
         }
-        renderCareerRecordPicker(definitions, records, candidatesForGroup, state.selectedView);
-        if (state.selectedView === 'candidates') {
-            renderCareerRecordCandidatePanel(candidatesForGroup);
-            return;
-        }
-        if (state.selectedView === 'history') {
-            const selectedDefinition = definitions.find(function(item) { return item.recordKey === state.selectedRecordKey; }) || definitions[0] || null;
-            const historyFocus = selectedDefinition
-                ? (records.find(function(item) { return item.recordKey === selectedDefinition.recordKey; }) || careerRecordViewFromDefinition(selectedDefinition))
-                : null;
-            if (historyFocus && (!state.analysis || state.analysis.recordKey !== historyFocus.recordKey)) {
-                state.selectedRecordId = historyFocus.id;
-                state.selectedRecordKey = historyFocus.recordKey;
-                loadCareerRecordAnalysis(historyFocus).catch(function(e) { console.warn('loadCareerRecordAnalysis history', e); });
-            } else {
-                renderCareerRecordAnalysisPanel(historyFocus, state.analysis && state.analysis.metricSeries ? state.analysis.metricSeries : null);
-            }
-            return;
-        }
+        renderCareerRecordPicker(definitions, records);
         if (!definitions.length) {
             renderCareerRecordAnalysisPanel(null, null);
             return;
@@ -13371,7 +13274,14 @@
                 careerRecordChartInstances[containerId].dispose();
             }
             const chart = window.echarts.init(el);
-            chart.setOption(option || {});
+            const rawOption = option || {};
+            const clickHandler = typeof rawOption.__careerRecordClickHandler === 'function' ? rawOption.__careerRecordClickHandler : null;
+            const chartOption = Object.assign({}, rawOption);
+            delete chartOption.__careerRecordClickHandler;
+            chart.setOption(chartOption);
+            if (clickHandler && typeof chart.on === 'function') {
+                chart.on('click', clickHandler);
+            }
             careerRecordChartInstances[containerId] = chart;
             setTimeout(function() {
                 if (careerRecordChartInstances[containerId] === chart && chart && typeof chart.resize === 'function') {
@@ -13418,31 +13328,113 @@
 
     function careerRecordSeriesEmptyText(record, metricSeries) {
         const status = metricSeries && metricSeries.status && typeof metricSeries.status === 'object' ? metricSeries.status : {};
-        if (status.message) return String(status.message);
+        if (status.message) return '暂无可展示记录。完成更多活动后，这里会展示你的记录。';
         if (careerRecordIsCyclingStandardDistanceRecord(record)) {
-            return '暂无正式标准距离纪录。该记录定义已接入 Catalog，但距离-时间流契约仍待真实数据验收。';
+            return '暂无标准距离纪录。完成更多相关活动后，这里会展示你的最快成绩。';
         }
         if (careerRecordIsCyclingPowerRecord(record)) {
-            return '暂无正式功率纪录。可能缺少功率计数据，或该记录仍处于候选/真实数据验收阶段。';
+            return '暂无功率纪录。记录包含功率数据后，这里会展示你的最佳功率。';
         }
         if (careerRecordIsCyclingRecord(record)) {
-            return '暂无正式骑行纪录。该记录定义已接入 Catalog，但尚未生成可展示的正式历史节点。';
+            return '暂无骑行纪录。完成更多相关活动后，这里会展示你的历史成绩。';
         }
-        return '暂无正式纪录历史。';
+        return '暂无纪录历史。完成更多活动后，这里会展示你的记录。';
     }
 
-    function careerRecordSeriesListHtml(metricSeries, record) {
+    function careerRecordSeriesFallbackHtml(metricSeries, record) {
         const points = metricSeries && Array.isArray(metricSeries.points) ? metricSeries.points : [];
         if (!points.length) return '<div class="career-archive-empty">' + safeHtml(careerRecordSeriesEmptyText(record, metricSeries)) + '</div>';
-        return '<div class="career-record-node-list" aria-label="可访问历史节点列表">'
+        const currentBestId = metricSeries && metricSeries.currentBest ? String(metricSeries.currentBest.id || '') : '';
+        const progressionIds = (metricSeries && Array.isArray(metricSeries.recordProgression) ? metricSeries.recordProgression : []).reduce(function(acc, item) {
+            if (item && item.metricResultId) acc[String(item.metricResultId)] = item;
+            return acc;
+        }, {});
+        return '<div class="career-record-series-fallback" role="list">'
             + points.map(function(point) {
-                const marker = point.isCurrentBest ? '当前最佳' : (point.isRecordBreaking ? '刷新记录' : '');
-                return '<div class="career-record-node" data-status="' + safeHtml(point.status) + '">'
-                    + '<span>' + safeHtml([formatCareerDate(point.eventDate), point.status, marker].filter(Boolean).join(' · ')) + '</span>'
-                    + '<strong>' + safeHtml(point.metric.display || '--') + '</strong>'
+                const visual = careerRecordPointVisual(point, currentBestId, progressionIds);
+                return '<div class="career-record-series-fallback-row" role="listitem">'
+                    + careerRecordSeriesFallbackPointHtml(point, visual)
                     + '</div>';
             }).join('')
             + '</div>';
+    }
+
+    function careerRecordChartLegendHtml(points) {
+        if (!points || !points.length) return '';
+        return '<div class="career-record-chart-legend" aria-hidden="true">'
+            + '<span class="career-record-chart-legend-item"><span class="career-record-chart-legend-dot"></span>活动成绩</span>'
+            + '<span class="career-record-chart-legend-item"><span class="career-record-chart-legend-dot progression"></span>刷新记录</span>'
+            + '<span class="career-record-chart-legend-item"><span class="career-record-chart-legend-dot best"></span>当前最佳</span>'
+            + '</div>';
+    }
+
+    function careerRecordPointVisual(point, currentBestId, progressionIds) {
+        const safePoint = point && typeof point === 'object' ? point : {};
+        const pointId = String(safePoint.id || '');
+        const isCurrentBest = !!safePoint.isCurrentBest || (!!currentBestId && pointId === currentBestId);
+        const isRecordBreaking = !!safePoint.isRecordBreaking || !!(progressionIds && progressionIds[pointId]);
+        const kind = isCurrentBest ? 'current_best' : (isRecordBreaking ? 'record_breaking' : 'activity');
+        const label = isCurrentBest
+            ? (isRecordBreaking ? '当前最佳 / 刷新记录' : '当前最佳')
+            : (isRecordBreaking ? '刷新记录' : '活动成绩');
+        return {
+            kind: kind,
+            label: label,
+            color: isCurrentBest ? '#facc15' : (isRecordBreaking ? '#f43f5e' : '#60a5fa'),
+            borderColor: isCurrentBest ? '#fff7ed' : '#0f172a',
+            borderWidth: isCurrentBest ? 3 : 2,
+            symbolSize: isCurrentBest ? 11 : (isRecordBreaking ? 8 : 5)
+        };
+    }
+
+    function careerRecordPointActivityId(point) {
+        const safePoint = point && typeof point === 'object' ? point : {};
+        const detailLink = safePoint.detailLink && typeof safePoint.detailLink === 'object' ? safePoint.detailLink : {};
+        return String(detailLink.activityId || safePoint.activityId || '').trim();
+    }
+
+    function careerRecordPointCanOpenActivity(point, visual) {
+        const kind = visual && visual.kind ? String(visual.kind) : '';
+        return !!careerRecordPointActivityId(point) && (kind === 'record_breaking' || kind === 'current_best');
+    }
+
+    function openCareerRecordPointActivityFromElement(el) {
+        openCareerActivityDetailFromElement(el);
+    }
+
+    function onCareerRecordPointActivityKeydown(event, el) {
+        onCareerActivityDetailKeydown(event, el);
+    }
+
+    function openCareerRecordPointActivityData(data) {
+        const raw = data && typeof data === 'object' ? data : {};
+        if (raw.canOpenActivity !== true || !raw.activityId) return;
+        const proxy = document.createElement('span');
+        proxy.setAttribute('data-career-source', 'career');
+        proxy.setAttribute('data-activity-id', String(raw.activityId || ''));
+        openCareerActivityDetailFromElement(proxy);
+    }
+
+    function careerRecordSeriesFallbackPointHtml(point, visual) {
+        const metricDisplay = point && point.metric ? String(point.metric.display || '') : '';
+        const eventDate = formatCareerDate(point && point.eventDate ? point.eventDate : '');
+        const kind = visual && visual.kind ? String(visual.kind) : 'activity';
+        const activityId = careerRecordPointActivityId(point);
+        const canOpen = careerRecordPointCanOpenActivity(point, visual);
+        const attrs = canOpen
+            ? ' role="button" tabindex="0" onclick="openCareerRecordPointActivityFromElement(this)" onkeydown="onCareerRecordPointActivityKeydown(event, this)" data-activity-id="' + safeHtml(activityId) + '" data-career-source="career" aria-label="' + safeHtml((visual && visual.label ? visual.label : '活动成绩') + '，打开运动详情') + '"'
+            : '';
+        return '<div class="career-record-series-fallback-item' + (canOpen ? ' is-clickable' : '') + '"' + attrs + '>'
+            + '<span class="career-record-series-fallback-badge" data-kind="' + safeHtml(kind) + '">' + safeHtml(visual && visual.label ? visual.label : '活动成绩') + '</span>'
+            + '<span class="career-record-series-fallback-value">' + safeHtml(metricDisplay || '--') + '</span>'
+            + (eventDate ? '<span class="career-record-series-fallback-meta">' + safeHtml(eventDate) + '</span>' : '')
+            + '</div>';
+    }
+
+    function careerRecordChartAxisLabel(value) {
+        const seconds = Number(value);
+        if (!Number.isFinite(seconds)) return '';
+        return formatDuration(seconds);
     }
 
     function renderCareerRecordAnalysisPanel(record, metricSeries) {
@@ -13461,49 +13453,107 @@
             if (item && item.metricResultId) acc[String(item.metricResultId)] = item;
             return acc;
         }, {});
+        const chartPoints = points.filter(function(item) { return item.metric && item.metric.value !== null && !Number.isNaN(item.metric.value); });
+        const visiblePoints = chartPoints.map(function(point) {
+            return {
+                point: point,
+                visual: careerRecordPointVisual(point, currentBestId, progressionIds)
+            };
+        });
         panel.innerHTML = '<div class="career-record-analysis-head">'
             + '<div>'
-                + '<div class="career-record-analysis-title">' + safeHtml((series && series.displayName) || record.displayName || '纪录演进') + (series && series.currentBest && series.currentBest.metric.display ? ' · ' + safeHtml(series.currentBest.metric.display) : (record.metric && record.metric.display ? ' · ' + safeHtml(record.metric.display) : '')) + '</div>'
+                + '<div class="career-record-analysis-title">' + safeHtml((series && series.displayName) || record.displayName || '纪录详情') + (series && series.currentBest && series.currentBest.metric.display ? ' · ' + safeHtml(series.currentBest.metric.display) : (record.metric && record.metric.display ? ' · ' + safeHtml(record.metric.display) : '')) + '</div>'
                 + '<div class="career-record-analysis-subtitle">' + careerRecordAnalysisSubtitle(record) + '</div>'
             + '</div>'
-            + '<div class="career-record-badges">' + careerRecordAvailabilityBadge(record.catalogState, record.catalogState) + '</div>'
             + '</div>'
             + '<div class="career-record-analysis-grid">'
             + '<div class="career-record-chart-box">'
                 + '<div class="career-record-chart-title">' + safeHtml(careerRecordChartTitle(record, axisDirection)) + '</div>'
+                + careerRecordChartLegendHtml(points)
                 + '<div class="career-record-chart-canvas" id="career-record-history-chart"></div>'
-                + careerRecordSeriesListHtml(series, record)
             + '</div>'
             + '</div>';
-        const chartPoints = points.filter(function(item) { return item.metric && item.metric.value !== null && !Number.isNaN(item.metric.value); });
-        const progressionMarkers = chartPoints.map(function(point, index) {
-            const progression = progressionIds[String(point.id || '')];
-            if (!progression) return null;
+        const progressionMarkers = visiblePoints.map(function(entry, index) {
+            if (!entry.visual || (entry.visual.kind !== 'current_best' && entry.visual.kind !== 'record_breaking')) return null;
+            const activityId = careerRecordPointActivityId(entry.point);
+            const canOpenActivity = careerRecordPointCanOpenActivity(entry.point, entry.visual);
             return {
-                name: progression.eventType || 'record_progression',
-                coord: [index, point.metric.value],
-                value: point.metric.display || ''
+                name: entry.visual.label,
+                coord: [index, entry.point.metric.value],
+                value: entry.point.metric.display || '',
+                activityId: activityId,
+                pointKind: entry.visual.kind,
+                canOpenActivity: canOpenActivity,
+                symbol: 'circle',
+                symbolSize: entry.visual.symbolSize + 2,
+                itemStyle: {
+                    color: entry.visual.color,
+                    borderColor: entry.visual.borderColor,
+                    borderWidth: entry.visual.borderWidth
+                },
+                label: { show: false }
             };
         }).filter(Boolean);
         renderCareerRecordChart('career-record-history-chart', {
-            tooltip: { trigger: 'axis' },
-            xAxis: { type: 'category', data: chartPoints.map(function(item) { return formatCareerDate(item.eventDate) || '--'; }) },
-            yAxis: { type: 'value', inverse: axisDirection === 'lower' },
+            __careerRecordClickHandler: function(params) {
+                openCareerRecordPointActivityData(params && params.data);
+            },
+            grid: { left: 54, right: 24, top: 18, bottom: 36 },
+            tooltip: {
+                trigger: 'axis',
+                backgroundColor: 'rgba(15, 23, 42, 0.96)',
+                borderColor: 'rgba(148, 163, 184, 0.24)',
+                textStyle: { color: '#e2e8f0' },
+                formatter: function(params) {
+                    const entry = params && params[0] && visiblePoints[params[0].dataIndex] ? visiblePoints[params[0].dataIndex] : null;
+                    if (!entry) return '';
+                    return safeHtml(formatCareerDate(entry.point.eventDate) || '--')
+                        + '<br><strong>' + safeHtml(entry.point.metric.display || careerRecordChartAxisLabel(entry.point.metric.value)) + '</strong>'
+                        + '<br><span style="color:#94a3b8">' + safeHtml(entry.visual.label) + '</span>';
+                }
+            },
+            xAxis: {
+                type: 'category',
+                data: chartPoints.map(function(item) { return formatCareerDate(item.eventDate) || '--'; }),
+                axisTick: { alignWithLabel: true },
+                axisLabel: { color: '#94a3b8', hideOverlap: true },
+                axisLine: { lineStyle: { color: 'rgba(148, 163, 184, 0.24)' } }
+            },
+            yAxis: {
+                type: 'value',
+                inverse: axisDirection === 'lower',
+                axisLabel: { color: '#94a3b8', formatter: careerRecordChartAxisLabel },
+                splitLine: { lineStyle: { color: 'rgba(148, 163, 184, 0.16)' } },
+                axisLine: { show: false },
+                axisTick: { show: false }
+            },
             series: [{
                 type: 'line',
-                data: chartPoints.map(function(item) {
+                smooth: true,
+                showSymbol: true,
+                emphasis: { focus: 'series' },
+                lineStyle: { width: 2, color: '#60a5fa' },
+                data: visiblePoints.map(function(entry) {
+                    const activityId = careerRecordPointActivityId(entry.point);
+                    const canOpenActivity = careerRecordPointCanOpenActivity(entry.point, entry.visual);
                     return {
-                        value: item.metric.value,
-                        name: item.metric.display || '',
-                        symbolSize: item.isCurrentBest || (currentBestId && item.id === currentBestId) ? 11 : (item.isRecordBreaking ? 8 : 5),
-                        itemStyle: item.isCurrentBest || (currentBestId && item.id === currentBestId)
-                            ? { color: '#f59e0b', borderColor: '#fff7ed', borderWidth: 2 }
-                            : (item.isRecordBreaking ? { color: '#38bdf8' } : undefined)
+                        value: entry.point.metric.value,
+                        name: entry.visual.label,
+                        activityId: activityId,
+                        pointKind: entry.visual.kind,
+                        canOpenActivity: canOpenActivity,
+                        symbol: 'circle',
+                        symbolSize: entry.visual.symbolSize,
+                        itemStyle: {
+                            color: entry.visual.color,
+                            borderColor: entry.visual.borderColor,
+                            borderWidth: entry.visual.borderWidth
+                        }
                     };
                 }),
                 markPoint: progressionMarkers.length ? { data: progressionMarkers } : undefined
             }]
-        }, careerRecordSeriesListHtml(series, record));
+        }, careerRecordSeriesFallbackHtml(series, record));
     }
 
     async function loadCareerRecordAnalysis(record) {
@@ -13517,6 +13567,15 @@
             renderCareerRecordAnalysisPanel(record, null);
             return null;
         }
+        const cacheKey = expectedSport + ':' + expectedRecordKey;
+        const cachedAnalysis = state.analysisCache && state.analysisCache[cacheKey] ? state.analysisCache[cacheKey] : null;
+        if (cachedAnalysis) {
+            state.detail = cachedAnalysis.detail || null;
+            state.analysis = cachedAnalysis;
+            renderCareerRecordAnalysisPanel(record, cachedAnalysis.metricSeries || null);
+            return cachedAnalysis;
+        }
+        renderCareerRecordAnalysisPanel(record, null);
         const tasks = [];
         const isCatalogOnly = String(record.id || '').indexOf('catalog:') === 0;
         if (!isCatalogOnly && typeof api.get_career_record_detail === 'function') {
@@ -13548,6 +13607,8 @@
             }
             state.detail = detail;
             state.analysis = { recordId: record.id, recordKey: record.recordKey, detail: detail, metricSeries: metricSeries };
+            state.analysisCache = state.analysisCache || {};
+            state.analysisCache[cacheKey] = state.analysis;
             renderCareerRecordAnalysisPanel(record, metricSeries);
             return state.analysis;
         } catch (error) {
@@ -13569,50 +13630,9 @@
         const record = (state.records || []).find(function(item) { return item.recordKey === state.selectedRecordKey; }) || null;
         state.selectedRecordId = record ? record.id : ('catalog:' + state.selectedRecordKey);
         state.detail = null;
-        state.analysis = null;
+        const cacheKey = String(state.selectedSport || '') + ':' + state.selectedRecordKey;
+        state.analysis = state.analysisCache && state.analysisCache[cacheKey] ? state.analysisCache[cacheKey] : null;
         renderCareerRecordsCenter({ catalog: state.catalog });
-    }
-
-    function openCareerRecordActivityFromElement(event, el) {
-        if (event && typeof event.stopPropagation === 'function') event.stopPropagation();
-        openCareerActivityDetailFromElement(el);
-    }
-
-    function setCareerRecordCandidateFeedback(candidateId, message) {
-        const state = careerRecordState();
-        state.candidateFeedback = state.candidateFeedback || {};
-        state.candidateFeedback[String(candidateId || '')] = String(message || '');
-        const el = document.querySelector('[data-career-record-feedback="' + String(candidateId || '').replace(/"/g, '\\"') + '"]');
-        if (el) el.textContent = String(message || '');
-    }
-
-    async function decideCareerRecordCandidateFromElement(event, el) {
-        if (event && typeof event.stopPropagation === 'function') event.stopPropagation();
-        const candidateId = el && el.getAttribute ? el.getAttribute('data-candidate-id') : '';
-        const decision = el && el.getAttribute ? el.getAttribute('data-decision') : '';
-        const api = window.pywebview && window.pywebview.api ? window.pywebview.api : null;
-        if (!candidateId || ['confirm', 'reject'].indexOf(decision) < 0 || !api || typeof api.decide_career_record_candidate !== 'function') return;
-        const card = el.closest ? el.closest('[data-career-record-candidate-id]') : null;
-        const buttons = card ? Array.prototype.slice.call(card.querySelectorAll('button')) : [el];
-        buttons.forEach(function(btn) {
-            btn.disabled = true;
-            btn.setAttribute('aria-busy', 'true');
-        });
-        setCareerRecordCandidateFeedback(candidateId, decision === 'confirm' ? '确认中...' : '处理中...');
-        try {
-            const res = await api.decide_career_record_candidate({ candidate_id: candidateId, decision: decision });
-            requireCareerApiData(res, '候选纪录处理失败');
-            setCareerRecordCandidateFeedback(candidateId, decision === 'confirm' ? '已确认，正在刷新记录中心。' : '已拒绝，正在刷新候选列表。');
-            await loadCareerRecordsCenter({ refresh: true });
-            showToast(decision === 'confirm' ? '候选纪录已确认' : '候选纪录已拒绝');
-        } catch (error) {
-            console.warn('decideCareerRecordCandidateFromElement failed', error);
-            buttons.forEach(function(btn) {
-                btn.disabled = false;
-                btn.removeAttribute('aria-busy');
-            });
-            setCareerRecordCandidateFeedback(candidateId, '处理失败，请稍后重试。');
-        }
     }
 
     function onCareerRecordPickerKeydown(event, el) {
@@ -13631,21 +13651,36 @@
         state.detail = null;
         state.analysis = null;
         state.analysisRequestId = Number(state.analysisRequestId || 0) + 1;
-        state.loading = true;
+        state.loading = false;
         state.error = '';
         disposeCareerRecordCharts();
         renderCareerRecordsCenter({ catalog: state.catalog });
-        loadCareerRecordsCenter({ refresh: true }).catch(function(e) { console.warn('setCareerRecordSport', e); });
-    }
-
-    function setCareerRecordView(view) {
-        const state = careerRecordState();
-        state.selectedView = ['current', 'history', 'candidates'].indexOf(String(view || '')) >= 0 ? String(view) : 'current';
-        renderCareerRecordsCenter({ catalog: state.catalog });
+        loadCareerRecordsCenter().catch(function(e) { console.warn('setCareerRecordSport', e); });
     }
 
     async function loadCareerRecordsCenter(options) {
+        const opts = options && typeof options === 'object' ? options : {};
         const state = careerRecordState();
+        const currentSourceVersion = Number((appState.career && appState.career.careerSourceVersion) || 0);
+        const cacheSport = String(state.selectedSport || state.loadedSport || 'all');
+        const cachedSport = state.recordsBySport && state.recordsBySport[cacheSport] ? state.recordsBySport[cacheSport] : null;
+        if (
+            !opts.refresh
+            && cachedSport
+            && !state.error
+            && Number(cachedSport.sourceVersion || 0) === currentSourceVersion
+        ) {
+            state.records = Array.isArray(cachedSport.records) ? cachedSport.records : [];
+            state.catalog = cachedSport.catalog || state.catalog;
+            state.loaded = true;
+            state.loadedSport = cacheSport;
+            state.loadedSourceVersion = currentSourceVersion;
+            state.loadedAt = Number(cachedSport.loadedAt || Date.now());
+            state.loading = false;
+            renderCareerRecordsCenter({ catalog: state.catalog });
+            setTimeout(resizeCareerRecordCharts, 80);
+            return state;
+        }
         const requestId = Number(state.recordsRequestId || 0) + 1;
         state.recordsRequestId = requestId;
         state.loading = true;
@@ -13653,24 +13688,36 @@
         renderCareerRecordsCenter({ catalog: state.catalog });
         const api = window.pywebview && window.pywebview.api ? window.pywebview.api : null;
         try {
-            if (!api || typeof api.get_career_record_catalog !== 'function' || typeof api.get_career_records !== 'function' || typeof api.get_career_record_candidates !== 'function') {
-                throw new Error('记录中心 V2 接口暂不可用');
+            if (!api || typeof api.get_career_record_catalog !== 'function' || typeof api.get_career_records !== 'function') {
+                throw new Error('记录中心暂不可用');
             }
             const catalogRes = await api.get_career_record_catalog({ include_unavailable: true, include_analysis: true });
             const catalog = normalizeCareerRecordCatalog(requireCareerApiData(catalogRes, '记录目录加载失败'));
             const selectedSport = state.selectedSport || (catalog.sports.length ? catalog.sports[0].sport : '');
-            const recordsRes = await api.get_career_records({ sport: selectedSport || 'all' });
-            const candidatesRes = await api.get_career_record_candidates({ status: 'candidate' });
-            const recordData = requireCareerApiData(recordsRes, '当前纪录加载失败');
-            const candidateData = requireCareerApiData(candidatesRes, '候选纪录加载失败');
             if (state.recordsRequestId !== requestId) {
                 return state;
             }
             state.catalog = catalog;
             if (!state.selectedSport && catalog.sports.length) state.selectedSport = catalog.sports[0].sport;
+            renderCareerRecordsCenter({ catalog: state.catalog });
+            const recordsRes = await api.get_career_records({ sport: selectedSport || 'all' });
+            const recordData = requireCareerApiData(recordsRes, '当前最佳加载失败');
+            if (state.recordsRequestId !== requestId) {
+                return state;
+            }
             state.records = Array.isArray(recordData.records) ? recordData.records.map(normalizeCareerRecordV2).filter(Boolean) : [];
-            state.candidates = Array.isArray(candidateData.candidates) ? candidateData.candidates.map(normalizeCareerRecordCandidateV2).filter(Boolean) : [];
             state.loading = false;
+            state.loaded = true;
+            state.loadedSport = selectedSport || 'all';
+            state.loadedSourceVersion = currentSourceVersion;
+            state.loadedAt = Date.now();
+            state.recordsBySport = state.recordsBySport || {};
+            state.recordsBySport[state.loadedSport] = {
+                records: state.records,
+                catalog: state.catalog,
+                sourceVersion: currentSourceVersion,
+                loadedAt: state.loadedAt
+            };
             renderCareerRecordsCenter({ catalog: state.catalog });
             return state;
         } catch (error) {
@@ -14719,8 +14766,8 @@
         const raceSummaryEl = document.getElementById('career-race-summary');
         if (raceSummaryEl) raceSummaryEl.textContent = total ? '当前筛选下共 ' + String(total) + ' 场赛事' : '当前筛选下暂无赛事';
         const pbStatusText = document.getElementById('career-pb-status-text');
-        if (pbStatusText) pbStatusText.textContent = '记录中心 V2 已接入';
-        if (statusText) statusText.textContent = total ? '赛事档案已接入' : '等待赛事数据';
+        if (pbStatusText) pbStatusText.textContent = '记录中心已准备好';
+        if (statusText) statusText.textContent = total ? '赛事档案已生成' : '等待赛事数据';
         if (emptyEl) {
             emptyEl.style.display = total ? 'none' : '';
             emptyEl.textContent = vm.status && vm.status.message ? vm.status.message : '暂无赛事档案数据。';
@@ -14944,6 +14991,34 @@
         return date || '--';
     }
 
+    function isCareerTimelineRecordBreakingNode(node) {
+        const eventType = String((node && node.eventType) || '');
+        const subtype = String((node && node.subtype) || '');
+        return eventType === 'record_breaking' || subtype === 'record_breaking';
+    }
+
+    function isCareerTimelineRecordBestNode(node) {
+        const eventType = String((node && node.eventType) || '');
+        const subtype = String((node && node.subtype) || '');
+        return eventType === 'current_best' || subtype === 'current_best';
+    }
+
+    function careerTimelineNodeDisplayTitle(node) {
+        const title = String((node && node.title) || '').trim();
+        if (isCareerTimelineRecordBestNode(node)) {
+            const recordName = title.replace(/^最佳记录[：:]\s*/, '').trim();
+            return recordName ? '最佳记录：' + recordName : '最佳记录';
+        }
+        if (!isCareerTimelineRecordBreakingNode(node)) return title || '未命名节点';
+        const recordName = title.replace(/^纪录刷新[：:]\s*/, '').replace(/^刷新纪录[：:]\s*/, '').trim();
+        return recordName ? '刷新纪录：' + recordName : '刷新纪录';
+    }
+
+    function careerTimelineNodeTrackName(node) {
+        if (isCareerTimelineRecordBreakingNode(node) || isCareerTimelineRecordBestNode(node)) return 'milestone';
+        return String((node && (node.track || node.type)) || '');
+    }
+
     function careerTimelinePbCrownHtml(node) {
         const scope = node && node.pbBadgeScope ? String(node.pbBadgeScope) : 'none';
         if (scope !== 'career' && scope !== 'season') return '';
@@ -14952,16 +15027,19 @@
     }
 
     function careerTimelineNodeAriaLabel(node) {
-        const title = node && node.title ? String(node.title) : '未命名节点';
+        const title = careerTimelineNodeDisplayTitle(node);
         const meta = careerTimelineNodeMeta(node);
-        const result = node && node.type === 'race' ? formatCareerTimelineNodeValue(node) : '';
+        const result = node && (node.type === 'race' || isCareerTimelineRecordBreakingNode(node) || isCareerTimelineRecordBestNode(node)) ? formatCareerTimelineNodeValue(node) : '';
         const description = node && node.description ? String(node.description) : '';
-        return [careerTimelineTypeLabel(node && node.type), title, meta, result, description].filter(Boolean).join('，');
+        const typeLabel = isCareerTimelineRecordBreakingNode(node) ? '刷新纪录' : (isCareerTimelineRecordBestNode(node) ? '最佳记录' : careerTimelineTypeLabel(node && node.type));
+        return [typeLabel, title, meta, result, description].filter(Boolean).join('，');
     }
 
     function careerTimelineNodeTone(node) {
         const type = String((node && node.type) || '');
         if (type === 'race') return 'race';
+        if (isCareerTimelineRecordBreakingNode(node)) return 'record-breaking';
+        if (isCareerTimelineRecordBestNode(node)) return 'annual';
         const badge = String((node && node.badge) || '');
         const subtype = String((node && (node.subtype || node.achievementType)) || '');
         if (badge.indexOf('首次') >= 0 || subtype.indexOf('first_') === 0) return 'first';
@@ -14980,13 +15058,17 @@
         const tone = careerTimelineNodeTone(node);
         const nodeLabel = careerTimelineNodeAriaLabel(node);
         const positionStyle = careerTimelineNodePositionStyle(node, month, laneIndex);
-        const raceResult = type === 'race' ? formatCareerTimelineNodeValue(node) : '';
-        return '<div class="career-timeline-node ' + safeHtml(type) + ' tone-' + safeHtml(tone) + '" role="button" tabindex="0" aria-label="' + safeHtml(nodeLabel) + '" onclick="openCareerActivityDetailFromElement(this)" onkeydown="onCareerActivityDetailKeydown(event, this)" data-activity-id="' + safeHtml(activityId) + '" data-career-source="' + safeHtml(source) + '" data-career-timeline-type="' + safeHtml(type) + '" data-career-timeline-tone="' + safeHtml(tone) + '"' + positionStyle + '>'
+        const nodeResult = type === 'race' || isCareerTimelineRecordBreakingNode(node) || isCareerTimelineRecordBestNode(node) ? formatCareerTimelineNodeValue(node) : '';
+        const detailAttrs = activityId
+            ? ' role="button" tabindex="0" onclick="openCareerActivityDetailFromElement(this)" onkeydown="onCareerActivityDetailKeydown(event, this)"'
+            : '';
+        const clickableClass = activityId ? ' is-clickable' : '';
+        return '<div class="career-timeline-node ' + safeHtml(type) + ' tone-' + safeHtml(tone) + clickableClass + '"' + detailAttrs + ' aria-label="' + safeHtml(nodeLabel) + '" data-activity-id="' + safeHtml(activityId) + '" data-career-source="' + safeHtml(source) + '" data-career-timeline-type="' + safeHtml(type) + '" data-career-timeline-tone="' + safeHtml(tone) + '"' + positionStyle + '>'
             + careerTimelinePbCrownHtml(node)
             + '<div class="career-timeline-node-body">'
-                + '<div class="career-timeline-node-title">' + safeHtml((node && node.title) || '未命名节点') + '</div>'
+                + '<div class="career-timeline-node-title">' + safeHtml(careerTimelineNodeDisplayTitle(node)) + '</div>'
                 + '<div class="career-timeline-node-meta">' + safeHtml(careerTimelineNodeDateLabel(node)) + '</div>'
-                + (raceResult ? '<div class="career-timeline-node-result">' + safeHtml(raceResult) + '</div>' : '')
+                + (nodeResult ? '<div class="career-timeline-node-result">' + safeHtml(nodeResult) + '</div>' : '')
             + '</div>'
             + '</div>';
     }
@@ -15108,7 +15190,7 @@
         const yearValue = arguments.length > 2 ? arguments[2] : null;
         const key = String(track || '');
         const nodes = month && Array.isArray(month.nodes)
-            ? month.nodes.filter(function(node) { return node && (node.track === key || node.type === key); })
+            ? month.nodes.filter(function(node) { return node && careerTimelineNodeTrackName(node) === key; })
             : [];
         if (!nodes.length) return '';
         const trackKey = careerTimelineTrackKey(yearValue, month && month.month, key);
@@ -15200,7 +15282,7 @@
             emptyEl.style.display = vm.status && vm.status.dataReady ? 'none' : '';
             emptyEl.textContent = vm.status && vm.status.message ? vm.status.message : '暂无时间轴节点';
         }
-        if (statusText) statusText.textContent = vm.status && vm.status.dataReady ? '时间轴已接入' : '等待时间轴数据';
+        if (statusText) statusText.textContent = vm.status && vm.status.dataReady ? '时间轴已生成' : '等待时间轴数据';
     }
 
     function renderCareerTimelineLoading() {
@@ -15862,6 +15944,7 @@
             + careerYearFactHtml('时长', formatDuration(summary.total_duration_seconds || 0))
             + careerYearFactHtml('赛事', String(Number(summary.race_count || 0)) + ' 场')
             + careerYearFactHtml('PB', String(Number(summary.pb_count || 0)) + ' 项')
+            + careerYearFactHtml('刷新纪录', String(Number(summary.record_milestone_count || 0)) + ' 次')
             + careerYearFactHtml('成就 / 城市', String(Number(summary.achievement_count || 0)) + ' 项 · ' + String(Number(summary.covered_city_count || 0)) + ' 城')
             + '</div>';
     }
@@ -15900,10 +15983,38 @@
         return '<button type="button" class="career-insight-action" data-career-year-generate-action="' + safeHtml(key) + '" onclick="generateCareerYearInsight()"' + disabled + '>' + safeHtml(label) + '</button>';
     }
 
+    function careerYearNumberTone(token) {
+        const text = String(token || '').trim().toLowerCase();
+        if (text.indexOf('%') >= 0) return 'rate';
+        if (text.indexOf(':') >= 0 || /小时|分钟|秒/.test(text)) return 'duration';
+        if (/公里|km|米|\bm\b/.test(text)) return 'distance';
+        return 'count';
+    }
+
+    function careerYearHighlightedTextHtml(value) {
+        const source = String(value == null ? '' : value);
+        const pattern = /(\d{1,2}:\d{2}(?::\d{2})?|\d[\d,]*(?:\.\d+)?\s*(?:公里|km|KM|m|米|小时|分钟|秒|次|项|场|座|城|个|%))/g;
+        let cursor = 0;
+        let html = '';
+        let match = pattern.exec(source);
+        while (match) {
+            const token = match[0];
+            html += safeHtml(source.slice(cursor, match.index));
+            html += '<span class="career-year-number tone-' + careerYearNumberTone(token) + '">' + safeHtml(token) + '</span>';
+            cursor = match.index + token.length;
+            match = pattern.exec(source);
+        }
+        return html + safeHtml(source.slice(cursor));
+    }
+
     function careerYearV2ArticleHtml(report) {
         const content = report && typeof report === 'object' ? report : {};
         const sections = Array.isArray(content.body_sections) ? content.body_sections : [];
         const factLeads = Array.isArray(content.fact_leads) ? content.fact_leads : [];
+        const factLeadItems = factLeads.length ? factLeads : (content.fact_lead ? [content.fact_lead] : []);
+        const factLeadHtml = factLeadItems.length
+            ? '<div class="career-year-fact-leads" aria-label="全年总结">' + factLeadItems.map(function(item) { return '<p class="career-year-article-lead">' + careerYearHighlightedTextHtml(item) + '</p>'; }).join('') + '</div>'
+            : '';
         const sectionHtml = sections.map(function(section) {
             const paragraphs = Array.isArray(section && section.paragraphs) ? section.paragraphs : [];
             return '<section class="career-year-article-section" data-career-year-section="' + safeHtml(section && section.type || '') + '">'
@@ -15915,7 +16026,7 @@
             + '<header><div class="career-year-article-title">' + safeHtml(content.title || content.headline || '这一年的运动故事') + '</div>'
             + (content.subtitle ? '<div class="career-year-article-subtitle">' + safeHtml(content.subtitle) + '</div>' : '') + '</header>'
             + (content.opening ? '<p class="career-year-article-opening">' + safeHtml(content.opening) + '</p>' : '')
-            + (factLeads.length ? '<div class="career-year-fact-leads">' + factLeads.map(function(item) { return '<p class="career-year-article-lead">' + safeHtml(item) + '</p>'; }).join('') + '</div>' : (content.fact_lead ? '<p class="career-year-article-lead">' + safeHtml(content.fact_lead) + '</p>' : ''))
+            + factLeadHtml
             + sectionHtml
             + (content.closing ? '<p class="career-year-article-closing">' + safeHtml(content.closing) + '</p>' : '')
             + (content.letter_to_next_year ? '<div class="career-year-letter">' + safeHtml(content.letter_to_next_year) + '</div>' : '')
@@ -15968,11 +16079,42 @@
         }).join('') + '</div>';
     }
 
+    function careerYearFallbackSummaryHtml(fallback) {
+        const source = fallback && typeof fallback === 'object' ? fallback : {};
+        const highlights = (Array.isArray(source.highlights) ? source.highlights : [])
+            .map(function(item) { return String(item || '').trim(); })
+            .filter(Boolean)
+            .slice(0, 3);
+        const rhythm = source.month_rhythm && typeof source.month_rhythm === 'object' ? source.month_rhythm : {};
+        const topMonth = rhythm.top_month && typeof rhythm.top_month === 'object' ? rhythm.top_month : null;
+        const keyEvent = Array.isArray(source.key_events) ? source.key_events[0] : null;
+        const paragraphs = [];
+        if (highlights.length) {
+            paragraphs.push('先看看这一年的运动事实：' + highlights.join('，') + '。');
+        } else {
+            paragraphs.push('这一年的运动事实已经整理完成。');
+        }
+        if (topMonth && Number(topMonth.activity_count || 0) > 0) {
+            const month = Number(topMonth.month || 0);
+            const monthLabel = month >= 1 && month <= 12 ? String(month) + ' 月' : '这一年';
+            const distance = Number(topMonth.distance_km || 0);
+            const distanceText = distance > 0 ? '，累计 ' + String(distance) + ' 公里' : '';
+            paragraphs.push(monthLabel + ' 是运动最集中的一个月，留下了 ' + String(Number(topMonth.activity_count || 0)) + ' 次活动' + distanceText + '。');
+        } else if (keyEvent && typeof keyEvent === 'object' && keyEvent.title) {
+            paragraphs.push('其中一个值得回看的节点是：' + String(keyEvent.title) + '。');
+        }
+        return '<section class="career-year-fallback-summary" data-career-year-report-mode="local-fallback">'
+            + paragraphs.slice(0, 2).map(function(paragraph) {
+                return '<p>' + careerYearHighlightedTextHtml(paragraph) + '</p>';
+            }).join('')
+            + '</section>';
+    }
+
     function careerYearReportSectionsHtml(vm) {
         const hasReport = !!(vm && vm.report && vm.report.content);
         const report = hasReport ? vm.report.content : {};
         const fallback = vm && vm.local_fallback ? vm.local_fallback : {};
-        if (!hasReport) return careerYearLegacyReportHtml({}, fallback);
+        if (!hasReport) return careerYearFallbackSummaryHtml(fallback);
         if (['acs.year.report.v2', 'acs.year.report.v3'].indexOf(String(report.schema_version || '')) >= 0) return careerYearV2ArticleHtml(report);
         return careerYearLegacyReportHtml(report, fallback);
     }
@@ -16020,7 +16162,7 @@
                     + careerYearActionHtml(state, vm)
                     + (state === 'generating' ? careerYearGeneratingHtml(vm) : '')
                     + careerYearReportSectionsHtml(vm)
-                    + '<div class="career-insight-disclaimer">' + safeHtml(fallback.disclaimer || '当前为本地年度事实摘要，不调用 AI。') + '</div>';
+                    + (!vm.report ? '<div class="career-insight-disclaimer">' + safeHtml(fallback.disclaimer || '当前为本地年度事实摘要，不调用 AI。') + '</div>' : '');
             } catch (e) {
                 console.warn('renderCareerYearInsight card failed', e);
                 cardEl.innerHTML = '<div class="career-insight-title">' + safeHtml(year ? String(year) + ' 年度总结' : '年度总结') + '</div>'
@@ -17016,7 +17158,28 @@
         onSportHubTitleFilterChange();
     }
 
+        function sportHubPerfNow() {
+            return (window.performance && performance.now) ? performance.now() : Date.now();
+        }
+
+        function sportHubRoundMs(value) {
+            return Math.round(Number(value || 0) * 100) / 100;
+        }
+
+        function sportHubPayloadBytes(value) {
+            try {
+                var text = JSON.stringify(value == null ? {} : value);
+                if (window.TextEncoder) return (new TextEncoder()).encode(text).length;
+                return text.length;
+            } catch (e) {
+                return null;
+            }
+        }
+
 	    async function loadSportHubActivityList(options = {}) {
+	        var listFlowStart = sportHubPerfNow();
+	        var listApiDoneAt = null;
+	        var listDataDoneAt = null;
 	        markStartupPhase('activity_list_load_start', { refreshSnapshot: options.refreshSnapshot !== false });
 	        const resetPage = !!options.resetPage;
 	        const forceRefresh = options.refreshSnapshot !== false && (!!options.refreshSnapshot || !sportHubState.recordsReady);
@@ -17040,7 +17203,7 @@
 	        renderSportHubRecords();
 	        try {
 	            let res = null;
-	            const listRequestStart = (window.performance && performance.now) ? performance.now() : Date.now();
+	            const listRequestStart = sportHubPerfNow();
 	            if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.get_activity_list === 'function') {
 	                res = await window.pywebview.api.get_activity_list(page, pageSize, filterType, titleKeyword);
 	            } else if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.get_activity_list_snapshot === 'function') {
@@ -17050,13 +17213,15 @@
 	                sportHubState.recordsReady = true;
 	                return;
 	            }
-	            const listRequestEnd = (window.performance && performance.now) ? performance.now() : Date.now();
+	            const listRequestEnd = sportHubPerfNow();
+	            listApiDoneAt = listRequestEnd;
 	            if (requestId !== sportHubState.requestSeq) return;
 	            if (!res || res.code !== 0) throw new Error((res && res.msg) || '运动记录加载失败');
 	            var data = res.data || {};
 	            markStartupPhase('activity_list_api_done', {
-	                roundtrip_ms: Math.round((listRequestEnd - listRequestStart) * 100) / 100,
-	                backend_ms: data.startup_trace && data.startup_trace.api_elapsed_ms,
+	                roundtrip_ms: sportHubRoundMs(listRequestEnd - listRequestStart),
+	                backend_ms: data.api_elapsed_ms || (data.startup_trace && data.startup_trace.api_elapsed_ms),
+	                payload_bytes: sportHubPayloadBytes(data),
 	                total: data.total,
 	                records: Array.isArray(data.records) ? data.records.length : 0
 	            });
@@ -17074,6 +17239,12 @@
 	            sportHubState.filteredRecords = sportHubState.records.slice();
 	            setSportHubRecordSnapshot(sportHubState.records);
 	            sportHubState.recordsReady = true;
+	            listDataDoneAt = sportHubPerfNow();
+	            markStartupPhase('activity_list_data_done', {
+	                data_ms: sportHubRoundMs(listDataDoneAt - listApiDoneAt),
+	                total_ms: sportHubRoundMs(listDataDoneAt - listFlowStart),
+	                records: Array.isArray(sportHubState.records) ? sportHubState.records.length : 0
+	            });
 	        } catch (e) {
 	            console.error('loadSportHubActivityList error:', e);
 	            markStartupPhase('activity_list_load_error', { message: String((e && e.message) || e || '') });
@@ -17088,7 +17259,10 @@
 	                renderSportHubFilterOptions();
 	                renderSportHubRecords();
 	                renderCurrentSportHubTab();
+	                var listRenderDoneAt = sportHubPerfNow();
 	                markStartupPhase('activity_list_render_done', {
+	                    render_ms: sportHubRoundMs(listRenderDoneAt - (listDataDoneAt || listApiDoneAt || listFlowStart)),
+	                    total_ms: sportHubRoundMs(listRenderDoneAt - listFlowStart),
 	                    records: Array.isArray(sportHubState.records) ? sportHubState.records.length : 0,
 	                    total: sportHubState.total
 	                });
@@ -18025,17 +18199,50 @@
 
     async function fetchSportHubActivityDetail(activityId) {
         const cached = sportHubState.recordMap[activityId];
-        if (cached && cached.detail && Array.isArray(cached.thumbnail_points)) {
+        if (cached && cached.detail && !cached.detail_pending && Array.isArray(cached.thumbnail_points)) {
+            markStartupPhase('activity_detail_cache_hit', { activity_id: Number(activityId) || 0 });
             return cached;
         }
         if (!(window.pywebview && window.pywebview.api && typeof window.pywebview.api.get_activity_detail === 'function')) {
             return cached || null;
         }
+        const detailRequestStart = sportHubPerfNow();
         const res = await window.pywebview.api.get_activity_detail(activityId);
+        const detailRequestEnd = sportHubPerfNow();
         // §三 响应结构契约:res.data.record(任务 3 改造后)
         if (!res || res.code !== 0 || !res.data || !res.data.record) {
             throw new Error((res && res.msg) || '活动详情加载失败');
         }
+        markStartupPhase('activity_detail_api_done', {
+            activity_id: Number(activityId) || 0,
+            roundtrip_ms: sportHubRoundMs(detailRequestEnd - detailRequestStart),
+            backend_ms: res.data.api_elapsed_ms,
+            payload_bytes: sportHubPayloadBytes(res.data)
+        });
+        return mergeSportHubRecord(res.data.record);
+    }
+
+    async function fetchSportHubActivityDetailSummary(activityId) {
+        const cached = sportHubState.recordMap[activityId];
+        if (cached && cached.detail && cached.detail_pending) {
+            markStartupPhase('activity_detail_summary_cache_hit', { activity_id: Number(activityId) || 0 });
+            return cached;
+        }
+        if (!(window.pywebview && window.pywebview.api && typeof window.pywebview.api.get_activity_detail_summary === 'function')) {
+            return null;
+        }
+        const summaryRequestStart = sportHubPerfNow();
+        const res = await window.pywebview.api.get_activity_detail_summary(activityId);
+        const summaryRequestEnd = sportHubPerfNow();
+        if (!res || res.code !== 0 || !res.data || !res.data.record) {
+            throw new Error((res && res.msg) || '活动概览摘要加载失败');
+        }
+        markStartupPhase('activity_detail_summary_api_done', {
+            activity_id: Number(activityId) || 0,
+            roundtrip_ms: sportHubRoundMs(summaryRequestEnd - summaryRequestStart),
+            backend_ms: res.data.api_elapsed_ms,
+            payload_bytes: sportHubPayloadBytes(res.data)
+        });
         return mergeSportHubRecord(res.data.record);
     }
 
@@ -19002,9 +19209,11 @@
                 _autoBannerEl.style.display = 'none';
             }
         }
-        appState.activityRacePhotoRecord = record;
-        appState.activityRacePhotoError = '';
-        loadActivityRacePhotos(record).catch(function(e) { console.warn('loadActivityRacePhotos', e); });
+        if (!record.detail_pending) {
+            appState.activityRacePhotoRecord = record;
+            appState.activityRacePhotoError = '';
+            loadActivityRacePhotos(record).catch(function(e) { console.warn('loadActivityRacePhotos', e); });
+        }
 
         // V6 轨迹快照(E11) — 固定 260×260 一次渲染,不再动态
         if (caps.has_gps && record.thumbnail_points && record.thumbnail_points.length) {
@@ -19496,6 +19705,8 @@
     }
 
     async function openActivityDetailModal(activityId) {
+        const detailFlowStart = sportHubPerfNow();
+        markStartupPhase('activity_detail_open_start', { activity_id: Number(activityId) || 0 });
         const overlay = document.getElementById('activity-detail-overlay');
         if (!overlay) return;
         sportHubState.activeDetailId = activityId;
@@ -19526,9 +19737,40 @@
         if (overviewBtn) switchDetailTab('overview', overviewBtn);
 
         try {
+            let summaryRendered = false;
+            if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.get_activity_detail_summary === 'function') {
+                try {
+                    const summaryRecord = await fetchSportHubActivityDetailSummary(activityId);
+                    if (summaryRecord && sportHubState.activeDetailId === activityId) {
+                        const summaryDataReadyAt = sportHubPerfNow();
+                        renderActivityDetail(summaryRecord);
+                        const summaryRenderDoneAt = sportHubPerfNow();
+                        summaryRendered = true;
+                        markStartupPhase('activity_detail_summary_render_done', {
+                            activity_id: Number(activityId) || 0,
+                            data_ms: sportHubRoundMs(summaryDataReadyAt - detailFlowStart),
+                            render_ms: sportHubRoundMs(summaryRenderDoneAt - summaryDataReadyAt),
+                            total_ms: sportHubRoundMs(summaryRenderDoneAt - detailFlowStart)
+                        });
+                    }
+                } catch (summaryError) {
+                    console.warn('activity detail summary fallback:', summaryError);
+                }
+            }
             const record = await fetchSportHubActivityDetail(activityId);
+            const detailDataReadyAt = sportHubPerfNow();
             if (!record) throw new Error('未找到该活动记录');
+            if (sportHubState.activeDetailId !== activityId) return;
             renderActivityDetail(record);
+            const detailRenderDoneAt = sportHubPerfNow();
+            markStartupPhase('activity_detail_render_done', {
+                activity_id: Number(activityId) || 0,
+                data_ms: sportHubRoundMs(detailDataReadyAt - detailFlowStart),
+                render_ms: sportHubRoundMs(detailRenderDoneAt - detailDataReadyAt),
+                total_ms: sportHubRoundMs(detailRenderDoneAt - detailFlowStart),
+                summary_first: summaryRendered,
+                thumbnail_points: Array.isArray(record.thumbnail_points) ? record.thumbnail_points.length : 0
+            });
             const processingStatus = String(record.processing_status || 'ready').toLowerCase();
             if (processingStatus === 'processing' || processingStatus === 'pending') {
                 showToast('该活动已加入列表，详细复盘数据正在后台准备');
@@ -19590,6 +19832,7 @@
         if (tab === 'review' && !_fatigueReviewTabLoaded) {
             _fatigueReviewTabLoaded = true;
             if (typeof openFatigueReview === 'function' && sportHubState.activeDetailId) {
+                markStartupPhase('fatigue_review_tab_first_open', { activity_id: Number(sportHubState.activeDetailId) || 0 });
                 openFatigueReview(sportHubState.activeDetailId);
             }
         }
@@ -24368,6 +24611,10 @@ function stopLLMHeartbeat() {
             console.warn('openFatigueReview: activityId 缺失');
             return;
         }
+        var reviewFlowStart = sportHubPerfNow();
+        var reviewApiDoneAt = null;
+        var reviewPanelsDoneAt = null;
+        markStartupPhase('fatigue_review_open_start', { activity_id: Number(activityId) || 0 });
         // 阅后即焚 ②:切换活动触发清空
         if (_fatigueReviewActivityId && _fatigueReviewActivityId !== activityId) {
             _clearFatigueReviewInsight();
@@ -24383,13 +24630,27 @@ function stopLLMHeartbeat() {
                 _renderFatigueReviewError('后端 API 未就绪 (get_fatigue_review 不可用)');
                 return;
             }
+            var reviewRequestStart = sportHubPerfNow();
             var res = await window.pywebview.api.get_fatigue_review(activityId);
+            var reviewRequestEnd = sportHubPerfNow();
+            reviewApiDoneAt = reviewRequestEnd;
             // §三 响应结构契约:必须解封 code === 0
             if (!res || res.code !== 0) {
                 _renderFatigueReviewError((res && res.msg) || '查询失败');
                 return;
             }
             var data = res.data || {};
+            markStartupPhase('fatigue_review_api_done', {
+                activity_id: Number(activityId) || 0,
+                roundtrip_ms: sportHubRoundMs(reviewRequestEnd - reviewRequestStart),
+                backend_ms: data.api_elapsed_ms,
+                payload_bytes: sportHubPayloadBytes(data),
+                cache_status: data.cache_status || '',
+                curve_resolution: data.curve_resolution || '',
+                curve_points: data.curves && Array.isArray(data.curves.distance) ? data.curves.distance.length : 0,
+                curve_points_original: data.curve_points_original || 0,
+                curve_points_returned: data.curve_points_returned || 0
+            });
             // §六 shadow_diff 隔离:数据快照严禁携带 shadow_diff(后端白名单已过滤,前端再校验)
             if (data.shadow_diff || data.shadow_diff_json || data.diff) {
                 console.warn('fatigue_review response contains shadow_diff, contract violation');
@@ -24407,6 +24668,12 @@ function stopLLMHeartbeat() {
             _renderFatigueReviewStageOverview(data.fatigue_zones || [], data.sport_type, reviewTotalDistanceKm, data.metrics || {}, data.collapse_events || []);
             _renderFatigueReviewSideSummary(data);
             _renderFatigueReviewChartFooter(data);
+            reviewPanelsDoneAt = sportHubPerfNow();
+            markStartupPhase('fatigue_review_panels_done', {
+                activity_id: Number(activityId) || 0,
+                panels_ms: sportHubRoundMs(reviewPanelsDoneAt - reviewApiDoneAt),
+                total_ms: sportHubRoundMs(reviewPanelsDoneAt - reviewFlowStart)
+            });
             // P7.10:分层主图全部空时不渲染 ECharts,改展示占位卡
             var curvesObj = data.curves || {};
             var chartSportMode = _fatigueReviewChartSportMode(data.sport_type);
@@ -24432,6 +24699,7 @@ function stopLLMHeartbeat() {
             );
             var chartContainer = document.getElementById('fatigue-review-chart');
             if (allCurvesEmpty && chartContainer) {
+                var emptyChartStart = sportHubPerfNow();
                 // 清理可能残留的 ECharts 实例
                 if (typeof clearProfileAnalysisChart === 'function') {
                     clearProfileAnalysisChart('fatigue-review-chart');
@@ -24445,6 +24713,12 @@ function stopLLMHeartbeat() {
                         ? '后端未返回可绘制的功率、心率、海拔、踏频、坡度或地形负荷曲线。'
                         : '该活动缺少可绘制的心率、配速、海拔、效率、GAP、坡度或地形负荷曲线。',
                     tag: '暂无可用曲线'
+                });
+                markStartupPhase('fatigue_review_chart_done', {
+                    activity_id: Number(activityId) || 0,
+                    chart_ms: sportHubRoundMs(sportHubPerfNow() - emptyChartStart),
+                    total_ms: sportHubRoundMs(sportHubPerfNow() - reviewFlowStart),
+                    curve_points: 0
                 });
             } else {
                 // 渲染 P7.10 分层 ECharts 主图(复用渲染函数,容器 ID 区分)
@@ -24471,7 +24745,15 @@ function stopLLMHeartbeat() {
                 _lastFatigueReviewChartPayload = chartPayload;
                 _renderFatigueReviewChartFooter(chartPayload);
                 chartPayload = _applyFatigueReviewLayerVisibility(chartPayload);
+                var reviewChartStart = sportHubPerfNow();
                 renderProfileAnalysisChart(chartPayload, 'fatigue-review-chart', { introAnimation: true });
+                var reviewChartDone = sportHubPerfNow();
+                markStartupPhase('fatigue_review_chart_done', {
+                    activity_id: Number(activityId) || 0,
+                    chart_ms: sportHubRoundMs(reviewChartDone - reviewChartStart),
+                    total_ms: sportHubRoundMs(reviewChartDone - reviewFlowStart),
+                    curve_points: Array.isArray(chartPayload.distance_curve) ? chartPayload.distance_curve.length : 0
+                });
                 // 解决从 display:none 或布局变更切出来的 ECharts 宽度塌陷
                 _bindFatigueReviewChartAutoResize();
                 _resizeFatigueReviewChartWhenStable();
@@ -24640,6 +24922,7 @@ function stopLLMHeartbeat() {
         var zones = Array.isArray(data.fatigue_zones) ? data.fatigue_zones : [];
         var events = Array.isArray(data.collapse_events) ? data.collapse_events : [];
         var contextTags = data.context_tags || {};
+        var environmentFactors = _fatigueReviewEnvironmentFactorEntries(data.environment_factors);
         var labels = _fatigueReviewOverviewDimensionLabels();
         var hr = metrics.hr_drift || {};
         var decoupling = metrics.decoupling || {};
@@ -24661,9 +24944,14 @@ function stopLLMHeartbeat() {
         var fatigueTone = zones.length ? _fatigueReviewOverviewTone(firstZone.level || 'warn') : 'ok';
         var riskTone = bonk.is_at_risk || events.length ? 'warn' : 'ok';
         if (_fatigueReviewOverviewTone(trainingLoad.level) === 'bad') riskTone = 'bad';
-        var contextKeys = Object.keys(contextTags || {});
-        var contextTone = contextKeys.length ? 'warn' : 'muted';
-        var contextComment = _fatigueReviewContextOverviewComment(contextTags);
+        var contextKeys = Object.keys(contextTags || {}).filter(function(key) {
+            return contextTags[key] != null && String(contextTags[key]).trim() !== '';
+        });
+        var hasEnvironmentFactors = environmentFactors.length > 0;
+        var contextTone = hasEnvironmentFactors || contextKeys.length ? 'warn' : 'muted';
+        var contextComment = hasEnvironmentFactors
+            ? _fatigueReviewEnvironmentFactorsOverviewComment(environmentFactors)
+            : _fatigueReviewContextOverviewComment(contextTags);
 
         return [
             Object.assign({
@@ -24709,14 +24997,44 @@ function stopLLMHeartbeat() {
             {
                 key: 'context_impact',
                 label: labels.context_impact,
-                level: contextKeys.length ? '有线索' : '数据不足',
+                level: hasEnvironmentFactors || contextKeys.length ? '有线索' : '数据不足',
                 tone: contextTone,
-                comment: contextKeys.length
+                comment: hasEnvironmentFactors || contextKeys.length
                     ? contextComment
                     : '本次外部影响线索不足，不额外推断天气、地形或设备影响。',
-                tags: '天气 · 地形 · 设备'
+                tags: hasEnvironmentFactors
+                    ? (environmentFactors.map(function(factor) { return factor.label; }).filter(Boolean).slice(0, 3).join(' · ') || '后端环境解释')
+                    : '天气 · 地形 · 设备'
             }
         ];
+    }
+
+    function _fatigueReviewEnvironmentFactorEntries(factors) {
+        return (Array.isArray(factors) ? factors : []).map(function(factor) {
+            factor = factor && typeof factor === 'object' ? factor : {};
+            return {
+                label: String(factor.label || '').trim(),
+                comment: String(factor.comment || '').trim()
+            };
+        }).filter(function(factor) {
+            return factor.label || factor.comment;
+        });
+    }
+
+    function _fatigueReviewEnvironmentFactorDisplay(factor) {
+        factor = factor || {};
+        var label = String(factor.label || '').trim();
+        var comment = String(factor.comment || '').trim();
+        if (label && comment && label !== comment) return label + '：' + comment;
+        return comment || label;
+    }
+
+    function _fatigueReviewEnvironmentFactorsOverviewComment(factors) {
+        var copies = _fatigueReviewEnvironmentFactorEntries(factors).map(_fatigueReviewEnvironmentFactorDisplay).filter(Boolean);
+        if (!copies.length) {
+            return '本次外部影响线索不足，不额外推断天气、地形或设备影响。';
+        }
+        return copies.slice(0, 2).join('；');
     }
 
     function _fatigueReviewContextOverviewComment(tags) {
@@ -26786,7 +27104,7 @@ function stopLLMHeartbeat() {
     function _fatigueReviewContextFactorCopy(key, value) {
         var text = String(key || '') + ' ' + String(value || '');
         if (/热应激|Heat Stress|temperature|温度|散热/i.test(text)) {
-            return '温度偏高，心率更容易上浮';
+            return '后端热压力标签可作为本次波动的背景参考';
         }
         if (/糖原|Glycogen|补给|kcal|能量/i.test(text)) {
             return '能量消耗偏高，后程可能更吃补给';
@@ -26808,18 +27126,24 @@ function stopLLMHeartbeat() {
         return String(key || '背景因素').replace(/\s*\([^)]*\)/g, '').slice(0, 24) || '背景因素';
     }
 
-    function _renderFatigueReviewContextFactors(tags) {
+    function _renderFatigueReviewContextFactors(environmentFactors, tags) {
+        var factors = _fatigueReviewEnvironmentFactorEntries(environmentFactors);
         tags = tags && typeof tags === 'object' ? tags : {};
         var keys = Object.keys(tags).filter(function(k) {
             return tags[k] != null && String(tags[k]).trim() !== '';
         });
-        if (!keys.length) return '';
+        var copies = factors.length
+            ? factors.map(_fatigueReviewEnvironmentFactorDisplay).filter(Boolean)
+            : keys.map(function(key) {
+                return _fatigueReviewContextFactorCopy(key, tags[key]);
+            }).filter(Boolean);
+        if (!copies.length) return '';
         return '<div class="fr-context-factor-card">'
             + '<strong>' + safeHtml('影响因素') + '</strong>'
             + '<div class="fr-context-factors-list">'
-            + keys.slice(0, 5).map(function(k) {
+            + copies.slice(0, 5).map(function(copy) {
                 return '<div class="fr-context-factor">'
-                    + safeHtml(_fatigueReviewContextFactorCopy(k, tags[k]))
+                    + safeHtml(copy)
                     + '</div>';
             }).join('')
             + '</div>'
@@ -27052,6 +27376,7 @@ function stopLLMHeartbeat() {
         var collapseEvents = Array.isArray(data.collapse_events) ? data.collapse_events : [];
         var fatigueZones = Array.isArray(data.fatigue_zones) ? data.fatigue_zones : [];
         var contextTags = data.context_tags || {};
+        var environmentFactors = _fatigueReviewEnvironmentFactorEntries(data.environment_factors);
         var summaryEl = document.getElementById('fr-side-summary-list');
         var impactEl = document.getElementById('fr-phys-impact-list');
 
@@ -27130,8 +27455,8 @@ function stopLLMHeartbeat() {
         })[0];
 
         if (summaryEl) {
-            var contextFactorsHtml = _renderFatigueReviewContextFactors(contextTags);
-            if (!Object.keys(metrics).length && !collapseEvents.length && !fatigueZones.length && !Object.keys(contextTags).length) {
+            var contextFactorsHtml = _renderFatigueReviewContextFactors(environmentFactors, contextTags);
+            if (!Object.keys(metrics).length && !collapseEvents.length && !fatigueZones.length && !environmentFactors.length && !Object.keys(contextTags).length) {
                 summaryEl.innerHTML = _frEmptyStateHtml({
                     icon: '○',
                     title: '关键摘要待接入',

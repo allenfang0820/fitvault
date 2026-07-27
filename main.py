@@ -21,7 +21,7 @@ import hashlib
 from urllib.parse import urlparse
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Iterable, Optional
 
 import llm_backend  # noqa: F401 -- PyInstaller bundles LLM 模块
 import garmin_sync  # noqa: F401 -- PyInstaller bundles Garmin sync provider
@@ -277,6 +277,10 @@ def _resolve_activity_list_dynamic_columns_for_rows(rows: list[dict[str, Any]]) 
 
 _ACTIVITY_SYNC_SCHEMA_LOCK = threading.Lock()
 _ACTIVITY_SYNC_SCHEMA_READY_FOR: str | None = None
+ACTIVITY_SYNC_SCHEMA_SENTINEL_KEY = "activity_sync_schema_ready_v20260723_task03"
+FATIGUE_REVIEW_CACHE_VERSION = "fatigue_review_snapshot_v20260723_task05"
+FATIGUE_REVIEW_CURVE_SAMPLE_TARGET_POINTS = 1200
+FATIGUE_REVIEW_CURVE_SAMPLE_MAX_POINTS = 1500
 _APP_SHUTTING_DOWN = threading.Event()
 PROFILE_SYNC_INTERVAL_SEC = 5 * 60
 PROFILE_STARTUP_SYNC_DELAY_SEC = PROFILE_SYNC_INTERVAL_SEC
@@ -749,6 +753,27 @@ def _activity_optional_column_sql(cursor: sqlite3.Cursor, column: str, alias: st
     return column if column in cols and output == column else (f"{column} AS {output}" if column in cols else f"NULL AS {output}")
 
 
+def _activity_history_coarse_time_filter(
+    cursor: sqlite3.Cursor,
+    *,
+    window_start: datetime,
+    as_of_time: datetime,
+    slack_days: int = 3,
+) -> tuple[str, tuple[str, str]]:
+    """Return a broad SQL time bound; Python datetime parsing remains authoritative."""
+    try:
+        cols = {str(r[1]) for r in cursor.execute("PRAGMA table_info(activities)").fetchall()}
+    except Exception:
+        cols = {"start_time"}
+    if "start_time_utc" in cols:
+        time_expr = "COALESCE(NULLIF(start_time_utc, ''), NULLIF(start_time, ''))"
+    else:
+        time_expr = "NULLIF(start_time, '')"
+    lower = (window_start - timedelta(days=max(0, slack_days))).date().isoformat()
+    upper = (as_of_time + timedelta(days=max(1, slack_days))).date().isoformat()
+    return f" AND {time_expr} >= ? AND {time_expr} < ?", (lower, upper)
+
+
 def _activity_time_in_window(
     start_time_utc: Any,
     start_time: Any,
@@ -931,6 +956,54 @@ DETAIL_API_REQUIRED_COLUMNS: tuple[str, ...] = (
     "track_json",
     "points_json",
     # WHERE 子句使用
+    "deleted_at",
+)
+
+DETAIL_SUMMARY_API_COLUMNS: tuple[str, ...] = (
+    "id",
+    "filename",
+    "file_name",
+    "title",
+    "title_source",
+    "sport_type",
+    "sub_sport_type",
+    "start_time",
+    "start_time_utc",
+    "updated_at",
+    "dist_km",
+    "distance",
+    "duration",
+    "duration_sec",
+    "avg_pace",
+    "avg_hr",
+    "max_hr",
+    "calories",
+    "avg_power",
+    "max_power",
+    "normalized_power",
+    "avg_stroke_distance",
+    "swolf",
+    "gain_m",
+    "max_alt_m",
+    "min_alt_m",
+    "total_descent_m",
+    "start_lat",
+    "start_lon",
+    "region",
+    "region_status",
+    "region_display",
+    "weather_json",
+    "weather_status",
+    "device_name",
+    "aerobic_training_effect",
+    "anaerobic_training_effect",
+    "is_race",
+    "race_source",
+    "race_confirmed_at",
+    "race_confidence",
+    "race_override",
+    "processing_status",
+    "processing_error",
     "deleted_at",
 )
 API_CODE_EXTERNAL_SERVICE = 3001
@@ -1269,6 +1342,282 @@ def _build_fatigue_review_environment_context(
         "pressure_level": pressure_level,
         "summary": summary,
     }
+
+
+def _fatigue_review_factor_float(value: Any, *, min_value: float | None = None, max_value: float | None = None) -> float | None:
+    num = _safe_optional_float(value)
+    if num is None:
+        return None
+    if min_value is not None and num < min_value:
+        return None
+    if max_value is not None and num > max_value:
+        return None
+    return num
+
+
+def _fatigue_review_row_float(
+    row: dict[str, Any] | None,
+    keys: tuple[str, ...],
+    *,
+    min_value: float | None = None,
+    max_value: float | None = None,
+) -> float | None:
+    row = row if isinstance(row, dict) else {}
+    for key in keys:
+        value = _fatigue_review_factor_float(
+            row.get(key),
+            min_value=min_value,
+            max_value=max_value,
+        )
+        if value is not None:
+            return value
+    return None
+
+
+def _fatigue_review_environment_factor(
+    *,
+    key: str,
+    category: str,
+    severity: str,
+    label: str,
+    comment: str,
+    basis: dict[str, Any],
+    confidence: str = "medium",
+) -> dict[str, Any]:
+    clean_basis = {
+        k: round(v, 1) if isinstance(v, float) else v
+        for k, v in basis.items()
+        if isinstance(v, (int, float, str, bool)) and v is not None and v != ""
+    }
+    return {
+        "key": key,
+        "category": category,
+        "severity": severity,
+        "label": label,
+        "comment": comment,
+        "basis": clean_basis,
+        "confidence": confidence,
+    }
+
+
+def _is_open_water_review_sport(sport_type: Any, row: dict[str, Any] | None = None) -> bool:
+    sport = str(sport_type or "").strip().lower()
+    row = row if isinstance(row, dict) else {}
+    sub_sport = str(row.get("sub_sport_type") or row.get("sub_sport") or "").strip().lower()
+    return sport in {"open_water", "open_water_swimming"} or sub_sport in {"open_water", "open_water_swimming"}
+
+
+def _build_fatigue_review_environment_factors(
+    *,
+    sport_type: str,
+    environment_context: dict[str, Any] | None,
+    row: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """Generate user-visible environment explanations from backend facts only."""
+    env = environment_context if isinstance(environment_context, dict) else {}
+    row = row if isinstance(row, dict) else {}
+    sport = normalize_review_sport_type(sport_type or row.get("sport_type") or "unknown")
+    temp = _fatigue_review_factor_float(env.get("temperature_c"), min_value=-60.0, max_value=70.0)
+    humidity = _fatigue_review_factor_float(env.get("humidity"), min_value=0.0, max_value=100.0)
+    wind = _fatigue_review_factor_float(env.get("wind_speed_kmh"), min_value=0.0, max_value=160.0)
+
+    basis: dict[str, Any] = {}
+    if temp is not None:
+        basis["temperature_c"] = temp
+    if humidity is not None:
+        basis["humidity"] = humidity
+    if wind is not None:
+        basis["wind_speed_kmh"] = wind
+
+    factors: list[dict[str, Any]] = []
+    walking_sports = {"walking", "hiking"}
+    mountaineering_sports = {"mountaineering"}
+    cycling_sports = set(_CYCLING_SPORT_TYPES)
+    running_sports = {"running", "trail_running", "treadmill_running"}
+
+    water_temp = _fatigue_review_row_float(
+        row,
+        ("water_temperature_c", "water_temp_c", "avg_water_temperature", "water_temperature"),
+        min_value=-5.0,
+        max_value=45.0,
+    )
+    weather = _decode_weather_json(row.get("weather_json")) or {}
+    if water_temp is None:
+        water_temp = _fatigue_review_factor_float(
+            weather.get("water_temperature_c") or weather.get("water_temp_c"),
+            min_value=-5.0,
+            max_value=45.0,
+        )
+
+    if _is_open_water_review_sport(sport, row):
+        water_basis = dict(basis)
+        if water_temp is not None:
+            water_basis["water_temperature_c"] = water_temp
+            if water_temp < 18.0:
+                factors.append(_fatigue_review_environment_factor(
+                    key="water_temperature_low",
+                    category="water",
+                    severity="moderate" if water_temp < 15.0 else "mild",
+                    label="水温偏低",
+                    comment="户外游泳水温偏低,冷刺激会让体感和心率解释更需要保守看待。",
+                    basis=water_basis,
+                    confidence="medium",
+                ))
+        else:
+            factors.append(_fatigue_review_environment_factor(
+                key="water_temperature_missing",
+                category="data_quality",
+                severity="info",
+                label="缺少水温数据",
+                comment="本次是户外游泳,但缺少水温数据,环境判断有限,不推断水温压力。",
+                basis=water_basis,
+                confidence="low",
+            ))
+        if wind is not None and wind >= 25.0:
+            factors.append(_fatigue_review_environment_factor(
+                key="open_water_wind",
+                category="water",
+                severity="mild",
+                label="开放水域风速偏高",
+                comment="风速偏高可能影响开放水域体感和安全余量,游泳心率解释应更保守。",
+                basis=water_basis,
+                confidence="medium",
+            ))
+        return factors
+    if sport in {"swimming", "lap_swimming"}:
+        return []
+    if temp is None and humidity is None and wind is None:
+        return []
+
+    ascent = _fatigue_review_row_float(row, ("gain_m", "total_ascent", "ascent"), min_value=0.0, max_value=20000.0)
+    max_altitude = _fatigue_review_row_float(
+        row,
+        ("max_alt_m", "max_altitude_m", "max_altitude"),
+        min_value=-500.0,
+        max_value=9000.0,
+    )
+
+    if sport in mountaineering_sports:
+        if max_altitude is not None and max_altitude >= 2500.0:
+            factors.append(_fatigue_review_environment_factor(
+                key="altitude",
+                category="altitude",
+                severity="high" if max_altitude >= 3500.0 else "moderate",
+                label="高海拔压力",
+                comment="登山场景优先按海拔缺氧压力解释,不应轻易归因于耐力不足。",
+                basis={**basis, "max_altitude_m": max_altitude},
+                confidence="medium",
+            ))
+        if temp is not None and (temp <= 8.0 or (wind is not None and wind >= 20.0)):
+            factors.append(_fatigue_review_environment_factor(
+                key="wind_chill" if wind is not None and wind >= 20.0 else "cold",
+                category="weather",
+                severity="moderate" if temp <= 5.0 or (wind is not None and wind >= 25.0) else "mild",
+                label="低温 / 风寒",
+                comment="登山环境下低温或大风更影响体感和安全余量,应按低温和风寒解释。",
+                basis=basis,
+                confidence="medium",
+            ))
+        if ascent is not None and ascent >= 800.0:
+            factors.append(_fatigue_review_environment_factor(
+                key="vertical_exposure",
+                category="terrain",
+                severity="moderate",
+                label="爬升压力",
+                comment="累计爬升较多,本次表现需要结合垂直负荷解释。",
+                basis={**basis, "ascent_m": ascent},
+                confidence="medium",
+            ))
+        return factors
+
+    if sport in walking_sports:
+        if humidity is not None and humidity >= 85.0 and temp is not None and 18.0 <= temp < 28.0:
+            factors.append(_fatigue_review_environment_factor(
+                key="humidity",
+                category="weather",
+                severity="mild",
+                label="体感偏闷",
+                comment="徒步不是跑得慢的跑步; 高湿会让长时间暴露更吃状态,补水需求也会上升。",
+                basis=basis,
+                confidence="medium",
+            ))
+        if ascent is not None and ascent >= 500.0:
+            factors.append(_fatigue_review_environment_factor(
+                key="vertical_exposure",
+                category="terrain",
+                severity="moderate",
+                label="爬升负荷",
+                comment="徒步场景下爬升和长时间暴露优先于跑步式热应激解释。",
+                basis={**basis, "ascent_m": ascent},
+                confidence="medium",
+            ))
+        return factors
+
+    if sport in cycling_sports:
+        if humidity is not None and humidity >= 80.0 and temp is not None and 20.0 <= temp < 25.0:
+            factors.append(_fatigue_review_environment_factor(
+                key="humidity",
+                category="weather",
+                severity="mild",
+                label="湿度偏高",
+                comment="骑行存在风冷效应,温度本身不高; 高湿可能让体感偏闷,外部影响按湿度解释。",
+                basis=basis,
+                confidence="medium",
+            ))
+        elif temp is not None and temp >= 30.0:
+            factors.append(_fatigue_review_environment_factor(
+                key="heat",
+                category="weather",
+                severity="moderate",
+                label="热环境压力",
+                comment="气温较高,骑行仍需关注散热和补水,但结论应比跑步同温场景更保守。",
+                basis=basis,
+                confidence="medium",
+            ))
+        return factors
+
+    if sport in running_sports:
+        if humidity is not None and humidity >= 80.0 and temp is not None and 20.0 <= temp < 25.0:
+            factors.append(_fatigue_review_environment_factor(
+                key="humidity",
+                category="weather",
+                severity="mild",
+                label="湿度偏高",
+                comment="温度本身不高,但湿度偏高,体感可能偏闷,散热效率可能下降。",
+                basis=basis,
+                confidence="medium",
+            ))
+        elif humidity is not None and humidity >= 70.0 and temp is not None and 25.0 <= temp < 28.0:
+            factors.append(_fatigue_review_environment_factor(
+                key="warm_humid",
+                category="weather",
+                severity="moderate",
+                label="温湿度偏高",
+                comment="温度和湿度共同抬高体感负担,本次心率和疲劳解释需要更保守。",
+                basis=basis,
+                confidence="medium",
+            ))
+        elif temp is not None and temp >= 28.0:
+            factors.append(_fatigue_review_environment_factor(
+                key="heat",
+                category="weather",
+                severity="high" if temp >= 30.0 else "moderate",
+                label="高温 / 热应激" if temp >= 30.0 else "热环境压力",
+                comment="气温较高,散热压力会上升,本次疲劳和心率表现应结合热环境解释。",
+                basis=basis,
+                confidence="medium",
+            ))
+        if max_altitude is not None and max_altitude >= 2500.0:
+            factors.append(_fatigue_review_environment_factor(
+                key="altitude",
+                category="altitude",
+                severity="moderate",
+                label="海拔压力",
+                comment="中高海拔会增加心肺负担,表现解释应保留环境宽容度。",
+                basis={**basis, "max_altitude_m": max_altitude},
+                confidence="medium",
+            ))
+    return factors
 
 
 def _safe_json_list(value: Any) -> list | None:
@@ -2467,6 +2816,166 @@ def _build_fatigue_review_display_meta() -> dict[str, Any]:
         "pace_display_cap_label": "15'00''/km",
         "pace_cap_strategy": "cap_slow_points_for_chart_only",
     }
+
+
+def _fatigue_review_curve_resolution(value: Any = None) -> str:
+    if isinstance(value, dict):
+        value = value.get("curve_resolution") or value.get("resolution")
+    text = str(value or "").strip().lower()
+    if text in {"full", "raw", "all"}:
+        return "full"
+    return "sampled"
+
+
+def _fatigue_review_nearest_distance_index(distance: list[Any], target_km: Any) -> int | None:
+    target = _safe_float(target_km)
+    if target is None or not distance:
+        return None
+    best_index: int | None = None
+    best_delta: float | None = None
+    for index, value in enumerate(distance):
+        dist = _safe_float(value)
+        if dist is None:
+            continue
+        delta = abs(dist - target)
+        if best_delta is None or delta < best_delta:
+            best_delta = delta
+            best_index = index
+    return best_index
+
+
+def _fatigue_review_add_series_extrema_indices(
+    indices: set[int],
+    values: Any,
+    axis_len: int,
+) -> None:
+    if not isinstance(values, list) or len(values) != axis_len:
+        return
+    min_index: int | None = None
+    max_index: int | None = None
+    min_value: float | None = None
+    max_value: float | None = None
+    for index, value in enumerate(values):
+        number = _safe_float(value)
+        if number is None:
+            continue
+        if min_value is None or number < min_value:
+            min_value = number
+            min_index = index
+        if max_value is None or number > max_value:
+            max_value = number
+            max_index = index
+    if min_index is not None:
+        indices.add(min_index)
+    if max_index is not None:
+        indices.add(max_index)
+
+
+def _fatigue_review_downsample_indices(
+    *,
+    curves: dict[str, Any],
+    display_curves: dict[str, Any],
+    collapse_events: list[dict[str, Any]],
+    fatigue_zones: list[dict[str, Any]],
+    target_points: int = FATIGUE_REVIEW_CURVE_SAMPLE_TARGET_POINTS,
+) -> list[int]:
+    distance = curves.get("distance") if isinstance(curves, dict) else []
+    if not isinstance(distance, list):
+        return []
+    axis_len = len(distance)
+    if axis_len <= 0:
+        return []
+    if axis_len <= FATIGUE_REVIEW_CURVE_SAMPLE_MAX_POINTS:
+        return list(range(axis_len))
+
+    indices: set[int] = {0, axis_len - 1}
+    reserve_budget = max(2, int(target_points))
+    uniform_step = max(1, (axis_len + reserve_budget - 1) // reserve_budget)
+    for index in range(0, axis_len, uniform_step):
+        indices.add(index)
+
+    for key, values in (curves or {}).items():
+        if key == "total_distance_m":
+            continue
+        _fatigue_review_add_series_extrema_indices(indices, values, axis_len)
+    for values in (display_curves or {}).values():
+        _fatigue_review_add_series_extrema_indices(indices, values, axis_len)
+
+    for event in collapse_events or []:
+        if not isinstance(event, dict):
+            continue
+        nearest = _fatigue_review_nearest_distance_index(distance, event.get("trigger_km"))
+        if nearest is None:
+            continue
+        indices.update(index for index in (nearest - 1, nearest, nearest + 1) if 0 <= index < axis_len)
+
+    for zone in fatigue_zones or []:
+        if not isinstance(zone, dict):
+            continue
+        for key in ("start_km", "end_km"):
+            nearest = _fatigue_review_nearest_distance_index(distance, zone.get(key))
+            if nearest is None:
+                continue
+            indices.update(index for index in (nearest - 1, nearest, nearest + 1) if 0 <= index < axis_len)
+
+    return sorted(indices)
+
+
+def _fatigue_review_sample_axis_payload(
+    payload: dict[str, Any],
+    indices: list[int],
+    axis_len: int,
+) -> dict[str, Any]:
+    sampled: dict[str, Any] = {}
+    for key, value in (payload or {}).items():
+        if isinstance(value, list) and len(value) == axis_len:
+            sampled[key] = [value[index] for index in indices]
+        else:
+            sampled[key] = value
+    return sampled
+
+
+def _prepare_fatigue_review_snapshot_for_response(
+    snapshot: dict[str, Any],
+    curve_resolution: Any = None,
+) -> dict[str, Any]:
+    resolution = _fatigue_review_curve_resolution(curve_resolution)
+    payload = dict(snapshot or {})
+    curves = payload.get("curves") if isinstance(payload.get("curves"), dict) else {}
+    display_curves = (
+        payload.get("display_curves")
+        if isinstance(payload.get("display_curves"), dict)
+        else {}
+    )
+    distance = curves.get("distance") if isinstance(curves, dict) else []
+    original_points = len(distance) if isinstance(distance, list) else 0
+
+    if resolution == "full" or original_points <= FATIGUE_REVIEW_CURVE_SAMPLE_MAX_POINTS:
+        returned_points = original_points
+        payload["curve_resolution"] = "full" if resolution == "full" else "sampled"
+        payload["curve_points_original"] = original_points
+        payload["curve_points_returned"] = returned_points
+        payload["curve_sample_target_points"] = FATIGUE_REVIEW_CURVE_SAMPLE_TARGET_POINTS
+        payload["full_curves_available"] = resolution != "full" and original_points > returned_points
+        return payload
+
+    indices = _fatigue_review_downsample_indices(
+        curves=curves,
+        display_curves=display_curves,
+        collapse_events=payload.get("collapse_events") or [],
+        fatigue_zones=payload.get("fatigue_zones") or [],
+    )
+    if not indices:
+        indices = list(range(original_points))
+    payload["curves"] = _fatigue_review_sample_axis_payload(curves, indices, original_points)
+    payload["display_curves"] = _fatigue_review_sample_axis_payload(display_curves, indices, original_points)
+    returned_points = len(indices)
+    payload["curve_resolution"] = "sampled"
+    payload["curve_points_original"] = original_points
+    payload["curve_points_returned"] = returned_points
+    payload["curve_sample_target_points"] = FATIGUE_REVIEW_CURVE_SAMPLE_TARGET_POINTS
+    payload["full_curves_available"] = original_points > returned_points
+    return payload
 
 
 def _fatigue_review_data_quality(
@@ -4591,6 +5100,10 @@ def ensure_activity_sync_schema() -> None:
 
         conn = profile_backend._conn()
         try:
+            if profile_backend.app_migration_done(conn, ACTIVITY_SYNC_SCHEMA_SENTINEL_KEY):
+                _ACTIVITY_SYNC_SCHEMA_READY_FOR = cache_key
+                return
+
             ensure_device_product_mapping_schema(conn)
 
             conn.execute(
@@ -4728,6 +5241,8 @@ def ensure_activity_sync_schema() -> None:
                 ("device_vendor", "TEXT"),
                 ("device_product_key", "TEXT"),
                 ("device_product_id", "TEXT"),
+                ("device_product_name", "TEXT"),
+                ("device_product_hint", "TEXT"),
                 ("device_serial", "TEXT"),
                 ("device_mapping_status", "TEXT"),
             ]:
@@ -4788,6 +5303,11 @@ def ensure_activity_sync_schema() -> None:
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_activity_placemarks_activity_dist ON activity_placemarks(activity_id, dist_km)"
+            )
+            profile_backend.mark_app_migration_done(
+                conn,
+                ACTIVITY_SYNC_SCHEMA_SENTINEL_KEY,
+                details_json='{"scope":"main.ensure_activity_sync_schema"}',
             )
             conn.commit()
             _ACTIVITY_SYNC_SCHEMA_READY_FOR = cache_key
@@ -6699,6 +7219,8 @@ def _parse_fit_activity_for_sync(file_path: Path) -> dict[str, Any]:
     result["device_vendor"] = device_resolution.get("vendor") or "unknown"
     result["device_product_key"] = device_resolution.get("product_key") or ""
     result["device_product_id"] = device_resolution.get("product_id") or ""
+    result["device_product_name"] = device_resolution.get("product_name") or ""
+    result["device_product_hint"] = device_resolution.get("product_hint") or ""
     result["device_serial"] = device_resolution.get("serial") or ""
     result["device_mapping_status"] = device_resolution.get("mapping_status") or "unknown"
 
@@ -6974,6 +7496,7 @@ def _insert_activity_sync_row(conn: sqlite3.Connection, activity: dict[str, Any]
             ),
         )
         activity_id = int(cur.lastrowid)
+        _update_activity_device_product_meta(conn, activity_id, activity)
         _apply_fit_race_marker(conn, activity_id, activity)
         return activity_id
     except sqlite3.IntegrityError:
@@ -7084,7 +7607,33 @@ def _update_activity_sync_row(conn: sqlite3.Connection, activity_id: int, activi
             activity_id,
         ),
     )
+    _update_activity_device_product_meta(conn, activity_id, activity)
     _apply_fit_race_marker(conn, activity_id, activity)
+
+
+def _update_activity_device_product_meta(conn: sqlite3.Connection, activity_id: int, activity: dict[str, Any]) -> None:
+    """Persist provider-native product strings for future read-only resolution.
+
+    Dry-run/backfill paths must not re-parse FIT files. These fields preserve
+    official model text such as ``COROS NOMAD`` and Garmin SDK symbolic hints
+    such as ``fenix8`` when the import path has already parsed the FIT.
+    """
+    try:
+        conn.execute(
+            """
+            UPDATE activities
+            SET device_product_name = ?,
+                device_product_hint = ?
+            WHERE id = ?
+            """,
+            (
+                activity.get("device_product_name") or "",
+                activity.get("device_product_hint") or "",
+                int(activity_id),
+            ),
+        )
+    except sqlite3.Error:
+        logger.debug("设备产品元数据列尚不可用，跳过补充写入", exc_info=True)
 
 
 def _upsert_processing_activity_placeholder(dst: Path, source_name: str | None = None) -> int:
@@ -7638,10 +8187,11 @@ def device_product_mapping_dry_run(
         rows = conn.execute(
             """
             SELECT id, start_time, sport_type, device_name, device_vendor,
-                   device_product_key, device_product_id, device_serial, device_mapping_status
+                   device_product_key, device_product_id, device_product_name,
+                   device_product_hint, device_serial, device_mapping_status
             FROM activities
             WHERE deleted_at IS NULL
-              AND COALESCE(is_mock, 0) = 0
+              AND CAST(COALESCE(is_mock, 0) AS INTEGER) = 0
             ORDER BY start_time DESC, id DESC
             """
         ).fetchall()
@@ -7661,6 +8211,7 @@ def device_product_mapping_dry_run(
             row_vendor = str(identity.get("vendor") or "unknown").strip().lower()
             product_key = str(identity.get("product_key") or "").strip()
             product_id = str(identity.get("product_id") or "").strip()
+            normalized_product_key = str(identity.get("product_key") or "").strip()
             if raw_vendor and row_vendor != raw_vendor:
                 continue
 
@@ -7693,6 +8244,7 @@ def device_product_mapping_dry_run(
                         "vendor": row_vendor or "unknown",
                         "product_key": product_key,
                         "product_id": product_id,
+                        "normalized_product_key": normalized_product_key,
                         "activity_count": 0,
                         "unresolved_count": 0,
                         "refreshable_count": 0,
@@ -7718,6 +8270,7 @@ def device_product_mapping_dry_run(
                         "device_name": device_name,
                         "device_vendor": row_vendor or "unknown",
                         "device_product_key": product_key,
+                        "normalized_product_key": normalized_product_key,
                         "device_mapping_status": mapping_status or "unknown",
                         "refreshable": refreshable,
                         "mapped_display_name": resolved_name if resolved_status == "resolved" else "",
@@ -7764,10 +8317,11 @@ def backfill_device_product_mappings(
         rows = conn.execute(
             """
             SELECT id, device_name, device_vendor, device_product_key,
-                   device_product_id, device_serial, device_mapping_status
+                   device_product_id, device_product_name, device_product_hint,
+                   device_serial, device_mapping_status
             FROM activities
             WHERE deleted_at IS NULL
-              AND COALESCE(is_mock, 0) = 0
+              AND CAST(COALESCE(is_mock, 0) AS INTEGER) = 0
               AND (
                 COALESCE(device_name, '') = ''
                 OR lower(COALESCE(device_name, '')) IN ('unknown', 'unknown device', 'none')
@@ -7808,6 +8362,8 @@ def backfill_device_product_mappings(
                     resolution.get("vendor") or row_vendor or "unknown",
                     product_key,
                     resolution.get("product_id") or identity.get("product_id") or "",
+                    resolution.get("product_name") or identity.get("product_name") or row_dict.get("device_product_name") or "",
+                    resolution.get("product_hint") or identity.get("product_hint") or row_dict.get("device_product_hint") or "",
                     resolution.get("serial") or identity.get("serial") or "",
                     "resolved",
                     int(row_dict["id"]),
@@ -7834,6 +8390,8 @@ def backfill_device_product_mappings(
                     device_vendor = ?,
                     device_product_key = ?,
                     device_product_id = ?,
+                    device_product_name = COALESCE(NULLIF(?, ''), device_product_name),
+                    device_product_hint = COALESCE(NULLIF(?, ''), device_product_hint),
                     device_serial = COALESCE(NULLIF(?, ''), device_serial),
                     device_mapping_status = ?
                 WHERE id = ?
@@ -8067,6 +8625,204 @@ def _refresh_career_derived_events_safe(reason: str = "", activity_id: Any | Non
         }
 
 
+def _clean_changed_activity_ids(activity_ids: Iterable[Any]) -> list[int]:
+    clean_ids: list[int] = []
+    seen: set[int] = set()
+    for activity_id in activity_ids or []:
+        clean_id = _safe_int(activity_id)
+        if clean_id > 0 and clean_id not in seen:
+            seen.add(clean_id)
+            clean_ids.append(clean_id)
+    return clean_ids
+
+
+def _refresh_career_derived_events_for_activities_safe(
+    activity_ids: Iterable[Any],
+    *,
+    reason: str = "activity_write",
+) -> dict[str, Any]:
+    """Evaluate changed Activities incrementally, then refresh ACS once."""
+    clean_ids = _clean_changed_activity_ids(activity_ids)
+    if not clean_ids:
+        return {
+            "ok": True,
+            "reason": reason,
+            "activity_count": 0,
+            "activity_ids": [],
+            "incremental_results": [],
+            "incremental_errors": [],
+            "refreshed": False,
+            "skipped": True,
+        }
+
+    incremental_results: list[dict[str, Any]] = []
+    incremental_errors: list[dict[str, Any]] = []
+    for activity_id in clean_ids:
+        try:
+            with sqlite3.connect(profile_backend.DB_PATH) as conn:
+                incremental_results.append(
+                    career_backend.evaluate_activity_record_increment(conn, activity_id)
+                )
+        except Exception as exc:
+            logger.warning(
+                "ACS incremental evaluation failed reason=%s activity_id=%s error_type=%s",
+                reason,
+                activity_id,
+                type(exc).__name__,
+            )
+            incremental_errors.append({
+                "activity_id": activity_id,
+                "error_code": "career_increment_failed",
+            })
+
+    include_pb = bool(incremental_errors)
+    try:
+        refresh_result = career_backend.refresh_career_derived_events(include_pb=include_pb)
+        return {
+            "ok": bool(refresh_result.get("ok", True)),
+            "reason": reason,
+            "activity_count": len(clean_ids),
+            "activity_ids": clean_ids,
+            "incremental_results": incremental_results,
+            "incremental_errors": incremental_errors,
+            "include_pb": include_pb,
+            "refreshed": True,
+            "derived": refresh_result,
+        }
+    except Exception:
+        logger.exception("ACS batch derived event refresh failed after %s", reason)
+        return {
+            "ok": False,
+            "reason": reason,
+            "activity_count": len(clean_ids),
+            "activity_ids": clean_ids,
+            "incremental_results": incremental_results,
+            "incremental_errors": incremental_errors,
+            "include_pb": include_pb,
+            "refreshed": False,
+            "message": "运动生涯派生事件刷新失败，活动导入已保留",
+            "error_code": "career_refresh_failed",
+        }
+
+
+def _refresh_career_record_metric_results_for_activity_safe(
+    activity_id: Any,
+    *,
+    reason: str = "activity_write",
+) -> dict[str, Any]:
+    """Best-effort V3 Records materialization for one changed Activity."""
+    clean_activity_id = str(activity_id or "").strip()
+    if not clean_activity_id:
+        return {"ok": True, "reason": reason, "activity_id": "", "skipped": True}
+    try:
+        conn = profile_backend._conn()
+        try:
+            career_backend.ensure_career_schema(conn)
+            row = conn.execute(
+                "SELECT * FROM activities WHERE id = ? AND deleted_at IS NULL",
+                (clean_activity_id,),
+            ).fetchone()
+            if row is None:
+                invalidated = career_backend.invalidate_career_record_metric_results_for_activity(
+                    conn,
+                    clean_activity_id,
+                    reason=reason,
+                    dry_run=False,
+                )
+                conn.commit()
+                return {
+                    "ok": True,
+                    "reason": reason,
+                    "activity_id": clean_activity_id,
+                    "plan_state": "activity_missing_or_deleted",
+                    "invalidated": int(invalidated.get("invalidated") or 0),
+                }
+            plan = career_backend.compute_record_metric_results_for_activity(row, conn=conn)
+            applied = career_backend.upsert_career_record_metric_results(
+                conn,
+                plan,
+                run_id=f"activity:{reason}",
+                dry_run=False,
+            )
+            conn.commit()
+            return {
+                "ok": True,
+                "reason": reason,
+                "activity_id": clean_activity_id,
+                "plan_state": str((plan.get("status") or {}).get("state") or ""),
+                "result_count": int((plan.get("summary") or {}).get("result_count") or 0),
+                "upserted": int(applied.get("upserted") or 0),
+                "skipped": int(applied.get("skipped") or 0),
+                "invalidated": int(applied.get("invalidated") or 0),
+            }
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+    except Exception:
+        logger.exception("record metric result refresh failed after %s activity_id=%s", reason, clean_activity_id)
+        return {
+            "ok": False,
+            "reason": reason,
+            "activity_id": clean_activity_id,
+            "message": "记录中心成绩物化刷新失败，活动导入已保留",
+            "error_code": "record_metric_results_refresh_failed",
+        }
+
+
+def _refresh_career_record_metric_results_for_activities_safe(
+    activity_ids: Iterable[Any],
+    *,
+    reason: str = "activity_write",
+) -> dict[str, Any]:
+    clean_ids = []
+    seen: set[str] = set()
+    for activity_id in activity_ids or []:
+        clean = str(activity_id or "").strip()
+        if clean and clean not in seen:
+            seen.add(clean)
+            clean_ids.append(clean)
+    results = [
+        _refresh_career_record_metric_results_for_activity_safe(activity_id, reason=reason)
+        for activity_id in clean_ids
+    ]
+    return {
+        "ok": all(bool(item.get("ok")) for item in results) if results else True,
+        "reason": reason,
+        "activity_count": len(clean_ids),
+        "upserted": sum(int(item.get("upserted") or 0) for item in results),
+        "skipped": sum(int(item.get("skipped") or 0) for item in results),
+        "invalidated": sum(int(item.get("invalidated") or 0) for item in results),
+        "results": results,
+    }
+
+
+def _refresh_changed_activity_derivatives_safe(
+    activity_ids: Iterable[Any],
+    *,
+    reason: str,
+) -> dict[str, Any]:
+    clean_ids = _clean_changed_activity_ids(activity_ids)
+    if not clean_ids:
+        return {
+            "activity_ids": [],
+            "career_metric_results": None,
+            "career_refresh": None,
+        }
+    return {
+        "activity_ids": clean_ids,
+        "career_metric_results": _refresh_career_record_metric_results_for_activities_safe(
+            clean_ids,
+            reason=reason,
+        ),
+        "career_refresh": _refresh_career_derived_events_for_activities_safe(
+            clean_ids,
+            reason=reason,
+        ),
+    }
+
+
 def _filter_fit_file_before_parse(target: Path) -> dict[str, Any] | None:
     """Fast health-data filter for tiny FIT files before expensive parsing."""
     file_size_kb = _fit_file_size_kb(target)
@@ -8188,8 +8944,467 @@ def _sync_single_fit_file(file_path: str | Path, refresh_career: bool = True) ->
         "points": activity.get("points") or [],
     }
     if refresh_career and result["activity_id"] and write_res.get("op") in {"inserted", "updated"}:
+        result["career_metric_results"] = _refresh_career_record_metric_results_for_activity_safe(
+            result["activity_id"],
+            reason="single_fit_sync",
+        )
         result["career_refresh"] = _refresh_career_derived_events_safe("single_fit_sync", result["activity_id"])
     return result
+
+
+def _sha256_fit_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as file_obj:
+        for chunk in iter(lambda: file_obj.read(chunk_size), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _activity_source_row_is_complete(conn: sqlite3.Connection, row: dict[str, Any]) -> bool:
+    status = str(row.get("ingest_status") or "").strip().lower()
+    if status not in {"parsed", "skipped"}:
+        return False
+    activity_id = _safe_int(row.get("activity_id"))
+    if status == "parsed" and not activity_id:
+        return False
+    if not activity_id:
+        return True
+    active = conn.execute(
+        "SELECT 1 FROM activities WHERE id = ? AND deleted_at IS NULL LIMIT 1",
+        (activity_id,),
+    ).fetchone()
+    return active is not None
+
+
+def _find_completed_activity_source(
+    provider: str,
+    provider_activity_id: str,
+    sha256: str,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None, str, str | None]:
+    conn = None
+    try:
+        conn = profile_backend._conn()
+        provider_row = profile_backend.get_activity_source_file_by_provider_activity_id(
+            conn, provider, provider_activity_id
+        ) if provider_activity_id else None
+        provider_sha256 = str((provider_row or {}).get("sha256") or "").strip().lower()
+        provider_content_matches = not provider_sha256 or provider_sha256 == sha256
+        if provider_row and provider_content_matches and _activity_source_row_is_complete(conn, provider_row):
+            return provider_row, provider_row, "provider_activity_id", None
+        provider_row_id = _safe_int((provider_row or {}).get("id"))
+        for row in profile_backend.get_activity_source_files_by_sha256(conn, sha256):
+            if provider_row_id and _safe_int(row.get("id")) == provider_row_id:
+                continue
+            if _activity_source_row_is_complete(conn, row):
+                return provider_row, row, "sha256", None
+        return provider_row, None, "", None
+    except Exception as exc:
+        logger.warning(
+            "activity source ledger lookup failed provider=%s error_type=%s",
+            provider,
+            type(exc).__name__,
+        )
+        return None, None, "", "来源账本查询失败，已继续导入"
+    finally:
+        if conn is not None:
+            conn.close()
+
+
+def _write_activity_source_ledger(
+    *,
+    provider: str,
+    provider_activity_id: str,
+    target: Path,
+    sha256: str | None,
+    file_size: int | None,
+    file_mtime: float | None,
+    ingest_status: str,
+    activity_id: int | None = None,
+    error: Any = None,
+    source_file_id: int | None = None,
+) -> tuple[int | None, str | None]:
+    conn = None
+    try:
+        conn = profile_backend._conn()
+        row_id = profile_backend.upsert_activity_source_file(
+            conn,
+            provider=provider,
+            provider_activity_id=provider_activity_id or None,
+            file_path=str(target),
+            filename=target.name,
+            sha256=sha256,
+            file_size=file_size,
+            file_mtime=file_mtime,
+            activity_id=activity_id,
+            ingest_status=ingest_status,
+            error=error,
+            source_file_id=source_file_id,
+        )
+        conn.commit()
+        return row_id, None
+    except Exception as exc:
+        if conn is not None:
+            conn.rollback()
+        logger.warning(
+            "activity source ledger write failed provider=%s status=%s error_type=%s",
+            provider,
+            ingest_status,
+            type(exc).__name__,
+        )
+        return None, "来源账本更新失败，活动导入结果已保留"
+    finally:
+        if conn is not None:
+            conn.close()
+
+
+def _prepare_local_fit_source(target: Path) -> dict[str, Any]:
+    """Record a local FIT source and decide whether parsing can be skipped."""
+    ensure_activity_sync_schema()
+    stat = target.stat()
+    file_size = int(stat.st_size)
+    file_mtime = float(stat.st_mtime)
+    sha256_value = _sha256_fit_file(target)
+    _, completed_row, idempotency_reason, lookup_warning = _find_completed_activity_source(
+        "local",
+        "",
+        sha256_value,
+    )
+    context: dict[str, Any] = {
+        "target": target,
+        "sha256": sha256_value,
+        "file_size": file_size,
+        "file_mtime": file_mtime,
+        "source_file_id": None,
+        "ledger_available": lookup_warning is None,
+        "ledger_warning": lookup_warning,
+        "skip_parse": False,
+        "activity_id": 0,
+        "idempotency_reason": "",
+    }
+    if lookup_warning:
+        return context
+
+    if completed_row is not None:
+        completed_id = _safe_int(completed_row.get("id")) or None
+        matched_activity_id = _safe_int(completed_row.get("activity_id"))
+        context.update({
+            "source_file_id": completed_id,
+            "skip_parse": True,
+            "activity_id": matched_activity_id,
+            "idempotency_reason": idempotency_reason,
+        })
+        if str(completed_row.get("provider") or "").strip().lower() != "local":
+            local_id, ledger_warning = _write_activity_source_ledger(
+                provider="local",
+                provider_activity_id="",
+                target=target,
+                sha256=sha256_value,
+                file_size=file_size,
+                file_mtime=file_mtime,
+                ingest_status="skipped",
+                activity_id=matched_activity_id or None,
+            )
+            context["source_file_id"] = local_id or completed_id
+            context["ledger_warning"] = ledger_warning
+        return context
+
+    source_file_id, ledger_warning = _write_activity_source_ledger(
+        provider="local",
+        provider_activity_id="",
+        target=target,
+        sha256=sha256_value,
+        file_size=file_size,
+        file_mtime=file_mtime,
+        ingest_status="pending",
+    )
+    context["source_file_id"] = source_file_id
+    context["ledger_warning"] = ledger_warning
+    if ledger_warning:
+        context["ledger_available"] = False
+    return context
+
+
+def _finish_local_fit_source(
+    context: dict[str, Any] | None,
+    *,
+    ingest_status: str,
+    activity_id: int | None = None,
+    error: Any = None,
+) -> str | None:
+    if not context or not context.get("ledger_available"):
+        return str((context or {}).get("ledger_warning") or "").strip() or None
+    _, ledger_warning = _write_activity_source_ledger(
+        provider="local",
+        provider_activity_id="",
+        target=context["target"],
+        sha256=context.get("sha256"),
+        file_size=context.get("file_size"),
+        file_mtime=context.get("file_mtime"),
+        ingest_status=ingest_status,
+        activity_id=activity_id,
+        error=error,
+        source_file_id=context.get("source_file_id"),
+    )
+    return ledger_warning
+
+
+def _import_remote_fit_candidates(
+    provider: str,
+    download_summary: dict[str, Any],
+    tracks_root: str | Path,
+) -> dict[str, Any]:
+    """Import only the FIT files named by one provider download response."""
+    started_at = time.perf_counter()
+    provider_value = str(provider or "").strip().lower() or "remote"
+    provider_label = {"garmin": "Garmin", "coros": "COROS"}.get(provider_value, provider_value)
+    root = Path(tracks_root).expanduser().resolve()
+    raw_candidates = download_summary.get("candidates")
+    candidates = raw_candidates if isinstance(raw_candidates, list) else []
+    results: list[dict[str, Any]] = []
+    errors: list[dict[str, str]] = []
+    activity_ids: list[int] = []
+    seen_activity_ids: set[int] = set()
+    seen_paths: set[str] = set()
+    scanned = 0
+    inserted = 0
+    updated = 0
+    skipped = 0
+    successful = 0
+
+    for index, raw_candidate in enumerate(candidates):
+        candidate = raw_candidate if isinstance(raw_candidate, dict) else {}
+        status = str(candidate.get("status") or "").strip().lower()
+        provider_activity_id = str(candidate.get("provider_activity_id") or "").strip()
+        raw_file = str(candidate.get("file") or "").strip()
+        base_result: dict[str, Any] = {
+            "index": index,
+            "provider": provider_value,
+            "provider_activity_id": provider_activity_id,
+            "file": raw_file,
+            "filename": str(candidate.get("filename") or "").strip(),
+        }
+
+        if status == "failed":
+            error_text = str(candidate.get("reason") or "provider download failed").strip()
+            results.append({**base_result, "status": "failed", "error": error_text})
+            errors.append({"file": raw_file, "error": error_text})
+            continue
+        if status not in {"downloaded", "skipped"}:
+            results.append({**base_result, "status": "ignored", "reason": "unsupported_candidate_status"})
+            continue
+
+        scanned += 1
+        target: Path | None = None
+        sha256_value: str | None = None
+        file_size: int | None = None
+        file_mtime: float | None = None
+        source_file_id: int | None = None
+        ledger_warnings: list[str] = []
+        ledger_available = True
+        pending_written = False
+        try:
+            source_path = Path(raw_file)
+            if not raw_file or not source_path.is_absolute():
+                raise ValueError("候选 FIT 路径必须是绝对路径")
+            target = source_path.expanduser().resolve()
+            if target.suffix.lower() != ".fit":
+                raise ValueError("候选文件不是 FIT 文件")
+            if not _is_path_under_dir(target, root):
+                raise ValueError("候选 FIT 路径超出受控 tracks 目录")
+
+            canonical_path = str(target)
+            if canonical_path in seen_paths:
+                skipped += 1
+                results.append({**base_result, "file": canonical_path, "status": "skipped", "reason": "duplicate_candidate"})
+                continue
+            seen_paths.add(canonical_path)
+            if not target.is_file():
+                raise FileNotFoundError("候选 FIT 文件不存在")
+
+            stat = target.stat()
+            file_size = int(stat.st_size)
+            file_mtime = float(stat.st_mtime)
+            sha256_value = _sha256_fit_file(target)
+            provider_row, completed_row, idempotency_reason, lookup_warning = _find_completed_activity_source(
+                provider_value,
+                provider_activity_id,
+                sha256_value,
+            )
+            if lookup_warning:
+                ledger_warnings.append(lookup_warning)
+                ledger_available = False
+            source_file_id = _safe_int((provider_row or {}).get("id")) or None
+
+            if completed_row is not None:
+                completed_id = _safe_int(completed_row.get("id")) or None
+                matched_activity_id = _safe_int(completed_row.get("activity_id"))
+                ledger_status = str(completed_row.get("ingest_status") or "skipped")
+                if completed_id != source_file_id:
+                    written_id, ledger_warning = _write_activity_source_ledger(
+                        provider=provider_value,
+                        provider_activity_id=provider_activity_id,
+                        target=target,
+                        sha256=sha256_value,
+                        file_size=file_size,
+                        file_mtime=file_mtime,
+                        ingest_status="skipped",
+                        activity_id=matched_activity_id or None,
+                        source_file_id=source_file_id,
+                    )
+                    source_file_id = written_id or source_file_id or completed_id
+                    if ledger_warning:
+                        ledger_warnings.append(ledger_warning)
+                        ledger_status = str((provider_row or completed_row).get("ingest_status") or "") or None
+                    else:
+                        ledger_status = "skipped"
+                else:
+                    source_file_id = completed_id
+                skipped += 1
+                successful += 1
+                result_item = {
+                    **base_result,
+                    "file": canonical_path,
+                    "filename": target.name,
+                    "status": "skipped",
+                    "op": "skipped",
+                    "activity_id": matched_activity_id,
+                    "sha256": sha256_value,
+                    "source_file_id": source_file_id,
+                    "ledger_status": ledger_status,
+                    "idempotency_reason": idempotency_reason,
+                }
+                if ledger_warnings:
+                    result_item["ledger_warning"] = "；".join(dict.fromkeys(ledger_warnings))
+                results.append(result_item)
+                continue
+
+            if ledger_available:
+                pending_id, pending_warning = _write_activity_source_ledger(
+                    provider=provider_value,
+                    provider_activity_id=provider_activity_id,
+                    target=target,
+                    sha256=sha256_value,
+                    file_size=file_size,
+                    file_mtime=file_mtime,
+                    ingest_status="pending",
+                    source_file_id=source_file_id,
+                )
+                source_file_id = pending_id or source_file_id
+                pending_written = bool(pending_id and not pending_warning)
+                if pending_warning:
+                    ledger_warnings.append(pending_warning)
+
+            sync_result = _sync_single_fit_file(target, refresh_career=False)
+            if not isinstance(sync_result, dict) or not sync_result.get("ok"):
+                error_text = str((sync_result or {}).get("error") or "FIT 导入失败") if isinstance(sync_result, dict) else "FIT 导入失败"
+                raise RuntimeError(error_text)
+
+            op = str(sync_result.get("op") or "skipped").strip().lower()
+            if op == "inserted":
+                inserted += 1
+            elif op == "updated":
+                updated += 1
+            else:
+                skipped += 1
+            successful += 1
+            activity_id = _safe_int(sync_result.get("activity_id"))
+            if op in {"inserted", "updated"} and activity_id and activity_id not in seen_activity_ids:
+                seen_activity_ids.add(activity_id)
+                activity_ids.append(activity_id)
+            ledger_status = "parsed" if op in {"inserted", "updated"} else "skipped"
+            if ledger_available:
+                terminal_id, terminal_warning = _write_activity_source_ledger(
+                    provider=provider_value,
+                    provider_activity_id=provider_activity_id,
+                    target=target,
+                    sha256=sha256_value,
+                    file_size=file_size,
+                    file_mtime=file_mtime,
+                    ingest_status=ledger_status,
+                    activity_id=activity_id or None,
+                    source_file_id=source_file_id,
+                )
+                source_file_id = terminal_id or source_file_id
+                if terminal_warning:
+                    ledger_warnings.append(terminal_warning)
+                    ledger_status = "pending" if pending_written else None
+            else:
+                ledger_status = None
+            result_item = {
+                **base_result,
+                "file": canonical_path,
+                "filename": target.name,
+                "status": "parsed" if op in {"inserted", "updated"} else "skipped",
+                "op": op,
+                "activity_id": activity_id,
+                "sha256": sha256_value,
+                "source_file_id": source_file_id,
+                "ledger_status": ledger_status,
+            }
+            if ledger_warnings:
+                result_item["ledger_warning"] = "；".join(dict.fromkeys(ledger_warnings))
+            results.append(result_item)
+        except Exception as exc:
+            skipped += 1
+            error_text = profile_backend._sanitize_activity_source_file_error(exc) or type(exc).__name__
+            reported_ledger_status: str | None = None
+            if ledger_available and target is not None and _is_path_under_dir(target, root):
+                failed_id, failed_warning = _write_activity_source_ledger(
+                    provider=provider_value,
+                    provider_activity_id=provider_activity_id,
+                    target=target,
+                    sha256=sha256_value,
+                    file_size=file_size,
+                    file_mtime=file_mtime,
+                    ingest_status="failed",
+                    error=exc,
+                    source_file_id=source_file_id,
+                )
+                source_file_id = failed_id or source_file_id
+                if failed_warning:
+                    ledger_warnings.append(failed_warning)
+                    reported_ledger_status = "pending" if pending_written else None
+                else:
+                    reported_ledger_status = "failed"
+            logger.warning("%s remote FIT candidate import failed file=%s error=%s", provider_label, raw_file, error_text)
+            result_item = {
+                **base_result,
+                "status": "failed",
+                "error": error_text,
+                "sha256": sha256_value,
+                "source_file_id": source_file_id,
+                "ledger_status": reported_ledger_status,
+            }
+            if ledger_warnings:
+                result_item["ledger_warning"] = "；".join(dict.fromkeys(ledger_warnings))
+            results.append(result_item)
+            errors.append({"file": raw_file, "error": error_text})
+
+    elapsed_sec = round(time.perf_counter() - started_at, 2)
+    ok = scanned == 0 or successful > 0
+    remote_import_skipped = scanned == 0
+    if remote_import_skipped:
+        message = f"{provider_label} 未返回可下载的 FIT 文件，已跳过本地全目录扫描。"
+    else:
+        message = (
+            f"{provider_label} 候选导入完成：处理 {scanned} 个，新增 {inserted} 条，"
+            f"更新 {updated} 条，跳过 {skipped} 条，错误 {len(errors)} 个，用时 {elapsed_sec:.2f} 秒。"
+        )
+    return {
+        "ok": ok,
+        "source_dir": str(root),
+        "scanned": scanned,
+        "inserted": inserted,
+        "updated": updated,
+        "skipped": skipped,
+        "removed": 0,
+        "errors": errors,
+        "activity_ids": activity_ids,
+        "results": results,
+        "elapsed_sec": elapsed_sec,
+        "remote_import_skipped": remote_import_skipped,
+        "message": message,
+    }
 
 
 class FITFolderHandler(FileSystemEventHandler):
@@ -8983,8 +10198,12 @@ class Api:
         self._ai_snapshot: dict[str, Any] | None = None
         self._activity_advice_snapshot: dict[str, Any] | None = None
         self._fatigue_review_activity_id: int = 0
+        self._fatigue_review_historical_curve_cache: dict[str, Any] = {}
+        self._fatigue_review_backend_profile: list[dict[str, Any]] | None = None
         self._profile_startup_sync_scheduled = False
         self._profile_sync_timer: threading.Timer | None = None
+        self._fatigue_review_numeric_prewarm_scheduled = False
+        self._fatigue_review_numeric_prewarm_timer: threading.Timer | None = None
         self._region_enrichment_timer: threading.Timer | None = None
         self._region_enrichment_active = False
         self._window_shown = False
@@ -9025,6 +10244,7 @@ class Api:
         self._frontend_ready = True
         self._flush_pending_track_notifications()
         self._schedule_profile_startup_sync()
+        self._schedule_fatigue_review_numeric_prewarm()
         self._schedule_region_enrichment()
         return {"ok": True}
 
@@ -9033,6 +10253,29 @@ class Api:
             "process_elapsed_ms": _startup_elapsed_ms(),
             "events": _startup_timeline_snapshot(),
         })
+
+    def _schedule_fatigue_review_numeric_prewarm(self) -> None:
+        if self._fatigue_review_numeric_prewarm_scheduled:
+            return
+        self._fatigue_review_numeric_prewarm_scheduled = True
+
+        def _run() -> None:
+            started = time.perf_counter()
+            try:
+                import gap_calculator
+
+                gap_calculator._numeric_deps()
+                elapsed_ms = round((time.perf_counter() - started) * 1000.0, 2)
+                _record_startup_event("fatigue_review_numeric_prewarm", elapsed_ms=elapsed_ms)
+            except Exception as exc:
+                logger.debug("fatigue_review_numeric_prewarm_failed: %s", exc)
+
+        try:
+            self._fatigue_review_numeric_prewarm_timer = threading.Timer(2.0, _run)
+            self._fatigue_review_numeric_prewarm_timer.daemon = True
+            self._fatigue_review_numeric_prewarm_timer.start()
+        except Exception:
+            logger.debug("schedule_fatigue_review_numeric_prewarm_failed", exc_info=True)
 
     def _schedule_region_enrichment(self) -> None:
         if self._region_enrichment_active:
@@ -10683,24 +11926,6 @@ class Api:
                 "当前手表品牌暂不支持按时间同步活动，请在配置页面选择佳明或高驰后重试，或使用导入本地 FIT 文件。",
             )
 
-        def _download_has_import_candidates(summary: dict[str, Any]) -> bool:
-            return int(summary.get("downloaded") or 0) > 0 or int(summary.get("skipped") or 0) > 0
-
-        def _remote_import_skipped_result(provider_label: str) -> dict[str, Any]:
-            return {
-                "ok": True,
-                "source_dir": str(TRACKS_DIR),
-                "scanned": 0,
-                "inserted": 0,
-                "updated": 0,
-                "skipped": 0,
-                "removed": 0,
-                "errors": [],
-                "elapsed_sec": 0,
-                "remote_import_skipped": True,
-                "message": f"{provider_label} 未返回可下载的 FIT 文件，已跳过本地全目录扫描。",
-            }
-
         if brand == "coros":
             try:
                 download_summary = coros_sync.download_fit_json(
@@ -10735,16 +11960,7 @@ class Api:
                         provider_detail=detail,
                     )
                     return _api_error(API_CODE_EXTERNAL_SERVICE, payload["message"], payload)
-                if not _download_has_import_candidates(download_summary):
-                    import_result = _remote_import_skipped_result("COROS")
-                    return _api_success({
-                        "download": download_summary,
-                        "import": import_result,
-                        "start_date": start_day.isoformat(),
-                        "end_date": end_day.isoformat(),
-                        "target_dir": TRACKS_DIR,
-                    })
-                import_result = self.sync_local_fit_files()
+                import_result = _import_remote_fit_candidates("coros", download_summary, TRACKS_DIR)
                 if not (isinstance(import_result, dict) and import_result.get("ok")):
                     msg = str((import_result or {}).get("error") or (import_result or {}).get("msg") or "COROS FIT 已下载，但本地导入失败")
                     payload = self._coros_sync_error_payload(
@@ -10757,6 +11973,13 @@ class Api:
                     )
                     logger.warning("COROS remote FIT sync import failed: %s", msg)
                     return _api_error(API_CODE_EXTERNAL_SERVICE, "COROS FIT 已下载，但本地导入失败", payload)
+                refresh_results = _refresh_changed_activity_derivatives_safe(
+                    import_result.get("activity_ids") or [],
+                    reason="remote_coros_fit_sync",
+                )
+                import_result["activity_ids"] = refresh_results["activity_ids"]
+                import_result["career_metric_results"] = refresh_results["career_metric_results"]
+                import_result["career_refresh"] = refresh_results["career_refresh"]
                 return _api_success({
                     "download": download_summary,
                     "import": import_result,
@@ -10801,16 +12024,7 @@ class Api:
                 download_summary.get("skipped"),
                 download_summary.get("failed"),
             )
-            if not _download_has_import_candidates(download_summary):
-                import_result = _remote_import_skipped_result("Garmin")
-                return _api_success({
-                    "download": download_summary,
-                    "import": import_result,
-                    "start_date": start_day.isoformat(),
-                    "end_date": end_day.isoformat(),
-                    "target_dir": TRACKS_DIR,
-                })
-            import_result = self.sync_local_fit_files()
+            import_result = _import_remote_fit_candidates("garmin", download_summary, TRACKS_DIR)
             if not (isinstance(import_result, dict) and import_result.get("ok")):
                 msg = str((import_result or {}).get("error") or (import_result or {}).get("msg") or "Garmin FIT 已下载，但本地导入失败")
                 payload = self._garmin_sync_error_payload(
@@ -10823,6 +12037,13 @@ class Api:
                 )
                 logger.warning("Garmin remote FIT sync import failed: %s", msg)
                 return _api_error(API_CODE_EXTERNAL_SERVICE, "Garmin FIT 已下载，但本地导入失败", payload)
+            refresh_results = _refresh_changed_activity_derivatives_safe(
+                import_result.get("activity_ids") or [],
+                reason="remote_garmin_fit_sync",
+            )
+            import_result["activity_ids"] = refresh_results["activity_ids"]
+            import_result["career_metric_results"] = refresh_results["career_metric_results"]
+            import_result["career_refresh"] = refresh_results["career_refresh"]
             return _api_success({
                 "download": download_summary,
                 "import": import_result,
@@ -11387,6 +12608,23 @@ class Api:
         finally:
             conn.close()
 
+    def _fetch_activity_summary_row(self, activity_id: int) -> dict | None:
+        ensure_activity_sync_schema()
+        conn = profile_backend._conn()
+        try:
+            columns_str = ", ".join(DETAIL_SUMMARY_API_COLUMNS)
+            row = conn.execute(
+                f"""
+                SELECT {columns_str}
+                FROM activities
+                WHERE id = ? AND deleted_at IS NULL
+                """,
+                (activity_id,),
+            ).fetchone()
+            return dict(row) if row else None
+        finally:
+            conn.close()
+
     def _load_activity_placemarks(self, activity_id: int) -> list[dict[str, Any]]:
         ensure_activity_sync_schema()
         if not _safe_int(activity_id):
@@ -11553,6 +12791,7 @@ class Api:
             updated = 0
             skipped = 0
             errors: list[dict[str, str]] = []
+            changed_activity_ids: list[int] = []
 
             _emit_sync_progress(
                 progress_callback,
@@ -11633,6 +12872,8 @@ class Api:
                     write_res = _persist_sync_activity(activity, dedupe_index=dedupe_index)
                     if write_res.get("op") == "updated":
                         updated += 1
+                        if _safe_int(write_res.get("id")):
+                            changed_activity_ids.append(_safe_int(write_res.get("id")))
                     elif write_res.get("op") == "skipped":
                         if write_res.get("dedupe") == "strict_key":
                             try:
@@ -11643,6 +12884,8 @@ class Api:
                         skipped += 1
                     else:
                         inserted += 1
+                        if _safe_int(write_res.get("id")):
+                            changed_activity_ids.append(_safe_int(write_res.get("id")))
                 except Exception as exc:
                     logger.exception("解析/写入 FIT 文件异常: %s", file_name)
                     skipped += 1
@@ -11669,8 +12912,20 @@ class Api:
             elapsed_sec = round(time.perf_counter() - started_at, 2)
             removed = self._mark_missing_activity_files_deleted(str(base), disk_paths)
             career_refresh = None
-            if inserted or updated or removed:
+            career_metric_results = None
+            changed_activity_ids = _clean_changed_activity_ids(changed_activity_ids)
+            if changed_activity_ids:
+                career_metric_results = _refresh_career_record_metric_results_for_activities_safe(
+                    changed_activity_ids,
+                    reason="local_fit_sync",
+                )
+            if removed:
                 career_refresh = _refresh_career_derived_events_safe("local_fit_sync")
+            elif changed_activity_ids:
+                career_refresh = _refresh_career_derived_events_for_activities_safe(
+                    changed_activity_ids,
+                    reason="local_fit_sync",
+                )
             result = {
                 "ok": True,
                 "source_dir": str(base),
@@ -11683,6 +12938,7 @@ class Api:
                 "removed": removed,
                 "errors": errors,
                 "career_refresh": career_refresh,
+                "career_metric_results": career_metric_results,
                 "elapsed_sec": elapsed_sec,
                 "message": f"同步完成：扫描 {total} 个 FIT 文件（跳过 {pre_skipped} 个未变更），新增 {inserted} 条，更新 {updated} 条，跳过 {skipped} 条，标记删除 {removed} 条，用时 {elapsed_sec:.2f} 秒。",
             }
@@ -11740,6 +12996,13 @@ class Api:
             if not missing_ids:
                 return 0
             placeholders = ",".join("?" * len(missing_ids))
+            for activity_id in missing_ids:
+                career_backend.invalidate_career_record_metric_results_for_activity(
+                    conn,
+                    activity_id,
+                    reason="missing_activity_file",
+                    dry_run=False,
+                )
             conn.execute(
                 f"UPDATE activities SET deleted_at = datetime('now'), updated_at = datetime('now') WHERE id IN ({placeholders})",
                 missing_ids,
@@ -11822,6 +13085,22 @@ class Api:
                     file_errors.append({"id": str(row_id), "file_path": fp, "error": str(exc)})
 
             if deletable_ids:
+                career_metric_results = {
+                    "ok": True,
+                    "reason": "delete_activities",
+                    "activity_count": len(deletable_ids),
+                    "invalidated": 0,
+                    "results": [],
+                }
+                for activity_id in deletable_ids:
+                    invalidated = career_backend.invalidate_career_record_metric_results_for_activity(
+                        conn,
+                        activity_id,
+                        reason="delete_activities",
+                        dry_run=False,
+                    )
+                    career_metric_results["invalidated"] += int(invalidated.get("invalidated") or 0)
+                    career_metric_results["results"].append(invalidated)
                 conn.execute(
                     "DELETE FROM activity_placemarks WHERE activity_id IN ({})".format(",".join("?" * len(deletable_ids))),
                     deletable_ids,
@@ -11852,6 +13131,7 @@ class Api:
                 "expanded_duplicate_ids": duplicate_expanded_ids,
             }
             if deletable_ids:
+                result["career_metric_results"] = career_metric_results
                 result["career_refresh"] = _refresh_career_derived_events_safe("delete_activities")
             if missing_ids:
                 result["missing_ids"] = missing_ids
@@ -11983,6 +13263,7 @@ class Api:
             self._watch_service.suspended = True
 
         imported: list[str] = []
+        imported_activity_ids: list[int] = []
         skipped: list[dict] = []
         errors: list[dict] = []
         # V10.1 健康数据过滤累计(契约 §2.2 fit_sdk 严格语义)
@@ -12009,6 +13290,7 @@ class Api:
             emit_progress("导入任务已启动，正在准备文件...", stage="preparing")
             for fp in file_paths:
                 current_dst: Path | None = None
+                current_source_context: dict[str, Any] | None = None
                 try:
                     src = Path(fp).expanduser().resolve()
                     if not src.is_file():
@@ -12022,6 +13304,21 @@ class Api:
                         dst = Path(self.unique_fit_path(TRACKS_DIR, src.name))
                         current_dst = dst
                         shutil.copy2(str(src), str(dst))
+                        current_source_context = _prepare_local_fit_source(dst)
+                        if current_source_context.get("skip_parse"):
+                            try:
+                                dst.unlink()
+                            except OSError:
+                                pass
+                            skipped.append({
+                                "file": str(fp),
+                                "duplicate_of": current_source_context.get("activity_id") or None,
+                                "dedupe": "source_sha256",
+                            })
+                            current_source_context = None
+                            current += 1
+                            emit_progress(f"已跳过重复文件 {current}/{total}：{src.name}", src.name)
+                            continue
                         emit_progress(f"正在解析 {min(current + 1, total)}/{total}：{src.name}", src.name)
                         # 手动调用单入口同步解析
                         res = _sync_single_fit_file(dst, refresh_career=False)
@@ -12034,6 +13331,8 @@ class Api:
                                         "file_size_kb": res.get("file_size_kb"),
                                         "filter_reasons": res.get("filter_reasons"),
                                     })
+                                    _finish_local_fit_source(current_source_context, ingest_status="skipped")
+                                    current_source_context = None
                                     current += 1
                                     emit_progress(f"已跳过疑似健康数据 {current}/{total}：{src.name}", src.name)
                                     continue
@@ -12043,6 +13342,12 @@ class Api:
                                         "duplicate_of": res.get("activity_id"),
                                         "dedupe": "strict_key",
                                     })
+                                    _finish_local_fit_source(
+                                        current_source_context,
+                                        ingest_status="skipped",
+                                        activity_id=_safe_int(res.get("activity_id")) or None,
+                                    )
+                                    current_source_context = None
                                     current += 1
                                     emit_progress(f"已跳过重复活动 {current}/{total}：{src.name}", src.name)
                                     continue
@@ -12052,11 +13357,26 @@ class Api:
                             skip_entry = self._rollback_if_semantic_duplicate(res, dst, fp)
                             if skip_entry is not None:
                                 skipped.append(skip_entry)
+                                _finish_local_fit_source(
+                                    current_source_context,
+                                    ingest_status="skipped",
+                                    activity_id=_safe_int(skip_entry.get("duplicate_of")) or None,
+                                )
                             else:
                                 imported.append(str(dst))
+                                if res.get("op") in {"inserted", "updated"} and _safe_int(res.get("activity_id")):
+                                    imported_activity_ids.append(_safe_int(res.get("activity_id")))
+                                _finish_local_fit_source(
+                                    current_source_context,
+                                    ingest_status="parsed" if res.get("op") in {"inserted", "updated"} else "skipped",
+                                    activity_id=_safe_int(res.get("activity_id")) or None,
+                                )
+                            current_source_context = None
                         else:
                             err_msg = str(res.get("error") or "FIT 解析失败")
                             _mark_activity_processing_failed(dst, err_msg)
+                            _finish_local_fit_source(current_source_context, ingest_status="failed", error=err_msg)
+                            current_source_context = None
                             errors.append({"file": fp, "error": err_msg})
                         current += 1
                         emit_progress(f"已处理 {current}/{total}：{src.name}", src.name)
@@ -12086,6 +13406,21 @@ class Api:
                             dst = Path(self.unique_fit_path(TRACKS_DIR, fit.name))
                             current_dst = dst
                             shutil.move(str(fit), str(dst))
+                            current_source_context = _prepare_local_fit_source(dst)
+                            if current_source_context.get("skip_parse"):
+                                try:
+                                    dst.unlink()
+                                except OSError:
+                                    pass
+                                skipped.append({
+                                    "file": str(fit),
+                                    "duplicate_of": current_source_context.get("activity_id") or None,
+                                    "dedupe": "source_sha256",
+                                })
+                                current_source_context = None
+                                current += 1
+                                emit_progress(f"已跳过重复文件 {current}/{total}：{fit.name}", fit.name)
+                                continue
                             emit_progress(f"正在解析 {min(current + 1, total)}/{total}：{fit.name}", fit.name)
                             res = _sync_single_fit_file(dst, refresh_career=False)
                             if res.get("ok"):
@@ -12097,6 +13432,8 @@ class Api:
                                             "file_size_kb": res.get("file_size_kb"),
                                             "filter_reasons": res.get("filter_reasons"),
                                         })
+                                        _finish_local_fit_source(current_source_context, ingest_status="skipped")
+                                        current_source_context = None
                                         current += 1
                                         emit_progress(f"已跳过疑似健康数据 {current}/{total}：{fit.name}", fit.name)
                                         continue
@@ -12106,6 +13443,12 @@ class Api:
                                             "duplicate_of": res.get("activity_id"),
                                             "dedupe": "strict_key",
                                         })
+                                        _finish_local_fit_source(
+                                            current_source_context,
+                                            ingest_status="skipped",
+                                            activity_id=_safe_int(res.get("activity_id")) or None,
+                                        )
+                                        current_source_context = None
                                         current += 1
                                         emit_progress(f"已跳过重复活动 {current}/{total}：{fit.name}", fit.name)
                                         continue
@@ -12114,11 +13457,26 @@ class Api:
                                 skip_entry = self._rollback_if_semantic_duplicate(res, dst, fp)
                                 if skip_entry is not None:
                                     skipped.append(skip_entry)
+                                    _finish_local_fit_source(
+                                        current_source_context,
+                                        ingest_status="skipped",
+                                        activity_id=_safe_int(skip_entry.get("duplicate_of")) or None,
+                                    )
                                 else:
                                     imported.append(str(dst))
+                                    if res.get("op") in {"inserted", "updated"} and _safe_int(res.get("activity_id")):
+                                        imported_activity_ids.append(_safe_int(res.get("activity_id")))
+                                    _finish_local_fit_source(
+                                        current_source_context,
+                                        ingest_status="parsed" if res.get("op") in {"inserted", "updated"} else "skipped",
+                                        activity_id=_safe_int(res.get("activity_id")) or None,
+                                    )
+                                current_source_context = None
                             else:
                                 err_msg = str(res.get("error") or "FIT 解析失败")
                                 _mark_activity_processing_failed(dst, err_msg)
+                                _finish_local_fit_source(current_source_context, ingest_status="failed", error=err_msg)
+                                current_source_context = None
                                 errors.append({"file": str(fit), "error": err_msg})
                             current += 1
                             emit_progress(f"已处理 {current}/{total}：{fit.name}", fit.name)
@@ -12132,20 +13490,30 @@ class Api:
                             _mark_activity_processing_failed(current_dst, str(exc))
                     except Exception:
                         pass
+                    _finish_local_fit_source(current_source_context, ingest_status="failed", error=exc)
+                    current_source_context = None
                     errors.append({"file": fp, "error": str(exc)})
                     current += 1
                     emit_progress(f"导入异常：{Path(fp).name}", Path(fp).name)
 
             career_refresh = None
-            if imported:
-                career_refresh = _refresh_career_derived_events_safe("batch_import_tracks")
+            career_metric_results = None
+            refresh_results = _refresh_changed_activity_derivatives_safe(
+                imported_activity_ids,
+                reason="batch_import_tracks",
+            )
+            imported_activity_ids = refresh_results["activity_ids"]
+            career_metric_results = refresh_results["career_metric_results"]
+            career_refresh = refresh_results["career_refresh"]
 
             return _api_success({
                 "imported": imported,
+                "imported_activity_ids": imported_activity_ids,
                 "skipped": skipped,
                 # V10.1 健康数据过滤累计(契约 §2.2)
                 "health_filtered": health_filtered,
                 "errors": errors if errors else None,
+                "career_metric_results": career_metric_results,
                 "career_refresh": career_refresh,
             }, msg=f"导入完成：新增 {len(imported)} 条，跳过 {len(skipped)} 条，异常 {len(errors)} 条")
 
@@ -12453,6 +13821,69 @@ class Api:
         except Exception:
             logger.exception("get_career_record_metric_series failed")
             return _api_error(API_CODE_DB, "运动生涯记录成绩序列查询失败")
+
+    def rebuild_career_record_metric_results(self, payload: dict | None = None) -> dict:
+        """Controlled V3 metric-result materialization maintenance API; dry-run by default."""
+        started = time.perf_counter()
+        try:
+            clean_payload = payload if isinstance(payload, dict) else {}
+            dry_run = clean_payload.get("dry_run") is not False
+            raw_record_keys = clean_payload.get("record_keys")
+            if raw_record_keys is None:
+                raw_record_keys = clean_payload.get("record_key")
+            if isinstance(raw_record_keys, str):
+                record_keys = [item.strip() for item in raw_record_keys.split(",") if item.strip()]
+            elif isinstance(raw_record_keys, list):
+                record_keys = [str(item or "").strip() for item in raw_record_keys if str(item or "").strip()]
+            else:
+                record_keys = None
+            limit = _safe_int(clean_payload.get("limit")) or None
+            data = career_backend.rebuild_career_record_metric_results(
+                sport=str(clean_payload.get("sport") or "all").strip() or "all",
+                record_keys=record_keys,
+                limit=limit,
+                dry_run=dry_run,
+            )
+            data["metrics"] = {
+                **(data.get("metrics") if isinstance(data.get("metrics"), dict) else {}),
+                "elapsed_ms": round((time.perf_counter() - started) * 1000.0, 2),
+                "controlled_apply": not dry_run,
+            }
+            return _api_success(data)
+        except Exception:
+            logger.exception("rebuild_career_record_metric_results failed")
+            return _api_error(API_CODE_DB, "记录中心成绩物化维护失败")
+
+    def materialize_career_record_breaking_events(self, payload: dict | None = None) -> dict:
+        """Controlled record-breaking event materialization maintenance API; dry-run by default."""
+        started = time.perf_counter()
+        try:
+            clean_payload = payload if isinstance(payload, dict) else {}
+            dry_run = clean_payload.get("dry_run") is not False
+            raw_record_keys = clean_payload.get("record_keys")
+            if raw_record_keys is None:
+                raw_record_keys = clean_payload.get("record_key")
+            if isinstance(raw_record_keys, str):
+                record_keys = [item.strip() for item in raw_record_keys.split(",") if item.strip()]
+            elif isinstance(raw_record_keys, list):
+                record_keys = [str(item or "").strip() for item in raw_record_keys if str(item or "").strip()]
+            else:
+                record_keys = None
+            data = career_backend.materialize_career_record_breaking_events(
+                sport=str(clean_payload.get("sport") or "all").strip() or "all",
+                record_keys=record_keys,
+                run_id=str(clean_payload.get("run_id") or "record_breaking_event_materialize").strip() or "record_breaking_event_materialize",
+                dry_run=dry_run,
+            )
+            data["metrics"] = {
+                **(data.get("metrics") if isinstance(data.get("metrics"), dict) else {}),
+                "elapsed_ms": round((time.perf_counter() - started) * 1000.0, 2),
+                "controlled_apply": not dry_run,
+            }
+            return _api_success(data)
+        except Exception:
+            logger.exception("materialize_career_record_breaking_events failed")
+            return _api_error(API_CODE_DB, "纪录刷新事件物化失败")
 
     def get_career_record_curve(self, payload: dict | None = None) -> dict:
         """Return safe V2 derived curve ViewModel."""
@@ -13136,6 +14567,7 @@ class Api:
                 "dynamic_columns": _resolve_activity_list_dynamic_columns_for_rows(records),
                 "normalized_power_backfill": metric_backfill,
                 "list_metric_backfill": metric_backfill,
+                "api_elapsed_ms": elapsed_ms,
                 "startup_trace": {
                     "api_elapsed_ms": elapsed_ms,
                     "process_elapsed_ms": _startup_elapsed_ms(),
@@ -13162,6 +14594,7 @@ class Api:
 
     def get_sport_hub_activity_page(self, page: int = 1, page_size: int = 10, sport_filter: str = "all", title_keyword: str = "") -> dict:
         """个人运动数据 - 后端分页活动记录。"""
+        started = time.perf_counter()
         try:
             page = max(1, _safe_int(page, 1))
             requested_page_size = _safe_int(page_size, 10)
@@ -13196,6 +14629,15 @@ class Api:
                 key=lambda item: (SPORT_HUB_TYPE_ORDER.get(item, 99), item),
             )
 
+            elapsed_ms = round((time.perf_counter() - started) * 1000.0, 2)
+            _record_startup_event(
+                "sport_hub_activity_page_api",
+                elapsed_ms_api=elapsed_ms,
+                page=page,
+                page_size=page_size,
+                total=total_count,
+                sport_filter=str(sport_filter or "all"),
+            )
             return _api_success({
                 "page": page,
                 "page_size": page_size,
@@ -13204,19 +14646,58 @@ class Api:
                 "activity_types": activity_types,
                 "page_sizes": SPORT_HUB_PAGE_SIZES,
                 "records": records,
+                "api_elapsed_ms": elapsed_ms,
+                "startup_trace": {
+                    "api_elapsed_ms": elapsed_ms,
+                    "process_elapsed_ms": _startup_elapsed_ms(),
+                },
             })
         except Exception:
             logger.exception("get_sport_hub_activity_page failed")
             return _api_error(API_CODE_DB, "个人运动数据分页查询失败")
 
+    def get_activity_detail_summary(self, activity_id: int) -> dict:
+        """返回单条活动概览首屏轻量数据，不读取完整轨迹或圈速。"""
+        started = time.perf_counter()
+        aid = _safe_int(activity_id)
+        try:
+            row = self._fetch_activity_summary_row(aid)
+            if not row:
+                return _api_error(API_CODE_NOT_FOUND, "未找到该活动记录")
+            record = _build_activity_detail_summary_from_row(row, 0)
+            elapsed_ms = round((time.perf_counter() - started) * 1000.0, 2)
+            _record_startup_event(
+                "activity_detail_summary_api",
+                elapsed_ms_api=elapsed_ms,
+                activity_id=aid,
+            )
+            return _api_success({
+                "record": record,
+                "api_elapsed_ms": elapsed_ms,
+                "summary_only": True,
+            })
+        except Exception:
+            logger.exception("get_activity_detail_summary failed activity_id=%s", activity_id)
+            return _api_error(API_CODE_DB, "活动概览摘要查询失败")
+
     def get_activity_detail(self, activity_id: int) -> dict:
         """返回单条活动的详情数据，包含缩略图与统计信息。"""
+        started = time.perf_counter()
         try:
             row = self._fetch_activity_row(_safe_int(activity_id))
             if not row:
                 return _api_error(API_CODE_NOT_FOUND, "未找到该活动记录")
             record = _build_record_from_row(self, row, 0)
-            return _api_success({"record": record})
+            elapsed_ms = round((time.perf_counter() - started) * 1000.0, 2)
+            _record_startup_event(
+                "activity_detail_api",
+                elapsed_ms_api=elapsed_ms,
+                activity_id=_safe_int(activity_id),
+            )
+            return _api_success({
+                "record": record,
+                "api_elapsed_ms": elapsed_ms,
+            })
         except Exception:
             logger.exception("get_activity_detail failed activity_id=%s", activity_id)
             return _api_error(API_CODE_DB, "活动详情查询失败")
@@ -13354,7 +14835,161 @@ class Api:
             logger.exception("backfill_activity_weather failed activity_id=%s", activity_id)
             return _api_error(API_CODE_DB, "当前活动天气补全失败")
 
-    def get_fatigue_review(self, activity_id: int) -> dict:
+    def _record_fatigue_review_backend_stage(
+        self,
+        name: str,
+        started: float,
+        **metadata: Any,
+    ) -> None:
+        profile = getattr(self, "_fatigue_review_backend_profile", None)
+        if not isinstance(profile, list):
+            return
+        event: dict[str, Any] = {
+            "name": str(name or "").strip()[:80],
+            "elapsed_ms": round((time.perf_counter() - started) * 1000.0, 2),
+        }
+        for key, value in metadata.items():
+            if key not in {
+                "cache_status",
+                "curve_resolution",
+                "rows",
+                "candidate_rows",
+                "window_rows",
+                "compared_count",
+                "records_count",
+                "curve_points",
+                "payload_bytes",
+            }:
+                continue
+            if isinstance(value, bool):
+                continue
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                number = float(value)
+                if 0 <= number <= 10_000_000:
+                    event[key] = int(number) if number.is_integer() else round(number, 2)
+            elif key in {"cache_status", "curve_resolution"}:
+                text = str(value or "").strip().lower()
+                if text in {"hit", "miss", "sampled", "full"}:
+                    event[key] = text
+        profile.append(event)
+        if len(profile) > 48:
+            del profile[:-48]
+
+    @staticmethod
+    def _fatigue_review_backend_profile_payload(profile: Any) -> dict[str, Any]:
+        events = [
+            dict(event)
+            for event in (profile if isinstance(profile, list) else [])
+            if isinstance(event, dict) and event.get("name")
+        ]
+        top_level_names = {
+            "fetch_activity_row",
+            "cache_fingerprint",
+            "load_snapshot_cache",
+            "build_snapshot",
+            "store_snapshot_cache",
+            "prepare_response",
+        }
+        total_ms = round(
+            sum(
+                _safe_float(event.get("elapsed_ms"), 0.0) or 0.0
+                for event in events
+                if event.get("name") in top_level_names
+            ),
+            2,
+        )
+        return {
+            "storage": "response_diagnostic",
+            "event_count": len(events),
+            "top_level_profiled_ms": total_ms,
+            "events": events,
+        }
+
+    def _ensure_fatigue_review_cache_schema(self, conn: sqlite3.Connection) -> None:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS fatigue_review_snapshot_cache (
+                activity_id INTEGER PRIMARY KEY,
+                fingerprint TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_fatigue_review_snapshot_cache_fingerprint
+            ON fatigue_review_snapshot_cache(activity_id, fingerprint)
+            """
+        )
+
+    def _fatigue_review_cache_fingerprint(self, row: dict) -> str:
+        payload = {
+            "activity_id": _safe_int(row.get("id")) or 0,
+            "activity_updated_at": str(row.get("updated_at") or ""),
+            "cache_version": FATIGUE_REVIEW_CACHE_VERSION,
+            "metrics_version": CURRENT_METRICS_VERSION,
+        }
+        raw = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+    def _load_fatigue_review_snapshot_cache(self, activity_id: int, fingerprint: str) -> dict | None:
+        conn = profile_backend._conn()
+        try:
+            self._ensure_fatigue_review_cache_schema(conn)
+            row = conn.execute(
+                """
+                SELECT payload_json
+                FROM fatigue_review_snapshot_cache
+                WHERE activity_id = ? AND fingerprint = ?
+                LIMIT 1
+                """,
+                (_safe_int(activity_id), str(fingerprint or "")),
+            ).fetchone()
+            if not row:
+                return None
+            payload = json.loads(row["payload_json"])
+            return payload if isinstance(payload, dict) else None
+        except Exception:
+            logger.debug("fatigue_review_snapshot_cache_load_failed", exc_info=True)
+            return None
+        finally:
+            conn.close()
+
+    def _store_fatigue_review_snapshot_cache(self, activity_id: int, fingerprint: str, snapshot: dict) -> None:
+        conn = profile_backend._conn()
+        try:
+            self._ensure_fatigue_review_cache_schema(conn)
+            payload = dict(snapshot or {})
+            payload.pop("api_elapsed_ms", None)
+            payload.pop("cache_status", None)
+            payload.pop("review_backend_profile", None)
+            payload["ai_insight"] = None
+            conn.execute(
+                """
+                INSERT INTO fatigue_review_snapshot_cache
+                    (activity_id, fingerprint, payload_json, created_at, updated_at)
+                VALUES (?, ?, ?, datetime('now'), datetime('now'))
+                ON CONFLICT(activity_id) DO UPDATE SET
+                    fingerprint = excluded.fingerprint,
+                    payload_json = excluded.payload_json,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    _safe_int(activity_id),
+                    str(fingerprint or ""),
+                    json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+                ),
+            )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            logger.debug("fatigue_review_snapshot_cache_store_failed", exc_info=True)
+        finally:
+            conn.close()
+
+    def get_fatigue_review(self, activity_id: int, curve_resolution: Any = None) -> dict:
         """V6.3 运动复盘覆盖层数据源。
 
         契约:fit-arch-contrac §3 响应结构 / §六 shadow_diff 隔离 / §8 只读。
@@ -13362,12 +14997,18 @@ class Api:
         ai_insight / advice / disclaimer。前端禁止拼接 prompt,AI 洞察由
         call_llm('__FATIGUE_REVIEW_INSIGHT__', sport_type) 独立 sentinel 走专用通道。
         """
+        started = time.perf_counter()
+        previous_profile = self._fatigue_review_backend_profile
+        backend_profile: list[dict[str, Any]] = []
+        self._fatigue_review_backend_profile = backend_profile
         try:
             aid = _safe_int(activity_id)
             if aid is None or aid <= 0:
                 return _api_error(API_CODE_VALIDATION, "activity_id 必须为正整数")
 
+            stage_started = time.perf_counter()
             row = self._fetch_activity_row(aid)
+            self._record_fatigue_review_backend_stage("fetch_activity_row", stage_started)
             if not row:
                 return _api_error(API_CODE_NOT_FOUND, "未找到该活动记录")
             processing_status = str(row.get("processing_status") or "ready").strip().lower()
@@ -13383,13 +15024,234 @@ class Api:
                     "processing_error": str(row.get("processing_error") or ""),
                 })
 
+            response_curve_resolution = _fatigue_review_curve_resolution(curve_resolution)
+            stage_started = time.perf_counter()
+            cache_fingerprint = self._fatigue_review_cache_fingerprint(row)
+            self._record_fatigue_review_backend_stage("cache_fingerprint", stage_started)
+            stage_started = time.perf_counter()
+            cached_snapshot = self._load_fatigue_review_snapshot_cache(aid, cache_fingerprint)
+            self._record_fatigue_review_backend_stage(
+                "load_snapshot_cache",
+                stage_started,
+                cache_status="hit" if cached_snapshot is not None else "miss",
+            )
+            if cached_snapshot is not None:
+                self._fatigue_review_activity_id = aid
+                elapsed_ms = round((time.perf_counter() - started) * 1000.0, 2)
+                stage_started = time.perf_counter()
+                response_snapshot = _prepare_fatigue_review_snapshot_for_response(
+                    cached_snapshot,
+                    response_curve_resolution,
+                )
+                self._record_fatigue_review_backend_stage(
+                    "prepare_response",
+                    stage_started,
+                    curve_resolution=response_snapshot.get("curve_resolution"),
+                    curve_points=response_snapshot.get("curve_points_returned"),
+                )
+                response_snapshot["api_elapsed_ms"] = elapsed_ms
+                response_snapshot["cache_status"] = "hit"
+                response_snapshot["review_backend_profile"] = self._fatigue_review_backend_profile_payload(backend_profile)
+                _record_startup_event(
+                    "fatigue_review_api",
+                    elapsed_ms_api=elapsed_ms,
+                    activity_id=aid,
+                    cache_status="hit",
+                    curve_resolution=response_snapshot.get("curve_resolution"),
+                    curve_points=response_snapshot.get("curve_points_returned"),
+                )
+                return _api_success(response_snapshot)
+
             # §六 shadow_diff 隔离:严禁从 _build_standard_diff 路径拉取 shadow_diff
-            fr_snapshot = self._build_fatigue_review_snapshot(row)
+            self._fatigue_review_historical_curve_cache = {}
+            try:
+                stage_started = time.perf_counter()
+                fr_snapshot = self._build_fatigue_review_snapshot(row)
+                self._record_fatigue_review_backend_stage(
+                    "build_snapshot",
+                    stage_started,
+                    curve_points=len(((fr_snapshot.get("curves") or {}).get("distance") or [])),
+                )
+            finally:
+                self._fatigue_review_historical_curve_cache = {}
             self._fatigue_review_activity_id = aid
-            return _api_success(fr_snapshot)
+            stage_started = time.perf_counter()
+            self._store_fatigue_review_snapshot_cache(aid, cache_fingerprint, fr_snapshot)
+            self._record_fatigue_review_backend_stage("store_snapshot_cache", stage_started)
+            elapsed_ms = round((time.perf_counter() - started) * 1000.0, 2)
+            stage_started = time.perf_counter()
+            response_snapshot = _prepare_fatigue_review_snapshot_for_response(
+                fr_snapshot,
+                response_curve_resolution,
+            )
+            self._record_fatigue_review_backend_stage(
+                "prepare_response",
+                stage_started,
+                curve_resolution=response_snapshot.get("curve_resolution"),
+                curve_points=response_snapshot.get("curve_points_returned"),
+            )
+            response_snapshot["api_elapsed_ms"] = elapsed_ms
+            response_snapshot["cache_status"] = "miss"
+            response_snapshot["review_backend_profile"] = self._fatigue_review_backend_profile_payload(backend_profile)
+            _record_startup_event(
+                "fatigue_review_api",
+                elapsed_ms_api=elapsed_ms,
+                activity_id=aid,
+                cache_status="miss",
+                curve_resolution=response_snapshot.get("curve_resolution"),
+                curve_points=response_snapshot.get("curve_points_returned"),
+            )
+            return _api_success(response_snapshot)
         except Exception:
             logger.exception("get_fatigue_review failed activity_id=%s", activity_id)
             return _api_error(API_CODE_DB, "复盘数据查询失败")
+        finally:
+            self._fatigue_review_backend_profile = previous_profile
+
+    @staticmethod
+    def _fatigue_review_history_raw_cache_key(value: Any) -> str | None:
+        if value is None or value == "":
+            return None
+        if isinstance(value, str):
+            raw = value
+        else:
+            try:
+                raw = json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
+            except Exception:
+                raw = str(value)
+        digest = hashlib.sha1(raw.encode("utf-8", errors="ignore")).hexdigest()
+        return f"{len(raw)}:{digest}"
+
+    def _review_historical_curve_cached(
+        self,
+        canonical_points_json: Any,
+        derived_curve_json: Any,
+        field: str,
+    ) -> tuple[list, str]:
+        """Request-scoped cache for historical curve decoding during one review build."""
+        cache = getattr(self, "_fatigue_review_historical_curve_cache", None)
+        if not isinstance(cache, dict):
+            return _review_historical_curve(canonical_points_json, derived_curve_json, field)
+
+        canonical_key = self._fatigue_review_history_raw_cache_key(canonical_points_json)
+        if canonical_key:
+            bucket_key = f"canonical:{canonical_key}"
+            bucket = cache.setdefault(bucket_key, {})
+            curve_key = f"field:{field}"
+            if curve_key in bucket:
+                cached = bucket[curve_key]
+                if cached[0]:
+                    return list(cached[0]), str(cached[1])
+            if "__points__" not in bucket:
+                bucket["__points__"] = _safe_json_list(canonical_points_json) or []
+            points = bucket.get("__points__") or []
+            values: list[Any] = []
+            has_numeric_field = False
+            for point in points:
+                if not isinstance(point, dict):
+                    continue
+                value = _safe_float(point.get(field), None)
+                if value is not None:
+                    has_numeric_field = True
+                values.append(value)
+            result = (values, "canonical_track_json") if has_numeric_field else ([], "missing")
+            bucket[curve_key] = result
+            if result[0]:
+                return list(result[0]), result[1]
+
+        derived_key = self._fatigue_review_history_raw_cache_key(derived_curve_json)
+        if derived_key:
+            bucket_key = f"derived:{field}:{derived_key}"
+            if bucket_key in cache:
+                cached = cache[bucket_key]
+                return list(cached[0]), str(cached[1])
+            derived = _safe_json_list(derived_curve_json)
+            result = (derived, "legacy_derived_column") if derived else ([], "missing")
+            cache[bucket_key] = result
+            return list(result[0]), result[1]
+
+        return [], "missing"
+
+    def _fetch_review_history_curve_candidates(
+        self,
+        row: dict,
+        *,
+        min_duration_sec: int,
+        derived_column: str,
+        window_days: int = 21,
+    ) -> list[dict[str, Any]]:
+        sport_type = str(row.get("sport_type") or "running")
+        current_id = _safe_int(row.get("id")) or 0
+        as_of_time = _activity_as_of_time(row)
+        if not as_of_time:
+            return []
+        window_start = as_of_time - timedelta(days=window_days)
+        conn = sqlite3.connect(str(profile_backend.DB_PATH))
+        try:
+            cursor = conn.cursor()
+            time_select_sql, time_where_sql, time_order_sql = _activity_table_time_sql(cursor)
+            derived_select_sql = _activity_optional_column_sql(cursor, derived_column, derived_column)
+            coarse_sql, coarse_params = _activity_history_coarse_time_filter(
+                cursor,
+                window_start=window_start,
+                as_of_time=as_of_time,
+            )
+            cursor.execute(
+                f"""
+                SELECT id, {time_select_sql}, {derived_select_sql}
+                FROM activities
+                WHERE sport_type = ?
+                  AND id != ?
+                  AND {time_where_sql}
+                  AND duration_sec > ?
+                  {coarse_sql}
+                ORDER BY {time_order_sql}
+                """,
+                (sport_type, current_id, min_duration_sec, *coarse_params),
+            )
+            rows = cursor.fetchall()
+            window_rows: list[tuple[int, Any]] = []
+            for activity_id, start_utc, start_local, derived_json in rows:
+                if _activity_time_in_window(
+                    start_utc,
+                    start_local,
+                    window_start=window_start,
+                    as_of_time=as_of_time,
+                ):
+                    aid = _safe_int(activity_id)
+                    if aid:
+                        window_rows.append((aid, derived_json))
+            if not window_rows:
+                return []
+
+            ids = [activity_id for activity_id, _derived_json in window_rows]
+            placeholders = ",".join("?" for _ in ids)
+            track_select_sql = _activity_optional_column_sql(cursor, "track_json", "track_json")
+            points_select_sql = _activity_optional_column_sql(cursor, "points_json", "points_json")
+            cursor.execute(
+                f"""
+                SELECT id, {track_select_sql}, {points_select_sql}
+                FROM activities
+                WHERE id IN ({placeholders})
+                """,
+                ids,
+            )
+            canonical_by_id = {
+                _safe_int(activity_id): (track_json or points_json)
+                for activity_id, track_json, points_json in cursor.fetchall()
+            }
+            return [
+                {
+                    "activity_id": activity_id,
+                    "canonical_points_json": canonical_by_id.get(activity_id),
+                    "derived_curve_json": derived_json,
+                }
+                for activity_id, derived_json in window_rows
+            ]
+        except Exception:
+            return []
+        finally:
+            conn.close()
 
     def _fetch_historical_metrics_avg(self, sport_type: str, current_activity_id: int, limit: int = 5) -> dict:
         """V8.2/FR-Core-02: 从可同口径曲线列计算同运动类型历史基线。
@@ -13476,9 +15338,15 @@ class Api:
             if not as_of_time or not avg_hr or not avg_pace or duration_sec < 15 * 60:
                 return {"baseline_ratio": None, "compared_count": 0, "level": "flat"}
 
+            window_start = as_of_time - timedelta(days=21)
             conn = sqlite3.connect(str(DB_PATH))
             cursor = conn.cursor()
             time_select_sql, time_where_sql, time_order_sql = _activity_table_time_sql(cursor)
+            coarse_sql, coarse_params = _activity_history_coarse_time_filter(
+                cursor,
+                window_start=window_start,
+                as_of_time=as_of_time,
+            )
             cursor.execute(
                 f"""
                 SELECT {time_select_sql}, avg_hr, avg_pace, duration_sec
@@ -13489,16 +15357,16 @@ class Api:
                   AND avg_hr IS NOT NULL
                   AND avg_pace IS NOT NULL
                   AND duration_sec > ?
+                  {coarse_sql}
                 ORDER BY {time_order_sql}
                 """,
-                (sport_type, current_id, 15 * 60),
+                (sport_type, current_id, 15 * 60, *coarse_params),
             )
             rows = cursor.fetchall()
             conn.close()
         except Exception:
             return {"baseline_ratio": None, "compared_count": 0, "level": "flat"}
 
-        window_start = as_of_time - timedelta(days=21)
         ratios = []
         for start_utc, start_local, h, p, _d in rows:
             if not _activity_time_in_window(
@@ -13530,51 +15398,20 @@ class Api:
         返回:{"baseline_ratio": float|None, "compared_count": int, "level": str}
         """
         try:
-            from profile_backend import DB_PATH
-            import sqlite3
-            sport_type = str(row.get("sport_type") or "running")
-            current_id = _safe_int(row.get("id")) or 0
-            as_of_time = _activity_as_of_time(row)
-            if not as_of_time:
-                return {"baseline_ratio": None, "compared_count": 0, "level": "flat"}
-
-            conn = sqlite3.connect(str(DB_PATH))
-            cursor = conn.cursor()
-            time_select_sql, time_where_sql, time_order_sql = _activity_table_time_sql(cursor)
-            track_select_sql = _activity_optional_column_sql(cursor, "track_json", "track_json")
-            points_select_sql = _activity_optional_column_sql(cursor, "points_json", "points_json")
-            speed_select_sql = _activity_optional_column_sql(cursor, "speed_curve", "speed_curve")
-            cursor.execute(
-                f"""
-                SELECT {time_select_sql}, {track_select_sql}, {points_select_sql}, {speed_select_sql}
-                FROM activities
-                WHERE sport_type = ?
-                  AND id != ?
-                  AND {time_where_sql}
-                  AND duration_sec > ?
-                ORDER BY {time_order_sql}
-                """,
-                (sport_type, current_id, 45 * 60),
+            rows = self._fetch_review_history_curve_candidates(
+                row,
+                min_duration_sec=45 * 60,
+                derived_column="speed_curve",
             )
-            rows = cursor.fetchall()
-            conn.close()
         except Exception:
             return {"baseline_ratio": None, "compared_count": 0, "level": "flat"}
 
-        window_start = as_of_time - timedelta(days=21)
         ratios = []
         source_quality_counts: dict[str, int] = {}
-        for start_utc, start_local, track_json, points_json, speed_curve_json in rows:
-            if not _activity_time_in_window(
-                start_utc,
-                start_local,
-                window_start=window_start,
-                as_of_time=as_of_time,
-            ):
-                continue
-            speed_curve, source_quality = _review_historical_curve(
-                track_json or points_json,
-                speed_curve_json,
+        for history_row in rows:
+            speed_curve, source_quality = self._review_historical_curve_cached(
+                history_row.get("canonical_points_json"),
+                history_row.get("derived_curve_json"),
                 "speed",
             )
             valid = [s for s in speed_curve if s and s > 0]
@@ -13632,51 +15469,20 @@ class Api:
         - §6 SQL 严禁 SELECT shadow_diff_json
         """
         try:
-            from profile_backend import DB_PATH
-            import sqlite3
-            sport_type = str(row.get("sport_type") or "running")
-            current_id = _safe_int(row.get("id")) or 0
-            as_of_time = _activity_as_of_time(row)
-            if not as_of_time:
-                return {"baseline_cv": None, "compared_count": 0, "level": "flat"}
-
-            conn = sqlite3.connect(str(DB_PATH))
-            cursor = conn.cursor()
-            time_select_sql, time_where_sql, time_order_sql = _activity_table_time_sql(cursor)
-            track_select_sql = _activity_optional_column_sql(cursor, "track_json", "track_json")
-            points_select_sql = _activity_optional_column_sql(cursor, "points_json", "points_json")
-            cadence_select_sql = _activity_optional_column_sql(cursor, "cadence_curve", "cadence_curve")
-            cursor.execute(
-                f"""
-                SELECT {time_select_sql}, {track_select_sql}, {points_select_sql}, {cadence_select_sql}
-                FROM activities
-                WHERE sport_type = ?
-                  AND id != ?
-                  AND {time_where_sql}
-                  AND duration_sec > ?
-                ORDER BY {time_order_sql}
-                """,
-                (sport_type, current_id, 20 * 60),
+            rows = self._fetch_review_history_curve_candidates(
+                row,
+                min_duration_sec=20 * 60,
+                derived_column="cadence_curve",
             )
-            rows = cursor.fetchall()
-            conn.close()
         except Exception:
             return {"baseline_cv": None, "compared_count": 0, "level": "flat"}
 
-        window_start = as_of_time - timedelta(days=21)
         cvs: list[float] = []
         source_quality_counts: dict[str, int] = {}
-        for start_utc, start_local, track_json, points_json, cadence_json in rows:
-            if not _activity_time_in_window(
-                start_utc,
-                start_local,
-                window_start=window_start,
-                as_of_time=as_of_time,
-            ):
-                continue
-            cadence_stream, source_quality = _review_historical_curve(
-                track_json or points_json,
-                cadence_json,
+        for history_row in rows:
+            cadence_stream, source_quality = self._review_historical_curve_cached(
+                history_row.get("canonical_points_json"),
+                history_row.get("derived_curve_json"),
                 "cadence",
             )
             # 复刻 V7.12 CV 计算:过滤 > 30 spm 的有效点
@@ -13754,9 +15560,15 @@ class Api:
                 profile_max_hr = _safe_float(row.get("max_hr") or row.get("max_heart_rate"))
                 profile_resting_hr = 60.0 if profile_max_hr else None
 
+            window_start = as_of_time - timedelta(days=21)
             conn = sqlite3.connect(str(DB_PATH))
             cursor = conn.cursor()
             time_select_sql, time_where_sql, time_order_sql = _activity_table_time_sql(cursor)
+            coarse_sql, coarse_params = _activity_history_coarse_time_filter(
+                cursor,
+                window_start=window_start,
+                as_of_time=as_of_time,
+            )
             cursor.execute(
                 f"""
                 SELECT {time_select_sql}, hr_zone_distribution, avg_hr, duration_sec
@@ -13766,16 +15578,16 @@ class Api:
                   AND {time_where_sql}
                   AND duration_sec > ?
                   AND avg_hr IS NOT NULL
+                  {coarse_sql}
                 ORDER BY {time_order_sql}
                 """,
-                (sport_type, current_id, 5 * 60),
+                (sport_type, current_id, 5 * 60, *coarse_params),
             )
             rows = cursor.fetchall()
             conn.close()
         except Exception:
             return {"baseline_load": None, "compared_count": 0, "level": "flat"}
 
-        window_start = as_of_time - timedelta(days=21)
         loads: list[float] = []
         for start_utc, start_local, zone_json, avg_hr, dur in rows:
             if not _activity_time_in_window(
@@ -13874,22 +15686,28 @@ class Api:
             time_select_sql, time_where_sql, time_order_sql = _activity_table_time_sql(cursor)
             cutoff_7d = as_of_time - timedelta(days=7)
             cutoff_42d = as_of_time - timedelta(days=42)
+            coarse_sql, coarse_params = _activity_history_coarse_time_filter(
+                cursor,
+                window_start=cutoff_42d,
+                as_of_time=as_of_time,
+            )
+            cursor.execute(
+                f"""
+                SELECT {time_select_sql}, avg_hr, duration_sec
+                FROM activities
+                WHERE sport_type = ?
+                  AND id != ?
+                  AND {time_where_sql}
+                  AND avg_hr IS NOT NULL
+                  AND duration_sec > ?
+                  {coarse_sql}
+                ORDER BY {time_order_sql}
+                """,
+                (sport_type, current_id, 5 * 60, *coarse_params),
+            )
+            period_rows = cursor.fetchall()
 
             def _query_period_load(cutoff_dt):
-                cursor.execute(
-                    f"""
-                    SELECT {time_select_sql}, avg_hr, duration_sec
-                    FROM activities
-                    WHERE sport_type = ?
-                      AND id != ?
-                      AND {time_where_sql}
-                      AND avg_hr IS NOT NULL
-                      AND duration_sec > ?
-                    ORDER BY {time_order_sql}
-                    """,
-                    (sport_type, current_id, 5 * 60),
-                )
-                period_rows = cursor.fetchall()
                 total = 0.0
                 count = 0
                 for start_utc, start_local, h, d in period_rows:
@@ -14099,6 +15917,7 @@ class Api:
             "display_meta": _build_fatigue_review_display_meta(),
             "context_tags": {},
             "environment_context": _build_fatigue_review_environment_context(),
+            "environment_factors": [],
             "cycling_explanation_signals": _build_cycling_explanation_signals(
                 sport_type=sport_type,
                 summary={
@@ -14184,6 +16003,7 @@ class Api:
             ),
             "context_tags": review_snapshot.get("context_tags") or {},
             "environment_context": review_snapshot.get("environment_context") or {},
+            "environment_factors": review_snapshot.get("environment_factors") or [],
             "cycling_explanation_signals": review_snapshot.get("cycling_explanation_signals") or {},
             "advice": review_snapshot.get("advice") or "",
             "disclaimer": review_snapshot.get("disclaimer") or "",
@@ -14225,7 +16045,13 @@ class Api:
             review_mode = get_review_mode(sport_type)
             review_capabilities = get_review_capabilities(sport_type)
 
+            stage_started = time.perf_counter()
             bundle = _build_fatigue_review_curve_bundle(row)
+            self._record_fatigue_review_backend_stage(
+                "build_curve_bundle",
+                stage_started,
+                records_count=len(bundle.get("records") or []),
+            )
             total_distance_m = bundle.get("total_distance_m") or total_distance_m
             distance_curve_m = bundle.get("distance_curve_m") or []
             time_curve = bundle.get("time_curve_sec") or []
@@ -14242,6 +16068,7 @@ class Api:
 
             if bundle.get("records"):
                 try:
+                    stage_started = time.perf_counter()
                     resolved_v81 = _build_resolved_payload_v81(
                         bundle=bundle,
                         sport_type=sport_type,
@@ -14266,21 +16093,34 @@ class Api:
                     )
                     fatigue_zones = _merge_fatigue_zones_for_review(fatigue_zones)
                     context_tags = resolved_v81.get("context_tags") or {}
+                    self._record_fatigue_review_backend_stage(
+                        "resolver_payload",
+                        stage_started,
+                        curve_points=len(distance_curve_m or []),
+                    )
                 except Exception:
                     logger.exception(
                         "_build_fatigue_review_snapshot V8.1 Resolver 调用失败,降级空数组"
                     )
 
+            stage_started = time.perf_counter()
             curves_snapshot = _build_fatigue_review_curves_snapshot(
                 bundle=bundle,
                 resolved=resolved_v81,
             )
+            self._record_fatigue_review_backend_stage(
+                "curves_snapshot",
+                stage_started,
+                curve_points=len(curves_snapshot.get("distance") or []),
+            )
             axis_len = len(curves_snapshot.get("distance") or [])
+            stage_started = time.perf_counter()
             display_curves = _build_fatigue_review_display_curves(
                 speed_curve=curves_snapshot.get("speed") or [],
                 gap_curve=curves_snapshot.get("gap") or [],
                 axis_len=axis_len,
             )
+            self._record_fatigue_review_backend_stage("display_curves", stage_started)
             display_meta = _build_fatigue_review_display_meta()
             distance_curve_km = curves_snapshot.get("distance") or []
             review_input_window = _build_review_input_window(
@@ -14378,10 +16218,16 @@ class Api:
 
             # V7.6 trend 派生:挂在 metrics 子字段,不扩展 V6.3 顶级 7 段白名单
             _TREND_COMPARE_COUNT = 5
+            stage_started = time.perf_counter()
             historical_avg = self._fetch_historical_metrics_avg(
                 sport_type=sport_type,
                 current_activity_id=int(row.get("id", 0)) or 0,
                 limit=_TREND_COMPARE_COUNT,
+            )
+            self._record_fatigue_review_backend_stage(
+                "historical_metrics_avg",
+                stage_started,
+                compared_count=historical_avg.get("sample_size", 0),
             )
             sample_size = historical_avg.get("sample_size", 0)
 
@@ -14484,7 +16330,13 @@ class Api:
             # V7.14:efficiency trend 真实查询(21d baseline)
             # 见 docs/physiology_reference.md §指标 5 + §五未来指标入源流程
             try:
+                stage_started = time.perf_counter()
                 _eff_trend = self._fetch_efficiency_trend(row)
+                self._record_fatigue_review_backend_stage(
+                    "efficiency_trend",
+                    stage_started,
+                    compared_count=_eff_trend.get("compared_count", 0),
+                )
                 metrics["efficiency"]["trend"] = {
                     "level": _eff_trend.get("level", "flat"),
                     "compared_count": _eff_trend.get("compared_count", 0),
@@ -14527,7 +16379,13 @@ class Api:
                 # V7.14:durability trend 真实查询(21d baseline)
                 # 见 docs/physiology_reference.md §指标 7 + §五未来指标入源流程
                 try:
+                    stage_started = time.perf_counter()
                     _dur_trend = self._fetch_durability_trend(row)
+                    self._record_fatigue_review_backend_stage(
+                        "durability_trend",
+                        stage_started,
+                        compared_count=_dur_trend.get("compared_count", 0),
+                    )
                     metrics["durability"]["trend"] = {
                         "level": _dur_trend.get("level", "flat"),
                         "compared_count": _dur_trend.get("compared_count", 0),
@@ -14588,7 +16446,13 @@ class Api:
                 # 语义与 4 个老指标不同:CV 越小越稳(is_improving 方向反转)
                 # 见 docs/physiology_reference.md §指标 8
                 try:
+                    stage_started = time.perf_counter()
                     _cad_trend = self._fetch_cadence_stability_trend(row)
+                    self._record_fatigue_review_backend_stage(
+                        "cadence_stability_trend",
+                        stage_started,
+                        compared_count=_cad_trend.get("compared_count", 0),
+                    )
                     _baseline_cv = _cad_trend.get("baseline_cv")
                     _current_cv = _cadence_result.get("cv")
                     if _baseline_cv is not None and _current_cv is not None and _baseline_cv > 0:
@@ -14678,7 +16542,13 @@ class Api:
                 }
                 # V7.14:7d/42d acute/chronic 真实计算
                 try:
+                    stage_started = time.perf_counter()
                     _load_ratio = self._fetch_load_ratio_7d_42d(row)
+                    self._record_fatigue_review_backend_stage(
+                        "load_ratio_7d_42d",
+                        stage_started,
+                        compared_count=_load_ratio.get("compared_count", 0),
+                    )
                     metrics["training_load"]["load_ratio"] = _load_ratio.get("ratio")
                     metrics["training_load"]["ratio_7d_42d"] = _load_ratio.get("level")
                     metrics["training_load"]["acute_7d"] = _load_ratio.get("acute_7d")
@@ -14691,7 +16561,13 @@ class Api:
                 # 训练负荷无统一改善方向(高/低因训练阶段而异),is_improving 留 None
                 # 见 docs/physiology_reference.md §指标 9
                 try:
+                    stage_started = time.perf_counter()
                     _load_trend = self._fetch_training_load_trend(row)
+                    self._record_fatigue_review_backend_stage(
+                        "training_load_trend",
+                        stage_started,
+                        compared_count=_load_trend.get("compared_count", 0),
+                    )
                     _baseline_load = _load_trend.get("baseline_load")
                     _current_load = _load_result.get("load")
                     if _baseline_load is not None and _current_load is not None and _baseline_load > 0:
@@ -14738,11 +16614,17 @@ class Api:
             # 周边 metrics 白名单(decoupling / bonk_risk / events / historical_avg)完全保留
 
             # 6. 7 段白名单
+            stage_started = time.perf_counter()
             weather = _decode_weather_json(row.get("weather_json"))
             environment_context = _build_fatigue_review_environment_context(
                 weather=weather,
                 avg_temperature=bundle.get("avg_temperature"),
                 context_tags=context_tags,
+            )
+            environment_factors = _build_fatigue_review_environment_factors(
+                sport_type=sport_type,
+                environment_context=environment_context,
+                row=row,
             )
             summary = _build_fatigue_review_summary(
                 row=row,
@@ -14770,7 +16652,9 @@ class Api:
                     curves_snapshot=curves_snapshot,
                     cycling_explanation_signals=cycling_explanation_signals,
                 )
+            self._record_fatigue_review_backend_stage("summary_and_signals", stage_started)
             # 5. collapse_events 白名单(每条带 event_id 联动标识)
+            stage_started = time.perf_counter()
             collapse_events = _build_fatigue_review_collapse_events(
                 bonk_events=bonk_events,
                 fatigue_zones=fatigue_zones,
@@ -14795,6 +16679,11 @@ class Api:
                 },
             }
             metrics = _gate_fatigue_review_metric_trends(metrics)
+            self._record_fatigue_review_backend_stage(
+                "events_and_metric_gate",
+                stage_started,
+                compared_count=sample_size,
+            )
             snapshot = {
                 "sport_type": sport_type,
                 "review_mode": review_mode,
@@ -14808,6 +16697,7 @@ class Api:
                 "display_meta": display_meta,
                 "context_tags": context_tags,
                 "environment_context": environment_context,
+                "environment_factors": environment_factors,
                 "cycling_explanation_signals": cycling_explanation_signals,
                 "ai_insight": None,
                 "advice": "暂未生成",
@@ -15211,6 +17101,148 @@ def _build_detail_laps(api_self, row: dict, display_type: str, dist_km: float, d
     return api_self._build_lap_rows(dist_km, duration_sec, avg_hr, base_power)
 
 
+def _build_activity_detail_summary_from_row(row: dict, idx: int = 0) -> dict:
+    dist_km_field = _safe_float(row.get("dist_km"))
+    dist_m_field = _safe_float(row.get("distance"))
+    if dist_km_field and dist_km_field > 0:
+        dist_km = dist_km_field
+    elif dist_m_field and dist_m_field > 0:
+        dist_km = dist_m_field / 1000.0
+    else:
+        dist_km = 0.0
+    duration_sec = _safe_int(row.get("duration") if row.get("duration") is not None else row.get("duration_sec"))
+    avg_hr = _safe_int(row.get("avg_hr")) or None
+    max_hr = _safe_int(row.get("max_hr"))
+    avg_pace = row.get("avg_pace")
+    pace_sec = _safe_int(avg_pace) if avg_pace is not None else None
+    sub_sport_record = str(row.get("sub_sport_type") or "").strip()
+    pace_unit_record = "/100m" if sub_sport_record in ("lap_swimming", "open_water") else "/km"
+    if pace_sec and pace_sec > 0:
+        pm, ps = int(pace_sec // 60), int(round(pace_sec % 60))
+        pace_display_detail = f"{pm}'{ps:02d}''{pace_unit_record}"
+    else:
+        pace_display_detail = f"-- {pace_unit_record}"
+    raw_distance_m_detail = dist_km * 1000
+    distance_display_detail = f"{int(raw_distance_m_detail)}m" if raw_distance_m_detail <= 5000 else f"{round(dist_km, 2):.2f}km"
+    calories = _safe_int(row.get("calories"))
+    display_type = _resolve_display_sport_type(row.get("sport_type"), row.get("sub_sport_type"))
+    water_metric_value, water_metric_label, water_metric_kind = _resolve_water_metric_for_row(
+        display_type,
+        row.get("sub_sport_type"),
+        row.get("swolf"),
+        "",
+    )
+    timestamp = row.get("start_time") or row.get("updated_at")
+    try:
+        dt = datetime.fromisoformat(str(timestamp).replace("Z", "+00:00")) if timestamp else None
+        month_key = dt.strftime("%Y-%m") if dt else "--"
+        date_label = dt.strftime("%Y-%m-%d") if dt else "--"
+    except Exception:
+        month_key = "--"
+        date_label = str(timestamp or "--")
+    raw_for_engine = {
+        "distance_km": dist_km,
+        "duration_sec": duration_sec,
+        "avg_speed": (dist_km * 1000.0 / duration_sec) if dist_km > 0 and duration_sec > 0 else None,
+        "avg_pace_sec": pace_sec,
+        "avg_pace_display": pace_display_detail,
+        "distance_display": distance_display_detail,
+        "avg_hr": avg_hr,
+        "max_hr": max_hr,
+        "calories": calories,
+        "elevation": int(row.get("gain_m") or 0),
+    }
+    capabilities = {
+        "has_gps": False,
+        "has_hr": bool(avg_hr),
+        "has_elevation": any(
+            row.get(field) is not None
+            for field in ("gain_m", "max_alt_m", "min_alt_m", "total_descent_m")
+        ),
+        "has_power": bool(row.get("avg_power") or row.get("normalized_power")),
+    }
+    detail = {
+        "display_metrics": SemanticSportsEngine.build_display_metrics(display_type, raw_for_engine),
+        "layout": SemanticSportsEngine.get_layout(display_type),
+        "capabilities": capabilities,
+        "summary": raw_for_engine,
+        "laps": [],
+        "lap_columns": [],
+        "thumbnail_points": [],
+        "training_effect": build_training_effect(
+            {
+                "aerobic_training_effect": row.get("aerobic_training_effect"),
+                "anaerobic_training_effect": row.get("anaerobic_training_effect"),
+            },
+            display_type,
+        ),
+        "environment_challenge": {},
+    }
+    region_status = str(row.get("region_status") or "").strip()
+    region_display = str(row.get("region_display") or row.get("region") or "").strip()
+    if not region_display:
+        if region_status == "pending":
+            region_display = "待补全"
+        elif region_status == "none":
+            region_display = "室内运动"
+        elif region_status == "failed":
+            region_display = "未知地点"
+    title = str(row.get("title") or "").strip()
+    return {
+        "id": int(row.get("id") or idx + 1),
+        "sport_type": str(row.get("sport_type") or "running"),
+        "sub_sport_type": str(row.get("sub_sport_type") or "unknown"),
+        "display_sport_type": display_type,
+        "sport_type_cn": profile_backend.translate_sport_type(display_type),
+        "title": title,
+        "title_source": str(row.get("title_source") or ""),
+        "file_name": row.get("filename") or row.get("file_name") or title,
+        "filename": row.get("filename") or row.get("file_name") or title,
+        "start_time": row.get("start_time"),
+        "start_time_utc": row.get("start_time_utc"),
+        "date_label": date_label,
+        "month_key": month_key,
+        "distance_km": round(dist_km, 2),
+        "duration_sec": duration_sec,
+        "avg_pace_sec": pace_sec,
+        "avg_hr": avg_hr,
+        "max_hr": max_hr,
+        "calories": calories,
+        "swolf": round(_safe_float(water_metric_value), 1) if water_metric_value is not None else None,
+        "swolf_subtitle": water_metric_label,
+        "water_metric_value": round(_safe_float(water_metric_value), 1) if water_metric_value is not None else None,
+        "water_metric_label": water_metric_label,
+        "water_metric_kind": water_metric_kind,
+        "stroke_distance": (
+            round(_safe_float(water_metric_value), 1)
+            if water_metric_kind == "stroke_distance" and water_metric_value is not None
+            else None
+        ),
+        "gain_m": int(row.get("gain_m") or 0),
+        "region": region_display,
+        "region_display": region_display,
+        "region_status": region_status,
+        "device_name": str(row.get("device_name") or "").strip(),
+        "start_lat": _safe_float(row.get("start_lat")) or None,
+        "start_lon": _safe_float(row.get("start_lon")) or None,
+        "weather": _decode_weather_json(row.get("weather_json")),
+        "file_path": "",
+        "has_track": False,
+        "has_local_file": False,
+        "processing_status": str(row.get("processing_status") or "ready"),
+        "processing_error": str(row.get("processing_error") or ""),
+        "is_race": bool(_safe_int(row.get("is_race"))),
+        "race_source": str(row.get("race_source") or ""),
+        "race_confirmed_at": str(row.get("race_confirmed_at") or ""),
+        "race_confidence": str(row.get("race_confidence") or ""),
+        "race_override": _safe_int(row.get("race_override")),
+        "shadow_diff": {},
+        "thumbnail_points": [],
+        "detail": detail,
+        "detail_pending": True,
+    }
+
+
 def _build_record_from_row(api_self, row: dict, idx: int) -> dict:
     points = api_self._decode_points_json(row.get("track_json") or row.get("points_json") or row.get("merged_track_json"))
     # V8.x 修复: distance 已对齐米单位, dist_km 是真公里值
@@ -15388,6 +17420,7 @@ def _build_record_from_row(api_self, row: dict, idx: int) -> dict:
         "shadow_diff": _decode_weather_json(row.get("shadow_diff_json")) if row.get("shadow_diff_json") else {},
         "thumbnail_points": detail["thumbnail_points"],
         "detail": detail,
+        "detail_pending": False,
     }
 
 

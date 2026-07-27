@@ -535,6 +535,48 @@ class TestFatigueReviewP2SnapshotRealignment(unittest.TestCase):
         self.assertEqual(env["pressure_level"], "none")
         self.assertIn("未识别到明显外部环境压力", env["summary"])
         self.assertNotIn("热应激", json.dumps(snapshot["context_tags"], ensure_ascii=False))
+        self.assertEqual(snapshot["environment_factors"], [])
+
+    def test_snapshot_environment_factors_describe_high_humidity_without_heat(self):
+        row = self._row(calories=393, include_altitude=False)
+        row["sport_type"] = "cycling"
+        row["weather_json"] = json.dumps({
+            "temperature_c": 21.7,
+            "humidity": 89,
+            "wind_speed_kmh": 7.6,
+            "weather_label": "晴",
+        })
+
+        profile = MagicMock(max_hr=186, resting_hr=51, lactate_threshold_hr=166)
+        with patch("profile_backend.get_profile", return_value=profile):
+            snapshot = self._api()._build_fatigue_review_snapshot(row)
+        encoded = json.dumps(snapshot["environment_factors"], ensure_ascii=False)
+
+        self.assertTrue(snapshot["environment_factors"])
+        self.assertIn("湿度偏高", encoded)
+        self.assertIn("体感偏闷", encoded)
+        self.assertNotIn("温度偏高", encoded)
+        self.assertNotIn("热应激", encoded)
+
+    def test_compact_snapshot_carries_backend_environment_factors(self):
+        from main import Api
+
+        api = self._api()
+        row = self._row(calories=393, include_altitude=False)
+        row["id"] = 77
+        row["sport_type"] = "cycling"
+        row["weather_json"] = json.dumps({"temperature_c": 21.7, "humidity": 89})
+        api._fetch_activity_row = MagicMock(return_value=row)
+
+        profile = MagicMock(max_hr=186, resting_hr=51, lactate_threshold_hr=166)
+        with patch("profile_backend.get_profile", return_value=profile):
+            compact = Api._build_fatigue_review_insight_snapshot(api, 77, "cycling")
+        encoded = json.dumps(compact["environment_factors"], ensure_ascii=False)
+
+        self.assertIn("environment_factors", compact)
+        self.assertIn("湿度偏高", encoded)
+        for forbidden in ("points", "records", "shadow_diff", "diff"):
+            self.assertNotIn('"' + forbidden + '"', encoded)
 
     def test_snapshot_context_tags_use_backend_session_and_weather_fields(self):
         profile = MagicMock(max_hr=184, resting_hr=52, lactate_threshold_hr=166)

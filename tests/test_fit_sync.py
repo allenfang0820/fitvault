@@ -158,6 +158,36 @@ class TestFitSync(unittest.TestCase):
             time.sleep(0.05)
         self.fail(f"同步任务未在 {timeout_sec} 秒内结束: {job_id}")
 
+    def _insert_source_test_activity(self, filename: str, deleted: bool = False) -> int:
+        conn = profile_backend._conn()
+        try:
+            cursor = conn.execute(
+                "INSERT INTO activities (filename, deleted_at) VALUES (?, ?)",
+                (filename, "2026-07-22T00:00:00Z" if deleted else None),
+            )
+            conn.commit()
+            return int(cursor.lastrowid)
+        finally:
+            conn.close()
+
+    def _upsert_source_test_row(self, **kwargs) -> int:
+        conn = profile_backend._conn()
+        try:
+            row_id = profile_backend.upsert_activity_source_file(conn, **kwargs)
+            conn.commit()
+            return row_id
+        finally:
+            conn.close()
+
+    def _get_source_test_row(self, provider: str, provider_activity_id: str) -> dict | None:
+        conn = profile_backend._conn()
+        try:
+            return profile_backend.get_activity_source_file_by_provider_activity_id(
+                conn, provider, provider_activity_id
+            )
+        finally:
+            conn.close()
+
     def test_sync_local_fit_files_recovers_after_temporary_db_lock(self):
         fit_path = self.temp_dir / "locked.fit"
         fit_path.write_bytes(b"x" * 8192)
@@ -315,12 +345,15 @@ class TestFitSync(unittest.TestCase):
         fit_path.write_bytes(b"x" * 8192)
 
         with mock.patch.object(main, "_parse_fit_activity_for_sync", return_value=self._activity("career-refresh.fit")), \
+             mock.patch.object(main, "_refresh_career_record_metric_results_for_activity_safe", return_value={"ok": True, "upserted": 1}) as metric_mock, \
              mock.patch.object(main.career_backend, "refresh_career_derived_events", return_value={"ok": True}) as refresh_mock:
             result = main._sync_single_fit_file(fit_path)
 
         self.assertTrue(result["ok"], result)
         self.assertEqual(result["op"], "inserted")
+        self.assertEqual(result["career_metric_results"]["upserted"], 1)
         self.assertEqual(result["career_refresh"]["ok"], True)
+        metric_mock.assert_called_once_with(result["activity_id"], reason="single_fit_sync")
         refresh_mock.assert_called_once_with(include_pb=False)
 
     def test_single_fit_sync_keeps_import_success_when_career_refresh_fails(self):
@@ -341,15 +374,134 @@ class TestFitSync(unittest.TestCase):
         fit_path.write_bytes(b"x" * 8192)
 
         with mock.patch.object(main, "_sync_single_fit_file", return_value={"ok": True, "op": "inserted", "activity_id": 88}) as sync_mock, \
-             mock.patch.object(main, "_refresh_career_derived_events_safe", return_value={"ok": True, "reason": "batch_import_tracks"}) as refresh_mock:
+             mock.patch.object(main, "_refresh_career_record_metric_results_for_activities_safe", return_value={"ok": True, "activity_count": 1, "upserted": 1}) as metric_mock, \
+             mock.patch.object(main, "_refresh_career_derived_events_for_activities_safe", return_value={"ok": True, "reason": "batch_import_tracks", "refreshed": True}) as refresh_mock:
             result = self.api.batch_import_tracks([str(fit_path)])
 
         self.assertTrue(result["ok"], result)
         self.assertEqual(len(result["data"]["imported"]), 1)
         sync_mock.assert_called_once()
         self.assertEqual(sync_mock.call_args.kwargs.get("refresh_career"), False)
-        refresh_mock.assert_called_once_with("batch_import_tracks")
+        metric_mock.assert_called_once_with([88], reason="batch_import_tracks")
+        refresh_mock.assert_called_once_with([88], reason="batch_import_tracks")
+        self.assertEqual(result["data"]["career_metric_results"]["upserted"], 1)
         self.assertEqual(result["data"]["career_refresh"]["ok"], True)
+
+    def test_manual_fit_import_records_local_ledger_and_skips_same_content_before_parse(self):
+        fit_path = self.temp_dir / "manual-ledger.fit"
+        fit_path.write_bytes(b"x" * 8192)
+        main.ensure_activity_sync_schema()
+        activity_id = self._insert_source_test_activity("manual-ledger.fit")
+
+        with mock.patch.object(
+            main,
+            "_sync_single_fit_file",
+            return_value={"ok": True, "op": "inserted", "activity_id": activity_id},
+        ) as sync_mock, mock.patch.object(
+            self.api, "_rollback_if_semantic_duplicate", return_value=None
+        ):
+            first = self.api.batch_import_tracks([str(fit_path)])
+            second = self.api.batch_import_tracks([str(fit_path)])
+
+        self.assertTrue(first["ok"], first)
+        self.assertTrue(second["ok"], second)
+        sync_mock.assert_called_once()
+        self.assertEqual(second["data"]["skipped"][0]["dedupe"], "source_sha256")
+        conn = profile_backend._conn()
+        try:
+            source_row = profile_backend.get_activity_source_file_by_sha256(
+                conn, main._sha256_fit_file(fit_path), provider="local"
+            )
+        finally:
+            conn.close()
+        self.assertIsNotNone(source_row)
+        self.assertEqual(source_row["provider_activity_id"], None)
+        self.assertEqual(source_row["ingest_status"], "parsed")
+        self.assertEqual(source_row["activity_id"], activity_id)
+
+    def test_manual_fit_import_retries_when_ledger_activity_was_deleted(self):
+        fit_path = self.temp_dir / "manual-deleted-retry.fit"
+        fit_path.write_bytes(b"y" * 8192)
+        main.ensure_activity_sync_schema()
+        deleted_activity_id = self._insert_source_test_activity("deleted.fit", deleted=True)
+        digest = main._sha256_fit_file(fit_path)
+        self._upsert_source_test_row(
+            provider="local",
+            provider_activity_id=None,
+            file_path=str(Path(main.TRACKS_DIR) / "old.fit"),
+            filename="old.fit",
+            sha256=digest,
+            activity_id=deleted_activity_id,
+            ingest_status="parsed",
+        )
+
+        with mock.patch.object(
+            main,
+            "_sync_single_fit_file",
+            return_value={"ok": True, "op": "inserted", "activity_id": 99},
+        ) as sync_mock, mock.patch.object(
+            self.api, "_rollback_if_semantic_duplicate", return_value=None
+        ):
+            result = self.api.batch_import_tracks([str(fit_path)])
+
+        self.assertTrue(result["ok"], result)
+        sync_mock.assert_called_once()
+        self.assertEqual(len(result["data"]["imported"]), 1)
+
+    def test_manual_zip_import_records_local_source_ledger(self):
+        zip_path = self.temp_dir / "manual-ledger.zip"
+        fit_bytes = b"z" * 8192
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr("inside.fit", fit_bytes)
+        main.ensure_activity_sync_schema()
+        activity_id = self._insert_source_test_activity("inside.fit")
+
+        with mock.patch.object(
+            main,
+            "_sync_single_fit_file",
+            return_value={"ok": True, "op": "inserted", "activity_id": activity_id},
+        ) as sync_mock, mock.patch.object(self.api, "_rollback_if_semantic_duplicate", return_value=None):
+            result = self.api.batch_import_tracks([str(zip_path)])
+            repeated = self.api.batch_import_tracks([str(zip_path)])
+
+        self.assertTrue(result["ok"], result)
+        self.assertTrue(repeated["ok"], repeated)
+        self.assertEqual(len(result["data"]["imported"]), 1)
+        self.assertEqual(repeated["data"]["skipped"][0]["dedupe"], "source_sha256")
+        sync_mock.assert_called_once()
+        imported_path = Path(result["data"]["imported"][0])
+        conn = profile_backend._conn()
+        try:
+            source_row = profile_backend.get_activity_source_file_by_sha256(
+                conn, main._sha256_fit_file(imported_path), provider="local"
+            )
+        finally:
+            conn.close()
+        self.assertIsNotNone(source_row)
+        self.assertEqual(source_row["ingest_status"], "parsed")
+        self.assertEqual(source_row["activity_id"], activity_id)
+
+    def test_manual_import_restores_watchdog_after_success_and_parser_exception(self):
+        fit_path = self.temp_dir / "manual-watchdog.fit"
+        fit_path.write_bytes(b"w" * 8192)
+        watch_service = types.SimpleNamespace(suspended=False)
+        self.api._watch_service = watch_service
+
+        with mock.patch.object(
+            main,
+            "_sync_single_fit_file",
+            return_value={"ok": True, "op": "skipped", "activity_id": 0},
+        ), mock.patch.object(self.api, "_rollback_if_semantic_duplicate", return_value=None):
+            success = self.api.batch_import_tracks([str(fit_path)])
+        self.assertTrue(success["ok"], success)
+        self.assertFalse(watch_service.suspended)
+
+        fit_path.write_bytes(b"changed" * 2048)
+        with mock.patch.object(main, "_sync_single_fit_file", side_effect=RuntimeError("parse boom")):
+            failed = self.api.batch_import_tracks([str(fit_path)])
+        self.assertTrue(failed["ok"], failed)
+        self.assertEqual(failed["data"]["errors"][0]["error"], "parse boom")
+        self.assertFalse(watch_service.suspended)
 
     def test_local_fit_sync_refreshes_career_once_after_activity_changes(self):
         fit_path = self.temp_dir / "local-career-refresh.fit"
@@ -358,18 +510,168 @@ class TestFitSync(unittest.TestCase):
         with mock.patch.object(main, "resolve_workspace_track_dir", return_value=self._workspace_config()), \
              mock.patch.object(main, "_walk_fit_files", return_value=[fit_path]), \
              mock.patch.object(main, "_parse_fit_activity_for_sync", return_value=self._activity("local-career-refresh.fit")), \
-             mock.patch.object(main, "_refresh_career_derived_events_safe", return_value={"ok": True, "reason": "local_fit_sync"}) as refresh_mock:
+             mock.patch.object(main, "_refresh_career_record_metric_results_for_activities_safe", return_value={"ok": True, "activity_count": 1, "upserted": 1}) as metric_mock, \
+             mock.patch.object(main, "_refresh_career_derived_events_for_activities_safe", return_value={"ok": True, "reason": "local_fit_sync", "refreshed": True}) as refresh_mock:
             result = self.api.sync_local_fit_files()
 
         self.assertTrue(result["ok"], result)
         self.assertEqual(result["inserted"], 1)
-        refresh_mock.assert_called_once_with("local_fit_sync")
+        metric_mock.assert_called_once()
+        self.assertEqual(result["career_metric_results"]["upserted"], 1)
+        self.assertEqual(refresh_mock.call_count, 1)
+        self.assertEqual(refresh_mock.call_args.args[0], metric_mock.call_args.args[0])
+        self.assertEqual(refresh_mock.call_args.kwargs, {"reason": "local_fit_sync"})
         self.assertEqual(result["career_refresh"]["ok"], True)
+
+    def test_batch_career_refresh_dedupes_ids_and_refreshes_once(self):
+        with mock.patch.object(
+            main.career_backend,
+            "evaluate_activity_record_increment",
+            side_effect=lambda _conn, activity_id: {"ok": True, "activity_id": str(activity_id)},
+        ) as incremental_mock, mock.patch.object(
+            main.career_backend,
+            "refresh_career_derived_events",
+            return_value={"ok": True},
+        ) as refresh_mock:
+            result = main._refresh_career_derived_events_for_activities_safe(
+                [5, "5", 0, None, 6, 6],
+                reason="test_batch",
+            )
+
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["activity_ids"], [5, 6])
+        self.assertEqual(result["activity_count"], 2)
+        self.assertEqual([call.args[1] for call in incremental_mock.call_args_list], [5, 6])
+        refresh_mock.assert_called_once_with(include_pb=False)
+
+    def test_batch_career_refresh_falls_back_to_one_full_pb_refresh_after_increment_failure(self):
+        def evaluate_side_effect(_conn, activity_id):
+            if activity_id == 5:
+                raise RuntimeError("increment failed")
+            return {"ok": True, "activity_id": str(activity_id)}
+
+        with mock.patch.object(
+            main.career_backend,
+            "evaluate_activity_record_increment",
+            side_effect=evaluate_side_effect,
+        ) as incremental_mock, mock.patch.object(
+            main.career_backend,
+            "refresh_career_derived_events",
+            return_value={"ok": True},
+        ) as refresh_mock:
+            result = main._refresh_career_derived_events_for_activities_safe(
+                [5, 6],
+                reason="test_fallback",
+            )
+
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(incremental_mock.call_count, 2)
+        self.assertEqual(result["incremental_errors"], [{
+            "activity_id": 5,
+            "error_code": "career_increment_failed",
+        }])
+        refresh_mock.assert_called_once_with(include_pb=True)
+
+    def test_batch_career_refresh_empty_ids_does_not_call_backend(self):
+        with mock.patch.object(main.career_backend, "evaluate_activity_record_increment") as incremental_mock, \
+             mock.patch.object(main.career_backend, "refresh_career_derived_events") as refresh_mock:
+            result = main._refresh_career_derived_events_for_activities_safe(
+                [None, "", 0],
+                reason="test_empty",
+            )
+
+        self.assertTrue(result["ok"], result)
+        self.assertTrue(result["skipped"])
+        self.assertFalse(result["refreshed"])
+        incremental_mock.assert_not_called()
+        refresh_mock.assert_not_called()
+
+    def test_batch_career_refresh_failure_returns_warning_without_raising(self):
+        with mock.patch.object(
+            main.career_backend,
+            "evaluate_activity_record_increment",
+            return_value={"ok": True, "activity_id": "5"},
+        ), mock.patch.object(
+            main.career_backend,
+            "refresh_career_derived_events",
+            side_effect=RuntimeError("refresh failed"),
+        ):
+            result = main._refresh_career_derived_events_for_activities_safe(
+                [5],
+                reason="test_refresh_failure",
+            )
+
+        self.assertFalse(result["ok"])
+        self.assertFalse(result["refreshed"])
+        self.assertEqual(result["error_code"], "career_refresh_failed")
+        self.assertIn("活动导入已保留", result["message"])
+
+    def test_manual_batch_skipped_filtered_and_failed_do_not_refresh(self):
+        fit_files = []
+        for name in ("manual-skipped.fit", "manual-filtered.fit", "manual-failed.fit"):
+            path = self.temp_dir / name
+            path.write_bytes(b"x" * 8192)
+            fit_files.append(path)
+        sync_results = [
+            {"ok": True, "op": "skipped", "activity_id": 77},
+            {"ok": True, "op": "skipped", "activity_id": 0, "reason": "filtered_as_health_data"},
+            {"ok": False, "error": "parse failed"},
+        ]
+
+        with mock.patch.object(main, "_sync_single_fit_file", side_effect=sync_results), \
+             mock.patch.object(self.api, "_apply_title_override"), \
+             mock.patch.object(self.api, "_rollback_if_semantic_duplicate", return_value=None), \
+             mock.patch.object(main, "_refresh_career_record_metric_results_for_activities_safe") as metric_mock, \
+             mock.patch.object(main, "_refresh_career_derived_events_for_activities_safe") as refresh_mock:
+            result = self.api.batch_import_tracks([str(path) for path in fit_files])
+
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["data"]["imported_activity_ids"], [])
+        self.assertIsNone(result["data"]["career_metric_results"])
+        self.assertIsNone(result["data"]["career_refresh"])
+        self.assertEqual(len(result["data"]["health_filtered"]), 1)
+        metric_mock.assert_not_called()
+        refresh_mock.assert_not_called()
+
+    def test_local_fit_sync_zero_changes_does_not_refresh(self):
+        with mock.patch.object(main, "resolve_workspace_track_dir", return_value=self._workspace_config()), \
+             mock.patch.object(main, "_walk_fit_files", return_value=[]), \
+             mock.patch.object(main, "_refresh_career_record_metric_results_for_activities_safe") as metric_mock, \
+             mock.patch.object(main, "_refresh_career_derived_events_for_activities_safe") as refresh_mock, \
+             mock.patch.object(main, "_refresh_career_derived_events_safe") as full_refresh_mock:
+            result = self.api.sync_local_fit_files()
+
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["inserted"], 0)
+        self.assertEqual(result["updated"], 0)
+        self.assertEqual(result["removed"], 0)
+        metric_mock.assert_not_called()
+        refresh_mock.assert_not_called()
+        full_refresh_mock.assert_not_called()
+
+    def test_local_fit_sync_removed_files_preserve_single_full_refresh(self):
+        with mock.patch.object(main, "resolve_workspace_track_dir", return_value=self._workspace_config()), \
+             mock.patch.object(main, "_walk_fit_files", return_value=[]), \
+             mock.patch.object(self.api, "_mark_missing_activity_files_deleted", return_value=1), \
+             mock.patch.object(main, "_refresh_career_record_metric_results_for_activities_safe") as metric_mock, \
+             mock.patch.object(main, "_refresh_career_derived_events_for_activities_safe") as refresh_mock, \
+             mock.patch.object(main, "_refresh_career_derived_events_safe", return_value={"ok": True}) as full_refresh_mock:
+            result = self.api.sync_local_fit_files()
+
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["removed"], 1)
+        metric_mock.assert_not_called()
+        refresh_mock.assert_not_called()
+        full_refresh_mock.assert_called_once_with("local_fit_sync")
 
     def test_remote_fit_sync_downloads_garmin_fit_and_imports_without_openclaw(self):
         api = object.__new__(main.Api)
+        downloaded_file = Path(main.TRACKS_DIR) / "Morning_Run_100.fit"
+        downloaded_file.write_bytes(b"x" * 8192)
+        downloaded_path = str(downloaded_file.resolve())
         download_summary = {
             "ok": True,
+            "provider": "garmin",
             "region": "cn",
             "output_dir": main.TRACKS_DIR,
             "mode": "date_range",
@@ -379,10 +681,18 @@ class TestFitSync(unittest.TestCase):
             "downloaded": 1,
             "skipped": 1,
             "failed": 0,
-            "files": [{"activity_id": "100", "status": "downloaded"}],
+            "files": [downloaded_path],
+            "candidates": [{
+                "provider": "garmin",
+                "provider_activity_id": "100",
+                "file": downloaded_path,
+                "filename": "Morning_Run_100.fit",
+                "status": "downloaded",
+                "reason": "已保存",
+                "bytes": 8192,
+            }],
             "errors": [],
         }
-        import_result = {"ok": True, "inserted": 1, "updated": 0, "skipped": 1, "errors": []}
         with mock.patch.object(llm_backend, "load_llm_config", return_value={
             "provider": "local_mcp",
             "url": "",
@@ -392,7 +702,10 @@ class TestFitSync(unittest.TestCase):
             "watch_brand": "garmin",
             "garmin_region": "global",
         }), mock.patch.object(garmin_sync, "download_fit_json", return_value=download_summary) as download_mock, \
-             mock.patch.object(api, "sync_local_fit_files", return_value=import_result) as import_mock, \
+             mock.patch.object(main, "_sync_single_fit_file", return_value={"ok": True, "op": "inserted", "activity_id": 100}) as single_mock, \
+             mock.patch.object(api, "sync_local_fit_files") as full_scan_mock, \
+             mock.patch.object(main, "_refresh_career_record_metric_results_for_activities_safe", return_value={"ok": False, "activity_count": 1, "error_code": "record_metric_results_refresh_failed"}) as metric_mock, \
+             mock.patch.object(main, "_refresh_career_derived_events_for_activities_safe", return_value={"ok": False, "refreshed": False, "error_code": "career_refresh_failed"}) as refresh_mock, \
              mock.patch.object(llm_backend, "chat_completions", side_effect=AssertionError("Garmin activity sync must not call LLM")):
             result = api.sync_remote_fit_activities("2026-05-01", "2026-05-31")
 
@@ -403,12 +716,361 @@ class TestFitSync(unittest.TestCase):
             output_dir=main.TRACKS_DIR,
             region="global",
         )
-        import_mock.assert_called_once_with()
+        single_mock.assert_called_once_with(downloaded_file.resolve(), refresh_career=False)
+        full_scan_mock.assert_not_called()
+        metric_mock.assert_called_once_with([100], reason="remote_garmin_fit_sync")
+        refresh_mock.assert_called_once_with([100], reason="remote_garmin_fit_sync")
         self.assertEqual(result["data"]["download"], download_summary)
-        self.assertEqual(result["data"]["import"], import_result)
+        self.assertEqual(result["data"]["import"]["inserted"], 1)
+        self.assertEqual(result["data"]["import"]["activity_ids"], [100])
+        self.assertFalse(result["data"]["import"]["career_metric_results"]["ok"])
+        self.assertFalse(result["data"]["import"]["career_refresh"]["ok"])
         self.assertEqual(result["data"]["start_date"], "2026-05-01")
         self.assertEqual(result["data"]["end_date"], "2026-05-31")
         self.assertEqual(result["data"]["target_dir"], main.TRACKS_DIR)
+
+    def test_remote_candidate_import_only_processes_listed_unique_fit_files(self):
+        tracks_root = Path(main.TRACKS_DIR)
+        downloaded = tracks_root / "downloaded.fit"
+        skipped_existing = tracks_root / "skipped-existing.fit"
+        unrelated = tracks_root / "historical-unrelated.fit"
+        for path in (downloaded, skipped_existing, unrelated):
+            path.write_bytes(b"x" * 8192)
+        summary = {
+            "candidates": [
+                {"status": "downloaded", "file": str(downloaded.resolve()), "provider_activity_id": "1"},
+                {"status": "skipped", "file": str(skipped_existing.resolve()), "provider_activity_id": "2"},
+                {"status": "downloaded", "file": str(downloaded.resolve()), "provider_activity_id": "1"},
+                {"status": "failed", "file": "", "provider_activity_id": "3", "reason": "download failed"},
+            ]
+        }
+        with mock.patch.object(main, "_sync_single_fit_file", side_effect=[
+            {"ok": True, "op": "inserted", "activity_id": 11},
+            {"ok": True, "op": "skipped", "activity_id": 12},
+        ]) as single_mock, mock.patch.object(main, "_walk_fit_files") as walk_mock:
+            result = main._import_remote_fit_candidates("garmin", summary, tracks_root)
+
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["scanned"], 3)
+        self.assertEqual(result["inserted"], 1)
+        self.assertEqual(result["skipped"], 2)
+        self.assertEqual(result["activity_ids"], [11])
+        self.assertEqual(single_mock.call_count, 2)
+        self.assertEqual(
+            [call.args[0] for call in single_mock.call_args_list],
+            [downloaded.resolve(), skipped_existing.resolve()],
+        )
+        self.assertTrue(all(call.kwargs.get("refresh_career") is False for call in single_mock.call_args_list))
+        self.assertNotIn(unrelated.resolve(), [call.args[0] for call in single_mock.call_args_list])
+        walk_mock.assert_not_called()
+
+    def test_remote_candidate_import_rejects_invalid_paths_and_continues_after_failure(self):
+        tracks_root = Path(main.TRACKS_DIR)
+        first = tracks_root / "first.fit"
+        second = tracks_root / "second.fit"
+        outside = self.temp_dir / "outside.fit"
+        for path in (first, second, outside):
+            path.write_bytes(b"x" * 8192)
+        summary = {
+            "candidates": [
+                {"status": "downloaded", "file": str(first.resolve())},
+                {"status": "downloaded", "file": str(outside.resolve())},
+                {"status": "downloaded", "file": "relative.fit"},
+                {"status": "downloaded", "file": str(second.resolve())},
+            ]
+        }
+
+        def sync_side_effect(path, refresh_career=True):
+            if Path(path) == first.resolve():
+                raise RuntimeError("first parse failed")
+            return {"ok": True, "op": "updated", "activity_id": 22}
+
+        with mock.patch.object(main, "_sync_single_fit_file", side_effect=sync_side_effect) as single_mock, \
+             mock.patch.object(main, "_walk_fit_files") as walk_mock:
+            result = main._import_remote_fit_candidates("coros", summary, tracks_root)
+
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["scanned"], 4)
+        self.assertEqual(result["updated"], 1)
+        self.assertEqual(result["skipped"], 3)
+        self.assertEqual(result["activity_ids"], [22])
+        self.assertEqual(single_mock.call_count, 2)
+        self.assertEqual(len(result["errors"]), 3)
+        self.assertTrue(any("超出受控" in item["error"] for item in result["errors"]))
+        self.assertTrue(any("绝对路径" in item["error"] for item in result["errors"]))
+        self.assertTrue(any("first parse failed" in item["error"] for item in result["errors"]))
+        walk_mock.assert_not_called()
+
+    def test_remote_candidate_provider_id_match_skips_parser_when_activity_is_active(self):
+        fit_path = Path(main.TRACKS_DIR) / "provider-id.fit"
+        fit_path.write_bytes(b"provider-id")
+        activity_id = self._insert_source_test_activity(fit_path.name)
+        self._upsert_source_test_row(
+            provider="garmin",
+            provider_activity_id="provider-1",
+            file_path=str(fit_path.resolve()),
+            filename=fit_path.name,
+            sha256=main._sha256_fit_file(fit_path),
+            file_size=fit_path.stat().st_size,
+            file_mtime=fit_path.stat().st_mtime,
+            activity_id=activity_id,
+            ingest_status="parsed",
+        )
+        summary = {"candidates": [{
+            "status": "downloaded",
+            "file": str(fit_path.resolve()),
+            "provider_activity_id": "provider-1",
+        }]}
+
+        with mock.patch.object(main, "_sync_single_fit_file") as single_mock:
+            result = main._import_remote_fit_candidates("garmin", summary, main.TRACKS_DIR)
+
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["skipped"], 1)
+        self.assertEqual(result["results"][0]["idempotency_reason"], "provider_activity_id")
+        self.assertEqual(result["results"][0]["activity_id"], activity_id)
+        single_mock.assert_not_called()
+
+    def test_remote_candidate_sha_match_skips_parser_and_records_current_provider(self):
+        fit_path = Path(main.TRACKS_DIR) / "same-content.fit"
+        fit_path.write_bytes(b"same-content-across-providers")
+        digest = main._sha256_fit_file(fit_path)
+        activity_id = self._insert_source_test_activity(fit_path.name)
+        self._upsert_source_test_row(
+            provider="garmin",
+            provider_activity_id="garmin-1",
+            file_path=str(fit_path.resolve()),
+            filename=fit_path.name,
+            sha256=digest,
+            file_size=fit_path.stat().st_size,
+            file_mtime=fit_path.stat().st_mtime,
+            activity_id=activity_id,
+            ingest_status="parsed",
+        )
+        summary = {"candidates": [{
+            "status": "downloaded",
+            "file": str(fit_path.resolve()),
+            "provider_activity_id": "coros-1",
+        }]}
+
+        with mock.patch.object(main, "_sync_single_fit_file") as single_mock:
+            result = main._import_remote_fit_candidates("coros", summary, main.TRACKS_DIR)
+
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["results"][0]["idempotency_reason"], "sha256")
+        single_mock.assert_not_called()
+        current_row = self._get_source_test_row("coros", "coros-1")
+        self.assertEqual(current_row["ingest_status"], "skipped")
+        self.assertEqual(current_row["activity_id"], activity_id)
+
+    def test_remote_candidate_new_source_is_pending_before_parse_then_parsed(self):
+        fit_path = Path(main.TRACKS_DIR) / "pending-to-parsed.fit"
+        fit_path.write_bytes(b"pending-to-parsed")
+        activity_id = self._insert_source_test_activity(fit_path.name)
+        summary = {"candidates": [{
+            "status": "downloaded",
+            "file": str(fit_path.resolve()),
+            "provider_activity_id": "state-1",
+        }]}
+
+        def sync_side_effect(path, refresh_career=True):
+            pending = self._get_source_test_row("garmin", "state-1")
+            self.assertEqual(pending["ingest_status"], "pending")
+            self.assertIsNone(pending["activity_id"])
+            return {"ok": True, "op": "inserted", "activity_id": activity_id}
+
+        with mock.patch.object(main, "_sync_single_fit_file", side_effect=sync_side_effect) as single_mock:
+            first = main._import_remote_fit_candidates("garmin", summary, main.TRACKS_DIR)
+        with mock.patch.object(main, "_sync_single_fit_file") as second_sync_mock:
+            second = main._import_remote_fit_candidates("garmin", summary, main.TRACKS_DIR)
+
+        self.assertEqual(first["inserted"], 1)
+        self.assertEqual(first["activity_ids"], [activity_id])
+        single_mock.assert_called_once_with(fit_path.resolve(), refresh_career=False)
+        final_row = self._get_source_test_row("garmin", "state-1")
+        self.assertEqual(final_row["ingest_status"], "parsed")
+        self.assertEqual(final_row["activity_id"], activity_id)
+        self.assertEqual(second["skipped"], 1)
+        second_sync_mock.assert_not_called()
+
+    def test_remote_candidate_pending_failed_and_orphan_sources_are_retried(self):
+        cases = (
+            ("pending", None, False),
+            ("failed", None, False),
+            ("parsed", 999999, False),
+            ("parsed", None, True),
+        )
+        for index, (initial_status, activity_id, deleted_activity) in enumerate(cases):
+            with self.subTest(initial_status=initial_status, deleted_activity=deleted_activity):
+                fit_path = Path(main.TRACKS_DIR) / f"retry-{index}.fit"
+                fit_path.write_bytes(f"retry-{index}".encode("ascii"))
+                source_activity_id = activity_id
+                if deleted_activity:
+                    source_activity_id = self._insert_source_test_activity(fit_path.name, deleted=True)
+                provider_activity_id = f"retry-{index}"
+                self._upsert_source_test_row(
+                    provider="garmin",
+                    provider_activity_id=provider_activity_id,
+                    file_path=str(fit_path.resolve()),
+                    filename=fit_path.name,
+                    sha256=main._sha256_fit_file(fit_path),
+                    file_size=fit_path.stat().st_size,
+                    file_mtime=fit_path.stat().st_mtime,
+                    activity_id=source_activity_id,
+                    ingest_status=initial_status,
+                    error="old failure" if initial_status == "failed" else None,
+                )
+                new_activity_id = self._insert_source_test_activity(f"new-{index}.fit")
+                summary = {"candidates": [{
+                    "status": "downloaded",
+                    "file": str(fit_path.resolve()),
+                    "provider_activity_id": provider_activity_id,
+                }]}
+                with mock.patch.object(main, "_sync_single_fit_file", return_value={
+                    "ok": True, "op": "updated", "activity_id": new_activity_id,
+                }) as single_mock:
+                    result = main._import_remote_fit_candidates("garmin", summary, main.TRACKS_DIR)
+
+                self.assertTrue(result["ok"], result)
+                single_mock.assert_called_once()
+                row = self._get_source_test_row("garmin", provider_activity_id)
+                self.assertEqual(row["ingest_status"], "parsed")
+                self.assertEqual(row["activity_id"], new_activity_id)
+                self.assertIsNone(row["error"])
+
+    def test_remote_candidate_changed_content_retries_same_provider_activity(self):
+        fit_path = Path(main.TRACKS_DIR) / "changed-content.fit"
+        fit_path.write_bytes(b"old-content")
+        old_activity_id = self._insert_source_test_activity("old-content.fit")
+        self._upsert_source_test_row(
+            provider="garmin",
+            provider_activity_id="changed-1",
+            file_path=str(fit_path.resolve()),
+            filename=fit_path.name,
+            sha256=main._sha256_fit_file(fit_path),
+            file_size=fit_path.stat().st_size,
+            file_mtime=fit_path.stat().st_mtime,
+            activity_id=old_activity_id,
+            ingest_status="parsed",
+        )
+        fit_path.write_bytes(b"new-content-that-must-be-parsed")
+        new_digest = main._sha256_fit_file(fit_path)
+        new_activity_id = self._insert_source_test_activity("new-content.fit")
+        summary = {"candidates": [{
+            "status": "downloaded",
+            "file": str(fit_path.resolve()),
+            "provider_activity_id": "changed-1",
+        }]}
+
+        with mock.patch.object(main, "_sync_single_fit_file", return_value={
+            "ok": True, "op": "updated", "activity_id": new_activity_id,
+        }) as single_mock:
+            result = main._import_remote_fit_candidates("garmin", summary, main.TRACKS_DIR)
+
+        self.assertTrue(result["ok"], result)
+        single_mock.assert_called_once_with(fit_path.resolve(), refresh_career=False)
+        row = self._get_source_test_row("garmin", "changed-1")
+        self.assertEqual(row["sha256"], new_digest)
+        self.assertEqual(row["activity_id"], new_activity_id)
+        self.assertEqual(row["ingest_status"], "parsed")
+
+    def test_remote_candidate_failure_is_sanitized_and_can_retry(self):
+        fit_path = Path(main.TRACKS_DIR) / "retry-failure.fit"
+        fit_path.write_bytes(b"retry-failure")
+        summary = {"candidates": [{
+            "status": "downloaded",
+            "file": str(fit_path.resolve()),
+            "provider_activity_id": "failure-1",
+        }]}
+        with mock.patch.object(
+            main,
+            "_sync_single_fit_file",
+            side_effect=RuntimeError("token=secret-value; parser failed"),
+        ):
+            failed = main._import_remote_fit_candidates("coros", summary, main.TRACKS_DIR)
+
+        self.assertFalse(failed["ok"], failed)
+        self.assertNotIn("secret-value", failed["errors"][0]["error"])
+        failed_row = self._get_source_test_row("coros", "failure-1")
+        self.assertEqual(failed_row["ingest_status"], "failed")
+        self.assertNotIn("secret-value", failed_row["error"])
+
+        activity_id = self._insert_source_test_activity(fit_path.name)
+        with mock.patch.object(main, "_sync_single_fit_file", return_value={
+            "ok": True, "op": "inserted", "activity_id": activity_id,
+        }) as retry_mock:
+            retried = main._import_remote_fit_candidates("coros", summary, main.TRACKS_DIR)
+
+        self.assertTrue(retried["ok"], retried)
+        retry_mock.assert_called_once()
+        final_row = self._get_source_test_row("coros", "failure-1")
+        self.assertEqual(final_row["ingest_status"], "parsed")
+        self.assertIsNone(final_row["error"])
+
+    def test_remote_candidate_skipped_result_is_terminal_without_activity(self):
+        fit_path = Path(main.TRACKS_DIR) / "health-filtered.fit"
+        fit_path.write_bytes(b"health-filtered")
+        summary = {"candidates": [{
+            "status": "downloaded",
+            "file": str(fit_path.resolve()),
+            "provider_activity_id": "health-1",
+        }]}
+        with mock.patch.object(main, "_sync_single_fit_file", return_value={
+            "ok": True, "op": "skipped", "activity_id": 0,
+        }) as first_mock:
+            first = main._import_remote_fit_candidates("garmin", summary, main.TRACKS_DIR)
+        with mock.patch.object(main, "_sync_single_fit_file") as second_mock:
+            second = main._import_remote_fit_candidates("garmin", summary, main.TRACKS_DIR)
+
+        self.assertEqual(first["results"][0]["ledger_status"], "skipped")
+        first_mock.assert_called_once()
+        self.assertEqual(second["results"][0]["idempotency_reason"], "provider_activity_id")
+        second_mock.assert_not_called()
+
+    def test_remote_candidate_ledger_final_write_failure_preserves_import_success(self):
+        fit_path = Path(main.TRACKS_DIR) / "ledger-warning.fit"
+        fit_path.write_bytes(b"ledger-warning")
+        summary = {"candidates": [{
+            "status": "downloaded",
+            "file": str(fit_path.resolve()),
+            "provider_activity_id": "ledger-warning-1",
+        }]}
+        with mock.patch.object(main, "_write_activity_source_ledger", side_effect=[
+            (91, None),
+            (None, "来源账本更新失败，活动导入结果已保留"),
+        ]), mock.patch.object(main, "_sync_single_fit_file", return_value={
+            "ok": True, "op": "inserted", "activity_id": 42,
+        }):
+            result = main._import_remote_fit_candidates("garmin", summary, main.TRACKS_DIR)
+
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["inserted"], 1)
+        self.assertEqual(result["activity_ids"], [42])
+        self.assertEqual(result["results"][0]["ledger_status"], "pending")
+        self.assertIn("账本更新失败", result["results"][0]["ledger_warning"])
+
+    def test_remote_candidate_ledger_lookup_failure_does_not_overwrite_ledger(self):
+        fit_path = Path(main.TRACKS_DIR) / "ledger-lookup-warning.fit"
+        fit_path.write_bytes(b"ledger-lookup-warning")
+        summary = {"candidates": [{
+            "status": "downloaded",
+            "file": str(fit_path.resolve()),
+            "provider_activity_id": "ledger-lookup-1",
+        }]}
+        with mock.patch.object(
+            main,
+            "_find_completed_activity_source",
+            return_value=(None, None, "", "来源账本查询失败，已继续导入"),
+        ), mock.patch.object(main, "_write_activity_source_ledger") as ledger_write_mock, \
+             mock.patch.object(main, "_sync_single_fit_file", return_value={
+                 "ok": True, "op": "inserted", "activity_id": 43,
+             }):
+            result = main._import_remote_fit_candidates("garmin", summary, main.TRACKS_DIR)
+
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["inserted"], 1)
+        self.assertIn("账本查询失败", result["results"][0]["ledger_warning"])
+        ledger_write_mock.assert_not_called()
 
     def test_remote_fit_sync_rejects_invalid_date_range(self):
         api = object.__new__(main.Api)
@@ -501,15 +1163,25 @@ class TestFitSync(unittest.TestCase):
 
     def test_remote_fit_sync_fails_when_local_import_fails_but_preserves_download_summary(self):
         api = object.__new__(main.Api)
+        downloaded_file = Path(main.TRACKS_DIR) / "failed.fit"
+        downloaded_file.write_bytes(b"x" * 8192)
+        downloaded_path = str(downloaded_file.resolve())
         download_summary = {
             "ok": True,
+            "provider": "garmin",
             "downloaded": 1,
             "skipped": 0,
             "failed": 0,
-            "files": [{"activity_id": "100", "status": "downloaded"}],
+            "files": [downloaded_path],
+            "candidates": [{
+                "provider": "garmin",
+                "provider_activity_id": "100",
+                "file": downloaded_path,
+                "filename": downloaded_file.name,
+                "status": "downloaded",
+            }],
             "errors": [],
         }
-        import_result = {"ok": False, "error": "数据库写入失败", "inserted": 0, "errors": [{"file": "a.fit"}]}
         with mock.patch.object(llm_backend, "load_llm_config", return_value={
             "provider": "local_mcp",
             "url": "",
@@ -518,15 +1190,20 @@ class TestFitSync(unittest.TestCase):
             "agent_id": "",
             "watch_brand": "garmin",
         }), mock.patch.object(garmin_sync, "download_fit_json", return_value=download_summary), \
-             mock.patch.object(api, "sync_local_fit_files", return_value=import_result):
+             mock.patch.object(main, "_sync_single_fit_file", side_effect=RuntimeError("数据库写入失败")), \
+             mock.patch.object(api, "sync_local_fit_files") as full_scan_mock, \
+             mock.patch.object(main, "_refresh_changed_activity_derivatives_safe") as refresh_mock:
             result = api.sync_remote_fit_activities("2026-05-01", "2026-05-31")
 
         self.assertFalse(result["ok"], result)
         self.assertEqual(result["data"]["provider_error_code"], "garmin_import_failed")
         self.assertEqual(result["data"]["download"], download_summary)
-        self.assertEqual(result["data"]["import"], import_result)
+        self.assertFalse(result["data"]["import"]["ok"])
+        self.assertIn("数据库写入失败", result["data"]["import"]["errors"][0]["error"])
         self.assertIn("下载", result["error"])
         self.assertIn("导入", result["data"]["action_hint"])
+        full_scan_mock.assert_not_called()
+        refresh_mock.assert_not_called()
 
     def test_remote_fit_sync_unknown_exception_has_stable_provider_code(self):
         api = object.__new__(main.Api)
@@ -547,6 +1224,9 @@ class TestFitSync(unittest.TestCase):
 
     def test_remote_fit_sync_downloads_coros_fit_and_imports_without_openclaw(self):
         api = object.__new__(main.Api)
+        downloaded_file = Path(main.TRACKS_DIR) / "coros.fit"
+        downloaded_file.write_bytes(b"x" * 8192)
+        downloaded_path = str(downloaded_file.resolve())
         download_summary = {
             "ok": True,
             "provider": "coros",
@@ -560,10 +1240,18 @@ class TestFitSync(unittest.TestCase):
             "skipped": 0,
             "failed": 0,
             "limit": 10,
-            "files": [{"file": "coros.fit", "status": "downloaded"}],
+            "files": [{"file": downloaded_path, "status": "downloaded"}],
+            "candidates": [{
+                "provider": "coros",
+                "provider_activity_id": "",
+                "file": downloaded_path,
+                "filename": "coros.fit",
+                "status": "downloaded",
+                "reason": "",
+                "bytes": 8192,
+            }],
             "errors": [],
         }
-        import_result = {"ok": True, "inserted": 1, "updated": 0, "skipped": 0, "errors": []}
         with mock.patch.object(llm_backend, "load_llm_config", return_value={
             "provider": "local_mcp",
             "url": "http://localhost:3000/v1/chat/completions",
@@ -575,7 +1263,10 @@ class TestFitSync(unittest.TestCase):
         }), mock.patch.object(llm_backend, "chat_completions") as chat_mock, \
              mock.patch.object(garmin_sync, "download_fit_json") as garmin_download_mock, \
              mock.patch.object(coros_sync, "download_fit_json", return_value=download_summary) as coros_download_mock, \
-             mock.patch.object(api, "sync_local_fit_files", return_value=import_result) as import_mock:
+             mock.patch.object(main, "_sync_single_fit_file", return_value={"ok": True, "op": "updated", "activity_id": 200}) as single_mock, \
+             mock.patch.object(api, "sync_local_fit_files") as full_scan_mock, \
+             mock.patch.object(main, "_refresh_career_record_metric_results_for_activities_safe", return_value={"ok": True, "activity_count": 1}) as metric_mock, \
+             mock.patch.object(main, "_refresh_career_derived_events_for_activities_safe", return_value={"ok": True, "refreshed": True}) as refresh_mock:
             result = api.sync_remote_fit_activities("2026-05-01", "2026-05-31")
 
         self.assertTrue(result["ok"], result)
@@ -586,11 +1277,15 @@ class TestFitSync(unittest.TestCase):
             region="cn",
             limit=10,
         )
-        import_mock.assert_called_once_with()
+        single_mock.assert_called_once_with(downloaded_file.resolve(), refresh_career=False)
+        full_scan_mock.assert_not_called()
+        metric_mock.assert_called_once_with([200], reason="remote_coros_fit_sync")
+        refresh_mock.assert_called_once_with([200], reason="remote_coros_fit_sync")
         chat_mock.assert_not_called()
         garmin_download_mock.assert_not_called()
         self.assertEqual(result["data"]["download"], download_summary)
-        self.assertEqual(result["data"]["import"], import_result)
+        self.assertEqual(result["data"]["import"]["updated"], 1)
+        self.assertEqual(result["data"]["import"]["activity_ids"], [200])
 
     def test_remote_fit_sync_skips_local_scan_when_coros_returns_no_fit_files(self):
         api = object.__new__(main.Api)
@@ -619,12 +1314,18 @@ class TestFitSync(unittest.TestCase):
             "watch_brand": "coros",
             "coros_region": "cn",
         }), mock.patch.object(coros_sync, "download_fit_json", return_value=download_summary) as coros_download_mock, \
-             mock.patch.object(api, "sync_local_fit_files") as import_mock:
+             mock.patch.object(main, "_sync_single_fit_file") as single_mock, \
+             mock.patch.object(api, "sync_local_fit_files") as import_mock, \
+             mock.patch.object(main, "_refresh_career_record_metric_results_for_activities_safe") as metric_mock, \
+             mock.patch.object(main, "_refresh_career_derived_events_for_activities_safe") as refresh_mock:
             result = api.sync_remote_fit_activities("2026-06-25", "2026-06-25")
 
         self.assertTrue(result["ok"], result)
         coros_download_mock.assert_called_once()
+        single_mock.assert_not_called()
         import_mock.assert_not_called()
+        metric_mock.assert_not_called()
+        refresh_mock.assert_not_called()
         self.assertEqual(result["data"]["download"], download_summary)
         self.assertTrue(result["data"]["import"]["remote_import_skipped"])
         self.assertEqual(result["data"]["import"]["scanned"], 0)
@@ -1856,7 +2557,15 @@ class TestFitSync(unittest.TestCase):
             conn.close()
 
         self.assertIn("device_product_mappings", tables)
-        for col in ("device_vendor", "device_product_key", "device_product_id", "device_serial", "device_mapping_status"):
+        for col in (
+            "device_vendor",
+            "device_product_key",
+            "device_product_id",
+            "device_product_name",
+            "device_product_hint",
+            "device_serial",
+            "device_mapping_status",
+        ):
             self.assertIn(col, activity_cols)
         self.assertEqual(mapping["display_name"], "Fenix6 Asia")
 
@@ -1998,6 +2707,88 @@ class TestFitSync(unittest.TestCase):
         self.assertEqual(row["device_vendor"], "garmin")
         self.assertEqual(row["device_product_key"], "garmin:4587")
         self.assertEqual(row["device_product_id"], "4587")
+        self.assertEqual(row["device_mapping_status"], "resolved")
+
+    def test_device_dry_run_and_backfill_normalize_malformed_garmin_symbolic_key(self):
+        main.ensure_activity_sync_schema()
+        activity = self._activity("malformed_symbolic_garmin.fit")
+        activity["device_name"] = "Unknown Device"
+        activity["device_vendor"] = "garmin"
+        activity["device_product_key"] = "garmin:fenix8"
+        activity["device_product_id"] = "fenix8"
+        activity["device_product_hint"] = "fenix8"
+        activity["device_mapping_status"] = "unresolved"
+        persisted = main._persist_sync_activity(activity)
+
+        dry_run = main.device_product_mapping_dry_run(limit=10, vendor="garmin")
+        sample = next(item for item in dry_run["samples"] if item["id"] == persisted["id"])
+        self.assertEqual(sample["device_product_key"], "garmin:4536")
+        self.assertEqual(sample["normalized_product_key"], "garmin:4536")
+        self.assertEqual(sample["mapped_display_name"], "Fenix 8")
+        self.assertTrue(sample["refreshable"])
+
+        result = main.backfill_device_product_mappings(vendor="garmin")
+        self.assertGreaterEqual(result["updated"], 1)
+
+        conn = profile_backend._conn()
+        try:
+            row = conn.execute(
+                """
+                SELECT device_name, device_vendor, device_product_key, device_product_id,
+                       device_product_hint, device_mapping_status
+                FROM activities WHERE id = ?
+                """,
+                (persisted["id"],),
+            ).fetchone()
+        finally:
+            conn.close()
+
+        self.assertEqual(row["device_name"], "Fenix 8")
+        self.assertEqual(row["device_vendor"], "garmin")
+        self.assertEqual(row["device_product_key"], "garmin:4536")
+        self.assertEqual(row["device_product_id"], "4536")
+        self.assertEqual(row["device_product_hint"], "fenix8")
+        self.assertEqual(row["device_mapping_status"], "resolved")
+
+    def test_device_dry_run_and_backfill_use_coros_fit_product_name(self):
+        main.ensure_activity_sync_schema()
+        activity = self._activity("coros_nomad.fit")
+        activity["device_name"] = "Unknown Device"
+        activity["device_vendor"] = "coros"
+        activity["device_product_key"] = "coros:861"
+        activity["device_product_id"] = "861"
+        activity["device_product_name"] = "COROS NOMAD"
+        activity["device_mapping_status"] = "unresolved"
+        persisted = main._persist_sync_activity(activity)
+
+        dry_run = main.device_product_mapping_dry_run(limit=10, vendor="coros")
+        sample = next(item for item in dry_run["samples"] if item["id"] == persisted["id"])
+        self.assertEqual(sample["device_product_key"], "coros:861")
+        self.assertEqual(sample["mapped_display_name"], "COROS NOMAD")
+        self.assertEqual(sample["resolution_source"], "fit_product_name")
+        self.assertTrue(sample["refreshable"])
+
+        result = main.backfill_device_product_mappings(vendor="coros")
+        self.assertGreaterEqual(result["updated"], 1)
+
+        conn = profile_backend._conn()
+        try:
+            row = conn.execute(
+                """
+                SELECT device_name, device_vendor, device_product_key, device_product_id,
+                       device_product_name, device_mapping_status
+                FROM activities WHERE id = ?
+                """,
+                (persisted["id"],),
+            ).fetchone()
+        finally:
+            conn.close()
+
+        self.assertEqual(row["device_name"], "COROS NOMAD")
+        self.assertEqual(row["device_vendor"], "coros")
+        self.assertEqual(row["device_product_key"], "coros:861")
+        self.assertEqual(row["device_product_id"], "861")
+        self.assertEqual(row["device_product_name"], "COROS NOMAD")
         self.assertEqual(row["device_mapping_status"], "resolved")
 
     def test_activity_list_item_falls_back_to_clean_filename_when_title_missing(self):

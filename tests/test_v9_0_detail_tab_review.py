@@ -985,9 +985,10 @@ class TestV9AiInsightModalHtml(unittest.TestCase):
                           f"P8.1 FAIL: 缺少 #{el_id}")
         for text in [
             "影响因素",
-            "温度偏高，心率更容易上浮",
+            "后端热压力标签可作为本次波动的背景参考",
         ]:
             self.assertIn(text, self.html)
+        self.assertNotIn("温度偏高，心率更容易上浮", self.html)
         for removed in ("fr-advice-panel", "fr-advice-boundary", "fr-advice-status", 'id="fr-advice"'):
             self.assertNotIn(removed, self.html)
         for text in [
@@ -1001,15 +1002,16 @@ class TestV9AiInsightModalHtml(unittest.TestCase):
     def test_p8_1_context_factors_render_uses_whitelisted_fields_only(self):
         """P8.1:影响因素/建议/免责声明只消费白名单字段。"""
         self.assertIn("var contextTags = data.context_tags || {}", self.html)
-        self.assertIn("_renderFatigueReviewContextFactors(contextTags)", self.html)
+        self.assertIn("var environmentFactors = _fatigueReviewEnvironmentFactorEntries(data.environment_factors)", self.html)
+        self.assertIn("_renderFatigueReviewContextFactors(environmentFactors, contextTags)", self.html)
         self.assertIn("_renderFatigueReviewAdvice(data.advice, data.disclaimer)", self.html)
-        ctx_idx = self.html.find("function _renderFatigueReviewContextFactors(tags)")
+        ctx_idx = self.html.find("function _renderFatigueReviewContextFactors(environmentFactors, tags)")
         adv_idx = self.html.find("function _renderFatigueReviewAdvice(advice, disclaimer)")
         self.assertGreater(ctx_idx, 0)
         self.assertGreater(adv_idx, 0)
         ctx_body = self.html[ctx_idx:self.html.find("\n    function _renderFatigueReviewAdvice", ctx_idx)]
         adv_body = self.html[adv_idx:self.html.find("\n    // === V6.3 AI", adv_idx)]
-        for required in ["Object.keys(tags)", "fr-context-factor", "影响因素"]:
+        for required in ["_fatigueReviewEnvironmentFactorEntries(environmentFactors)", "Object.keys(tags)", "fr-context-factor", "影响因素"]:
             self.assertIn(required, ctx_body)
         for required in ["主页面不再重复展示建议", "AI 洞察弹窗", "return;"]:
             self.assertIn(required, adv_body)
@@ -1028,12 +1030,17 @@ class TestV9AiInsightModalHtml(unittest.TestCase):
         self.assertGreater(idx, 0)
         end = self.html.find("\n    function _fatigueReviewContextOverviewComment", idx)
         body = self.html[idx:end]
-        self.assertIn("var contextComment = _fatigueReviewContextOverviewComment(contextTags)", body)
+        self.assertIn("var environmentFactors = _fatigueReviewEnvironmentFactorEntries(data.environment_factors)", body)
+        self.assertIn("_fatigueReviewEnvironmentFactorsOverviewComment(environmentFactors)", body)
+        self.assertIn(": _fatigueReviewContextOverviewComment(contextTags)", body)
         self.assertIn("? contextComment", body)
         self.assertNotIn("key + ': ' + String(contextTags[key])", body)
         self.assertNotIn(".slice(0, 24)", body)
-        helper = self.html[end:self.html.find("\n    function _buildFatigueReviewOverviewDimensionsFromAi", end)]
+        helper_start = self.html.find("function _fatigueReviewEnvironmentFactorsOverviewComment(factors)")
+        helper = self.html[helper_start:self.html.find("\n    function _buildFatigueReviewOverviewDimensionsFromAi", helper_start)]
         for text in (
+            "_fatigueReviewEnvironmentFactorEntries(factors)",
+            "_fatigueReviewEnvironmentFactorDisplay",
             "_fatigueReviewContextFactorCopy(key, tags[key])",
             "copies.slice(0, 2).join('；')",
             "可作为解释本次波动的背景",

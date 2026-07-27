@@ -148,6 +148,9 @@ class TestCareerOverviewFrontendRender(unittest.TestCase):
         self.assertNotIn("careerSeasonPillHtml('memories', '记忆'", card_body)
         self.assertIn("careerSeasonPillHtml('cities', '城市'", card_body)
         self.assertIn('class="career-season-pills"', card_body)
+        self.assertIn("年度结构已生成", render_body)
+        self.assertNotIn("年度结构已接入", render_body)
+        self.assertNotIn("已接入", render_body)
         self.assertNotIn("highlights", card_body)
         self.assertNotIn('class="career-season-icon"', card_body)
         self.assertNotIn("seasonTitle", card_body)
@@ -247,6 +250,9 @@ class TestCareerOverviewFrontendRender(unittest.TestCase):
         self.assertIn("renderCareerHeroBanner(vm.heroBanner)", body)
         self.assertIn("career-overview-empty", body)
         self.assertIn("dataReady", body)
+        self.assertIn("生涯总览已生成", body)
+        self.assertNotIn("生涯总览已接入", body)
+        self.assertNotIn("已接入", body)
 
     def test_banner_renderers_use_safe_html_and_data_hooks(self):
         bodies = "\n".join(

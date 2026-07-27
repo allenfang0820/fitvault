@@ -24,6 +24,7 @@ def _snapshot():
             "race_count": 1,
             "pb_count": 2,
             "achievement_count": 3,
+            "record_milestone_count": 1,
             "covered_city_count": 2,
             "file_path": "/Users/example/private.fit",
         },
@@ -40,6 +41,30 @@ def _snapshot():
                 "track_json": "[forbidden]",
             }
         ],
+        "record_milestones": {
+            "count": 1,
+            "items": [
+                {
+                    "id": "record_milestone:5k:1",
+                    "activity_id": "1",
+                    "sport": "running",
+                    "sport_label": "跑步",
+                    "record_key": "running_5k",
+                    "display_name": "5K",
+                    "title": "刷新纪录：5K",
+                    "date": "2026-05-01",
+                    "year": 2026,
+                    "new_record": {"value": 1700.0, "unit": "seconds", "display": "28:20"},
+                    "previous_record": {"value": 1800.0, "unit": "seconds", "display": "30:00"},
+                    "improvement": {"value": 100.0, "unit": "seconds", "display": "01:40", "relative_delta_ratio": 0.055556, "relative_delta_percent": 5.56, "direction": "lower_is_better"},
+                }
+            ],
+            "record_keys": ["running_5k"],
+            "by_record_key": [{"record_key": "running_5k", "display_name": "5K", "sport": "running", "sport_label": "跑步", "count": 1, "first_date": "2026-05-01", "latest_date": "2026-05-01"}],
+            "largest_breakthrough": None,
+            "representative_breakthrough": None,
+            "first_breakthroughs": [],
+        },
         "highlight_moments": [
             {"id": "pb:1", "activity_id": "1", "type": "pb", "title": "10K PB", "date": "2026-05-01", "value": "45:00", "rank": 15},
             {"id": "city:成都:1", "activity_id": "1", "type": "city", "title": "在成都留下运动坐标", "date": "2026-05-01", "value": "2 次活动 · 火锅", "rank": 50},
@@ -107,6 +132,9 @@ class TestCareerYearLlmPrompt(unittest.TestCase):
         self.assertIn("不是数据分析表", prompt_text)
         self.assertIn("不计算或复述精确数字", prompt_text)
         self.assertIn("highlight_moments", prompt_text)
+        self.assertIn("record_milestones", prompt_text)
+        self.assertIn("刷新纪录", prompt_text)
+        self.assertIn("不得根据曲线、成绩文本或前端数据自行计算", prompt_text)
         self.assertIn("city_moments", prompt_text)
         self.assertIn("覆盖了几座城市、哪些城市", prompt_text)
         self.assertIn("footprints 章节的 evidence_ids 必须留空或省略", prompt_text)

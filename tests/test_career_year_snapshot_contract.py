@@ -56,6 +56,7 @@ def rich_year_snapshot_fixture():
             "race_count": 3,
             "pb_count": 2,
             "achievement_count": 5,
+            "record_milestone_count": 0,
             "covered_city_count": 8,
         },
         "sport_breakdown": [
@@ -102,6 +103,15 @@ def rich_year_snapshot_fixture():
                 "value": "00:19:20",
             },
         ],
+        "record_milestones": {
+            "count": 0,
+            "items": [],
+            "record_keys": [],
+            "by_record_key": [],
+            "largest_breakthrough": None,
+            "representative_breakthrough": None,
+            "first_breakthroughs": [],
+        },
         "highlight_moments": [
             {
                 "id": "race:123",
@@ -151,6 +161,7 @@ def light_year_snapshot_fixture():
         "race_count": 0,
         "pb_count": 0,
         "achievement_count": 0,
+        "record_milestone_count": 0,
         "covered_city_count": 1,
     }
     snapshot["sport_breakdown"] = [
@@ -211,6 +222,8 @@ class TestCareerYearSnapshotContract(unittest.TestCase):
         self.assertEqual(snapshot["period"]["end_date"], "2026-12-31")
         self.assertIsNone(snapshot["period"]["data_through"])
         self.assertEqual(snapshot["summary"]["activity_count"], 0)
+        self.assertEqual(snapshot["summary"]["record_milestone_count"], 0)
+        self.assertEqual(snapshot["record_milestones"]["count"], 0)
         self.assertEqual(len(snapshot["month_digest"]), 12)
         self.assertEqual(snapshot["highlight_moments"], [])
         self.assertEqual(snapshot["city_moments"], [])

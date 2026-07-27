@@ -145,9 +145,12 @@ class TestCareerTimelineFrontendRender(unittest.TestCase):
         loading_body = extract_function_body(self.source, "function renderCareerTimelineLoading()")
         error_body = extract_function_body(self.source, "function renderCareerTimelineError(message)")
         self.assertIn("career-timeline-empty", render_body)
+        self.assertIn("时间轴已生成", render_body)
         self.assertIn("正在加载时间轴", loading_body)
         self.assertIn("时间轴暂不可用", error_body)
         self.assertIn("dataReady", render_body + error_body)
+        self.assertNotIn("时间轴已接入", render_body)
+        self.assertNotIn("已接入", render_body)
         self.assertNotIn("career-timeline-candidates", render_body)
         self.assertNotIn("candidatesCount", render_body)
         self.assertNotIn("候选事件待确认", render_body)
@@ -223,6 +226,8 @@ class TestCareerTimelineFrontendRender(unittest.TestCase):
         body = extract_function_body(self.source, "function careerTimelineNodeHtml(node)")
         self.assertIn("node.detailLink.activityId", body)
         self.assertIn("node.activityId", body)
+        self.assertIn("const detailAttrs = activityId", body)
+        self.assertIn("const clickableClass = activityId", body)
         self.assertIn('data-activity-id="', body)
         self.assertIn('data-career-source="', body)
         self.assertIn('role="button"', body)
@@ -230,6 +235,32 @@ class TestCareerTimelineFrontendRender(unittest.TestCase):
         self.assertIn('onclick="openCareerActivityDetailFromElement(this)"', body)
         self.assertIn('onkeydown="onCareerActivityDetailKeydown(event, this)"', body)
         self.assertIn("safeHtml", body)
+
+    def test_record_breaking_nodes_render_as_clickable_milestones_without_engineering_copy(self):
+        title_body = extract_function_body(self.source, "function careerTimelineNodeDisplayTitle(node)")
+        track_body = extract_function_body(self.source, "function careerTimelineNodeTrackName(node)")
+        tone_body = extract_function_body(self.source, "function careerTimelineNodeTone(node)")
+        node_body = extract_function_body(self.source, "function careerTimelineNodeHtml(node)")
+        aria_body = extract_function_body(self.source, "function careerTimelineNodeAriaLabel(node)")
+        best_body = extract_function_body(self.source, "function isCareerTimelineRecordBestNode(node)")
+
+        self.assertIn("isCareerTimelineRecordBreakingNode(node)", title_body)
+        self.assertIn("isCareerTimelineRecordBestNode(node)", title_body)
+        self.assertIn("'刷新纪录：' + recordName", title_body)
+        self.assertIn("'最佳记录：' + recordName", title_body)
+        self.assertIn("return 'milestone'", track_body)
+        self.assertIn("return 'record-breaking'", tone_body)
+        self.assertIn("isCareerTimelineRecordBestNode(node)", node_body)
+        self.assertIn("isCareerTimelineRecordBreakingNode(node)", node_body)
+        self.assertIn("careerTimelineNodeDisplayTitle(node)", node_body)
+        self.assertIn("const detailAttrs = activityId", node_body)
+        self.assertIn("const clickableClass = activityId", node_body)
+        self.assertIn("openCareerActivityDetailFromElement(this)", node_body)
+        self.assertIn("刷新纪录", aria_body)
+        self.assertIn("最佳记录", aria_body)
+        self.assertIn("current_best", best_body)
+        self.assertNotIn("metric_series", node_body + title_body + track_body + aria_body)
+        self.assertNotIn("+ safeHtml(node.eventType)", node_body)
 
     def test_timeline_render_layer_does_not_compute_facts_or_use_raw_fields(self):
         relevant = "\n".join(
@@ -240,6 +271,8 @@ class TestCareerTimelineFrontendRender(unittest.TestCase):
                 "function renderCareerTimeline(viewModel)",
                 "function careerTimelineNodeHtml(node)",
                 "function careerTimelineNodeMeta(node)",
+                "function careerTimelineNodeDisplayTitle(node)",
+                "function careerTimelineNodeTrackName(node)",
                 "function loadCareerTimeline(filters)",
             )
         )

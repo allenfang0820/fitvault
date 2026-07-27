@@ -87,7 +87,7 @@ class CareerRecordsV2DerivedProviderTest(unittest.TestCase):
         career_backend._RECORDS_V2_ACTIVITY_FINGERPRINT_CACHE.clear()
         self.conn.close()
 
-    def test_records_api_returns_derived_rows_without_writing_state(self):
+    def test_records_api_returns_v3_series_rows_without_writing_state(self):
         before = {
             table: int(self.conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
             for table in ("career_pb_records", "career_event_candidates", "career_record_events")
@@ -101,29 +101,34 @@ class CareerRecordsV2DerivedProviderTest(unittest.TestCase):
 
         self.assertEqual(before, {key: 0 for key in before})
         self.assertEqual(after, {"career_pb_records": 0, "career_event_candidates": 0, "career_record_events": 0})
-        self.assertGreaterEqual(records["summary"]["derived_count"], 1)
-        self.assertEqual(records["summary"]["active_count"], 0)
-        self.assertTrue(any(record["record_key"] == "cycling_longest_distance" for record in records["records"]))
-        self.assertFalse(any(record["status"] == "active" for record in records["records"]))
+        self.assertGreaterEqual(records["summary"]["active_count"], 1)
+        distance = next(record for record in records["records"] if record["record_key"] == "cycling_longest_distance")
+        self.assertEqual(distance["id"], "catalog:cycling_longest_distance")
+        self.assertEqual(distance["status"], "active")
+        self.assertEqual(distance["source_mode"], "activity_total")
+        self.assertEqual(distance["metric"]["display"], "120000 m")
         assert_safe(self, records)
 
-    def test_history_and_detail_use_derived_viewmodel_shape(self):
+    def test_chart_source_uses_metric_series_viewmodel_for_activity_total_records(self):
         records = career_backend.get_career_records({"sport": "cycling"}, conn=self.conn)["records"]
         distance = next(record for record in records if record["record_key"] == "cycling_longest_distance")
 
-        detail = career_backend.get_career_record_detail({"record_id": distance["id"]}, conn=self.conn)
-        history = career_backend.get_career_record_history(
-            {"record_key": "cycling_longest_distance", "scope_hash": distance["scope"]["scope_hash"]},
+        series = career_backend.get_career_record_metric_series(
+            {
+                "record_key": "cycling_longest_distance",
+                "sport": "cycling",
+                "scope_hash": distance["scope"]["scope_hash"],
+                "status": "available",
+            },
             conn=self.conn,
         )
 
-        self.assertEqual(detail["record"]["id"], distance["id"])
-        self.assertEqual(detail["record"]["status"], "derived")
-        self.assertEqual(detail["activity_summary"]["title"], "Long Ride")
-        self.assertGreaterEqual(len(history["chart"]["points"]), 1)
-        self.assertTrue(all(point["status"] != "active" for point in history["chart"]["points"]))
-        assert_safe(self, detail)
-        assert_safe(self, history)
+        self.assertEqual(series["record_key"], distance["record_key"])
+        self.assertEqual(series["current_best"]["activity_id"], distance["activity_id"])
+        self.assertEqual(series["current_best"]["metric"]["value"], distance["metric"]["value"])
+        self.assertGreaterEqual(len(series["points"]), 1)
+        self.assertTrue(all(point["status"] == "available" for point in series["points"]))
+        assert_safe(self, series)
 
     def test_activity_total_history_uses_summary_only_fast_provider(self):
         career_backend._RECORDS_V2_DERIVED_CACHE.clear()

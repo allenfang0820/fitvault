@@ -172,8 +172,10 @@ class TestCareerArchivesFrontendRender(unittest.TestCase):
         ):
             self.assertNotIn(token, self.source)
         self.assertNotIn('id="career-record-dashboard-stats"', self.source)
-        for label in ("记录中心", "当前纪录", "演进", "候选"):
+        for label in ("记录中心", "当前最佳", "历史成绩曲线"):
             self.assertIn(label, pb_section)
+        for label in ("演进", "候选", "记录中心 V2", "已接入"):
+            self.assertNotIn(label, pb_section)
 
     def test_dedicated_achievement_archive_page_is_removed(self):
         self.assertNotIn('<section class="career-section" data-career-section="achievements">', self.source)
@@ -273,7 +275,10 @@ class TestCareerArchivesFrontendRender(unittest.TestCase):
         self.assertIn("career-achievement-badge", self.source)
         self.assertIn("暂无赛事", self.relevant_js)
         self.assertNotIn("暂无当前纪录", self.relevant_js)
-        self.assertIn("记录中心 V2 已接入", self.relevant_js)
+        self.assertIn("记录中心已准备好", self.relevant_js)
+        self.assertIn("赛事档案已生成", self.relevant_js)
+        for token in ("记录中心 V2", "V2 已接入", "已接入", "演进", "候选"):
+            self.assertNotIn(token, self.relevant_js)
         self.assertIn("正在加载赛事档案", self.relevant_js)
         self.assertIn("赛事档案暂不可用", self.relevant_js)
         self.assertIn("当前筛选下共", self.relevant_js)
