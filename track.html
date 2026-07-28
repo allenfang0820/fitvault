@@ -19072,6 +19072,13 @@
 
         var detail = record.detail || {};
         var caps = detail.capabilities || {};
+        var overviewCaps = detail.overview_capabilities || {};
+        var primaryVisual = detail.primary_visual || (caps.has_gps ? 'track_map' : 'empty');
+        var splitSection = detail.split_section || 'laps';
+        var overviewEmptyStates = detail.overview_empty_states || {};
+        var hasTrackVisual = overviewCaps.has_track_visual != null
+            ? overviewCaps.has_track_visual
+            : !!caps.has_gps;
 
         // V9.3 §需求 2:统一标题解析(列表 / 详情 / 历史卡片 共用)
         title.innerText = _resolveDisplayTitle(record);
@@ -19111,9 +19118,7 @@
 
         // V5 轨迹快照(E11) — 正方形 Canvas,动态适配容器尺寸
         var trackSection = document.getElementById('activity-detail-track-section');
-        if (trackSection) {
-            trackSection.style.display = (!caps.has_gps) ? 'none' : '';
-        }
+        if (trackSection) trackSection.style.display = '';
 
         // V9.4.4:圈速表头真理源 = 后端 resolve_lap_columns(detail.lap_columns)
         // 列 label 走 HERO_FIELD_LABELS,格式化走 _formatHeroValue
@@ -19150,6 +19155,17 @@
             var s = (record.display_sport_type || record.sport_type || '').toLowerCase();
             return (s === 'swimming' || s === 'lap_swimming' || s === 'open_water' || s === 'open_water_swimming') ? { unit_m: true, unit_per_100m: true } : {};
         })();
+        var _lapTitle = document.getElementById('overview-laps-title');
+        var _splitCopy = {
+            laps: { title: '📈 圈速统计', empty: '暂无圈速统计数据' },
+            indoor_segments: { title: '📊 分段统计', empty: '设备未提供可用分段数据' },
+            swim_lengths: { title: '🏊 泳段统计', empty: '设备未提供可用泳段数据' },
+            strength_unavailable: { title: '🏋️ 动作组', empty: '设备未提供结构化动作组数据' },
+            hr_summary: { title: '❤️ 心率摘要', empty: '本次仅记录了基础心率摘要' },
+            unavailable: { title: '📝 记录摘要', empty: '设备未提供可展示的分段数据' }
+        };
+        var _splitMeta = _splitCopy[splitSection] || _splitCopy.unavailable;
+        if (_lapTitle) _lapTitle.textContent = _splitMeta.title;
         var _headRow = document.getElementById('activity-detail-laps-head');
         if (_headRow) {
             _headRow.innerHTML = '<th scope="col">圈号</th>' + _lapCols.map(function(c){
@@ -19197,7 +19213,7 @@
                 return '<td data-field="' + c + '">' + f.value + (f.unit ? '<span class="unit">' + f.unit + '</span>' : '') + '</td>';
             }).join('');
             return '<tr tabindex="0" data-row="' + rowIdx + '">' + cells + '</tr>';
-        }).join('') : '<tr><td colspan="' + _colCount + '" style="color:#64748b;">暂无圈速统计数据</td></tr>';
+        }).join('') : '<tr><td colspan="' + _colCount + '" style="color:#64748b;">' + _splitMeta.empty + '</td></tr>';
 
         // V10.0 P1-1:自动切圈标签(仅当存在 frontend_fallback 数据时显示)
         var _autoBannerEl = document.getElementById('activity-detail-laps-auto-banner');
@@ -19216,7 +19232,7 @@
         }
 
         // V6 轨迹快照(E11) — 固定 260×260 一次渲染,不再动态
-        if (caps.has_gps && record.thumbnail_points && record.thumbnail_points.length) {
+        if (primaryVisual === 'track_map' && hasTrackVisual && record.thumbnail_points && record.thumbnail_points.length) {
             // V6 写死 260×260,与 CSS 中 .overview-track-area 固定尺寸一致
             var SIZE = 260;
             const _canvas = buildTrackThumbnailCanvas(record.thumbnail_points, SIZE, SIZE);
@@ -19234,10 +19250,18 @@
                 trackContainer.appendChild(_wrap);
                 trackContainer.appendChild(_tip);
             } else {
-                trackContainer.innerHTML = '<div class="detail-track-tip" style="color:#94a3b8;">当前活动无可用轨迹文件,无法生成轨迹地图。</div>';
+                trackContainer.innerHTML = '<div class="detail-track-tip" style="color:#94a3b8;">本次未生成可展示的轨迹缩略图。</div>';
             }
+        } else if (primaryVisual === 'indoor_summary') {
+            trackContainer.innerHTML = '<div class="detail-track-tip">室内训练记录<br>本次不需要轨迹地图，可查看时长、心率、功率或踏频等设备记录。</div>';
+        } else if (primaryVisual === 'swim_summary') {
+            trackContainer.innerHTML = '<div class="detail-track-tip">游泳训练摘要<br>可查看距离、配速、SWOLF 和泳段等已记录数据。</div>';
+        } else if (primaryVisual === 'strength_limited') {
+            trackContainer.innerHTML = '<div class="detail-track-tip">设备未提供结构化动作组数据<br>本次仅展示时长、心率和热量等基础记录。</div>';
+        } else if (primaryVisual === 'recovery_summary') {
+            trackContainer.innerHTML = '<div class="detail-track-tip">恢复类运动摘要<br>可查看时长、心率和热量等已记录数据。</div>';
         } else {
-            trackContainer.innerHTML = '<div class="detail-track-tip" style="color:#94a3b8;">当前活动无可用轨迹文件,无法生成轨迹地图。</div>';
+            trackContainer.innerHTML = '<div class="detail-track-tip" style="color:#94a3b8;">' + (overviewEmptyStates.primary_visual === 'data_unavailable' ? '本次记录的数据不足，暂不显示主视觉。' : '本次没有可展示的轨迹缩略图。') + '</div>';
         }
 
         // V9.2.2 §E12 侧栏 3 张卡(天气/训练收益/环境挑战)
@@ -19662,9 +19686,22 @@
         sport = String(sport).toLowerCase();
         var fields = HERO_FIELD_REGISTRY[sport] || HERO_FIELD_REGISTRY.running;
         // 游泳特判:距离单位米、配速 /100m
-        var opts = (sport === 'swimming') ? { unit_m: true, unit_per_100m: true } : {};
         var detail = (record && record.detail) || {};
+        var isSwim = detail.detail_surface_mode === 'swim_pool'
+            || detail.detail_surface_mode === 'swim_open_water'
+            || sport === 'swimming'
+            || sport === 'lap_swimming'
+            || sport === 'open_water'
+            || sport === 'open_water_swimming';
+        var opts = isSwim ? { unit_m: true, unit_per_100m: true } : {};
         var summary = (detail && detail.summary) || {};
+        var backendFieldMap = {
+            distance_km: 'distance',
+            duration_sec: 'duration',
+            avg_pace_sec: 'avg_pace',
+            gain_m: 'elevation_gain',
+            avg_cadence: 'cadence'
+        };
         // 字段值查表:detail.* / detail.summary.* / record.* 三级回退
         function pick(field) {
             // avg_pace:后端用 avg_pace_sec(秒),优先查 _sec 字段
@@ -19675,6 +19712,9 @@
                      : (record.avg_pace_sec != null ? record.avg_pace_sec : record.avg_pace)));
             }
             if (field === 'avg_hr' || field === 'max_hr' || field === 'calories') {
+                return detail[field] != null ? detail[field] : (summary[field] != null ? summary[field] : record[field]);
+            }
+            if (field === 'avg_power' || field === 'cadence') {
                 return detail[field] != null ? detail[field] : (summary[field] != null ? summary[field] : record[field]);
             }
             if (field === 'distance') {
@@ -19700,6 +19740,14 @@
                 return detail.swolf != null ? detail.swolf : (summary.swolf != null ? summary.swolf : record.swolf);
             }
             return null;
+        }
+        var backendMetrics = Array.isArray(detail.overview_metrics) ? detail.overview_metrics : [];
+        if (backendMetrics.length) {
+            return backendMetrics.map(function(metric) {
+                var backendField = metric && metric.field ? metric.field : metric;
+                var field = backendFieldMap[backendField] || backendField;
+                return { field: field, raw: pick(field), opts: opts };
+            });
         }
         return fields.map(function(field) { return { field: field, raw: pick(field), opts: opts }; });
     }
@@ -24658,7 +24706,13 @@ function stopLLMHeartbeat() {
                 return;
             }
             _renderFatigueReviewSummary(data);
-            _renderFatigueReviewMetrics(data.metrics || {}, data.sport_type, data.cycling_explanation_signals || {}, data.summary || {}, data.review_mode);
+            _renderFatigueReviewMetrics(data.metrics || {}, data.sport_type, data.cycling_explanation_signals || {}, data.summary || {}, data.review_mode, data.review_profile, data.available_review_facts, data.not_applicable_reason);
+            if (_isFatigueReviewLimitedProfile(data)) {
+                _renderFatigueReviewLimitedPanels(data);
+                _renderFatigueReviewAdvice(data.advice, data.disclaimer);
+                _lastLoadedFatigueReviewActivityId = activityId;
+                return;
+            }
             _renderFatigueReviewDimensions(data.metrics || {});
             var reviewTotalDistanceKm = _fatigueReviewTotalDistanceKm(data);
             var hasSustainedZone = _fatigueReviewHasSustainedZone(data.fatigue_zones || [], reviewTotalDistanceKm);
@@ -24676,7 +24730,9 @@ function stopLLMHeartbeat() {
             });
             // P7.10:分层主图全部空时不渲染 ECharts,改展示占位卡
             var curvesObj = data.curves || {};
-            var chartSportMode = _fatigueReviewChartSportMode(data.sport_type);
+            var displayCurvesObj = data.display_curves || {};
+            var chartSportMode = _fatigueReviewChartSportMode(data);
+            var chartReviewProfile = String(data.review_profile || '').toLowerCase();
             var allCurvesEmpty = (
                 chartSportMode === 'cycling'
                     ? (
@@ -24686,6 +24742,17 @@ function stopLLMHeartbeat() {
                         !(curvesObj.cadence && curvesObj.cadence.length) &&
                         !(curvesObj.grade && curvesObj.grade.length) &&
                         !(curvesObj.terrain_load && curvesObj.terrain_load.length)
+                    )
+                    : chartReviewProfile === 'swim'
+                    ? (
+                        !(curvesObj.hr && curvesObj.hr.length) &&
+                        !(curvesObj.cadence && curvesObj.cadence.length)
+                    )
+                    : chartReviewProfile === 'endurance_indoor'
+                    ? (
+                        !(curvesObj.hr && curvesObj.hr.length) &&
+                        !(displayCurvesObj.pace_sec_per_km && displayCurvesObj.pace_sec_per_km.length) &&
+                        !(curvesObj.cadence && curvesObj.cadence.length)
                     )
                     : (
                         !(curvesObj.gap && curvesObj.gap.length) &&
@@ -24708,9 +24775,15 @@ function stopLLMHeartbeat() {
                 _renderFatigueReviewLaneRail([]);
                 chartContainer.innerHTML = _frEmptyStateHtml({
                     icon: '📉',
-                    title: chartSportMode === 'cycling' ? '本次骑行未记录可绘制曲线' : '本次活动未记录曲线数据',
-                    desc: chartSportMode === 'cycling'
+                    title: chartReviewProfile === 'endurance_indoor'
+                        ? '本次室内训练未记录可绘制曲线'
+                        : (chartSportMode === 'cycling' ? '本次骑行未记录可绘制曲线' : '本次活动未记录曲线数据'),
+                    desc: chartReviewProfile === 'endurance_indoor'
+                        ? '后端未返回可绘制的心率、配速、功率或踏频曲线。'
+                        : chartSportMode === 'cycling'
                         ? '后端未返回可绘制的功率、心率、海拔、踏频、坡度或地形负荷曲线。'
+                        : chartReviewProfile === 'swim'
+                        ? '后端未返回可绘制的心率或划频曲线。'
                         : '该活动缺少可绘制的心率、配速、海拔、效率、GAP、坡度或地形负荷曲线。',
                     tag: '暂无可用曲线'
                 });
@@ -24724,6 +24797,8 @@ function stopLLMHeartbeat() {
                 // 渲染 P7.10 分层 ECharts 主图(复用渲染函数,容器 ID 区分)
                 var chartPayload = {
                     sport_type: data.sport_type,
+                    review_mode: data.review_mode,
+                    review_profile: data.review_profile,
                     distance_curve: Array.isArray(curvesObj.distance) ? curvesObj.distance : [],
                     hr_curve:        data.curves && data.curves.hr,
                     power_curve:     data.curves && data.curves.power,
@@ -25162,6 +25237,56 @@ function stopLLMHeartbeat() {
             }
         });
     }
+    function _isFatigueReviewLimitedProfile(data) {
+        var profile = String((data && data.review_profile) || '').toLowerCase();
+        return /^(strength_limited|recovery_limited|generic_limited|not_applicable)$/.test(profile);
+    }
+    function _renderFatigueReviewLimitedPanels(data) {
+        data = data || {};
+        var reasonText = {
+            structured_strength_data_missing: '设备未提供结构化动作组数据，本次不生成动作、肌群或训练量结论。',
+            recovery_activity_limited: '恢复类活动仅保留基础记录，不生成竞速化表现结论。',
+            generic_activity_limited: '本次泛训练仅保留基础记录，不生成耐力指标。',
+            unsupported_activity_type: '该活动类型暂不适用耐力复盘。'
+        }[data.not_applicable_reason] || '本次活动仅展示后端已记录的基础事实。';
+        var renderEmpty = function(id, title) {
+            var el = document.getElementById(id);
+            if (el) el.innerHTML = _frEmptyStateHtml({
+                icon: '○',
+                title: title,
+                desc: reasonText,
+                tag: '基础事实'
+            });
+        };
+        renderEmpty('fr-event-list', '不生成状态下滑事件');
+        renderEmpty('fr-fatigue-zone-list', '不生成疲劳带');
+        renderEmpty('fr-stage-track', '不生成耐力阶段');
+        renderEmpty('fr-side-summary', '本次仅保留基础事实');
+        renderEmpty('fr-side-impact', '不生成耐力影响排序');
+        var eventCount = document.getElementById('fr-event-count');
+        if (eventCount) eventCount.textContent = '0';
+        var boundary = document.getElementById('fr-stage-boundary');
+        if (boundary) boundary.textContent = reasonText;
+        var chartContainer = document.getElementById('fatigue-review-chart');
+        if (typeof clearProfileAnalysisChart === 'function') {
+            clearProfileAnalysisChart('fatigue-review-chart');
+        }
+        _unbindFatigueReviewChartAutoResize();
+        _renderFatigueReviewLaneRail([]);
+        if (chartContainer) {
+            chartContainer.innerHTML = _frEmptyStateHtml({
+                icon: '○',
+                title: '不生成耐力曲线',
+                desc: reasonText,
+                tag: '基础事实'
+            });
+        }
+        var toggles = document.getElementById('fr-layer-toggle-row');
+        if (toggles) {
+            toggles.innerHTML = '';
+            toggles.hidden = true;
+        }
+    }
     function _renderFatigueReviewSummary(data) {
         data = data || {};
         _lastFatigueReviewData = data;
@@ -25179,6 +25304,8 @@ function stopLLMHeartbeat() {
         var aiPill = document.getElementById('fr-ai-status-pill');
         var bonk = metrics.bonk_risk || {};
         var drift = metrics.hr_drift || {};
+        var reviewProfile = String(data.review_profile || '').toLowerCase();
+        var availableFacts = data.available_review_facts || {};
         var distance = Array.isArray(curves.distance) ? curves.distance : [];
         var drawableCurveKeys = ['hr', 'speed', 'altitude', 'grade', 'gap', 'efficiency'];
         var drawableCurveCount = drawableCurveKeys.filter(function(key) {
@@ -25190,6 +25317,30 @@ function stopLLMHeartbeat() {
             el.textContent = text;
             el.className = 'fr-pill' + (tone ? ' ' + tone : '');
         };
+        if (reviewProfile && reviewProfile !== 'endurance_outdoor') {
+            var reasonText = {
+                structured_strength_data_missing: '设备未提供结构化动作组数据',
+                recovery_activity_limited: '恢复类活动仅保留基础记录',
+                generic_activity_limited: '本次泛训练仅保留基础记录',
+                unsupported_activity_type: '该活动类型暂不适用耐力复盘'
+            }[data.not_applicable_reason] || '本次仅展示后端已记录的事实';
+            var factText = Object.keys(availableFacts).map(function(key) {
+                return key + ' ' + availableFacts[key];
+            }).join(' · ') || '暂无可展示的基础事实';
+            if (summary) {
+                summary.style.color = '';
+                summary.textContent = reasonText;
+            }
+            if (desc) desc.textContent = factText + ' · ' + (data.disclaimer || '建议仅供参考，请结合身体感受判断');
+            setPill(sourcePill, '基础事实', 'ok');
+            setPill(axisPill, distance.length ? ('距离轴 ' + distance.length + ' 点') : '不使用距离轴', distance.length ? 'ok' : 'muted');
+            setPill(curvePill, drawableCurveCount ? ('曲线 ' + drawableCurveCount + ' 组') : '仅基础事实', drawableCurveCount ? 'ok' : 'muted');
+            setPill(riskPill, '不生成耐力风险', 'muted');
+            setPill(eventPill, '不生成疲劳事件', 'muted');
+            setPill(aiPill, 'AI 受限', 'muted');
+            _renderFatigueReviewOverviewDimensions([], 'backend');
+            return;
+        }
 
         if (summary) {
             var riskText = bonk.is_at_risk ? '存在能量断档风险线索' : '未触发能量断档风险线索';
@@ -25237,13 +25388,13 @@ function stopLLMHeartbeat() {
         if (reviewMode === 'cycling') return 'cycling';
         if (reviewMode === 'running' && String(sportType || '').toLowerCase() === 'trail_running') return 'trail_running';
         if (reviewMode === 'running') return 'running';
-        if (reviewMode === 'general') return 'hiking';
-        if (reviewMode === 'swimming') return 'hiking';
+        if (reviewMode === 'general') return 'general';
+        if (reviewMode === 'swimming') return 'swimming';
         var sport = String(sportType || '').toLowerCase();
         if (sport === 'trail_running') return 'trail_running';
         if (sport === 'cycling' || sport === 'road_cycling' || sport === 'mountain_biking' || sport === 'indoor_cycling' || sport === 'e_biking') return 'cycling';
         if (sport === 'hiking' || sport === 'walking' || sport === 'mountaineering') return 'hiking';
-        return 'running';
+        return 'general';
     }
     var FATIGUE_REVIEW_METRIC_COPY = {
         hr_drift: {
@@ -25717,6 +25868,7 @@ function stopLLMHeartbeat() {
     }
     function _fatigueReviewMetricCardDefs(sportType) {
         var reviewMode = arguments.length > 1 ? arguments[1] : null;
+        var reviewProfile = arguments.length > 2 ? String(arguments[2] || '').toLowerCase() : '';
         var slots = _fatigueReviewMetricCardSlots();
         var sportMode = _fatigueReviewMetricSportMode(sportType, reviewMode);
         var withSlot = function(slotKey, metricKey, label, ariaLabel, tooltip, valueSource, unit) {
@@ -25736,6 +25888,7 @@ function stopLLMHeartbeat() {
                 infoId: slot.infoId
             };
         };
+        if (reviewProfile && reviewProfile !== 'endurance_outdoor') return [];
         if (sportMode === 'cycling') {
             return [
                 withSlot('hr_drift', 'power_variability', '输出节奏', '输出节奏说明', '比较标准化功率和平均功率的差距。差距越小，说明踩得越连续；差距越大，说明冲刺、滑行或忽高忽低更多。', 'vi', 'VI'),
@@ -26169,9 +26322,10 @@ function stopLLMHeartbeat() {
         var bonk = metrics.bonk_risk || {};
         var events = metrics.events || { count: 0 };
         var reviewMode = arguments.length > 4 ? arguments[4] : null;
+        var reviewProfile = arguments.length > 5 ? arguments[5] : null;
         var sportGroup = getFatigueReviewSportCopyGroup(sportType, reviewMode);
         var sportMode = _fatigueReviewMetricSportMode(sportType, reviewMode);
-        var cardDefs = _fatigueReviewMetricCardDefs(sportType, reviewMode);
+        var cardDefs = _fatigueReviewMetricCardDefs(sportType, reviewMode, reviewProfile);
         var cyclingSignals = arguments.length > 2 && arguments[2] && typeof arguments[2] === 'object' ? arguments[2] : {};
         var reviewSummary = arguments.length > 3 && arguments[3] && typeof arguments[3] === 'object' ? arguments[3] : {};
         var levelText = function(v, map) {
@@ -26195,6 +26349,20 @@ function stopLLMHeartbeat() {
             }
             if (subEl) subEl.textContent = subText || '待接入';
         };
+        var slots = _fatigueReviewMetricCardSlots();
+        Object.keys(slots).forEach(function(slotKey) {
+            var valueEl = document.getElementById(slots[slotKey].valueId);
+            var cardEl = valueEl && valueEl.closest ? valueEl.closest('.fr-metric-card') : null;
+            if (cardEl) cardEl.style.display = '';
+        });
+        if (!cardDefs.length) {
+            Object.keys(slots).forEach(function(slotKey) {
+                var valueEl = document.getElementById(slots[slotKey].valueId);
+                var cardEl = valueEl && valueEl.closest ? valueEl.closest('.fr-metric-card') : null;
+                if (cardEl) cardEl.style.display = 'none';
+            });
+            return;
+        }
         for (var cardDefIndex = 0; cardDefIndex < cardDefs.length; cardDefIndex++) {
             _applyFatigueReviewMetricCardDef(cardDefs[cardDefIndex]);
         }
@@ -28715,7 +28883,15 @@ function stopLLMHeartbeat() {
     }
 
     function _fatigueReviewChartSportMode(sportType) {
-        var normalized = String(sportType || '').toLowerCase();
+        var data = arguments.length > 1 && arguments[1] && typeof arguments[1] === 'object'
+            ? arguments[1]
+            : (sportType && typeof sportType === 'object' ? sportType : {});
+        var reviewMode = String(data.review_mode || '').toLowerCase();
+        var reviewProfile = String(data.review_profile || '').toLowerCase();
+        var normalized = String(data.sport_type || (typeof sportType === 'string' ? sportType : '') || '').toLowerCase();
+        if (reviewMode === 'cycling') return 'cycling';
+        if (reviewMode === 'running') return 'running';
+        if (reviewProfile === 'swim' || reviewMode === 'swimming') return 'swimming';
         if (normalized === 'cycling' || normalized === 'road_cycling' || normalized === 'mountain_biking') {
             return 'cycling';
         }
@@ -28726,8 +28902,16 @@ function stopLLMHeartbeat() {
     }
 
     function _fatigueReviewChartLaneDefs(activityData) {
-        var sportMode = _fatigueReviewChartSportMode(activityData && activityData.sport_type);
+        var sportMode = _fatigueReviewChartSportMode(activityData && activityData.sport_type, activityData);
+        var reviewProfile = String((activityData && activityData.review_profile) || '').toLowerCase();
         if (sportMode === 'cycling') {
+            if (reviewProfile === 'endurance_indoor') {
+                return [
+                    { key: 'power_curve', name: '功率', unit: 'W', color: '#f59e0b', area: 'rgba(245, 158, 11, 0.10)' },
+                    { key: 'hr_curve', name: '心率', unit: 'bpm', color: '#ef4444', area: 'rgba(239, 68, 68, 0.08)' },
+                    { key: 'cadence_curve', name: '踏频', unit: 'rpm', color: '#38bdf8', area: 'rgba(56, 189, 248, 0.08)' }
+                ];
+            }
             return [
                 { key: 'power_curve', name: '功率', unit: 'W', color: '#f59e0b', area: 'rgba(245, 158, 11, 0.10)', tooltip: '显示每一段实际踩出来的输出强度。高低起伏越大，说明冲刺、爬坡、滑行或停顿越多；和心率一起看，可以区分是主动发力还是地形影响。' },
                 { key: 'hr_curve', name: '心率', unit: 'bpm', color: '#ef4444', area: 'rgba(239, 68, 68, 0.08)' },
@@ -28735,6 +28919,19 @@ function stopLLMHeartbeat() {
                 { key: 'cadence_curve', name: '踏频', unit: 'rpm', color: '#38bdf8', area: 'rgba(56, 189, 248, 0.08)', tooltip: '显示每分钟踩踏次数。结合功率和心率一起看，可以判断是稳定踩踏、滑行变多，还是被坡度和停顿打断。' },
                 { key: 'grade_curve', name: '坡度', unit: '%', color: '#f97316', area: 'rgba(249, 115, 22, 0.08)', robustAxis: { hardMin: -35, hardMax: 35, minSpan: 4 }, tooltip: '显示当前路段的上坡或下坡程度。正值多为上坡，负值多为下坡，短时尖峰更适合作为地形参考。' },
                 { key: 'terrain_load_curve', name: '地形负荷', unit: 'grade×speed×s', color: '#14b8a6', area: 'rgba(20, 184, 166, 0.12)', seriesType: 'bar', tooltip: '把坡度、速度和持续时间合成的地形压力参考。柱子越高，说明这一小段地形对体能消耗越集中。' }
+            ];
+        }
+        if (reviewProfile === 'endurance_indoor') {
+            return [
+                { key: 'hr_curve', name: '心率', unit: 'bpm', color: '#ef4444', area: 'rgba(239, 68, 68, 0.08)' },
+                { key: 'pace_curve', name: '配速', unit: '/km', color: '#3b82f6', area: 'rgba(59, 130, 246, 0.08)', displayAsPace: true, rawKey: 'pace_raw_curve', cappedKey: 'pace_capped_curve' },
+                { key: 'cadence_curve', name: '步频', unit: 'rpm', color: '#38bdf8', area: 'rgba(56, 189, 248, 0.08)' }
+            ];
+        }
+        if (reviewProfile === 'swim' || sportMode === 'swimming') {
+            return [
+                { key: 'hr_curve', name: '心率', unit: 'bpm', color: '#ef4444', area: 'rgba(239, 68, 68, 0.08)' },
+                { key: 'cadence_curve', name: '划频', unit: 'spm', color: '#38bdf8', area: 'rgba(56, 189, 248, 0.08)' }
             ];
         }
         return [

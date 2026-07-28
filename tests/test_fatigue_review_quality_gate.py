@@ -38,6 +38,25 @@ def _extract_js_function(source: str, name: str) -> str:
     return source[start:end]
 
 
+def _slice_js_braced_block(source: str, start_token: str) -> str:
+    start = source.find(start_token)
+    if start < 0:
+        raise AssertionError(f"missing JS block start: {start_token}")
+    brace_start = source.find("{", start)
+    if brace_start < 0:
+        raise AssertionError(f"missing JS block brace: {start_token}")
+    depth = 0
+    for idx in range(brace_start, len(source)):
+        char = source[idx]
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return source[start:idx + 1]
+    raise AssertionError(f"unclosed JS block: {start_token}")
+
+
 class TestP5FrontendZeroInferenceGate(unittest.TestCase):
     def setUp(self) -> None:
         self.html = _read(TRACK_HTML)
@@ -118,7 +137,10 @@ class TestP5SnapshotWhitelistGate(unittest.TestCase):
         "environment_context",
         "environment_factors",
         "review_mode",
+        "review_profile",
         "capabilities",
+        "not_applicable_reason",
+        "available_review_facts",
         "cycling_explanation_signals",
         "ai_insight",
         "advice",
@@ -217,6 +239,68 @@ class TestP5SnapshotWhitelistGate(unittest.TestCase):
         encoded = json.dumps(snapshot, ensure_ascii=False)
         for key in self.FORBIDDEN_KEYS:
             self.assertNotIn('"' + key + '"', encoded)
+
+    def test_limited_profiles_return_only_scalar_facts_without_endurance_outputs(self):
+        for sport_type, profile, reason in (
+            ("strength_training", "strength_limited", "structured_strength_data_missing"),
+            ("yoga", "recovery_limited", "recovery_activity_limited"),
+            ("cardio", "generic_limited", "generic_activity_limited"),
+            ("unknown", "not_applicable", "unsupported_activity_type"),
+        ):
+            with self.subTest(sport_type=sport_type):
+                row = self._row()
+                row.update({
+                    "sport_type": sport_type,
+                    "avg_hr": 128,
+                    "calories": 260,
+                })
+                snapshot = self._api()._build_fatigue_review_snapshot(row)
+
+                self.assertEqual(snapshot["review_profile"], profile)
+                self.assertEqual(snapshot["not_applicable_reason"], reason)
+                self.assertFalse(snapshot["capabilities"]["is_applicable"])
+                self.assertEqual(
+                    snapshot["available_review_facts"],
+                    {"duration_sec": 750, "avg_hr": 128.0, "calories": 260.0},
+                )
+                self.assertEqual(snapshot["collapse_events"], [])
+                self.assertEqual(snapshot["fatigue_zones"], [])
+                self.assertTrue(
+                    all(not values for key, values in snapshot["curves"].items()
+                        if key != "total_distance_m")
+                )
+
+    def test_indoor_and_swim_profiles_remove_route_and_terrain_signals(self):
+        indoor_row = self._row()
+        indoor_row.update({"sport_type": "treadmill_running", "avg_hr": 145})
+        indoor = self._api()._build_fatigue_review_snapshot(indoor_row)
+        self.assertEqual(indoor["review_profile"], "endurance_indoor")
+        self.assertFalse(indoor["capabilities"]["uses_altitude"])
+        self.assertFalse(indoor["capabilities"]["uses_heat"])
+        self.assertEqual(indoor["environment_factors"], [])
+        for key in ("efficiency", "gap", "grade", "terrain_load", "altitude"):
+            self.assertEqual(indoor["curves"][key], [], key)
+
+        swim_row = self._row()
+        swim_row.update({
+            "sport_type": "lap_swimming",
+            "avg_hr": 142,
+            "avg_cadence": 28,
+            "avg_speed": 1.5,
+            "avg_swolf": 32,
+        })
+        swim = self._api()._build_fatigue_review_snapshot(swim_row)
+        self.assertEqual(swim["review_profile"], "swim")
+        self.assertIsNone(swim["not_applicable_reason"])
+        self.assertEqual(swim["fatigue_zones"], [])
+        self.assertEqual(swim["collapse_events"], [])
+        self.assertEqual(swim["metrics"]["events"]["analysis_status"], "not_applicable")
+        self.assertEqual(swim["metrics"]["efficiency"]["confidence"], "unavailable")
+        self.assertFalse(swim["summary"]["power_available"])
+        self.assertIsNone(swim["summary"]["avg_power"])
+        self.assertEqual(swim["available_review_facts"]["swolf"], 32.0)
+        for key in ("efficiency", "gap", "grade", "terrain_load", "altitude", "power"):
+            self.assertEqual(swim["curves"][key], [], key)
 
     def test_non_empty_drawable_curves_align_to_distance_axis(self):
         curves = self._api()._build_fatigue_review_snapshot(self._row())["curves"]
@@ -1090,9 +1174,22 @@ class TestP5P4UiStructureGate(unittest.TestCase):
         ):
             self.assertIn(text, body)
         review_fn = _extract_js_function(self.html, "openFatigueReview")
+        indoor_copy_idx = review_fn.find("chartReviewProfile === 'endurance_indoor'")
+        cycling_copy_idx = review_fn.find("chartSportMode === 'cycling'", indoor_copy_idx)
+        self.assertGreater(indoor_copy_idx, -1)
+        self.assertGreater(cycling_copy_idx, indoor_copy_idx)
         for text in (
             "chartSportMode === 'cycling'",
+            "var displayCurvesObj = data.display_curves || {}",
+            "var chartReviewProfile = String(data.review_profile || '').toLowerCase()",
+            "chartReviewProfile === 'swim'",
+            "chartReviewProfile === 'endurance_indoor'",
+            "displayCurvesObj.pace_sec_per_km && displayCurvesObj.pace_sec_per_km.length",
+            "curvesObj.cadence && curvesObj.cadence.length",
+            "本次室内训练未记录可绘制曲线",
+            "后端未返回可绘制的心率、配速、功率或踏频曲线。",
             "后端未返回可绘制的功率、心率、海拔、踏频、坡度或地形负荷曲线。",
+            "后端未返回可绘制的心率或划频曲线。",
         ):
             self.assertIn(text, review_fn)
         apply_fn = _extract_js_function(self.html, "_applyFatigueReviewLayerVisibility")
@@ -1121,10 +1218,8 @@ class TestP5P4UiStructureGate(unittest.TestCase):
         self.assertIn("normalized === 'mountain_biking'", self.html)
         self.assertIn("if (sportMode === 'cycling')", lane_defs)
 
-        cycling_start = lane_defs.find("if (sportMode === 'cycling')")
-        cycling_end = lane_defs.find("\n        return [", cycling_start + 1)
-        cycling_block = lane_defs[cycling_start:cycling_end]
-        expected_order = [
+        cycling_block = _slice_js_braced_block(lane_defs, "if (sportMode === 'cycling')")
+        for text in [
             "key: 'power_curve'",
             "name: '功率'",
             "unit: 'W'",
@@ -1135,12 +1230,9 @@ class TestP5P4UiStructureGate(unittest.TestCase):
             "unit: 'rpm'",
             "key: 'grade_curve'",
             "key: 'terrain_load_curve'",
-        ]
-        cursor = -1
-        for text in expected_order:
-            next_idx = cycling_block.find(text)
-            self.assertGreater(next_idx, cursor)
-            cursor = next_idx
+            "reviewProfile === 'endurance_indoor'",
+        ]:
+            self.assertIn(text, cycling_block)
         for forbidden in (
             "key: 'pace_curve'",
             "key: 'gap_pace_curve'",
@@ -1149,7 +1241,7 @@ class TestP5P4UiStructureGate(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, cycling_block)
 
-        running_block = lane_defs[cycling_end:]
+        running_block = lane_defs
         for text in (
             "key: 'pace_curve'",
             "key: 'gap_pace_curve'",
@@ -1499,7 +1591,7 @@ class TestP5P4UiStructureGate(unittest.TestCase):
         render_body = _extract_js_function(self.html, "_renderFatigueReviewMetrics")
 
         self.assertIn(
-            "_renderFatigueReviewMetrics(data.metrics || {}, data.sport_type, data.cycling_explanation_signals || {}, data.summary || {}, data.review_mode)",
+            "_renderFatigueReviewMetrics(data.metrics || {}, data.sport_type, data.cycling_explanation_signals || {}, data.summary || {}, data.review_mode, data.review_profile",
             open_body,
         )
         for text in (

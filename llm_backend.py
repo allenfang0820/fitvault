@@ -2305,6 +2305,69 @@ def normalize_fatigue_review_json(raw_text: str) -> dict[str, Any]:
     return schema
 
 
+def _fatigue_review_profile_prompt(snapshot: dict[str, Any], sport_type: str, mode: str) -> str:
+    """Build the multi-sport profile boundary block for fatigue-review prompts."""
+    snap = snapshot or {}
+    profile = str(snap.get("review_profile") or "").strip().lower() or "endurance_outdoor"
+    capabilities = snap.get("capabilities") if isinstance(snap.get("capabilities"), dict) else {}
+    facts = snap.get("available_review_facts") if isinstance(snap.get("available_review_facts"), dict) else {}
+    reason = snap.get("not_applicable_reason")
+    sport = str(sport_type or snap.get("sport_type") or "").strip().lower()
+    raw_mode = str(snap.get("review_mode") or mode or "").strip().lower() or "general"
+    fact_text = json.dumps(facts, ensure_ascii=False, sort_keys=True, default=str)
+    caps_text = json.dumps(capabilities, ensure_ascii=False, sort_keys=True, default=str)
+    lines = [
+        "【多运动 Profile 分流 — 必须优先于通用耐力模板】",
+        f"- review_profile={profile}; review_mode={raw_mode}; not_applicable_reason={reason or 'null'}",
+        f"- capabilities={caps_text}",
+        f"- available_review_facts={fact_text}",
+        "- 你必须先读取 review_profile / capabilities / not_applicable_reason / available_review_facts,再组织复盘;字段缺失只代表旧 snapshot 兼容,不得反推新事实。",
+    ]
+
+    if profile == "endurance_indoor":
+        if mode == "cycling" or "cycling" in sport or "biking" in sport:
+            lines.extend([
+                "- endurance_indoor/室内骑行:只解释 snapshot 中已有的功率、心率、踏频、速度等室内训练事实。",
+                "- 室内骑行禁止路线、爬升、天气压力、地形推断、海拔变化、坡度路段、顺逆风或路况叙事;即使通用骑行段提到这些字段,本 profile 下也必须视为不可用。",
+                "- 若功率或踏频事实缺失,只能说明对应数据不足,不得补出功率效率、后程功率保持或踩踏组织结论。",
+            ])
+        elif mode == "running" or "treadmill" in sport:
+            lines.extend([
+                "- endurance_indoor/跑步机:只解释 snapshot 中已有的心率、配速、步频、时长等室内训练事实。",
+                "- 跑步机禁止路线、GAP、地形负荷、爬升、坡度修正配速、天气压力或户外路况叙事。",
+                "- 若配速或步频事实缺失,只能说明数据不足,不得补算节奏、步幅、路况或地形影响。",
+            ])
+        else:
+            lines.append("- endurance_indoor:按室内训练处理,禁止路线、爬升、天气压力、地形和户外路况推断。")
+    elif profile == "swim":
+        lines.extend([
+            "- swim:只解释 snapshot 中已有的配速、心率、划频、SWOLF、泳段或水温事实。",
+            "- 游泳禁止 GAP、爬升、跑步配速、跑步能量断档、骑行功率推断、坡度、路线和地形负荷叙事。",
+            "- 无 SWOLF、划频、心率或泳段事实时,只能说明该维度数据不足,不得用跑步或骑行模板补结论。",
+        ])
+    elif profile == "strength_limited":
+        lines.extend([
+            "- strength_limited:本轮仅支持受限复盘,禁止猜动作、组数、重量、肌群、训练量、训练容量、力竭组或具体器械。",
+            "- 若 not_applicable_reason=structured_strength_data_missing,必须说明设备未提供结构化动作组数据;只解释 available_review_facts 中真实存在的时长、心率、热量等基础事实。",
+            "- 输出仍保持四维 JSON,但不得生成完整四维耐力洞察;每个维度都应围绕事实不足和记录边界给出温和说明。",
+        ])
+    elif profile == "recovery_limited":
+        lines.extend([
+            "- recovery_limited:瑜伽、拉伸、呼吸或恢复类运动禁止竞速化表现评价、后程耐久、能量断档、冲刺能力、配速效率或功率输出结论。",
+            "- 只解释 available_review_facts 中已有的时长、心率、热量和恢复压力边界;训练建议应偏恢复、舒展和负荷管理。",
+            "- 输出仍保持四维 JSON,但不得生成完整四维耐力洞察。",
+        ])
+    elif profile in {"generic_limited", "not_applicable"}:
+        lines.extend([
+            f"- {profile}:只输出受限说明和可用事实边界,不生成完整四维耐力洞察。",
+            "- 禁止把 unknown、driving、generic、cardio 或泛训练默认写成跑步、骑行、游泳、徒步或登山。",
+            "- 若 capabilities.is_applicable=false 或 not_applicable_reason 存在,必须把数据不适用原因写清楚,不得补事实。",
+        ])
+    else:
+        lines.append("- endurance_outdoor:可按既有户外耐力复盘解释,但仍只能使用 snapshot 已有事实。")
+    return "\n".join(lines)
+
+
 def build_fatigue_review_messages(
     snapshot: dict[str, Any],
     sport_type: str,
@@ -2318,6 +2381,7 @@ def build_fatigue_review_messages(
     mode = str((snapshot or {}).get("review_mode") or "").strip().lower() or "general"
     if mode == "not_applicable":
         mode = "general"
+    profile_prompt = _fatigue_review_profile_prompt(snapshot or {}, sport_type, mode)
 
     system = f"""你是一位资深运动表现分析师与训练科学专家,专长于{sport_cn}单次训练复盘分析。
 
@@ -2346,6 +2410,8 @@ def build_fatigue_review_messages(
 - 骑行不得把"配速"、"步频"、"跑姿"、"触地"、"步幅"、"跑步节奏"、"恢复跑"、"跑步赛道"作为核心解释框架;若需要描述速度,写"速度"或"车速",且说明速度受坡度、风、滑行、停顿和路况影响,不能替代功率判断训练输出。
 - 骑行不得自行计算或推断 VI、FTP、IF、TSS、W/kg、左右平衡、扭矩或齿比;除非 snapshot 明确提供,否则这些维度必须视为不可用。
 - 不得编造补给、天气、设备、路况等 snapshot 未提供的缺失事实;若 environment_context 或 context_tags 未提供依据,只能说明外部因素证据不足。
+
+{profile_prompt}
 
 【外部影响语义边界】
 - environment_factors 是后端已识别的用户可见外部影响解释;若 snapshot 中存在 environment_factors,必须优先引用 environment_factors 的 label / comment,并尊重 confidence 与缺失信息。AI 只能消费,不得补算或改写 canonical 环境事实。

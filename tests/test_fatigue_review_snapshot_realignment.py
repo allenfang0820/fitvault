@@ -574,6 +574,9 @@ class TestFatigueReviewP2SnapshotRealignment(unittest.TestCase):
         encoded = json.dumps(compact["environment_factors"], ensure_ascii=False)
 
         self.assertIn("environment_factors", compact)
+        self.assertEqual(compact["review_profile"], "endurance_outdoor")
+        self.assertIn("available_review_facts", compact)
+        self.assertIsNone(compact["not_applicable_reason"])
         self.assertIn("湿度偏高", encoded)
         for forbidden in ("points", "records", "shadow_diff", "diff"):
             self.assertNotIn('"' + forbidden + '"', encoded)

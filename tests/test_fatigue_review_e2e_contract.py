@@ -38,7 +38,9 @@ class TestFatigueReviewBackendOutputContract(unittest.TestCase):
 
     EXPECTED_TOP_KEYS = {
         "sport_type", "metrics", "collapse_events", "fatigue_zones",
-        "curves", "summary", "context_tags", "environment_context", "environment_factors", "ai_insight", "advice", "disclaimer",
+        "curves", "summary", "context_tags", "environment_context", "environment_factors",
+        "review_mode", "review_profile", "capabilities", "not_applicable_reason",
+        "available_review_facts", "ai_insight", "advice", "disclaimer",
     }
     EXPECTED_METRICS_KEYS = {
         "hr_drift", "decoupling", "bonk_risk", "events",
@@ -131,6 +133,11 @@ class TestFatigueReviewBackendOutputContract(unittest.TestCase):
         """构造符合后端真实输出的 mock snapshot"""
         return {
             "sport_type": "running",
+            "review_mode": "running",
+            "review_profile": "endurance_outdoor",
+            "capabilities": {"is_applicable": True},
+            "not_applicable_reason": None,
+            "available_review_facts": {"duration_sec": 3600, "avg_hr": 150.0},
             "metrics": {
                 "hr_drift": {"pct": 5.2, "level": "good", "confidence": "high",
                             "reasons": [],

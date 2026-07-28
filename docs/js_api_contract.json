@@ -1128,7 +1128,7 @@
       ],
       "returns": "{ ok, code, msg, data: {record, api_elapsed_ms}, traceId }",
       "high_risk": false,
-      "description": "单条活动详情。V9.4.4 新增字段:1) record.detail.training_effect(Firstbeat TE 0.0~5.0,V9.4.0 错字段已纠);2) record.detail.lap_columns(圈速表列真理源,后端 resolve_lap_columns 计算);3) record.detail.laps[i].{max_hr, ascent_m, descent_m}(FIT lap 透传)。全部走 FIT SDK 直读,无前端计算。"
+      "description": "单条活动详情。V9.4.4 新增字段:1) record.detail.training_effect(Firstbeat TE 0.0~5.0,V9.4.0 错字段已纠);2) record.detail.lap_columns(圈速表列真理源,后端 resolve_lap_columns 计算);3) record.detail.laps[i].{max_hr, ascent_m, descent_m}(FIT lap 透传)。多运动升级新增 record.detail.detail_surface_mode、overview_capabilities、overview_empty_states、overview_metrics、primary_visual、split_section；这些字段必须由后端事实和 metrics_registry.py 决定，前端不得按 sport_type 另行推断。全部走 FIT SDK 直读,无前端计算。"
     },
     {
       "name": "update_activity_title",
@@ -1301,7 +1301,7 @@
         5001,
         9001
       ],
-      "returns": "{ code, msg, data: {sport_type, api_elapsed_ms, cache_status, review_backend_profile?: {storage:'response_diagnostic', event_count, top_level_profiled_ms, events:[{name, elapsed_ms, rows?, candidate_rows?, window_rows?, compared_count?, records_count?, curve_points?, cache_status?, curve_resolution?}]}, curve_resolution, curve_points_original, curve_points_returned, curve_sample_target_points, full_curves_available, summary, metrics, collapse_events, fatigue_zones, curves, display_curves, display_meta, context_tags, environment_context, environment_factors, cycling_explanation_signals, ai_insight, advice, disclaimer}, traceId }。cache_status 为 Task 05 诊断字段: miss/hit; review_backend_profile 为 Task 10 受控诊断字段,仅含阶段名、耗时、计数、cache 状态、曲线分辨率和曲线点数,不进入 snapshot cache 或 AI 输入; curve_resolution 默认为 sampled,显式 full 返回全量曲线; 缓存命中不得改变 snapshot 字段语义。",
+      "returns": "{ code, msg, data: {sport_type, review_mode, review_profile, capabilities, not_applicable_reason, available_review_facts, api_elapsed_ms, cache_status, review_backend_profile?: {storage:'response_diagnostic', event_count, top_level_profiled_ms, events:[{name, elapsed_ms, rows?, candidate_rows?, window_rows?, compared_count?, records_count?, curve_points?, cache_status?, curve_resolution?}]}, curve_resolution, curve_points_original, curve_points_returned, curve_sample_target_points, full_curves_available, summary, metrics, collapse_events, fatigue_zones, curves, display_curves, display_meta, context_tags, environment_context, environment_factors, cycling_explanation_signals, ai_insight, advice, disclaimer}, traceId }。review_profile、not_applicable_reason、available_review_facts 是 MDT-04 正式多运动字段：普通、受限和不适用快照及 AI compact snapshot 均须返回；受限或不适用活动不得构造耐力指标、曲线或事件；cache_status 为 Task 05 诊断字段: miss/hit; review_backend_profile 为 Task 10 受控诊断字段,仅含阶段名、耗时、计数、cache 状态、曲线分辨率和曲线点数,不进入 snapshot cache 或 AI 输入; curve_resolution 默认为 sampled,显式 full 返回全量曲线; 缓存命中不得改变 snapshot 字段语义。",
       "contract": "fit-arch-contrac §3 统一 envelope / §2.1 字段全链路可追溯 / §六 shadow_diff 隔离(严禁 shadow_diff/shadow_diff_json/diff/records/全量 points 出现在 data) / §8 canonical 只读 / P2 前端零推断: curves.distance 必须由后端权威输出,前端不得通过 _distanceFromSpeedTime 或 points 重建事实距离轴; fatigue_zones.start_km/end_km 与 collapse_events.trigger_km 必须和 curves.distance 同源; get_fatigue_review 是复盘页面唯一权威数据源 / P0-cycling 前端零推断: curves.power 与 curves.cadence 必须由后端权威输出,前端不得补算、推断、拉伸或从 DOM/ECharts/points 重建; P0-science 骑行解释信号零推断: cycling_explanation_signals 必须由后端生成或占位,前端与 AI 只能消费 review snapshot 字段,不得从 summary/curves/DOM/ECharts/points 自行推导; 个人强度解释信号只允许后端 intensity_signal 读取 profile FTP 与 summary 功率事实生成 evidence,不得由前端或 AI 构造; P9 心率反应/有氧漂移解释信号只允许后端 aerobic_drift_signal 使用有效功率+心率曲线摘要和 metrics.hr_drift/metrics.decoupling 参考 evidence 生成,不得由前端或 AI 构造; P3 有效踩踏段后程保持只允许后端 power_retention_signal 过滤滑行/停顿/零功率/异常片段后生成,不得由前端或 AI 构造; P4 骑行 pacing / 功率波动解释只允许后端 pacing_signal 结合 VI 与功率曲线摘要生成,不得由前端或 AI 构造; P10 踏频节奏解释信号只允许后端 cadence_signal 使用有效踏频曲线摘要和 pedaling_stability 参考 evidence 生成,不得由前端或 AI 构造,不得从 curves/DOM/ECharts/points 自行判断踏频节奏; P11 evidence 标签零推断: 用户可见关键证据只读后端 label/display_value/description/visibility/source,前端不得从 summary/metrics/curves/DOM/ECharts/points 生成证据标签或补算证据,visibility=hidden 不展示; 缺数据必须 status=partial/unavailable 并写入 reasons/unavailable_reasons; 无 FTP/功率/心率时不得输出个人化强度、功率保持/波动或有氧漂移确定性结论; 无踏频或踏频样本不足时不得输出踩踏节奏确定性结论; 不得输出 Pw:Hr 专业缩写,不得推断补给/天气/恢复等 snapshot 未提供事实; 不得把下坡/滑行包装成后程功率下降; 不得把跑步配速策略包装成骑行功率 pacing; 不得诊断齿比/扭矩/左右平衡/踩踏平滑度/真实踩踏技术; 不得把负荷参考包装为 TSS/IF/CTL/ATL/TSB/W/kg/长期训练负荷模型 / P3-cycling 指标零推断: cycling/road_cycling/mountain_biking 的 power_variability/pedaling_stability 只能由后端 summary 和同轴 cadence 曲线生成,前端与 AI 均不得计算或补齐; P3b-cycling 指标零推断: cycling/road_cycling/mountain_biking 的 efficiency/durability 只能由后端 avg_power/avg_hr 和同轴 power 曲线生成,前端与 AI 均不得计算或补齐; 无功率或样本不足时必须按 power_data_quality/cadence_data_quality 降级; P5 现有复盘 UI 最小接入: 骑行复盘现有卡片只读后端 cycling_explanation_signals 的 signal.summary/evidence/reasons,不得从 summary/metrics/curves/DOM/ECharts/points 构造解释信号,专业指标只作为依据副文本,缺 FTP/功率/心率时必须展示温和降级文案 P13 骑行事件与疲劳带契约: 骑行 fatigue_zones 是压力/状态变化参考区间,不默认等于体能崩了或输出下降; cycling fatigue_zones 可携带 semantic=state_change_reference、interpretation=reference_only、confidence=partial 等后端字段,前端只展示后端字段和温和参考文案; collapse_events 必须区分功率回落、踏频中断、心率-功率关系变化、滑行/停顿/下坡导致的非体能事件、数据不足,当前无法可靠区分时必须降级为参考区间/数据不足; power_data_quality != available 时不得输出功率回落、后程功率保持下降或输出崩掉等确定性事件文案; 无心率时不得输出有氧漂移或心率压力确定性事件文案; available 才能强结论,partial 只能参考，unavailable 必须温和降级; 前端不得从 curves/DOM/ECharts/points 为 fatigue_zones 或 collapse_events 构造新的骑行事件语义。 P14 骑行疲劳带生成逻辑校准: 骑行 fatigue_zones 在进入 UI 前必须经过后端校准; 下坡、滑行、停顿、零功率主导的片段不得默认展示为疲劳或体能下降区间; power_retention_signal.status != available 时不得表达确定性功率保持下降,aerobic_drift_signal.status != available 时不得表达确定性有氧漂移或心率压力,cadence_signal.status != available 时不得表达确定性踏频组织问题; 无功率、无心率、无踏频或 power_data_quality != available 时只能保留 reference_only 参考区间并说明数据不足; 前端仍只读后端 fatigue_zones/collapse_events 字段,不得从 curves/DOM/ECharts/points 补算疲劳带语义。 P15 事件文案产品化: 前端只将后端 collapse_events/fatigue_zones 字段翻译为用户可读文案,优先识别 type/semantic/event_semantic/reason_code,不得从 curves/DOM/ECharts/points 推导事件语义; 骑行事件白名单包括 power_drop、cadence_interruption、hr_power_decoupling、non_fitness_event、data_insufficient; power_drop 只能表达有效踩踏输出回落参考并引导查看后程功率保持卡片,不得独立宣称后程功率保持下降或输出崩掉; cadence_interruption 不得诊断齿比/扭矩/左右平衡/踩踏技术; hr_power_decoupling 不得输出 Pw:Hr; non_fitness_event/data_insufficient 必须降级为路线/停顿影响或数据不足参考点; 骑行 fatigue_zones 可见说明必须保持参考区间语气,不得把状态变化区间直接解释成体能下降。 / Task 1 外部影响语义契约: environment_factors 是后端生成的用户可见外部影响解释层,普通 snapshot 与 AI compact snapshot 均允许该字段; 前端和 AI 只能消费,不得从 DOM/ECharts/截图/活动标题/设备/天气卡/points/records/curves 补算; environment_context 只表达中性事实,context_tags 只表达压力/宽容标签; environment_challenge 不在本次重构范围内。",
       "description": "P2 运动复盘后端快照回正 + P0-cycling 契约延续 + P0-science 骑行解释信号契约 + 个人强度解释信号 + P2 有氧漂移解释信号 + P3 有效踩踏段后程保持 + P4 骑行 pacing / 功率波动解释 + P10 踏频节奏解释信号 + P11 证据标签产品化 + P3/P3b-cycling 骑行专项指标实现 — get_fatigue_review 输出完整白名单 snapshot,后端统一曲线单位/长度/空态; P0-science 定义 cycling_explanation_signals 结构和降级边界; P8 个人强度算法补齐已将 intensity_signal 升级为后端个人化强度分级,有 FTP 且功率可用时输出 recovery/endurance/tempo/threshold/high_intensity,无 FTP/无功率/样本不足时降级,不计算 IF/TSS/Pw:Hr/W/kg 或长期负荷; P9 心率反应/有氧漂移算法补齐已将 aerobic_drift_signal 升级为后端有效功率+心率关系分级,可输出 stable/mild_drift/significant_drift,缺心率/缺功率/样本不足时降级,不输出 Pw:Hr 专业缩写; P3 有效踩踏段后程保持仅增强 power_retention_signal,后端过滤滑行/停顿/零功率/异常片段后输出 held/slight_drop/clear_drop/unavailable,不改 UI/DB/AI; P4 骑行 pacing / 功率波动解释仅增强 pacing_signal,后端结合 VI 与功率曲线摘要输出 steady/variable/front_loaded/late_fade/unavailable; P10 踏频节奏解释信号仅增强 cadence_signal,后端过滤无效踏频、停顿、滑行和时间断裂后输出 steady/variable/low_cadence_bias/cadence_drop/interrupted/unavailable,不诊断齿比/扭矩/左右平衡/踩踏技术; P11 仅产品化 evidence 标签与 display_value,隐藏机器证据,负荷只作相对个人阈值或本次刺激参考,不新增训练负荷模型; P3-cycling 已实现 power_variability(VI=NP/AvgPower) 与 pedaling_stability(cv/decay/score) 的后端事实指标和数据质量降级; P3b-cycling 已将骑行 efficiency/durability 升级为 power_hr/power_retention 功率口径; AI 洞察 __FATIGUE_REVIEW_INSIGHT__ 留到后续专项阶段; 不改前端 ECharts、不改 DB、不让 AI 计算指标; P5 现有复盘 UI 最小接入已完成,前端现有骑行卡片优先展示后端 signal.summary,signal.evidence 仅作为依据,不新增模块、不改 ECharts、不计算新指标 P13 骑行事件与疲劳带契约: 骑行 fatigue_zones 是压力/状态变化参考区间,不默认等于体能崩了或输出下降; cycling fatigue_zones 可携带 semantic=state_change_reference、interpretation=reference_only、confidence=partial 等后端字段,前端只展示后端字段和温和参考文案; collapse_events 必须区分功率回落、踏频中断、心率-功率关系变化、滑行/停顿/下坡导致的非体能事件、数据不足,当前无法可靠区分时必须降级为参考区间/数据不足; power_data_quality != available 时不得输出功率回落、后程功率保持下降或输出崩掉等确定性事件文案; 无心率时不得输出有氧漂移或心率压力确定性事件文案; available 才能强结论,partial 只能参考，unavailable 必须温和降级; 前端不得从 curves/DOM/ECharts/points 为 fatigue_zones 或 collapse_events 构造新的骑行事件语义。 P14 骑行疲劳带生成逻辑校准: 骑行 fatigue_zones 在进入 UI 前必须经过后端校准; 下坡、滑行、停顿、零功率主导的片段不得默认展示为疲劳或体能下降区间; power_retention_signal.status != available 时不得表达确定性功率保持下降,aerobic_drift_signal.status != available 时不得表达确定性有氧漂移或心率压力,cadence_signal.status != available 时不得表达确定性踏频组织问题; 无功率、无心率、无踏频或 power_data_quality != available 时只能保留 reference_only 参考区间并说明数据不足; 前端仍只读后端 fatigue_zones/collapse_events 字段,不得从 curves/DOM/ECharts/points 补算疲劳带语义。 P15 事件文案产品化: 前端只将后端 collapse_events/fatigue_zones 字段翻译为用户可读文案,优先识别 type/semantic/event_semantic/reason_code,不得从 curves/DOM/ECharts/points 推导事件语义; 骑行事件白名单包括 power_drop、cadence_interruption、hr_power_decoupling、non_fitness_event、data_insufficient; power_drop 只能表达有效踩踏输出回落参考并引导查看后程功率保持卡片,不得独立宣称后程功率保持下降或输出崩掉; cadence_interruption 不得诊断齿比/扭矩/左右平衡/踩踏技术; hr_power_decoupling 不得输出 Pw:Hr; non_fitness_event/data_insufficient 必须降级为路线/停顿影响或数据不足参考点; 骑行 fatigue_zones 可见说明必须保持参考区间语气,不得把状态变化区间直接解释成体能下降。 Task 1 已冻结 environment_factors 合同,但不在本任务实现业务生成逻辑。"
     },
@@ -1893,6 +1893,103 @@
     "consumption_boundary": "environment_factors 是后端生成；前端和 AI 只能消费，不得补算 canonical 环境事实。",
     "forbidden_sources": "前端和 AI 不得从 DOM、ECharts、截图、活动标题、设备、天气卡、points、records 或 curves 推导 environment_factors。",
     "scope_boundary": "environment_challenge 不在本次 environment_factors 重构范围内。"
+  },
+  "activity_detail_multi_sport_contract": {
+    "status": "MDT-00 frozen contract; production routing is implemented in MDT-01 and later tasks.",
+    "source_of_truth": "metrics_registry.py is the sole authority for normalized sport routing, detail surface mode, review profile, and capability defaults. Frontend routing is compatibility fallback only.",
+    "detail_surface_mode_enum": [
+      "endurance_outdoor",
+      "endurance_indoor",
+      "swim_pool",
+      "swim_open_water",
+      "strength",
+      "mobility_recovery",
+      "skill_session",
+      "generic_session",
+      "not_supported"
+    ],
+    "review_profile_enum": [
+      "endurance_outdoor",
+      "endurance_indoor",
+      "swim",
+      "strength_limited",
+      "recovery_limited",
+      "generic_limited",
+      "not_applicable"
+    ],
+    "not_applicable_reason_enum": [
+      "structured_strength_data_missing",
+      "recovery_activity_limited",
+      "generic_activity_limited",
+      "unsupported_activity_type"
+    ],
+    "overview_capabilities_minimum_fields": [
+      "has_track_visual",
+      "has_laps",
+      "has_structured_sets",
+      "has_swim_lengths",
+      "has_power",
+      "has_cadence",
+      "has_hr",
+      "has_weather"
+    ],
+    "sample_routes": {
+      "running": {
+        "detail_surface_mode": "endurance_outdoor",
+        "review_profile": "endurance_outdoor"
+      },
+      "trail_running": {
+        "detail_surface_mode": "endurance_outdoor",
+        "review_profile": "endurance_outdoor"
+      },
+      "treadmill_running": {
+        "detail_surface_mode": "endurance_indoor",
+        "review_profile": "endurance_indoor"
+      },
+      "cycling": {
+        "detail_surface_mode": "endurance_outdoor",
+        "review_profile": "endurance_outdoor"
+      },
+      "indoor_cycling": {
+        "detail_surface_mode": "endurance_indoor",
+        "review_profile": "endurance_indoor"
+      },
+      "lap_swimming": {
+        "detail_surface_mode": "swim_pool",
+        "review_profile": "swim"
+      },
+      "open_water": {
+        "detail_surface_mode": "swim_open_water",
+        "review_profile": "swim"
+      },
+      "strength_training": {
+        "detail_surface_mode": "strength",
+        "review_profile": "strength_limited",
+        "not_applicable_reason": "structured_strength_data_missing"
+      },
+      "yoga": {
+        "detail_surface_mode": "mobility_recovery",
+        "review_profile": "recovery_limited",
+        "not_applicable_reason": "recovery_activity_limited"
+      },
+      "breathing": {
+        "detail_surface_mode": "mobility_recovery",
+        "review_profile": "recovery_limited",
+        "not_applicable_reason": "recovery_activity_limited"
+      },
+      "cardio": {
+        "detail_surface_mode": "generic_session",
+        "review_profile": "generic_limited",
+        "not_applicable_reason": "generic_activity_limited"
+      },
+      "unknown": {
+        "detail_surface_mode": "not_supported",
+        "review_profile": "not_applicable",
+        "not_applicable_reason": "unsupported_activity_type"
+      }
+    },
+    "strength_boundary": "Without parsed set_mesgs, exercise_title_mesgs, and workout_step_mesgs, strength_training must not claim exercise names, muscle groups, set counts, weights, volume, or structured strength analysis.",
+    "review_boundary": "get_fatigue_review is the only review-page source. unavailable and not_applicable values are null, not zero. Its snapshot and compact AI snapshot must not expose records, points, shadow_diff, shadow_diff_json, diff, or debug-only fields."
   },
   "architectural_constraints": {
     "field_contract": "FIT → Resolver(唯一语义翻译层) → DB(系统标准字段) → UI(契约字段, 禁止fallback推断)",

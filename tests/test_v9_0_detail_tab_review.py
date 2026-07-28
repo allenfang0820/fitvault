@@ -34,6 +34,25 @@ def _read_doc(path: str) -> str:
         return f.read()
 
 
+def _slice_js_braced_block(source: str, start_token: str) -> str:
+    start = source.find(start_token)
+    if start < 0:
+        raise AssertionError(f"missing JS block start: {start_token}")
+    brace_start = source.find("{", start)
+    if brace_start < 0:
+        raise AssertionError(f"missing JS block brace: {start_token}")
+    depth = 0
+    for idx in range(brace_start, len(source)):
+        char = source[idx]
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return source[start:idx + 1]
+    raise AssertionError(f"unclosed JS block: {start_token}")
+
+
 class TestV9DetailTabHtml(unittest.TestCase):
     """V9.0 详情 Modal HTML 结构校验。"""
 
@@ -96,6 +115,38 @@ class TestV9DetailTabHtml(unittest.TestCase):
                           f"V9.0 FAIL: 复盘 Tab 缺 {metric_id}")
         self.assertIn('id="fatigue-review-chart"', self.html,
                       "V9.0 FAIL: 复盘 Tab 缺 ECharts 容器")
+
+    def test_multisport_overview_consumes_backend_view_model(self):
+        """MDT-03: 概览必须优先消费后端 mode/capabilities，而非本地 sport 矩阵。"""
+        render_start = self.html.find("function renderActivityDetail(record)")
+        render_end = self.html.find("\n    // === V9.2.2", render_start)
+        render_body = self.html[render_start:render_end]
+        hero_start = self.html.find("function _resolveHeroItems(record)")
+        hero_end = self.html.find("\n    async function openActivityDetailModal", hero_start)
+        hero_body = self.html[hero_start:hero_end]
+        for text in [
+            "detail.overview_capabilities",
+            "detail.primary_visual",
+            "detail.split_section",
+            "detail.overview_empty_states",
+            "indoor_summary",
+            "swim_summary",
+            "strength_limited",
+            "recovery_summary",
+            "本次不需要轨迹地图",
+            "设备未提供结构化动作组数据",
+            "hasTrackVisual",
+            "overviewCaps.has_track_visual != null",
+        ]:
+            self.assertIn(text, render_body)
+        for text in [
+            "detail.overview_metrics",
+            "backendFieldMap",
+            "if (backendMetrics.length)",
+            "var isSwim",
+            "sport === 'lap_swimming'",
+        ]:
+            self.assertIn(text, hero_body)
 
     def test_p7_3_metric_cockpit_status_targets_exist(self):
         """P7.3:8 张指标卡必须都有状态标签和解释容器。"""
@@ -595,9 +646,7 @@ class TestV9AiInsightModalHtml(unittest.TestCase):
         self.assertIn("name: '踏频'", lane_defs)
         self.assertIn("unit: 'rpm'", lane_defs)
 
-        cycling_start = lane_defs.find("if (sportMode === 'cycling')")
-        cycling_end = lane_defs.find("\n        return [", cycling_start + 1)
-        cycling_block = lane_defs[cycling_start:cycling_end]
+        cycling_block = _slice_js_braced_block(lane_defs, "if (sportMode === 'cycling')")
         for forbidden in [
             "key: 'pace_curve'",
             "key: 'gap_pace_curve'",

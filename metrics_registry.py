@@ -157,6 +157,45 @@ REVIEW_MODE_SPORTS: dict[str, frozenset[str]] = {
     }),
 }
 
+DETAIL_SURFACE_MODE_SPORTS: dict[str, frozenset[str]] = {
+    "endurance_outdoor": frozenset({
+        "running",
+        "trail_running",
+        "cycling",
+        "road_cycling",
+        "mountain_biking",
+        "e_biking",
+        "hiking",
+        "mountaineering",
+        "walking",
+        "stand_up_paddleboarding",
+    }),
+    "endurance_indoor": frozenset({"treadmill_running", "indoor_cycling"}),
+    "swim_pool": frozenset({"swimming", "lap_swimming"}),
+    "swim_open_water": frozenset({"open_water"}),
+    "strength": frozenset({"strength_training"}),
+    "mobility_recovery": frozenset({
+        "breathing",
+        "yoga",
+        "pilates",
+        "flexibility_training",
+    }),
+    "skill_session": frozenset({
+        "rock_climbing",
+        "alpine_skiing",
+        "cross_country_skiing",
+        "snowboarding",
+    }),
+    "generic_session": frozenset({
+        "cardio",
+        "training",
+        "hiit",
+        "stair_climbing",
+        "generic",
+    }),
+    "not_supported": frozenset({"driving", "unknown"}),
+}
+
 
 def _base_review_capabilities(review_mode: str) -> dict[str, Any]:
     if review_mode == "running":
@@ -247,7 +286,67 @@ def get_review_capabilities(sport_type: Any) -> dict[str, Any]:
     if sport == "indoor_cycling":
         capabilities["uses_altitude"] = False
         capabilities["uses_heat"] = False
+    if sport == "treadmill_running":
+        capabilities["uses_altitude"] = False
+        capabilities["uses_heat"] = False
     return dict(capabilities)
+
+
+def get_detail_surface_mode(sport_type: Any) -> str:
+    sport = normalize_review_sport_type(sport_type)
+    for mode, sports in DETAIL_SURFACE_MODE_SPORTS.items():
+        if sport in sports:
+            return mode
+    return "not_supported"
+
+
+def get_detail_capabilities(sport_type: Any) -> dict[str, bool]:
+    # Actual record facts are populated by the detail view model. Registry
+    # defaults must stay conservative so sport type never fabricates a signal.
+    return {
+        "has_track_visual": False,
+        "has_laps": False,
+        "has_structured_sets": False,
+        "has_swim_lengths": False,
+        "has_power": False,
+        "has_cadence": False,
+        "has_hr": False,
+        "has_weather": False,
+    }
+
+
+def get_review_profile(
+    sport_type: Any,
+    capabilities: dict[str, Any] | None = None,
+) -> str:
+    capabilities = capabilities if isinstance(capabilities, dict) else {}
+    detail_surface_mode = capabilities.get("detail_surface_mode") or get_detail_surface_mode(sport_type)
+    profiles = {
+        "endurance_outdoor": "endurance_outdoor",
+        "endurance_indoor": "endurance_indoor",
+        "swim_pool": "swim",
+        "swim_open_water": "swim",
+        "strength": "strength_limited",
+        "mobility_recovery": "recovery_limited",
+        "skill_session": "generic_limited",
+        "generic_session": "generic_limited",
+        "not_supported": "not_applicable",
+    }
+    return profiles.get(detail_surface_mode, "not_applicable")
+
+
+def get_not_applicable_reason(
+    sport_type: Any,
+    capabilities: dict[str, Any] | None = None,
+) -> str | None:
+    profile = get_review_profile(sport_type, capabilities)
+    reasons = {
+        "strength_limited": "structured_strength_data_missing",
+        "recovery_limited": "recovery_activity_limited",
+        "generic_limited": "generic_activity_limited",
+        "not_applicable": "unsupported_activity_type",
+    }
+    return reasons.get(profile)
 
 
 REVIEW_SPORT_CAPABILITY_REGISTRY: dict[str, dict[str, Any]] = {

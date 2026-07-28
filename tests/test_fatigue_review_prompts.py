@@ -211,6 +211,133 @@ class TestSportSpecificConstraints:
         assert "耐力" in system or "持续性" in system
 
 
+class TestMultiSportReviewProfilePrompt:
+    """MDT-06:AI prompt 必须按后端 review_profile 做多运动分流。"""
+
+    def test_indoor_cycling_profile_bans_outdoor_route_and_weather_pressure(self, mock_snapshot):
+        from llm_backend import build_fatigue_review_messages
+        snapshot = {
+            **mock_snapshot,
+            "sport_type": "indoor_cycling",
+            "review_mode": "cycling",
+            "review_profile": "endurance_indoor",
+            "capabilities": {"is_applicable": True, "has_power": True, "has_cadence": True},
+            "available_review_facts": {"duration_sec": 2700, "avg_power": 168, "avg_hr": 142},
+        }
+        system = build_fatigue_review_messages(snapshot, "indoor_cycling", "室内骑行")[0]["content"]
+        for required in [
+            "review_profile=endurance_indoor",
+            "available_review_facts",
+            "室内骑行禁止路线、爬升、天气压力、地形推断",
+            "顺逆风或路况叙事",
+            "不得补出功率效率、后程功率保持或踩踏组织结论",
+        ]:
+            assert required in system
+
+    def test_treadmill_profile_bans_gap_and_terrain_load(self, mock_snapshot):
+        from llm_backend import build_fatigue_review_messages
+        snapshot = {
+            **mock_snapshot,
+            "sport_type": "treadmill_running",
+            "review_mode": "running",
+            "review_profile": "endurance_indoor",
+            "capabilities": {"is_applicable": True, "has_hr": True, "has_cadence": True},
+            "available_review_facts": {"duration_sec": 1800, "avg_hr": 136, "avg_cadence": 168},
+        }
+        system = build_fatigue_review_messages(snapshot, "treadmill_running", "跑步机")[0]["content"]
+        for required in [
+            "review_profile=endurance_indoor",
+            "跑步机禁止路线、GAP、地形负荷",
+            "坡度修正配速、天气压力或户外路况叙事",
+            "不得补算节奏、步幅、路况或地形影响",
+        ]:
+            assert required in system
+
+    def test_swim_profile_bans_running_and_cycling_inference(self, mock_snapshot):
+        from llm_backend import build_fatigue_review_messages
+        snapshot = {
+            **mock_snapshot,
+            "sport_type": "lap_swimming",
+            "review_mode": "swimming",
+            "review_profile": "swim",
+            "capabilities": {"is_applicable": True, "has_hr": True, "has_swim_lengths": True},
+            "available_review_facts": {"distance_m": 1500, "swolf": 42, "avg_hr": 128},
+        }
+        system = build_fatigue_review_messages(snapshot, "lap_swimming", "泳池游泳")[0]["content"]
+        for required in [
+            "review_profile=swim",
+            "配速、心率、划频、SWOLF、泳段或水温事实",
+            "游泳禁止 GAP、爬升、跑步配速、跑步能量断档、骑行功率推断",
+            "不得用跑步或骑行模板补结论",
+        ]:
+            assert required in system
+
+    def test_strength_limited_profile_bans_structured_strength_guessing(self, mock_snapshot):
+        from llm_backend import build_fatigue_review_messages
+        snapshot = {
+            **mock_snapshot,
+            "sport_type": "strength_training",
+            "review_mode": "not_applicable",
+            "review_profile": "strength_limited",
+            "capabilities": {"is_applicable": False},
+            "not_applicable_reason": "structured_strength_data_missing",
+            "available_review_facts": {"duration_sec": 2400, "avg_hr": 118, "calories": 260},
+        }
+        system = build_fatigue_review_messages(snapshot, "strength_training", "力量训练")[0]["content"]
+        for required in [
+            "review_profile=strength_limited",
+            "review_mode=not_applicable",
+            "not_applicable_reason=structured_strength_data_missing",
+            "禁止猜动作、组数、重量、肌群、训练量",
+            "设备未提供结构化动作组数据",
+            "只解释 available_review_facts 中真实存在的时长、心率、热量",
+            "不得生成完整四维耐力洞察",
+        ]:
+            assert required in system
+
+    def test_recovery_limited_profile_bans_racing_language(self, mock_snapshot):
+        from llm_backend import build_fatigue_review_messages
+        snapshot = {
+            **mock_snapshot,
+            "sport_type": "yoga",
+            "review_mode": "not_applicable",
+            "review_profile": "recovery_limited",
+            "capabilities": {"is_applicable": False},
+            "not_applicable_reason": "recovery_activity_limited",
+            "available_review_facts": {"duration_sec": 3600, "avg_hr": 92, "calories": 180},
+        }
+        system = build_fatigue_review_messages(snapshot, "yoga", "瑜伽")[0]["content"]
+        for required in [
+            "review_profile=recovery_limited",
+            "禁止竞速化表现评价、后程耐久、能量断档",
+            "只解释 available_review_facts 中已有的时长、心率、热量和恢复压力边界",
+            "训练建议应偏恢复、舒展和负荷管理",
+        ]:
+            assert required in system
+
+    def test_not_applicable_profile_does_not_default_unknown_to_endurance(self, mock_snapshot):
+        from llm_backend import build_fatigue_review_messages
+        snapshot = {
+            **mock_snapshot,
+            "sport_type": "unknown",
+            "review_mode": "not_applicable",
+            "review_profile": "not_applicable",
+            "capabilities": {"is_applicable": False},
+            "not_applicable_reason": "unsupported_activity_type",
+            "available_review_facts": {"duration_sec": 600},
+        }
+        system = build_fatigue_review_messages(snapshot, "unknown", "未知运动")[0]["content"]
+        for required in [
+            "review_profile=not_applicable",
+            "review_mode=not_applicable",
+            "not_applicable_reason=unsupported_activity_type",
+            "只输出受限说明和可用事实边界",
+            "禁止把 unknown、driving、generic、cardio 或泛训练默认写成跑步、骑行、游泳、徒步或登山",
+            "不得补事实",
+        ]:
+            assert required in system
+
+
 # === 测试 4: shadow_diff 隔离(§六 强约束必须存在)===
 class TestShadowDiffClauseInPrompt:
     """§六 强约束:LLM prompt 必须显式声明严禁使用 shadow_diff 字段。"""

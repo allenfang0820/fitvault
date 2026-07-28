@@ -63,6 +63,27 @@ class TestFRCore06SportCapabilityRegistry(unittest.TestCase):
                 self.assertEqual(caps["review_mode"], expected_mode)
                 self.assertEqual(caps["is_applicable"], expected_mode != "not_applicable")
 
+    def test_registry_preserves_multisport_review_mode_compatibility(self):
+        from metrics_registry import get_review_mode
+
+        cases = {
+            "running": "running",
+            "trail_running": "running",
+            "treadmill_running": "running",
+            "cycling": "cycling",
+            "indoor_cycling": "cycling",
+            "lap_swimming": "swimming",
+            "open_water": "swimming",
+            "strength_training": "not_applicable",
+            "yoga": "not_applicable",
+            "breathing": "not_applicable",
+            "cardio": "not_applicable",
+            "unknown": "not_applicable",
+        }
+        for sport, expected_mode in cases.items():
+            with self.subTest(sport=sport):
+                self.assertEqual(get_review_mode(sport), expected_mode)
+
     def test_backend_snapshot_exports_review_mode_and_capabilities(self):
         from main import Api
 

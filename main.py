@@ -43,8 +43,12 @@ from metrics_resolver import (
 )  # V9.4.0 修复 NameError:build_training_effect 已在 metrics_resolver.py:2760 定义, 此处补 import;V_ENV.1.16:补 _build_environment_challenge_block
 from metrics_registry import (
     REVIEW_MODE_SPORTS,
+    get_detail_capabilities,
+    get_detail_surface_mode,
+    get_not_applicable_reason,
     get_review_capabilities,
     get_review_mode,
+    get_review_profile,
     normalize_review_sport_type,
 )
 
@@ -278,7 +282,7 @@ def _resolve_activity_list_dynamic_columns_for_rows(rows: list[dict[str, Any]]) 
 _ACTIVITY_SYNC_SCHEMA_LOCK = threading.Lock()
 _ACTIVITY_SYNC_SCHEMA_READY_FOR: str | None = None
 ACTIVITY_SYNC_SCHEMA_SENTINEL_KEY = "activity_sync_schema_ready_v20260723_task03"
-FATIGUE_REVIEW_CACHE_VERSION = "fatigue_review_snapshot_v20260723_task05"
+FATIGUE_REVIEW_CACHE_VERSION = "fatigue_review_snapshot_v20260728_multisport_v1"
 FATIGUE_REVIEW_CURVE_SAMPLE_TARGET_POINTS = 1200
 FATIGUE_REVIEW_CURVE_SAMPLE_MAX_POINTS = 1500
 _APP_SHUTTING_DOWN = threading.Event()
@@ -3120,6 +3124,79 @@ def _build_fatigue_review_summary(
         "zero_power_ratio": _safe_float(power_quality_result.get("zero_power_ratio"), 0.0),
         "invalid_power_ratio": _safe_float(power_quality_result.get("invalid_power_ratio"), 0.0),
     }
+
+
+def _build_available_fatigue_review_facts(
+    row: dict[str, Any] | None,
+    summary: dict[str, Any] | None = None,
+    review_profile: str | None = None,
+) -> dict[str, float | int]:
+    """Return only scalar activity facts that are actually present on the row."""
+    row = row if isinstance(row, dict) else {}
+    summary = summary if isinstance(summary, dict) else {}
+    values: dict[str, float | int | None] = {
+        "duration_sec": _safe_int(
+            summary.get("duration_sec")
+            or row.get("duration_sec")
+            or row.get("duration"),
+            0,
+        ),
+        "avg_hr": _safe_float(row.get("avg_hr"), None),
+        "calories": _safe_float(row.get("calories"), None),
+        "avg_power": _safe_float(summary.get("avg_power") or row.get("avg_power"), None),
+        "avg_cadence": _safe_float(
+            summary.get("avg_cadence") or row.get("avg_cadence"),
+            None,
+        ),
+        "avg_speed_mps": _safe_float(row.get("avg_speed"), None),
+        "swolf": _safe_float(row.get("avg_swolf") or row.get("swolf"), None),
+    }
+    allowed_by_profile = {
+        "endurance_outdoor": set(values),
+        "endurance_indoor": set(values) - {"swolf"},
+        "swim": {
+            "duration_sec",
+            "avg_hr",
+            "calories",
+            "avg_cadence",
+            "avg_speed_mps",
+            "swolf",
+        },
+        "strength_limited": {"duration_sec", "avg_hr", "calories"},
+        "recovery_limited": {"duration_sec", "avg_hr", "calories"},
+        "generic_limited": {"duration_sec", "avg_hr", "calories"},
+        "not_applicable": {"duration_sec", "avg_hr", "calories"},
+    }
+    allowed = allowed_by_profile.get(review_profile or "", set(values))
+    return {
+        key: value
+        for key, value in values.items()
+        if key in allowed and value is not None and value > 0
+    }
+
+
+def _restrict_fatigue_review_profile_curves(
+    curves_snapshot: dict[str, Any],
+    display_curves: dict[str, Any],
+    review_profile: str,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Remove route and terrain signals from profiles that cannot use them."""
+    if review_profile not in {"endurance_indoor", "swim"}:
+        return curves_snapshot, display_curves
+
+    curves = dict(curves_snapshot or {})
+    display = dict(display_curves or {})
+    for key in ("efficiency", "gap", "grade", "terrain_load", "altitude"):
+        curves[key] = []
+    for key in (
+        "gap_pace_sec_per_km",
+        "gap_pace_raw_sec_per_km",
+        "gap_pace_capped",
+    ):
+        display[key] = []
+    if review_profile == "swim":
+        curves["power"] = []
+    return curves, display
 
 
 def _cycling_power_variability_unavailable(
@@ -15771,6 +15848,7 @@ class Api:
                 "compared_count": 0, "level": "error",
             }
 
+    @staticmethod
     def _empty_fatigue_review_snapshot(
         sport_type: str = "running",
         advice_text: str = "复盘快照构建失败,数据不足",
@@ -15785,10 +15863,18 @@ class Api:
         sport_type = normalize_review_sport_type(sport_type)
         review_mode = get_review_mode(sport_type)
         review_capabilities = get_review_capabilities(sport_type)
+        review_profile = get_review_profile(sport_type, review_capabilities)
+        not_applicable_reason = get_not_applicable_reason(
+            sport_type,
+            review_capabilities,
+        )
         return {
             "sport_type": sport_type,
             "review_mode": review_mode,
+            "review_profile": review_profile,
             "capabilities": review_capabilities,
+            "not_applicable_reason": not_applicable_reason,
+            "available_review_facts": {},
             "metrics": {
                 "hr_drift": {
                     "pct": None, "level": "unknown", "confidence": "unavailable",
@@ -15933,6 +16019,29 @@ class Api:
             "disclaimer": "AI 生成仅供参考 · 数据来源：FIT 解析 + 后端算法",
         }
 
+    def _build_limited_fatigue_review_snapshot(
+        self,
+        row: dict[str, Any],
+        *,
+        sport_type: str,
+        review_profile: str,
+        review_capabilities: dict[str, Any],
+        not_applicable_reason: str | None,
+    ) -> dict[str, Any]:
+        """Build the bounded snapshot used by limited and unsupported profiles."""
+        snapshot = self._empty_fatigue_review_snapshot(
+            sport_type=sport_type,
+            advice_text="本次活动仅保留已记录的基础事实，不生成耐力复盘结论",
+        )
+        snapshot["review_profile"] = review_profile
+        snapshot["capabilities"] = review_capabilities
+        snapshot["not_applicable_reason"] = not_applicable_reason
+        snapshot["available_review_facts"] = _build_available_fatigue_review_facts(
+            row,
+            review_profile=review_profile,
+        )
+        return snapshot
+
     @staticmethod
     def _extract_fatigue_review_activity_id(snapshot: dict[str, Any] | None) -> int:
         if not isinstance(snapshot, dict):
@@ -15992,8 +16101,12 @@ class Api:
             "sport_type": review_snapshot.get("sport_type") or row.get("sport_type") or sport_type or "running",
             "review_mode": review_snapshot.get("review_mode")
             or get_review_mode(review_snapshot.get("sport_type") or row.get("sport_type") or sport_type),
+            "review_profile": review_snapshot.get("review_profile")
+            or get_review_profile(review_snapshot.get("sport_type") or row.get("sport_type") or sport_type),
             "capabilities": review_snapshot.get("capabilities")
             or get_review_capabilities(review_snapshot.get("sport_type") or row.get("sport_type") or sport_type),
+            "not_applicable_reason": review_snapshot.get("not_applicable_reason"),
+            "available_review_facts": review_snapshot.get("available_review_facts") or {},
             "metrics": metrics,
             "summary": review_snapshot.get("summary") or {},
             "fatigue_zones": review_snapshot.get("fatigue_zones") or [],
@@ -16044,6 +16157,24 @@ class Api:
             sport_type = normalize_review_sport_type(row.get("sport_type") or "unknown")
             review_mode = get_review_mode(sport_type)
             review_capabilities = get_review_capabilities(sport_type)
+            review_profile = get_review_profile(sport_type, review_capabilities)
+            not_applicable_reason = get_not_applicable_reason(
+                sport_type,
+                review_capabilities,
+            )
+            if review_profile in {
+                "strength_limited",
+                "recovery_limited",
+                "generic_limited",
+                "not_applicable",
+            }:
+                return self._build_limited_fatigue_review_snapshot(
+                    row,
+                    sport_type=sport_type,
+                    review_profile=review_profile,
+                    review_capabilities=review_capabilities,
+                    not_applicable_reason=not_applicable_reason,
+                )
 
             stage_started = time.perf_counter()
             bundle = _build_fatigue_review_curve_bundle(row)
@@ -16684,10 +16815,58 @@ class Api:
                 stage_started,
                 compared_count=sample_size,
             )
+            curves_snapshot, display_curves = _restrict_fatigue_review_profile_curves(
+                curves_snapshot,
+                display_curves,
+                review_profile,
+            )
+            if review_profile == "endurance_indoor":
+                context_tags = {}
+                environment_context = _build_fatigue_review_environment_context()
+                environment_factors = []
+            if review_profile == "swim":
+                fatigue_zones = []
+                collapse_events = []
+                summary = dict(summary)
+                summary.update({
+                    "avg_power": None,
+                    "max_power": None,
+                    "normalized_power": None,
+                    "power_available": False,
+                    "power_points_count": 0,
+                    "power_data_quality": "missing",
+                    "power_zero_points_count": 0,
+                    "power_invalid_points_count": 0,
+                    "power_observed_points_count": 0,
+                    "zero_power_ratio": 0.0,
+                    "invalid_power_ratio": 0.0,
+                })
+                metrics = self._empty_fatigue_review_snapshot(
+                    sport_type=sport_type,
+                )["metrics"]
+                metrics["events"] = {
+                    "analysis_status": "not_applicable",
+                    "count": None,
+                    "confidence": "unavailable",
+                    "reasons": ["unsupported_sport_swim"],
+                    "trend": {
+                        "delta_count": None,
+                        "level": "unknown",
+                        "compared_count": sample_size,
+                        "source": "historical_avg",
+                    },
+                }
             snapshot = {
                 "sport_type": sport_type,
                 "review_mode": review_mode,
+                "review_profile": review_profile,
                 "capabilities": review_capabilities,
+                "not_applicable_reason": not_applicable_reason,
+                "available_review_facts": _build_available_fatigue_review_facts(
+                    row,
+                    summary,
+                    review_profile,
+                ),
                 "metrics": metrics,
                 "summary": summary,
                 "collapse_events": collapse_events,
@@ -17101,6 +17280,124 @@ def _build_detail_laps(api_self, row: dict, display_type: str, dist_km: float, d
     return api_self._build_lap_rows(dist_km, duration_sec, avg_hr, base_power)
 
 
+def _build_multi_sport_overview_view_model(
+    row: dict,
+    *,
+    points: list[dict] | None,
+    laps: list[dict] | None,
+    distance_km: float,
+    duration_sec: int,
+    avg_hr: int | None,
+    pace_sec: int | None,
+    calories: int,
+    water_metric_value: float | None,
+) -> dict[str, Any]:
+    sport_type = normalize_review_sport_type(
+        _resolve_display_sport_type(row.get("sport_type"), row.get("sub_sport_type"))
+    )
+    detail_surface_mode = get_detail_surface_mode(sport_type)
+    overview_capabilities = get_detail_capabilities(sport_type)
+    weather = _decode_weather_json(row.get("weather_json"))
+    has_distance = distance_km > 0
+    has_pace = bool(pace_sec and pace_sec > 0)
+    has_track_visual = bool(points) and detail_surface_mode in {
+        "endurance_outdoor",
+        "swim_open_water",
+    }
+    has_laps = bool(laps)
+    has_power = any(
+        row.get(field) is not None
+        for field in ("avg_power", "max_power", "normalized_power")
+    )
+    has_cadence = any(
+        row.get(field) is not None
+        for field in ("avg_cadence", "cadence")
+    )
+    has_swim_lengths = detail_surface_mode in {"swim_pool", "swim_open_water"} and has_laps
+    overview_capabilities.update({
+        "has_track_visual": has_track_visual,
+        "has_laps": has_laps,
+        "has_swim_lengths": has_swim_lengths,
+        "has_power": has_power,
+        "has_cadence": has_cadence,
+        "has_hr": avg_hr is not None,
+        "has_weather": bool(weather),
+    })
+
+    metric_candidates = {
+        "endurance_outdoor": [
+            ("distance_km", has_distance), ("duration_sec", duration_sec > 0),
+            ("avg_pace_sec", has_pace), ("avg_hr", avg_hr is not None),
+            ("gain_m", row.get("gain_m") is not None), ("calories", calories > 0),
+        ],
+        "endurance_indoor": [
+            ("distance_km", has_distance), ("duration_sec", duration_sec > 0),
+            ("avg_pace_sec", has_pace), ("avg_hr", avg_hr is not None),
+            ("avg_power", has_power), ("avg_cadence", has_cadence), ("calories", calories > 0),
+        ],
+        "swim_pool": [
+            ("distance_km", has_distance), ("duration_sec", duration_sec > 0),
+            ("avg_pace_sec", has_pace), ("swolf", water_metric_value is not None),
+            ("avg_cadence", has_cadence), ("avg_hr", avg_hr is not None),
+        ],
+        "swim_open_water": [
+            ("distance_km", has_distance), ("duration_sec", duration_sec > 0),
+            ("avg_pace_sec", has_pace), ("swolf", water_metric_value is not None),
+            ("avg_cadence", has_cadence), ("avg_hr", avg_hr is not None),
+        ],
+        "strength": [
+            ("duration_sec", duration_sec > 0), ("avg_hr", avg_hr is not None),
+            ("calories", calories > 0),
+        ],
+        "mobility_recovery": [
+            ("duration_sec", duration_sec > 0), ("avg_hr", avg_hr is not None),
+            ("calories", calories > 0),
+        ],
+        "generic_session": [
+            ("duration_sec", duration_sec > 0), ("avg_hr", avg_hr is not None),
+            ("calories", calories > 0),
+        ],
+    }
+    overview_metrics = [
+        {"field": field}
+        for field, available in metric_candidates.get(detail_surface_mode, [])
+        if available
+    ]
+    primary_visual = {
+        "endurance_indoor": "indoor_summary",
+        "swim_pool": "swim_summary",
+        "swim_open_water": "swim_summary",
+        "strength": "strength_limited",
+        "mobility_recovery": "recovery_summary",
+    }.get(detail_surface_mode, "track_map" if has_track_visual else "empty")
+    split_section = {
+        "endurance_indoor": "indoor_segments",
+        "strength": "strength_unavailable",
+        "swim_pool": "swim_lengths" if has_swim_lengths else "unavailable",
+        "swim_open_water": "swim_lengths" if has_swim_lengths else "unavailable",
+        "mobility_recovery": "hr_summary" if overview_capabilities["has_hr"] else "unavailable",
+        "generic_session": "hr_summary" if overview_capabilities["has_hr"] else "unavailable",
+    }.get(detail_surface_mode, "laps" if has_laps else "unavailable")
+    return {
+        "detail_surface_mode": detail_surface_mode,
+        "overview_capabilities": overview_capabilities,
+        "overview_empty_states": {
+            "primary_visual": (
+                "indoor_no_track" if detail_surface_mode == "endurance_indoor" and not has_track_visual
+                else "structured_sets_missing" if detail_surface_mode == "strength"
+                else "data_unavailable" if primary_visual == "empty" else None
+            ),
+            "splits": "structured_sets_missing" if detail_surface_mode == "strength" else (
+                "swim_lengths_missing" if detail_surface_mode.startswith("swim") and not has_swim_lengths
+                else "segments_unavailable" if split_section == "unavailable" else None
+            ),
+        },
+        "overview_metrics": overview_metrics,
+        "primary_visual": primary_visual,
+        "split_section": split_section,
+    }
+
+
 def _build_activity_detail_summary_from_row(row: dict, idx: int = 0) -> dict:
     dist_km_field = _safe_float(row.get("dist_km"))
     dist_m_field = _safe_float(row.get("distance"))
@@ -17149,6 +17446,8 @@ def _build_activity_detail_summary_from_row(row: dict, idx: int = 0) -> dict:
         "distance_display": distance_display_detail,
         "avg_hr": avg_hr,
         "max_hr": max_hr,
+        "avg_cadence": _safe_float(row.get("avg_cadence")),
+        "avg_power": _safe_float(row.get("avg_power")),
         "calories": calories,
         "elevation": int(row.get("gain_m") or 0),
     }
@@ -17178,6 +17477,17 @@ def _build_activity_detail_summary_from_row(row: dict, idx: int = 0) -> dict:
         ),
         "environment_challenge": {},
     }
+    detail.update(_build_multi_sport_overview_view_model(
+        row,
+        points=[],
+        laps=[],
+        distance_km=dist_km,
+        duration_sec=duration_sec,
+        avg_hr=avg_hr,
+        pace_sec=pace_sec,
+        calories=calories,
+        water_metric_value=water_metric_value,
+    ))
     region_status = str(row.get("region_status") or "").strip()
     region_display = str(row.get("region_display") or row.get("region") or "").strip()
     if not region_display:
@@ -17300,6 +17610,8 @@ def _build_record_from_row(api_self, row: dict, idx: int) -> dict:
         "distance_display": distance_display_detail,
         "avg_hr": avg_hr,
         "max_hr": max_hr,
+        "avg_cadence": _safe_float(row.get("avg_cadence")),
+        "avg_power": _safe_float(row.get("avg_power")),
         "calories": calories,
         "elevation": int(row.get("gain_m") or 0),
     }
@@ -17358,6 +17670,17 @@ def _build_record_from_row(api_self, row: dict, idx: int) -> dict:
             meta={},
         ),
     }
+    detail.update(_build_multi_sport_overview_view_model(
+        row,
+        points=points,
+        laps=detail_laps,
+        distance_km=dist_km,
+        duration_sec=duration_sec,
+        avg_hr=avg_hr,
+        pace_sec=pace_sec,
+        calories=calories,
+        water_metric_value=water_metric_value,
+    ))
 
     region_status = str(row.get("region_status") or "").strip()
     region_display = str(row.get("region_display") or row.get("region") or "").strip()

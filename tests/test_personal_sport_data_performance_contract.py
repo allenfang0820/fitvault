@@ -313,6 +313,9 @@ def test_task05_fatigue_review_cache_invalidates_on_activity_or_version_change(t
         build_calls.append(activity_row["updated_at"])
         return {
             "sport_type": "running",
+            "review_profile": "endurance_outdoor",
+            "not_applicable_reason": None,
+            "available_review_facts": {"duration_sec": 1800},
             "summary": {"updated_at": activity_row["updated_at"]},
             "metrics": {},
             "curves": {},
@@ -329,7 +332,11 @@ def test_task05_fatigue_review_cache_invalidates_on_activity_or_version_change(t
     assert api.get_fatigue_review(502)["data"]["cache_status"] == "hit"
 
     monkeypatch.setattr(main, "FATIGUE_REVIEW_CACHE_VERSION", "fatigue_review_snapshot_test_next")
-    assert api.get_fatigue_review(502)["data"]["cache_status"] == "miss"
+    refreshed = api.get_fatigue_review(502)
+    assert refreshed["data"]["cache_status"] == "miss"
+    assert refreshed["data"]["review_profile"] == "endurance_outdoor"
+    assert refreshed["data"]["not_applicable_reason"] is None
+    assert refreshed["data"]["available_review_facts"] == {"duration_sec": 1800}
     assert build_calls == [
         "2026-07-23T10:00:00",
         "2026-07-23T11:00:00",
