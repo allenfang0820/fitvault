@@ -274,7 +274,11 @@ class TestCareerPhase9DataBoundaryAudit(unittest.TestCase):
         for entry in career_entries:
             returns = str(entry.get("returns") or "")
             description = str(entry.get("description") or "")
-            for token in ("storage_ref", "file_path", "track_json", "points", "SQLite schema"):
+            forbidden = ["storage_ref", "file_path", "track_json", "SQLite schema"]
+            # Metric-series points are safe chart ViewModels, not raw track points.
+            if entry.get("name") != "get_career_record_metric_series":
+                forbidden.append("points")
+            for token in forbidden:
                 self.assertNotIn(token, returns, entry.get("name"))
             self.assertIn("不", description, entry.get("name"))
             if entry.get("name") == "generate_career_insight":

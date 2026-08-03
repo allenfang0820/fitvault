@@ -13,6 +13,13 @@ def _distance_points(items):
     return json.dumps([{"distance_m": distance, "t_sec": elapsed} for distance, elapsed in items])
 
 
+def _elevation_points(items):
+    return json.dumps([
+        {"distance_m": distance, "t_sec": elapsed, "alt_m": altitude}
+        for distance, elapsed, altitude in items
+    ])
+
+
 def _time_only_points(count=4):
     return json.dumps([{"lat": 30.0 + index * 0.001, "lon": 104.0, "time": f"2026-01-01T08:{index:02d}:00Z"} for index in range(count)])
 
@@ -110,14 +117,15 @@ def _insert_total_activity(
     ascent_m=None,
     max_altitude_m=None,
     sub_sport_type=None,
+    points_json=None,
 ):
     conn.execute(
         """
         INSERT INTO activities (
             id, sport_type, sub_sport_type, start_time, dist_km, duration_sec,
-            gain_m, ascent_m, max_alt_m, max_altitude_m, is_mock
+            gain_m, ascent_m, max_alt_m, max_altitude_m, points_json, is_mock
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
         """,
         (
             activity_id,
@@ -130,6 +138,7 @@ def _insert_total_activity(
             ascent_m,
             max_altitude_m,
             max_altitude_m,
+            points_json,
         ),
     )
 
@@ -706,6 +715,109 @@ class CareerRecordMetricSeriesRunningStandardDistanceTest(unittest.TestCase):
             _assert_no_forbidden_payload(self, result)
             _assert_no_forbidden_payload(self, records)
 
+    def test_trail_single_climb_metric_series_uses_elevation_range_not_total_ascent(self):
+        self.assertIn("trail_max_single_climb", career_backend.RECORD_METRIC_SERIES_SUPPORTED_KEYS)
+        _insert_total_activity(
+            self.conn,
+            "trail-climb-first",
+            "2026-03-01",
+            sport="trail_running",
+            distance_m=16000,
+            duration_sec=7200,
+            ascent_m=2000,
+            max_altitude_m=1500,
+            points_json=_elevation_points([
+                (0, 0, 100),
+                (1000, 600, 160),
+                (2000, 1200, 260),
+                (3500, 2100, 250),
+            ]),
+        )
+        _insert_total_activity(
+            self.conn,
+            "trail-climb-best",
+            "2026-04-01",
+            sport="trail_running",
+            distance_m=18000,
+            duration_sec=7600,
+            ascent_m=1200,
+            max_altitude_m=1800,
+            points_json=_elevation_points([
+                (0, 0, 300),
+                (800, 500, 380),
+                (1800, 1200, 540),
+                (2600, 1800, 720),
+                (3600, 2500, 690),
+            ]),
+        )
+
+        result = career_backend.get_career_record_metric_series(
+            "trail_max_single_climb",
+            {"sport": "trail_running"},
+            conn=self.conn,
+        )
+        records = career_backend.get_career_records(
+            {"sport": "trail_running", "record_key": "trail_max_single_climb"},
+            conn=self.conn,
+        )
+
+        _assert_metric_series_contract(self, result)
+        self.assertEqual(result["status"]["state"], "ready")
+        self.assertEqual(result["summary"]["point_count"], 2)
+        self.assertEqual(result["current_best"]["activity_id"], "trail-climb-best")
+        self.assertEqual(result["current_best"]["metric"]["value"], 420)
+        self.assertEqual(result["current_best"]["source_mode"], "elevation_track")
+        self.assertEqual(result["current_best"]["scope"]["dimensions"]["sport_scope"], "trail_running")
+        self.assertEqual(result["current_best"]["range"]["start_sec"], 0)
+        self.assertEqual(result["current_best"]["range"]["end_sec"], 1800)
+        self.assertEqual(result["current_best"]["range"]["start_distance_m"], 0)
+        self.assertEqual(result["current_best"]["range"]["end_distance_m"], 2600)
+        self.assertEqual(result["record_progression"][-1]["activity_id"], "trail-climb-best")
+        self.assertEqual(records["records"][0]["activity_id"], "trail-climb-best")
+        _assert_no_forbidden_payload(self, result)
+        _assert_no_forbidden_payload(self, records)
+
+    def test_trail_single_climb_missing_track_is_sample_missing_with_reason_code(self):
+        _insert_total_activity(
+            self.conn,
+            "trail-no-track",
+            "2026-05-01",
+            sport="trail_running",
+            distance_m=18000,
+            duration_sec=7600,
+            ascent_m=1400,
+            max_altitude_m=1800,
+        )
+
+        series = career_backend.get_career_record_metric_series(
+            "trail_max_single_climb",
+            {"sport": "trail_running"},
+            conn=self.conn,
+        )
+        plan = career_backend.compute_record_metric_results_for_activity(
+            {
+                "id": "trail-no-track",
+                "sport_type": "trail_running",
+                "start_time": "2026-05-01T08:00:00Z",
+                "dist_km": 18.0,
+                "duration_sec": 7600,
+                "gain_m": 1400,
+                "max_alt_m": 1800,
+            },
+            record_keys=["trail_max_single_climb"],
+            conn=self.conn,
+        )
+
+        _assert_metric_series_contract(self, series)
+        self.assertEqual(series["points"], [])
+        self.assertIsNone(series["current_best"])
+        self.assertEqual(series["status"]["state"], "sample_missing")
+        self.assertIn("trail_max_single_climb", plan["summary"]["would_skip"])
+        self.assertIn("single_climb_range_missing", plan["summary"]["skip_reasons"]["trail_max_single_climb"])
+        self.assertIn("single_climb_range_missing", plan["status"]["reason_codes"])
+        _assert_no_forbidden_payload(self, series)
+        _assert_no_forbidden_payload(self, plan)
+
     def test_activity_total_metric_series_respects_year_status_scope_and_sport_filters(self):
         _insert_total_activity(self.conn, "ride-2025", "2025-12-01", sport="cycling", distance_m=50000, duration_sec=4000, ascent_m=500)
         _insert_total_activity(self.conn, "ride-2026", "2026-01-01", sport="cycling", distance_m=70000, duration_sec=5000, ascent_m=700)
@@ -910,10 +1022,10 @@ class CareerRecordMetricSeriesRunningStandardDistanceTest(unittest.TestCase):
             _assert_no_forbidden_payload(self, result)
 
     def test_unsupported_record_key_returns_controlled_empty_viewmodel(self):
-        result = career_backend.get_career_record_metric_series("open_water_swim_750m", {}, conn=self.conn)
+        result = career_backend.get_career_record_metric_series("unknown_record_key", {}, conn=self.conn)
 
         _assert_metric_series_contract(self, result)
-        self.assertEqual(result["record_key"], "open_water_swim_750m")
+        self.assertEqual(result["record_key"], "unknown_record_key")
         self.assertEqual(result["points"], [])
         self.assertEqual(result["status"]["state"], "unsupported")
         self.assertEqual(result["metrics"]["scanned"], 0)

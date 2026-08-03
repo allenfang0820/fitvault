@@ -51,24 +51,24 @@ CAREER_BUSINESS_TABLES = (
     "career_event_candidates",
 )
 
-CAREER_EMPTY_STATUS_MESSAGE = "运动生涯数据将在赛事、PB 与成就解析后生成"
-CAREER_TIMELINE_EMPTY_STATUS_MESSAGE = "时间轴将在 ACS 派生事件生成后展示"
-CAREER_RACES_EMPTY_STATUS_MESSAGE = "赛事档案将在 Race Resolver 识别正式赛事后展示"
-CAREER_RACES_READY_STATUS_MESSAGE = "赛事档案已生成"
-CAREER_RACE_MAP_EMPTY_STATUS_MESSAGE = "赛事足迹将在有赛事与安全起点坐标后展示"
-CAREER_RACE_MAP_READY_STATUS_MESSAGE = "赛事足迹已生成"
-CAREER_FOOTPRINT_EMPTY_STATUS_MESSAGE = "生涯足迹将在有可靠地区信息后展示"
-CAREER_FOOTPRINT_READY_STATUS_MESSAGE = "生涯足迹已生成"
-CAREER_PB_EMPTY_STATUS_MESSAGE = "PB 记录将在 PB Resolver 识别后展示"
-CAREER_PB_READY_STATUS_MESSAGE = "PB 记录已生成"
-CAREER_ACHIEVEMENTS_EMPTY_STATUS_MESSAGE = "成就档案将在 Achievement Resolver 识别后展示"
-CAREER_ACHIEVEMENTS_READY_STATUS_MESSAGE = "成就档案已生成"
-CAREER_CANDIDATES_EMPTY_STATUS_MESSAGE = "暂无待确认候选事件"
-CAREER_CANDIDATES_READY_STATUS_MESSAGE = "候选事件已生成"
-CAREER_MEMORY_GALLERY_EMPTY_STATUS_MESSAGE = "赛事相册将在赛事活动生成后展示"
-CAREER_MEMORY_GALLERY_READY_STATUS_MESSAGE = "赛事相册已生成"
-CAREER_SEASONS_EMPTY_STATUS_MESSAGE = "年度生涯将在活动记录与派生事件生成后展示"
-CAREER_SEASONS_READY_STATUS_MESSAGE = "年度生涯已生成"
+CAREER_EMPTY_STATUS_MESSAGE = "暂无可展示的运动生涯内容"
+CAREER_TIMELINE_EMPTY_STATUS_MESSAGE = "暂无时间轴内容"
+CAREER_RACES_EMPTY_STATUS_MESSAGE = "还没有识别到赛事记录"
+CAREER_RACES_READY_STATUS_MESSAGE = "可查看赛事档案"
+CAREER_RACE_MAP_EMPTY_STATUS_MESSAGE = "暂无可展示的赛事足迹"
+CAREER_RACE_MAP_READY_STATUS_MESSAGE = "可查看赛事足迹"
+CAREER_FOOTPRINT_EMPTY_STATUS_MESSAGE = "暂无可展示的生涯足迹"
+CAREER_FOOTPRINT_READY_STATUS_MESSAGE = "可查看生涯足迹"
+CAREER_PB_EMPTY_STATUS_MESSAGE = "暂无可展示的个人纪录"
+CAREER_PB_READY_STATUS_MESSAGE = "可查看个人纪录"
+CAREER_ACHIEVEMENTS_EMPTY_STATUS_MESSAGE = "暂无可展示的生涯成就"
+CAREER_ACHIEVEMENTS_READY_STATUS_MESSAGE = "可查看生涯成就"
+CAREER_CANDIDATES_EMPTY_STATUS_MESSAGE = "暂无需要确认的记录"
+CAREER_CANDIDATES_READY_STATUS_MESSAGE = "有记录需要确认"
+CAREER_MEMORY_GALLERY_EMPTY_STATUS_MESSAGE = "暂无赛事相册"
+CAREER_MEMORY_GALLERY_READY_STATUS_MESSAGE = "可查看赛事相册"
+CAREER_SEASONS_EMPTY_STATUS_MESSAGE = "暂无可展示的年度回顾"
+CAREER_SEASONS_READY_STATUS_MESSAGE = "可查看年度回顾"
 CAREER_BANNER_MEDIA_ROLE = "overview_banner"
 CAREER_RACE_GALLERY_MEDIA_ROLE = "race_gallery"
 CAREER_BANNER_PHOTO_TITLE = "赛事 Banner 照片"
@@ -807,6 +807,7 @@ CAREER_OVERVIEW_STRENGTH_WEIGHT_COLUMNS = (
     "weight_volume_kg",
     "volume_kg",
 )
+CAREER_OVERVIEW_STRENGTH_SUMMARY_JSON_COLUMN = "strength_summary_json"
 
 @dataclass(frozen=True)
 class RecordDefinition:
@@ -1046,8 +1047,6 @@ OPEN_WATER_RECORD_DEFINITIONS = (
             family="distance_time_pb",
             scope_dimensions=("water_scope",),
             quality_policy="open_water_distance_time",
-            availability_state="candidate_only",
-            availability_reason="open_water_sample_limited",
         )
         for index, (label, display, distance_m) in enumerate(
             (("750m", "750m", 750), ("1500m", "1500m", 1500), ("1900m", "1900m", 1900), ("3800m", "3800m", 3800), ("5k", "5K", 5000), ("10k", "10K", 10000))
@@ -1058,11 +1057,11 @@ OPEN_WATER_RECORD_DEFINITIONS = (
 )
 
 TRAIL_RECORD_DEFINITIONS = (
-    RecordDefinition("trail_longest_distance", "trail_running", "activity_total", "最长越野距离", "distance_m", "meters", "higher_is_better", "activity_total", None, None, ("activity_id", "sport", "distance_m", "event_date", "metric_quality"), "records-v2", RECORDS_V2_RULE_VERSION, 500, family="activity_total_record", scope_dimensions=("sport_scope",), quality_policy="trail_activity_total", availability_state="candidate_only", availability_reason="real_data_sample_missing"),
-    RecordDefinition("trail_max_ascent", "trail_running", "activity_total", "越野最大累计爬升", "ascent_m", "meters_ascent", "higher_is_better", "activity_total", None, None, ("activity_id", "sport", "ascent_m", "event_date", "metric_quality"), "records-v2", RECORDS_V2_RULE_VERSION, 501, family="activity_total_record", scope_dimensions=("sport_scope",), quality_policy="trail_elevation", availability_state="candidate_only", availability_reason="real_data_sample_missing"),
-    RecordDefinition("trail_longest_elapsed_time", "trail_running", "activity_total", "最长越野历时", "elapsed_time_sec", "seconds", "higher_is_better", "activity_total", None, None, ("activity_id", "sport", "elapsed_time_sec", "event_date", "time_quality"), "records-v2", RECORDS_V2_RULE_VERSION, 502, family="activity_total_record", scope_dimensions=("sport_scope",), quality_policy="trail_activity_total", availability_state="candidate_only", availability_reason="real_data_sample_missing"),
-    RecordDefinition("trail_max_altitude", "trail_running", "activity_total", "越野最高海拔", "max_altitude_m", "meters_altitude", "higher_is_better", "activity_total", None, None, ("activity_id", "sport", "max_altitude_m", "event_date", "metric_quality"), "records-v2", RECORDS_V2_RULE_VERSION, 503, family="activity_total_record", scope_dimensions=("sport_scope",), quality_policy="trail_elevation", availability_state="candidate_only", availability_reason="real_data_sample_missing"),
-    RecordDefinition("trail_max_single_climb", "trail_running", "activity_total", "越野最大连续爬升", "single_climb_m", "meters_ascent", "higher_is_better", "activity_total", None, None, ("activity_id", "sport", "single_climb_m", "event_date", "range_start", "range_end", "metric_quality"), "records-v2", RECORDS_V2_RULE_VERSION, 504, family="activity_total_record", scope_dimensions=("sport_scope",), quality_policy="trail_single_climb", availability_state="candidate_only", availability_reason="real_data_sample_missing"),
+    RecordDefinition("trail_longest_distance", "trail_running", "activity_total", "最长越野距离", "distance_m", "meters", "higher_is_better", "activity_total", None, None, ("activity_id", "sport", "distance_m", "event_date", "metric_quality"), "records-v2", RECORDS_V2_RULE_VERSION, 500, family="activity_total_record", scope_dimensions=("sport_scope",), quality_policy="trail_activity_total"),
+    RecordDefinition("trail_max_ascent", "trail_running", "activity_total", "越野最大累计爬升", "ascent_m", "meters_ascent", "higher_is_better", "activity_total", None, None, ("activity_id", "sport", "ascent_m", "event_date", "metric_quality"), "records-v2", RECORDS_V2_RULE_VERSION, 501, family="activity_total_record", scope_dimensions=("sport_scope",), quality_policy="trail_elevation"),
+    RecordDefinition("trail_longest_elapsed_time", "trail_running", "activity_total", "最长越野历时", "elapsed_time_sec", "seconds", "higher_is_better", "activity_total", None, None, ("activity_id", "sport", "elapsed_time_sec", "event_date", "time_quality"), "records-v2", RECORDS_V2_RULE_VERSION, 502, family="activity_total_record", scope_dimensions=("sport_scope",), quality_policy="trail_activity_total"),
+    RecordDefinition("trail_max_altitude", "trail_running", "activity_total", "越野最高海拔", "max_altitude_m", "meters_altitude", "higher_is_better", "activity_total", None, None, ("activity_id", "sport", "max_altitude_m", "event_date", "metric_quality"), "records-v2", RECORDS_V2_RULE_VERSION, 503, family="activity_total_record", scope_dimensions=("sport_scope",), quality_policy="trail_elevation"),
+    RecordDefinition("trail_max_single_climb", "trail_running", "activity_total", "越野最大连续爬升", "single_climb_m", "meters_ascent", "higher_is_better", "activity_total", None, None, ("activity_id", "sport", "single_climb_m", "event_date", "range_start", "range_end", "metric_quality"), "records-v2", RECORDS_V2_RULE_VERSION, 504, family="activity_total_record", scope_dimensions=("sport_scope",), quality_policy="trail_single_climb"),
 )
 
 RECORD_DEFINITIONS = (
@@ -1231,6 +1230,9 @@ def _activity_truthy(value: Any) -> bool:
 
 
 def _activity_distance_m(activity: dict[str, Any]) -> float | None:
+    distance_m = _safe_float(activity.get("distance_m"))
+    if distance_m is not None and distance_m > 0:
+        return round(distance_m, 3)
     dist_km = _safe_float(activity.get("dist_km"))
     if dist_km is not None and dist_km > 0:
         return round(dist_km * 1000.0, 3)
@@ -1311,7 +1313,13 @@ def _activity_lap_length_stream_available(activity: dict[str, Any]) -> bool:
 
 
 def _activity_pool_length_available(activity: dict[str, Any]) -> bool:
-    for key in ("pool_length_m", "pool_length", "pool_length_scope"):
+    for key in (
+        "swim_pool_length_m",
+        "pool_length_m",
+        "pool_length",
+        "swim_pool_length_scope",
+        "pool_length_scope",
+    ):
         value = activity.get(key)
         if _safe_float(value) is not None or _clean_activity_text(value):
             return True
@@ -1990,7 +1998,7 @@ def _record_sport_capabilities(sport: str) -> dict[str, Any]:
     if sport == "trail_running":
         return {
             "activity_total_records": {
-                "state": "candidate_only",
+                "state": "available",
                 "record_keys": [
                     "trail_longest_distance",
                     "trail_max_ascent",
@@ -1998,7 +2006,7 @@ def _record_sport_capabilities(sport: str) -> dict[str, Any]:
                     "trail_max_altitude",
                     "trail_max_single_climb",
                 ],
-                "reason_codes": ["real_data_sample_missing"],
+                "sample_missing_reason_codes": ["trail_activity_missing", "metric_missing", "single_climb_range_missing"],
             },
             "scope_dimensions": ["sport_scope"],
         }
@@ -3691,7 +3699,7 @@ def resolve_hiking_elevation_climb(
         alt = _hiking_track_point_value(point, "alt_m", "altitude_m", "altitude", "alt")
         if alt is None:
             continue
-        t_sec = _hiking_track_point_value(point, "t", "time_sec", "elapsed_sec")
+        t_sec = _hiking_track_point_value(point, "t", "t_sec", "time_sec", "elapsed_sec")
         d_m = _hiking_track_point_value(point, "d", "distance_m", "distance")
         parsed.append({
             "index": index,
@@ -3848,6 +3856,7 @@ def apply_hiking_single_climb_record(
 SWIM_CANONICAL_ACTIVITY_COLUMNS = {
     "swim_water_scope": "TEXT",
     "swim_pool_length_m": "REAL",
+    "swim_pool_length_unit": "TEXT",
     "swim_pool_length_scope": "TEXT",
     "swim_stroke_scope": "TEXT",
     "swim_facts_quality_json": "TEXT NOT NULL DEFAULT '{}'",
@@ -3904,7 +3913,7 @@ def _normalize_pool_length_scope(pool_length_m: float | None, unit: Any = "m") -
     if pool_length_m is None or pool_length_m <= 0:
         return "", ["pool_length_missing"]
     unit_token = _swim_scope_token(unit or "m")
-    if unit_token in {"yard", "yards", "yd", "y"}:
+    if unit_token in {"yard", "yards", "yd", "y"} or "yard" in unit_token:
         return "", ["pool_length_yards_unsupported"]
     if abs(pool_length_m - 25.0) < 0.01:
         return "scm_25m", []
@@ -3922,7 +3931,14 @@ def normalize_swim_canonical_facts(
     activity = activity or {}
     sport_tokens = {
         _swim_scope_token(activity.get(key))
-        for key in ("sport_type", "sport", "sub_sport_type", "sub_sport", "water_scope")
+        for key in (
+            "sport_type",
+            "sport",
+            "sub_sport_type",
+            "sub_sport",
+            "water_scope",
+            "swim_water_scope",
+        )
         if str(activity.get(key) or "").strip()
     }
     reason_codes: list[str] = []
@@ -3936,12 +3952,26 @@ def normalize_swim_canonical_facts(
     else:
         water_scope = "not_swimming"
         reason_codes.append("record_definition_conflict")
-    pool_length = _finite_float(activity.get("pool_length_m") or activity.get("pool_length"))
+    pool_length = _finite_float(
+        activity.get("swim_pool_length_m")
+        or activity.get("pool_length_m")
+        or activity.get("pool_length")
+    )
+    pool_length_unit = str(
+        activity.get("swim_pool_length_unit")
+        or activity.get("pool_length_unit")
+        or "m"
+    ).strip()
     pool_length_scope = ""
     if water_scope == "pool_swimming":
-        pool_length_scope, pool_reasons = _normalize_pool_length_scope(pool_length, activity.get("pool_length_unit") or "m")
+        pool_length_scope, pool_reasons = _normalize_pool_length_scope(pool_length, pool_length_unit)
         reason_codes.extend(pool_reasons)
-    stroke_scope = _normalize_swim_stroke(activity.get("stroke_scope") or activity.get("swim_stroke") or activity.get("stroke"))
+    stroke_scope = _normalize_swim_stroke(
+        activity.get("swim_stroke_scope")
+        or activity.get("stroke_scope")
+        or activity.get("swim_stroke")
+        or activity.get("stroke")
+    )
     if stroke_scope == "unknown":
         reason_codes.append("swim_stroke_unknown")
     normalized_lengths: list[dict[str, Any]] = []
@@ -3967,6 +3997,7 @@ def normalize_swim_canonical_facts(
     return {
         "water_scope": water_scope,
         "pool_length_m": pool_length if water_scope == "pool_swimming" else None,
+        "pool_length_unit": pool_length_unit if water_scope == "pool_swimming" else "",
         "pool_length_scope": pool_length_scope,
         "stroke_scope": stroke_scope,
         "lengths": normalized_lengths,
@@ -3975,6 +4006,25 @@ def normalize_swim_canonical_facts(
             "reason_codes": list(_dedupe_reason_codes(tuple(reason_codes))),
             "candidate_only": quality_state == "candidate",
         },
+    }
+
+
+def build_swim_canonical_activity_fields(
+    *,
+    activity: dict[str, Any] | None,
+    lengths: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Build the safe swim facts persisted alongside an Activity row."""
+    facts = normalize_swim_canonical_facts(activity=activity, lengths=lengths)
+    if facts.get("water_scope") not in {"pool_swimming", "open_water_swimming", "unknown"}:
+        return {}
+    return {
+        "swim_water_scope": str(facts.get("water_scope") or ""),
+        "swim_pool_length_m": facts.get("pool_length_m"),
+        "swim_pool_length_unit": str(facts.get("pool_length_unit") or ""),
+        "swim_pool_length_scope": str(facts.get("pool_length_scope") or ""),
+        "swim_stroke_scope": str(facts.get("stroke_scope") or "unknown"),
+        "swim_facts_quality_json": _json_dumps(dict(facts.get("quality") or {})),
     }
 
 
@@ -4321,8 +4371,8 @@ def build_trail_activity_total_record_evidences(
         quality = {
             "confidence": confidence,
             "confidence_band": _record_confidence_level(confidence),
-            "decision": "auto_confirm" if not reason_codes else "candidate",
-            "reason_codes": reason_codes,
+            "decision": "candidate",
+            "reason_codes": list(dict.fromkeys([*reason_codes, "legacy_candidate_compat"])),
             "source": "activity_total",
             "quality_policy": definition.quality_policy if definition else "trail_activity_total",
             "log_safety": "aggregate_only",
@@ -4370,8 +4420,8 @@ def build_trail_activity_total_record_evidences(
             quality={
                 "confidence": confidence,
                 "confidence_band": _record_confidence_level(confidence),
-                "decision": "auto_confirm" if not reasons else "candidate",
-                "reason_codes": reasons,
+                "decision": "candidate",
+                "reason_codes": list(dict.fromkeys([*reasons, "legacy_candidate_compat"])),
                 "source": "elevation_track",
                 "quality_policy": "trail_single_climb",
                 "log_safety": "aggregate_only",
@@ -4936,13 +4986,30 @@ def _activity_text_expr_from_columns(available_columns: set[str], columns: tuple
     return f"COALESCE({', '.join(parts)}, '')" if parts else "''"
 
 
-def _activity_strength_weight_expr_from_columns(available_columns: set[str]) -> tuple[str, bool]:
-    parts = [
-        f"WHEN {column} IS NOT NULL AND {column} > 0 THEN {column}"
-        for column in CAREER_OVERVIEW_STRENGTH_WEIGHT_COLUMNS
-        if column in available_columns
-    ]
-    return (f"CASE {' '.join(parts)} ELSE NULL END", bool(parts)) if parts else ("NULL", False)
+def _activity_strength_summary_weight_kg(value: Any) -> float | None:
+    if isinstance(value, dict):
+        parsed = value
+    elif value in (None, ""):
+        return None
+    else:
+        try:
+            parsed = json.loads(str(value))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return None
+    if not isinstance(parsed, dict):
+        return None
+    weight = _safe_float(parsed.get("total_volume_kg"))
+    return weight if weight is not None and weight > 0 else None
+
+
+def _activity_strength_weight_from_row(row: dict[str, Any]) -> float | None:
+    for column in CAREER_OVERVIEW_STRENGTH_WEIGHT_COLUMNS:
+        value = _safe_float(row.get(column))
+        if value is not None and value > 0:
+            return value
+    return _activity_strength_summary_weight_kg(
+        row.get(CAREER_OVERVIEW_STRENGTH_SUMMARY_JSON_COLUMN)
+    )
 
 
 def _overview_activity_metric_rows(conn: sqlite3.Connection) -> list[dict[str, Any]]:
@@ -4972,7 +5039,9 @@ def _overview_activity_metric_rows(conn: sqlite3.Connection) -> list[dict[str, A
         "region_country",
         "country",
         "countryName",
-    ) + CAREER_OVERVIEW_STRENGTH_WEIGHT_COLUMNS
+    ) + CAREER_OVERVIEW_STRENGTH_WEIGHT_COLUMNS + (
+        CAREER_OVERVIEW_STRENGTH_SUMMARY_JSON_COLUMN,
+    )
     select_sql = ", ".join(_activity_select_alias(available_columns, column) for column in columns)
     cursor = conn.execute(
         f"""
@@ -5028,7 +5097,9 @@ _OVERVIEW_ACTIVITY_ROW_COLUMNS = (
     "region_country",
     "country",
     "countryName",
-) + CAREER_OVERVIEW_STRENGTH_WEIGHT_COLUMNS
+) + CAREER_OVERVIEW_STRENGTH_WEIGHT_COLUMNS + (
+    CAREER_OVERVIEW_STRENGTH_SUMMARY_JSON_COLUMN,
+)
 
 
 def _overview_activity_rows_for_year(
@@ -5609,9 +5680,16 @@ def _build_sport_totals(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "strength_total_weight_kg": None,
         "strength_total_weight_status": "unavailable",
     }
-    strength_columns = [column for column in CAREER_OVERVIEW_STRENGTH_WEIGHT_COLUMNS if any(row.get(column) not in (None, "") for row in rows)]
     strength_sum = 0.0
     strength_seen = False
+    strength_activity_seen = False
+    strength_source_columns = set(CAREER_OVERVIEW_STRENGTH_WEIGHT_COLUMNS) | {
+        CAREER_OVERVIEW_STRENGTH_SUMMARY_JSON_COLUMN,
+    }
+    has_strength_source = any(
+        any(row.get(column) not in (None, "") for column in strength_source_columns)
+        for row in rows
+    )
     for row in rows:
         sport = _overview_activity_sport(row)
         distance_km = _activity_distance_km(row) or 0.0
@@ -5627,16 +5705,15 @@ def _build_sport_totals(rows: list[dict[str, Any]]) -> dict[str, Any]:
             totals["walking_hiking_distance_km"] += distance_km
         elif sport == "swimming":
             totals["swimming_distance_km"] += distance_km
-        if sport == "strength" and strength_columns:
-            for column in strength_columns:
-                value = _safe_float(row.get(column))
-                if value is not None and value > 0:
-                    strength_sum += value
-                    strength_seen = True
-                    break
+        if sport == "strength":
+            strength_activity_seen = True
+            value = _activity_strength_weight_from_row(row)
+            if value is not None:
+                strength_sum += value
+                strength_seen = True
     for key in ("running_distance_km", "cycling_distance_km", "walking_distance_km", "hiking_distance_km", "walking_hiking_distance_km", "swimming_distance_km"):
         totals[key] = round(float(totals[key]), 2)
-    if strength_columns:
+    if has_strength_source and strength_activity_seen:
         totals["strength_total_weight_kg"] = round(strength_sum, 1) if strength_seen else None
         totals["strength_total_weight_status"] = "available" if strength_seen else "partial"
     return totals
@@ -5695,32 +5772,15 @@ def _overview_sport_totals_query(conn: sqlite3.Connection) -> dict[str, Any]:
     sport_columns = ("sport_type", "sub_sport_type", "sport", "activity_type")
     sport_select = ", ".join(_activity_select_alias(available_columns, column) for column in sport_columns)
     distance_expr = _activity_distance_expr_from_columns(available_columns)
-    strength_expr, has_strength_columns = _activity_strength_weight_expr_from_columns(available_columns)
-    strength_presence_parts = [
-        f"WHEN {column} IS NOT NULL AND TRIM(CAST({column} AS TEXT)) != '' THEN 1"
-        for column in CAREER_OVERVIEW_STRENGTH_WEIGHT_COLUMNS
-        if column in available_columns
-    ]
-    strength_presence_expr = (
-        f"CASE {' '.join(strength_presence_parts)} ELSE 0 END"
-        if strength_presence_parts
-        else "0"
-    )
     cursor = conn.execute(
         f"""
         SELECT {sport_select},
-               SUM(COALESCE({distance_expr}, 0)) AS distance_km,
-               SUM(COALESCE({strength_expr}, 0)) AS strength_weight_kg,
-               SUM(CASE WHEN {strength_expr} IS NOT NULL THEN 1 ELSE 0 END) AS strength_positive_count,
-               SUM({strength_presence_expr}) AS strength_value_count
+               SUM(COALESCE({distance_expr}, 0)) AS distance_km
         FROM activities
         WHERE {_overview_activity_deleted_filter(available_columns)}
         GROUP BY sport_type, sub_sport_type, sport, activity_type
         """
     )
-    strength_sum = 0.0
-    strength_seen = False
-    strength_value_seen = False
     for row in _rows_to_dicts(cursor):
         sport = _overview_activity_sport(row)
         distance_km = float(row.get("distance_km") or 0.0)
@@ -5736,16 +5796,9 @@ def _overview_sport_totals_query(conn: sqlite3.Connection) -> dict[str, Any]:
             totals["walking_hiking_distance_km"] += distance_km
         elif sport == "swimming":
             totals["swimming_distance_km"] += distance_km
-        if int(row.get("strength_value_count") or 0) > 0:
-            strength_value_seen = True
-        if sport == "strength" and int(row.get("strength_positive_count") or 0) > 0:
-            strength_sum += float(row.get("strength_weight_kg") or 0.0)
-            strength_seen = True
     for key in ("running_distance_km", "cycling_distance_km", "walking_distance_km", "hiking_distance_km", "walking_hiking_distance_km", "swimming_distance_km"):
         totals[key] = round(float(totals[key]), 2)
-    if has_strength_columns and strength_value_seen:
-        totals["strength_total_weight_kg"] = round(strength_sum, 1) if strength_seen else None
-        totals["strength_total_weight_status"] = "available" if strength_seen else "partial"
+    totals.update(_overview_strength_totals_query(conn, available_columns))
     return totals
 
 
@@ -5758,15 +5811,10 @@ def _overview_strength_totals_query(
         "strength_total_weight_status": "unavailable",
     }
     columns = available_columns if available_columns is not None else _activity_available_columns(conn)
-    strength_expr, has_strength_columns = _activity_strength_weight_expr_from_columns(columns)
-    if not has_strength_columns or not _table_exists(conn, "activities"):
+    has_strength_columns = any(column in columns for column in CAREER_OVERVIEW_STRENGTH_WEIGHT_COLUMNS)
+    has_summary_json = CAREER_OVERVIEW_STRENGTH_SUMMARY_JSON_COLUMN in columns
+    if not (has_strength_columns or has_summary_json) or not _table_exists(conn, "activities"):
         return result
-    strength_presence_parts = [
-        f"WHEN {column} IS NOT NULL AND TRIM(CAST({column} AS TEXT)) != '' THEN 1"
-        for column in CAREER_OVERVIEW_STRENGTH_WEIGHT_COLUMNS
-        if column in columns
-    ]
-    strength_presence_expr = f"CASE {' '.join(strength_presence_parts)} ELSE 0 END"
     sport_clauses: list[str] = []
     params: list[Any] = []
     if "sport_type" in columns:
@@ -5777,23 +5825,31 @@ def _overview_strength_totals_query(
         params.extend(sorted(STRENGTH_SPORT_TYPES))
     if not sport_clauses:
         return result
-    row = conn.execute(
+    select_columns = (
+        [column for column in CAREER_OVERVIEW_STRENGTH_WEIGHT_COLUMNS if column in columns]
+        + ([CAREER_OVERVIEW_STRENGTH_SUMMARY_JSON_COLUMN] if has_summary_json else [])
+    )
+    cursor = conn.execute(
         f"""
-        SELECT SUM(COALESCE({strength_expr}, 0)) AS strength_weight_kg,
-               SUM(CASE WHEN {strength_expr} IS NOT NULL THEN 1 ELSE 0 END) AS strength_positive_count,
-               SUM({strength_presence_expr}) AS strength_value_count
+        SELECT {', '.join(select_columns)}
         FROM activities
         WHERE {_overview_activity_deleted_filter(columns)}
           AND ({' OR '.join(sport_clauses)})
         """,
         tuple(params),
-    ).fetchone()
-    if not row:
+    )
+    rows = _rows_to_dicts(cursor)
+    if not rows:
         return result
-    if int(row[2] or 0) <= 0:
-        return result
-    if int(row[1] or 0) > 0:
-        result["strength_total_weight_kg"] = round(float(row[0] or 0.0), 1)
+    strength_sum = 0.0
+    strength_seen = False
+    for row in rows:
+        value = _activity_strength_weight_from_row(row)
+        if value is not None:
+            strength_sum += value
+            strength_seen = True
+    if strength_seen:
+        result["strength_total_weight_kg"] = round(strength_sum, 1)
         result["strength_total_weight_status"] = "available"
     else:
         result["strength_total_weight_status"] = "partial"
@@ -6477,7 +6533,7 @@ def _record_timeline_node(row: dict[str, Any]) -> dict[str, Any] | None:
     event_type = str(row.get("event_type") or "").strip()
     record_id = str(row.get("record_id") or "").strip()
     activity_id = str(row.get("activity_id") or "").strip()
-    if not event_id or event_type != RECORD_BREAKING_EVENT_TYPE:
+    if not event_id or event_type not in {RECORD_BREAKING_EVENT_TYPE, RECORD_CURRENT_BEST_EVENT_TYPE}:
         return None
     record_key = str(row.get("record_key") or row.get("pb_type") or "").strip()
     definition = get_record_definition(record_key)
@@ -6631,6 +6687,32 @@ def _timeline_current_best_record_nodes(db: sqlite3.Connection, year: int | None
             seen_ids.add(node["id"])
             nodes.append(node)
     return nodes
+
+
+def _timeline_record_state_key(node: dict[str, Any]) -> tuple[str, str, str]:
+    return (
+        str(node.get("activity_id") or ""),
+        str(node.get("record_key") or ""),
+        str(node.get("scope_hash") or ""),
+    )
+
+
+def _merge_timeline_record_nodes(record_nodes: list[dict[str, Any]], current_best_nodes: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+    all_nodes = [*record_nodes, *(current_best_nodes or [])]
+    current_best_keys = {
+        _timeline_record_state_key(node)
+        for node in all_nodes
+        if str(node.get("event_type") or "") == RECORD_CURRENT_BEST_EVENT_TYPE
+    }
+    filtered_records = [
+        node
+        for node in all_nodes
+        if not (
+            str(node.get("event_type") or "") == RECORD_BREAKING_EVENT_TYPE
+            and _timeline_record_state_key(node) in current_best_keys
+        )
+    ]
+    return filtered_records
 
 
 def _normalize_race_filters(filters: dict[str, Any] | None) -> dict[str, Any]:
@@ -11471,6 +11553,7 @@ def refresh_career_derived_events(
             "race": race_result,
             "pb": pb_result,
             "achievement": achievement_result,
+            "record_source_version": _career_record_source_version(db),
             "status": {
                 "schema_ready": bool(schema.get("ok")),
                 "message": "运动生涯派生事件已刷新",
@@ -15272,15 +15355,15 @@ def _build_timeline_nodes_for_type(
     if node_type == "all" or node_type in CAREER_TIMELINE_MILESTONE_TYPES:
         nodes.extend(_timeline_milestone_nodes(db, year=year))
     if node_type == "all" or node_type in CAREER_TIMELINE_RECORD_TYPES:
-        nodes.extend(_timeline_record_event_nodes(db, year=year))
-        nodes.extend(_timeline_current_best_record_nodes(db, year=year))
+        record_nodes = _timeline_record_event_nodes(db, year=year)
+        nodes.extend(_merge_timeline_record_nodes(record_nodes))
     elif node_type in CAREER_TIMELINE_MILESTONE_TYPES:
-        nodes.extend(
+        record_nodes = [
             node
             for node in _timeline_record_event_nodes(db, year=year)
-            if str(node.get("event_type") or "") == RECORD_BREAKING_EVENT_TYPE
-        )
-        nodes.extend(_timeline_current_best_record_nodes(db, year=year))
+            if str(node.get("event_type") or "") in {RECORD_BREAKING_EVENT_TYPE, RECORD_CURRENT_BEST_EVENT_TYPE}
+        ]
+        nodes.extend(_merge_timeline_record_nodes(record_nodes))
     return nodes
 
 
@@ -16617,6 +16700,19 @@ def _record_metric_material_display(metric: Any) -> str:
     return _record_metric_display(value, unit) if value not in (None, "") else ""
 
 
+def _career_year_record_metric_sentence_display(record_key: Any, display_name: Any, metric: Any) -> str:
+    if not isinstance(metric, dict):
+        return ""
+    clean_key = str(record_key or "").lower()
+    clean_name = str(display_name or "")
+    unit = str(metric.get("unit") or "").strip().lower()
+    value = _safe_float(metric.get("value"))
+    is_distance_record = "distance" in clean_key or "距离" in clean_name or "里程" in clean_name
+    if is_distance_record and unit in {"m", "meter", "meters", "metre", "metres"} and value is not None:
+        return f"{value / 1000.0:.1f}".replace(".0", "") + " 公里"
+    return _record_metric_material_display(metric)
+
+
 def _record_milestone_material_id(activity_id: Any, record_key: Any, date: Any) -> str:
     stable = {
         "activity_id": str(activity_id or "").strip(),
@@ -16880,15 +16976,16 @@ def _career_year_activity_context_by_id(
 def _record_breaking_read_model_rows(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     rows_by_id: dict[str, dict[str, Any]] = {}
     if _table_exists(conn, "career_record_events"):
+        placeholders = ", ".join("?" for _ in (RECORD_BREAKING_EVENT_TYPE, RECORD_CURRENT_BEST_EVENT_TYPE))
         cursor = conn.execute(
-            """
+            f"""
             SELECT id, record_id, activity_id, pb_type, event_type, event_at,
                    evidence_key, resolver_version, source, record_key, scope_hash,
                    scope_key, run_id, decision, reason_codes_json, payload_json
             FROM career_record_events
-            WHERE event_type = ?
+            WHERE event_type IN ({placeholders})
             """,
-            (RECORD_BREAKING_EVENT_TYPE,),
+            (RECORD_BREAKING_EVENT_TYPE, RECORD_CURRENT_BEST_EVENT_TYPE),
         )
         for row in _rows_to_dicts(cursor):
             event_id = str(row.get("id") or "").strip()
@@ -16899,11 +16996,12 @@ def _record_breaking_read_model_rows(conn: sqlite3.Connection) -> list[dict[str,
             definition = get_record_definition(record_key)
             if definition is None:
                 continue
-            for row in _record_breaking_event_rows_for_definition(
+            record_breaking_rows, current_best_rows = _record_metric_series_event_rows_for_definition(
                 conn,
                 definition,
                 run_id="record_breaking_read_model",
-            ):
+            )
+            for row in [*record_breaking_rows, *current_best_rows]:
                 event_id = str(row.get("id") or "").strip()
                 if event_id:
                     rows_by_id.setdefault(event_id, row)
@@ -18802,7 +18900,7 @@ def _career_year_local_fallback(snapshot: dict[str, Any] | None) -> dict[str, An
     if summary["activity_count"]:
         highlights.append(f"全年记录 {summary['activity_count']} 次活动")
     if summary["total_distance_km"]:
-        highlights.append(f"累计距离 {summary['total_distance_km']:.1f} km")
+        highlights.append(f"累计距离 {summary['total_distance_km']:.1f} 公里")
     if summary["race_count"]:
         highlights.append(f"{summary['race_count']} 场赛事")
     if summary["pb_count"]:
@@ -19594,8 +19692,9 @@ def _career_year_fact_leads(snapshot: dict[str, Any]) -> list[str]:
         display_name = str(representative_breakthrough.get("display_name") or "").strip()
         new_record = representative_breakthrough.get("new_record") if isinstance(representative_breakthrough.get("new_record"), dict) else {}
         previous_record = representative_breakthrough.get("previous_record") if isinstance(representative_breakthrough.get("previous_record"), dict) else {}
-        new_display = str(new_record.get("display") or "").strip()
-        previous_display = str(previous_record.get("display") or "").strip()
+        record_key = str(representative_breakthrough.get("record_key") or "").strip()
+        new_display = _career_year_record_metric_sentence_display(record_key, display_name, new_record)
+        previous_display = _career_year_record_metric_sentence_display(record_key, display_name, previous_record)
         improvement = representative_breakthrough.get("improvement") if isinstance(representative_breakthrough.get("improvement"), dict) else {}
         improvement_percent = _safe_float(improvement.get("relative_delta_percent"))
         event_date = str(representative_breakthrough.get("date") or "").strip()
@@ -19605,6 +19704,8 @@ def _career_year_fact_leads(snapshot: dict[str, Any]) -> list[str]:
         context_parts = [part for part in (event_date, location_label, activity_title) if part]
         context = "，".join(context_parts)
         prefix_text = f"代表性突破发生在{context}：" if context else "代表性突破是："
+        if display_name == "最高海拔":
+            display_name = "最高海拔高度"
         if display_name and new_display and previous_display:
             suffix = f"，提升 {improvement_percent:g}%" if improvement_percent is not None and improvement_percent > 0 else ""
             leads.append(f"{prefix_text}{display_name} 从 {previous_display} 提升到 {new_display}{suffix}。")
@@ -20091,7 +20192,9 @@ def get_career_pb_history(
 
 
 RECORD_METRIC_SERIES_RESOLVER_VERSION = "records-v3-series-activity-level-v2"
+CAREER_RECORD_SOURCE_VERSION_ALGORITHM = "records-v3-source-content-v1"
 RECORD_BREAKING_EVENT_TYPE = "record_breaking"
+RECORD_CURRENT_BEST_EVENT_TYPE = "current_best"
 RUNNING_STANDARD_DISTANCE_METRIC_SERIES_KEYS = {
     "running_5k",
     "running_10k",
@@ -20112,6 +20215,7 @@ ACTIVITY_TOTAL_METRIC_SERIES_KEYS = {
     "trail_max_ascent",
     "trail_longest_elapsed_time",
     "trail_max_altitude",
+    "trail_max_single_climb",
 }
 CYCLING_POWER_METRIC_SERIES_KEYS = set(CYCLING_POWER_RECORD_KEY_BY_DURATION.values())
 CYCLING_STANDARD_DISTANCE_METRIC_SERIES_KEYS = {
@@ -20123,13 +20227,91 @@ CYCLING_STANDARD_DISTANCE_METRIC_SERIES_KEYS = {
     "cycling_fastest_180k",
 }
 POOL_SWIM_METRIC_SERIES_KEYS = set(POOL_SWIM_RECORD_KEY_BY_DISTANCE.values())
+OPEN_WATER_STANDARD_DISTANCE_METRIC_SERIES_KEYS = set(
+    OPEN_WATER_RECORD_KEY_BY_DISTANCE.values()
+)
 RECORD_METRIC_SERIES_SUPPORTED_KEYS = (
     RUNNING_STANDARD_DISTANCE_METRIC_SERIES_KEYS
     | ACTIVITY_TOTAL_METRIC_SERIES_KEYS
     | CYCLING_POWER_METRIC_SERIES_KEYS
     | CYCLING_STANDARD_DISTANCE_METRIC_SERIES_KEYS
     | POOL_SWIM_METRIC_SERIES_KEYS
+    | OPEN_WATER_STANDARD_DISTANCE_METRIC_SERIES_KEYS
 )
+
+
+def _career_record_source_version(conn: sqlite3.Connection) -> int:
+    """Return a stable numeric version for materialized record facts/events."""
+    tables = {
+        "metric_results": (
+            "career_record_metric_results",
+            (
+                "id",
+                "activity_id",
+                "record_key",
+                "sport",
+                "event_date",
+                "metric_name",
+                "metric_value_num",
+                "metric_unit",
+                "display_value",
+                "source_mode",
+                "record_family",
+                "comparison",
+                "scope_json",
+                "scope_hash",
+                "range_json",
+                "quality_json",
+                "eligibility_json",
+                "resolver_version",
+                "rule_version",
+                "input_fingerprint",
+                "result_fingerprint",
+                "status",
+            ),
+        ),
+        "record_events": (
+            "career_record_events",
+            (
+                "id",
+                "record_id",
+                "activity_id",
+                "pb_type",
+                "event_type",
+                "event_at",
+                "evidence_key",
+                "resolver_version",
+                "source",
+                "record_key",
+                "scope_hash",
+                "scope_key",
+                "decision",
+                "reason_codes_json",
+                "payload_json",
+            ),
+        ),
+    }
+    content: list[tuple[str, list[tuple[Any, ...]]]] = []
+    for label, (table_name, columns) in tables.items():
+        if not _table_exists(conn, table_name):
+            content.append((label, []))
+            continue
+        selected = ", ".join(columns)
+        rows = conn.execute(
+            f"SELECT {selected} FROM {table_name} ORDER BY {', '.join(columns)}"
+        ).fetchall()
+        content.append((label, [tuple(row) for row in rows]))
+    payload = json.dumps(
+        {
+            "algorithm": CAREER_RECORD_SOURCE_VERSION_ALGORITHM,
+            "content": content,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    ).encode("utf-8")
+    return int.from_bytes(hashlib.sha256(payload).digest()[:6], "big")
 
 
 def _record_metric_series_unsupported_response(
@@ -20475,7 +20657,12 @@ def _activity_total_metric_scope(definition: RecordDefinition, facts: dict[str, 
     scope: dict[str, Any] = {}
     for dimension in definition.scope_dimensions:
         if dimension == "sport_scope":
-            scope[dimension] = str(facts.get("indoor_scope") or "outdoor") if definition.sport == "cycling" else "default"
+            if definition.sport == "cycling":
+                scope[dimension] = str(facts.get("indoor_scope") or "outdoor")
+            elif definition.sport == "trail_running":
+                scope[dimension] = "trail_running"
+            else:
+                scope[dimension] = "default"
         elif dimension == "indoor_scope":
             scope[dimension] = str(facts.get("indoor_scope") or "outdoor")
         elif dimension == "water_scope":
@@ -20487,6 +20674,63 @@ def _activity_total_metric_scope(definition: RecordDefinition, facts: dict[str, 
     return scope
 
 
+def _trail_single_climb_metric_result_from_activity(
+    activity: dict[str, Any],
+    definition: RecordDefinition,
+    facts: dict[str, Any],
+) -> dict[str, Any] | None:
+    if definition.key != "trail_max_single_climb" or definition.sport != "trail_running":
+        return None
+    if str(facts.get("sport") or "") != "trail_running":
+        return None
+    activity_id = str(facts.get("activity_id") or activity.get("id") or activity.get("activity_id") or "").strip()
+    event_date = str(facts.get("event_date") or "")[:10]
+    if not activity_id or not event_date:
+        return None
+    stream = _activity_stream_list(activity, "points_json", "track_json")
+    climb = resolve_hiking_elevation_climb(stream)
+    best = climb.get("max_single_climb") if isinstance(climb.get("max_single_climb"), dict) else None
+    if not best:
+        return None
+    start_point = best.get("start") if isinstance(best.get("start"), dict) else {}
+    end_point = best.get("end") if isinstance(best.get("end"), dict) else {}
+    metric_value = _finite_float(best.get("gain_m"))
+    if metric_value is None or metric_value <= 0:
+        return None
+    reason_codes = list(_dedupe_reason_codes(tuple(str(code or "").strip() for code in (climb.get("reason_codes") or []))))
+    validation_required = bool(reason_codes)
+    quality = {
+        "confidence": 0.80 if validation_required else 0.98,
+        "confidence_band": "medium" if validation_required else "high",
+        "decision": "validation_required" if validation_required else "auto_confirm",
+        "reason_codes": reason_codes or ["trail_single_climb_elevation_window"],
+        "source": "elevation_track",
+        "quality_policy": definition.quality_policy or "trail_single_climb",
+        "log_safety": "aggregate_only",
+        "can_user_confirm": validation_required,
+        "blocks_active": validation_required,
+    }
+    return _metric_series_point_from_resolver_result(
+        activity=activity,
+        definition=definition,
+        metric_value=metric_value,
+        event_date=event_date,
+        scope=_activity_total_metric_scope(definition, facts),
+        range_data={
+            "start_sec": start_point.get("t_sec"),
+            "end_sec": end_point.get("t_sec"),
+            "start_distance_m": start_point.get("distance_m"),
+            "end_distance_m": end_point.get("distance_m"),
+            "start_index": start_point.get("index"),
+            "end_index": end_point.get("index"),
+        },
+        quality_data=quality,
+        source_mode="elevation_track",
+        status="validation_required" if validation_required else "available",
+        eligible_for_current_best=not validation_required,
+    )
+
+
 def _activity_total_metric_result_from_activity(
     activity: dict[str, Any],
     definition: RecordDefinition,
@@ -20496,6 +20740,8 @@ def _activity_total_metric_result_from_activity(
     facts = build_activity_record_facts(activity)
     if str(facts.get("sport") or "") != definition.sport:
         return None
+    if definition.key == "trail_max_single_climb":
+        return _trail_single_climb_metric_result_from_activity(activity, definition, facts)
     activity_id = str(facts.get("activity_id") or activity.get("id") or activity.get("activity_id") or "").strip()
     event_date = str(facts.get("event_date") or "")[:10]
     if not activity_id or not event_date:
@@ -20593,6 +20839,8 @@ def _metric_series_point_from_resolver_result(
     range_data: dict[str, Any],
     quality_data: dict[str, Any],
     source_mode: str,
+    status: str = "available",
+    eligible_for_current_best: bool = True,
 ) -> dict[str, Any] | None:
     activity_id = str(activity.get("activity_id") or activity.get("id") or "").strip()
     if not activity_id or not event_date:
@@ -20638,8 +20886,8 @@ def _metric_series_point_from_resolver_result(
         "source_mode": source_mode,
         "resolver_version": RECORD_METRIC_SERIES_RESOLVER_VERSION,
         "rule_version": "records-v3-series",
-        "status": "available",
-        "eligible_for_current_best": True,
+        "status": status,
+        "eligible_for_current_best": bool(eligible_for_current_best),
         "is_current_best": False,
         "is_record_breaking": False,
         "result_fingerprint": _record_stable_hash("metric_result", result_seed),
@@ -20875,6 +21123,118 @@ def _pool_swim_metric_results_from_activity(
     return results
 
 
+def _open_water_standard_metric_results_from_activity(
+    activity: dict[str, Any],
+    definitions: list[RecordDefinition],
+) -> dict[str, dict[str, Any]]:
+    open_water_definitions = [
+        definition
+        for definition in definitions
+        if definition.key in OPEN_WATER_STANDARD_DISTANCE_METRIC_SERIES_KEYS
+    ]
+    if not open_water_definitions:
+        return {}
+    facts = build_activity_record_facts(activity)
+    if str(facts.get("sport") or "") != "open_water_swimming":
+        return {}
+    event_date = str(facts.get("event_date") or "")[:10]
+    if not event_date:
+        return {}
+    stream = _activity_stream_list(activity, "points_json", "track_json")
+    source_is_manual = str(activity.get("distance_source") or "").strip().lower() in {
+        "manual",
+        "estimated",
+    }
+    results: dict[str, dict[str, Any]] = {}
+    validation_reason_codes = {
+        "distance_time_stream_missing",
+        "distance_jump_break",
+        "distance_rollback",
+        "distance_time_invalid_break",
+        "no_valid_distance_time_segment",
+        "time_not_increasing",
+        "time_gap_break",
+        "invalid_distance_time_point",
+    }
+    for definition in open_water_definitions:
+        target_distance_m = _finite_float(definition.standard_distance_m)
+        if target_distance_m is None or target_distance_m <= 0:
+            continue
+        resolved = best_effort_distance_or_fallback(
+            stream,
+            target_distance_m,
+            activity=activity,
+            fallback_tolerance_ratio=definition.tolerance_ratio,
+        )
+        if not resolved.get("ok"):
+            continue
+        metric_value = _finite_float(resolved.get("elapsed_time_sec"))
+        if metric_value is None or metric_value <= 0:
+            continue
+        raw_quality = (
+            resolved.get("quality")
+            if isinstance(resolved.get("quality"), dict)
+            else {}
+        )
+        normalization = (
+            resolved.get("normalization")
+            if isinstance(resolved.get("normalization"), dict)
+            else {}
+        )
+        reason_codes = list(raw_quality.get("reason_codes") or [])
+        reason_codes.extend(normalization.get("reason_codes") or [])
+        if source_is_manual:
+            reason_codes.append("open_water_gps_unreliable")
+        reason_codes = list(_dedupe_reason_codes(tuple(reason_codes)))
+        validation_required = (
+            source_is_manual
+            or str(resolved.get("source_mode") or "") == "fallback_activity_total"
+            or bool(validation_reason_codes.intersection(reason_codes))
+        )
+        quality = {
+            **raw_quality,
+            "confidence": (
+                min(float(raw_quality.get("confidence") or 0.45), 0.8)
+                if validation_required
+                else float(raw_quality.get("confidence") or 0.92)
+            ),
+            "confidence_band": (
+                "medium" if validation_required else raw_quality.get("confidence_band", "high")
+            ),
+            "decision": "validation_required" if validation_required else "auto_confirm",
+            "reason_codes": reason_codes or ["open_water_distance_window"],
+            "source": str(
+                raw_quality.get("source")
+                or resolved.get("source_mode")
+                or "open_water_distance_window"
+            ),
+            "quality_policy": definition.quality_policy,
+            "can_user_confirm": validation_required,
+            "blocks_active": validation_required,
+        }
+        point = _metric_series_point_from_resolver_result(
+            activity=activity,
+            definition=definition,
+            metric_value=metric_value,
+            event_date=event_date,
+            scope={"water_scope": "open_water_swimming"},
+            range_data=(
+                resolved.get("range")
+                if isinstance(resolved.get("range"), dict)
+                else {}
+            ),
+            quality_data=quality,
+            source_mode=str(
+                resolved.get("source_mode") or "open_water_distance_window"
+            ),
+            status="validation_required" if validation_required else "available",
+            eligible_for_current_best=not validation_required,
+        )
+        if point is not None:
+            results[definition.key] = point
+    return results
+
+
 CAREER_RECORD_METRIC_RESULT_STREAM_KEYS = (
     "points_json",
     "track_json",
@@ -21048,6 +21408,7 @@ def _record_metric_results_from_activity(activity: dict[str, Any], definitions: 
     cycling_distance_definitions = [definition for definition in definitions if definition.key in CYCLING_STANDARD_DISTANCE_METRIC_SERIES_KEYS]
     cycling_power_definitions = [definition for definition in definitions if definition.key in CYCLING_POWER_METRIC_SERIES_KEYS]
     pool_swim_definitions = [definition for definition in definitions if definition.key in POOL_SWIM_METRIC_SERIES_KEYS]
+    open_water_definitions = [definition for definition in definitions if definition.key in OPEN_WATER_STANDARD_DISTANCE_METRIC_SERIES_KEYS]
     if running_definitions:
         results.update(_running_standard_distance_metric_results_from_activity(activity, running_definitions))
     if activity_total_definitions:
@@ -21058,7 +21419,29 @@ def _record_metric_results_from_activity(activity: dict[str, Any], definitions: 
         results.update(_cycling_power_metric_results_from_activity(activity, cycling_power_definitions))
     if pool_swim_definitions:
         results.update(_pool_swim_metric_results_from_activity(activity, pool_swim_definitions))
+    if open_water_definitions:
+        results.update(_open_water_standard_metric_results_from_activity(activity, open_water_definitions))
     return results
+
+
+def _metric_result_skip_reason_codes(definition: RecordDefinition, facts: dict[str, Any]) -> list[str]:
+    if definition.key == "trail_max_single_climb":
+        reasons: list[str] = []
+        if not bool(facts.get("distance_time_stream_available")):
+            reasons.append("distance_time_stream_missing")
+        if not bool(facts.get("elevation_available")):
+            reasons.append("elevation_missing")
+        reasons.append("single_climb_range_missing")
+        return list(_dedupe_reason_codes(tuple(reasons)))
+    if definition.metric == "distance_m" and facts.get("distance_m") is None:
+        return ["distance_missing"]
+    if definition.metric == "elapsed_time_sec" and facts.get("elapsed_time_sec") is None:
+        return ["elapsed_time_missing"]
+    if definition.metric == "ascent_m" and facts.get("ascent_m") is None:
+        return ["ascent_missing"]
+    if definition.metric == "max_altitude_m" and facts.get("max_altitude_m") is None:
+        return ["max_altitude_missing"]
+    return ["metric_missing"]
 
 
 def _existing_metric_result_rows_for_activity(conn: sqlite3.Connection | None, activity_id: str) -> dict[str, dict[str, Any]]:
@@ -21096,10 +21479,12 @@ def compute_record_metric_results_for_activity(
     rows: list[dict[str, Any]] = []
     would_upsert: list[str] = []
     would_skip: list[str] = []
+    skip_reasons: dict[str, list[str]] = {}
     for definition in definitions:
         point = points_by_key.get(definition.key)
         if point is None:
             would_skip.append(definition.key)
+            skip_reasons[definition.key] = _metric_result_skip_reason_codes(definition, facts)
             continue
         row = _metric_result_point_to_row(point, input_fingerprint)
         key_scope = f"{row.get('record_key')}|{row.get('scope_hash')}"
@@ -21130,13 +21515,20 @@ def compute_record_metric_results_for_activity(
             "result_count": len(rows),
             "would_upsert": would_upsert,
             "would_skip": would_skip,
+            "skip_reasons": skip_reasons,
             "would_invalidate": would_invalidate,
             "would_write": False,
         },
         "status": {
             "state": "ready" if rows else "sample_missing",
             "message": "metric result dry-run planner complete" if rows else "no metric result rows planned",
-            "reason_codes": list(facts.get("reason_codes") or []),
+            "reason_codes": list(_dedupe_reason_codes(tuple(
+                str(code or "").strip()
+                for code in [
+                    *(facts.get("reason_codes") or []),
+                    *(code for codes in skip_reasons.values() for code in codes),
+                ]
+            ))),
         },
     }
     _assert_record_evidence_safe_json(result, path="metric_result_plan")
@@ -21502,7 +21894,13 @@ def materialize_career_record_breaking_events(
                 "planned": int(record_breaking_events.get("planned") or 0),
                 "upserted": int(record_breaking_events.get("upserted") or 0),
                 "deleted": int(record_breaking_events.get("deleted") or 0),
-                "would_write": not dry_run and bool(int(record_breaking_events.get("planned") or 0)),
+                "current_best_planned": int(record_breaking_events.get("current_best_planned") or 0),
+                "current_best_upserted": int(record_breaking_events.get("current_best_upserted") or 0),
+                "current_best_deleted": int(record_breaking_events.get("current_best_deleted") or 0),
+                "would_write": not dry_run and bool(
+                    int(record_breaking_events.get("planned") or 0)
+                    or int(record_breaking_events.get("current_best_planned") or 0)
+                ),
             },
             "status": {
                 "state": "ready",
@@ -21672,6 +22070,17 @@ def _record_breaking_event_id(activity_id: str, record_key: str, scope_hash: str
     return f"record_event:{RECORD_BREAKING_EVENT_TYPE}:{digest}"
 
 
+def _record_current_best_event_id(activity_id: str, record_key: str, scope_hash: str) -> str:
+    stable = {
+        "event_type": RECORD_CURRENT_BEST_EVENT_TYPE,
+        "activity_id": str(activity_id or ""),
+        "record_key": str(record_key or ""),
+        "scope_hash": str(scope_hash or ""),
+    }
+    digest = hashlib.sha1(_json_dumps(stable).encode("utf-8")).hexdigest()[:18]
+    return f"record_event:{RECORD_CURRENT_BEST_EVENT_TYPE}:{digest}"
+
+
 def _record_breaking_event_payload(
     definition: RecordDefinition,
     point: dict[str, Any],
@@ -21700,6 +22109,35 @@ def _record_breaking_event_payload(
     encoded_payload = _json_dumps(payload)
     if _looks_like_local_path(encoded_payload):
         raise ValueError("record_breaking_event_payload must not contain a local path")
+    return payload
+
+
+def _record_current_best_event_payload(
+    definition: RecordDefinition,
+    point: dict[str, Any],
+) -> dict[str, Any]:
+    scope_view = point.get("scope") if isinstance(point.get("scope"), dict) else {}
+    payload = {
+        "activity_id": str(point.get("activity_id") or ""),
+        "record_key": definition.key,
+        "sport": definition.sport,
+        "event_date": str(point.get("event_date") or ""),
+        "metric": copy.deepcopy(point.get("metric") or {}),
+        "scope": {
+            "scope_hash": str(scope_view.get("scope_hash") or ""),
+            "scope_key": str(scope_view.get("scope_key") or "default"),
+            "dimensions": copy.deepcopy(scope_view.get("dimensions") if isinstance(scope_view.get("dimensions"), dict) else {}),
+            "labels": list(scope_view.get("labels") or []) if isinstance(scope_view.get("labels"), list) else [],
+        },
+        "source_mode": str(point.get("source_mode") or definition.source_mode),
+        "metric_result_id": str(point.get("id") or ""),
+        "detail_link": {"activity_id": str(point.get("activity_id") or ""), "source": "career"},
+        "resolver_version": str(point.get("resolver_version") or RECORD_METRIC_SERIES_RESOLVER_VERSION),
+        "rule_version": str(point.get("rule_version") or "records-v3-series"),
+    }
+    encoded_payload = _json_dumps(payload)
+    if _looks_like_local_path(encoded_payload):
+        raise ValueError("record_current_best_event_payload must not contain a local path")
     return payload
 
 
@@ -21735,7 +22173,38 @@ def _record_breaking_event_row(
     }
 
 
-def _insert_record_breaking_event_row(conn: sqlite3.Connection, row: dict[str, Any]) -> None:
+def _record_current_best_event_row(
+    definition: RecordDefinition,
+    point: dict[str, Any],
+    *,
+    run_id: str = "",
+) -> dict[str, Any]:
+    payload = _record_current_best_event_payload(definition, point)
+    scope = payload["scope"] if isinstance(payload.get("scope"), dict) else {}
+    activity_id = str(payload.get("activity_id") or "")
+    record_key = str(payload.get("record_key") or definition.key)
+    scope_hash = str(scope.get("scope_hash") or "")
+    return {
+        "id": _record_current_best_event_id(activity_id, record_key, scope_hash),
+        "record_id": None,
+        "activity_id": activity_id,
+        "pb_type": record_key,
+        "event_type": RECORD_CURRENT_BEST_EVENT_TYPE,
+        "event_at": str(payload.get("event_date") or ""),
+        "evidence_key": str(point.get("result_fingerprint") or point.get("id") or ""),
+        "resolver_version": str(payload.get("resolver_version") or RECORD_METRIC_SERIES_RESOLVER_VERSION),
+        "source": "metric_series",
+        "record_key": record_key,
+        "scope_hash": scope_hash,
+        "scope_key": str(scope.get("scope_key") or "default"),
+        "run_id": str(run_id or ""),
+        "decision": RECORD_CURRENT_BEST_EVENT_TYPE,
+        "reason_codes_json": _json_dumps([RECORD_CURRENT_BEST_EVENT_TYPE]),
+        "payload_json": _json_dumps(payload),
+    }
+
+
+def _insert_record_metric_series_event_row(conn: sqlite3.Connection, row: dict[str, Any]) -> None:
     conn.execute(
         """
         INSERT INTO career_record_events (
@@ -21766,12 +22235,12 @@ def _insert_record_breaking_event_row(conn: sqlite3.Connection, row: dict[str, A
     )
 
 
-def _record_breaking_event_rows_for_definition(
+def _record_metric_series_event_rows_for_definition(
     conn: sqlite3.Connection,
     definition: RecordDefinition,
     *,
     run_id: str = "",
-) -> list[dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     points = _materialized_metric_result_points_for_definition(
         conn,
         definition,
@@ -21783,9 +22252,10 @@ def _record_breaking_event_rows_for_definition(
         scope_hash = str(scope.get("scope_hash") or "")
         points_by_scope.setdefault(scope_hash, []).append(point)
 
-    rows: list[dict[str, Any]] = []
+    record_breaking_rows: list[dict[str, Any]] = []
+    current_best_rows: list[dict[str, Any]] = []
     for scope_points in points_by_scope.values():
-        decorated_points, _current_best, progression = _derive_record_metric_series(scope_points, definition)
+        decorated_points, current_best, progression = _derive_record_metric_series(scope_points, definition)
         point_by_id = {str(point.get("id") or ""): point for point in decorated_points}
         for item in progression:
             if str(item.get("event_type") or "") != RECORD_BREAKING_EVENT_TYPE:
@@ -21793,8 +22263,24 @@ def _record_breaking_event_rows_for_definition(
             point = point_by_id.get(str(item.get("metric_result_id") or ""))
             if not point:
                 continue
-            rows.append(_record_breaking_event_row(definition, point, item, run_id=run_id))
-    return rows
+            record_breaking_rows.append(_record_breaking_event_row(definition, point, item, run_id=run_id))
+        if current_best:
+            current_best_rows.append(_record_current_best_event_row(definition, current_best, run_id=run_id))
+    return record_breaking_rows, current_best_rows
+
+
+def _record_breaking_event_rows_for_definition(
+    conn: sqlite3.Connection,
+    definition: RecordDefinition,
+    *,
+    run_id: str = "",
+) -> list[dict[str, Any]]:
+    record_breaking_rows, _current_best_rows = _record_metric_series_event_rows_for_definition(
+        conn,
+        definition,
+        run_id=run_id,
+    )
+    return record_breaking_rows
 
 
 def upsert_career_record_breaking_events(
@@ -21823,29 +22309,41 @@ def upsert_career_record_breaking_events(
             ))
         ]
     clean_keys = sorted({key for key in requested if key in RECORD_METRIC_SERIES_SUPPORTED_KEYS and get_record_definition(key) is not None})
-    event_rows: list[dict[str, Any]] = []
+    record_breaking_rows: list[dict[str, Any]] = []
+    current_best_rows: list[dict[str, Any]] = []
     for key in clean_keys:
         definition = get_record_definition(key)
         if definition is None:
             continue
-        event_rows.extend(_record_breaking_event_rows_for_definition(conn, definition, run_id=run_id))
+        breaking_rows, best_rows = _record_metric_series_event_rows_for_definition(
+            conn,
+            definition,
+            run_id=run_id,
+        )
+        record_breaking_rows.extend(breaking_rows)
+        current_best_rows.extend(best_rows)
     result = {
         "ok": True,
         "dry_run": bool(dry_run),
         "run_id": str(run_id or ""),
         "record_keys": clean_keys,
-        "planned": len(event_rows),
+        "planned": len(record_breaking_rows),
+        "current_best_planned": len(current_best_rows),
         "upserted": 0,
+        "current_best_upserted": 0,
         "deleted": 0,
+        "current_best_deleted": 0,
         "event_type": RECORD_BREAKING_EVENT_TYPE,
         "idempotency_key": "activity_id + record_key + scope_hash + event_type",
     }
     if dry_run:
         return _records_api_safe(result)
-    planned_ids = {str(row.get("id") or "") for row in event_rows if str(row.get("id") or "")}
-    if clean_keys:
+
+    def delete_stale_events(event_type: str, planned_ids: set[str]) -> int:
+        if not clean_keys:
+            return 0
         placeholders = ", ".join("?" for _ in clean_keys)
-        stale_params: list[Any] = [RECORD_BREAKING_EVENT_TYPE, "metric_series", *clean_keys]
+        stale_params: list[Any] = [event_type, "metric_series", *clean_keys]
         stale_where = [
             "event_type = ?",
             "source = ?",
@@ -21859,10 +22357,18 @@ def upsert_career_record_breaking_events(
             f"DELETE FROM career_record_events WHERE {' AND '.join(stale_where)}",
             tuple(stale_params),
         )
-        result["deleted"] = int(cursor.rowcount or 0)
-    for row in event_rows:
-        _insert_record_breaking_event_row(conn, row)
-    result["upserted"] = len(event_rows)
+        return int(cursor.rowcount or 0)
+
+    record_breaking_ids = {str(row.get("id") or "") for row in record_breaking_rows if str(row.get("id") or "")}
+    current_best_ids = {str(row.get("id") or "") for row in current_best_rows if str(row.get("id") or "")}
+    result["deleted"] = delete_stale_events(RECORD_BREAKING_EVENT_TYPE, record_breaking_ids)
+    result["current_best_deleted"] = delete_stale_events(RECORD_CURRENT_BEST_EVENT_TYPE, current_best_ids)
+    for row in record_breaking_rows:
+        _insert_record_metric_series_event_row(conn, row)
+    for row in current_best_rows:
+        _insert_record_metric_series_event_row(conn, row)
+    result["upserted"] = len(record_breaking_rows)
+    result["current_best_upserted"] = len(current_best_rows)
     return _records_api_safe(result)
 
 
@@ -21996,6 +22502,8 @@ def get_career_record_metric_series(
                 point = _cycling_power_metric_results_from_activity(row, [definition]).get(record_key)
             elif record_key in POOL_SWIM_METRIC_SERIES_KEYS:
                 point = _pool_swim_metric_results_from_activity(row, [definition]).get(record_key)
+            elif record_key in OPEN_WATER_STANDARD_DISTANCE_METRIC_SERIES_KEYS:
+                point = _open_water_standard_metric_results_from_activity(row, [definition]).get(record_key)
             else:
                 point = None
             if point is None:
@@ -22186,6 +22694,7 @@ def _records_v3_series_current_best_views(conn: sqlite3.Connection, filters: dic
         cycling_distance_definitions = [definition for definition in sport_definitions if definition.key in CYCLING_STANDARD_DISTANCE_METRIC_SERIES_KEYS]
         cycling_power_definitions = [definition for definition in sport_definitions if definition.key in CYCLING_POWER_METRIC_SERIES_KEYS]
         pool_swim_definitions = [definition for definition in sport_definitions if definition.key in POOL_SWIM_METRIC_SERIES_KEYS]
+        open_water_definitions = [definition for definition in sport_definitions if definition.key in OPEN_WATER_STANDARD_DISTANCE_METRIC_SERIES_KEYS]
         for row in rows:
             points_by_definition: dict[str, dict[str, Any]] = {}
             if running_definitions:
@@ -22198,6 +22707,8 @@ def _records_v3_series_current_best_views(conn: sqlite3.Connection, filters: dic
                 points_by_definition.update(_cycling_power_metric_results_from_activity(row, cycling_power_definitions))
             if pool_swim_definitions:
                 points_by_definition.update(_pool_swim_metric_results_from_activity(row, pool_swim_definitions))
+            if open_water_definitions:
+                points_by_definition.update(_open_water_standard_metric_results_from_activity(row, open_water_definitions))
             for definition in sport_definitions:
                 point = points_by_definition.get(definition.key)
                 if point is None:
@@ -22302,6 +22813,7 @@ def get_career_records(
             "records": records,
             "summary": summary,
             "filters": normalized_filters,
+            "source_version": _career_record_source_version(db),
             "metrics": {
                 "elapsed_ms": _elapsed_ms(start),
                 "returned_count": len(records),
@@ -22801,6 +23313,12 @@ def _preview_career_record_activity_rows(conn: sqlite3.Connection, *, limit: int
         "pool_length",
         "stroke_scope",
         "swim_stroke",
+        "swim_water_scope",
+        "swim_pool_length_m",
+        "swim_pool_length_unit",
+        "swim_pool_length_scope",
+        "swim_stroke_scope",
+        "swim_facts_quality_json",
         "advanced_metrics",
         "deleted_at",
         "is_mock",
@@ -24901,7 +25419,7 @@ def get_career_timeline(
             "status": {
                 "schema_ready": bool(schema.get("ok")),
                 "data_ready": data_ready,
-                "message": "运动生涯时间轴已生成" if data_ready else CAREER_TIMELINE_EMPTY_STATUS_MESSAGE,
+                "message": "可查看生涯时间轴" if data_ready else CAREER_TIMELINE_EMPTY_STATUS_MESSAGE,
             },
         }
     finally:

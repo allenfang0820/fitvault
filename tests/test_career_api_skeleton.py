@@ -55,7 +55,7 @@ class TestCareerApiSkeleton(unittest.TestCase):
             self.assertEqual(result["representative_achievements"], [])
             self.assertEqual(result["status"]["schema_ready"], True)
             self.assertEqual(result["status"]["data_ready"], False)
-            self.assertIn("赛事、PB 与成就解析后生成", result["status"]["message"])
+            self.assertEqual(result["status"]["message"], "暂无可展示的运动生涯内容")
 
             table = conn.execute(
                 """
@@ -81,7 +81,7 @@ class TestCareerApiSkeleton(unittest.TestCase):
             self.assertEqual(result["candidates_count"], 0)
             self.assertEqual(result["status"]["schema_ready"], True)
             self.assertEqual(result["status"]["data_ready"], False)
-            self.assertIn("时间轴将在 ACS 派生事件生成后展示", result["status"]["message"])
+            self.assertEqual(result["status"]["message"], "暂无时间轴内容")
             _assert_forbidden_keys_absent(self, result)
         finally:
             conn.close()
@@ -165,6 +165,13 @@ class TestCareerApiSkeleton(unittest.TestCase):
         self.assertFalse(refresh_method["readonly"])
         self.assertIn("{ ok, code, msg", refresh_method["returns"])
         self.assertIn("派生事件索引", refresh_method["description"])
+
+        repair_method = methods["repair_historical_swim_records"]
+        self.assertEqual(repair_method["category"], "career")
+        self.assertTrue(repair_method["high_risk"])
+        self.assertFalse(repair_method["readonly"])
+        self.assertIn("dry_run", repair_method["returns"])
+        self.assertIn("source ledger", repair_method["description"])
 
 
 if __name__ == "__main__":

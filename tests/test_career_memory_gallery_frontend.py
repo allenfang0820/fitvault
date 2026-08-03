@@ -67,7 +67,8 @@ class TestCareerMemoryGalleryFrontend(unittest.TestCase):
         self.assertIn('id="career-memory-album-detail"', section)
         self.assertIn('id="career-memory-photo-modal"', section)
         self.assertIn('id="career-memory-empty"', section)
-        self.assertIn("按赛事组织相册", section)
+        self.assertIn("按赛事浏览照片", section)
+        self.assertNotIn("按赛事组织相册", section)
         self.assertNotIn('type="file"', section.lower())
         self.assertNotIn("save_career_memory_media", section)
 
@@ -165,7 +166,8 @@ class TestCareerMemoryGalleryFrontend(unittest.TestCase):
         self.assertIn("careerMemoryAlbumCardHtml", body)
         self.assertIn("renderCareerMemoryAlbumDetail(selectedAlbum)", body)
         self.assertIn("albumCount", body)
-        self.assertIn("emptyAlbumCount", body)
+        self.assertIn("photoCount", body)
+        self.assertNotIn("空相册 ' + String", body)
         self.assertIn("暂无赛事相册", body)
         self.assertNotIn("careerMemoryItemHtml", body)
 

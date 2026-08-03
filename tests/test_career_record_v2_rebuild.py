@@ -67,8 +67,8 @@ class CareerRecordV2RebuildTest(unittest.TestCase):
             keys = {item["record_key"] for item in cycling["definitions"]}
             self.assertIn("cycling_longest_distance", keys)
             self.assertNotIn("cycling_max_work", keys)
-            self.assertEqual(trail["action"], "ignored")
-            self.assertEqual(trail["reason"], "no_available_definitions")
+            self.assertEqual(trail["action"], "dispatch_planned")
+            self.assertTrue(trail["definitions"])
             self.assertEqual(deleted["reason"], "activity_not_found_or_deleted")
         finally:
             conn.close()

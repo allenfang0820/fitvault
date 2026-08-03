@@ -113,6 +113,7 @@ class TestLLMCliFrontendConfig(unittest.TestCase):
         test_body = extract_function_body(self.source, "async function testLLMConfig()")
 
         self.assertIn("savedLLMConfigSignature", self.source)
+        self.assertIn("confirmedLLMRuntimeConfig", self.source)
         self.assertIn("transport === 'cli'", signature_body)
         self.assertIn("cliType", signature_body)
         self.assertIn("cliPath", signature_body)
@@ -121,6 +122,8 @@ class TestLLMCliFrontendConfig(unittest.TestCase):
         self.assertIn("corosRegion", signature_body)
         self.assertIn("配置已修改，需重新测试", dirty_body)
         self.assertIn("buildLLMConfigSignature", clean_body)
+        self.assertIn("transport: normalizeLLMTransport(cfg.transport)", clean_body)
+        self.assertIn("cliTimeoutSec: normalizeCLITimeout", clean_body)
         self.assertIn("markLLMConfigClean(currentLLMConfig)", test_body)
 
     def test_openclaw_cli_agent_id_row_is_only_shown_for_openclaw(self):

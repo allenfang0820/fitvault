@@ -125,7 +125,9 @@ class TestTrackHtmlSyncLogic(unittest.TestCase):
         self.assertIn('data-career-section="overview"', career_panel)
         self.assertIn('data-career-section="timeline"', career_panel)
         self.assertIn('data-career-section="archives"', career_panel)
-        self.assertIn('每个节点都必须携带 activity_id', career_panel)
+        self.assertIn('生涯总览', career_panel)
+        self.assertIn('生涯时间轴', career_panel)
+        self.assertIn('赛事档案', career_panel)
         for forbidden in ("window.pywebview.api", "points", "track_json", "raw FIT", "get_career_"):
             self.assertNotIn(forbidden, career_panel)
 
@@ -141,8 +143,21 @@ class TestTrackHtmlSyncLogic(unittest.TestCase):
         self.assertNotIn('id="sport-honor-wall"', self.source)
 
         render_tab_body = extract_function_body(self.source, "function renderCurrentSportHubTab()")
-        self.assertIn("new Set(['results', 'reserved'])", render_tab_body)
-        self.assertNotIn("['results', 'honors', 'reserved']", render_tab_body)
+        self.assertIn("new Set(['results'])", render_tab_body)
+        self.assertNotIn("honors", render_tab_body)
+
+    def test_profile_sport_hub_removes_reserved_analysis_and_marks_growth_trend_in_development(self):
+        self.assertIn('data-hub-tab="results"', self.source)
+        self.assertIn('>成长趋势</button>', self.source)
+        self.assertIn('功能还在开发中', self.source)
+        self.assertNotIn('data-hub-tab="reserved"', self.source)
+        self.assertNotIn('id="sport-hub-tab-reserved"', self.source)
+        self.assertNotIn('预留分析', self.source)
+        self.assertNotIn('function onSwitchToReservedAnalysis()', self.source)
+
+        activation_body = extract_function_body(self.source, "async function handleSportHubTabActivation(tab, options = {})")
+        self.assertNotIn("activeTab === 'reserved'", activation_body)
+        self.assertNotIn("onSwitchToResults", activation_body)
 
     def test_career_tab_starts_derived_refresh_without_blocking_overview(self):
         switch_body = extract_function_body(self.source, "function switchTab(tabBtn)")
@@ -151,16 +166,21 @@ class TestTrackHtmlSyncLogic(unittest.TestCase):
 
         self.assertIn("loadCareerData().catch", switch_body)
         self.assertIn("refresh_career_derived_events", refresh_body)
+        self.assertIn("refreshData && refreshData.record_source_version", refresh_body)
+        self.assertIn("invalidateCareerDataCaches()", refresh_body)
+        self.assertIn("loadCareerRecordsCenter({ refresh: true })", refresh_body)
         self.assertIn("refreshCareerDerivedEventsInBackground()", load_body)
-        self.assertLess(load_body.find("refreshCareerDerivedEventsInBackground()"), load_body.find("loadCareerOverview()"))
+        self.assertLess(load_body.find("refreshCareerDerivedEventsInBackground()"), load_body.find("loadCareerFirstPaint()"))
         self.assertNotIn("await refreshCareerDerivedEventsInBackground()", load_body)
-        for token in (
-            "loadCareerOverview().catch",
-            "loadCareerSeasons().catch",
-            "loadCareerTimeline().catch",
-            "loadCareerArchives().catch",
-        ):
-            self.assertIn(token, load_body)
+        self.assertIn("loadCareerFirstPaint()", load_body)
+        self.assertIn("scheduleCareerBackgroundPrefetch()", load_body)
+        self.assertNotIn("loadCareerTimeline().catch", load_body)
+        self.assertNotIn("loadCareerArchives().catch", load_body)
+
+    def test_records_center_consumes_backend_source_version(self):
+        load_body = extract_function_body(self.source, "async function loadCareerRecordsCenter(options)")
+        self.assertIn("recordData && recordData.source_version", load_body)
+        self.assertIn("appState.career.careerSourceVersion = responseSourceVersion", load_body)
 
     def test_activity_fact_changes_invalidate_year_and_career_caches(self):
         for signature in (

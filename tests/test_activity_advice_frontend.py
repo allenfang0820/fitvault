@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import os
+import json
+import subprocess
 import unittest
 
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -121,13 +123,90 @@ class TestActivityAdviceFrontendContract(unittest.TestCase):
 
     def test_activity_advice_timeout_helper_exists(self):
         helper_body = _slice_function_body(self.html, "withTimeout")
+        timeout_body = _slice_function_body(self.html, "getActivityAdviceTimeoutMs")
         request_body = _slice_function_body(self.html, "requestActivityAdvice")
 
         self.assertIn("Promise.race", helper_body)
         self.assertIn("setTimeout", helper_body)
-        self.assertIn("reject(new Error('请求超时'))", helper_body)
+        self.assertIn("clearTimeout(timer)", helper_body)
+        self.assertIn("error.name = 'TimeoutError'", helper_body)
+        self.assertIn("error.code = 'FRONTEND_TIMEOUT'", helper_body)
+        self.assertIn("normalizeLLMTransport(cfg.transport) === 'cli'", timeout_body)
+        self.assertIn("cfg.cliTimeoutSec !== undefined", timeout_body)
+        self.assertIn("cfg.cli_timeout_sec", timeout_body)
+        self.assertIn("normalizeCLITimeout(configuredTimeout)", timeout_body)
+        self.assertIn("backendTimeoutSec * 1000 + 15000", timeout_body)
+        self.assertIn("config || confirmedLLMRuntimeConfig || {}", timeout_body)
+        self.assertNotIn("config || currentLLMConfig", timeout_body)
         self.assertIn("await withTimeout(", request_body)
-        self.assertIn("60000", request_body)
+        self.assertIn("getActivityAdviceTimeoutMs()", request_body)
+        self.assertNotIn("60000", request_body)
+
+    def test_activity_advice_distinguishes_timeout_from_other_failures(self):
+        request_body = _slice_function_body(self.html, "requestActivityAdvice")
+
+        self.assertIn("e.code === 'FRONTEND_TIMEOUT'", request_body)
+        self.assertIn("e.name === 'TimeoutError'", request_body)
+        self.assertIn("活动建议生成超时，请稍后重试", request_body)
+        self.assertIn("活动建议生成失败：", request_body)
+        self.assertNotIn("活动建议请求超时或失败", request_body)
+
+    def test_activity_advice_timeout_contract_behavior(self):
+        normalize_transport = _slice_function_body(self.html, "normalizeLLMTransport")
+        normalize_cli_timeout = _slice_function_body(self.html, "normalizeCLITimeout")
+        advice_timeout = _slice_function_body(self.html, "getActivityAdviceTimeoutMs")
+        script = "\n".join((
+            "var confirmedLLMRuntimeConfig = null;",
+            normalize_transport,
+            normalize_cli_timeout,
+            advice_timeout,
+            "console.log(JSON.stringify([",
+            "  getActivityAdviceTimeoutMs({transport: 'cli', cliTimeoutSec: 300}),",
+            "  getActivityAdviceTimeoutMs({transport: 'cli', cli_timeout_sec: 120}),",
+            "  getActivityAdviceTimeoutMs({transport: 'cli', cliTimeoutSec: ''}),",
+            "  getActivityAdviceTimeoutMs({transport: 'cli', cliTimeoutSec: 'bad'}),",
+            "  getActivityAdviceTimeoutMs({transport: 'cli', cliTimeoutSec: 1}),",
+            "  getActivityAdviceTimeoutMs({transport: 'cli', cliTimeoutSec: 9999}),",
+            "  getActivityAdviceTimeoutMs({transport: 'http', cliTimeoutSec: 5})",
+            "]));",
+        ))
+        result = subprocess.run(
+            ["node", "-e", script],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+        self.assertEqual(json.loads(result.stdout), [
+            315000,
+            135000,
+            315000,
+            315000,
+            20000,
+            1815000,
+            315000,
+        ])
+
+    def test_activity_advice_ignores_dirty_form_timeout(self):
+        normalize_transport = _slice_function_body(self.html, "normalizeLLMTransport")
+        normalize_cli_timeout = _slice_function_body(self.html, "normalizeCLITimeout")
+        advice_timeout = _slice_function_body(self.html, "getActivityAdviceTimeoutMs")
+        script = "\n".join((
+            "var currentLLMConfig = {transport: 'cli', cliTimeoutSec: 5};",
+            "var confirmedLLMRuntimeConfig = {transport: 'cli', cliTimeoutSec: 300};",
+            normalize_transport,
+            normalize_cli_timeout,
+            advice_timeout,
+            "console.log(getActivityAdviceTimeoutMs());",
+        ))
+        result = subprocess.run(
+            ["node", "-e", script],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+        self.assertEqual(result.stdout.strip(), "315000")
 
     def test_overview_route_facts_only_sync_through_track_context(self):
         apply_body = _slice_function_body(self.html, "applyDataAndRender", max_len=14000)
@@ -143,7 +222,10 @@ class TestActivityAdviceFrontendContract(unittest.TestCase):
         sync_body = _slice_function_body(self.html, "syncCurrentTrackContextForActivityAdvice")
         self.assertIn("buildActivityAdviceRouteFactsFromOverview(", sync_body)
         self.assertIn("activityAdviceRouteFacts: activityAdviceRouteFacts", sync_body)
-        self.assertIn("sync_track_context(JSON.stringify({", sync_body)
+        self.assertIn("appState.persistenceMode === 'canonical_activity'", sync_body)
+        self.assertIn("if (!isCanonicalActivity) payload.points = appState.points", sync_body)
+        self.assertNotIn("points: appState.points", sync_body)
+        self.assertIn("sync_track_context(JSON.stringify(payload))", sync_body)
 
     def test_activity_advice_region_uses_overview_fact_source(self):
         body = _slice_function_body(self.html, "normalizeActivityAdviceRegion")

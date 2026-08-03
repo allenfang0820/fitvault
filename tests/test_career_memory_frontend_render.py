@@ -118,7 +118,8 @@ class TestCareerMemoryFrontendRender(unittest.TestCase):
         self.assertIn("career-memory-empty", render_body)
         self.assertIn("暂无赛事相册", render_body)
         self.assertIn("正在加载赛事相册", loading_body)
-        self.assertIn("赛事相册暂不可用", error_body)
+        self.assertIn("暂时无法加载赛事相册，请稍后重试。", error_body)
+        self.assertNotIn("statusText.textContent = message", error_body)
         self.assertIn("careerMemoryAlbumCardHtml", render_body)
 
     def test_album_cards_are_clickable_four_three_units(self):
@@ -140,13 +141,14 @@ class TestCareerMemoryFrontendRender(unittest.TestCase):
         self.assertIn("safeHtml(meta", body)
         self.assertIn("safeHtml(imageRef)", body)
 
-    def test_switching_to_career_loads_memory(self):
+    def test_memory_page_loads_gallery_on_demand(self):
         body = extract_function_body(self.source, "function switchTab(tabBtn)")
         load_body = extract_function_body(self.source, "async function loadCareerData()")
+        page_body = extract_function_body(self.source, "async function loadCareerPageData(page, options)")
         self.assertIn("loadCareerData().catch", body)
-        self.assertIn("loadCareerOverview().catch", load_body)
-        self.assertIn("loadCareerTimeline().catch", load_body)
-        self.assertIn("loadCareerMemory().catch", load_body)
+        self.assertIn("loadCareerFirstPaint()", load_body)
+        self.assertNotIn("loadCareerMemory().catch", load_body)
+        self.assertIn("memory: function() { return loadCareerMemory(); }", page_body)
 
     def test_memory_frontend_keeps_data_boundary(self):
         relevant = "\n".join(

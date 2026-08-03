@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/fitvault/js-api-contract/v1/schema.json",
-  "contract_version": "V9.4.4",
-  "generated_at": "2026-05-29",
+  "contract_version": "V9.4.5",
+  "generated_at": "2026-07-29",
   "project": "脉图 (FitVault) — Local AI Sports Copilot",
   "transport": "pywebview window.pywebview.api.*",
   "response_envelope": {
@@ -259,7 +259,23 @@
       ],
       "returns": "{ ok, code, msg, data, traceId }",
       "high_risk": false,
-      "description": "前端渲染完成后同步轨迹上下文；构建 DB AI snapshot 与活动建议专用白名单 route facts snapshot"
+      "description": "前端渲染完成后同步轨迹上下文；canonical activity 传 activityId、placemarks 与活动建议白名单 route facts，不重复回传完整 points；temporary session 继续传 points 供后端聚合临时路线事实；构建 DB AI snapshot 与活动建议专用白名单 route facts snapshot"
+    },
+    {
+      "name": "prepare_dem_session_cache",
+      "file": "main.py",
+      "category": "map",
+      "parameters": [
+        {
+          "name": "points_json",
+          "type": "string",
+          "required": true
+        }
+      ],
+      "returns": "{ ok, code, msg, data: { prepared, bbox: { west, south, east, north, buffer_meters, point_count } }, traceId }",
+      "high_risk": false,
+      "readonly": false,
+      "description": "仅由用户主动选择真实地形时调用：在当前应用 DEM session 目录写入路线 bbox 预备元数据。不得下载 DEM、切换 Cesium provider、写入活动数据库、workspace/tracks 或活动事实；应用退出清理当前 session，启动清理异常残留。"
     },
     {
       "name": "reset_llm_session",
@@ -277,7 +293,7 @@
       "line": 11330,
       "category": "career",
       "parameters": [],
-      "returns": "{ ok, code, msg, data: {ok, race, pb, achievement, status}, traceId }",
+      "returns": "{ ok, code, msg, data: {ok, race, pb, achievement, record_source_version, status}, traceId }",
       "high_risk": false,
       "readonly": false,
       "description": "手动刷新 ACS 运动生涯派生事件索引；仅调用后端 Resolver 从 Activity 安全摘要生成/更新 career_race_events、career_pb_records、career_achievement_events 与候选事件，不读取或返回 raw FIT、points、track_json、file_path、本地路径或 SQLite schema。用于进入运动生涯页前补齐历史活动数据。"
@@ -291,7 +307,7 @@
       "returns": "{ ok, code, msg, data: {summary: {career_start_year, activity_count, race_count, pb_count, achievement_count, covered_city_count, total_distance_km}, hero_banner: {mode, activity_id, race_id, title, subtitle, sport, sport_label, event_date, city, country, distance_display, duration_display, badges, media: {has_photo, image_ref}, art: {text, tone, style}, detail_link: {activity_id, source}}, sport_totals: {running_distance_km, cycling_distance_km, walking_distance_km, hiking_distance_km, walking_hiking_distance_km, swimming_distance_km, strength_total_weight_kg, strength_total_weight_status}, career_stats: {activity_count, race_count, pb_count, achievement_count, total_duration_seconds, covered_city_count, covered_country_count|null, active_year_count, longest_activity_distance_km, max_elevation_gain_m|null, max_altitude_m|null, secondary_metrics_status}, best_pb: null|{title, value_display, event_date, detail_link: {activity_id, source}}, identity: {primary_sport, primary_sport_label, career_years, career_stage, identity_title, identity_summary, identity_tags, question_answers: {who, journey, experience}}, representative_seasons: [{year, activity_count, total_distance_km, total_duration_seconds, race_count, pb_count, achievement_count, city_count, primary_sport, primary_sport_label, season_stage, season_title, season_summary, highlights, report_update_available}], latest_race: null|{id, activity_id, name, event_type, sport, event_date, city, confidence, source, confidence_level, display_metadata, detail_link: {activity_id, source}}, latest_pb: null|{id, activity_id, sport, pb_type, value, value_unit, improvement_sec, event_date, confidence, source, display_metadata, detail_link: {activity_id, source}}, representative_pb_records: [{id, activity_id, sport, pb_type, value, value_unit, improvement_sec, event_date, confidence, source, display_metadata, detail_link: {activity_id, source}}], representative_achievements: [{id, activity_id, achievement_type, title, event_date, score, icon, description, confidence, source, display_metadata, detail_link: {activity_id, source}}], status: {schema_ready, data_ready, message}}, traceId }",
       "high_risk": false,
       "readonly": true,
-      "description": "ACS 运动生涯总览只读 API；组织 Activity 基础摘要、赛事照片 Banner、分运动类型累计数据、足迹/PB/年度入口以及 Race Resolver、PB Resolver、Achievement Resolver 生成的 active 派生摘要。representative_seasons[].report_update_available 仅表示该年份当前 Year Snapshot 的 source_fingerprint 与 ready 年度报告缓存不同，用于显示 NEW/可刷新提示，不自动生成或刷新报告。hero_banner 有照片时 image_ref 只能是后端从应用受控媒体目录转换出的 data:image 引用；当前无安全预览时使用 title_art 艺术字 fallback，不返回 storage_ref、file_path、本地绝对路径、file:// 或原始媒体路径。strength_total_weight_kg 仅在 Activity 存在可靠总重量字段时聚合，否则返回 null 与 unavailable/partial 状态；covered_country_count、max_elevation_gain_m 与 max_altitude_m 属于非首屏核心二级指标，首屏可返回 null 与 secondary_metrics_status=pending，由 get_career_overview_secondary_metrics 后台补齐；前端不得从轨迹点推导。status.data_ready 在存在普通 Activity 或任一 active 派生摘要时为 true。不重新计算赛事/PB/成就，不读取或返回 raw FIT、points、track_json、本地路径或 SQLite schema。"
+      "description": "ACS 运动生涯总览只读 API；组织 Activity 基础摘要、赛事照片 Banner、分运动类型累计数据、足迹/PB/年度入口以及 Race Resolver、PB Resolver、Achievement Resolver 生成的 active 派生摘要。representative_seasons[].report_update_available 仅表示该年份当前 Year Snapshot 的 source_fingerprint 与 ready 年度报告缓存不同，用于显示 NEW/可刷新提示，不自动生成或刷新报告。hero_banner 有照片时 image_ref 只能是后端从应用受控媒体目录转换出的 data:image 引用；当前无安全预览时使用 title_art 艺术字 fallback，不返回 storage_ref、file_path、本地绝对路径、file:// 或原始媒体路径。strength_total_weight_kg 仅在 Activity 存在可靠总重量字段或已物化 strength_summary_json.total_volume_kg 时聚合，否则返回 null 与 unavailable/partial 状态；covered_country_count、max_elevation_gain_m 与 max_altitude_m 属于非首屏核心二级指标，首屏可返回 null 与 secondary_metrics_status=pending，由 get_career_overview_secondary_metrics 后台补齐；前端不得从轨迹点推导。status.data_ready 在存在普通 Activity 或任一 active 派生摘要时为 true。不重新计算赛事/PB/成就，不读取或返回 raw FIT、points、track_json、本地路径或 SQLite schema。"
     },
     {
       "name": "get_career_overview_secondary_metrics",
@@ -494,7 +510,7 @@
           "description": "可选筛选: sport/record_key/family/scope_hash/status/year"
         }
       ],
-      "returns": "{ ok, code, msg, data: {records: [{id, activity_id, record_key, pb_type, display_name, sport, family, metric, comparison, axis_direction, improvement, event_date, source_mode, scope, range, quality, status, catalog_state, detail_link}], summary, filters, metrics, status}, traceId }",
+      "returns": "{ ok, code, msg, data: {records: [{id, activity_id, record_key, pb_type, display_name, sport, family, metric, comparison, axis_direction, improvement, event_date, source_mode, scope, range, quality, status, catalog_state, detail_link}], summary, filters, source_version, metrics, status}, traceId }",
       "high_risk": false,
       "readonly": true,
       "description": "Records Center V2/V3 当前纪录列表 API；前端只渲染 ViewModel，不计算纪录事实、scope、confidence、improvement 或 axis direction。running 标准距离首批四项的左侧 Current Best 必须从 get_career_record_metric_series().current_best 派生，并通过 record_key + scope_hash 与右侧 metric series chart 串联；career_pb_records active/superseded 仅为兼容路径，不得作为 V3 主图或 running 标准距离左侧 Current Best 的主数据源。candidate 不得渲染为 current record。不得返回 raw FIT、points、track_json、power_stream、storage_ref、file_path、本地路径、设备标识、体重历史或 SQLite schema。"
@@ -579,6 +595,26 @@
       "risk_level": "high",
       "readonly": false,
       "description": "受控的刷新纪录事件物化维护 API；只从已存在的 career_record_metric_results 生成或回写正式 record_breaking 事件，不重算 metric results，不读取 raw FIT。dry_run 默认开启，只有显式 dry_run=false 才会写 career_record_events。用于让运动生涯时间轴和年度报告消费正式里程碑事件。"
+    },
+    {
+      "name": "repair_historical_swim_records",
+      "file": "main.py",
+      "line": 15084,
+      "category": "career",
+      "parameters": [
+        {
+          "name": "payload",
+          "type": "dict",
+          "required": false,
+          "default": null,
+          "description": "{activity_id?|activity_ids?: list|string, limit?: number, dry_run?: boolean}; dry-run by default"
+        }
+      ],
+      "returns": "{ ok, code, msg, data: {dry_run, scanned, source_counts, plans: [{activity_id, sport, source, canonical_fields_changed, metric_state, reason_codes, would_upsert, would_skip, would_invalidate}], rebuild, summary, record_source_version, status}, traceId }",
+      "high_risk": true,
+      "risk_level": "high",
+      "readonly": false,
+      "description": "受控的历史游泳事实修复 API；泳池仅从 Activity source ledger 指向的现存 FIT 文件读取池长、单位、泳姿和长度事实，公开水域仅消费已保存 Activity 距离/时长/轨迹事实。不得从总距离和 lap 数推断池长，不返回 raw FIT、laps、points、file_path 或本地路径。dry_run 默认开启，只有显式 dry_run=false 才会写 canonical swim fields、metric results 和可重建的 career_record_events。"
     },
     {
       "name": "get_career_record_curve",
@@ -1110,7 +1146,7 @@
           "required": true
         }
       ],
-      "returns": "{ ok, code, msg, data: {record, api_elapsed_ms, summary_only}, traceId }。record.detail_pending=true; summary API 不读取或返回 track_json、points_json、laps_json、hr_curve、speed_curve、cadence_curve 等大字段; 用于活动概览首屏渐进加载",
+      "returns": "{ ok, code, msg, data: {record, api_elapsed_ms, summary_only}, traceId }。record.detail_pending=true; summary API 不读取或返回 track_json、points_json、laps_json、hr_curve、speed_curve、cadence_curve 等轨迹/曲线大字段；力量活动允许读取已物化 strength JSON 与 version/status/error，但只向 detail.strength_materialization 输出 {version,status,can_retry,message_code}，不返回内部 error，以保持首屏与完整详情合同一致",
       "high_risk": false,
       "description": "单条活动概览首屏轻量摘要。只返回标题、时间、地区、运动类型、关键指标、设备、天气、能力占位和空 laps/thumbnail 占位; 旧 get_activity_detail 继续提供完整详情。"
     },
@@ -1128,7 +1164,7 @@
       ],
       "returns": "{ ok, code, msg, data: {record, api_elapsed_ms}, traceId }",
       "high_risk": false,
-      "description": "单条活动详情。V9.4.4 新增字段:1) record.detail.training_effect(Firstbeat TE 0.0~5.0,V9.4.0 错字段已纠);2) record.detail.lap_columns(圈速表列真理源,后端 resolve_lap_columns 计算);3) record.detail.laps[i].{max_hr, ascent_m, descent_m}(FIT lap 透传)。多运动升级新增 record.detail.detail_surface_mode、overview_capabilities、overview_empty_states、overview_metrics、primary_visual、split_section；这些字段必须由后端事实和 metrics_registry.py 决定，前端不得按 sport_type 另行推断。全部走 FIT SDK 直读,无前端计算。"
+      "description": "单条活动详情。V9.4.4 新增 record.detail.training_effect、lap_columns 与扩展 lap 字段。多运动升级新增 record.detail.detail_surface_mode、overview_capabilities、overview_empty_states、overview_metrics、primary_visual、split_section。已物化结构化力量活动返回 primary_visual=strength_muscle_map、split_section=strength_sets、overview_capabilities.has_structured_sets=true、力量 overview_metrics 及 record.detail.strength={summary,exercises,muscle_heatmap}；所有力量活动另返回脱敏 detail.strength_materialization={version,status,can_retry,message_code}，状态限 pending/materialized/unstructured/source_missing/failed。详情只读 DB 物化结果，不重新解析 FIT，不返回 strength_materialization_error，不在前端计算容量或热度。"
     },
     {
       "name": "update_activity_title",
@@ -1238,6 +1274,77 @@
       "readonly": true,
       "high_risk": false,
       "description": "旧地区缓存 admin1 回填 dry-run；复用随包地图 GeoJSON 估算可补齐的一级行政区，只统计 geocode_cache.admin1/admin1_code 与 activities.region_admin1/region_admin1_code 缺失项，不写数据库，不调用网络，不修改 region_city、region_display、region、title、title_source、运动事实或 AI/Snapshot 数据，不返回 raw FIT、points、track_json、file_path 或 SQLite schema。"
+    },
+    {
+      "name": "get_strength_materialization_dry_run",
+      "file": "main.py",
+      "line": 17845,
+      "category": "activity",
+      "parameters": [
+        {
+          "name": "payload",
+          "type": "object",
+          "required": false,
+          "schema": {
+            "limit": "int optional, clamped to 1..2000"
+          }
+        }
+      ],
+      "returns": "{ ok, code, msg, data: {version, dry_run:true, limit, strength_rows, scanned_count, limited, candidate_count, processable_count, already_materialized_count, unstructured_count, source_missing_count, version_outdated_count, soft_deleted_skipped_count, status_distribution:{pending,materialized,unstructured,source_missing,failed}}, traceId }",
+      "readonly": true,
+      "high_risk": false,
+      "description": "历史力量活动物化只读扫描；仅按 sport/sub_sport、软删除状态、物化版本/状态、三个力量 JSON 和受控 TRACKS_DIR 源文件边界统计候选，不解析 FIT，不写 activities/app_migrations，不使用标题、心率、热量或时长推断结构化数据，不返回活动 ID、文件名、file_path、原始错误或 SQLite schema。"
+    },
+    {
+      "name": "start_strength_materialization_backfill",
+      "file": "main.py",
+      "line": 17854,
+      "category": "activity",
+      "parameters": [
+        {
+          "name": "payload",
+          "type": "object",
+          "required": false,
+          "schema": {
+            "limit": "int optional, clamped to 1..200"
+          }
+        }
+      ],
+      "returns": "{ ok, code, msg, data: {strength_materialization: {running, retry_only:false, version, total, processed, updated, materialized, unstructured, source_missing, failed, skipped, limited, started_at, finished_at, error_code}}, traceId }",
+      "readonly": false,
+      "high_risk": false,
+      "description": "手动启动单实例、限批的历史力量活动物化 worker；只处理 pending/缺失/过期候选，复用 FIT raw parser、力量 normalizer 和肌群 resolver，只写三个力量 JSON、物化版本/状态、脱敏错误码和 updated_at。详情 API 不触发该 worker；不返回活动 ID、文件名、路径、异常文本或 raw FIT。"
+    },
+    {
+      "name": "get_strength_materialization_backfill_status",
+      "file": "main.py",
+      "line": 17863,
+      "category": "activity",
+      "parameters": [],
+      "returns": "{ ok, code, msg, data: {strength_materialization: {running, retry_only, version, total, processed, updated, materialized, unstructured, source_missing, failed, skipped, limited, started_at, finished_at, error_code}}, traceId }",
+      "readonly": true,
+      "high_risk": false,
+      "description": "只读查询历史力量物化 worker 聚合状态；不查询或返回单条活动、文件名、路径、异常文本、原始 FIT 或 SQLite schema。"
+    },
+    {
+      "name": "retry_strength_materialization_backfill",
+      "file": "main.py",
+      "line": 17871,
+      "category": "activity",
+      "parameters": [
+        {
+          "name": "payload",
+          "type": "object",
+          "required": false,
+          "schema": {
+            "limit": "int optional, clamped to 1..200"
+          }
+        }
+      ],
+      "returns": "{ ok, code, msg, data: {strength_materialization: {running, retry_only:true, version, total, processed, updated, materialized, unstructured, source_missing, failed, skipped, limited, started_at, finished_at, error_code}}, traceId }",
+      "readonly": false,
+      "high_risk": false,
+      "description": "手动重试 failed/source_missing 历史力量物化候选；仍执行受控 TRACKS_DIR、.fit、真实文件和软删除边界，单实例限批，只写力量物化字段及必要 updated_at，不暴露内部路径或异常。"
     },
     {
       "name": "run_region_admin1_backfill_once",
@@ -1988,7 +2095,58 @@
         "not_applicable_reason": "unsupported_activity_type"
       }
     },
-    "strength_boundary": "Without parsed set_mesgs, exercise_title_mesgs, and workout_step_mesgs, strength_training must not claim exercise names, muscle groups, set counts, weights, volume, or structured strength analysis.",
+    "structured_strength_overview": {
+      "source_columns": [
+        "strength_sets_json",
+        "strength_summary_json",
+        "muscle_heatmap_json",
+        "strength_materialization_version",
+        "strength_materialization_status",
+        "strength_materialization_error"
+      ],
+      "materialization_state": {
+        "fields": [
+          "version",
+          "status",
+          "can_retry",
+          "message_code"
+        ],
+        "statuses": [
+          "pending",
+          "materialized",
+          "unstructured",
+          "source_missing",
+          "failed"
+        ],
+        "privacy": "detail APIs never return strength_materialization_error, file_path, source filename, or raw parser errors"
+      },
+      "structured_state": {
+        "primary_visual": "strength_muscle_map",
+        "split_section": "strength_sets",
+        "has_structured_sets": true,
+        "detail_strength_fields": [
+          "summary",
+          "exercises",
+          "muscle_heatmap"
+        ],
+        "overview_metric_fields": [
+          "duration_sec",
+          "strength_exercise_count",
+          "strength_working_set_count",
+          "strength_total_reps",
+          "strength_total_volume_kg",
+          "avg_hr",
+          "calories"
+        ]
+      },
+      "limited_state": {
+        "primary_visual": "strength_limited",
+        "split_section": "strength_unavailable",
+        "has_structured_sets": false
+      },
+      "read_boundary": "get_activity_detail_summary and get_activity_detail consume only materialized activity columns; they must not parse FIT or recompute muscle scores. Frontend must not aggregate volume, coverage, share, score, or level."
+    },
+    "strength_boundary": "Without materialized structured set facts from set_mesgs/exercise_title_mesgs/workout_step_mesgs, strength_training must not claim exercise names, muscle groups, set counts, weights, volume, or structured strength analysis.",
     "review_boundary": "get_fatigue_review is the only review-page source. unavailable and not_applicable values are null, not zero. Its snapshot and compact AI snapshot must not expose records, points, shadow_diff, shadow_diff_json, diff, or debug-only fields."
   },
   "architectural_constraints": {

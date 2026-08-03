@@ -52,7 +52,7 @@ class TestLLMTransportContract(unittest.TestCase):
         calls = _called_names(Api.sync_remote_fit_activities)
 
         self.assertIn("garmin_sync.download_fit_json", calls)
-        self.assertIn("self.sync_local_fit_files", calls)
+        self.assertIn("_import_remote_fit_candidates", calls)
         self.assertNotIn("llm_backend.chat_completions", calls)
         self.assertNotIn("self._generate_llm_text", calls)
 

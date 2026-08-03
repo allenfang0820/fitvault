@@ -200,7 +200,7 @@ class TestStartupTimelineInstrumentation(unittest.TestCase):
     def test_activity_list_timeline_marks_api_and_render(self):
         self.assertIn("markStartupPhase('activity_list_load_start'", self.html)
         self.assertIn("markStartupPhase('activity_list_api_done'", self.html)
-        self.assertIn("backend_ms: data.startup_trace && data.startup_trace.api_elapsed_ms", self.html)
+        self.assertIn("backend_ms: data.api_elapsed_ms || (data.startup_trace && data.startup_trace.api_elapsed_ms)", self.html)
         self.assertIn("markStartupPhase('activity_list_render_done'", self.html)
 
 

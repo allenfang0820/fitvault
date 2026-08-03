@@ -198,7 +198,6 @@ class TestActivityAdviceIntegration(unittest.TestCase):
         with patch("main._build_ai_snapshot", return_value=db_snapshot):
             res = self.api.sync_track_context(json.dumps({
                 "activityId": 9,
-                "points": _sample_points(),
                 "filename": "route.fit",
                 "activityAdviceRouteFacts": {
                     "activity_id": 9,
@@ -218,6 +217,7 @@ class TestActivityAdviceIntegration(unittest.TestCase):
         self.assertEqual(snapshot["elevation_gain_m"], 1152)
         self.assertEqual(snapshot["max_alt_m"], 4241)
         self.assertEqual(snapshot["source"], "overview_canonical_metrics")
+        self.assertEqual(self.api._track_points, [])
 
     def test_activity_advice_overview_route_facts_are_whitelisted(self):
         res = self.api.sync_track_context(json.dumps({
@@ -257,6 +257,7 @@ class TestActivityAdviceIntegration(unittest.TestCase):
             "weather": {"temperature_c": 20},
             "filename": "route.gpx",
         }))
+        self.assertEqual(self.api._track_points, _sample_points())
 
         with patch("llm_backend.load_llm_config", return_value={"url": "http://llm", "model": "m"}):
             with patch("main._build_activity_advice_messages", side_effect=fake_messages):

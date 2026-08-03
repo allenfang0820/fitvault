@@ -920,6 +920,13 @@ class MetricsResolver:
         return value
 
     @staticmethod
+    def _first_present(*values: Any) -> Any:
+        for value in values:
+            if value is not None and value != "":
+                return value
+        return None
+
+    @staticmethod
     def _num(value: Any) -> float:
         try:
             return float(value)
@@ -1272,6 +1279,7 @@ class MetricsResolver:
             pace_sec = int(round(elapsed / (dist_m / 1000.0))) if dist_m > 0 and elapsed > 0 else 0
             rows.append({
                 "lap_no": idx + 1,
+                "distance_m": dist_m if dist_m > 0 else None,
                 "distance_km": round(dist_m / 1000.0, 2) if dist_m > 0 else None,
                 "pace_sec": pace_sec if pace_sec > 0 else None,
                 "hr": lap_avg_hr if lap_avg_hr else None,
@@ -2655,7 +2663,15 @@ class MetricsResolver:
             swolf = MetricsResolver._num(lap.get("swolf"))
             stroke_distance = MetricsResolver._num(lap.get("avg_stroke_distance"))
             swim_stroke = lap.get("swim_stroke")
-            lengths = MetricsResolver._num(lap.get("lengths"))
+            lengths = MetricsResolver._num(
+                MetricsResolver._first_present(lap.get("lengths"), lap.get("num_lengths"))
+            )
+            strokes = MetricsResolver._num(
+                MetricsResolver._first_present(lap.get("total_strokes"), lap.get("total_cycles"))
+            )
+            if not swolf and strokes > 0 and lengths > 0 and elapsed > 0:
+                lap_dur = elapsed / 1000.0 if elapsed > 86400 else elapsed
+                swolf = int(round(strokes / lengths + lap_dur / lengths))
             # V9.x 修复:增读 FIT 步态字段,§2.1 全链路可追溯,严禁硬编码 None
             # 字段名对齐 fit_engine._read_lap_data 输出(avg_ 前缀为 FIT lap 聚合值)
             stance_time_ms = MetricsResolver._safe_int_zero(lap.get("avg_stance_time")) or None

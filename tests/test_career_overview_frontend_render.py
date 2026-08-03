@@ -148,7 +148,8 @@ class TestCareerOverviewFrontendRender(unittest.TestCase):
         self.assertNotIn("careerSeasonPillHtml('memories', '记忆'", card_body)
         self.assertIn("careerSeasonPillHtml('cities', '城市'", card_body)
         self.assertIn('class="career-season-pills"', card_body)
-        self.assertIn("年度结构已生成", render_body)
+        self.assertIn("if (statusEl) statusEl.textContent = ''", render_body)
+        self.assertNotIn("年度结构已生成", render_body)
         self.assertNotIn("年度结构已接入", render_body)
         self.assertNotIn("已接入", render_body)
         self.assertNotIn("highlights", card_body)
@@ -250,7 +251,8 @@ class TestCareerOverviewFrontendRender(unittest.TestCase):
         self.assertIn("renderCareerHeroBanner(vm.heroBanner)", body)
         self.assertIn("career-overview-empty", body)
         self.assertIn("dataReady", body)
-        self.assertIn("生涯总览已生成", body)
+        self.assertIn("if (statusText) statusText.textContent = ''", body)
+        self.assertNotIn("生涯总览已生成", body)
         self.assertNotIn("生涯总览已接入", body)
         self.assertNotIn("已接入", body)
 
@@ -356,7 +358,8 @@ class TestCareerOverviewFrontendRender(unittest.TestCase):
         loading_body = extract_function_body(self.source, "function renderCareerOverviewLoading()")
         error_body = extract_function_body(self.source, "function renderCareerOverviewError(message)")
         self.assertIn("正在加载生涯总览", loading_body)
-        self.assertIn("生涯总览暂不可用", error_body)
+        self.assertIn("暂时无法加载生涯总览，请稍后重试。", error_body)
+        self.assertNotIn("statusText.textContent = message", error_body)
 
 
 if __name__ == "__main__":

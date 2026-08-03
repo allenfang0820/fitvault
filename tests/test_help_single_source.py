@@ -31,7 +31,7 @@ class TestHelpSingleSource(unittest.TestCase):
         self.assertIn("AI 洞察一直加载或失败怎么办？", self.help_doc)
 
     def test_track_html_loads_help_from_backend_instead_of_hardcoding_full_copy(self):
-        self.assertIn("<title>脉图 - FitVault V1.2.0</title>", self.html)
+        self.assertIn("<title>脉图 - FitVault V2.0</title>", self.html)
         for token in (
             'id="help-preface-content"',
             'id="help-usage-content"',
@@ -49,6 +49,13 @@ class TestHelpSingleSource(unittest.TestCase):
         self.assertNotIn("OpenClaw 配置说明", self.html)
         self.assertNotIn("AI 洞察一直加载或失败怎么办？", self.html)
         self.assertNotIn("Garmin 同步按钮不可用怎么办？", self.html)
+
+    def test_about_panel_shows_v2_highlights(self):
+        self.assertEqual(main.APP_VERSION, "V2.0")
+        self.assertIn("V2.0 重点新增", self.html)
+        self.assertIn("力量训练肌肉热力图", self.html)
+        self.assertIn("轨迹分析真实地形", self.html)
+        self.assertNotIn("V1.2.0 重要更新", self.html)
 
     def test_readme_garmin_sync_no_longer_requires_openclaw_prompt(self):
         readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
@@ -103,6 +110,10 @@ class TestHelpSingleSource(unittest.TestCase):
     def test_packaging_uses_fitvault_english_name(self):
         self.assertIn("name='FitVault'", self.spec)
         self.assertIn("bundle_identifier='com.mrfang.fitvault'", self.spec)
+        self.assertIn("'CFBundleShortVersionString': '2.0.0'", self.spec)
+        self.assertIn("'CFBundleVersion': '2.0.0'", self.spec)
+        self.assertNotIn("'CFBundleShortVersionString': '1.2.0'", self.spec)
+        self.assertNotIn("'CFBundleVersion': '1.2.0'", self.spec)
         self.assertNotIn("name='MaiTu'", self.spec)
         self.assertNotIn("com.mrfang.maitu", self.spec)
 

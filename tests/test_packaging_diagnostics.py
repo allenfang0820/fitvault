@@ -340,6 +340,23 @@ class TestPackagingDiagnostics(unittest.TestCase):
         self.assertNotIn("password=", serialized.lower())
         self.assertNotIn("authorization=", serialized.lower())
 
+    def test_portable_manifest_does_not_expose_build_machine_paths(self):
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            runtime = root / "runtimes" / "node-darwin-arm64" / "bin"
+            runtime.mkdir(parents=True)
+            (runtime / "node").write_text("", encoding="utf-8")
+            (runtime / "npm").write_text("", encoding="utf-8")
+
+            manifest = diag.build_dependency_manifest(root, portable=True)
+
+        serialized = json.dumps(manifest, ensure_ascii=False)
+        self.assertEqual(manifest["python_executable"], "<bundled-python>")
+        self.assertEqual(manifest["runtime"]["node"]["path"], "node/bin/node")
+        self.assertEqual(manifest["runtime"]["npm"]["path"], "node/bin/npm")
+        self.assertNotIn(str(Path(temp)), serialized)
+        self.assertNotRegex(serialized, r"/Users/|/home/|[A-Za-z]:\\\\")
+
 
 if __name__ == "__main__":
     unittest.main()

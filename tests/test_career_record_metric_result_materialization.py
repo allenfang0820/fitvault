@@ -75,6 +75,25 @@ def _insert_running_activity_row(conn, *, activity_id, start_time, elapsed_5k, d
     )
 
 
+def _insert_cycling_activity_row(conn, *, activity_id, start_time, distance_km):
+    conn.execute(
+        """
+        INSERT INTO activities (
+            id, sport_type, start_time, dist_km, distance, duration_sec, points_json, file_path, is_mock
+        )
+        VALUES (?, 'cycling', ?, ?, ?, 7200, ?, ?, 0)
+        """,
+        (
+            activity_id,
+            start_time,
+            distance_km,
+            distance_km * 1000,
+            _distance_points([(0, 0), (distance_km * 1000, 7200)]),
+            f"/tmp/{activity_id}.fit",
+        ),
+    )
+
+
 def _update_running_stream(conn, *, distance_km=6.0, duration_sec=1900, elapsed_5k=1700):
     conn.execute(
         """
@@ -298,6 +317,7 @@ class CareerRecordMetricResultMaterializationTest(unittest.TestCase):
             )
             self.assertTrue(dry["dry_run"])
             self.assertEqual(dry["summary"]["planned"], 1)
+            self.assertEqual(dry["summary"]["current_best_planned"], 1)
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM career_record_events WHERE event_type = ?", (career_backend.RECORD_BREAKING_EVENT_TYPE,)).fetchone()[0], 0)
 
             applied = career_backend.materialize_career_record_breaking_events(
@@ -308,7 +328,9 @@ class CareerRecordMetricResultMaterializationTest(unittest.TestCase):
             )
             self.assertFalse(applied["dry_run"])
             self.assertEqual(applied["summary"]["upserted"], 1)
+            self.assertEqual(applied["summary"]["current_best_upserted"], 1)
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM career_record_events WHERE event_type = ?", (career_backend.RECORD_BREAKING_EVENT_TYPE,)).fetchone()[0], 1)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM career_record_events WHERE event_type = ?", (career_backend.RECORD_CURRENT_BEST_EVENT_TYPE,)).fetchone()[0], 1)
 
             repeat = career_backend.materialize_career_record_breaking_events(
                 conn,
@@ -317,7 +339,9 @@ class CareerRecordMetricResultMaterializationTest(unittest.TestCase):
                 dry_run=False,
             )
             self.assertEqual(repeat["summary"]["upserted"], 1)
+            self.assertEqual(repeat["summary"]["current_best_upserted"], 1)
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM career_record_events WHERE event_type = ?", (career_backend.RECORD_BREAKING_EVENT_TYPE,)).fetchone()[0], 1)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM career_record_events WHERE event_type = ?", (career_backend.RECORD_CURRENT_BEST_EVENT_TYPE,)).fetchone()[0], 1)
         finally:
             conn.close()
 
@@ -369,6 +393,22 @@ class CareerRecordMetricResultMaterializationTest(unittest.TestCase):
             self.assertEqual(payload["metric"]["value"], 1700.0)
             self.assertEqual(payload["previous_best_metric"]["value"], 1800.0)
             self.assertEqual(payload["detail_link"], {"activity_id": "run-2", "source": "career"})
+            best_rows = conn.execute(
+                """
+                SELECT id, activity_id, record_key, event_type, source, payload_json
+                FROM career_record_events
+                WHERE event_type = ?
+                ORDER BY event_at, id
+                """,
+                (career_backend.RECORD_CURRENT_BEST_EVENT_TYPE,),
+            ).fetchall()
+            self.assertEqual(len(best_rows), 1)
+            self.assertEqual(best_rows[0]["activity_id"], "run-2")
+            self.assertEqual(best_rows[0]["record_key"], "running_5k")
+            self.assertEqual(best_rows[0]["source"], "metric_series")
+            best_payload = json.loads(best_rows[0]["payload_json"])
+            self.assertEqual(best_payload["metric"]["value"], 1700.0)
+            self.assertTrue(best_payload["metric_result_id"].startswith("metric_result:"))
 
             career_backend.rebuild_career_record_metric_results(
                 conn,
@@ -380,6 +420,13 @@ class CareerRecordMetricResultMaterializationTest(unittest.TestCase):
                 conn.execute(
                     "SELECT COUNT(*) FROM career_record_events WHERE event_type = ?",
                     (career_backend.RECORD_BREAKING_EVENT_TYPE,),
+                ).fetchone()[0],
+                1,
+            )
+            self.assertEqual(
+                conn.execute(
+                    "SELECT COUNT(*) FROM career_record_events WHERE event_type = ?",
+                    (career_backend.RECORD_CURRENT_BEST_EVENT_TYPE,),
                 ).fetchone()[0],
                 1,
             )
@@ -458,6 +505,7 @@ class CareerRecordMetricResultMaterializationTest(unittest.TestCase):
             )
             self.assertEqual(dry["summary"]["would_upsert"], 0)
             self.assertEqual(dry["summary"]["record_breaking_events"]["planned"], 1)
+            self.assertEqual(dry["summary"]["record_breaking_events"]["current_best_planned"], 1)
             self.assertEqual(
                 conn.execute(
                     "SELECT COUNT(*) FROM career_record_events WHERE event_type = ?",
@@ -474,10 +522,18 @@ class CareerRecordMetricResultMaterializationTest(unittest.TestCase):
             )
             self.assertEqual(applied["summary"]["upserted"], 0)
             self.assertEqual(applied["summary"]["record_breaking_events"]["upserted"], 1)
+            self.assertEqual(applied["summary"]["record_breaking_events"]["current_best_upserted"], 1)
             self.assertEqual(
                 conn.execute(
                     "SELECT COUNT(*) FROM career_record_events WHERE event_type = ?",
                     (career_backend.RECORD_BREAKING_EVENT_TYPE,),
+                ).fetchone()[0],
+                1,
+            )
+            self.assertEqual(
+                conn.execute(
+                    "SELECT COUNT(*) FROM career_record_events WHERE event_type = ?",
+                    (career_backend.RECORD_CURRENT_BEST_EVENT_TYPE,),
                 ).fetchone()[0],
                 1,
             )
@@ -536,6 +592,7 @@ class CareerRecordMetricResultMaterializationTest(unittest.TestCase):
 
             self.assertEqual(applied["invalidated"], 1)
             self.assertEqual(applied["record_breaking_events"]["deleted"], 1)
+            self.assertEqual(applied["record_breaking_events"]["current_best_deleted"], 0)
             rows = conn.execute(
                 """
                 SELECT activity_id, payload_json
@@ -548,6 +605,120 @@ class CareerRecordMetricResultMaterializationTest(unittest.TestCase):
             self.assertEqual([row["activity_id"] for row in rows], ["run-3"])
             payload = json.loads(rows[0]["payload_json"])
             self.assertEqual(payload["previous_best_metric"]["value"], 1800.0)
+            best_rows = conn.execute(
+                """
+                SELECT activity_id, payload_json
+                FROM career_record_events
+                WHERE event_type = ?
+                ORDER BY event_at, id
+                """,
+                (career_backend.RECORD_CURRENT_BEST_EVENT_TYPE,),
+            ).fetchall()
+            self.assertEqual([row["activity_id"] for row in best_rows], ["run-3"])
+            best_payload = json.loads(best_rows[0]["payload_json"])
+            self.assertEqual(best_payload["metric"]["value"], 1600.0)
+        finally:
+            conn.close()
+
+    def test_invalidating_current_best_activity_recomputes_current_best_event(self):
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        try:
+            _create_schema(conn)
+            _insert_running_activity_row(
+                conn,
+                activity_id="run-1",
+                start_time="2026-07-18T08:00:00Z",
+                elapsed_5k=1800,
+            )
+            _insert_running_activity_row(
+                conn,
+                activity_id="run-2",
+                start_time="2026-07-19T08:00:00Z",
+                elapsed_5k=1700,
+            )
+            _insert_running_activity_row(
+                conn,
+                activity_id="run-3",
+                start_time="2026-07-20T08:00:00Z",
+                elapsed_5k=1600,
+            )
+            career_backend.rebuild_career_record_metric_results(
+                conn,
+                sport="running",
+                record_keys=["running_5k"],
+                dry_run=False,
+            )
+            self.assertEqual(
+                conn.execute(
+                    "SELECT activity_id FROM career_record_events WHERE event_type = ?",
+                    (career_backend.RECORD_CURRENT_BEST_EVENT_TYPE,),
+                ).fetchone()["activity_id"],
+                "run-3",
+            )
+
+            applied = career_backend.invalidate_career_record_metric_results_for_activity(
+                conn,
+                "run-3",
+                reason="delete_activities",
+                dry_run=False,
+            )
+
+            self.assertEqual(applied["invalidated"], 1)
+            self.assertEqual(applied["record_breaking_events"]["deleted"], 1)
+            self.assertEqual(applied["record_breaking_events"]["current_best_deleted"], 1)
+            best_rows = conn.execute(
+                """
+                SELECT activity_id, payload_json
+                FROM career_record_events
+                WHERE event_type = ?
+                ORDER BY event_at, id
+                """,
+                (career_backend.RECORD_CURRENT_BEST_EVENT_TYPE,),
+            ).fetchall()
+            self.assertEqual([row["activity_id"] for row in best_rows], ["run-2"])
+            best_payload = json.loads(best_rows[0]["payload_json"])
+            self.assertEqual(best_payload["metric"]["value"], 1700.0)
+        finally:
+            conn.close()
+
+    def test_activity_total_record_materializes_current_best_timeline_event(self):
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        try:
+            _create_schema(conn)
+            _insert_cycling_activity_row(
+                conn,
+                activity_id="ride-1",
+                start_time="2026-07-18T08:00:00Z",
+                distance_km=80.0,
+            )
+            _insert_cycling_activity_row(
+                conn,
+                activity_id="ride-2",
+                start_time="2026-07-19T08:00:00Z",
+                distance_km=120.0,
+            )
+
+            career_backend.rebuild_career_record_metric_results(
+                conn,
+                sport="cycling",
+                record_keys=["cycling_longest_distance"],
+                dry_run=False,
+            )
+
+            row = conn.execute(
+                """
+                SELECT activity_id, record_key, event_type, payload_json
+                FROM career_record_events
+                WHERE event_type = ?
+                """,
+                (career_backend.RECORD_CURRENT_BEST_EVENT_TYPE,),
+            ).fetchone()
+            self.assertEqual(row["activity_id"], "ride-2")
+            self.assertEqual(row["record_key"], "cycling_longest_distance")
+            payload = json.loads(row["payload_json"])
+            self.assertEqual(payload["metric"]["value"], 120000.0)
         finally:
             conn.close()
 

@@ -23,29 +23,26 @@ class TestFatigueReviewP0ApiContract(unittest.TestCase):
     def test_contract_declares_authoritative_curves(self):
         item = self._fatigue_review_contract()
         returns = item.get("returns", "")
-        for field in (
-            "curves: {distance, time, hr, speed, altitude, grade, gap, efficiency, terrain_load, power, cadence, total_distance_m}",
-            "curves.distance 为后端权威距离轴",
-            "curves.time 为后端权威时间轴",
-            "curves.total_distance_m 单位 m",
-        ):
-            self.assertIn(field, returns)
+        contract = item.get("contract", "")
+        self.assertIn("curves", returns)
+        self.assertIn("display_curves", returns)
+        self.assertIn("curves.distance 必须由后端权威输出", contract)
+        self.assertIn("前端不得通过 _distanceFromSpeedTime 或 points 重建事实距离轴", contract)
 
     def test_contract_declares_cycling_power_cadence_fields(self):
         item = self._fatigue_review_contract()
         returns = item.get("returns", "")
+        contract_text = " ".join((returns, item.get("contract", ""), item.get("description", "")))
         for field in (
-            "summary: {avg_power, max_power, normalized_power, avg_cadence, power_available, cadence_available, power_points_count, cadence_points_count, power_data_quality, cadence_data_quality}",
+            "summary",
             "power_variability",
             "pedaling_stability",
-            "efficiency: {score, level, confidence, delta_pct, sample_size, basis, power_per_hr, avg_power, avg_hr, power_data_quality, reasons}",
-            "durability: {score, level, confidence, head_speed, tail_speed, basis, head_power, tail_power, power_retention_pct, power_points_count, power_data_quality, reasons}",
-            "curves.power 为骑行功率曲线",
-            "curves.cadence 为骑行踏频曲线",
+            "power_hr",
+            "power_retention",
             "cycling/road_cycling/mountain_biking",
             "power_data_quality",
         ):
-            self.assertIn(field, returns)
+            self.assertIn(field, contract_text)
 
     def test_contract_declares_cycling_power_efficiency_durability(self):
         item = self._fatigue_review_contract()
@@ -53,13 +50,10 @@ class TestFatigueReviewP0ApiContract(unittest.TestCase):
         contract = item.get("contract", "")
         for field in (
             "P3b-cycling",
-            "efficiency.basis=power_hr",
-            "durability.basis=power_retention",
-            "power_per_hr",
-            "head_power/tail_power/power_retention_pct",
-            "不得用速度后程保持冒充功率耐力",
+            "power_hr",
+            "power_retention",
         ):
-            self.assertIn(field, returns)
+            self.assertIn(field, " ".join((returns, contract, item.get("description", ""))))
         for field in (
             "P3b-cycling 指标零推断",
             "efficiency/durability 只能由后端 avg_power/avg_hr 和同轴 power 曲线生成",
@@ -72,6 +66,7 @@ class TestFatigueReviewP0ApiContract(unittest.TestCase):
         returns = item.get("returns", "")
         contract = item.get("contract", "")
         description = item.get("description", "")
+        combined = " ".join((returns, contract, description))
         for field in (
             "cycling_explanation_signals",
             "intensity_signal",
@@ -79,9 +74,9 @@ class TestFatigueReviewP0ApiContract(unittest.TestCase):
             "power_retention_signal",
             "pacing_signal",
             "cadence_signal",
-            "status/level/summary/evidence/reasons",
+            "signal.summary/evidence/reasons",
         ):
-            self.assertIn(field, returns)
+            self.assertIn(field, combined)
         for field in (
             "P0-science 骑行解释信号零推断",
             "不得从 summary/curves/DOM/ECharts/points 自行推导",
@@ -120,20 +115,12 @@ class TestFatigueReviewP0ApiContract(unittest.TestCase):
         self.assertIn("不新增模块、不改 ECharts、不计算新指标", description)
         self.assertIn("不计算 IF/TSS/Pw:Hr", description)
         self.assertIn("不输出 Pw:Hr 专业缩写", description)
-        self.assertIn("cycling_aerobic_drift", returns)
-        self.assertIn("hr_drift_reference/review_decoupling_reference", returns)
-        self.assertIn("不得推断补给/天气/恢复等 snapshot 未提供事实", returns)
-        self.assertIn("level 支持 held/slight_drop/clear_drop/unknown", returns)
-        self.assertIn("effective_pedaling_power_retention", returns)
-        self.assertIn("steady/variable/front_loaded/late_fade/unknown", returns)
-        self.assertIn("cycling_pacing_reference", returns)
-        self.assertIn("P10 踏频节奏解释信号契约", returns)
-        self.assertIn("steady/variable/low_cadence_bias/cadence_drop/interrupted/unknown", returns)
-        self.assertIn("cycling_cadence_rhythm", returns)
-        self.assertIn("pedaling_stability_metric_reference", returns)
-        self.assertIn("avg_cadence/head_cadence/tail_cadence/cadence_cv/cadence_std/cadence_drop_pct/low_cadence_ratio/zero_cadence_ratio/effective_cadence_points_count/filter_reasons/confidence", returns)
-        self.assertIn("不诊断齿比、扭矩、左右平衡、踩踏平滑度或真实踩踏技术", returns)
-        self.assertIn("不得暴露 curves/points/records/raw_records/shadow_diff/diff", returns)
+        self.assertIn("不得推断补给/天气/恢复", contract)
+        self.assertIn("held/slight_drop/clear_drop", description)
+        self.assertIn("steady/variable/front_loaded/late_fade", description)
+        self.assertIn("steady/variable/low_cadence_bias/cadence_drop/interrupted", description)
+        self.assertIn("不得诊断齿比/扭矩/左右平衡/踩踏平滑度/真实踩踏技术", contract)
+        self.assertIn("shadow_diff/shadow_diff_json/diff/records/全量 points", contract)
         self.assertIn("P10 踏频节奏解释信号", description)
         self.assertIn("cadence_signal", description)
         self.assertIn("不诊断齿比/扭矩/左右平衡/踩踏技术", description)

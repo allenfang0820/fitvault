@@ -68,7 +68,15 @@ class TestCareerOverviewFrontendIntegration(unittest.TestCase):
         self.assertIn("refresh_career_derived_events", refresh_body)
         self.assertIn("refreshCareerDerivedEventsInBackground()", load_body)
         self.assertNotIn("await refreshCareerDerivedEventsInBackground()", load_body)
-        self.assertIn("loadCareerOverview().catch", load_body)
+        self.assertIn("loadCareerFirstPaint()", load_body)
+        first_paint_body = extract_function_body(self.source, "async function loadCareerFirstPaint()")
+        self.assertIn("loadCareerOverview().catch", first_paint_body)
+        self.assertIn("loadCareerSeasons().catch", first_paint_body)
+        self.assertNotIn("loadCareerTimeline().catch", load_body)
+        self.assertNotIn("loadCareerArchives().catch", load_body)
+        self.assertNotIn("loadCareerRecordsCenter().catch", load_body)
+        self.assertNotIn("loadCareerFootprint().catch", load_body)
+        self.assertNotIn("loadCareerMemory().catch", load_body)
 
     def test_career_overview_normalizer_outputs_stable_view_model(self):
         body = extract_function_body(self.source, "function normalizeCareerOverview(payload)")
@@ -148,6 +156,15 @@ class TestCareerOverviewFrontendIntegration(unittest.TestCase):
         self.assertIn("dataReady", render_body)
         for token in FORBIDDEN_FRONTEND_TOKENS:
             self.assertNotIn(token, load_body + render_body)
+
+    def test_career_background_prefetch_targets_timeline_and_records_only(self):
+        body = extract_function_body(self.source, "function scheduleCareerBackgroundPrefetch()")
+        self.assertIn("loadCareerPageData('timeline'", body)
+        self.assertIn("loadCareerPageData('pb'", body)
+        self.assertIn("deferAnalysis: true", body)
+        self.assertNotIn("loadCareerArchives()", body)
+        self.assertNotIn("loadCareerFootprint()", body)
+        self.assertNotIn("loadCareerMemory()", body)
 
     def test_career_shell_has_minimal_overview_targets_without_api_logic(self):
         career_panel = extract_between(

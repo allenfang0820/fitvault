@@ -191,14 +191,14 @@ class TestCareerArchivesFrontendRender(unittest.TestCase):
         self.assertIn("min-height: 0", bucket_css)
         self.assertNotIn("repeat(3", bucket_list_css)
 
-    def test_switching_to_career_loads_archives(self):
+    def test_switching_to_races_page_loads_archives_on_demand(self):
         body = extract_function_body(self.source, "function switchTab(tabBtn)")
         load_body = extract_function_body(self.source, "async function loadCareerData()")
+        page_body = extract_function_body(self.source, "async function loadCareerPageData(page, options)")
         self.assertIn("loadCareerData().catch", body)
-        self.assertIn("loadCareerArchives().catch", load_body)
-        self.assertIn("loadCareerOverview().catch", load_body)
-        self.assertIn("loadCareerTimeline().catch", load_body)
-        self.assertIn("loadCareerMemory().catch", load_body)
+        self.assertIn("loadCareerFirstPaint()", load_body)
+        self.assertNotIn("loadCareerArchives().catch", load_body)
+        self.assertIn("races: function() { return loadCareerArchives(); }", page_body)
 
     def test_loader_calls_existing_readonly_apis_only(self):
         body = extract_function_body(self.source, "async function loadCareerArchives()")
@@ -275,12 +275,13 @@ class TestCareerArchivesFrontendRender(unittest.TestCase):
         self.assertIn("career-achievement-badge", self.source)
         self.assertIn("暂无赛事", self.relevant_js)
         self.assertNotIn("暂无当前纪录", self.relevant_js)
-        self.assertIn("记录中心已准备好", self.relevant_js)
-        self.assertIn("赛事档案已生成", self.relevant_js)
+        self.assertNotIn("记录中心已准备好", self.relevant_js)
+        self.assertNotIn("赛事档案已生成", self.relevant_js)
         for token in ("记录中心 V2", "V2 已接入", "已接入", "演进", "候选"):
             self.assertNotIn(token, self.relevant_js)
         self.assertIn("正在加载赛事档案", self.relevant_js)
-        self.assertIn("赛事档案暂不可用", self.relevant_js)
+        self.assertIn("暂时无法加载赛事档案，请稍后重试。", self.relevant_js)
+        self.assertNotIn("statusText.textContent = message", self.relevant_js)
         self.assertIn("当前筛选下共", self.relevant_js)
 
     def test_archive_items_reuse_activity_detail_handler(self):

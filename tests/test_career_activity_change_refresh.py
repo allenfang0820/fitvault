@@ -2,8 +2,17 @@ import tempfile
 from pathlib import Path
 from unittest import mock
 
+import career_backend
 import main
 import profile_backend
+
+
+def _flatten_timeline_nodes(timeline: dict):
+    nodes = []
+    for year in timeline["years"]:
+        for month in year["months"]:
+            nodes.extend(month["nodes"])
+    return nodes
 
 
 def test_manual_save_activity_triggers_career_refresh():
@@ -78,6 +87,156 @@ def test_delete_activities_triggers_career_refresh_after_deleted_rows():
             assert result["data"]["deleted"] == 1
             assert result["data"]["career_refresh"] == refresh_result
             refresh.assert_called_once_with("delete_activities")
+        finally:
+            profile_backend.DB_PATH = original_db_path
+            main.TRACKS_DIR = original_tracks_dir
+            main._ACTIVITY_SYNC_SCHEMA_READY_FOR = original_schema_ready
+
+
+def test_delete_activities_invalidates_pb_records_for_deleted_activity():
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+        original_db_path = profile_backend.DB_PATH
+        original_tracks_dir = main.TRACKS_DIR
+        original_schema_ready = main._ACTIVITY_SYNC_SCHEMA_READY_FOR
+        try:
+            profile_backend.DB_PATH = temp_path / "activities.sqlite"
+            tracks_dir = temp_path / "tracks"
+            tracks_dir.mkdir()
+            main.TRACKS_DIR = str(tracks_dir)
+            main._ACTIVITY_SYNC_SCHEMA_READY_FOR = None
+
+            fit_path = tracks_dir / "pb-delete-me.fit"
+            fit_path.write_text("fit", encoding="utf-8")
+            activity_id = profile_backend.save_activity({
+                "filename": "pb-delete-me.fit",
+                "sport_type": "running",
+                "dist_km": 5.0,
+                "duration_sec": 1500,
+                "start_time": "2026-07-11T08:00:00Z",
+                "file_path": str(fit_path),
+                "points_json": [{"distance_m": 5000, "t_sec": 1500}],
+            })
+
+            conn = profile_backend._conn()
+            try:
+                career_backend.ensure_career_schema(conn)
+                row = career_backend._fetch_pb_resolver_activity_row(conn, activity_id)
+                summary = career_backend._record_performance_summary(row)
+                summary["time_quality"] = "reliable_elapsed"
+                summary["elapsed_time_sec"] = 1500
+                match = career_backend.match_record_definition(summary)
+                decision = career_backend.build_record_candidate_decision(summary, match)
+                career_backend.apply_record_candidate_decision(conn, decision)
+                conn.commit()
+            finally:
+                conn.close()
+
+            refresh_result = {"ok": True, "reason": "delete_activities"}
+            with mock.patch("main._refresh_career_derived_events_safe", return_value=refresh_result):
+                result = main.Api.__new__(main.Api).delete_activities([activity_id], "DELETE:1")
+
+            assert result["ok"] is True
+            assert result["data"]["deleted"] == 1
+            conn = profile_backend._conn()
+            try:
+                status = conn.execute(
+                    "SELECT status FROM career_pb_records WHERE activity_id = ?",
+                    (str(activity_id),),
+                ).fetchone()[0]
+            finally:
+                conn.close()
+            assert status == "invalidated"
+        finally:
+            profile_backend.DB_PATH = original_db_path
+            main.TRACKS_DIR = original_tracks_dir
+            main._ACTIVITY_SYNC_SCHEMA_READY_FOR = original_schema_ready
+
+
+def test_delete_activities_updates_record_timeline_milestones_for_deleted_best_activity():
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+        original_db_path = profile_backend.DB_PATH
+        original_tracks_dir = main.TRACKS_DIR
+        original_schema_ready = main._ACTIVITY_SYNC_SCHEMA_READY_FOR
+        try:
+            profile_backend.DB_PATH = temp_path / "activities.sqlite"
+            tracks_dir = temp_path / "tracks"
+            tracks_dir.mkdir()
+            main.TRACKS_DIR = str(tracks_dir)
+            main._ACTIVITY_SYNC_SCHEMA_READY_FOR = None
+
+            first_fit = tracks_dir / "timeline-5k-first.fit"
+            best_fit = tracks_dir / "timeline-5k-best.fit"
+            first_fit.write_text("fit", encoding="utf-8")
+            best_fit.write_text("fit", encoding="utf-8")
+            first_id = profile_backend.save_activity({
+                "filename": first_fit.name,
+                "sport_type": "running",
+                "dist_km": 5.0,
+                "duration_sec": 1800,
+                "start_time": "2026-07-11T08:00:00Z",
+                "file_path": str(first_fit),
+                "points_json": [{"distance_m": 5000, "t_sec": 1800}],
+            })
+            best_id = profile_backend.save_activity({
+                "filename": best_fit.name,
+                "sport_type": "running",
+                "dist_km": 5.0,
+                "duration_sec": 1700,
+                "start_time": "2026-07-12T08:00:00Z",
+                "file_path": str(best_fit),
+                "points_json": [{"distance_m": 5000, "t_sec": 1700}],
+            })
+
+            conn = profile_backend._conn()
+            try:
+                career_backend.rebuild_career_record_metric_results(
+                    conn,
+                    sport="running",
+                    record_keys=["running_5k"],
+                    dry_run=False,
+                )
+                before_nodes = _flatten_timeline_nodes(
+                    career_backend.get_career_timeline({"type": "record"}, conn)
+                )
+                assert any(
+                    node["event_type"] == "current_best" and node["activity_id"] == str(best_id)
+                    for node in before_nodes
+                )
+                assert not any(
+                    node["event_type"] == "record_breaking" and node["activity_id"] == str(best_id)
+                    for node in before_nodes
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            refresh_result = {"ok": True, "reason": "delete_activities"}
+            with mock.patch("main._refresh_career_derived_events_safe", return_value=refresh_result):
+                result = main.Api.__new__(main.Api).delete_activities([best_id], "DELETE:1")
+
+            assert result["ok"] is True
+            assert result["data"]["deleted"] == 1
+            conn = profile_backend._conn()
+            try:
+                timeline = career_backend.get_career_timeline({"type": "record"}, conn)
+                nodes = _flatten_timeline_nodes(timeline)
+            finally:
+                conn.close()
+
+            assert not any(node["activity_id"] == str(best_id) for node in nodes)
+            current_best_nodes = [
+                node for node in nodes
+                if node["event_type"] == "current_best" and node["record_key"] == "running_5k"
+            ]
+            assert len(current_best_nodes) == 1
+            assert current_best_nodes[0]["activity_id"] == str(first_id)
+            assert not any(
+                node["event_type"] == "record_breaking"
+                and (node["activity_id"] == str(best_id) or node["detail_link"]["activity_id"] == str(best_id))
+                for node in nodes
+            )
         finally:
             profile_backend.DB_PATH = original_db_path
             main.TRACKS_DIR = original_tracks_dir

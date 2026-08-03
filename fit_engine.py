@@ -245,6 +245,11 @@ class FITCoreEngine:
                 "max_power": FITCoreEngine._int_or_none(session_info.get("max_power")),
                 "normalized_power": FITCoreEngine._int_or_none(session_info.get("normalized_power")),
                 "avg_stroke_distance": FITCoreEngine._float_or_none(session_info.get("avg_stroke_distance")),
+                "pool_length_m": FITCoreEngine._float_or_none(
+                    session_info.get("pool_length_m") or session_info.get("pool_length")
+                ),
+                "pool_length_unit": FITCoreEngine._token(session_info.get("pool_length_unit"), "m"),
+                "swim_stroke": FITCoreEngine._token(session_info.get("swim_stroke"), ""),
                 "avg_hr": avg_hr,
                 "max_hr": max_hr,
                 # V9.4.4:Training Effect(Firstbeat 私有字段,直读 0.0~5.0)
@@ -291,6 +296,13 @@ class FITCoreEngine:
     def _token(value: Any, fallback: str = "") -> str:
         token = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
         return token or fallback
+
+    @staticmethod
+    def _first_present(*values: Any) -> Any:
+        for value in values:
+            if value is not None and value != "":
+                return value
+        return None
 
     @staticmethod
     def _clean_text(value: Any) -> str:
@@ -381,6 +393,9 @@ class FITCoreEngine:
                 "max_power": msg.get_value("max_power"),
                 "normalized_power": msg.get_value("normalized_power"),
                 "avg_stroke_distance": msg.get_value("avg_stroke_distance"),
+                "pool_length": msg.get_value("pool_length"),
+                "pool_length_unit": msg.get_value("pool_length_unit"),
+                "swim_stroke": msg.get_value("swim_stroke"),
                 "session_label": fields.get("unknown_110"),
                 # V9.4.4:Training Effect 字段(直接读 FIT session message)
                 # Garmin Firstbeat 私有算法输出两个字段:
@@ -445,11 +460,18 @@ class FITCoreEngine:
                 "normalized_power": FITCoreEngine._int_or_none(values.get("normalized_power")),
                 "max_power": FITCoreEngine._int_or_none(values.get("max_power")),
                 "total_calories": FITCoreEngine._int_or_none(values.get("total_calories")),
-                "total_strokes": FITCoreEngine._int_or_none(values.get("total_strokes")),
+                "total_strokes": FITCoreEngine._int_or_none(
+                    FITCoreEngine._first_present(values.get("total_strokes"), values.get("total_cycles"))
+                ),
+                "total_cycles": FITCoreEngine._int_or_none(values.get("total_cycles")),
                 "avg_stroke_distance": FITCoreEngine._float_or_none(values.get("avg_stroke_distance")),
                 "swolf": FITCoreEngine._int_or_none(values.get("swolf")),
                 "swim_stroke": FITCoreEngine._token(values.get("swim_stroke"), ""),
-                "lengths": FITCoreEngine._int_or_none(values.get("lengths")),
+                "lengths": FITCoreEngine._int_or_none(
+                    FITCoreEngine._first_present(values.get("lengths"), values.get("num_lengths"))
+                ),
+                "num_lengths": FITCoreEngine._int_or_none(values.get("num_lengths")),
+                "num_active_lengths": FITCoreEngine._int_or_none(values.get("num_active_lengths")),
                 "lap_start_time": FITCoreEngine._iso_utc(lap_start),
                 # V9.4.4:徒步/登山圈速统计需要累计爬升/下降(FIT lap_mesgs)
                 "total_ascent": FITCoreEngine._float_or_none(values.get("total_ascent")),

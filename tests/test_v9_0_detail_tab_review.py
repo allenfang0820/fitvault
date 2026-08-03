@@ -129,24 +129,71 @@ class TestV9DetailTabHtml(unittest.TestCase):
             "detail.primary_visual",
             "detail.split_section",
             "detail.overview_empty_states",
-            "indoor_summary",
-            "swim_summary",
-            "strength_limited",
-            "recovery_summary",
-            "本次不需要轨迹地图",
-            "设备未提供结构化动作组数据",
+            "_strengthMaterializationCopy(detail)",
             "hasTrackVisual",
-            "overviewCaps.has_track_visual != null",
+            "overviewCaps.has_track_visual === true",
+            "_setDetailReviewTabAvailability(detail)",
+            "detailSurfaceMode === 'generic_session'",
+            "detailSurfaceMode === 'not_supported'",
         ]:
             self.assertIn(text, render_body)
         for text in [
             "detail.overview_metrics",
             "backendFieldMap",
             "if (backendMetrics.length)",
-            "var isSwim",
-            "sport === 'lap_swimming'",
+            "usesBackendOverview",
+            "if (usesBackendOverview && !backendMetrics.length) return []",
+            "if (!usesBackendOverview)",
+            "avg_cadence: 'cadence'",
         ]:
             self.assertIn(text, hero_body)
+
+    def test_non_outdoor_overview_uses_backend_surface_and_hides_review(self):
+        """MDT-FIX-08: 非户外详情只由后端 surface/view model 决定概览与复盘入口。"""
+        self.assertIn('id="detail-tab-review-button"', self.html)
+        self.assertIn('id="activity-detail-split-empty"', self.html)
+        self.assertIn('id="activity-detail-laps-table-wrap"', self.html)
+
+        tab_idx = self.html.find("function _setDetailReviewTabAvailability(detail)")
+        tab_end = self.html.find("\n    function switchDetailTab", tab_idx)
+        tab_body = self.html[tab_idx:tab_end]
+        for text in [
+            "detail.detail_surface_mode === 'endurance_outdoor'",
+            "reviewBtn.hidden = !reviewAvailable",
+            "reviewBtn.disabled = !reviewAvailable",
+            "switchDetailTab('overview', overviewBtn)",
+        ]:
+            self.assertIn(text, tab_body)
+        self.assertNotIn("record.sport_type", tab_body)
+
+        sidebar_idx = self.html.find("function renderActivityDetailSidebar(weather, record)")
+        sidebar_end = self.html.find("\n    // V9.2.3", sidebar_idx)
+        sidebar_body = self.html[sidebar_idx:sidebar_end]
+        for text in [
+            "detail.detail_surface_mode !== 'endurance_outdoor'",
+            "_buildNonOutdoorOverviewSidebar(record, esc)",
+            "基础记录",
+            "数据边界",
+        ]:
+            self.assertIn(text, sidebar_body)
+        self.assertNotIn("_buildWeatherCard(weather, esc, record);", sidebar_body.split(
+            "if (detail.detail_surface_mode !== 'endurance_outdoor')"
+        )[0])
+
+    def test_non_outdoor_split_sections_do_not_render_a_lap_table(self):
+        """MDT-FIX-08: 受限分段使用边界态，力量训练不得残留圈号表。"""
+        render_start = self.html.find("function renderActivityDetail(record)")
+        render_end = self.html.find("\n    // V9.2.2", render_start)
+        render_body = self.html[render_start:render_end]
+        for text in [
+            "strength_unavailable",
+            "var _usesSplitTable = !!_splitTableLead[splitSection]",
+            "_splitTableWrap.hidden = !_usesSplitTable",
+            "_splitEmpty.hidden = _usesSplitTable",
+            "if (_headRow && _usesSplitTable)",
+            "lapsBody.innerHTML = !_usesSplitTable ? ''",
+        ]:
+            self.assertIn(text, render_body)
 
     def test_p7_3_metric_cockpit_status_targets_exist(self):
         """P7.3:8 张指标卡必须都有状态标签和解释容器。"""

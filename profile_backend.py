@@ -78,7 +78,7 @@ SQLITE_LOCK_RETRY_BASE_DELAY_SEC = 0.25
 PROFILE_SYNC_RETRY_COOLDOWN_SEC = 30 * 60
 ACTIVITY_SOURCE_FILE_STATUSES = ("pending", "parsed", "skipped", "failed")
 ACTIVITY_SOURCE_FILE_ERROR_MAX_LENGTH = 500
-PROFILE_SCHEMA_SENTINEL_KEY = "profile_backend_schema_ready_v20260723_task03"
+PROFILE_SCHEMA_SENTINEL_KEY = "profile_backend_schema_ready_v20260729_strength_materialization_v1"
 REGION_CACHE_PRECISION = 2
 REGION_ENRICH_LIMIT = 20
 REGION_ENRICH_MAX_REQUESTS = 50
@@ -628,9 +628,6 @@ def build_activity_dedupe_key(data: dict[str, Any]) -> str:
     if not start_time or dist_km is None or dist_km <= 0 or not duration_sec or duration_sec <= 0:
         return ""
     key = f"{_canonical_dedupe_sport(data)}|{start_time}|{round(dist_km, 3):.3f}|{duration_sec}"
-    file_identity = str(data.get("file_name") or data.get("filename") or data.get("file_path") or "").strip()
-    if file_identity:
-        key = f"{key}|{file_identity}"
     return key
 
 
@@ -1409,7 +1406,13 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             swolf REAL,
             list_metric_backfill_version INTEGER DEFAULT 0,
             device_name TEXT,
-            shadow_diff_json TEXT
+            shadow_diff_json TEXT,
+            strength_sets_json TEXT,
+            strength_summary_json TEXT,
+            muscle_heatmap_json TEXT,
+            strength_materialization_version INTEGER DEFAULT 0,
+            strength_materialization_status TEXT,
+            strength_materialization_error TEXT
         )
     """)
 
@@ -1427,6 +1430,8 @@ def _init_schema(conn: sqlite3.Connection) -> None:
         "avg_pace",     "calories",    "avg_power",   "max_power",
         "normalized_power","avg_stroke_distance","swolf","list_metric_backfill_version",
         "device_name",  "source_type", "is_mock",     "shadow_diff_json",
+        "strength_sets_json", "strength_summary_json", "muscle_heatmap_json",
+        "strength_materialization_version", "strength_materialization_status", "strength_materialization_error",
         "device_vendor", "device_product_key", "device_product_id", "device_product_name", "device_product_hint", "device_serial", "device_mapping_status",
         "hr_curve",     "speed_curve",
         "gain_m",       "max_alt_m",   "max_hr",      "avg_cadence",
@@ -1449,6 +1454,8 @@ def _init_schema(conn: sqlite3.Connection) -> None:
         "REAL", "INTEGER", "REAL", "REAL",
         "REAL", "REAL", "REAL", "INTEGER DEFAULT 0",
         "TEXT", "TEXT", "INTEGER", "TEXT",
+        "TEXT", "TEXT", "TEXT",
+        "INTEGER DEFAULT 0", "TEXT", "TEXT",
         "TEXT", "TEXT", "TEXT", "TEXT", "TEXT", "TEXT", "TEXT",
         "TEXT", "TEXT",
         "REAL", "REAL", "INTEGER", "REAL",

@@ -200,6 +200,7 @@ class TestActivityDetailMultiSportContract(unittest.TestCase):
         )
         self.assertEqual(open_water["detail_surface_mode"], "swim_open_water")
         self.assertTrue(open_water["overview_capabilities"]["has_track_visual"])
+        self.assertEqual(open_water["primary_visual"], "track_map")
 
         strength = build("strength_training", duration_sec=1800, avg_hr=120, calories=260)
         self.assertEqual(strength["primary_visual"], "strength_limited")

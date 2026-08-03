@@ -86,6 +86,41 @@ class TestFitEngineLapData(unittest.TestCase):
         self.assertEqual(first["avg_power"], 245)
         self.assertIsNotNone(first["lap_start_time"])
 
+    def test_read_lap_data_preserves_pool_swim_cycles_and_lengths(self):
+        fake = FakeFitFile("")
+        fake.lap_messages = [
+            FakeMessage(
+                index=0,
+                total_distance=80.0,
+                total_timer_time=78.188,
+                total_cycles=50,
+                num_lengths=1,
+                num_active_lengths=1,
+                avg_heart_rate=121,
+                swim_stroke="breaststroke",
+            ),
+            FakeMessage(
+                index=1,
+                total_distance=0.0,
+                total_timer_time=53.438,
+                total_cycles=0,
+                num_lengths=0,
+                num_active_lengths=0,
+                avg_heart_rate=126,
+            ),
+        ]
+
+        laps = fit_engine.FITCoreEngine._read_lap_data(fake)
+
+        self.assertEqual(laps[0]["total_strokes"], 50)
+        self.assertEqual(laps[0]["total_cycles"], 50)
+        self.assertEqual(laps[0]["lengths"], 1)
+        self.assertEqual(laps[0]["num_lengths"], 1)
+        self.assertEqual(laps[0]["num_active_lengths"], 1)
+        self.assertEqual(laps[0]["swim_stroke"], "breaststroke")
+        self.assertEqual(laps[1]["total_strokes"], 0)
+        self.assertEqual(laps[1]["lengths"], 0)
+
     def test_read_lap_data_empty_file(self):
         fake = FakeFitFile("")
         fake.lap_messages = []
@@ -110,6 +145,43 @@ class TestNormalizeLaps(unittest.TestCase):
 
     def test_normalize_empty_input(self):
         self.assertEqual(MetricsResolver._normalize_laps([]), [])
+
+    def test_pool_swim_lap_swolf_and_length_distance_derive_from_cycles(self):
+        raw = [
+            {
+                "total_distance": 80.0,
+                "total_timer_time": 78.188,
+                "total_cycles": 50,
+                "num_lengths": 1,
+                "avg_heart_rate": 121,
+                "swim_stroke": "breaststroke",
+            },
+            {
+                "total_distance": 0.0,
+                "total_timer_time": 53.438,
+                "total_cycles": 0,
+                "num_lengths": 0,
+                "avg_heart_rate": 126,
+            },
+            {
+                "total_distance": 80.0,
+                "total_timer_time": 85.563,
+                "total_cycles": 55,
+                "num_lengths": 1,
+                "avg_heart_rate": 148,
+                "swim_stroke": "breaststroke",
+            },
+        ]
+
+        normalized = MetricsResolver._normalize_laps(raw)
+
+        self.assertEqual(normalized[0]["swolf"], 128)
+        self.assertEqual(normalized[0]["length_distance_m"], 80.0)
+        self.assertEqual(normalized[0]["swim_stroke"], "breaststroke")
+        self.assertIsNone(normalized[1]["swolf"])
+        self.assertIsNone(normalized[1]["length_distance_m"])
+        self.assertEqual(normalized[2]["swolf"], 141)
+        self.assertEqual(normalized[2]["length_distance_m"], 80.0)
 
 
 class TestBuildRealLapsFromRow(unittest.TestCase):
@@ -233,6 +305,51 @@ class TestDetailLapsBySportContract(unittest.TestCase):
 
         self.assertEqual(len(laps), 1)
         self.assertTrue(api.fallback_called)
+
+    def test_pool_swim_detail_filters_idle_laps_and_preserves_active_distance(self):
+        from main import _build_detail_laps
+        api = self._FakeApi()
+        row = {
+            "sport_type": "swimming",
+            "sub_sport_type": "lap_swimming",
+            "laps_json": json.dumps([
+                {
+                    "lap_index": 0,
+                    "distance_m": 0.0,
+                    "elapsed_sec": 53.75,
+                    "avg_hr": 125,
+                },
+                {
+                    "lap_index": 1,
+                    "distance_m": 50.0,
+                    "elapsed_sec": 65.54,
+                    "avg_hr": 99,
+                    "swolf": 45,
+                    "swim_stroke": "freestyle",
+                    "length_distance_m": 25.0,
+                },
+                {
+                    "lap_index": 2,
+                    "distance_m": 100.0,
+                    "elapsed_sec": 156.438,
+                    "avg_hr": 130,
+                    "swolf": 59,
+                    "swim_stroke": "breaststroke",
+                    "length_distance_m": 25.0,
+                },
+            ]),
+        }
+
+        laps = _build_detail_laps(api, row, "lap_swimming", 0.15, 275, 122, 245)
+
+        self.assertEqual(len(laps), 2)
+        self.assertEqual([lap["distance_m"] for lap in laps], [50.0, 100.0])
+        self.assertEqual([lap["distance_km"] for lap in laps], [0.05, 0.1])
+        self.assertEqual(sum(lap["distance_m"] for lap in laps), 150.0)
+        self.assertEqual(laps[0]["swolf"], 45)
+        self.assertEqual(laps[0]["stroke_style"], "freestyle")
+        self.assertEqual(laps[0]["length_distance_m"], 25.0)
+        self.assertFalse(api.fallback_called)
 
 
 class TestSchemaLapsColumn(unittest.TestCase):

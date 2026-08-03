@@ -55,7 +55,9 @@ class TestCareerRaceMapFrontend(unittest.TestCase):
 
     def test_load_career_data_uses_footprint_loader(self):
         body = extract_function_body(self.source, "async function loadCareerData()")
-        self.assertIn("loadCareerFootprint().catch", body)
+        page_body = extract_function_body(self.source, "async function loadCareerPageData(page, options)")
+        self.assertNotIn("loadCareerFootprint().catch", body)
+        self.assertIn("footprint: function() { return loadCareerFootprint(appState.career.footprintFilters); }", page_body)
         self.assertNotIn("loadCareerRaceMap().catch", body)
 
 

@@ -18,7 +18,7 @@ sys.path.insert(0, "/Users/fanglei/应用开发/AI track")
 
 
 class TestFitHealthDataFilter(unittest.TestCase):
-    """V10.1: 三个独立阈值,任一命中即跳过"""
+    """V10.1: 健康快照过滤不应误伤室内/非轨迹训练。"""
 
     def _make_fit_file(self, size_kb: float, content_bytes: bytes = None) -> Path:
         """创建指定大小的临时 FIT 文件(返回路径)。"""
@@ -32,6 +32,28 @@ class TestFitHealthDataFilter(unittest.TestCase):
     def _cleanup(self, path: Path):
         if path.exists():
             path.unlink()
+
+    def _filter_after_parse(self, activity: dict) -> dict | None:
+        from main import _filter_fit_activity_after_parse
+
+        target = Path(tempfile.gettempdir()) / "fit-health-filter-test.fit"
+        return _filter_fit_activity_after_parse(activity, target, file_size_kb=64.0)
+
+    def _base_activity(self, sport_type: str = "unknown", **overrides) -> dict:
+        activity = {
+            "sport_type": sport_type,
+            "sub_sport_type": "unknown",
+            "dist_km": 0,
+            "duration_sec": 0,
+            "avg_hr": None,
+            "max_hr": None,
+            "calories": 0,
+            "points": [],
+            "track_json": "[]",
+            "points_json": "[]",
+        }
+        activity.update(overrides)
+        return activity
 
     # ── 用例 1: 1 KB 文件 → 跳过(文件过小) ──
     def test_skip_small_file(self):
@@ -155,6 +177,91 @@ class TestFitHealthDataFilter(unittest.TestCase):
         data = res.get("data") or {}
         self.assertIn("imported", data)
         self.assertIn("errors", data)
+
+    def test_unknown_zero_fact_activity_still_filtered(self):
+        res = self._filter_after_parse(self._base_activity())
+        self.assertIsNotNone(res)
+        self.assertEqual(res.get("reason"), "filtered_as_health_data")
+        self.assertIn("unknown_activity_insufficient_facts", res.get("filter_reasons", []))
+
+    def test_running_without_track_or_facts_still_filtered(self):
+        res = self._filter_after_parse(self._base_activity("running"))
+        self.assertIsNotNone(res)
+        self.assertIn("track_activity_insufficient_track", res.get("filter_reasons", []))
+
+    def test_zumba_and_cardio_zero_distance_with_session_facts_are_allowed(self):
+        for sport in ("zumba", "cardio_training", "cardio"):
+            with self.subTest(sport=sport):
+                res = self._filter_after_parse(
+                    self._base_activity(
+                        sport,
+                        duration_sec=1970,
+                        avg_hr=138,
+                        calories=330,
+                    )
+                )
+                self.assertIsNone(res)
+
+    def test_strength_zero_distance_with_session_facts_is_allowed(self):
+        res = self._filter_after_parse(
+            self._base_activity(
+                "strength_training",
+                duration_sec=1200,
+                calories=100,
+            )
+        )
+        self.assertIsNone(res)
+
+    def test_strength_zero_distance_with_structured_sets_is_allowed(self):
+        res = self._filter_after_parse(
+            self._base_activity(
+                "strength_training",
+                strength_sets_json='[{"set_index":1,"reps":8}]',
+                strength_summary_json='{"working_set_count":1,"total_reps":8}',
+            )
+        )
+        self.assertIsNone(res)
+
+    def test_mobility_and_high_intensity_sessions_are_allowed_with_facts(self):
+        for sport in ("yoga", "pilates", "hiit", "flexibility_training", "breathing"):
+            with self.subTest(sport=sport):
+                res = self._filter_after_parse(
+                    self._base_activity(sport, duration_sec=900, calories=50)
+                )
+                self.assertIsNone(res)
+
+    def test_indoor_endurance_sessions_are_allowed_without_gps_track(self):
+        cases = [
+            ("indoor_cycling", {"avg_power": 150, "avg_cadence": 82}),
+            ("treadmill_running", {"duration_sec": 1800, "avg_hr": 140, "calories": 260}),
+            ("elliptical", {"duration_sec": 1200, "avg_hr": 132}),
+            ("stair_climbing", {"duration_sec": 900, "calories": 120}),
+            ("floor_climbing", {"duration_sec": 900, "calories": 120}),
+            ("indoor_walking", {"duration_sec": 1000, "avg_hr": 105}),
+            ("rowing", {"duration_sec": 1000, "avg_hr": 128}),
+        ]
+        for sport, facts in cases:
+            with self.subTest(sport=sport):
+                res = self._filter_after_parse(self._base_activity(sport, **facts))
+                self.assertIsNone(res)
+
+    def test_pool_swim_sessions_are_allowed_without_track_points(self):
+        cases = [
+            ("lap_swimming", {"laps_json": '[{"lap_no":1}]'}),
+            ("pool_swimming", {"swolf": 40}),
+            ("swimming", {"duration_sec": 1200, "calories": 180}),
+        ]
+        for sport, facts in cases:
+            with self.subTest(sport=sport):
+                res = self._filter_after_parse(self._base_activity(sport, **facts))
+                self.assertIsNone(res)
+
+    def test_health_snapshot_like_activity_remains_filtered(self):
+        res = self._filter_after_parse(
+            self._base_activity("generic", duration_sec=20, calories=0, avg_hr=None)
+        )
+        self.assertIsNotNone(res)
+        self.assertEqual(res.get("reason"), "filtered_as_health_data")
 
 
 if __name__ == "__main__":

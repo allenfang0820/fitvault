@@ -413,6 +413,42 @@ class TestCareerYearAiReportValidation(unittest.TestCase):
         self.assertIn("朝阳公园晨跑", result["fact_lead"])
         self.assertIn("从 30:00 提升到 28:20", result["fact_lead"])
 
+    def test_distance_record_milestone_fact_lead_uses_kilometers_not_raw_meters(self):
+        snap = copy.deepcopy(_snapshot())
+        snap["summary"]["record_milestone_count"] = 1
+        milestone = {
+            "id": "record_milestone:cycling-distance:1",
+            "activity_id": "7",
+            "sport": "cycling",
+            "sport_label": "骑行",
+            "record_key": "cycling_longest_distance",
+            "display_name": "最长骑行距离",
+            "title": "刷新纪录：最长骑行距离",
+            "date": "2026-05-31",
+            "activity_title": "名山区骑行",
+            "location": {"city": "名山区", "country": "", "display": "名山区"},
+            "location_label": "名山区",
+            "new_record": {"value": 128838.0, "unit": "meters", "display": "128838 m"},
+            "previous_record": {"value": 29977.0, "unit": "meters", "display": "29977 m"},
+            "improvement": {"value": 98861.0, "unit": "meters", "display": "98861 m", "relative_delta_ratio": 3.2979, "relative_delta_percent": 329.79, "direction": "higher_is_better"},
+        }
+        snap["record_milestones"] = {
+            "count": 1,
+            "items": [milestone],
+            "record_keys": ["cycling_longest_distance"],
+            "by_record_key": [{"record_key": "cycling_longest_distance", "display_name": "最长骑行距离", "sport": "cycling", "sport_label": "骑行", "count": 1, "first_date": "2026-05-31", "latest_date": "2026-05-31"}],
+            "largest_breakthrough": milestone,
+            "representative_breakthrough": milestone,
+            "first_breakthroughs": [milestone],
+        }
+
+        result = career_backend.validate_career_year_ai_report(_draft(), snap)
+
+        self.assertIn("最长骑行距离", result["fact_lead"])
+        self.assertIn("从 30 公里 提升到 128.8 公里", result["fact_lead"])
+        self.assertNotIn("29977 m", result["fact_lead"])
+        self.assertNotIn("128838 m", result["fact_lead"])
+
     def test_footprints_section_ignores_first_city_achievement_evidence(self):
         draft = _draft()
         draft["body_sections"][3]["evidence_ids"] = ["achievement:first_city:海口市:99"]

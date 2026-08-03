@@ -317,7 +317,11 @@ def _command_version(command: list[str]) -> str | None:
     return text.splitlines()[0].strip() if text else None
 
 
-def build_dependency_manifest(project_root: str | Path = ".") -> dict[str, Any]:
+def build_dependency_manifest(
+    project_root: str | Path = ".",
+    *,
+    portable: bool = False,
+) -> dict[str, Any]:
     root = Path(project_root)
     python_env = check_python_environment()
     runtime_dir = resolve_node_runtime_dir(root)
@@ -326,7 +330,7 @@ def build_dependency_manifest(project_root: str | Path = ".") -> dict[str, Any]:
     node_path = runtime_dir / node_name
     npm_path = runtime_dir / npm_name
     manifest = {
-        "python_executable": python_env["executable"],
+        "python_executable": "<bundled-python>" if portable else python_env["executable"],
         "python_version": sys.version.split()[0],
         "python_version_info": python_env["version_info"],
         "python_warnings": python_env["warnings"],
@@ -336,8 +340,14 @@ def build_dependency_manifest(project_root: str | Path = ".") -> dict[str, Any]:
             for name in ("garminconnect", "garmin-fit-sdk", "garth", "curl_cffi", "requests", "urllib3", "certifi")
         },
         "runtime": {
-            "node": {"path": str(node_path), "version": _command_version([str(node_path), "--version"]) if node_path.exists() else None},
-            "npm": {"path": str(npm_path), "version": _command_version([str(npm_path), "--version"]) if npm_path.exists() else None},
+            "node": {
+                "path": ("node/" + node_name.replace("\\", "/")) if portable else str(node_path),
+                "version": _command_version([str(node_path), "--version"]) if node_path.exists() else None,
+            },
+            "npm": {
+                "path": ("node/" + npm_name.replace("\\", "/")) if portable else str(npm_path),
+                "version": _command_version([str(npm_path), "--version"]) if npm_path.exists() else None,
+            },
         },
         "skills": {
             "garmin-stats": {
@@ -360,10 +370,15 @@ def build_dependency_manifest(project_root: str | Path = ".") -> dict[str, Any]:
     return _redact(manifest)
 
 
-def write_dependency_manifest(project_root: str | Path = ".", output_path: str | Path | None = None) -> Path:
+def write_dependency_manifest(
+    project_root: str | Path = ".",
+    output_path: str | Path | None = None,
+    *,
+    portable: bool = False,
+) -> Path:
     root = Path(project_root)
     target = Path(output_path) if output_path else root / MANIFEST_FILENAME
-    manifest = build_dependency_manifest(root)
+    manifest = build_dependency_manifest(root, portable=portable)
     target.write_text(json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return target
 

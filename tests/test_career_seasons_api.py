@@ -354,7 +354,7 @@ class TestCareerSeasonsApi(unittest.TestCase):
             self.assertIsNone(result["summary"]["latest_year"])
             self.assertIsNone(result["summary"]["total_distance_km"])
             self.assertFalse(result["status"]["data_ready"])
-            self.assertIn("年度生涯", result["status"]["message"])
+            self.assertEqual(result["status"]["message"], "暂无可展示的年度回顾")
             _assert_forbidden_keys_absent(self, result)
         finally:
             conn.close()

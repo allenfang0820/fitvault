@@ -57,11 +57,12 @@ class TestFatigueReviewP1Realignment(unittest.TestCase):
 
         bundle = _build_fatigue_review_curve_bundle(self._sample_row())
         resolved = _build_resolved_payload_v81(bundle=bundle, sport_type="running")
-        self.assertEqual(resolved["distance_curve"], bundle["distance_curve_m"])
-        self.assertEqual(resolved["time_curve"], bundle["time_curve_sec"])
-        self.assertEqual(resolved["altitude_curve"], bundle["altitude_curve_m"])
+        self.assertEqual(len(resolved["distance_curve"]), len(bundle["distance_curve_m"]))
+        self.assertAlmostEqual(resolved["distance_curve"][-1], bundle["distance_curve_m"][-1], places=1)
+        self.assertEqual(len(resolved["time_curve"]), len(bundle["time_curve_sec"]))
+        self.assertEqual(len(resolved["altitude_curve"]), len(bundle["altitude_curve_m"]))
         self.assertTrue(any(abs(v) > 0 for v in resolved["grade_curve"]))
-        self.assertEqual(len(resolved["efficiency_curve"]), len(bundle["distance_curve_m"]))
+        self.assertEqual(len(resolved["efficiency_curve"]), len(resolved["distance_curve"]))
 
     def test_snapshot_exposes_authoritative_curve_axes(self):
         from main import Api

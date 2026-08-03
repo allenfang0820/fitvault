@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import re
 import runpy
@@ -30,6 +31,9 @@ import track_backend  # noqa: F401 -- PyInstaller bundles track_backend
 import profile_backend  # noqa: F401 -- PyInstaller bundles profile 模块
 import career_backend  # noqa: F401 -- PyInstaller bundles ACS career backend
 from fit_engine import FITCoreEngine
+from strength_fit_parser import normalize_strength_messages
+from strength_muscle_resolver import resolve_strength_muscle_heatmap
+from strength_muscle_map_v1 import STRENGTH_EXERCISE_LABELS_ZH
 from metrics_resolver import (
     MetricsResolver,
     SemanticSportsEngine,
@@ -53,7 +57,7 @@ from metrics_registry import (
 )
 
 DEBUG_MODE = False
-APP_VERSION = "V1.2.0"
+APP_VERSION = "V2.0"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -90,6 +94,9 @@ CURRENT_METRICS_VERSION = 6  # v6: P1-P4 雷达解释字段与评分上下文升
 WORKSPACE_ROOT = os.path.abspath(os.path.expanduser("~/.fitvault/workspace/"))
 TRACKS_DIR = os.path.abspath(os.path.expanduser("~/.fitvault/workspace/tracks/"))
 IMPORTS_DIR = os.path.abspath(os.path.expanduser("~/.fitvault/workspace/imports/"))
+DEM_SESSION_CACHE_ROOT = Path(os.path.expanduser("~/.fitvault/cache/dem-session/"))
+DEM_SESSION_BBOX_BUFFER_METERS = 1500
+DEM_SESSION_MAX_ROUTE_POINTS = 200000
 CAREER_MEDIA_DIR = os.path.abspath(os.path.expanduser("~/.fitvault/workspace/career_media/"))
 CAREER_RACE_BANNER_DIRNAME = "race_banner"
 CAREER_ACTIVITY_RACE_PHOTO_DIRNAME = "activity_race_photo"
@@ -220,8 +227,8 @@ LAP_COLUMN_PRESETS: dict[str, list[str]] = {
     "road_cycling": ["lap_no", "lap_distance_km", "elapsed_sec", "avg_speed_kmh", "avg_hr", "avg_power", "max_power", "normalized_power", "total_ascent"],
     "mountain_biking": ["lap_no", "lap_distance_km", "elapsed_sec", "avg_speed_kmh", "avg_hr", "avg_power", "max_power", "normalized_power", "total_ascent"],
     "indoor_cycling": ["avg_pace", "avg_hr", "power"],
-    "swimming": ["avg_hr", "swolf", "stroke_style", "length_distance"],
-    "lap_swimming": ["avg_hr", "swolf", "stroke_style", "length_distance"],
+    "swimming": ["lap_distance_km", "avg_hr", "swolf", "stroke_style", "length_distance"],
+    "lap_swimming": ["lap_distance_km", "avg_hr", "swolf", "stroke_style", "length_distance"],
     "open_water": ["avg_hr", "stroke_distance"],
     "open_water_swimming": ["avg_hr", "stroke_distance"],
     "cardio": ["avg_hr", "power", "calories"],
@@ -281,7 +288,19 @@ def _resolve_activity_list_dynamic_columns_for_rows(rows: list[dict[str, Any]]) 
 
 _ACTIVITY_SYNC_SCHEMA_LOCK = threading.Lock()
 _ACTIVITY_SYNC_SCHEMA_READY_FOR: str | None = None
-ACTIVITY_SYNC_SCHEMA_SENTINEL_KEY = "activity_sync_schema_ready_v20260723_task03"
+ACTIVITY_SYNC_SCHEMA_SENTINEL_KEY = "activity_sync_schema_ready_v20260729_strength_materialization_v1"
+STRENGTH_MATERIALIZATION_VERSION = 1
+STRENGTH_MATERIALIZATION_STATUSES = (
+    "pending",
+    "materialized",
+    "unstructured",
+    "source_missing",
+    "failed",
+)
+STRENGTH_MATERIALIZATION_DRY_RUN_DEFAULT_LIMIT = 500
+STRENGTH_MATERIALIZATION_DRY_RUN_MAX_LIMIT = 2000
+STRENGTH_MATERIALIZATION_BATCH_DEFAULT_LIMIT = 25
+STRENGTH_MATERIALIZATION_BATCH_MAX_LIMIT = 200
 FATIGUE_REVIEW_CACHE_VERSION = "fatigue_review_snapshot_v20260728_multisport_v1"
 FATIGUE_REVIEW_CURVE_SAMPLE_TARGET_POINTS = 1200
 FATIGUE_REVIEW_CURVE_SAMPLE_MAX_POINTS = 1500
@@ -299,13 +318,85 @@ ZIP_MAX_TOTAL_UNCOMPRESSED_BYTES = 1024 * 1024 * 1024
 ZIP_COPY_CHUNK_BYTES = 1024 * 1024
 
 # V10.1 误导入健康数据防护(契约 §2.2 fit_sdk 严格语义:仅运动数据入库)
-# 误导入阈值,命中任一即跳过(走 skipped 通道,不算 error,不动 AI Snapshot)
+# 解析前先过滤极小健康快照;解析后按运动语义和训练事实判断,避免误伤室内/非轨迹训练。
 # - MIN_FIT_FILE_SIZE_KB: 健康监测/HRV/压力监测等 FIT 通常 < 5 KB
-# - MIN_FIT_DISTANCE_M: 实际运动通常 ≥ 100m,健康数据 distance=0
-# - MIN_FIT_RECORD_COUNT: 运动 record ≥ 30 条(约 30 秒以上)
+# - MIN_FIT_DISTANCE_M / MIN_FIT_RECORD_COUNT: 轨迹类活动的弱信号阈值
 MIN_FIT_FILE_SIZE_KB = 5.0
 MIN_FIT_DISTANCE_M = 100.0
 MIN_FIT_RECORD_COUNT = 30
+
+FIT_NON_TRACK_TRAINING_SPORTS: frozenset[str] = frozenset({
+    "strength_training",
+    "cardio",
+    "cardio_training",
+    "fitness_equipment",
+    "indoor_cardio",
+    "training",
+    "hiit",
+    "zumba",
+    "dance",
+    "yoga",
+    "pilates",
+    "breathing",
+    "breath_training",
+    "flexibility_training",
+})
+
+FIT_DISTANCE_OPTIONAL_INDOOR_ENDURANCE_SPORTS: frozenset[str] = frozenset({
+    "indoor_cycling",
+    "stationary_bike",
+    "treadmill_running",
+    "indoor_running",
+    "indoor_walking",
+    "elliptical",
+    "stair_climbing",
+    "floor_climbing",
+    "rowing",
+    "indoor_rowing",
+})
+
+FIT_POOL_OR_LENGTH_BASED_SPORTS: frozenset[str] = frozenset({
+    "swimming",
+    "lap_swimming",
+    "pool_swimming",
+})
+
+FIT_SKILL_OR_COURT_SPORTS: frozenset[str] = frozenset({
+    "rock_climbing",
+    "indoor_climbing",
+    "bouldering",
+    "tennis",
+    "badminton",
+    "basketball",
+    "table_tennis",
+    "pickleball",
+    "squash",
+    "volleyball",
+    "boxing",
+    "martial_arts",
+})
+
+FIT_TRACK_REQUIRED_SPORTS: frozenset[str] = frozenset({
+    "running",
+    "trail_running",
+    "cycling",
+    "road_cycling",
+    "mountain_biking",
+    "hiking",
+    "mountaineering",
+    "walking",
+    "open_water",
+    "open_water_swimming",
+    "stand_up_paddleboarding",
+    "paddling",
+})
+
+FIT_GENERIC_SPORT_TOKENS: frozenset[str] = frozenset({
+    "",
+    "unknown",
+    "generic",
+    "other",
+})
 ZIP_ALLOWED_SUFFIXES = frozenset({".fit"})
 WEATHER_BACKFILL_BATCH_LIMIT = 30
 WEATHER_BACKFILL_RETRY_COOLDOWN_SEC = 6 * 60 * 60
@@ -579,6 +670,10 @@ def _clean_fit_activity_title(file_name: Any, fallback: str = "") -> str:
 
 
 def _resolve_display_sport_type(sport_type: Any, sub_sport_type: Any) -> str:
+    raw_sub_token = str(sub_sport_type or "").strip().lower().replace("-", "_").replace(" ", "_")
+    raw_sport_token = str(sport_type or "").strip().lower().replace("-", "_").replace(" ", "_")
+    if raw_sub_token == "open_water_swimming" or raw_sport_token == "open_water_swimming":
+        return "open_water_swimming"
     sub_token = _normalize_activity_token(sub_sport_type, "")
     sport_token = _normalize_activity_token(sport_type)
     sub_display_map = {
@@ -939,6 +1034,12 @@ DETAIL_API_REQUIRED_COLUMNS: tuple[str, ...] = (
     "shadow_diff_json",
     # 圈速(任务 1 引入)
     "laps_json",
+    "strength_sets_json",
+    "strength_summary_json",
+    "muscle_heatmap_json",
+    "strength_materialization_version",
+    "strength_materialization_status",
+    "strength_materialization_error",
     # 曲线(复盘模块消费)
     "hr_curve",
     "speed_curve",
@@ -1001,6 +1102,12 @@ DETAIL_SUMMARY_API_COLUMNS: tuple[str, ...] = (
     "device_name",
     "aerobic_training_effect",
     "anaerobic_training_effect",
+    "strength_sets_json",
+    "strength_summary_json",
+    "muscle_heatmap_json",
+    "strength_materialization_version",
+    "strength_materialization_status",
+    "strength_materialization_error",
     "is_race",
     "race_source",
     "race_confirmed_at",
@@ -5177,7 +5284,10 @@ def ensure_activity_sync_schema() -> None:
 
         conn = profile_backend._conn()
         try:
+            swim_schema = career_backend.apply_swim_canonical_facts_schema_migration(conn, dry_run=False)
             if profile_backend.app_migration_done(conn, ACTIVITY_SYNC_SCHEMA_SENTINEL_KEY):
+                if swim_schema.get("added_columns"):
+                    conn.commit()
                 _ACTIVITY_SYNC_SCHEMA_READY_FOR = cache_key
                 return
 
@@ -5322,6 +5432,12 @@ def ensure_activity_sync_schema() -> None:
                 ("device_product_hint", "TEXT"),
                 ("device_serial", "TEXT"),
                 ("device_mapping_status", "TEXT"),
+                ("strength_sets_json", "TEXT"),
+                ("strength_summary_json", "TEXT"),
+                ("muscle_heatmap_json", "TEXT"),
+                ("strength_materialization_version", "INTEGER DEFAULT 0"),
+                ("strength_materialization_status", "TEXT"),
+                ("strength_materialization_error", "TEXT"),
             ]:
                 try:
                     conn.execute(f"ALTER TABLE activities ADD COLUMN {col} {dtype}")
@@ -7236,6 +7352,12 @@ def _parse_fit_activity_for_sync(file_path: Path) -> dict[str, Any]:
         "speed_curve": None,
         "cadence_curve": None,  # V8.3
         "laps_json": laps_json,  # 真实圈速数据 (FIT lap_mesgs 归一化)
+        "strength_sets_json": None,
+        "strength_summary_json": None,
+        "muscle_heatmap_json": None,
+        "strength_materialization_version": 0,
+        "strength_materialization_status": None,
+        "strength_materialization_error": None,
         "track_json": track_json,
         "points_json": track_json,
         "file_path": resolved_path,
@@ -7271,6 +7393,18 @@ def _parse_fit_activity_for_sync(file_path: Path) -> dict[str, Any]:
         "processing_status": "ready",
         "processing_error": None,
     }
+    result.update(
+        career_backend.build_swim_canonical_activity_fields(
+            activity={
+                "sport_type": result["sport_type"],
+                "sub_sport_type": result["sub_sport_type"],
+                "pool_length_m": basic.get("pool_length_m"),
+                "pool_length_unit": basic.get("pool_length_unit"),
+                "swim_stroke": basic.get("swim_stroke"),
+            },
+            lengths=normalized_laps,
+        )
+    )
 
     # 从 FIT 文件解析设备事实,再通过本地产品映射表生成展示型号
     device_resolution = resolve_device_display_name({}, None)
@@ -7309,6 +7443,28 @@ def _parse_fit_activity_for_sync(file_path: Path) -> dict[str, Any]:
     legacy_distance_display = distance_display
     try:
         raw_archive = FITCoreEngine.parse_fit_file_raw(resolved_path)
+        if _is_explicit_strength_activity(result):
+            strength = normalize_strength_messages(raw_archive.get("raw") or {})
+            if strength.get("has_structured_sets"):
+                muscle_heatmap = resolve_strength_muscle_heatmap(strength.get("sets"))
+                strength_summary = dict(strength.get("summary") or {})
+                strength_summary["unmapped_set_count"] = muscle_heatmap["coverage"][
+                    "unmapped_working_sets"
+                ]
+                result["strength_sets_json"] = json.dumps(
+                    strength.get("sets"), ensure_ascii=False
+                )
+                result["strength_summary_json"] = json.dumps(
+                    strength_summary, ensure_ascii=False
+                )
+                result["muscle_heatmap_json"] = json.dumps(
+                    muscle_heatmap, ensure_ascii=False
+                )
+                result["strength_materialization_status"] = "materialized"
+            else:
+                result["strength_materialization_status"] = "unstructured"
+            result["strength_materialization_version"] = STRENGTH_MATERIALIZATION_VERSION
+            result["strength_materialization_error"] = None
         resolver = MetricsResolver()
         resolved = resolver.resolve(
             raw_archive.get("raw") or {},
@@ -7464,6 +7620,321 @@ def _apply_fit_race_marker(conn: sqlite3.Connection, activity_id: int, activity:
     )
 
 
+def _update_activity_strength_materialization_meta(
+    conn: sqlite3.Connection,
+    activity_id: int,
+    activity: dict[str, Any],
+) -> None:
+    if not any(
+        key in activity
+        for key in (
+            "strength_materialization_version",
+            "strength_materialization_status",
+            "strength_materialization_error",
+        )
+    ):
+        return
+    conn.execute(
+        """
+        UPDATE activities
+        SET strength_materialization_version = ?,
+            strength_materialization_status = ?,
+            strength_materialization_error = ?
+        WHERE id = ?
+        """,
+        (
+            _safe_int(activity.get("strength_materialization_version"), 0),
+            activity.get("strength_materialization_status"),
+            activity.get("strength_materialization_error"),
+            int(activity_id),
+        ),
+    )
+
+
+def _update_activity_swim_canonical_facts(
+    conn: sqlite3.Connection,
+    activity_id: int,
+    activity: dict[str, Any],
+) -> None:
+    fields = (
+        "swim_water_scope",
+        "swim_pool_length_m",
+        "swim_pool_length_unit",
+        "swim_pool_length_scope",
+        "swim_stroke_scope",
+        "swim_facts_quality_json",
+    )
+    if not any(key in activity for key in fields):
+        return
+    try:
+        conn.execute(
+            """
+            UPDATE activities
+            SET swim_water_scope = ?,
+                swim_pool_length_m = ?,
+                swim_pool_length_unit = ?,
+                swim_pool_length_scope = ?,
+                swim_stroke_scope = ?,
+                swim_facts_quality_json = ?
+            WHERE id = ?
+            """,
+            tuple(activity.get(key) for key in fields) + (int(activity_id),),
+        )
+    except sqlite3.Error:
+        logger.debug("泳池游泳 canonical facts 列尚不可用，跳过补充写入", exc_info=True)
+
+
+def repair_historical_swim_records(
+    payload: dict[str, Any] | None = None,
+    conn: sqlite3.Connection | None = None,
+) -> dict[str, Any]:
+    """Repair historical swim facts and rebuild their V3 record projections.
+
+    FIT parsing is limited to pool activities with an existing source file.
+    Open-water activities use only the already persisted Activity facts.
+    """
+    raw = payload if isinstance(payload, dict) else {}
+    dry_run = raw.get("dry_run") is not False
+    limit = max(1, _safe_int(raw.get("limit")) or 5000)
+    requested_ids = raw.get("activity_ids")
+    if requested_ids is None:
+        requested_ids = raw.get("activity_id")
+    if isinstance(requested_ids, str):
+        activity_ids = {
+            str(item).strip()
+            for item in requested_ids.split(",")
+            if str(item).strip()
+        }
+    elif isinstance(requested_ids, list):
+        activity_ids = {
+            str(item).strip()
+            for item in requested_ids
+            if str(item).strip()
+        }
+    else:
+        activity_ids = set()
+
+    owns_conn = conn is None
+    db = conn or profile_backend._conn()
+    try:
+        if owns_conn:
+            ensure_activity_sync_schema()
+        else:
+            career_backend.apply_swim_canonical_facts_schema_migration(db, dry_run=False)
+            career_backend.ensure_career_schema(db)
+
+        rows = career_backend._rows_to_dicts(db.execute(
+            """
+            SELECT *
+            FROM activities
+            WHERE deleted_at IS NULL
+              AND (
+                    LOWER(COALESCE(sport_type, '')) IN ('swimming', 'swim', 'pool_swimming', 'open_water_swimming')
+                 OR LOWER(COALESCE(sub_sport_type, '')) IN ('lap_swimming', 'open_water', 'open_water_swimming')
+              )
+            ORDER BY COALESCE(start_time, start_time_utc, '') ASC, id ASC
+            LIMIT ?
+            """,
+            (limit,),
+        ))
+        if activity_ids:
+            rows = [
+                row for row in rows
+                if str(row.get("id") or row.get("activity_id") or "") in activity_ids
+            ]
+
+        source_paths: dict[str, str] = {}
+        if career_backend._table_exists(db, "activity_source_files"):
+            source_rows = career_backend._rows_to_dicts(db.execute(
+                """
+                SELECT activity_id, file_path
+                FROM activity_source_files
+                WHERE activity_id IS NOT NULL
+                  AND file_path IS NOT NULL
+                  AND TRIM(file_path) != ''
+                ORDER BY updated_at DESC, id DESC
+                """
+            ))
+            for source_row in source_rows:
+                source_id = str(source_row.get("activity_id") or "").strip()
+                source_path = str(source_row.get("file_path") or "").strip()
+                if source_id and source_path and source_id not in source_paths:
+                    source_paths[source_id] = source_path
+
+        plans: list[dict[str, Any]] = []
+        canonical_updates = 0
+        lengths_updates = 0
+        source_counts = {
+            "fit_source": 0,
+            "activity_facts": 0,
+            "source_missing": 0,
+            "source_parse_failed": 0,
+        }
+        for row in rows:
+            activity_id = str(row.get("id") or row.get("activity_id") or "").strip()
+            existing_lengths = _safe_json_list(row.get("laps_json") or row.get("lengths_json")) or []
+            current_facts = career_backend.normalize_swim_canonical_facts(
+                activity=row,
+                lengths=existing_lengths,
+            )
+            water_scope = str(current_facts.get("water_scope") or "")
+            if water_scope not in {"pool_swimming", "open_water_swimming"}:
+                continue
+
+            repair_activity = dict(row)
+            source_kind = "activity_facts"
+            source_reason_codes: list[str] = []
+            parsed_lengths: list[dict[str, Any]] = []
+            source_path = source_paths.get(activity_id) or str(row.get("file_path") or "").strip()
+            if water_scope == "pool_swimming":
+                source_kind = "source_missing"
+                if source_path and Path(source_path).expanduser().is_file():
+                    try:
+                        parsed_fit = FITCoreEngine.parse_fit_file(source_path)
+                        basic = dict(parsed_fit.get("basic_info") or {})
+                        parsed_lengths = MetricsResolver._normalize_laps(
+                            list(parsed_fit.get("lap_data") or [])
+                        )
+                        repair_activity.update({
+                            "sport_type": basic.get("sport") or row.get("sport_type"),
+                            "sub_sport_type": basic.get("sub_sport") or row.get("sub_sport_type"),
+                            "pool_length_m": basic.get("pool_length_m"),
+                            "pool_length_unit": basic.get("pool_length_unit"),
+                            "swim_stroke": basic.get("swim_stroke"),
+                        })
+                        source_kind = "fit_source"
+                    except Exception:
+                        source_kind = "source_parse_failed"
+                        source_reason_codes.append("source_parse_failed")
+                else:
+                    source_reason_codes.append("pool_source_missing")
+            if source_kind == "source_missing":
+                source_reason_codes.append("pool_length_missing")
+
+            # FIT parsing may recover canonical pool facts even when the Activity
+            # already has a persisted length stream. Keep the stored stream as
+            # the metric input so a repair re-run remains fingerprint-stable.
+            lengths_for_facts = existing_lengths or parsed_lengths
+            canonical_fields = career_backend.build_swim_canonical_activity_fields(
+                activity=repair_activity,
+                lengths=lengths_for_facts,
+            )
+            repair_activity.update(canonical_fields)
+            if parsed_lengths and not existing_lengths:
+                repair_activity["laps_json"] = json.dumps(
+                    parsed_lengths,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                )
+            plan = career_backend.compute_record_metric_results_for_activity(
+                repair_activity,
+                conn=db,
+            )
+            summary = plan.get("summary") if isinstance(plan.get("summary"), dict) else {}
+            plan_status = plan.get("status") if isinstance(plan.get("status"), dict) else {}
+            reason_codes = list(dict.fromkeys(
+                source_reason_codes
+                + list(plan_status.get("reason_codes") or [])
+            ))
+            if source_kind == "fit_source":
+                source_counts["fit_source"] += 1
+            elif source_kind == "source_parse_failed":
+                source_counts["source_parse_failed"] += 1
+            elif source_kind == "source_missing":
+                source_counts["source_missing"] += 1
+            else:
+                source_counts["activity_facts"] += 1
+
+            changed_fields = [
+                key for key in canonical_fields
+                if str(row.get(key) or "") != str(canonical_fields.get(key) or "")
+            ]
+            should_update_lengths = bool(
+                parsed_lengths and not existing_lengths and row.get("laps_json") in (None, "", "[]")
+            )
+            if not dry_run and changed_fields:
+                _update_activity_swim_canonical_facts(
+                    db,
+                    int(activity_id),
+                    canonical_fields,
+                )
+                canonical_updates += 1
+            if not dry_run and should_update_lengths:
+                db.execute(
+                    "UPDATE activities SET laps_json = ?, updated_at = datetime('now') WHERE id = ?",
+                    (repair_activity["laps_json"], int(activity_id)),
+                )
+                lengths_updates += 1
+
+            plans.append({
+                "activity_id": activity_id,
+                "sport": water_scope,
+                "source": source_kind,
+                "canonical_fields_changed": changed_fields,
+                "lengths_would_update": should_update_lengths,
+                "metric_state": str(plan_status.get("state") or "sample_missing"),
+                "reason_codes": sorted(set(reason_codes)),
+                "would_upsert": list(summary.get("would_upsert") or []),
+                "would_skip": list(summary.get("would_skip") or []),
+                "would_invalidate": list(summary.get("would_invalidate") or []),
+            })
+
+        rebuild_results: dict[str, Any] = {}
+        if not dry_run:
+            if owns_conn:
+                db.commit()
+            for swim_sport in ("pool_swimming", "open_water_swimming"):
+                rebuild = career_backend.rebuild_career_record_metric_results(
+                    db,
+                    sport=swim_sport,
+                    dry_run=False,
+                )
+                rebuild_results[swim_sport] = {
+                    "scanned": int(rebuild.get("scanned") or 0),
+                    "summary": rebuild.get("summary") if isinstance(rebuild.get("summary"), dict) else {},
+                }
+            if owns_conn:
+                db.commit()
+
+        return career_backend._records_api_safe({
+            "ok": True,
+            "dry_run": dry_run,
+            "scanned": len(rows),
+            "source_counts": source_counts,
+            "plans": plans,
+            "rebuild": rebuild_results,
+            "summary": {
+                "canonical_updates": canonical_updates,
+                "lengths_updates": lengths_updates,
+                "planned_canonical_updates": sum(bool(item["canonical_fields_changed"]) for item in plans),
+                "planned_lengths_updates": sum(
+                    bool(item["lengths_would_update"])
+                    for item in plans
+                ),
+                "planned_metric_upserts": sum(len(item["would_upsert"]) for item in plans),
+                "planned_metric_invalidations": sum(len(item["would_invalidate"]) for item in plans),
+                "sample_missing_count": sum(item["metric_state"] == "sample_missing" for item in plans),
+                "validation_required_count": sum(item["metric_state"] == "validation_required" for item in plans),
+                "would_write": not dry_run and bool(canonical_updates or lengths_updates),
+            },
+            "record_source_version": (
+                career_backend._career_record_source_version(db)
+                if not dry_run else None
+            ),
+            "status": {
+                "state": "dry_run" if dry_run else "applied",
+                "message": "历史游泳事实修复 dry-run 完成" if dry_run else "历史游泳事实与记录已修复",
+            },
+        })
+    except Exception:
+        if owns_conn:
+            db.rollback()
+        raise
+    finally:
+        if owns_conn:
+            db.close()
+
+
 def _insert_activity_sync_row(conn: sqlite3.Connection, activity: dict[str, Any]) -> int:
     try:
         cur = conn.execute(
@@ -7477,6 +7948,7 @@ def _insert_activity_sync_row(conn: sqlite3.Connection, activity: dict[str, Any]
                  file_mtime, file_size, advanced_metrics, avg_power, max_power, normalized_power, avg_stroke_distance, swolf, device_name,
                  device_vendor, device_product_key, device_product_id, device_serial, device_mapping_status,
                  shadow_diff_json, source_type, is_mock, deleted_at, updated_at, hr_curve, speed_curve, cadence_curve, hr_zone_distribution, laps_json,
+                 strength_sets_json, strength_summary_json, muscle_heatmap_json,
                  min_alt_m, total_descent_m, up_count, down_count, max_single_climb_m, difficulty_score, report_metrics_version,
                  avg_grade_pct, max_slope_pct, min_slope_pct, uphill_pct, downhill_pct,
                  aerobic_training_effect, anaerobic_training_effect, processing_status, processing_error)
@@ -7489,6 +7961,7 @@ def _insert_activity_sync_row(conn: sqlite3.Connection, activity: dict[str, Any]
                 ?, ?, ?, ?, ?, ?, ?, ?, ?,
                 ?, ?, ?, ?, ?, ?,
                 'fit_sdk', 0, NULL, datetime('now'), ?, ?, ?, ?, ?,
+                ?, ?, ?,
                 ?, ?, ?, ?, ?, ?, ?,
                 ?, ?, ?, ?, ?,
                 ?, ?, ?, ?
@@ -7553,6 +8026,9 @@ def _insert_activity_sync_row(conn: sqlite3.Connection, activity: dict[str, Any]
                 activity.get("cadence_curve"),  # V8.3
                 activity.get("hr_zone_distribution"),  # V8.4
                 activity.get("laps_json"),  # 真实圈速数据
+                activity.get("strength_sets_json"),
+                activity.get("strength_summary_json"),
+                activity.get("muscle_heatmap_json"),
                 activity.get("min_alt_m"),
                 activity.get("total_descent_m"),
                 activity.get("up_count"),
@@ -7573,6 +8049,8 @@ def _insert_activity_sync_row(conn: sqlite3.Connection, activity: dict[str, Any]
             ),
         )
         activity_id = int(cur.lastrowid)
+        _update_activity_swim_canonical_facts(conn, activity_id, activity)
+        _update_activity_strength_materialization_meta(conn, activity_id, activity)
         _update_activity_device_product_meta(conn, activity_id, activity)
         _apply_fit_race_marker(conn, activity_id, activity)
         return activity_id
@@ -7603,7 +8081,7 @@ def _update_activity_sync_row(conn: sqlite3.Connection, activity_id: int, activi
             avg_power = ?, max_power = ?, normalized_power = ?, avg_stroke_distance = ?, swolf = ?,
             device_name = ?, device_vendor = ?, device_product_key = ?, device_product_id = ?, device_serial = ?, device_mapping_status = ?,
             shadow_diff_json = ?, hr_curve = ?, speed_curve = ?,
-            laps_json = ?,
+            laps_json = ?, strength_sets_json = ?, strength_summary_json = ?, muscle_heatmap_json = ?,
             min_alt_m = ?, total_descent_m = ?, up_count = ?, down_count = ?, max_single_climb_m = ?, difficulty_score = ?, report_metrics_version = ?,
             avg_grade_pct = ?, max_slope_pct = ?, min_slope_pct = ?, uphill_pct = ?, downhill_pct = ?,
             processing_status = ?, processing_error = ?,
@@ -7667,6 +8145,9 @@ def _update_activity_sync_row(conn: sqlite3.Connection, activity_id: int, activi
             activity.get("hr_curve"),
             activity.get("speed_curve"),
             activity.get("laps_json"),
+            activity.get("strength_sets_json"),
+            activity.get("strength_summary_json"),
+            activity.get("muscle_heatmap_json"),
             activity.get("min_alt_m"),
             activity.get("total_descent_m"),
             activity.get("up_count"),
@@ -7684,6 +8165,8 @@ def _update_activity_sync_row(conn: sqlite3.Connection, activity_id: int, activi
             activity_id,
         ),
     )
+    _update_activity_swim_canonical_facts(conn, activity_id, activity)
+    _update_activity_strength_materialization_meta(conn, activity_id, activity)
     _update_activity_device_product_meta(conn, activity_id, activity)
     _apply_fit_race_marker(conn, activity_id, activity)
 
@@ -8056,6 +8539,545 @@ def _find_semantic_duplicate_activity(activity: dict[str, Any]) -> dict[str, Any
     return duplicate
 
 
+def _strength_materialization_limit(value: Any) -> int:
+    if value in (None, ""):
+        return STRENGTH_MATERIALIZATION_DRY_RUN_DEFAULT_LIMIT
+    return min(
+        STRENGTH_MATERIALIZATION_DRY_RUN_MAX_LIMIT,
+        max(1, _safe_int(value, STRENGTH_MATERIALIZATION_DRY_RUN_DEFAULT_LIMIT)),
+    )
+
+
+def _strength_materialization_batch_limit(value: Any) -> int:
+    if value in (None, ""):
+        return STRENGTH_MATERIALIZATION_BATCH_DEFAULT_LIMIT
+    return min(
+        STRENGTH_MATERIALIZATION_BATCH_MAX_LIMIT,
+        max(1, _safe_int(value, STRENGTH_MATERIALIZATION_BATCH_DEFAULT_LIMIT)),
+    )
+
+
+def _json_object(value: Any) -> dict[str, Any] | None:
+    if isinstance(value, dict):
+        return value
+    if not value:
+        return None
+    try:
+        parsed = json.loads(str(value))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _has_complete_strength_materialization(row: dict[str, Any]) -> bool:
+    return bool(
+        _safe_json_list(row.get("strength_sets_json"))
+        and _json_object(row.get("strength_summary_json"))
+        and _json_object(row.get("muscle_heatmap_json"))
+    )
+
+
+def _resolve_strength_materialization_source(file_path: Any, tracks_dir: Path) -> Path | None:
+    raw_path = str(file_path or "").strip()
+    if not raw_path:
+        return None
+    try:
+        source = Path(raw_path).expanduser().resolve()
+        controlled_root = tracks_dir.expanduser().resolve()
+    except (OSError, RuntimeError):
+        return None
+    if (
+        source.suffix.lower() != ".fit"
+        or not _is_path_under_dir(source, controlled_root)
+        or not source.is_file()
+    ):
+        return None
+    return source
+
+
+def _strength_materialization_source_is_valid(file_path: Any, tracks_dir: Path) -> bool:
+    return _resolve_strength_materialization_source(file_path, tracks_dir) is not None
+
+
+STRENGTH_ACTIVITY_SQL_PREDICATE = """
+    (
+        lower(replace(replace(trim(COALESCE(sport_type, '')), '-', '_'), ' ', '_'))
+            IN ('strength', 'strength_training')
+        OR lower(replace(replace(trim(COALESCE(sub_sport_type, '')), '-', '_'), ' ', '_'))
+            IN ('strength', 'strength_training')
+    )
+"""
+
+
+def _strength_materialization_row_is_complete(row: dict[str, Any]) -> bool:
+    raw_status = str(row.get("strength_materialization_status") or "").strip().lower()
+    version = _safe_int(row.get("strength_materialization_version"), 0)
+    if raw_status == "unstructured" and version >= STRENGTH_MATERIALIZATION_VERSION:
+        return True
+    has_complete_json = _has_complete_strength_materialization(row)
+    return bool(
+        (
+            raw_status == "materialized"
+            and version >= STRENGTH_MATERIALIZATION_VERSION
+            and has_complete_json
+        )
+        or (not raw_status and has_complete_json)
+    )
+
+
+def _is_explicit_strength_activity(row: dict[str, Any] | None) -> bool:
+    if not row:
+        return False
+    display_type = _resolve_display_sport_type(
+        row.get("sport_type"),
+        row.get("sub_sport_type"),
+    )
+    return any(
+        normalize_review_sport_type(value) == "strength_training"
+        for value in (
+            row.get("sport_type"),
+            row.get("sub_sport_type"),
+            display_type,
+        )
+    )
+
+
+def _strength_activity_needs_materialization(row: dict[str, Any] | None) -> bool:
+    if not _is_explicit_strength_activity(row):
+        return False
+    assert row is not None
+    return not _strength_materialization_row_is_complete(row)
+
+
+def _select_strength_materialization_candidates(
+    conn: sqlite3.Connection,
+    *,
+    limit: int,
+    retry_only: bool = False,
+) -> tuple[list[dict[str, Any]], int]:
+    rows = conn.execute(
+        f"""
+        SELECT id, sport_type, sub_sport_type, file_path,
+               strength_sets_json, strength_summary_json, muscle_heatmap_json,
+               strength_materialization_version, strength_materialization_status
+        FROM activities
+        WHERE deleted_at IS NULL AND {STRENGTH_ACTIVITY_SQL_PREDICATE}
+        ORDER BY id ASC
+        """
+    ).fetchall()
+    selected: list[dict[str, Any]] = []
+    candidate_count = 0
+    for raw_row in rows:
+        row = dict(raw_row)
+        if _strength_materialization_row_is_complete(row):
+            continue
+        status = str(row.get("strength_materialization_status") or "").strip().lower()
+        if retry_only:
+            if status not in {"failed", "source_missing"}:
+                continue
+        elif status in {"failed", "source_missing"}:
+            continue
+        candidate_count += 1
+        if len(selected) < limit:
+            selected.append(row)
+    return selected, candidate_count
+
+
+def _open_readonly_profile_connection() -> sqlite3.Connection:
+    db_uri = f"{Path(profile_backend.DB_PATH).expanduser().resolve().as_uri()}?mode=ro"
+    conn = sqlite3.connect(
+        db_uri,
+        uri=True,
+        timeout=profile_backend.SQLITE_CONNECT_TIMEOUT_SEC,
+    )
+    conn.row_factory = sqlite3.Row
+    conn.execute(f"PRAGMA busy_timeout = {profile_backend.SQLITE_BUSY_TIMEOUT_MS}")
+    conn.execute("PRAGMA query_only = ON")
+    return conn
+
+
+def strength_materialization_dry_run(
+    *,
+    limit: Any = None,
+    tracks_dir: str | Path | None = None,
+    conn: sqlite3.Connection | None = None,
+) -> dict[str, Any]:
+    """Inspect historical strength rows without parsing FIT or writing SQLite."""
+    bounded_limit = _strength_materialization_limit(limit)
+    controlled_root = Path(tracks_dir or TRACKS_DIR)
+    owns_conn = conn is None
+    if conn is None:
+        # The application initializes schema before exposing APIs. Keep this path
+        # strictly read-only by avoiding _conn()/ensure_activity_sync_schema().
+        conn = _open_readonly_profile_connection()
+    try:
+        activity_columns = {
+            str(row[1])
+            for row in conn.execute("PRAGMA table_info(activities)").fetchall()
+        }
+        sets_expr = (
+            "strength_sets_json"
+            if "strength_sets_json" in activity_columns
+            else "NULL AS strength_sets_json"
+        )
+        summary_expr = (
+            "strength_summary_json"
+            if "strength_summary_json" in activity_columns
+            else "NULL AS strength_summary_json"
+        )
+        heatmap_expr = (
+            "muscle_heatmap_json"
+            if "muscle_heatmap_json" in activity_columns
+            else "NULL AS muscle_heatmap_json"
+        )
+        version_expr = (
+            "strength_materialization_version"
+            if "strength_materialization_version" in activity_columns
+            else "0 AS strength_materialization_version"
+        )
+        status_expr = (
+            "strength_materialization_status"
+            if "strength_materialization_status" in activity_columns
+            else "NULL AS strength_materialization_status"
+        )
+        strength_rows = int(
+            conn.execute(
+                f"SELECT COUNT(*) FROM activities WHERE deleted_at IS NULL AND {STRENGTH_ACTIVITY_SQL_PREDICATE}"
+            ).fetchone()[0]
+        )
+        soft_deleted_skipped_count = int(
+            conn.execute(
+                f"SELECT COUNT(*) FROM activities WHERE deleted_at IS NOT NULL AND {STRENGTH_ACTIVITY_SQL_PREDICATE}"
+            ).fetchone()[0]
+        )
+        rows = conn.execute(
+            f"""
+            SELECT sport_type, sub_sport_type, file_path,
+                   {sets_expr}, {summary_expr}, {heatmap_expr},
+                   {version_expr}, {status_expr}
+            FROM activities
+            WHERE deleted_at IS NULL AND {STRENGTH_ACTIVITY_SQL_PREDICATE}
+            ORDER BY id ASC
+            LIMIT ?
+            """,
+            (bounded_limit,),
+        ).fetchall()
+
+        status_distribution = {status: 0 for status in STRENGTH_MATERIALIZATION_STATUSES}
+        candidate_count = 0
+        processable_count = 0
+        already_materialized_count = 0
+        unstructured_count = 0
+        source_missing_count = 0
+        version_outdated_count = 0
+
+        for raw_row in rows:
+            row = dict(raw_row)
+            raw_status = str(row.get("strength_materialization_status") or "").strip().lower()
+            status = raw_status if raw_status in STRENGTH_MATERIALIZATION_STATUSES else "pending"
+            status_distribution[status] += 1
+            version = _safe_int(row.get("strength_materialization_version"), 0)
+            if _strength_materialization_row_is_complete(row):
+                if raw_status == "unstructured":
+                    unstructured_count += 1
+                else:
+                    already_materialized_count += 1
+                continue
+
+            candidate_count += 1
+            if version < STRENGTH_MATERIALIZATION_VERSION:
+                version_outdated_count += 1
+            if _strength_materialization_source_is_valid(row.get("file_path"), controlled_root):
+                processable_count += 1
+            else:
+                source_missing_count += 1
+
+        return {
+            "version": STRENGTH_MATERIALIZATION_VERSION,
+            "dry_run": True,
+            "limit": bounded_limit,
+            "strength_rows": strength_rows,
+            "scanned_count": len(rows),
+            "limited": strength_rows > len(rows),
+            "candidate_count": candidate_count,
+            "processable_count": processable_count,
+            "already_materialized_count": already_materialized_count,
+            "unstructured_count": unstructured_count,
+            "source_missing_count": source_missing_count,
+            "version_outdated_count": version_outdated_count,
+            "soft_deleted_skipped_count": soft_deleted_skipped_count,
+            "status_distribution": status_distribution,
+        }
+    finally:
+        if owns_conn and conn is not None:
+            conn.close()
+
+
+_STRENGTH_MATERIALIZATION_LOCK = threading.Lock()
+_STRENGTH_MATERIALIZATION_STATUS: dict[str, Any] = {
+    "running": False,
+    "retry_only": False,
+    "version": STRENGTH_MATERIALIZATION_VERSION,
+    "total": 0,
+    "processed": 0,
+    "updated": 0,
+    "materialized": 0,
+    "unstructured": 0,
+    "source_missing": 0,
+    "failed": 0,
+    "skipped": 0,
+    "limited": False,
+    "started_at": 0.0,
+    "finished_at": 0.0,
+    "error_code": "",
+}
+_STRENGTH_MATERIALIZATION_THREAD: threading.Thread | None = None
+
+
+def _strength_materialization_backfill_status() -> dict[str, Any]:
+    with _STRENGTH_MATERIALIZATION_LOCK:
+        return dict(_STRENGTH_MATERIALIZATION_STATUS)
+
+
+def _set_strength_materialization_status(**fields: Any) -> None:
+    with _STRENGTH_MATERIALIZATION_LOCK:
+        _STRENGTH_MATERIALIZATION_STATUS.update(fields)
+
+
+def _write_strength_materialization_state(
+    conn: sqlite3.Connection,
+    activity_id: int,
+    *,
+    status: str,
+    sets_json: str | None = None,
+    summary_json: str | None = None,
+    heatmap_json: str | None = None,
+    error_code: str | None = None,
+) -> bool:
+    if status not in STRENGTH_MATERIALIZATION_STATUSES or status == "pending":
+        raise ValueError("invalid strength materialization terminal status")
+    if status in {"failed", "source_missing"}:
+        cursor = conn.execute(
+            f"""
+            UPDATE activities
+            SET strength_materialization_version = ?,
+                strength_materialization_status = ?,
+                strength_materialization_error = ?,
+                updated_at = datetime('now')
+            WHERE id = ?
+              AND deleted_at IS NULL
+              AND {STRENGTH_ACTIVITY_SQL_PREDICATE}
+            """,
+            (
+                STRENGTH_MATERIALIZATION_VERSION,
+                status,
+                error_code,
+                int(activity_id),
+            ),
+        )
+    else:
+        cursor = conn.execute(
+            f"""
+            UPDATE activities
+            SET strength_sets_json = ?,
+                strength_summary_json = ?,
+                muscle_heatmap_json = ?,
+                strength_materialization_version = ?,
+                strength_materialization_status = ?,
+                strength_materialization_error = ?,
+                updated_at = datetime('now')
+            WHERE id = ?
+              AND deleted_at IS NULL
+              AND {STRENGTH_ACTIVITY_SQL_PREDICATE}
+            """,
+            (
+                sets_json,
+                summary_json,
+                heatmap_json,
+                STRENGTH_MATERIALIZATION_VERSION,
+                status,
+                error_code,
+                int(activity_id),
+            ),
+        )
+    return cursor.rowcount == 1
+
+
+def _materialize_strength_fit(source: Path) -> tuple[str, str | None, str | None, str | None]:
+    raw_archive = FITCoreEngine.parse_fit_file_raw(source)
+    normalized = normalize_strength_messages(raw_archive.get("raw") or {})
+    if not normalized.get("has_structured_sets"):
+        return "unstructured", None, None, None
+
+    muscle_heatmap = resolve_strength_muscle_heatmap(normalized.get("sets"))
+    strength_summary = dict(normalized.get("summary") or {})
+    strength_summary["unmapped_set_count"] = muscle_heatmap["coverage"][
+        "unmapped_working_sets"
+    ]
+    return (
+        "materialized",
+        json.dumps(normalized.get("sets"), ensure_ascii=False),
+        json.dumps(strength_summary, ensure_ascii=False),
+        json.dumps(muscle_heatmap, ensure_ascii=False),
+    )
+
+
+def _run_strength_materialization_backfill_worker(
+    db_path: str,
+    tracks_dir: str,
+    limit: int,
+    retry_only: bool = False,
+) -> None:
+    started_at = time.time()
+    counters = {
+        "processed": 0,
+        "updated": 0,
+        "materialized": 0,
+        "unstructured": 0,
+        "source_missing": 0,
+        "failed": 0,
+        "skipped": 0,
+    }
+    conn: sqlite3.Connection | None = None
+    _set_strength_materialization_status(
+        running=True,
+        retry_only=bool(retry_only),
+        version=STRENGTH_MATERIALIZATION_VERSION,
+        total=0,
+        processed=0,
+        updated=0,
+        materialized=0,
+        unstructured=0,
+        source_missing=0,
+        failed=0,
+        skipped=0,
+        limited=False,
+        started_at=started_at,
+        finished_at=0.0,
+        error_code="",
+    )
+    try:
+        conn = sqlite3.connect(
+            db_path,
+            timeout=profile_backend.SQLITE_CONNECT_TIMEOUT_SEC,
+        )
+        conn.row_factory = sqlite3.Row
+        conn.execute(f"PRAGMA busy_timeout = {profile_backend.SQLITE_BUSY_TIMEOUT_MS}")
+        candidates, candidate_count = _select_strength_materialization_candidates(
+            conn,
+            limit=limit,
+            retry_only=retry_only,
+        )
+        conn.commit()
+        _set_strength_materialization_status(
+            total=len(candidates),
+            limited=candidate_count > len(candidates),
+        )
+
+        controlled_root = Path(tracks_dir)
+        for row in candidates:
+            if _APP_SHUTTING_DOWN.is_set():
+                break
+            counters["processed"] += 1
+            source = _resolve_strength_materialization_source(
+                row.get("file_path"),
+                controlled_root,
+            )
+            if source is None:
+                changed = _write_strength_materialization_state(
+                    conn,
+                    int(row["id"]),
+                    status="source_missing",
+                    error_code="source_unavailable",
+                )
+                terminal_status = "source_missing"
+            else:
+                try:
+                    terminal_status, sets_json, summary_json, heatmap_json = (
+                        _materialize_strength_fit(source)
+                    )
+                    changed = _write_strength_materialization_state(
+                        conn,
+                        int(row["id"]),
+                        status=terminal_status,
+                        sets_json=sets_json,
+                        summary_json=summary_json,
+                        heatmap_json=heatmap_json,
+                    )
+                except Exception:
+                    terminal_status = "failed"
+                    changed = _write_strength_materialization_state(
+                        conn,
+                        int(row["id"]),
+                        status="failed",
+                        error_code="fit_materialization_failed",
+                    )
+            conn.commit()
+            if changed:
+                counters["updated"] += 1
+                counters[terminal_status] += 1
+            else:
+                counters["skipped"] += 1
+            _set_strength_materialization_status(**counters)
+    except Exception:
+        if conn is not None:
+            conn.rollback()
+        _set_strength_materialization_status(error_code="worker_failed")
+    finally:
+        if conn is not None:
+            conn.close()
+        _set_strength_materialization_status(
+            running=False,
+            finished_at=time.time(),
+            **counters,
+        )
+
+
+def _start_strength_materialization_backfill(
+    *,
+    limit: Any = None,
+    retry_only: bool = False,
+) -> dict[str, Any]:
+    global _STRENGTH_MATERIALIZATION_THREAD
+    ensure_activity_sync_schema()
+    bounded_limit = _strength_materialization_batch_limit(limit)
+    with _STRENGTH_MATERIALIZATION_LOCK:
+        if _STRENGTH_MATERIALIZATION_STATUS.get("running"):
+            return dict(_STRENGTH_MATERIALIZATION_STATUS)
+        _STRENGTH_MATERIALIZATION_STATUS.update(
+            {
+                "running": True,
+                "retry_only": bool(retry_only),
+                "version": STRENGTH_MATERIALIZATION_VERSION,
+                "total": 0,
+                "processed": 0,
+                "updated": 0,
+                "materialized": 0,
+                "unstructured": 0,
+                "source_missing": 0,
+                "failed": 0,
+                "skipped": 0,
+                "limited": False,
+                "started_at": time.time(),
+                "finished_at": 0.0,
+                "error_code": "",
+            }
+        )
+        _STRENGTH_MATERIALIZATION_THREAD = threading.Thread(
+            target=_run_strength_materialization_backfill_worker,
+            args=(
+                _activity_schema_cache_key(),
+                str(Path(TRACKS_DIR).expanduser().resolve()),
+                bounded_limit,
+                bool(retry_only),
+            ),
+            daemon=True,
+            name="strength-materialization-backfill",
+        )
+        _STRENGTH_MATERIALIZATION_THREAD.start()
+        return dict(_STRENGTH_MATERIALIZATION_STATUS)
+
+
 def check_activity_data_integrity() -> dict[str, Any]:
     config = resolve_workspace_track_dir(auto_recover=True)
     source_dir = str(config.get("workspace_track_abs_path") or "")
@@ -8135,7 +9157,9 @@ def _find_activity_by_file_path(conn: sqlite3.Connection, file_path: str, includ
         f"""
         SELECT id, file_name, filename, file_path, title, sport_type, sub_sport_type, start_time, updated_at,
                file_mtime, file_size, deleted_at, processing_status,
-               device_name, device_mapping_status, device_product_key
+               device_name, device_mapping_status, device_product_key,
+               strength_sets_json, strength_summary_json, muscle_heatmap_json,
+               strength_materialization_version, strength_materialization_status
         FROM activities
         WHERE file_path = ? {deleted_clause}
         ORDER BY id DESC
@@ -8146,13 +9170,36 @@ def _find_activity_by_file_path(conn: sqlite3.Connection, file_path: str, includ
     return dict(row) if row else None
 
 
+def _find_activity_by_id_for_sync(
+    conn: sqlite3.Connection,
+    activity_id: int,
+) -> dict[str, Any] | None:
+    row = conn.execute(
+        """
+        SELECT id, file_name, filename, file_path, title, sport_type, sub_sport_type,
+               start_time, updated_at, file_mtime, file_size, deleted_at, processing_status,
+               device_name, device_mapping_status, device_product_key,
+               strength_sets_json, strength_summary_json, muscle_heatmap_json,
+               strength_materialization_version, strength_materialization_status
+        FROM activities
+        WHERE id = ? AND deleted_at IS NULL
+        LIMIT 1
+        """,
+        (int(activity_id),),
+    ).fetchone()
+    return dict(row) if row else None
+
+
 def _load_existing_file_index(conn: sqlite3.Connection) -> dict[str, dict[str, Any]]:
     """快速加载 DB 中所有已入库文件的 file_path → {file_mtime, file_size, id} 索引。
     用于在解析 FIT 文件前预判是否需要入库，避免无效解析。
     """
     rows = conn.execute(
         """
-        SELECT id, file_path, file_mtime, file_size, device_name, device_mapping_status, device_product_key
+        SELECT id, file_path, file_mtime, file_size, sport_type, sub_sport_type,
+               device_name, device_mapping_status, device_product_key,
+               strength_sets_json, strength_summary_json, muscle_heatmap_json,
+               strength_materialization_version, strength_materialization_status
         FROM activities
         WHERE deleted_at IS NULL
           AND COALESCE(file_path, '') != ''
@@ -8170,9 +9217,16 @@ def _load_existing_file_index(conn: sqlite3.Connection) -> dict[str, dict[str, A
                 "id": int(row["id"] or 0),
                 "file_mtime": row["file_mtime"],
                 "file_size": row["file_size"],
+                "sport_type": row["sport_type"] or "",
+                "sub_sport_type": row["sub_sport_type"] or "",
                 "device_name": row["device_name"] or "",
                 "device_mapping_status": row["device_mapping_status"] or "",
                 "device_product_key": row["device_product_key"] or "",
+                "strength_sets_json": row["strength_sets_json"],
+                "strength_summary_json": row["strength_summary_json"],
+                "muscle_heatmap_json": row["muscle_heatmap_json"],
+                "strength_materialization_version": row["strength_materialization_version"],
+                "strength_materialization_status": row["strength_materialization_status"],
             }
     return index
 
@@ -8496,6 +9550,8 @@ def backfill_device_product_mappings(
 
 def _is_file_unchanged(disk_path: Path, existing: dict[str, Any]) -> bool:
     """判断磁盘文件与 DB 记录是否一致（mtime 和 size 均匹配）。"""
+    if _strength_activity_needs_materialization(existing):
+        return False
     existing_mtime = existing.get("file_mtime")
     existing_size = existing.get("file_size")
     if existing_mtime is None or existing_size is None:
@@ -8515,6 +9571,7 @@ def _is_file_unchanged(disk_path: Path, existing: dict[str, Any]) -> bool:
 def _persist_sync_activity(
     activity: dict[str, Any],
     dedupe_index: dict[str, dict[str, Any]] | None = None,
+    existing_activity_id: int | None = None,
 ) -> dict[str, Any]:
     profile_backend._assert_gpx_not_persisted(activity)  # §二 §八: GPX/KML 用后即抛
     file_name = str(activity.get("file_name") or activity.get("filename") or "").strip()
@@ -8544,8 +9601,16 @@ def _persist_sync_activity(
     def _write() -> dict[str, Any]:
         conn = profile_backend._conn()
         try:
-            existing = _find_activity_by_file_path(conn, file_path, include_deleted=True) if file_path else None
+            existing = None
+            processing_placeholder = False
+            if existing_activity_id:
+                hinted = _find_activity_by_id_for_sync(conn, existing_activity_id)
+                if _strength_activity_needs_materialization(hinted):
+                    existing = hinted
+            if existing is None:
+                existing = _find_activity_by_file_path(conn, file_path, include_deleted=True) if file_path else None
             if existing and str(existing.get("processing_status") or "").strip().lower() in {"processing", "pending"}:
+                processing_placeholder = True
                 existing = None
             if existing and not existing.get("deleted_at"):
                 file_mtime = activity.get("file_mtime")
@@ -8560,6 +9625,7 @@ def _persist_sync_activity(
                 )
                 if (
                     not needs_device_refresh
+                    and not _strength_activity_needs_materialization(existing)
                     and file_mtime is not None
                     and file_size is not None
                     and existing.get("file_mtime") is not None
@@ -8571,6 +9637,7 @@ def _persist_sync_activity(
             if not existing and file_name:
                 existing = _find_activity_by_file_name(conn, file_name, include_deleted=True)
                 if existing and str(existing.get("processing_status") or "").strip().lower() in {"processing", "pending"}:
+                    processing_placeholder = True
                     existing = None
             strict_dedupe_key = profile_backend.build_activity_dedupe_key(activity)
             if not existing and strict_dedupe_key:
@@ -8589,36 +9656,45 @@ def _persist_sync_activity(
                 else:
                     existing = profile_backend.find_activity_by_dedupe_key(conn, activity)
                 if existing:
+                    existing = _find_activity_by_id_for_sync(conn, int(existing["id"])) or existing
                     existing_path = str(existing.get("file_path") or "").strip()
                     current_path = str(activity.get("file_path") or "").strip()
-                    if current_path and existing_path != current_path:
+                    if (
+                        current_path
+                        and existing_path != current_path
+                        and not _strength_activity_needs_materialization(existing)
+                    ):
                         _delete_processing_activity_placeholder(conn, current_path, keep_id=int(existing["id"]))
                         conn.commit()
                         if dedupe_index is not None:
                             dedupe_index[strict_dedupe_key] = {"id": int(existing["id"])}
-                        return {
-                            "op": "skipped",
-                            "id": int(existing["id"]),
-                            "dedupe": "strict_key",
-                            "duplicate": True,
-                        }
+                        if processing_placeholder:
+                            return {
+                                "op": "skipped",
+                                "id": int(existing["id"]),
+                                "dedupe": "strict_key",
+                                "duplicate": True,
+                            }
+                        # A changed source filename is a semantic re-import. Keep
+                        # the canonical row and merge the newer title/fields below.
+                        existing = None
             semantic_duplicate = None
             if not existing:
                 semantic_duplicate = _find_semantic_duplicate_activity(activity)
                 duplicate_id = _safe_int((semantic_duplicate or {}).get("id"))
                 if duplicate_id:
-                    row = conn.execute(
-                        """
-                        SELECT id, file_name, filename, file_path, deleted_at
-                        FROM activities
-                        WHERE id = ?
-                          AND deleted_at IS NULL
-                          AND COALESCE(source_type, 'fit_sdk') = 'fit_sdk'
-                          AND COALESCE(is_mock, 0) = 0
-                        """,
-                        (duplicate_id,),
-                    ).fetchone()
-                    existing = dict(row) if row else None
+                    candidate = _find_activity_by_id_for_sync(conn, duplicate_id)
+                    if candidate:
+                        source_row = conn.execute(
+                            """
+                            SELECT 1 FROM activities
+                            WHERE id = ?
+                              AND COALESCE(source_type, 'fit_sdk') = 'fit_sdk'
+                              AND COALESCE(is_mock, 0) = 0
+                            """,
+                            (duplicate_id,),
+                        ).fetchone()
+                        existing = candidate if source_row else None
             if existing:
                 activity_id = int(existing["id"])
                 merge_context = _load_activity_sync_merge_context(conn, activity_id)
@@ -8930,6 +10006,100 @@ def _fit_activity_record_count(activity: dict[str, Any]) -> int:
     return 0
 
 
+def _fit_filter_sport_tokens(activity: dict[str, Any]) -> set[str]:
+    tokens: set[str] = set()
+    for key in ("sport_type", "sub_sport_type", "activity_type", "sport", "sub_sport"):
+        raw = activity.get(key)
+        if raw is None:
+            continue
+        token = normalize_review_sport_type(raw)
+        if token:
+            tokens.add(token)
+        raw_token = str(raw or "").strip().lower().replace("-", "_").replace(" ", "_")
+        if raw_token:
+            tokens.add(raw_token)
+    return tokens or {"unknown"}
+
+
+def _fit_first_positive_number(activity: dict[str, Any], keys: Iterable[str]) -> float | None:
+    for key in keys:
+        value = _safe_optional_float(activity.get(key))
+        if value is not None and value > 0:
+            return value
+    return None
+
+
+def _fit_activity_duration_sec(activity: dict[str, Any]) -> float:
+    return _fit_first_positive_number(
+        activity,
+        ("duration_sec", "duration", "moving_time", "elapsed_time", "total_timer_time"),
+    ) or 0.0
+
+
+def _fit_activity_has_hr(activity: dict[str, Any]) -> bool:
+    return _fit_first_positive_number(activity, ("avg_hr", "max_hr", "heart_rate")) is not None
+
+
+def _fit_activity_has_calories(activity: dict[str, Any]) -> bool:
+    return _fit_first_positive_number(activity, ("calories", "total_calories")) is not None
+
+
+def _fit_activity_has_training_effect(activity: dict[str, Any]) -> bool:
+    return _fit_first_positive_number(
+        activity,
+        ("aerobic_training_effect", "anaerobic_training_effect", "training_effect"),
+    ) is not None
+
+
+def _fit_activity_has_power_or_cadence(activity: dict[str, Any]) -> bool:
+    return _fit_first_positive_number(
+        activity,
+        ("avg_power", "max_power", "normalized_power", "avg_cadence", "max_cadence"),
+    ) is not None
+
+
+def _fit_activity_has_laps_or_lengths(activity: dict[str, Any]) -> bool:
+    if _safe_json_list(activity.get("laps_json")):
+        return True
+    return _fit_first_positive_number(
+        activity,
+        (
+            "swolf",
+            "stroke_count",
+            "avg_stroke_distance",
+            "length_distance",
+            "lengths",
+        ),
+    ) is not None
+
+
+def _fit_activity_has_strength_facts(activity: dict[str, Any]) -> bool:
+    if _safe_json_list(activity.get("strength_sets_json")):
+        return True
+    summary = _decode_weather_json(activity.get("strength_summary_json"))
+    if not isinstance(summary, dict):
+        return False
+    return any(
+        _safe_optional_float(summary.get(key)) not in (None, 0)
+        for key in (
+            "working_set_count",
+            "total_reps",
+            "total_volume_kg",
+            "distinct_exercise_count",
+        )
+    )
+
+
+def _fit_activity_has_training_facts(activity: dict[str, Any]) -> bool:
+    return (
+        _fit_activity_duration_sec(activity) >= 60
+        or _fit_activity_has_hr(activity)
+        or _fit_activity_has_calories(activity)
+        or _fit_activity_has_training_effect(activity)
+        or _fit_activity_has_strength_facts(activity)
+    )
+
+
 def _filter_fit_activity_after_parse(activity: dict[str, Any], target: Path, file_size_kb: float | None = None) -> dict[str, Any] | None:
     """Filter parsed FIT payloads that are health snapshots rather than workouts."""
     filter_reasons: list[str] = []
@@ -8938,20 +10108,66 @@ def _filter_fit_activity_after_parse(activity: dict[str, Any], target: Path, fil
     except Exception:
         dist_km_val = 0.0
     total_distance_m = (dist_km_val or 0.0) * 1000.0
+    record_count = _fit_activity_record_count(activity)
     if total_distance_m < MIN_FIT_DISTANCE_M:
         filter_reasons.append("distance_too_short")
-
-    record_count = _fit_activity_record_count(activity)
     if record_count < MIN_FIT_RECORD_COUNT:
         filter_reasons.append("record_count_too_low")
+
+    sport_tokens = _fit_filter_sport_tokens(activity)
+    has_training_facts = _fit_activity_has_training_facts(activity)
+    has_strength_facts = _fit_activity_has_strength_facts(activity)
+    has_power_or_cadence = _fit_activity_has_power_or_cadence(activity)
+    has_laps_or_lengths = _fit_activity_has_laps_or_lengths(activity)
+
+    has_enough_track_signal = (
+        total_distance_m >= MIN_FIT_DISTANCE_M
+        or record_count >= MIN_FIT_RECORD_COUNT
+    )
+
+    if sport_tokens & FIT_NON_TRACK_TRAINING_SPORTS:
+        if has_training_facts or has_strength_facts:
+            return None
+        filter_reasons.append("non_track_training_insufficient_facts")
+    elif sport_tokens & FIT_DISTANCE_OPTIONAL_INDOOR_ENDURANCE_SPORTS:
+        if has_enough_track_signal or has_training_facts or has_power_or_cadence:
+            return None
+        filter_reasons.append("indoor_endurance_insufficient_facts")
+    elif sport_tokens & FIT_POOL_OR_LENGTH_BASED_SPORTS:
+        if total_distance_m >= MIN_FIT_DISTANCE_M or has_laps_or_lengths or has_training_facts:
+            return None
+        filter_reasons.append("pool_activity_insufficient_facts")
+    elif sport_tokens & FIT_SKILL_OR_COURT_SPORTS:
+        if has_training_facts:
+            return None
+        filter_reasons.append("skill_activity_insufficient_facts")
+    elif sport_tokens & FIT_TRACK_REQUIRED_SPORTS:
+        if has_enough_track_signal:
+            return None
+        filter_reasons.append("track_activity_insufficient_track")
+    else:
+        non_generic_tokens = {token for token in sport_tokens if token not in FIT_GENERIC_SPORT_TOKENS}
+        strong_unknown_facts = (
+            _fit_activity_duration_sec(activity) >= 60
+            and (
+                _fit_activity_has_hr(activity)
+                or _fit_activity_has_calories(activity)
+                or _fit_activity_has_training_effect(activity)
+            )
+        )
+        if non_generic_tokens and (has_enough_track_signal or strong_unknown_facts):
+            return None
+        if not non_generic_tokens and strong_unknown_facts:
+            return None
+        filter_reasons.append("unknown_activity_insufficient_facts")
 
     if not filter_reasons:
         return None
     if file_size_kb is None:
         file_size_kb = _fit_file_size_kb(target)
     logger.info(
-        "[V10.1 filter] skip %s: reasons=%s, file_size_kb=%.2f, total_distance_m=%.1f, record_count=%d",
-        target.name, filter_reasons, file_size_kb, total_distance_m, record_count,
+        "[V10.1 filter] skip %s: reasons=%s, file_size_kb=%.2f, total_distance_m=%.1f, record_count=%d, sport_tokens=%s",
+        target.name, filter_reasons, file_size_kb, total_distance_m, record_count, sorted(sport_tokens),
     )
     return _fit_health_skip_result(
         target,
@@ -8962,7 +10178,11 @@ def _filter_fit_activity_after_parse(activity: dict[str, Any], target: Path, fil
     )
 
 
-def _sync_single_fit_file(file_path: str | Path, refresh_career: bool = True) -> dict[str, Any]:
+def _sync_single_fit_file(
+    file_path: str | Path,
+    refresh_career: bool = True,
+    existing_activity_id: int | None = None,
+) -> dict[str, Any]:
     ensure_activity_sync_schema()
     target = Path(file_path).expanduser().resolve()
     if not target.is_file():
@@ -8983,7 +10203,10 @@ def _sync_single_fit_file(file_path: str | Path, refresh_career: bool = True) ->
     if post_filter:
         return post_filter
 
-    write_res = _persist_sync_activity(activity)
+    write_res = _persist_sync_activity(
+        activity,
+        existing_activity_id=existing_activity_id,
+    )
     activity_id = int(write_res.get("id") or 0)
 
     if write_res.get("op") == "skipped" and write_res.get("dedupe") == "strict_key":
@@ -9037,20 +10260,34 @@ def _sha256_fit_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
     return digest.hexdigest()
 
 
+def _activity_source_active_activity(
+    conn: sqlite3.Connection,
+    row: dict[str, Any],
+) -> dict[str, Any] | None:
+    activity_id = _safe_int(row.get("activity_id"))
+    if not activity_id:
+        return None
+    return _find_activity_by_id_for_sync(conn, activity_id)
+
+
 def _activity_source_row_is_complete(conn: sqlite3.Connection, row: dict[str, Any]) -> bool:
     status = str(row.get("ingest_status") or "").strip().lower()
     if status not in {"parsed", "skipped"}:
         return False
-    activity_id = _safe_int(row.get("activity_id"))
-    if status == "parsed" and not activity_id:
+    active = _activity_source_active_activity(conn, row)
+    return bool(active and not _strength_activity_needs_materialization(active))
+
+
+def _activity_source_row_needs_strength_refresh(
+    conn: sqlite3.Connection,
+    row: dict[str, Any],
+) -> bool:
+    status = str(row.get("ingest_status") or "").strip().lower()
+    if status not in {"parsed", "skipped"}:
         return False
-    if not activity_id:
-        return True
-    active = conn.execute(
-        "SELECT 1 FROM activities WHERE id = ? AND deleted_at IS NULL LIMIT 1",
-        (activity_id,),
-    ).fetchone()
-    return active is not None
+    return _strength_activity_needs_materialization(
+        _activity_source_active_activity(conn, row)
+    )
 
 
 def _find_completed_activity_source(
@@ -9066,14 +10303,22 @@ def _find_completed_activity_source(
         ) if provider_activity_id else None
         provider_sha256 = str((provider_row or {}).get("sha256") or "").strip().lower()
         provider_content_matches = not provider_sha256 or provider_sha256 == sha256
-        if provider_row and provider_content_matches and _activity_source_row_is_complete(conn, provider_row):
-            return provider_row, provider_row, "provider_activity_id", None
+        if provider_row and provider_content_matches:
+            if _activity_source_row_is_complete(conn, provider_row):
+                return provider_row, provider_row, "provider_activity_id", None
+            if _activity_source_row_needs_strength_refresh(conn, provider_row):
+                return provider_row, None, "strength_materialization_refresh", None
         provider_row_id = _safe_int((provider_row or {}).get("id"))
+        stale_strength_row = None
         for row in profile_backend.get_activity_source_files_by_sha256(conn, sha256):
             if provider_row_id and _safe_int(row.get("id")) == provider_row_id:
                 continue
             if _activity_source_row_is_complete(conn, row):
                 return provider_row, row, "sha256", None
+            if stale_strength_row is None and _activity_source_row_needs_strength_refresh(conn, row):
+                stale_strength_row = row
+        if stale_strength_row is not None:
+            return provider_row or stale_strength_row, None, "strength_materialization_refresh", None
         return provider_row, None, "", None
     except Exception as exc:
         logger.warning(
@@ -9141,7 +10386,7 @@ def _prepare_local_fit_source(target: Path) -> dict[str, Any]:
     file_size = int(stat.st_size)
     file_mtime = float(stat.st_mtime)
     sha256_value = _sha256_fit_file(target)
-    _, completed_row, idempotency_reason, lookup_warning = _find_completed_activity_source(
+    source_row, completed_row, idempotency_reason, lookup_warning = _find_completed_activity_source(
         "local",
         "",
         sha256_value,
@@ -9151,12 +10396,16 @@ def _prepare_local_fit_source(target: Path) -> dict[str, Any]:
         "sha256": sha256_value,
         "file_size": file_size,
         "file_mtime": file_mtime,
-        "source_file_id": None,
+        "source_file_id": _safe_int((source_row or {}).get("id")) or None,
         "ledger_available": lookup_warning is None,
         "ledger_warning": lookup_warning,
         "skip_parse": False,
-        "activity_id": 0,
-        "idempotency_reason": "",
+        "activity_id": (
+            _safe_int((source_row or {}).get("activity_id"))
+            if idempotency_reason == "strength_materialization_refresh"
+            else 0
+        ),
+        "idempotency_reason": idempotency_reason,
     }
     if lookup_warning:
         return context
@@ -9193,6 +10442,8 @@ def _prepare_local_fit_source(target: Path) -> dict[str, Any]:
         file_size=file_size,
         file_mtime=file_mtime,
         ingest_status="pending",
+        activity_id=_safe_int(context.get("activity_id")) or None,
+        source_file_id=_safe_int(context.get("source_file_id")) or None,
     )
     context["source_file_id"] = source_file_id
     context["ledger_warning"] = ledger_warning
@@ -9311,6 +10562,11 @@ def _import_remote_fit_candidates(
                 ledger_warnings.append(lookup_warning)
                 ledger_available = False
             source_file_id = _safe_int((provider_row or {}).get("id")) or None
+            refresh_activity_id = (
+                _safe_int((provider_row or {}).get("activity_id"))
+                if idempotency_reason == "strength_materialization_refresh"
+                else 0
+            )
 
             if completed_row is not None:
                 completed_id = _safe_int(completed_row.get("id")) or None
@@ -9364,6 +10620,7 @@ def _import_remote_fit_candidates(
                     file_size=file_size,
                     file_mtime=file_mtime,
                     ingest_status="pending",
+                    activity_id=refresh_activity_id or None,
                     source_file_id=source_file_id,
                 )
                 source_file_id = pending_id or source_file_id
@@ -9371,7 +10628,14 @@ def _import_remote_fit_candidates(
                 if pending_warning:
                     ledger_warnings.append(pending_warning)
 
-            sync_result = _sync_single_fit_file(target, refresh_career=False)
+            if refresh_activity_id:
+                sync_result = _sync_single_fit_file(
+                    target,
+                    refresh_career=False,
+                    existing_activity_id=refresh_activity_id,
+                )
+            else:
+                sync_result = _sync_single_fit_file(target, refresh_career=False)
             if not isinstance(sync_result, dict) or not sync_result.get("ok"):
                 error_text = str((sync_result or {}).get("error") or "FIT 导入失败") if isinstance(sync_result, dict) else "FIT 导入失败"
                 raise RuntimeError(error_text)
@@ -10240,6 +11504,113 @@ def _build_radar_insight_messages(
     ]
 
 
+class DemSessionCache:
+    """Keep optional DEM material isolated to the current application process."""
+
+    def __init__(
+        self,
+        root: Path | None = None,
+        session_id: str | None = None,
+        buffer_meters: int = DEM_SESSION_BBOX_BUFFER_METERS,
+    ) -> None:
+        self.root = Path(root) if root is not None else DEM_SESSION_CACHE_ROOT
+        self.session_id = session_id or ("session_" + uuid.uuid4().hex[:16])
+        self.buffer_meters = int(buffer_meters)
+        self._lock = threading.RLock()
+        self.cleanup_stale_sessions()
+
+    @property
+    def session_dir(self) -> Path:
+        return self.root / self.session_id
+
+    def cleanup_stale_sessions(self) -> int:
+        """Remove only prior app-session directories without creating the cache root."""
+        with self._lock:
+            if not self.root.exists():
+                return 0
+            if not self.root.is_dir():
+                logger.warning("DEM session cache root is not a directory: %s", self.root)
+                return 0
+
+            removed = 0
+            for child in self.root.iterdir():
+                if child.name == self.session_id or not child.name.startswith("session_"):
+                    continue
+                try:
+                    if child.is_symlink():
+                        child.unlink()
+                    elif child.is_dir():
+                        shutil.rmtree(child)
+                    else:
+                        continue
+                    removed += 1
+                except OSError:
+                    logger.warning("Unable to remove stale DEM session cache: %s", child, exc_info=True)
+            return removed
+
+    def prepare_route_bbox(self, points: list[dict[str, Any]]) -> dict[str, Any]:
+        """Create current-session metadata after explicit terrain-layer selection."""
+        if not isinstance(points, list) or len(points) < 2:
+            raise ValueError("当前轨迹至少需要两个有效 GPS 点")
+        if len(points) > DEM_SESSION_MAX_ROUTE_POINTS:
+            raise ValueError("当前轨迹点数量超过 DEM 预备上限")
+
+        coordinates: list[tuple[float, float]] = []
+        for point in points:
+            if not isinstance(point, dict):
+                continue
+            try:
+                lon = float(point.get("lon"))
+                lat = float(point.get("lat"))
+            except (TypeError, ValueError):
+                continue
+            if not math.isfinite(lon) or not math.isfinite(lat):
+                continue
+            if not (-180.0 <= lon <= 180.0 and -90.0 <= lat <= 90.0):
+                continue
+            coordinates.append((lon, lat))
+
+        if len(coordinates) < 2:
+            raise ValueError("当前轨迹缺少有效 GPS 坐标")
+
+        longitudes = [coordinate[0] for coordinate in coordinates]
+        latitudes = [coordinate[1] for coordinate in coordinates]
+        mean_latitude = (min(latitudes) + max(latitudes)) / 2.0
+        latitude_buffer = self.buffer_meters / 111320.0
+        longitude_buffer = self.buffer_meters / max(
+            111320.0 * abs(math.cos(math.radians(mean_latitude))),
+            1.0,
+        )
+        bbox = {
+            "west": round(max(-180.0, min(longitudes) - longitude_buffer), 7),
+            "south": round(max(-90.0, min(latitudes) - latitude_buffer), 7),
+            "east": round(min(180.0, max(longitudes) + longitude_buffer), 7),
+            "north": round(min(90.0, max(latitudes) + latitude_buffer), 7),
+            "buffer_meters": self.buffer_meters,
+            "point_count": len(coordinates),
+        }
+
+        with self._lock:
+            self.session_dir.mkdir(parents=True, exist_ok=True)
+            metadata_path = self.session_dir / "route-bbox.json"
+            metadata_path.write_text(
+                json.dumps({"bbox": bbox}, ensure_ascii=False, sort_keys=True),
+                encoding="utf-8",
+            )
+        return bbox
+
+    def cleanup_current_session(self) -> bool:
+        with self._lock:
+            if not self.session_dir.exists():
+                return False
+            try:
+                shutil.rmtree(self.session_dir)
+                return True
+            except OSError:
+                logger.warning("Unable to remove current DEM session cache: %s", self.session_dir, exc_info=True)
+                return False
+
+
 class Api:
     """pywebview js_api：轨迹文件、导出、大模型（OpenAI 兼容）等。"""
 
@@ -10267,6 +11638,7 @@ class Api:
         self._track_weather: dict[str, Any] | None = None
         self._chat_messages: list[dict[str, str]] = []
         self._session_id = "session_" + uuid.uuid4().hex[:16]
+        self._dem_session_cache = DemSessionCache()
         self._window = None
         self._frontend_ready = False
         self._pending_track_notifications: list[tuple[str, int]] = []
@@ -10507,6 +11879,27 @@ class Api:
 
     def _new_session_id(self) -> None:
         self._session_id = "session_" + uuid.uuid4().hex[:16]
+
+    def prepare_dem_session_cache(self, points_json: str) -> dict:
+        """Prepare a route-local temporary DEM cache after a user layer action."""
+        try:
+            points = json.loads(points_json)
+        except (TypeError, json.JSONDecodeError):
+            return _api_error(API_CODE_VALIDATION, "DEM 轨迹数据不是有效 JSON")
+        if not isinstance(points, list):
+            return _api_error(API_CODE_VALIDATION, "DEM 轨迹数据必须是数组")
+
+        try:
+            bbox = self._dem_session_cache.prepare_route_bbox(points)
+        except ValueError as exc:
+            return _api_error(API_CODE_VALIDATION, str(exc))
+        except OSError:
+            logger.exception("prepare_dem_session_cache failed")
+            return _api_error(API_CODE_INTERNAL, "DEM 临时缓存准备失败")
+        return _api_success({"prepared": True, "bbox": bbox})
+
+    def cleanup_dem_session_cache(self) -> None:
+        self._dem_session_cache.cleanup_current_session()
 
     def sync_track_context(self, payload_json: str) -> dict:
         """前端完成渲染后同步轨迹上下文。
@@ -13186,6 +14579,7 @@ class Api:
                     "DELETE FROM activities WHERE id IN ({})".format(",".join("?" * len(deletable_ids))),
                     deletable_ids,
                 )
+                career_lifecycle = career_backend.repair_record_lifecycle(conn)
             conn.commit()
             logger.info(
                 "delete_activities audit_id=%s requested=%s deleted=%s files_deleted=%s missing=%s unsafe=%s file_errors=%s",
@@ -13209,6 +14603,7 @@ class Api:
             }
             if deletable_ids:
                 result["career_metric_results"] = career_metric_results
+                result["career_lifecycle"] = career_lifecycle
                 result["career_refresh"] = _refresh_career_derived_events_safe("delete_activities")
             if missing_ids:
                 result["missing_ids"] = missing_ids
@@ -13398,7 +14793,20 @@ class Api:
                             continue
                         emit_progress(f"正在解析 {min(current + 1, total)}/{total}：{src.name}", src.name)
                         # 手动调用单入口同步解析
-                        res = _sync_single_fit_file(dst, refresh_career=False)
+                        refresh_activity_id = (
+                            _safe_int(current_source_context.get("activity_id"))
+                            if current_source_context.get("idempotency_reason")
+                            == "strength_materialization_refresh"
+                            else 0
+                        )
+                        if refresh_activity_id:
+                            res = _sync_single_fit_file(
+                                dst,
+                                refresh_career=False,
+                                existing_activity_id=refresh_activity_id,
+                            )
+                        else:
+                            res = _sync_single_fit_file(dst, refresh_career=False)
                         if res.get("ok"):
                             if res.get("op") == "skipped":
                                 # V10.1 健康数据过滤跳过(契约 §2.2)
@@ -13930,6 +15338,20 @@ class Api:
         except Exception:
             logger.exception("rebuild_career_record_metric_results failed")
             return _api_error(API_CODE_DB, "记录中心成绩物化维护失败")
+
+    def repair_historical_swim_records(self, payload: dict | None = None) -> dict:
+        """Repair historical swim source facts and rebuild V3 record projections."""
+        started = time.perf_counter()
+        try:
+            data = repair_historical_swim_records(payload)
+            data["metrics"] = {
+                "elapsed_ms": round((time.perf_counter() - started) * 1000.0, 2),
+                "controlled_apply": not bool(data.get("dry_run", True)),
+            }
+            return _api_success(data)
+        except Exception:
+            logger.exception("repair_historical_swim_records failed")
+            return _api_error(API_CODE_DB, "历史游泳记录修复失败")
 
     def materialize_career_record_breaking_events(self, payload: dict | None = None) -> dict:
         """Controlled record-breaking event materialization maintenance API; dry-run by default."""
@@ -17090,6 +18512,44 @@ class Api:
             logger.warning("get_region_admin1_backfill_dry_run failed: %s", e)
             return _api_error(API_CODE_DB, str(e))
 
+    def get_strength_materialization_dry_run(self, payload: dict | None = None) -> dict:
+        try:
+            raw_limit = payload.get("limit") if isinstance(payload, dict) else None
+            result = strength_materialization_dry_run(limit=raw_limit)
+            return _api_success(result)
+        except Exception as e:
+            logger.warning("get_strength_materialization_dry_run failed: %s", e)
+            return _api_error(API_CODE_DB, "力量训练历史数据扫描失败")
+
+    def start_strength_materialization_backfill(self, payload: dict | None = None) -> dict:
+        try:
+            raw_limit = payload.get("limit") if isinstance(payload, dict) else None
+            status = _start_strength_materialization_backfill(limit=raw_limit)
+            return _api_success({"strength_materialization": status})
+        except Exception:
+            logger.exception("start_strength_materialization_backfill failed")
+            return _api_error(API_CODE_DB, "力量训练历史数据补全启动失败")
+
+    def get_strength_materialization_backfill_status(self) -> dict:
+        try:
+            return _api_success(
+                {"strength_materialization": _strength_materialization_backfill_status()}
+            )
+        except Exception:
+            return _api_error(API_CODE_DB, "力量训练历史数据补全状态查询失败")
+
+    def retry_strength_materialization_backfill(self, payload: dict | None = None) -> dict:
+        try:
+            raw_limit = payload.get("limit") if isinstance(payload, dict) else None
+            status = _start_strength_materialization_backfill(
+                limit=raw_limit,
+                retry_only=True,
+            )
+            return _api_success({"strength_materialization": status})
+        except Exception:
+            logger.exception("retry_strength_materialization_backfill failed")
+            return _api_error(API_CODE_DB, "力量训练历史数据重试启动失败")
+
     def run_region_admin1_backfill_once(self, payload: dict | None = None) -> dict:
         try:
             raw_limit = 500
@@ -17191,6 +18651,16 @@ FULL_ACTIVITY_LAP_FALLBACK_DISPLAY_TYPES = frozenset({"hiking", "mountaineering"
 _AUTO_LAP_ELIGIBLE_DISPLAY_TYPES = frozenset({"cycling", "road_cycling", "mountain_biking"})
 _AUTO_LAP_BUCKET_M: float = 5000.0
 _AUTO_LAP_MIN_DISTANCE_KM: float = 5.0
+_POOL_SWIM_DETAIL_TYPES = frozenset({"swimming", "lap_swimming"})
+
+
+def _filter_pool_swim_active_laps(laps: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        lap
+        for lap in laps
+        if _safe_float(lap.get("distance_km"), 0.0) > 0
+        or _safe_float(lap.get("distance_m"), 0.0) > 0
+    ]
 
 
 def _build_detail_laps(api_self, row: dict, display_type: str, dist_km: float, duration_sec: int, avg_hr = None, base_power: int = 0) -> list[dict[str, Any]]:
@@ -17215,6 +18685,8 @@ def _build_detail_laps(api_self, row: dict, display_type: str, dist_km: float, d
     """
     normalized_type = (display_type or "").strip().lower()
     real_laps = _build_real_laps_from_row(row, dist_km, duration_sec, avg_hr, base_power)
+    if normalized_type in _POOL_SWIM_DETAIL_TYPES and real_laps:
+        real_laps = _filter_pool_swim_active_laps(real_laps)
 
     # 多圈 FIT 真实数据:始终优先返回
     if real_laps and len(real_laps) >= 2:
@@ -17280,6 +18752,123 @@ def _build_detail_laps(api_self, row: dict, display_type: str, dist_km: float, d
     return api_self._build_lap_rows(dist_km, duration_sec, avg_hr, base_power)
 
 
+def _build_strength_detail_payload(row: dict[str, Any]) -> dict[str, Any] | None:
+    normalized_sets = _safe_json_list(row.get("strength_sets_json"))
+    summary = _decode_weather_json(row.get("strength_summary_json"))
+    if not normalized_sets or not summary:
+        return None
+    muscle_heatmap = _decode_weather_json(row.get("muscle_heatmap_json"))
+    heatmap_regions = (
+        muscle_heatmap.get("regions", [])
+        if isinstance(muscle_heatmap, dict)
+        else []
+    )
+    primary_muscles: dict[str, list[str]] = {}
+    secondary_muscles: dict[str, list[str]] = {}
+    for region in heatmap_regions:
+        if not isinstance(region, dict):
+            continue
+        label = str(region.get("label") or region.get("id") or "").strip()
+        if not label:
+            continue
+        for exercise_key in region.get("primary_exercise_keys") or []:
+            primary_muscles.setdefault(str(exercise_key), []).append(label)
+        for exercise_key in region.get("secondary_exercise_keys") or []:
+            secondary_muscles.setdefault(str(exercise_key), []).append(label)
+
+    def strength_exercise_display_name(exercise_key: str, exercise_name: str) -> str:
+        raw_name = (exercise_name or "").strip()
+        if raw_name and raw_name != "未识别动作" and re.search(r"[\u3400-\u9fff]", raw_name):
+            return raw_name
+        mapped = STRENGTH_EXERCISE_LABELS_ZH.get(exercise_key)
+        if mapped:
+            return mapped
+        normalized_raw = raw_name.lower().replace("-", "_").replace(" ", "_")
+        return STRENGTH_EXERCISE_LABELS_ZH.get(normalized_raw, raw_name or "未识别动作")
+
+    grouped: dict[str, dict[str, Any]] = {}
+    order: list[str] = []
+    for item in normalized_sets:
+        if not isinstance(item, dict):
+            continue
+        exercise_key = str(item.get("exercise_key") or "").strip()
+        raw_exercise_name = str(item.get("exercise_name") or "未识别动作").strip()
+        exercise_name = strength_exercise_display_name(exercise_key, raw_exercise_name)
+        group_key = exercise_key or f"unknown:{exercise_name}"
+        if group_key not in grouped:
+            grouped[group_key] = {
+                "exercise_key": exercise_key or None,
+                "exercise_name": exercise_name,
+                "exercise_raw_name": raw_exercise_name if raw_exercise_name != exercise_name else None,
+                "exercise_name_source": item.get("exercise_name_source") or "unknown",
+                "working_set_count": 0,
+                "volume_kg": None,
+                "primary_muscles": primary_muscles.get(exercise_key, []),
+                "secondary_muscles": secondary_muscles.get(exercise_key, []),
+                "sets": [],
+            }
+            order.append(group_key)
+        set_type = str(item.get("set_type") or "working")
+        reps = _safe_int(item.get("reps")) or None
+        weight_kg = _safe_optional_float(item.get("weight_kg"))
+        set_volume = (
+            round(reps * weight_kg, 3)
+            if set_type == "working" and reps and weight_kg and weight_kg > 0
+            else None
+        )
+        exercise = grouped[group_key]
+        if set_type == "working":
+            exercise["working_set_count"] += 1
+        if set_volume is not None:
+            exercise["volume_kg"] = round(
+                (exercise.get("volume_kg") or 0.0) + set_volume,
+                3,
+            )
+        exercise["sets"].append({
+            "set_index": _safe_int(item.get("set_index")),
+            "set_type": set_type,
+            "reps": reps,
+            "weight_kg": weight_kg if weight_kg is not None and weight_kg > 0 else None,
+            "duration_sec": _safe_optional_float(item.get("duration_sec")),
+            "volume_kg": set_volume,
+        })
+    if not grouped:
+        return None
+    return {
+        "summary": summary,
+        "exercises": [grouped[key] for key in order],
+        "muscle_heatmap": muscle_heatmap,
+    }
+
+
+def _build_strength_materialization_view(row: dict[str, Any]) -> dict[str, Any] | None:
+    if not _is_explicit_strength_activity(row):
+        return None
+    raw_status = str(row.get("strength_materialization_status") or "").strip().lower()
+    stored_version = _safe_int(row.get("strength_materialization_version"), 0)
+    if _strength_materialization_row_is_complete(row):
+        status = "unstructured" if raw_status == "unstructured" else "materialized"
+    elif stored_version >= STRENGTH_MATERIALIZATION_VERSION and raw_status in {
+        "source_missing",
+        "failed",
+    }:
+        status = raw_status
+    else:
+        status = "pending"
+    return {
+        "version": STRENGTH_MATERIALIZATION_VERSION,
+        "status": status,
+        "can_retry": status in {"source_missing", "failed"},
+        "message_code": {
+            "pending": "strength_materialization_pending",
+            "materialized": "strength_materialization_ready",
+            "unstructured": "strength_sets_not_recorded",
+            "source_missing": "strength_source_unavailable",
+            "failed": "strength_materialization_failed",
+        }[status],
+    }
+
+
 def _build_multi_sport_overview_view_model(
     row: dict,
     *,
@@ -17297,6 +18886,17 @@ def _build_multi_sport_overview_view_model(
     )
     detail_surface_mode = get_detail_surface_mode(sport_type)
     overview_capabilities = get_detail_capabilities(sport_type)
+    strength_detail = (
+        _build_strength_detail_payload(row)
+        if detail_surface_mode == "strength"
+        else None
+    )
+    strength_summary = (
+        strength_detail.get("summary", {})
+        if isinstance(strength_detail, dict)
+        else {}
+    )
+    has_structured_sets = bool(strength_detail)
     weather = _decode_weather_json(row.get("weather_json"))
     has_distance = distance_km > 0
     has_pace = bool(pace_sec and pace_sec > 0)
@@ -17322,6 +18922,7 @@ def _build_multi_sport_overview_view_model(
         "has_cadence": has_cadence,
         "has_hr": avg_hr is not None,
         "has_weather": bool(weather),
+        "has_structured_sets": has_structured_sets,
     })
 
     metric_candidates = {
@@ -17346,8 +18947,22 @@ def _build_multi_sport_overview_view_model(
             ("avg_cadence", has_cadence), ("avg_hr", avg_hr is not None),
         ],
         "strength": [
-            ("duration_sec", duration_sec > 0), ("avg_hr", avg_hr is not None),
-            ("calories", calories > 0),
+            ("duration_sec", duration_sec > 0),
+            (
+                "strength_exercise_count",
+                _safe_int(strength_summary.get("distinct_exercise_count")) > 0,
+            ),
+            (
+                "strength_working_set_count",
+                _safe_int(strength_summary.get("working_set_count")) > 0,
+            ),
+            ("strength_total_reps", _safe_int(strength_summary.get("total_reps")) > 0),
+            (
+                "strength_total_volume_kg",
+                _safe_float(strength_summary.get("total_volume_kg")) > 0,
+            ),
+            ("avg_hr", avg_hr is not None),
+            ("calories", avg_hr is None and calories > 0),
         ],
         "mobility_recovery": [
             ("duration_sec", duration_sec > 0), ("avg_hr", avg_hr is not None),
@@ -17366,36 +18981,47 @@ def _build_multi_sport_overview_view_model(
     primary_visual = {
         "endurance_indoor": "indoor_summary",
         "swim_pool": "swim_summary",
-        "swim_open_water": "swim_summary",
-        "strength": "strength_limited",
+        "swim_open_water": "track_map" if has_track_visual else "swim_summary",
+        "strength": "strength_muscle_map" if has_structured_sets else "strength_limited",
         "mobility_recovery": "recovery_summary",
     }.get(detail_surface_mode, "track_map" if has_track_visual else "empty")
     split_section = {
         "endurance_indoor": "indoor_segments",
-        "strength": "strength_unavailable",
+        "strength": "strength_sets" if has_structured_sets else "strength_unavailable",
         "swim_pool": "swim_lengths" if has_swim_lengths else "unavailable",
         "swim_open_water": "swim_lengths" if has_swim_lengths else "unavailable",
         "mobility_recovery": "hr_summary" if overview_capabilities["has_hr"] else "unavailable",
         "generic_session": "hr_summary" if overview_capabilities["has_hr"] else "unavailable",
     }.get(detail_surface_mode, "laps" if has_laps else "unavailable")
-    return {
+    view_model = {
         "detail_surface_mode": detail_surface_mode,
         "overview_capabilities": overview_capabilities,
         "overview_empty_states": {
             "primary_visual": (
                 "indoor_no_track" if detail_surface_mode == "endurance_indoor" and not has_track_visual
-                else "structured_sets_missing" if detail_surface_mode == "strength"
+                else "structured_sets_missing" if detail_surface_mode == "strength" and not has_structured_sets
                 else "data_unavailable" if primary_visual == "empty" else None
             ),
-            "splits": "structured_sets_missing" if detail_surface_mode == "strength" else (
-                "swim_lengths_missing" if detail_surface_mode.startswith("swim") and not has_swim_lengths
-                else "segments_unavailable" if split_section == "unavailable" else None
+            "splits": (
+                "structured_sets_missing"
+                if detail_surface_mode == "strength" and not has_structured_sets
+                else "swim_lengths_missing"
+                if detail_surface_mode.startswith("swim") and not has_swim_lengths
+                else "segments_unavailable"
+                if split_section == "unavailable"
+                else None
             ),
         },
         "overview_metrics": overview_metrics,
         "primary_visual": primary_visual,
         "split_section": split_section,
     }
+    if strength_detail:
+        view_model["strength"] = strength_detail
+    strength_materialization = _build_strength_materialization_view(row)
+    if strength_materialization:
+        view_model["strength_materialization"] = strength_materialization
+    return view_model
 
 
 def _build_activity_detail_summary_from_row(row: dict, idx: int = 0) -> dict:
@@ -17633,6 +19259,8 @@ def _build_record_from_row(api_self, row: dict, idx: int) -> dict:
     }
 
     detail_laps = _build_detail_laps(api_self, row, display_type, dist_km, duration_sec, avg_hr, base_power)
+    if get_detail_surface_mode(display_type) == "strength":
+        detail_laps = []
 
     detail = {
         "display_metrics": SemanticSportsEngine.build_display_metrics(display_type, raw_for_engine),
@@ -18228,6 +19856,7 @@ def main() -> None:
         webview.start(debug=False)
     finally:
         _APP_SHUTTING_DOWN.set()
+        api.cleanup_dem_session_cache()
         watch_service.stop()
 
 

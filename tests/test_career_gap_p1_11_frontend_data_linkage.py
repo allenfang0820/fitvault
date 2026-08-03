@@ -151,9 +151,11 @@ class TestCareerGapP111FrontendDataLinkage(unittest.TestCase):
 
     def test_footprint_copy_uses_full_career_language_not_race_only_language(self):
         self.assertIn("生涯足迹", self.career_panel)
-        self.assertIn("按 Activity 地理信息点亮行政区域", self.career_panel)
+        self.assertIn("按活动地点回顾你的运动足迹", self.career_panel)
+        self.assertNotIn("按 Activity 地理信息点亮行政区域", self.career_panel)
         self.assertNotIn("仅展示已绑定 Activity 的赛事起点", self.career_panel)
-        self.assertIn("照片从赛事活动详情页绑定进入", self.career_panel)
+        self.assertIn("为赛事活动添加照片后", self.career_panel)
+        self.assertNotIn("照片从赛事活动详情页绑定进入", self.career_panel)
         self.assertNotIn("career-memory-story-activity-id", self.career_panel)
 
 

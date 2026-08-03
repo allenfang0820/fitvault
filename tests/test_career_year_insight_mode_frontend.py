@@ -159,6 +159,7 @@ class TestCareerYearInsightModeFrontend(unittest.TestCase):
 
     def test_career_data_load_is_gated_and_does_not_preload_full_career_insight(self):
         body = extract_function_body(self.source, "async function loadCareerData()")
+        first_paint_body = extract_function_body(self.source, "async function loadCareerFirstPaint()")
 
         self.assertIn("careerDataLoaded", body)
         self.assertIn("careerDataLoadingPromise", body)
@@ -166,7 +167,8 @@ class TestCareerYearInsightModeFrontend(unittest.TestCase):
         self.assertIn("sourceUnchanged", body)
         self.assertIn("coreLoadsReady", body)
         self.assertNotIn("loadCareerInsight", body)
-        self.assertLess(body.index("loadCareerOverview"), body.index("loadCareerSeasons"))
+        self.assertIn("loadCareerFirstPaint()", body)
+        self.assertLess(first_paint_body.index("loadCareerOverview"), first_paint_body.index("loadCareerSeasons"))
 
     def test_year_card_navigation_suppresses_default_load_and_selects_card_year(self):
         body = extract_function_body(self.source, "function openCareerYearInsight(year)")

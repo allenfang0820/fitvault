@@ -145,9 +145,11 @@ class TestCareerTimelineFrontendRender(unittest.TestCase):
         loading_body = extract_function_body(self.source, "function renderCareerTimelineLoading()")
         error_body = extract_function_body(self.source, "function renderCareerTimelineError(message)")
         self.assertIn("career-timeline-empty", render_body)
-        self.assertIn("时间轴已生成", render_body)
+        self.assertIn("if (statusText) statusText.textContent = ''", render_body)
+        self.assertNotIn("时间轴已生成", render_body)
         self.assertIn("正在加载时间轴", loading_body)
-        self.assertIn("时间轴暂不可用", error_body)
+        self.assertIn("暂时无法加载时间轴，请稍后重试。", error_body)
+        self.assertNotIn("statusText.textContent = message", error_body)
         self.assertIn("dataReady", render_body + error_body)
         self.assertNotIn("时间轴已接入", render_body)
         self.assertNotIn("已接入", render_body)
@@ -285,9 +287,13 @@ class TestCareerTimelineFrontendRender(unittest.TestCase):
     def test_switching_to_career_loads_timeline_without_breaking_overview(self):
         body = extract_function_body(self.source, "function switchTab(tabBtn)")
         load_body = extract_function_body(self.source, "async function loadCareerData()")
+        first_paint_body = extract_function_body(self.source, "async function loadCareerFirstPaint()")
+        page_body = extract_function_body(self.source, "async function loadCareerPageData(page, options)")
         self.assertIn("loadCareerData().catch", body)
-        self.assertIn("loadCareerOverview().catch", load_body)
-        self.assertIn("loadCareerTimeline().catch", load_body)
+        self.assertIn("loadCareerFirstPaint()", load_body)
+        self.assertIn("loadCareerOverview().catch", first_paint_body)
+        self.assertNotIn("loadCareerTimeline().catch", load_body)
+        self.assertIn("timeline: function() { return loadCareerTimeline(appState.career.timelineFilters); }", page_body)
 
 
 if __name__ == "__main__":

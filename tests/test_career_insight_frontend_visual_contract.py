@@ -70,7 +70,7 @@ class TestCareerInsightFrontendVisualContract(unittest.TestCase):
         cls.mobile_css = extract_between(
             cls.source,
             "@media (max-width: 980px)",
-            "/* V1.0:三个预留 tab",
+            "/* 成长趋势开发态蒙板 */",
         )
         cls.relevant_js = "\n".join(
             extract_function_body(cls.source, signature)
@@ -84,7 +84,8 @@ class TestCareerInsightFrontendVisualContract(unittest.TestCase):
         )
 
     def test_placeholder_copy_is_annual_and_not_full_career_copy(self):
-        self.assertIn("年度事实准备完成后", self.dom)
+        self.assertIn("选择有运动记录的年份", self.dom)
+        self.assertNotIn("年度事实准备完成后", self.dom)
         self.assertIn("年度 AI 总结", self.dom)
         self.assertNotIn("生涯总结", self.dom)
         self.assertNotIn("本地洞察", self.dom)
@@ -99,9 +100,10 @@ class TestCareerInsightFrontendVisualContract(unittest.TestCase):
             self.assertNotIn(text, self.relevant_js)
 
     def test_loading_and_error_copy_are_scoped_to_annual_report(self):
-        self.assertIn("年度总结加载中", self.relevant_js)
-        self.assertIn("年度总结暂不可用", self.relevant_js)
+        self.assertIn("正在加载年度总结", self.relevant_js)
+        self.assertIn("年度总结暂时无法加载", self.relevant_js)
         self.assertIn("年度总结只读接口暂不可用", self.relevant_js)
+        self.assertNotIn("年度只读数据", self.relevant_js)
         self.assertNotIn("生涯本地洞察", self.relevant_js)
         self.assertNotIn("alert(", self.relevant_js)
 

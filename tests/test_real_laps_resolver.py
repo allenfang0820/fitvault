@@ -48,7 +48,7 @@ class TestLapOutputContract(unittest.TestCase):
         self.assertEqual(len(r), 1)
         lap = r[0]
         expected_keys = {
-            "lap_no", "distance_km", "pace_sec", "hr", "max_hr",
+            "lap_no", "distance_m", "distance_km", "pace_sec", "hr", "max_hr",
             "cadence", "cadence_spm", "gct_ms", "stance_time_balance_pct",
             "power_w", "ascent_m", "descent_m",
             "calories", "swolf", "stroke_style", "stroke_distance_m",
@@ -66,7 +66,7 @@ class TestLapOutputContract(unittest.TestCase):
         r = MetricsResolver._build_real_laps_from_row(
             {"laps_json": self._make_laps_json(laps_data)})
         allowed = {
-            "lap_no", "distance_km", "pace_sec", "hr", "max_hr",
+            "lap_no", "distance_m", "distance_km", "pace_sec", "hr", "max_hr",
             "cadence", "cadence_spm", "gct_ms", "stance_time_balance_pct",
             "power_w", "ascent_m", "descent_m",
             "calories", "swolf", "stroke_style", "stroke_distance_m",
@@ -130,6 +130,37 @@ class TestNormalLapsParsing(unittest.TestCase):
             {"laps_json": self.laps_data})
         self.assertEqual(len(r), 2)
         self.assertEqual(r[0]["pace_sec"], 300)
+
+    def test_pool_swim_lap_facts_forward_to_detail_rows(self):
+        laps_data = [
+            {
+                "distance_m": 80.0,
+                "elapsed_sec": 78.188,
+                "avg_hr": 121,
+                "swolf": 128,
+                "swim_stroke": "breaststroke",
+                "length_distance_m": 80.0,
+            },
+            {
+                "distance_m": 0.0,
+                "elapsed_sec": 53.438,
+                "avg_hr": 126,
+                "swolf": None,
+                "swim_stroke": None,
+                "length_distance_m": None,
+            },
+        ]
+
+        r = MetricsResolver._build_real_laps_from_row(
+            {"laps_json": json.dumps(laps_data)}
+        )
+
+        self.assertEqual(r[0]["swolf"], 128)
+        self.assertEqual(r[0]["stroke_style"], "breaststroke")
+        self.assertEqual(r[0]["length_distance_m"], 80.0)
+        self.assertIsNone(r[1]["swolf"])
+        self.assertIsNone(r[1]["stroke_style"])
+        self.assertIsNone(r[1]["length_distance_m"])
 
 
 # ══════════════════════════════════════════════════════════════════

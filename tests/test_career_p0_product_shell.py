@@ -88,7 +88,8 @@ class TestCareerP0ProductShell(unittest.TestCase):
         self.assertIn('data-acs-product-shell="v1"', self.career_panel)
 
     def test_career_top_secondary_navigation_matches_acs_modules(self):
-        self.assertIn('aria-label="ACS 二级页面导航"', self.career_panel)
+        self.assertIn('aria-label="运动生涯页面导航"', self.career_panel)
+        self.assertNotIn('aria-label="ACS 二级页面导航"', self.career_panel)
         expected = {
             "overview": "总览",
             "timeline": "时间轴",

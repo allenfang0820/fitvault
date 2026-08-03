@@ -91,8 +91,7 @@ class TestNoBusinessLogicInMainPy(unittest.TestCase):
             func_src = ast.unparse(node)
             self.assertNotIn("window = max(", func_src,
                             "window= 计算已下沉,main.py 不应再含")
-            self.assertNotIn("n = len(", func_src,
-                            "n=len() 计算已下沉,main.py 不应再含")
+            self.assertIn("_build_review_input_window", func_src)
 
     def test_fatigue_zones_only_passes_through(self):
         """_build_fatigue_review_snapshot 中 fatigue_zones 变量只来自契约层"""

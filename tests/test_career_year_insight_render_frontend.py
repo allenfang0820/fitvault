@@ -35,6 +35,7 @@ class TestCareerYearInsightRenderFrontend(unittest.TestCase):
     def test_year_renderer_outputs_title_meta_data_through_partial_and_facts(self):
         body = extract_function_body(self.source, "function renderCareerYearInsight(viewModel)")
         facts_body = extract_function_body(self.source, "function careerYearFactsHtml(facts)")
+        distance_body = extract_function_body(self.source, "function formatCareerYearDistanceKm(value)")
         generated_at_body = extract_function_body(self.source, "function formatCareerGeneratedAt(value)")
 
         self.assertIn("年度总结", body)
@@ -45,6 +46,10 @@ class TestCareerYearInsightRenderFrontend(unittest.TestCase):
         self.assertIn("is_partial_year", body)
         self.assertIn("careerYearFactsHtml(facts)", body)
         self.assertIn("isV2Report ? '' : careerYearFactsHtml(facts)", body)
+        self.assertIn("formatCareerYearDistanceKm(summary.total_distance_km)", facts_body)
+        self.assertNotIn("formatCareerDistanceKm(summary.total_distance_km)", facts_body)
+        self.assertIn("' 公里'", distance_body)
+        self.assertNotIn("' km'", distance_body)
         for token in (
             "activity_count",
             "total_distance_km",
@@ -146,7 +151,7 @@ class TestCareerYearInsightRenderFrontend(unittest.TestCase):
         for state in ("no_data", "not_generated", "ready", "stale", "generating", "failed", "ai_unavailable"):
             self.assertIn(state, message_body)
         self.assertIn("生成年度总结", action_body)
-        self.assertIn("年度事实有更新，刷新年度总结", action_body)
+        self.assertIn("有新的运动记录，刷新年度总结", action_body)
         self.assertIn("重试年度总结", action_body)
         self.assertIn("升级年度故事", action_body)
         self.assertIn("format_upgrade_available", action_body)
@@ -160,8 +165,8 @@ class TestCareerYearInsightRenderFrontend(unittest.TestCase):
 
         self.assertIn("yearLabel", loading_body)
         self.assertIn("String(year) + ' 年度'", loading_body)
-        self.assertIn("'正在读取 ' + yearLabel + '总结数据'", loading_body)
-        self.assertIn("String(year) + ' 年度总结加载中'", loading_body)
+        self.assertIn("'正在加载 ' + yearLabel + '总结'", loading_body)
+        self.assertIn("if (statusText) statusText.textContent = ''", loading_body)
         self.assertIn("const cardEl = document.getElementById('career-insight-card')", loading_body)
         self.assertIn("cardEl.innerHTML", loading_body)
         self.assertIn("career-year-skeleton", loading_body)
@@ -175,16 +180,18 @@ class TestCareerYearInsightRenderFrontend(unittest.TestCase):
         self.assertIn("const currentYear", error_body)
         self.assertIn("currentYear === selectedYear", error_body)
         self.assertIn("cardEl.innerHTML", error_body)
-        self.assertIn("failed", error_body)
-        self.assertIn("年度总结暂不可用", error_body)
+        self.assertIn("report_state: 'failed'", error_body)
+        self.assertIn("暂时无法加载年度总结，请稍后重试。", error_body)
+        self.assertNotIn('career-insight-meta">failed', error_body)
+        self.assertNotIn("statusText.textContent = message", error_body)
 
     def test_not_generated_and_stale_states_keep_actions(self):
         action_body = extract_function_body(self.source, "function careerYearActionHtml(state, vm)")
         message_body = extract_function_body(self.source, "function careerYearStateMessage(state)")
 
-        self.assertIn("年度事实已准备好，AI 年度总结尚未生成。", message_body)
-        self.assertIn("有新的运动数据，当前保留旧年度报告。", message_body)
-        self.assertIn("key === 'stale' ? '年度事实有更新，刷新年度总结'", action_body)
+        self.assertIn("可以根据这一年的运动记录生成年度总结。", message_body)
+        self.assertIn("有新的运动记录，可以刷新年度总结。", message_body)
+        self.assertIn("key === 'stale' ? '有新的运动记录，刷新年度总结'", action_body)
         self.assertIn("'生成年度总结'", action_body)
         self.assertNotIn("key === 'not_generated'", action_body[action_body.find("if (key === 'no_data'"):action_body.find("const label")])
 
@@ -192,11 +199,13 @@ class TestCareerYearInsightRenderFrontend(unittest.TestCase):
         render_body = extract_function_body(self.source, "function renderCareerYearInsight(viewModel)")
         action_body = extract_function_body(self.source, "function careerYearActionHtml(state, vm)")
 
-        self.assertIn("本地年度事实摘要", render_body)
-        self.assertIn("不调用 AI", render_body)
+        self.assertIn("当前展示根据这一年的运动记录整理。", render_body)
+        self.assertNotIn("本地年度事实摘要", render_body)
+        self.assertNotIn("不调用 AI", render_body)
         self.assertIn("try {", render_body)
         self.assertIn("renderCareerYearInsight card failed", render_body)
-        self.assertIn("年度总结渲染失败，请稍后重试。", render_body)
+        self.assertIn("暂时无法显示年度总结，请稍后重试。", render_body)
+        self.assertNotIn('career-insight-meta">failed', render_body)
         self.assertIn("data-career-year-generate-action", action_body)
         self.assertIn("generateCareerYearInsight()", action_body)
         self.assertNotIn("generate_career_year_insight", render_body + action_body)

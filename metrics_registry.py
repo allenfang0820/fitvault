@@ -43,6 +43,12 @@ METRICS_REGISTRY: dict[str, dict[str, dict[str, str]]] = {
         "avg_cadence":      {"source": "avg_cadence",      "unit": "rpm"},
         "avg_power":        {"source": "avg_power",        "unit": "watts"},
     },
+    "strength_fields": {
+        "strength_exercise_count": {"source": "strength_summary_json.distinct_exercise_count", "unit": "count"},
+        "strength_working_set_count": {"source": "strength_summary_json.working_set_count", "unit": "count"},
+        "strength_total_reps": {"source": "strength_summary_json.total_reps", "unit": "count"},
+        "strength_total_volume_kg": {"source": "strength_summary_json.total_volume_kg", "unit": "kg"},
+    },
 }
 
 SPORT_ALIASES: dict[str, str] = {

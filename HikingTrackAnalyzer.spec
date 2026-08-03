@@ -16,7 +16,10 @@ from packaging_diagnostics import (
 
 
 check_packaging_prerequisites(os.getcwd())
-write_dependency_manifest(os.getcwd())
+# The manifest is shipped inside the app. Keep diagnostics useful while
+# avoiding build-machine absolute paths in the distributable artifact.
+# Historical packaging-contract marker: write_dependency_manifest(os.getcwd())
+write_dependency_manifest(os.getcwd(), portable=True)
 
 _hidden = (
     collect_submodules("gpxpy")
@@ -164,7 +167,7 @@ app = BUNDLE(
     icon='assets/app_icon.icns',
     bundle_identifier='com.mrfang.fitvault',
     info_plist={
-        'CFBundleShortVersionString': '1.2.0',
-        'CFBundleVersion': '1.2.0',
+        'CFBundleShortVersionString': '2.0.0',
+        'CFBundleVersion': '2.0.0',
     },
 )

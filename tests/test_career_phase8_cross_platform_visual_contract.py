@@ -84,7 +84,7 @@ class TestCareerPhase8CrossPlatformVisualContract(unittest.TestCase):
         cls.mobile_css = extract_between(
             cls.source,
             "@media (max-width: 980px)",
-            "/* V1.0:三个预留 tab",
+            "/* 成长趋势开发态蒙板 */",
         )
 
     def test_global_font_and_career_scroll_container_are_cross_platform_safe(self):
@@ -140,18 +140,28 @@ class TestCareerPhase8CrossPlatformVisualContract(unittest.TestCase):
     def test_switching_to_career_loads_modules_independently(self):
         body = extract_function_body(self.source, "function switchTab(tabBtn)")
         load_body = extract_function_body(self.source, "async function loadCareerData()")
+        first_paint_body = extract_function_body(self.source, "async function loadCareerFirstPaint()")
+        page_body = extract_function_body(self.source, "async function loadCareerPageData(page, options)")
         refresh_body = extract_function_body(self.source, "function refreshCareerDerivedEventsInBackground()")
         self.assertIn("loadCareerData().catch", body)
         self.assertIn("refresh_career_derived_events", refresh_body)
         self.assertIn("refreshCareerDerivedEventsInBackground()", load_body)
         self.assertNotIn("await refreshCareerDerivedEventsInBackground()", load_body)
+        self.assertIn("loadCareerFirstPaint()", load_body)
+        self.assertIn("loadCareerOverview().catch", first_paint_body)
+        self.assertIn("loadCareerSeasons().catch", first_paint_body)
         for token in (
-            "loadCareerOverview().catch",
             "loadCareerTimeline().catch",
             "loadCareerArchives().catch",
             "loadCareerMemory().catch",
         ):
-            self.assertIn(token, load_body)
+            self.assertNotIn(token, load_body)
+        self.assertIn("timeline: function() { return loadCareerTimeline(appState.career.timelineFilters); }", page_body)
+        self.assertIn("races: function() { return loadCareerArchives(); }", page_body)
+        self.assertIn("memory: function() { return loadCareerMemory(); }", page_body)
+        self.assertIn("insight: function()", page_body)
+        self.assertIn("loadCareerYearInsight({ prefetch: true })", page_body)
+        self.assertIn("yearInsightPrefetchLoading", extract_function_body(self.source, "function enterCareerInsightFromTopNav()"))
         self.assertNotIn("loadCareerInsight", load_body)
 
     def test_long_text_constraints_cover_interactive_career_items(self):

@@ -147,7 +147,7 @@ class TestCareerFootprintFrontend(unittest.TestCase):
         css = extract_between(self.source, ".career-footprint-map {", ".career-footprint-static-map-layer {")
         self.assertIn("type: 'map'", option_body)
         self.assertIn("areaColor", option_body)
-        self.assertIn("本地 GeoJSON · ECharts", self.source)
+        self.assertNotIn("本地 GeoJSON · ECharts", self.source)
         self.assertIn("min-height: 420px", css)
         self.assertIn(".career-footprint-map-back", self.source)
         self.assertNotIn("FITVAULT_CAREER_MAP_PROVIDER", self.source)
@@ -198,7 +198,8 @@ class TestCareerFootprintFrontend(unittest.TestCase):
         self.assertIn("drilldown && hasCareerFootprintDrilldownRegions", ensure_chart_body)
         self.assertIn("renderCareerFootprint(appState.career.footprint || normalizeCareerFootprint({}), { mapMode: drilldown", ensure_chart_body)
         self.assertIn("loadCareerFootprintMapScript(mapMode", self.source)
-        self.assertIn("正在加载本地地图资源", self.source)
+        self.assertIn("正在加载足迹地图", self.source)
+        self.assertNotIn("正在加载本地地图资源", self.source)
         self.assertNotIn("drilldown && key === 'CN'", ensure_chart_body)
         self.assertIn("returnCareerFootprintWorldMap", self.source)
         self.assertIn("career-footprint-map-back", self.source)
@@ -220,16 +221,20 @@ class TestCareerFootprintFrontend(unittest.TestCase):
         self.assertNotIn("careerFootprintMissingHtml", self.source)
         self.assertNotIn("Activity #", self.source)
 
-    def test_load_career_data_includes_footprint_not_legacy_race_map(self):
+    def test_footprint_page_loads_footprint_on_demand_not_legacy_race_map(self):
         body = extract_function_body(self.source, "async function loadCareerData()")
-        self.assertIn("loadCareerFootprint().catch", body)
+        page_body = extract_function_body(self.source, "async function loadCareerPageData(page, options)")
+        self.assertNotIn("loadCareerFootprint().catch", body)
+        self.assertIn("footprint: function() { return loadCareerFootprint(appState.career.footprintFilters); }", page_body)
         self.assertNotIn("loadCareerRaceMap().catch", body)
 
     def test_switching_to_footprint_refreshes_hidden_echarts_map(self):
         body = extract_function_body(self.source, "function switchCareerPage(page)")
         refresh_body = extract_function_body(self.source, "function refreshCareerFootprintMapWhenVisible()")
 
-        self.assertIn("if (nextPage === 'footprint') refreshCareerFootprintMapWhenVisible()", body)
+        self.assertIn("if (nextPage === 'footprint') {", body)
+        self.assertIn("loadCareerPageData('memory').catch", body)
+        self.assertIn("refreshCareerFootprintMapWhenVisible()", body)
         self.assertIn("setTimeout(function()", refresh_body)
         self.assertIn("renderCareerFootprint(appState.career.footprint", refresh_body)
         self.assertIn("footprintChart.resize()", refresh_body)

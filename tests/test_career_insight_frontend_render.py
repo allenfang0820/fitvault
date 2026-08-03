@@ -103,10 +103,15 @@ class TestCareerInsightFrontendRender(unittest.TestCase):
     def test_switching_to_career_loads_modules_but_keeps_insight_lazy(self):
         body = extract_function_body(self.source, "function switchTab(tabBtn)")
         load_body = extract_function_body(self.source, "async function loadCareerData()")
+        first_paint_body = extract_function_body(self.source, "async function loadCareerFirstPaint()")
+        page_body = extract_function_body(self.source, "async function loadCareerPageData(page, options)")
         self.assertIn("loadCareerData().catch", body)
-        self.assertIn("loadCareerOverview().catch", load_body)
-        self.assertIn("loadCareerTimeline().catch", load_body)
-        self.assertIn("loadCareerMemory().catch", load_body)
+        self.assertIn("loadCareerFirstPaint()", load_body)
+        self.assertIn("loadCareerOverview().catch", first_paint_body)
+        self.assertNotIn("loadCareerTimeline().catch", load_body)
+        self.assertNotIn("loadCareerMemory().catch", load_body)
+        self.assertIn("timeline: function() { return loadCareerTimeline(appState.career.timelineFilters); }", page_body)
+        self.assertIn("memory: function() { return loadCareerMemory(); }", page_body)
         self.assertNotIn("loadCareerInsight", load_body)
 
     def test_full_career_frontend_functions_are_removed(self):
@@ -123,7 +128,7 @@ class TestCareerInsightFrontendRender(unittest.TestCase):
         mobile_css = extract_between(
             self.source,
             "@media (max-width: 980px)",
-            "/* V1.0:三个预留 tab",
+            "/* 成长趋势开发态蒙板 */",
         )
         self.assertIn(".career-insight-toolbar", mobile_css)
         self.assertIn("flex-direction: column", mobile_css)

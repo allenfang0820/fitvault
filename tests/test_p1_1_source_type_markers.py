@@ -106,10 +106,10 @@ class TestLapColumnPresetsContract(unittest.TestCase):
                          ["avg_pace", "avg_hr", "max_hr", "ascent", "descent"])
 
     def test_swimming_unchanged(self):
-        """游泳不应被 P1-1 影响"""
+        """泳池游泳列展示泳段距离,便于与总距离核对。"""
         from main import LAP_COLUMN_PRESETS
         self.assertEqual(LAP_COLUMN_PRESETS["swimming"],
-                         ["avg_hr", "swolf", "stroke_style", "length_distance"])
+                         ["lap_distance_km", "avg_hr", "swolf", "stroke_style", "length_distance"])
 
 
 if __name__ == "__main__":

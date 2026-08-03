@@ -188,6 +188,32 @@ class TestFitSync(unittest.TestCase):
         finally:
             conn.close()
 
+    def _mark_source_activity_as_stale_strength(
+        self,
+        activity_id: int,
+        fit_path: Path,
+    ) -> None:
+        stat = fit_path.stat()
+        conn = profile_backend._conn()
+        try:
+            conn.execute(
+                """
+                UPDATE activities
+                SET sport_type = 'training', sub_sport_type = 'strength_training',
+                    file_path = ?, file_mtime = ?, file_size = ?,
+                    strength_sets_json = NULL, strength_summary_json = NULL,
+                    muscle_heatmap_json = NULL,
+                    strength_materialization_version = 0,
+                    strength_materialization_status = NULL,
+                    strength_materialization_error = NULL
+                WHERE id = ?
+                """,
+                (str(fit_path.resolve()), stat.st_mtime, stat.st_size, activity_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
     def test_sync_local_fit_files_recovers_after_temporary_db_lock(self):
         fit_path = self.temp_dir / "locked.fit"
         fit_path.write_bytes(b"x" * 8192)
@@ -419,6 +445,49 @@ class TestFitSync(unittest.TestCase):
         self.assertEqual(source_row["ingest_status"], "parsed")
         self.assertEqual(source_row["activity_id"], activity_id)
 
+    def test_manual_fit_import_reparses_same_sha_for_stale_strength_activity(self):
+        source_path = self.temp_dir / "manual-strength-refresh.fit"
+        source_path.write_bytes(b"manual-strength-refresh" * 512)
+        existing_path = Path(main.TRACKS_DIR) / "existing-strength.fit"
+        existing_path.write_bytes(source_path.read_bytes())
+        activity_id = self._insert_source_test_activity(existing_path.name)
+        self._mark_source_activity_as_stale_strength(activity_id, existing_path)
+        digest = main._sha256_fit_file(existing_path)
+        self._upsert_source_test_row(
+            provider="local",
+            provider_activity_id=None,
+            file_path=str(existing_path.resolve()),
+            filename=existing_path.name,
+            sha256=digest,
+            file_size=existing_path.stat().st_size,
+            file_mtime=existing_path.stat().st_mtime,
+            activity_id=activity_id,
+            ingest_status="parsed",
+        )
+
+        with mock.patch.object(
+            main,
+            "_sync_single_fit_file",
+            return_value={"ok": True, "op": "updated", "activity_id": activity_id},
+        ) as sync_mock, mock.patch.object(
+            self.api,
+            "_rollback_if_semantic_duplicate",
+            return_value=None,
+        ):
+            result = self.api.batch_import_tracks([str(source_path)])
+
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(len(result["data"]["imported"]), 1)
+        self.assertEqual(sync_mock.call_count, 1)
+        self.assertEqual(sync_mock.call_args.kwargs["existing_activity_id"], activity_id)
+        conn = profile_backend._conn()
+        try:
+            ledger = profile_backend.get_activity_source_file_by_sha256(conn, digest, provider="local")
+        finally:
+            conn.close()
+        self.assertEqual(ledger["activity_id"], activity_id)
+        self.assertEqual(ledger["ingest_status"], "parsed")
+
     def test_manual_fit_import_retries_when_ledger_activity_was_deleted(self):
         fit_path = self.temp_dir / "manual-deleted-retry.fit"
         fit_path.write_bytes(b"y" * 8192)
@@ -439,6 +508,34 @@ class TestFitSync(unittest.TestCase):
             main,
             "_sync_single_fit_file",
             return_value={"ok": True, "op": "inserted", "activity_id": 99},
+        ) as sync_mock, mock.patch.object(
+            self.api, "_rollback_if_semantic_duplicate", return_value=None
+        ):
+            result = self.api.batch_import_tracks([str(fit_path)])
+
+        self.assertTrue(result["ok"], result)
+        sync_mock.assert_called_once()
+        self.assertEqual(len(result["data"]["imported"]), 1)
+
+    def test_manual_fit_import_retries_skipped_source_without_activity(self):
+        fit_path = self.temp_dir / "manual-health-filter-retry.fit"
+        fit_path.write_bytes(b"health-filtered-before-rule-fix" * 512)
+        main.ensure_activity_sync_schema()
+        digest = main._sha256_fit_file(fit_path)
+        self._upsert_source_test_row(
+            provider="local",
+            provider_activity_id=None,
+            file_path=str(Path(main.TRACKS_DIR) / "old-health-filtered.fit"),
+            filename="old-health-filtered.fit",
+            sha256=digest,
+            activity_id=None,
+            ingest_status="skipped",
+        )
+
+        with mock.patch.object(
+            main,
+            "_sync_single_fit_file",
+            return_value={"ok": True, "op": "inserted", "activity_id": 123},
         ) as sync_mock, mock.patch.object(
             self.api, "_rollback_if_semantic_duplicate", return_value=None
         ):
@@ -831,6 +928,46 @@ class TestFitSync(unittest.TestCase):
         self.assertEqual(result["results"][0]["activity_id"], activity_id)
         single_mock.assert_not_called()
 
+    def test_remote_candidate_provider_match_reparses_stale_strength_activity(self):
+        fit_path = Path(main.TRACKS_DIR) / "provider-strength-refresh.fit"
+        fit_path.write_bytes(b"provider-strength-refresh")
+        activity_id = self._insert_source_test_activity(fit_path.name)
+        self._mark_source_activity_as_stale_strength(activity_id, fit_path)
+        self._upsert_source_test_row(
+            provider="garmin",
+            provider_activity_id="strength-provider-1",
+            file_path=str(fit_path.resolve()),
+            filename=fit_path.name,
+            sha256=main._sha256_fit_file(fit_path),
+            file_size=fit_path.stat().st_size,
+            file_mtime=fit_path.stat().st_mtime,
+            activity_id=activity_id,
+            ingest_status="parsed",
+        )
+        summary = {"candidates": [{
+            "status": "downloaded",
+            "file": str(fit_path.resolve()),
+            "provider_activity_id": "strength-provider-1",
+        }]}
+
+        with mock.patch.object(
+            main,
+            "_sync_single_fit_file",
+            return_value={"ok": True, "op": "updated", "activity_id": activity_id},
+        ) as single_mock:
+            result = main._import_remote_fit_candidates("garmin", summary, main.TRACKS_DIR)
+
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["updated"], 1)
+        single_mock.assert_called_once_with(
+            fit_path.resolve(),
+            refresh_career=False,
+            existing_activity_id=activity_id,
+        )
+        ledger = self._get_source_test_row("garmin", "strength-provider-1")
+        self.assertEqual(ledger["activity_id"], activity_id)
+        self.assertEqual(ledger["ingest_status"], "parsed")
+
     def test_remote_candidate_sha_match_skips_parser_and_records_current_provider(self):
         fit_path = Path(main.TRACKS_DIR) / "same-content.fit"
         fit_path.write_bytes(b"same-content-across-providers")
@@ -1007,7 +1144,7 @@ class TestFitSync(unittest.TestCase):
         self.assertEqual(final_row["ingest_status"], "parsed")
         self.assertIsNone(final_row["error"])
 
-    def test_remote_candidate_skipped_result_is_terminal_without_activity(self):
+    def test_remote_candidate_skipped_result_without_activity_is_retryable(self):
         fit_path = Path(main.TRACKS_DIR) / "health-filtered.fit"
         fit_path.write_bytes(b"health-filtered")
         summary = {"candidates": [{
@@ -1019,13 +1156,19 @@ class TestFitSync(unittest.TestCase):
             "ok": True, "op": "skipped", "activity_id": 0,
         }) as first_mock:
             first = main._import_remote_fit_candidates("garmin", summary, main.TRACKS_DIR)
-        with mock.patch.object(main, "_sync_single_fit_file") as second_mock:
+        activity_id = self._insert_source_test_activity("health-filtered-retry.fit")
+        with mock.patch.object(main, "_sync_single_fit_file", return_value={
+            "ok": True, "op": "inserted", "activity_id": activity_id,
+        }) as second_mock:
             second = main._import_remote_fit_candidates("garmin", summary, main.TRACKS_DIR)
 
         self.assertEqual(first["results"][0]["ledger_status"], "skipped")
         first_mock.assert_called_once()
-        self.assertEqual(second["results"][0]["idempotency_reason"], "provider_activity_id")
-        second_mock.assert_not_called()
+        self.assertEqual(second["inserted"], 1)
+        second_mock.assert_called_once_with(fit_path.resolve(), refresh_career=False)
+        final_row = self._get_source_test_row("garmin", "health-1")
+        self.assertEqual(final_row["ingest_status"], "parsed")
+        self.assertEqual(final_row["activity_id"], activity_id)
 
     def test_remote_candidate_ledger_final_write_failure_preserves_import_success(self):
         fit_path = Path(main.TRACKS_DIR) / "ledger-warning.fit"
@@ -4682,6 +4825,104 @@ class TestFitSync(unittest.TestCase):
         self.assertEqual(pre_skipped, 2)
         self.assertEqual(len(pending_files), 1)
         self.assertEqual(pending_files[0].name, "new_c.fit")
+
+    def test_unchanged_predicate_reopens_only_stale_strength_materialization(self):
+        main.ensure_activity_sync_schema()
+        fit_path = self.temp_dir / "strength-unchanged.fit"
+        fit_path.write_bytes(b"strength-unchanged")
+        activity_id = self._insert_source_test_activity(fit_path.name)
+        self._mark_source_activity_as_stale_strength(activity_id, fit_path)
+
+        conn = profile_backend._conn()
+        try:
+            stale_index = main._load_existing_file_index(conn)
+        finally:
+            conn.close()
+        resolved = str(fit_path.resolve())
+        self.assertFalse(main._is_file_unchanged(fit_path, stale_index[resolved]))
+
+        conn = profile_backend._conn()
+        try:
+            conn.execute(
+                "UPDATE activities SET sport_type = 'strength', sub_sport_type = 'generic' WHERE id = ?",
+                (activity_id,),
+            )
+            conn.commit()
+            alias_index = main._load_existing_file_index(conn)
+            self.assertFalse(main._is_file_unchanged(fit_path, alias_index[resolved]))
+            conn.execute(
+                """
+                UPDATE activities
+                SET strength_materialization_version = ?,
+                    strength_materialization_status = 'unstructured'
+                WHERE id = ?
+                """,
+                (main.STRENGTH_MATERIALIZATION_VERSION, activity_id),
+            )
+            conn.commit()
+            current_index = main._load_existing_file_index(conn)
+        finally:
+            conn.close()
+        self.assertTrue(main._is_file_unchanged(fit_path, current_index[resolved]))
+
+    def test_local_sync_reparses_stale_strength_once_then_restores_fast_skip(self):
+        main.ensure_activity_sync_schema()
+        fit_path = self.temp_dir / "strength-refresh.fit"
+        fit_path.write_bytes(b"x" * 8192)
+        activity_id = self._insert_source_test_activity(fit_path.name)
+        self._mark_source_activity_as_stale_strength(activity_id, fit_path)
+        conn = profile_backend._conn()
+        try:
+            conn.execute(
+                "UPDATE activities SET title = 'Protected strength title', title_source = 'user' WHERE id = ?",
+                (activity_id,),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        parsed = self._activity(fit_path.name)
+        parsed.update({
+            "sport_type": "training",
+            "sub_sport_type": "strength_training",
+            "file_path": str(fit_path.resolve()),
+            "file_mtime": fit_path.stat().st_mtime,
+            "file_size": fit_path.stat().st_size,
+            "strength_sets_json": json.dumps([{"set_type": "working", "reps": 8}]),
+            "strength_summary_json": json.dumps({"schema_version": 1, "working_set_count": 1}),
+            "muscle_heatmap_json": json.dumps({"schema_version": 1, "regions": []}),
+            "strength_materialization_version": main.STRENGTH_MATERIALIZATION_VERSION,
+            "strength_materialization_status": "materialized",
+            "strength_materialization_error": None,
+        })
+
+        with mock.patch.object(main, "resolve_workspace_track_dir", return_value=self._workspace_config()), \
+             mock.patch.object(main, "_walk_fit_files", return_value=[fit_path]), \
+             mock.patch.object(main, "_parse_fit_activity_for_sync", return_value=parsed) as parser:
+            first = self.api.sync_local_fit_files()
+            second = self.api.sync_local_fit_files()
+
+        self.assertTrue(first["ok"], first)
+        self.assertEqual(first["updated"], 1)
+        self.assertEqual(second["skipped"], 1)
+        parser.assert_called_once_with(fit_path.resolve())
+        conn = profile_backend._conn()
+        try:
+            rows = conn.execute(
+                """
+                SELECT id, title, strength_materialization_version,
+                       strength_materialization_status, strength_sets_json
+                FROM activities WHERE deleted_at IS NULL
+                """
+            ).fetchall()
+        finally:
+            conn.close()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["id"], activity_id)
+        self.assertEqual(rows[0]["title"], "Protected strength title")
+        self.assertEqual(rows[0]["strength_materialization_version"], main.STRENGTH_MATERIALIZATION_VERSION)
+        self.assertEqual(rows[0]["strength_materialization_status"], "materialized")
+        self.assertEqual(json.loads(rows[0]["strength_sets_json"])[0]["reps"], 8)
 
     def test_incremental_sync_detects_changed_files(self):
         main.ensure_activity_sync_schema()

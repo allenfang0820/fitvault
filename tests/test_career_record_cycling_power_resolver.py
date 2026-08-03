@@ -116,8 +116,9 @@ class CareerRecordCyclingPowerResolverTest(unittest.TestCase):
         self.assertEqual(second_result["summary"], {"activated": 9})
         self.assertEqual(tie_result["summary"], {"unchanged": 9})
         records = career_backend.get_career_records({"sport": "cycling"}, conn=self.conn)["records"]
-        self.assertEqual(len(records), 9)
-        self.assertTrue(all(record["metric"]["value"] == 250 for record in records))
+        power_records = [record for record in records if record["record_key"].startswith("cycling_power_")]
+        self.assertEqual(len(power_records), 9)
+        self.assertTrue(all(record["metric"]["value"] == 250 for record in power_records))
         self.assertEqual(
             self.conn.execute("SELECT COUNT(*) FROM career_pb_records WHERE status = 'superseded'").fetchone()[0],
             9,

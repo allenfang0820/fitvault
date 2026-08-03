@@ -652,7 +652,7 @@ GET /api/career/overview
 - `hero_banner.mode` 支持 `photo`、`title_art`、`empty`。
 - 有安全照片引用时使用 `photo`；没有照片时使用 `title_art`。
 - `image_ref` 只能是应用受控的逻辑引用，不得是本地绝对路径、`file://`、`storage_ref` 或原始文件路径。
-- `strength_total_weight_kg` 只能在 Activity 存在可靠总重量字段时聚合；没有可靠来源时必须返回 `null`，并通过 `strength_total_weight_status` 表达 `unavailable` 或 `partial`。
+- `strength_total_weight_kg` 只能在 Activity 存在可靠总重量字段或已物化 `strength_summary_json.total_volume_kg` 时聚合；没有可靠来源时必须返回 `null`，并通过 `strength_total_weight_status` 表达 `unavailable` 或 `partial`。
 - `max_altitude_m` 只能聚合未删除 Activity 的 canonical `max_alt_m`；前端不得从轨迹点自行计算最高海拔。
 - Overview 统计卡展示最高海拔；`best_pb` 继续保留在 ViewModel 中供 PB 档案与其他下钻入口使用，并允许为 `null`。
 - 所有可点击入口必须通过 `detail_link.activity_id` 回跳 Activity Detail。

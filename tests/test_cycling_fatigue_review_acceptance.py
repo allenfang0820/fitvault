@@ -145,7 +145,7 @@ class TestCyclingFatigueReviewAcceptanceFrontend(unittest.TestCase):
         lane_defs = _extract_js_function(self.html, "_fatigueReviewChartLaneDefs")
 
         cycling_cards_start = card_defs.find("if (sportMode === 'cycling')")
-        cycling_cards_end = card_defs.find("\n        return [", cycling_cards_start + 1)
+        cycling_cards_end = card_defs.find("\n        }\n        return [", cycling_cards_start + 1)
         cycling_cards = card_defs[cycling_cards_start:cycling_cards_end]
         for text in (
             "withSlot('hr_drift', 'power_variability', '输出节奏'",
@@ -169,7 +169,7 @@ class TestCyclingFatigueReviewAcceptanceFrontend(unittest.TestCase):
             self.assertNotIn(forbidden, cycling_cards)
 
         cycling_chart_start = lane_defs.find("if (sportMode === 'cycling')")
-        cycling_chart_end = lane_defs.find("\n        return [", cycling_chart_start + 1)
+        cycling_chart_end = lane_defs.find("\n        }\n        if (reviewProfile", cycling_chart_start + 1)
         cycling_chart = lane_defs[cycling_chart_start:cycling_chart_end]
         for text in (
             "key: 'power_curve'",

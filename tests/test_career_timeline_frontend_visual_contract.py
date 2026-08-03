@@ -164,7 +164,7 @@ class TestCareerTimelineFrontendVisualContract(unittest.TestCase):
         mobile_css = extract_between(
             self.source,
             "@media (max-width: 980px)",
-            "/* V1.0:三个预留 tab",
+            "/* 成长趋势开发态蒙板 */",
         )
         self.assertIn("overflow-wrap: anywhere", title_css)
         self.assertIn("overflow-wrap: anywhere", meta_css)
@@ -190,7 +190,7 @@ class TestCareerTimelineFrontendVisualContract(unittest.TestCase):
         mobile_css = extract_between(
             self.source,
             "@media (max-width: 980px)",
-            "/* V1.0:三个预留 tab",
+            "/* 成长趋势开发态蒙板 */",
         )
 
         self.assertIn('font-family: "DIN Next", "DIN NEXT"', year_css)
@@ -279,7 +279,7 @@ class TestCareerTimelineFrontendVisualContract(unittest.TestCase):
         mobile_css = extract_between(
             self.source,
             "@media (max-width: 980px)",
-            "/* V1.0:三个预留 tab",
+            "/* 成长趋势开发态蒙板 */",
         )
         self.assertIn(".career-timeline-day-tick.is-major", mobile_css)
         self.assertIn("color: transparent", mobile_css)
@@ -354,9 +354,9 @@ class TestCareerTimelineFrontendVisualContract(unittest.TestCase):
         loading_body = extract_function_body(self.source, "function renderCareerTimelineLoading()")
         error_body = extract_function_body(self.source, "function renderCareerTimelineError(message)")
         placeholder_css = css_block(self.source, ".career-timeline-placeholder")
-        self.assertIn("暂无时间轴节点", render_body)
+        self.assertIn("暂无时间轴内容", render_body)
         self.assertIn("正在加载时间轴", loading_body)
-        self.assertIn("时间轴暂不可用", error_body)
+        self.assertIn("暂时无法加载时间轴，请稍后重试。", error_body)
         self.assertIn("min-height: 180px", placeholder_css)
         self.assertNotIn("career-timeline-candidates", render_body)
         self.assertNotIn("候选事件待确认", render_body)

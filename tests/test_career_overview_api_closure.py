@@ -582,6 +582,77 @@ class TestCareerOverviewApiClosure(unittest.TestCase):
         finally:
             conn.close()
 
+    def test_overview_strength_total_reads_materialized_summary_json_without_legacy_columns(self):
+        conn = sqlite3.connect(":memory:")
+        try:
+            _create_activity_table(conn)
+            conn.execute("ALTER TABLE activities ADD COLUMN strength_summary_json TEXT")
+            _insert_activity(
+                conn,
+                id=1,
+                sport_type="strength_training",
+                dist_km=0,
+                strength_summary_json=json.dumps({"total_volume_kg": 1210.0}),
+            )
+            _insert_activity(
+                conn,
+                id=2,
+                sport_type="strength_training",
+                dist_km=0,
+                strength_summary_json=json.dumps({"total_volume_kg": 4920.4}),
+            )
+            _insert_activity(
+                conn,
+                id=3,
+                sport_type="strength_training",
+                dist_km=0,
+                strength_summary_json="{bad-json",
+            )
+            _insert_activity(
+                conn,
+                id=4,
+                sport_type="running",
+                dist_km=5,
+                strength_summary_json=json.dumps({"total_volume_kg": 9999.0}),
+            )
+
+            result = career_backend.get_career_overview(conn)
+
+            self.assertEqual(result["sport_totals"]["running_distance_km"], 5.0)
+            self.assertEqual(result["sport_totals"]["strength_total_weight_kg"], 6130.4)
+            self.assertEqual(result["sport_totals"]["strength_total_weight_status"], "available")
+            _assert_forbidden_keys_absent(self, result)
+        finally:
+            conn.close()
+
+    def test_overview_strength_total_malformed_summary_json_degrades_to_partial(self):
+        conn = sqlite3.connect(":memory:")
+        try:
+            _create_activity_table(conn)
+            conn.execute("ALTER TABLE activities ADD COLUMN strength_summary_json TEXT")
+            _insert_activity(
+                conn,
+                id=1,
+                sport_type="strength_training",
+                dist_km=0,
+                strength_summary_json="{bad-json",
+            )
+            _insert_activity(
+                conn,
+                id=2,
+                sport_type="strength_training",
+                dist_km=0,
+                strength_summary_json=json.dumps({"total_volume_kg": 0}),
+            )
+
+            result = career_backend.get_career_overview(conn)
+
+            self.assertIsNone(result["sport_totals"]["strength_total_weight_kg"])
+            self.assertEqual(result["sport_totals"]["strength_total_weight_status"], "partial")
+            _assert_forbidden_keys_absent(self, result)
+        finally:
+            conn.close()
+
     def test_overview_does_not_block_on_secondary_metrics_query(self):
         conn = sqlite3.connect(":memory:")
         try:

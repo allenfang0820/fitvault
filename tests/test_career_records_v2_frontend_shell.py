@@ -224,7 +224,20 @@ def test_records_v2_loads_with_career_data_and_page_switch():
     src = source()
     load_data = extract_function_body(src, "async function loadCareerData()")
     switch_page = extract_function_body(src, "function switchCareerPage(page)")
+    page_data = extract_function_body(src, "async function loadCareerPageData(page, options)")
 
-    assert "loadCareerRecordsCenter().catch" in load_data
+    assert "loadCareerRecordsCenter().catch" not in load_data
+    assert "pb: function() { return loadCareerRecordsCenter(opts); }" in page_data
+    assert "return loadCareerRecordsCenter({ deferAnalysis: false });" in page_data
     assert "nextPage === 'pb'" in switch_page
-    assert "loadCareerRecordsCenter().catch" in switch_page
+    assert "loadCareerPageData(nextPage).catch" in switch_page
+
+
+def test_records_v2_prefetch_defer_analysis_keeps_right_rail_lazy():
+    src = source()
+    load_data = extract_function_body(src, "async function loadCareerRecordsCenter(options)")
+    render_body = extract_function_body(src, "function renderCareerRecordsCenter(viewModel)")
+
+    assert "state.deferAnalysis = !!opts.deferAnalysis" in load_data
+    assert "if (state.deferAnalysis)" in render_body
+    assert "renderCareerRecordAnalysisPanel(selectedRecord, null)" in render_body

@@ -120,6 +120,11 @@ class TestCareerGapP109PageIntegrity(unittest.TestCase):
         )
         for target in required_targets:
             self.assertIn(f'id="{target}"', self.career_panel)
+            if target.endswith("-status-text"):
+                self.assertRegex(
+                    self.career_panel,
+                    rf'id="{re.escape(target)}"[^>]* hidden',
+                )
         self.assertNotIn('id="career-pb-empty"', self.career_panel)
         self.assertNotIn('id="career-pb-list"', self.career_panel)
 
@@ -152,6 +157,20 @@ class TestCareerGapP109PageIntegrity(unittest.TestCase):
         ):
             self.assertNotIn(token.lower(), lowered)
         self.assertIsNone(re.search(r"position\\s*:\\s*fixed", css_block(self.source, "#panel-career")))
+
+    def test_career_panel_does_not_expose_engineering_copy(self):
+        for token in (
+            "Athlete Career System",
+            "ACS 二级页面导航",
+            "ACS 只读数据",
+            "activity_id",
+            "Race Album",
+            "本地 GeoJSON · ECharts",
+            "年度只读数据",
+            "时间轴已生成",
+            "记录中心已准备好",
+        ):
+            self.assertNotIn(token, self.career_panel)
 
 
 if __name__ == "__main__":

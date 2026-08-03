@@ -82,9 +82,10 @@ class TestWatchdogBridge(unittest.TestCase):
         self.assertEqual(res, {"ok": True})
         startup_check.assert_not_called()
         region_start.assert_not_called()
-        self.assertEqual(len(created_timers), 2)
+        self.assertEqual(len(created_timers), 3)
         self.assertEqual(created_timers[0].delay, main.PROFILE_STARTUP_SYNC_DELAY_SEC)
-        self.assertEqual(created_timers[1].delay, main.REGION_ENRICH_STARTUP_DELAY_SEC)
+        self.assertEqual(created_timers[1].delay, 2.0)
+        self.assertEqual(created_timers[2].delay, main.REGION_ENRICH_STARTUP_DELAY_SEC)
         self.assertTrue(all(timer.started for timer in created_timers))
 
     def test_load_activity_track_by_file_path_prefers_sqlite_record(self):
@@ -120,44 +121,40 @@ class TestWatchdogBridge(unittest.TestCase):
         self.assertEqual((res.get("activity") or {}).get("id"), activity_id)
         self.assertEqual(len((res.get("data") or {}).get("points") or []), 2)
 
-    def test_watch_service_batches_new_fit_files_and_deduplicates_same_file(self):
+    def test_watch_service_stages_stable_fit_files_and_deduplicates_same_file(self):
         file_a = self.temp_dir / "batch_a.fit"
         file_b = self.temp_dir / "batch_b.fit"
         file_a.write_bytes(b"a-fit")
         file_b.write_bytes(b"b-fit")
 
         fake_api = mock.Mock()
-        fake_api.start_sync_local_fit_files.return_value = {"ok": True, "job_id": "job-1"}
-        fake_api.get_sync_local_fit_files_status.return_value = {
-            "ok": True,
-            "job_id": "job-1",
-            "state": "done",
-            "result": {"ok": True},
-        }
-        fake_api.get_activity_by_file_path.side_effect = lambda file_path: {
-            "ok": True,
-            "activity": {
-                "id": 101 if str(file_a.resolve()) == file_path else 202
-            },
-        }
+        def sync_one(file_path):
+            return {
+                "ok": True,
+                "activity_id": 101 if str(file_a.resolve()) == file_path else 202,
+                "op": "inserted",
+            }
 
-        service = main.FITFolderWatchService(fake_api, debounce_sec=0.05, stable_wait_sec=0.01)
-        try:
-            service._enqueue_created_file(str(file_a))
-            service._enqueue_created_file(str(file_a))
-            service._enqueue_created_file(str(file_b))
-            self._wait_until(lambda: fake_api.notify_new_track_detected.call_count == 2)
+        service = main.FITFolderWatchService(fake_api)
+        with mock.patch.object(main, "FIT_WATCH_STABLE_SEC", 0.01), \
+             mock.patch.object(main, "FIT_WATCH_POLL_INTERVAL_SEC", 0.01), \
+             mock.patch.object(main, "_sync_single_fit_file", side_effect=sync_one) as sync:
+            try:
+                service._enqueue_created_file(str(file_a))
+                service._enqueue_created_file(str(file_a))
+                service._enqueue_created_file(str(file_b))
+                self._wait_until(lambda: fake_api.notify_new_track_detected.call_count == 2)
 
-            self.assertEqual(fake_api.start_sync_local_fit_files.call_count, 1)
-            self.assertEqual(fake_api.notify_new_track_detected.call_count, 2)
+                self.assertEqual(sync.call_count, 2)
+                self.assertEqual(fake_api.notify_new_track_detected.call_count, 2)
 
-            fake_api.notify_new_track_detected.reset_mock()
-            service._enqueue_created_file(str(file_a))
-            time.sleep(0.15)
-            self.assertEqual(fake_api.start_sync_local_fit_files.call_count, 1)
-            self.assertEqual(fake_api.notify_new_track_detected.call_count, 0)
-        finally:
-            service.stop()
+                fake_api.notify_new_track_detected.reset_mock()
+                service._enqueue_created_file(str(file_a))
+                time.sleep(0.05)
+                self.assertEqual(sync.call_count, 2)
+                self.assertEqual(fake_api.notify_new_track_detected.call_count, 0)
+            finally:
+                service.stop()
 
     def _wait_until(self, predicate, timeout_sec: float = 1.5):
         deadline = time.time() + timeout_sec

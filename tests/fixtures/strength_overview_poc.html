@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Strength Overview POC</title>
+    <style>
+        html, body, iframe { width: 100%; height: 100%; margin: 0; border: 0; background: #020617; }
+    </style>
+</head>
+<body>
+<iframe id="app" src="/track.html" title="力量训练概览 POC"></iframe>
+<script>
+    const mockRecord = {
+        id: 42001,
+        title: '背部与下肢力量训练',
+        date_label: '2026-07-28',
+        device_name: 'Garmin Test Device',
+        sport_type: 'strength_training',
+        display_sport_type: 'strength_training',
+        duration_sec: 3120,
+        avg_hr: 118,
+        calories: 386,
+        detail_pending: false,
+        detail: {
+            detail_surface_mode: 'strength',
+            primary_visual: 'strength_muscle_map',
+            split_section: 'strength_sets',
+            overview_capabilities: {
+                has_track_visual: false,
+                has_laps: false,
+                has_structured_sets: true,
+                has_swim_lengths: false,
+                has_power: false,
+                has_cadence: false,
+                has_hr: true,
+                has_weather: false
+            },
+            overview_empty_states: { primary_visual: null, splits: null },
+            overview_metrics: [
+                { field: 'duration_sec' },
+                { field: 'strength_exercise_count' },
+                { field: 'strength_working_set_count' },
+                { field: 'strength_total_reps' },
+                { field: 'strength_total_volume_kg' },
+                { field: 'avg_hr' }
+            ],
+            summary: { duration_sec: 3120, avg_hr: 118, calories: 386 },
+            laps: [],
+            lap_columns: [],
+            strength: {
+                summary: {
+                    distinct_exercise_count: 4,
+                    working_set_count: 12,
+                    total_reps: 112,
+                    total_volume_kg: 6480,
+                    unmapped_set_count: 1,
+                    weight_missing_set_count: 2
+                },
+                muscle_heatmap: {
+                    coverage: {
+                        working_sets: 12,
+                        mapped_working_sets: 11,
+                        unmapped_working_sets: 1,
+                        mapped_volume_share_pct: 94.2
+                    },
+                    regions: [
+                        { id: 'lats', label: '背阔肌', level: 'high', score: 1, share_pct: 31.2, working_set_count: 6, exercise_keys: ['pull_up', 'seated_cable_row'], primary_exercise_keys: ['pull_up', 'seated_cable_row'], secondary_exercise_keys: [] },
+                        { id: 'upper_back', label: '上背', level: 'high', score: 0.82, share_pct: 24.1, working_set_count: 5, exercise_keys: ['pull_up', 'seated_cable_row'], primary_exercise_keys: ['seated_cable_row'], secondary_exercise_keys: ['pull_up'] },
+                        { id: 'biceps', label: '肱二头肌', level: 'medium', score: 0.54, share_pct: 16.4, working_set_count: 6, exercise_keys: ['pull_up', 'seated_cable_row'], primary_exercise_keys: [], secondary_exercise_keys: ['pull_up', 'seated_cable_row'] },
+                        { id: 'quadriceps', label: '股四头肌', level: 'medium', score: 0.48, share_pct: 14.8, working_set_count: 4, exercise_keys: ['weighted_squat'], primary_exercise_keys: ['weighted_squat'], secondary_exercise_keys: [] },
+                        { id: 'glutes', label: '臀部', level: 'low', score: 0.31, share_pct: 8.9, working_set_count: 4, exercise_keys: ['weighted_squat'], primary_exercise_keys: ['weighted_squat'], secondary_exercise_keys: [] },
+                        { id: 'core', label: '核心', level: 'low', score: 0.16, share_pct: 4.6, working_set_count: 4, exercise_keys: ['weighted_squat'], primary_exercise_keys: [], secondary_exercise_keys: ['weighted_squat'] }
+                    ]
+                },
+                exercises: [
+                    {
+                        exercise_key: 'pull_up', exercise_name: '引体向上', working_set_count: 3, volume_kg: null,
+                        primary_muscles: ['背阔肌'], secondary_muscles: ['上背', '肱二头肌'],
+                        sets: [
+                            { set_index: 1, set_type: 'working', reps: 8, weight_kg: null },
+                            { set_index: 2, set_type: 'working', reps: 7, weight_kg: null },
+                            { set_index: 3, set_type: 'working', reps: 6, weight_kg: null }
+                        ]
+                    },
+                    {
+                        exercise_key: 'seated_cable_row', exercise_name: '坐姿绳索划船（宽握，停顿两秒）', working_set_count: 3, volume_kg: 1800,
+                        primary_muscles: ['上背', '背阔肌'], secondary_muscles: ['肱二头肌'],
+                        sets: [
+                            { set_index: 4, set_type: 'warmup', reps: 12, weight_kg: 30 },
+                            { set_index: 5, set_type: 'working', reps: 12, weight_kg: 45 },
+                            { set_index: 6, set_type: 'working', reps: 10, weight_kg: 54 },
+                            { set_index: 7, set_type: 'working', reps: 10, weight_kg: 72 }
+                        ]
+                    },
+                    {
+                        exercise_key: 'weighted_squat', exercise_name: '杠铃深蹲', working_set_count: 4, volume_kg: 4480,
+                        primary_muscles: ['股四头肌', '臀部'], secondary_muscles: ['核心'],
+                        sets: [
+                            { set_index: 8, set_type: 'working', reps: 10, weight_kg: 80 },
+                            { set_index: 9, set_type: 'working', reps: 10, weight_kg: 100 },
+                            { set_index: 10, set_type: 'working', reps: 8, weight_kg: 120 },
+                            { set_index: 11, set_type: 'working', reps: 8, weight_kg: 140 }
+                        ]
+                    },
+                    {
+                        exercise_key: null, exercise_name: '未识别动作', working_set_count: 1, volume_kg: 200,
+                        primary_muscles: [], secondary_muscles: [],
+                        sets: [{ set_index: 12, set_type: 'working', reps: 10, weight_kg: 20 }]
+                    }
+                ]
+            }
+        }
+    };
+    const pocParams = new URLSearchParams(window.location.search);
+    if (pocParams.get('mode') === 'unmapped') {
+        const strength = mockRecord.detail.strength;
+        strength.summary.unmapped_set_count = strength.summary.working_set_count;
+        strength.muscle_heatmap.coverage = {
+            working_sets: strength.summary.working_set_count,
+            mapped_working_sets: 0,
+            unmapped_working_sets: strength.summary.working_set_count,
+            mapped_volume_share_pct: 0
+        };
+        strength.muscle_heatmap.regions = [];
+        strength.exercises.forEach(function(exercise) {
+            exercise.primary_muscles = [];
+            exercise.secondary_muscles = [];
+        });
+    }
+    document.getElementById('app').addEventListener('load', function() {
+        const app = this.contentWindow;
+        if (pocParams.get('library') === 'missing') app.BodyMuscles = null;
+        app.document.getElementById('activity-detail-overlay').classList.add('open');
+        app.renderActivityDetail(mockRecord);
+        window.__strengthPocReady = true;
+    });
+</script>
+</body>
+</html>

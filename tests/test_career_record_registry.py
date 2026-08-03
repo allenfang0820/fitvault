@@ -291,7 +291,7 @@ class CareerRecordRegistryTest(unittest.TestCase):
         self.assertEqual(definitions_by_key["cycling_power_30m"].standard_duration_sec, 1800)
         self.assertEqual(definitions_by_key["cycling_power_2h"].standard_duration_sec, 7200)
         self.assertEqual(definitions_by_key["pool_swim_100m"].availability_state, "validation_required")
-        self.assertEqual(definitions_by_key["open_water_swim_1500m"].availability_state, "candidate_only")
+        self.assertEqual(definitions_by_key["open_water_swim_1500m"].availability_state, "available")
         self.assertEqual(definitions_by_key["trail_max_single_climb"].source_mode, "activity_total")
         self.assertFalse(definitions_by_key["trail_max_single_climb"].dynamic_scope)
         self.assertIsNone(career_backend.get_record_definition("trail_route_best_time"))
@@ -340,7 +340,7 @@ class CareerRecordRegistryTest(unittest.TestCase):
             for record in group["records"]
         ]
         self.assertFalse(any(record["dynamic_scope"] for record in trail_records))
-        self.assertTrue(all(record["availability_state"] == "candidate_only" for record in trail_records))
+        self.assertTrue(all(record["availability_state"] == "available" for record in trail_records))
 
 
 if __name__ == "__main__":

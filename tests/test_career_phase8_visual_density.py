@@ -71,7 +71,7 @@ class TestCareerPhase8VisualDensity(unittest.TestCase):
         cls.mobile_css = extract_between(
             cls.source,
             "@media (max-width: 980px)",
-            "/* V1.0:三个预留 tab",
+            "/* 成长趋势开发态蒙板 */",
         )
 
     def test_header_copy_is_compact_and_not_placeholder_copy(self):

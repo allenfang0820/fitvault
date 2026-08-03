@@ -11,6 +11,7 @@ from main import (
     _read_water_metrics_from_fit,
     resolve_lap_columns,
 )
+from metrics_registry import get_detail_surface_mode
 from fit_engine import SPORT_TYPE_ALIASES
 
 
@@ -26,6 +27,7 @@ class TestWaterMetricBackendContract(unittest.TestCase):
             _resolve_display_sport_type("swimming", "open_water_swimming"),
             "open_water_swimming",
         )
+        self.assertEqual(get_detail_surface_mode("open_water_swimming"), "swim_open_water")
 
     def test_water_metric_labels_by_sub_sport(self):
         self.assertEqual(
@@ -83,6 +85,7 @@ class TestWaterMetricBackendContract(unittest.TestCase):
             main._read_water_metrics_from_fit = original
 
     def test_lap_columns_split_swolf_and_stroke_distance(self):
+        self.assertIn("lap_distance_km", resolve_lap_columns("lap_swimming"))
         self.assertIn("swolf", resolve_lap_columns("lap_swimming"))
         self.assertIn("stroke_distance", resolve_lap_columns("open_water"))
         self.assertIn("stroke_distance", resolve_lap_columns("open_water_swimming"))
@@ -122,6 +125,13 @@ class TestWaterMetricFrontendContract(unittest.TestCase):
         self.assertIn("s === 'open_water'", self.html)
         self.assertIn("s === 'open_water_swimming'", self.html)
         self.assertIn("lap.avg_stroke_distance", self.html)
+
+    def test_pool_swim_lap_table_uses_chinese_stroke_and_distance_fallback(self):
+        self.assertIn("label = '泳段距离'", self.html)
+        self.assertIn("lap.distance_km", self.html)
+        self.assertIn("freestyle: '自由泳'", self.html)
+        self.assertIn("breaststroke: '蛙泳'", self.html)
+        self.assertIn("mixed: '混合泳'", self.html)
 
 
 if __name__ == "__main__":

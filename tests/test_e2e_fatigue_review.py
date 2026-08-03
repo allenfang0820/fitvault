@@ -77,6 +77,7 @@ def mock_pywebview_api():
             "context_tags": {
                 "热应激 (Heat Stress)": "High (28.5°C) - 会导致散热受阻...",
             },
+            "environment_context": {},
             "ai_insight": None,
             "advice": "下次类似路线...",
             "disclaimer": "AI 生成仅供参考...",
@@ -569,7 +570,7 @@ class TestFatigueReviewEmptyStates:
         assert "本次活动未携带上下文标签" not in html
         assert "暂无上下文" not in html
         assert 'id="fr-context-panel"' not in html
-        assert "_renderFatigueReviewContextFactors(contextTags)" in html
+        assert "_renderFatigueReviewContextFactors(environmentFactors, contextTags)" in html
         assert "影响因素" in html
 
     def test_curves_all_empty_skips_echarts(self):
