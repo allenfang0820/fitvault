@@ -118,11 +118,62 @@ jobs:
             throw "PyInstaller Windows output is incomplete: $publishDir\FitVault.exe"
           }
 
-          choco install wixtoolset --version=3.11.2 --no-progress --yes
-          $wixBin = Join-Path ${env:ProgramFiles(x86)} "WiX Toolset v3.11\bin"
+          $wixBinCandidates = @(
+            (Join-Path ${env:ProgramFiles(x86)} "WiX Toolset v3.11\bin"),
+            (Join-Path ${env:ProgramFiles(x86)} "WiX Toolset v3.14\bin"),
+            (Join-Path ${env:ProgramFiles} "WiX Toolset v3.11\bin"),
+            (Join-Path ${env:ProgramFiles} "WiX Toolset v3.14\bin")
+          )
+          $wixBin = $null
+          foreach ($candidate in $wixBinCandidates) {
+            if (Test-Path (Join-Path $candidate "heat.exe")) {
+              $wixBin = $candidate
+              break
+            }
+          }
+          if (-not $wixBin) {
+            $heatCmd = Get-Command heat.exe -ErrorAction SilentlyContinue
+            if ($heatCmd) {
+              $wixBin = Split-Path -Parent $heatCmd.Source
+            }
+          }
+          if (-not $wixBin) {
+            foreach ($candidate in $wixBinCandidates) {
+              if (Test-Path (Join-Path $candidate "candle.exe")) {
+                $wixBin = $candidate
+                break
+              }
+            }
+          }
+          if (-not $wixBin) {
+            Write-Host "WiX not found in common locations; attempting Chocolatey install."
+            choco install wixtoolset --version=3.11.2 --no-progress --yes --allow-downgrade --force
+            if ($LASTEXITCODE -ne 0) {
+              Write-Host "Chocolatey returned exit code $LASTEXITCODE; continuing WiX lookup."
+            }
+            foreach ($candidate in $wixBinCandidates) {
+              if (Test-Path (Join-Path $candidate "heat.exe")) {
+                $wixBin = $candidate
+                break
+              }
+            }
+            if (-not $wixBin) {
+              $heatCmd = Get-Command heat.exe -ErrorAction SilentlyContinue
+              if ($heatCmd) {
+                $wixBin = Split-Path -Parent $heatCmd.Source
+              }
+            }
+          }
+          if (-not $wixBin) {
+            Write-Host "ProgramFiles(x86)=$($env:ProgramFiles(x86))"
+            Write-Host "ProgramFiles=$($env:ProgramFiles)"
+            Write-Host "PATH heat.exe lookup:"
+            Get-Command heat.exe -ErrorAction SilentlyContinue | Format-List * | Out-String | Write-Host
+            throw "Missing WiX tool: heat.exe (looked in standard locations and PATH)"
+          }
           foreach ($tool in @("heat.exe", "candle.exe", "light.exe")) {
             if (-not (Test-Path (Join-Path $wixBin $tool))) {
-              throw "Missing WiX tool: $tool"
+              throw "Missing WiX tool: $tool in $wixBin"
             }
           }
 
