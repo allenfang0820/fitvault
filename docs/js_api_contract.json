@@ -299,6 +299,66 @@
       "description": "手动刷新 ACS 运动生涯派生事件索引；仅调用后端 Resolver 从 Activity 安全摘要生成/更新 career_race_events、career_pb_records、career_achievement_events 与候选事件，不读取或返回 raw FIT、points、track_json、file_path、本地路径或 SQLite schema。用于进入运动生涯页前补齐历史活动数据。"
     },
     {
+      "name": "get_derived_metrics_upgrade_status",
+      "file": "main.py",
+      "line": 15214,
+      "category": "career",
+      "parameters": [],
+      "returns": "{ ok, code, msg, data: {derived_metrics_upgrade: {state, running, version, migration_key, migration_done, message_code, started_at, finished_at, error_code, steps, audit, source_version}}, traceId }",
+      "high_risk": false,
+      "readonly": true,
+      "description": "V2.0.4 旧库派生数据升级状态 API；只返回雷达 advanced_metrics、记录中心 metric results/events、PB/赛事/成就、力量热力图、admin1、list metric backfill 的安全状态摘要和统计，不返回 raw FIT、points、track_json、file_path、本地路径、账号、token 或 SQLite schema。前端只能据此展示升级状态和触发刷新，不得计算运动事实。"
+    },
+    {
+      "name": "start_derived_metrics_upgrade",
+      "file": "main.py",
+      "line": 15223,
+      "category": "career",
+      "parameters": [
+        {
+          "name": "payload",
+          "type": "dict",
+          "required": false,
+          "default": null,
+          "description": "{force?: bool}; 默认仅在 upgrade_2_0_4_derived_metrics_v1 未 done 时后台启动"
+        }
+      ],
+      "returns": "{ ok, code, msg, data: {derived_metrics_upgrade: {state, running, version, migration_key, migration_done, message_code, started_at, finished_at, error_code, steps, audit, source_version}}, traceId }",
+      "high_risk": false,
+      "readonly": false,
+      "description": "V2.0.4 旧库派生数据后台升级启动 API；不阻塞主窗口，幂等启动雷达 advanced_metrics 重建、record metric results 全量重建、current_best/record_breaking 事件物化、PB/赛事/成就事件刷新和安全审计。成功后由后端写 app_migrations done；失败保持 retryable。"
+    },
+    {
+      "name": "run_derived_metrics_upgrade_now",
+      "file": "main.py",
+      "line": 15233,
+      "category": "career",
+      "parameters": [
+        {
+          "name": "payload",
+          "type": "dict",
+          "required": false,
+          "default": null,
+          "description": "{force?: bool}; 维护/测试用同步执行"
+        }
+      ],
+      "returns": "{ ok, code, msg, data: {ok, migration_key, status, steps, audit_before, audit_after, source_version}, traceId }",
+      "high_risk": true,
+      "readonly": false,
+      "description": "V2.0.4 旧库派生数据同步维护 API；用于打包机或真机验证。执行真实派生表/字段重建，但不删除 Activity、activity_source_files、FIT 或媒体文件，不修改 VAM/雷达/记录算法口径。"
+    },
+    {
+      "name": "audit_derived_metrics_upgrade_dependencies",
+      "file": "main.py",
+      "line": 15245,
+      "category": "career",
+      "parameters": [],
+      "returns": "{ ok, code, msg, data: {ok, migration_key, migration_done, advanced_metrics, record_metric_results, career_events, strength_materialization, region_admin1, list_metric_backfill, schema_compatibility}, traceId }",
+      "high_risk": false,
+      "readonly": true,
+      "description": "V2.0.4 旧库派生依赖安全审计 API；按实际表/列存在性统计，不假设 activities.sport 等新版列一定存在；输出只包含数量、版本、分类和状态，不返回路径、raw FIT、points、track_json 或 SQLite schema。"
+    },
+    {
       "name": "get_career_overview",
       "file": "main.py",
       "line": 11330,

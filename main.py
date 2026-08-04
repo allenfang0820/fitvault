@@ -92,6 +92,9 @@ CURRENT_METRICS_VERSION = 6  # v6: P1-P4 雷达解释字段与评分上下文升
 # 3) stability/climbing/threshold/anaerobic 的 source/confidence 参与聚合解释。
 # 触发条件:历史 advanced_metrics.metrics_version < 6 → 由
 # api_force_rebuild_radar_data / rebuild_advanced_metrics_for_all_activities 强制清洗重建。
+DERIVED_METRICS_UPGRADE_KEY = "upgrade_2_0_4_derived_metrics_v1"
+DERIVED_METRICS_UPGRADE_VERSION = 1
+DERIVED_METRICS_UPGRADE_STATES = {"idle", "running", "completed", "failed_retryable"}
 WORKSPACE_ROOT = os.path.abspath(os.path.expanduser("~/.fitvault/workspace/"))
 TRACKS_DIR = os.path.abspath(os.path.expanduser("~/.fitvault/workspace/tracks/"))
 IMPORTS_DIR = os.path.abspath(os.path.expanduser("~/.fitvault/workspace/imports/"))
@@ -15211,6 +15214,44 @@ class Api:
             logger.exception("refresh_career_derived_events failed")
             return _api_error(API_CODE_DB, "运动生涯派生事件刷新失败")
 
+    def get_derived_metrics_upgrade_status(self) -> dict:
+        """Return V2.0.4 old-library derived-data upgrade status."""
+        try:
+            return _api_success({"derived_metrics_upgrade": get_derived_metrics_upgrade_status()})
+        except Exception:
+            logger.exception("get_derived_metrics_upgrade_status failed")
+            return _api_error(API_CODE_DB, "派生数据升级状态查询失败")
+
+    def start_derived_metrics_upgrade(self, payload: dict | None = None) -> dict:
+        """Start V2.0.4 old-library derived-data upgrade in the background."""
+        try:
+            force = bool(payload.get("force")) if isinstance(payload, dict) else False
+            status = start_derived_metrics_upgrade_if_needed(force=force)
+            return _api_success({"derived_metrics_upgrade": status})
+        except Exception:
+            logger.exception("start_derived_metrics_upgrade failed")
+            return _api_error(API_CODE_DB, "派生数据升级启动失败")
+
+    def run_derived_metrics_upgrade_now(self, payload: dict | None = None) -> dict:
+        """Run V2.0.4 derived-data upgrade synchronously for maintenance/testing."""
+        try:
+            force = bool(payload.get("force")) if isinstance(payload, dict) else False
+            data = run_derived_metrics_upgrade(force=force)
+            if not data.get("ok"):
+                return _api_error(API_CODE_DB, "派生数据升级失败", data)
+            return _api_success(data)
+        except Exception:
+            logger.exception("run_derived_metrics_upgrade_now failed")
+            return _api_error(API_CODE_DB, "派生数据升级执行失败")
+
+    def audit_derived_metrics_upgrade_dependencies(self) -> dict:
+        """Return safe derived dependency audit for V2.0.4 old-library upgrade."""
+        try:
+            return _api_success(audit_derived_metrics_upgrade_dependencies())
+        except Exception:
+            logger.exception("audit_derived_metrics_upgrade_dependencies failed")
+            return _api_error(API_CODE_DB, "派生数据依赖审计失败")
+
     def get_career_overview(self) -> dict:
         """Return ACS overview skeleton without deriving career facts in main.py."""
         try:
@@ -19757,23 +19798,354 @@ def _set_schema_version(version: int) -> None:
         conn.close()
 
 
-def force_rebuild_all_records(force: bool = True) -> dict[str, Any]:
-    """Safely rebuild derived advanced_metrics without touching canonical activity data."""
-    ensure_activity_sync_schema()
-    conn = profile_backend._conn()
+_DERIVED_METRICS_UPGRADE_LOCK = threading.RLock()
+_DERIVED_METRICS_UPGRADE_THREAD: threading.Thread | None = None
+_DERIVED_METRICS_UPGRADE_STATUS: dict[str, Any] = {
+    "state": "idle",
+    "running": False,
+    "version": DERIVED_METRICS_UPGRADE_VERSION,
+    "migration_key": DERIVED_METRICS_UPGRADE_KEY,
+    "message_code": "derived_upgrade_idle",
+    "started_at": 0.0,
+    "finished_at": 0.0,
+    "error_code": "",
+    "steps": {},
+    "audit": {},
+}
+
+
+def _table_exists_conn(conn: sqlite3.Connection, table_name: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1",
+        (str(table_name),),
+    ).fetchone()
+    return row is not None
+
+
+def _table_columns_conn(conn: sqlite3.Connection, table_name: str) -> set[str]:
+    if not _table_exists_conn(conn, table_name):
+        return set()
+    return {str(row[1]) for row in conn.execute(f"PRAGMA table_info({table_name})").fetchall()}
+
+
+def _coalesce_columns_sql(columns: set[str], candidates: Iterable[str], default: str = "''") -> str:
+    present = [name for name in candidates if name in columns]
+    if not present:
+        return default
+    return f"COALESCE({', '.join(present + [default])})"
+
+
+def _count_query(conn: sqlite3.Connection, sql: str, params: tuple[Any, ...] = ()) -> int:
     try:
-        rows = conn.execute(
+        row = conn.execute(sql, params).fetchone()
+        return int(row[0] or 0) if row is not None else 0
+    except sqlite3.Error:
+        return 0
+
+
+def _derived_metrics_migration_done(conn: sqlite3.Connection) -> bool:
+    return profile_backend.app_migration_done(conn, DERIVED_METRICS_UPGRADE_KEY)
+
+
+def _safe_source_version(conn: sqlite3.Connection) -> int:
+    try:
+        return int(career_backend._career_record_source_version(conn))
+    except Exception:
+        return 0
+
+
+def _derived_upgrade_public_status(status: dict[str, Any]) -> dict[str, Any]:
+    safe = {
+        "state": str(status.get("state") or "idle"),
+        "running": bool(status.get("running")),
+        "version": int(status.get("version") or DERIVED_METRICS_UPGRADE_VERSION),
+        "migration_key": DERIVED_METRICS_UPGRADE_KEY,
+        "message_code": str(status.get("message_code") or "derived_upgrade_idle"),
+        "started_at": float(status.get("started_at") or 0.0),
+        "finished_at": float(status.get("finished_at") or 0.0),
+        "error_code": str(status.get("error_code") or ""),
+        "steps": status.get("steps") if isinstance(status.get("steps"), dict) else {},
+        "audit": status.get("audit") if isinstance(status.get("audit"), dict) else {},
+        "source_version": int(status.get("source_version") or 0),
+        "migration_done": bool(status.get("migration_done")),
+    }
+    if safe["state"] not in DERIVED_METRICS_UPGRADE_STATES:
+        safe["state"] = "idle"
+    return safe
+
+
+def _set_derived_metrics_upgrade_status(**fields: Any) -> dict[str, Any]:
+    with _DERIVED_METRICS_UPGRADE_LOCK:
+        _DERIVED_METRICS_UPGRADE_STATUS.update(fields)
+        return _derived_upgrade_public_status(dict(_DERIVED_METRICS_UPGRADE_STATUS))
+
+
+def get_derived_metrics_upgrade_status(conn: sqlite3.Connection | None = None) -> dict[str, Any]:
+    owns_conn = conn is None
+    db = conn or profile_backend._conn()
+    try:
+        done = _derived_metrics_migration_done(db)
+        with _DERIVED_METRICS_UPGRADE_LOCK:
+            status = dict(_DERIVED_METRICS_UPGRADE_STATUS)
+        if done and not bool(status.get("running")):
+            status.update(
+                {
+                    "state": "completed",
+                    "running": False,
+                    "message_code": "derived_upgrade_completed",
+                    "source_version": _safe_source_version(db),
+                }
+            )
+        elif not bool(status.get("running")) and str(status.get("state") or "idle") == "completed" and not done:
+            status.update({"state": "idle", "message_code": "derived_upgrade_pending"})
+        status["migration_done"] = bool(done)
+        return _derived_upgrade_public_status(status)
+    finally:
+        if owns_conn:
+            db.close()
+
+
+def audit_derived_metrics_upgrade_dependencies(conn: sqlite3.Connection | None = None) -> dict[str, Any]:
+    owns_conn = conn is None
+    db = conn or profile_backend._conn()
+    try:
+        activity_cols = _table_columns_conn(db, "activities")
+        sport_expr = "lower(" + _coalesce_columns_sql(
+            activity_cols,
+            ("sport_type", "sport", "activity_type", "sub_sport_type"),
+            "''",
+        ) + ")"
+        deleted_filter = "COALESCE(deleted_at, '') = ''" if "deleted_at" in activity_cols else "1=1"
+        sync_filter = "COALESCE(sync_status, 'success') = 'success'" if "sync_status" in activity_cols else "1=1"
+        track_filter = "1=0"
+        if {"track_json", "points_json"} & activity_cols:
+            track_expr = _coalesce_columns_sql(activity_cols, ("track_json", "points_json"), "''")
+            track_filter = f"({track_expr} IS NOT NULL AND {track_expr} != '')"
+
+        advanced_missing_or_stale = 0
+        advanced_total = 0
+        if "advanced_metrics" in activity_cols and _table_exists_conn(db, "activities"):
+            rows = db.execute(
+                f"""
+                SELECT advanced_metrics
+                FROM activities
+                WHERE {deleted_filter}
+                  AND {track_filter}
+                """
+            ).fetchall()
+            advanced_total = len(rows)
+            for row in rows:
+                value = row["advanced_metrics"] if isinstance(row, sqlite3.Row) else row[0]
+                if needs_advanced_metrics_rebuild(value):
+                    advanced_missing_or_stale += 1
+
+        career_tables = {
+            table: _count_query(db, f"SELECT COUNT(*) FROM {table}") if _table_exists_conn(db, table) else 0
+            for table in (
+                "career_record_metric_results",
+                "career_record_events",
+                "career_race_events",
+                "career_pb_records",
+                "career_achievement_events",
+                "career_record_curve_cache",
+            )
+        }
+        materialized_key_count = 0
+        materialized_sport_count = 0
+        if _table_exists_conn(db, "career_record_metric_results"):
+            materialized_key_count = _count_query(
+                db,
+                """
+                SELECT COUNT(DISTINCT record_key)
+                FROM career_record_metric_results
+                WHERE resolver_version = ?
+                  AND status != 'invalidated'
+                """,
+                (career_backend.RECORD_METRIC_SERIES_RESOLVER_VERSION,),
+            )
+            materialized_sport_count = _count_query(
+                db,
+                """
+                SELECT COUNT(DISTINCT sport)
+                FROM career_record_metric_results
+                WHERE resolver_version = ?
+                  AND status != 'invalidated'
+                """,
+                (career_backend.RECORD_METRIC_SERIES_RESOLVER_VERSION,),
+            )
+
+        strength = {"available": False, "pending": 0, "source_missing": 0, "materialized": 0}
+        if "strength_materialization_status" in activity_cols:
+            strength["available"] = True
+            strength["pending"] = _count_query(
+                db,
+                f"""
+                SELECT COUNT(*)
+                FROM activities
+                WHERE {deleted_filter}
+                  AND ({sport_expr} LIKE '%strength%')
+                  AND (
+                    COALESCE(strength_materialization_version, 0) < ?
+                    OR COALESCE(strength_materialization_status, '') = ''
+                  )
+                """,
+                (STRENGTH_MATERIALIZATION_VERSION,),
+            )
+            strength["source_missing"] = _count_query(
+                db,
+                f"""
+                SELECT COUNT(*)
+                FROM activities
+                WHERE {deleted_filter}
+                  AND ({sport_expr} LIKE '%strength%')
+                  AND COALESCE(strength_materialization_status, '') = 'source_missing'
+                """,
+            )
+            strength["materialized"] = _count_query(
+                db,
+                f"""
+                SELECT COUNT(*)
+                FROM activities
+                WHERE {deleted_filter}
+                  AND ({sport_expr} LIKE '%strength%')
+                  AND COALESCE(strength_materialization_status, '') = 'materialized'
+                """,
+            )
+
+        admin1 = {"available": False, "missing": 0, "total_success_gps": 0}
+        if {"region_admin1", "region_admin1_code"} <= activity_cols:
+            gps_parts = [
+                f"COALESCE({column}, 0) != 0"
+                for column in ("lat", "lon", "start_lat", "start_lon")
+                if column in activity_cols
+            ]
+            gps_filter = "(" + " OR ".join(gps_parts) + ")" if gps_parts else "1=1"
+            region_status_filter = "COALESCE(region_status, 'success') = 'success'" if "region_status" in activity_cols else "1=1"
+            admin1["available"] = True
+            admin1["total_success_gps"] = _count_query(
+                db,
+                f"SELECT COUNT(*) FROM activities WHERE {deleted_filter} AND {sync_filter} AND {region_status_filter} AND {gps_filter}",
+            )
+            admin1["missing"] = _count_query(
+                db,
+                f"""
+                SELECT COUNT(*)
+                FROM activities
+                WHERE {deleted_filter}
+                  AND {sync_filter}
+                  AND {region_status_filter}
+                  AND {gps_filter}
+                  AND COALESCE(region_admin1, '') = ''
+                  AND COALESCE(region_admin1_code, '') = ''
+                """,
+            )
+
+        list_metrics = {"available": False, "missing_power_backfill": 0, "missing_water_backfill": 0}
+        if "list_metric_backfill_version" in activity_cols:
+            list_metrics["available"] = True
+            list_metrics["missing_power_backfill"] = _count_query(
+                db,
+                f"""
+                SELECT COUNT(*)
+                FROM activities
+                WHERE {deleted_filter}
+                  AND {sync_filter}
+                  AND ({sport_expr} LIKE '%cycl%' OR {sport_expr} LIKE '%bike%')
+                  AND COALESCE(list_metric_backfill_version, 0) = 0
+                """,
+            )
+            list_metrics["missing_water_backfill"] = _count_query(
+                db,
+                f"""
+                SELECT COUNT(*)
+                FROM activities
+                WHERE {deleted_filter}
+                  AND {sync_filter}
+                  AND ({sport_expr} LIKE '%swim%')
+                  AND COALESCE(list_metric_backfill_version, 0) = 0
+                """,
+            )
+
+        return {
+            "ok": True,
+            "migration_key": DERIVED_METRICS_UPGRADE_KEY,
+            "migration_done": _derived_metrics_migration_done(db),
+            "advanced_metrics": {
+                "classification": "mandatory_migration",
+                "total_track_rows": advanced_total,
+                "missing_or_stale": advanced_missing_or_stale,
+                "current_metrics_version": CURRENT_METRICS_VERSION,
+            },
+            "record_metric_results": {
+                "classification": "mandatory_migration",
+                "table_rows": career_tables["career_record_metric_results"],
+                "materialized_key_count": materialized_key_count,
+                "materialized_sport_count": materialized_sport_count,
+                "resolver_version": career_backend.RECORD_METRIC_SERIES_RESOLVER_VERSION,
+            },
+            "career_events": {
+                "classification": "mandatory_migration",
+                "tables": career_tables,
+            },
+            "strength_materialization": {
+                **strength,
+                "classification": "on_demand_backend_repair",
+            },
+            "region_admin1": {
+                **admin1,
+                "classification": "independent_display_backfill",
+            },
+            "list_metric_backfill": {
+                **list_metrics,
+                "classification": "background_self_healing",
+            },
+            "schema_compatibility": {
+                "activity_columns_checked": sorted(
+                    column
+                    for column in (
+                        "sport_type",
+                        "sport",
+                        "activity_type",
+                        "sub_sport_type",
+                        "advanced_metrics",
+                        "strength_materialization_status",
+                        "region_admin1",
+                        "region_admin1_code",
+                        "list_metric_backfill_version",
+                    )
+                    if column in activity_cols
+                ),
+                "uses_column_introspection": True,
+            },
+        }
+    finally:
+        if owns_conn:
+            db.close()
+
+
+def force_rebuild_all_records(force: bool = True, conn: sqlite3.Connection | None = None) -> dict[str, Any]:
+    """Safely rebuild derived advanced_metrics without touching canonical activity data."""
+    owns_conn = conn is None
+    if owns_conn:
+        ensure_activity_sync_schema()
+    db = conn or profile_backend._conn()
+    try:
+        activity_cols = _table_columns_conn(db, "activities")
+        track_expr = _coalesce_columns_sql(activity_cols, ("track_json", "points_json"), "''")
+        updated_clause = ", updated_at = datetime('now')" if "updated_at" in activity_cols else ""
+        rows = db.execute(
             """
             SELECT id, track_json, points_json, sport_type, advanced_metrics
             FROM activities
             WHERE deleted_at IS NULL
-              AND (track_json IS NOT NULL AND track_json != '')
+              AND ({track_expr} IS NOT NULL AND {track_expr} != '')
             ORDER BY id ASC
-            """
+            """.format(track_expr=track_expr)
         ).fetchall()
         if not rows:
             logger.info("全量重建: 无活动记录需要处理")
-            _set_schema_version(CURRENT_SCHEMA_VERSION)
+            if owns_conn:
+                _set_schema_version(CURRENT_SCHEMA_VERSION)
             return {
                 "ok": True,
                 "rebuilt_count": 0,
@@ -19805,22 +20177,24 @@ def force_rebuild_all_records(force: bool = True) -> dict[str, Any]:
                 advanced = _compute_advanced_metrics(track_data, row.get("sport_type"))
                 if advanced:
                     advanced_json = json.dumps(advanced, ensure_ascii=False)
-                    conn.execute(
-                        "UPDATE activities SET advanced_metrics = ?, updated_at = datetime('now') WHERE id = ?",
-                        (advanced_json, int(row["id"])),
+                    db.execute(
+                        f"UPDATE activities SET advanced_metrics = ?{updated_clause} WHERE id = ?",
+                        (advanced_json, row["id"]),
                     )
                     rebuilt_count += 1
-                    if rebuilt_count % 10 == 0:
-                        conn.commit()
+                    if owns_conn and rebuilt_count % 10 == 0:
+                        db.commit()
                 else:
                     skipped_count += 1
             except Exception as exc:
                 logger.warning("全量重建: 记录 id=%s 计算失败: %s", row.get("id"), exc)
                 failed_count += 1
                 continue
-        conn.commit()
+        if owns_conn:
+            db.commit()
         logger.info("全量重建完成: 成功重建 %s / %s 条记录", rebuilt_count, len(rows))
-        _set_schema_version(CURRENT_SCHEMA_VERSION)
+        if owns_conn:
+            _set_schema_version(CURRENT_SCHEMA_VERSION)
         return {
             "ok": True,
             "rebuilt_count": rebuilt_count,
@@ -19831,7 +20205,7 @@ def force_rebuild_all_records(force: bool = True) -> dict[str, Any]:
             "total": len(rows),
         }
     except Exception as e:
-        conn.rollback()
+        db.rollback()
         logger.exception("全量重建失败: %s", e)
         return {
             "ok": False,
@@ -19843,7 +20217,241 @@ def force_rebuild_all_records(force: bool = True) -> dict[str, Any]:
             "migrated": 0,
         }
     finally:
+        if owns_conn:
+            db.close()
+
+
+def run_derived_metrics_upgrade(
+    conn: sqlite3.Connection | None = None,
+    *,
+    force: bool = False,
+    run_strength_audit: bool = True,
+) -> dict[str, Any]:
+    """Run the V2.0.4 old-library derived-data upgrade in a retryable, idempotent way."""
+    owns_conn = conn is None
+    if owns_conn:
+        ensure_activity_sync_schema()
+    db = conn or profile_backend._conn()
+    started_at = time.time()
+    steps: dict[str, Any] = {}
+    _set_derived_metrics_upgrade_status(
+        state="running",
+        running=True,
+        message_code="derived_upgrade_running",
+        started_at=started_at,
+        finished_at=0.0,
+        error_code="",
+        steps=steps,
+    )
+    try:
+        career_backend.ensure_career_schema(db)
+        if _derived_metrics_migration_done(db) and not force:
+            status = _set_derived_metrics_upgrade_status(
+                state="completed",
+                running=False,
+                message_code="derived_upgrade_completed",
+                finished_at=time.time(),
+                source_version=_safe_source_version(db),
+                migration_done=True,
+                steps={"skipped": {"reason": "migration_done"}},
+            )
+            return {"ok": True, "skipped": True, "status": status}
+
+        audit_before = audit_derived_metrics_upgrade_dependencies(db)
+        steps["audit_before"] = {
+            "advanced_missing_or_stale": int((audit_before.get("advanced_metrics") or {}).get("missing_or_stale") or 0),
+            "record_metric_rows": int((audit_before.get("record_metric_results") or {}).get("table_rows") or 0),
+        }
+        _set_derived_metrics_upgrade_status(steps=dict(steps), audit=audit_before)
+
+        radar = force_rebuild_all_records(force=True, conn=db)
+        steps["advanced_metrics"] = {
+            "ok": bool(radar.get("ok")),
+            "rebuilt_count": int(radar.get("rebuilt_count") or radar.get("migrated") or 0),
+            "skipped_count": int(radar.get("skipped_count") or 0),
+            "failed_count": int(radar.get("failed_count") or 0),
+            "metrics_version": CURRENT_METRICS_VERSION,
+        }
+        if not radar.get("ok"):
+            raise RuntimeError("advanced_metrics_rebuild_failed")
+        _set_derived_metrics_upgrade_status(steps=dict(steps))
+
+        record_results = career_backend.rebuild_career_record_metric_results(
+            db,
+            sport="all",
+            limit=100000,
+            dry_run=False,
+        )
+        record_summary = record_results.get("summary") if isinstance(record_results.get("summary"), dict) else {}
+        steps["record_metric_results"] = {
+            "ok": bool(record_results.get("ok")),
+            "scanned": int(record_results.get("scanned") or 0),
+            "upserted": int(record_summary.get("upserted") or 0),
+            "invalidated": int(record_summary.get("invalidated") or 0),
+        }
+        if not record_results.get("ok"):
+            raise RuntimeError("record_metric_results_rebuild_failed")
+        _set_derived_metrics_upgrade_status(steps=dict(steps))
+
+        record_events = career_backend.materialize_career_record_breaking_events(
+            db,
+            sport="all",
+            run_id="v2_0_4_derived_upgrade",
+            dry_run=False,
+        )
+        record_event_summary = record_events.get("summary") if isinstance(record_events.get("summary"), dict) else {}
+        steps["record_events"] = {
+            "ok": bool(record_events.get("ok")),
+            "record_breaking_upserted": int(record_event_summary.get("upserted") or 0),
+            "current_best_upserted": int(record_event_summary.get("current_best_upserted") or 0),
+            "deleted": int(record_event_summary.get("deleted") or 0),
+            "current_best_deleted": int(record_event_summary.get("current_best_deleted") or 0),
+        }
+        if not record_events.get("ok"):
+            raise RuntimeError("record_events_materialize_failed")
+        _set_derived_metrics_upgrade_status(steps=dict(steps))
+
+        career_events = career_backend.refresh_career_derived_events(db, include_pb=True)
+        steps["career_derived_events"] = {
+            "ok": bool(career_events.get("ok")),
+            "record_source_version": int(career_events.get("record_source_version") or 0),
+        }
+        if not career_events.get("ok"):
+            raise RuntimeError("career_derived_events_refresh_failed")
+        _set_derived_metrics_upgrade_status(steps=dict(steps))
+
+        strength_status = None
+        if run_strength_audit:
+            try:
+                strength_status = strength_materialization_dry_run(limit=25)
+            except Exception:
+                strength_status = {"ok": False, "error_code": "strength_audit_failed"}
+            steps["strength_materialization_audit"] = {
+                "ok": bool(strength_status.get("ok", True)) if isinstance(strength_status, dict) else False,
+                "candidate_count": int((strength_status or {}).get("candidate_count") or (strength_status or {}).get("total") or 0)
+                if isinstance(strength_status, dict)
+                else 0,
+            }
+
+        if owns_conn:
+            try:
+                list_status = _start_normalized_power_backfill_if_needed()
+            except Exception:
+                list_status = {"ok": False, "error_code": "list_metric_backfill_failed"}
+        else:
+            list_status = {"running": False, "error_code": "", "skipped": "external_connection"}
+        steps["list_metric_backfill"] = {
+            "running": bool((list_status or {}).get("running")) if isinstance(list_status, dict) else False,
+            "error_code": str((list_status or {}).get("error_code") or "") if isinstance(list_status, dict) else "list_metric_backfill_failed",
+        }
+
+        career_backend._clear_record_metric_series_cache()
+        audit_after = audit_derived_metrics_upgrade_dependencies(db)
+        source_version = _safe_source_version(db)
+        details = {
+            "version": DERIVED_METRICS_UPGRADE_VERSION,
+            "steps": steps,
+            "audit_after": {
+                "advanced_missing_or_stale": int((audit_after.get("advanced_metrics") or {}).get("missing_or_stale") or 0),
+                "record_metric_rows": int((audit_after.get("record_metric_results") or {}).get("table_rows") or 0),
+            },
+            "source_version": source_version,
+        }
+        profile_backend.mark_app_migration_done(
+            db,
+            DERIVED_METRICS_UPGRADE_KEY,
+            details_json=json.dumps(details, ensure_ascii=False, sort_keys=True),
+        )
+        db.commit()
+        status = _set_derived_metrics_upgrade_status(
+            state="completed",
+            running=False,
+            message_code="derived_upgrade_completed",
+            finished_at=time.time(),
+            error_code="",
+            steps=dict(steps),
+            audit=audit_after,
+            source_version=source_version,
+            migration_done=True,
+        )
+        return {
+            "ok": True,
+            "migration_key": DERIVED_METRICS_UPGRADE_KEY,
+            "status": status,
+            "steps": steps,
+            "audit_before": audit_before,
+            "audit_after": audit_after,
+            "source_version": source_version,
+        }
+    except Exception as exc:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        logger.exception("V2.0.4 派生数据升级失败: %s", exc)
+        status = _set_derived_metrics_upgrade_status(
+            state="failed_retryable",
+            running=False,
+            message_code="derived_upgrade_failed_retryable",
+            finished_at=time.time(),
+            error_code=str(exc)[:80] or "derived_upgrade_failed",
+            steps=dict(steps),
+        )
+        return {
+            "ok": False,
+            "migration_key": DERIVED_METRICS_UPGRADE_KEY,
+            "error_code": status["error_code"],
+            "status": status,
+        }
+    finally:
+        if owns_conn:
+            db.close()
+
+
+def _run_derived_metrics_upgrade_worker(force: bool = False) -> None:
+    run_derived_metrics_upgrade(force=force)
+
+
+def start_derived_metrics_upgrade_if_needed(*, force: bool = False) -> dict[str, Any]:
+    global _DERIVED_METRICS_UPGRADE_THREAD
+    conn = profile_backend._conn()
+    try:
+        done = _derived_metrics_migration_done(conn)
+    finally:
         conn.close()
+    with _DERIVED_METRICS_UPGRADE_LOCK:
+        if _DERIVED_METRICS_UPGRADE_STATUS.get("running"):
+            return _derived_upgrade_public_status(dict(_DERIVED_METRICS_UPGRADE_STATUS))
+        if done and not force:
+            _DERIVED_METRICS_UPGRADE_STATUS.update(
+                {
+                    "state": "completed",
+                    "running": False,
+                    "message_code": "derived_upgrade_completed",
+                    "error_code": "",
+                    "migration_done": True,
+                }
+            )
+            return _derived_upgrade_public_status(dict(_DERIVED_METRICS_UPGRADE_STATUS))
+        _DERIVED_METRICS_UPGRADE_STATUS.update(
+            {
+                "state": "running",
+                "running": True,
+                "message_code": "derived_upgrade_running",
+                "started_at": time.time(),
+                "finished_at": 0.0,
+                "error_code": "",
+                "steps": {},
+            }
+        )
+        _DERIVED_METRICS_UPGRADE_THREAD = threading.Thread(
+            target=_run_derived_metrics_upgrade_worker,
+            args=(bool(force),),
+            name="derived-metrics-upgrade",
+            daemon=True,
+        )
+        _DERIVED_METRICS_UPGRADE_THREAD.start()
+        return _derived_upgrade_public_status(dict(_DERIVED_METRICS_UPGRADE_STATUS))
 
 
 def main() -> None:
@@ -19857,6 +20465,10 @@ def main() -> None:
         force_rebuild_all_records()
     else:
         logger.info("Schema 版本一致 (v=%s)，跳过数据清洗", local_version)
+    try:
+        start_derived_metrics_upgrade_if_needed()
+    except Exception:
+        logger.exception("V2.0.4 派生数据升级后台任务启动失败")
     html_path = html_file().resolve()
     url = str(html_path)
     _record_startup_event("html_file_resolved", path=url)

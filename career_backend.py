@@ -20193,6 +20193,7 @@ def get_career_pb_history(
 
 RECORD_METRIC_SERIES_RESOLVER_VERSION = "records-v3-series-activity-level-v2"
 CAREER_RECORD_SOURCE_VERSION_ALGORITHM = "records-v3-source-content-v1"
+DERIVED_METRICS_UPGRADE_KEY = "upgrade_2_0_4_derived_metrics_v1"
 RECORD_BREAKING_EVENT_TYPE = "record_breaking"
 RECORD_CURRENT_BEST_EVENT_TYPE = "current_best"
 RUNNING_STANDARD_DISTANCE_METRIC_SERIES_KEYS = {
@@ -21982,6 +21983,20 @@ def _has_materialized_metric_results_for_sport(
     return row is not None
 
 
+def _derived_metrics_upgrade_done(conn: sqlite3.Connection) -> bool:
+    return profile_backend.app_migration_done(conn, DERIVED_METRICS_UPGRADE_KEY)
+
+
+def _can_trust_materialized_empty_for_metric_results(
+    conn: sqlite3.Connection,
+    definition: RecordDefinition,
+) -> bool:
+    """Return True only when empty materialized reads represent a complete derived layer."""
+    if definition is None:
+        return False
+    return _derived_metrics_upgrade_done(conn)
+
+
 def _record_metric_point_value(point: dict[str, Any]) -> float | None:
     metric = point.get("metric") if isinstance(point.get("metric"), dict) else {}
     return _finite_float(metric.get("value"))
@@ -22459,8 +22474,9 @@ def get_career_record_metric_series(
         cached = _record_metric_series_cache_get(cache_key)
         if cached is not None:
             return _records_api_safe(cached)
+        trust_materialized_empty = _can_trust_materialized_empty_for_metric_results(db, definition)
         materialized_points = _materialized_metric_result_points_for_definition(db, definition, normalized_filters)
-        if materialized_points:
+        if materialized_points and trust_materialized_empty:
             response = _record_metric_series_response_from_points(
                 definition,
                 materialized_points,
@@ -22475,7 +22491,7 @@ def get_career_record_metric_series(
             response["metrics"]["materialized_hit"] = True
             _record_metric_series_cache_put(cache_key, response)
             return _records_api_safe(response)
-        if _has_materialized_metric_results_for_sport(db, definition.sport):
+        if _has_materialized_metric_results_for_sport(db, definition.sport) and trust_materialized_empty:
             response = _record_metric_series_response_from_points(
                 definition,
                 [],
@@ -22641,8 +22657,9 @@ def _records_v3_series_current_best_views(conn: sqlite3.Connection, filters: dic
                 if row is not None:
                     cached_views.append(_build_career_record_view(row))
             continue
+        trust_materialized_empty = _can_trust_materialized_empty_for_metric_results(conn, definition)
         materialized_points = _materialized_metric_result_points_for_definition(conn, definition, normalized_series_filters)
-        if materialized_points:
+        if materialized_points and trust_materialized_empty:
             series = _record_metric_series_response_from_points(
                 definition,
                 materialized_points,
@@ -22663,7 +22680,10 @@ def _records_v3_series_current_best_views(conn: sqlite3.Connection, filters: dic
             continue
         if definition.sport not in materialized_sports:
             materialized_sports[definition.sport] = _has_materialized_metric_results_for_sport(conn, definition.sport)
-        if materialized_sports[definition.sport]:
+        if (
+            materialized_sports[definition.sport]
+            and trust_materialized_empty
+        ):
             series = _record_metric_series_response_from_points(
                 definition,
                 [],

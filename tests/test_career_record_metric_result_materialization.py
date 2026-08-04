@@ -5,6 +5,7 @@ from unittest import mock
 
 import career_backend
 import main
+import profile_backend
 
 
 def _distance_points(items):
@@ -76,6 +77,12 @@ def _insert_running_activity_row(conn, *, activity_id, start_time, elapsed_5k, d
 
 
 def _insert_cycling_activity_row(conn, *, activity_id, start_time, distance_km):
+    distance_m = distance_km * 1000
+    steps = max(2, int(distance_km // 5))
+    points = [
+        (round(distance_m * index / steps, 3), round(7200 * index / steps, 3))
+        for index in range(steps + 1)
+    ]
     conn.execute(
         """
         INSERT INTO activities (
@@ -87,8 +94,8 @@ def _insert_cycling_activity_row(conn, *, activity_id, start_time, distance_km):
             activity_id,
             start_time,
             distance_km,
-            distance_km * 1000,
-            _distance_points([(0, 0), (distance_km * 1000, 7200)]),
+            distance_m,
+            _distance_points(points),
             f"/tmp/{activity_id}.fit",
         ),
     )
@@ -729,6 +736,7 @@ class CareerRecordMetricResultMaterializationTest(unittest.TestCase):
             _create_schema(conn)
             _insert_running_activity(conn)
             career_backend.rebuild_career_record_metric_results(conn, sport="running", record_keys=["running_5k"], dry_run=False)
+            profile_backend.mark_app_migration_done(conn, career_backend.DERIVED_METRICS_UPGRADE_KEY)
             conn.execute("UPDATE activities SET points_json = NULL WHERE id = 'run-1'")
             career_backend._clear_record_metric_series_cache()
 
@@ -761,6 +769,7 @@ class CareerRecordMetricResultMaterializationTest(unittest.TestCase):
             _create_schema(conn)
             _insert_running_activity(conn)
             career_backend.rebuild_career_record_metric_results(conn, sport="running", record_keys=["running_5k"], dry_run=False)
+            profile_backend.mark_app_migration_done(conn, career_backend.DERIVED_METRICS_UPGRADE_KEY)
             career_backend._clear_record_metric_series_cache()
 
             with mock.patch.object(career_backend, "_record_metric_series_activity_rows") as rows:
@@ -774,6 +783,73 @@ class CareerRecordMetricResultMaterializationTest(unittest.TestCase):
         finally:
             conn.close()
 
+    def test_half_materialized_old_cycling_db_does_not_mask_missing_distance_keys(self):
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        try:
+            _create_schema(conn)
+            _insert_cycling_activity_row(
+                conn,
+                activity_id="ride-52k",
+                start_time="2026-06-01T08:00:00Z",
+                distance_km=52.0,
+            )
+            _insert_cycling_activity_row(
+                conn,
+                activity_id="ride-short-1",
+                start_time="2026-07-01T08:00:00Z",
+                distance_km=5.24,
+            )
+            _insert_cycling_activity_row(
+                conn,
+                activity_id="ride-short-2",
+                start_time="2026-07-02T08:00:00Z",
+                distance_km=4.8,
+            )
+            career_backend.rebuild_career_record_metric_results(
+                conn,
+                sport="cycling",
+                record_keys=["cycling_longest_distance"],
+                dry_run=False,
+            )
+            conn.execute(
+                """
+                UPDATE career_record_metric_results
+                SET status = 'invalidated'
+                WHERE activity_id = 'ride-52k'
+                  AND record_key = 'cycling_longest_distance'
+                """
+            )
+            career_backend._clear_record_metric_series_cache()
+
+            longest = career_backend.get_career_record_metric_series(
+                "cycling_longest_distance",
+                {"sport": "cycling"},
+                conn=conn,
+            )
+            fastest_10k = career_backend.get_career_record_metric_series(
+                "cycling_fastest_10k",
+                {"sport": "cycling"},
+                conn=conn,
+            )
+            fastest_20k = career_backend.get_career_record_metric_series(
+                "cycling_fastest_20k",
+                {"sport": "cycling"},
+                conn=conn,
+            )
+
+            self.assertNotEqual(longest["metrics"]["source"], "materialized_empty")
+            self.assertEqual(longest["current_best"]["activity_id"], "ride-52k")
+            self.assertEqual(longest["current_best"]["metric"]["value"], 52000.0)
+            self.assertEqual(fastest_10k["summary"]["point_count"], 1)
+            self.assertEqual(fastest_10k["current_best"]["activity_id"], "ride-52k")
+            self.assertEqual(fastest_20k["summary"]["point_count"], 1)
+            self.assertEqual(fastest_20k["current_best"]["activity_id"], "ride-52k")
+            self.assertNotEqual(fastest_10k["metrics"]["source"], "materialized_empty")
+            self.assertNotEqual(fastest_20k["metrics"]["source"], "materialized_empty")
+        finally:
+            conn.close()
+
     def test_records_list_current_best_uses_materialized_rows(self):
         conn = sqlite3.connect(":memory:")
         conn.row_factory = sqlite3.Row
@@ -781,6 +857,7 @@ class CareerRecordMetricResultMaterializationTest(unittest.TestCase):
             _create_schema(conn)
             _insert_running_activity(conn)
             career_backend.rebuild_career_record_metric_results(conn, sport="running", record_keys=["running_5k"], dry_run=False)
+            profile_backend.mark_app_migration_done(conn, career_backend.DERIVED_METRICS_UPGRADE_KEY)
             conn.execute("UPDATE activities SET points_json = NULL WHERE id = 'run-1'")
             career_backend._clear_record_metric_series_cache()
 

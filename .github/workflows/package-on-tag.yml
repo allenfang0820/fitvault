@@ -103,15 +103,27 @@ jobs:
           FITVAULT_RELEASE_VERSION: ${{ steps.version.outputs.value }}
         run: |
           $ErrorActionPreference = "Stop"
+          if ($PSVersionTable.PSVersion.Major -ge 7) {
+            $PSNativeCommandUseErrorActionPreference = $true
+          }
           .\scripts\prepare_node_runtime.ps1
           .\scripts\install_packaging_deps.ps1 -Python .\.venv312\Scripts\python.exe
           & .\.venv312\Scripts\python.exe scripts\check_python312_runtime.py
+          if ($LASTEXITCODE -ne 0) {
+            throw "Python runtime check failed with exit code $LASTEXITCODE"
+          }
           & .\.venv312\Scripts\python.exe -m packaging_diagnostics
+          if ($LASTEXITCODE -ne 0) {
+            throw "Packaging diagnostics failed with exit code $LASTEXITCODE"
+          }
 
           $env:PYTHONPATH = "."
           $distDir = "dist\release-windows"
           $workDir = "build\release-windows"
           & .\.venv312\Scripts\pyinstaller.exe HikingTrackAnalyzer.spec --noconfirm --distpath $distDir --workpath $workDir
+          if ($LASTEXITCODE -ne 0) {
+            throw "PyInstaller failed with exit code $LASTEXITCODE"
+          }
 
           $publishDir = Join-Path $distDir "FitVault"
           if (-not (Test-Path (Join-Path $publishDir "FitVault.exe"))) {
@@ -183,21 +195,72 @@ jobs:
           $harvestedFiles = Join-Path $wixWork "PublishedFiles.wxs"
           New-Item -ItemType Directory -Force -Path $wixWork, "release\windows-x64" | Out-Null
           & (Join-Path $wixBin "heat.exe") dir $publishDir -cg PublishedFiles -dr INSTALLFOLDER -ag -sfrag -srd -scom -sreg -var var.SourceDir -out $harvestedFiles
+          if ($LASTEXITCODE -ne 0) {
+            throw "WiX heat.exe failed with exit code $LASTEXITCODE"
+          }
           & .\.venv312\Scripts\python.exe scripts\check_windows_msi_inputs.py --publish-dir $publishDir --wix-file installer\FitVault.wxs --wix-file $harvestedFiles
           if ($LASTEXITCODE -ne 0) {
             throw "Windows MSI input audit failed before candle/light"
           }
           & (Join-Path $wixBin "candle.exe") -nologo -arch x64 "-dProductVersion=$env:FITVAULT_RELEASE_VERSION" "-dSourceDir=$publishDir" -out "$wixWork\" installer\FitVault.wxs $harvestedFiles
+          if ($LASTEXITCODE -ne 0) {
+            throw "WiX candle.exe failed with exit code $LASTEXITCODE"
+          }
 
           $msiName = "FitVault-V$env:FITVAULT_RELEASE_VERSION-Windows-x64.msi"
           $msiPath = Join-Path "release\windows-x64" $msiName
           & (Join-Path $wixBin "light.exe") -nologo -out $msiPath (Join-Path $wixWork "FitVault.wixobj") (Join-Path $wixWork "PublishedFiles.wixobj")
+          if ($LASTEXITCODE -ne 0) {
+            throw "WiX light.exe failed with exit code $LASTEXITCODE"
+          }
           if (-not (Test-Path $msiPath)) {
             throw "WiX did not create MSI: $msiPath"
+          }
+          $msiItem = Get-Item $msiPath
+          if ($msiItem.Length -lt 1048576) {
+            throw "MSI is unexpectedly small: $($msiItem.Length) bytes at $msiPath"
+          }
+          $msiHeader = [System.IO.File]::ReadAllBytes((Resolve-Path $msiPath).Path)[0..7]
+          $expectedHeader = [byte[]](0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1)
+          for ($i = 0; $i -lt $expectedHeader.Length; $i++) {
+            if ($msiHeader[$i] -ne $expectedHeader[$i]) {
+              throw "MSI file header is invalid at byte $i for $msiPath"
+            }
+          }
+
+          $msiValidationDir = "build\msi-validation"
+          $msiValidationLog = Join-Path $wixWork "msiexec-admin.log"
+          if (Test-Path $msiValidationDir) {
+            Remove-Item $msiValidationDir -Recurse -Force
+          }
+          New-Item -ItemType Directory -Force -Path $msiValidationDir | Out-Null
+          $msiFullPath = (Resolve-Path $msiPath).Path
+          $validationTarget = (Resolve-Path $msiValidationDir).Path
+          $msiArgs = @("/a", $msiFullPath, "/qn", "TARGETDIR=$validationTarget", "/l*v", $msiValidationLog)
+          $msiProcess = Start-Process -FilePath "msiexec.exe" -ArgumentList $msiArgs -Wait -PassThru
+          if ($msiProcess.ExitCode -ne 0) {
+            if (Test-Path $msiValidationLog) {
+              Get-Content $msiValidationLog -Tail 200
+            }
+            throw "Windows Installer administrative validation failed with exit code $($msiProcess.ExitCode)"
+          }
+          $validatedExe = Get-ChildItem -Path $msiValidationDir -Recurse -Filter "FitVault.exe" | Select-Object -First 1
+          if (-not $validatedExe) {
+            throw "Windows Installer validation did not extract FitVault.exe"
           }
 
           $hash = (Get-FileHash -Algorithm SHA256 $msiPath).Hash.ToLowerInvariant()
           "$hash  $msiName" | Set-Content -Path "$msiPath.sha256" -Encoding ascii
+
+      - name: Upload Windows packaging diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fitvault-windows-packaging-diagnostics
+          path: |
+            build/wix/
+            build/msi-validation/
+          if-no-files-found: ignore
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4

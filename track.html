@@ -11758,6 +11758,12 @@
         var hint = document.getElementById('radarRebuildHint');
         if (!hint) return;
         var result = document.getElementById('radarRebuildResult');
+        var upgradeStatus = appState.career && appState.career.derivedMetricsUpgradeStatus;
+        var upgradeState = String((upgradeStatus && upgradeStatus.state) || '');
+        if (upgradeState === 'running' || upgradeState === 'failed_retryable') {
+            renderDerivedMetricsUpgradeStatus(upgradeStatus);
+            return;
+        }
         var shouldShow = !!(metricsData && metricsData.needs_rebuild);
         hint.style.display = shouldShow ? 'flex' : 'none';
         if (!shouldShow && result && !_radarRebuildLoading) result.textContent = '';
@@ -12348,6 +12354,99 @@
         return refreshPromise;
     }
 
+    function derivedMetricsUpgradePayload(res) {
+        const data = res && res.data && typeof res.data === 'object' ? res.data : (res || {});
+        return data.derived_metrics_upgrade && typeof data.derived_metrics_upgrade === 'object'
+            ? data.derived_metrics_upgrade
+            : data;
+    }
+
+    function renderDerivedMetricsUpgradeStatus(status) {
+        appState.career = appState.career || {};
+        appState.career.derivedMetricsUpgradeStatus = status || null;
+        const state = String((status && status.state) || '');
+        const running = !!(status && status.running) || state === 'running';
+        const hint = document.getElementById('radarRebuildHint');
+        const text = document.getElementById('radarRebuildHintText');
+        const result = document.getElementById('radarRebuildResult');
+        if (hint && text && running) {
+            hint.style.display = 'flex';
+            text.textContent = '正在更新运动能力与记录数据，完成后将自动刷新';
+            if (result) result.textContent = '后台升级中…';
+        } else if (hint && text && state === 'failed_retryable') {
+            hint.style.display = 'flex';
+            text.textContent = '历史派生数据升级未完成，可稍后重试';
+            if (result) result.textContent = '升级失败，可重启应用或重新构建';
+        }
+    }
+
+    function refreshAfterDerivedMetricsUpgrade(status) {
+        appState.career = appState.career || {};
+        const backendSourceVersion = Number(status && status.source_version);
+        const currentSourceVersion = Number(appState.career.careerSourceVersion || 0);
+        if (Number.isFinite(backendSourceVersion) && backendSourceVersion !== currentSourceVersion) {
+            const recordsCenterWasLoaded = !!(appState.career.recordsCenter && appState.career.recordsCenter.loaded);
+            invalidateCareerDataCaches();
+            appState.career.careerSourceVersion = backendSourceVersion;
+            if (recordsCenterWasLoaded) {
+                loadCareerRecordsCenter({ refresh: true }).catch(function(e) {
+                    console.warn('derived metrics upgrade records reload', e);
+                });
+            }
+        }
+        if (document.getElementById('performanceRadar')) {
+            renderPerformanceRadar().catch(function(e) {
+                console.warn('derived metrics upgrade radar reload', e);
+            });
+        }
+    }
+
+    function refreshDerivedMetricsUpgradeInBackground() {
+        const api = window.pywebview && window.pywebview.api ? window.pywebview.api : null;
+        if (!api || typeof api.get_derived_metrics_upgrade_status !== 'function') {
+            return Promise.resolve(null);
+        }
+        appState.career = appState.career || {};
+        if (appState.career.derivedMetricsUpgradePromise) {
+            return appState.career.derivedMetricsUpgradePromise;
+        }
+        const poll = function(iteration) {
+            return api.get_derived_metrics_upgrade_status().then(function(res) {
+                let status = derivedMetricsUpgradePayload(res);
+                if (status && status.state === 'idle' && typeof api.start_derived_metrics_upgrade === 'function') {
+                    return api.start_derived_metrics_upgrade({}).then(function(startRes) {
+                        return derivedMetricsUpgradePayload(startRes);
+                    });
+                }
+                return status;
+            }).then(function(status) {
+                renderDerivedMetricsUpgradeStatus(status);
+                if (status && status.state === 'completed') {
+                    refreshAfterDerivedMetricsUpgrade(status);
+                    return status;
+                }
+                if (status && status.state === 'failed_retryable') {
+                    return status;
+                }
+                if (status && status.running && iteration < 60) {
+                    return new Promise(function(resolve) {
+                        setTimeout(function() {
+                            resolve(poll(iteration + 1));
+                        }, 2000);
+                    });
+                }
+                return status;
+            });
+        };
+        appState.career.derivedMetricsUpgradePromise = poll(0).catch(function(e) {
+            console.warn('derived metrics upgrade status failed', e);
+            return null;
+        }).finally(function() {
+            appState.career.derivedMetricsUpgradePromise = null;
+        });
+        return appState.career.derivedMetricsUpgradePromise;
+    }
+
     async function loadCareerFirstPaint() {
         appState.career = appState.career || {};
         const sourceVersion = Number(appState.career.careerSourceVersion || 0);
@@ -12408,6 +12507,7 @@
         }
         const sourceVersion = Number(appState.career.careerSourceVersion || 0);
         appState.career.careerDataLoadingPromise = (async function() {
+            refreshDerivedMetricsUpgradeInBackground();
             refreshCareerDerivedEventsInBackground();
             await loadCareerFirstPaint();
             const sourceUnchanged = Number(appState.career.careerSourceVersion || 0) === sourceVersion;

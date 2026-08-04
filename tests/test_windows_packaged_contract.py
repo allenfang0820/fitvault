@@ -13,6 +13,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SPEC_PATH = PROJECT_ROOT / "HikingTrackAnalyzer.spec"
 WIX_PATH = PROJECT_ROOT / "installer" / "FitVault.wxs"
 WINDOWS_ICON_PATH = PROJECT_ROOT / "installer" / "maitu.ico"
+PACKAGE_WORKFLOW_PATH = PROJECT_ROOT / ".github" / "workflows" / "package-on-tag.yml"
 
 
 class TestWindowsPackagedContract(unittest.TestCase):
@@ -123,6 +124,18 @@ class TestWindowsPackagedContract(unittest.TestCase):
         )
         self.assertNotEqual(bad.returncode, 0)
         self.assertIn("non-ASCII publish path", bad.stdout)
+
+    def test_windows_workflow_validates_msi_before_uploading_artifact(self):
+        workflow = PACKAGE_WORKFLOW_PATH.read_text(encoding="utf-8")
+
+        self.assertIn("$PSNativeCommandUseErrorActionPreference = $true", workflow)
+        self.assertIn("WiX heat.exe failed with exit code", workflow)
+        self.assertIn("WiX candle.exe failed with exit code", workflow)
+        self.assertIn("WiX light.exe failed with exit code", workflow)
+        self.assertIn("MSI file header is invalid", workflow)
+        self.assertIn("Windows Installer administrative validation failed", workflow)
+        self.assertIn('Get-ChildItem -Path $msiValidationDir -Recurse -Filter "FitVault.exe"', workflow)
+        self.assertIn("fitvault-windows-packaging-diagnostics", workflow)
 
     def test_b_windows_frozen_meipass_and_internal_skill_paths(self):
         meipass = self.base_dir / "Program Files" / "FitVault" / "_MEI12345"
