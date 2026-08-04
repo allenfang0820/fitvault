@@ -1,0 +1,151 @@
+name: Package installers on release tag
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  package-macos:
+    name: macOS ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+            node_runtime: darwin-arm64
+          - arch: x86_64
+            runner: macos-15-intel
+            node_runtime: darwin-x64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Create isolated Python environment
+        shell: bash
+        run: python3 -m venv .venv312
+
+      - name: Resolve release version from tag
+        id: version
+        shell: bash
+        run: |
+          VERSION="$(.venv312/bin/python scripts/release_version.py --tag "$GITHUB_REF_NAME")"
+          echo "value=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Build macOS installer
+        shell: bash
+        env:
+          FITVAULT_RELEASE_VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          set -euo pipefail
+          scripts/prepare_node_runtime.sh "${{ matrix.node_runtime }}"
+          PYTHON=.venv312/bin/python scripts/install_packaging_deps.sh
+          .venv312/bin/python scripts/check_python312_runtime.py
+          .venv312/bin/python -m packaging_diagnostics
+
+          DIST_DIR="dist/release-macos-${{ matrix.arch }}"
+          WORK_DIR="build/release-macos-${{ matrix.arch }}"
+          RELEASE_DIR="release/macos-${{ matrix.arch }}"
+          DMG_NAME="FitVault-V${FITVAULT_RELEASE_VERSION}-macOS-${{ matrix.arch }}.dmg"
+          mkdir -p "$RELEASE_DIR"
+
+          PYTHONPATH=. .venv312/bin/pyinstaller HikingTrackAnalyzer.spec \
+            --noconfirm \
+            --distpath "$DIST_DIR" \
+            --workpath "$WORK_DIR"
+          scripts/create_macos_dmg.sh "$DIST_DIR/脉图.app" "$RELEASE_DIR/$DMG_NAME" "脉图 FitVault"
+          shasum -a 256 "$RELEASE_DIR/$DMG_NAME" | awk '{print $1 "  " $2}' \
+            > "$RELEASE_DIR/$DMG_NAME.sha256"
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fitvault-macos-${{ matrix.arch }}
+          path: release/macos-${{ matrix.arch }}/
+          if-no-files-found: error
+          compression-level: 0
+
+  package-windows:
+    name: Windows x64
+    runs-on: windows-2022
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          architecture: x64
+
+      - name: Create isolated Python environment
+        shell: pwsh
+        run: python -m venv .venv312
+
+      - name: Resolve release version from tag
+        id: version
+        shell: pwsh
+        run: |
+          $version = (& .\.venv312\Scripts\python.exe scripts\release_version.py --tag "${{ github.ref_name }}").Trim()
+          "value=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Build Windows MSI
+        shell: pwsh
+        env:
+          FITVAULT_RELEASE_VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          .\scripts\prepare_node_runtime.ps1
+          .\scripts\install_packaging_deps.ps1 -Python .\.venv312\Scripts\python.exe
+          & .\.venv312\Scripts\python.exe scripts\check_python312_runtime.py
+          & .\.venv312\Scripts\python.exe -m packaging_diagnostics
+
+          $env:PYTHONPATH = "."
+          $distDir = "dist\release-windows"
+          $workDir = "build\release-windows"
+          & .\.venv312\Scripts\pyinstaller.exe HikingTrackAnalyzer.spec --noconfirm --distpath $distDir --workpath $workDir
+
+          $publishDir = Join-Path $distDir "FitVault"
+          if (-not (Test-Path (Join-Path $publishDir "FitVault.exe"))) {
+            throw "PyInstaller Windows output is incomplete: $publishDir\FitVault.exe"
+          }
+
+          choco install wixtoolset --version=3.11.2 --no-progress --yes
+          $wixBin = Join-Path ${env:ProgramFiles(x86)} "WiX Toolset v3.11\bin"
+          foreach ($tool in @("heat.exe", "candle.exe", "light.exe")) {
+            if (-not (Test-Path (Join-Path $wixBin $tool))) {
+              throw "Missing WiX tool: $tool"
+            }
+          }
+
+          $wixWork = "build\wix"
+          $harvestedFiles = Join-Path $wixWork "PublishedFiles.wxs"
+          New-Item -ItemType Directory -Force -Path $wixWork, "release\windows-x64" | Out-Null
+          & (Join-Path $wixBin "heat.exe") dir $publishDir -cg PublishedFiles -dr INSTALLFOLDER -ag -sfrag -srd -scom -sreg -var var.SourceDir -out $harvestedFiles
+          & (Join-Path $wixBin "candle.exe") -nologo -arch x64 "-dProductVersion=$env:FITVAULT_RELEASE_VERSION" "-dSourceDir=$publishDir" -out "$wixWork\" installer\FitVault.wxs $harvestedFiles
+
+          $msiName = "FitVault-V$env:FITVAULT_RELEASE_VERSION-Windows-x64.msi"
+          $msiPath = Join-Path "release\windows-x64" $msiName
+          & (Join-Path $wixBin "light.exe") -nologo -out $msiPath (Join-Path $wixWork "FitVault.wixobj") (Join-Path $wixWork "PublishedFiles.wixobj")
+          if (-not (Test-Path $msiPath)) {
+            throw "WiX did not create MSI: $msiPath"
+          }
+
+          $hash = (Get-FileHash -Algorithm SHA256 $msiPath).Hash.ToLowerInvariant()
+          "$hash  $msiName" | Set-Content -Path "$msiPath.sha256" -Encoding ascii
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fitvault-windows-x64
+          path: release/windows-x64/
+          if-no-files-found: error
+          compression-level: 0

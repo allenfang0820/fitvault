@@ -1,5 +1,6 @@
 import os
 import platform
+from scripts.release_version import normalize_release_version
 # Force pyinstaller to use local cache dir to avoid permission error
 os.environ["PYINSTALLER_CONFIG_DIR"] = os.path.join(os.getcwd(), ".pyinstaller_cache")
 os.environ["PYINSTALLER_STRICT_CACHE_DIR"] = os.path.join(os.getcwd(), ".pyinstaller_cache")
@@ -20,6 +21,12 @@ check_packaging_prerequisites(os.getcwd())
 # avoiding build-machine absolute paths in the distributable artifact.
 # Historical packaging-contract marker: write_dependency_manifest(os.getcwd())
 write_dependency_manifest(os.getcwd(), portable=True)
+
+# CI provides FITVAULT_RELEASE_VERSION from the triggering tag. Local V2.0
+# builds keep the same value when no release tag is supplied.
+RELEASE_VERSION = normalize_release_version(
+    os.environ.get("FITVAULT_RELEASE_VERSION", "2.0.0")
+)
 
 _hidden = (
     collect_submodules("gpxpy")
@@ -167,7 +174,7 @@ app = BUNDLE(
     icon='assets/app_icon.icns',
     bundle_identifier='com.mrfang.fitvault',
     info_plist={
-        'CFBundleShortVersionString': '2.0.0',
-        'CFBundleVersion': '2.0.0',
+        'CFBundleShortVersionString': RELEASE_VERSION,
+        'CFBundleVersion': RELEASE_VERSION,
     },
 )

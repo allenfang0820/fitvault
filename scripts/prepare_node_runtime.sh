@@ -8,6 +8,7 @@ set -euo pipefail
 #   runtimes/node-win-x64
 
 NODE_VERSION="${NODE_VERSION:-v24.18.0}"
+TARGET_RUNTIME="${1:-all}"
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 RUNTIME_DIR="$ROOT_DIR/runtimes"
 TMP_DIR="$RUNTIME_DIR/.tmp"
@@ -52,9 +53,26 @@ download_windows_runtime() {
 }
 
 mkdir -p "$RUNTIME_DIR"
-download_darwin_runtime "arm64"
-download_darwin_runtime "x64"
-download_windows_runtime
+case "$TARGET_RUNTIME" in
+  all)
+    download_darwin_runtime "arm64"
+    download_darwin_runtime "x64"
+    download_windows_runtime
+    ;;
+  darwin-arm64)
+    download_darwin_runtime "arm64"
+    ;;
+  darwin-x64)
+    download_darwin_runtime "x64"
+    ;;
+  windows-x64)
+    download_windows_runtime
+    ;;
+  *)
+    echo "Usage: $0 [all|darwin-arm64|darwin-x64|windows-x64]" >&2
+    exit 64
+    ;;
+esac
 
 echo ""
 echo "Node runtimes are ready."
