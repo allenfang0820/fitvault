@@ -63,6 +63,9 @@ class TestWindowsPackagedContract(unittest.TestCase):
         self.assertIn("check_packaging_prerequisites(os.getcwd())", spec)
         self.assertIn("write_dependency_manifest(os.getcwd())", spec)
         self.assertIn("(MANIFEST_FILENAME, \".\")", spec)
+        self.assertIn("WINDOWS_HELP_PATH", spec)
+        self.assertIn('shutil.copyfile("docs/脉图帮助说明.md", WINDOWS_HELP_PATH)', spec)
+        self.assertIn('_datas.append((WINDOWS_HELP_PATH, "docs"))', spec)
         self.assertIn('_windows_icon = "installer/maitu.ico" if platform.system().lower() == "windows" else None', spec)
         self.assertIn("icon=_windows_icon", spec)
         self.assertNotIn('collect_submodules("garth")', spec)
@@ -72,7 +75,10 @@ class TestWindowsPackagedContract(unittest.TestCase):
 
         self.assertTrue(WINDOWS_ICON_PATH.is_file())
         self.assertIn('<?xml version="1.0" encoding="UTF-8"?>', wix)
-        self.assertIn('Name="脉图"', wix)
+        self.assertIn('Name="FitVault"', wix)
+        self.assertIn('Language="1033"', wix)
+        self.assertNotIn("脉图", wix)
+        self.assertNotIn("启动", wix)
         self.assertIn('Icon Id="MaituIcon.ico"', wix)
         self.assertIn('Property Id="ARPPRODUCTICON" Value="MaituIcon.ico"', wix)
         self.assertIn('Directory="ProgramMenuDir"', wix)
@@ -80,6 +86,43 @@ class TestWindowsPackagedContract(unittest.TestCase):
         self.assertIn('Target="[INSTALLFOLDER]FitVault.exe"', wix)
         self.assertIn('ComponentRef Id="ApplicationShortcutStartMenu"', wix)
         self.assertIn('ComponentRef Id="ApplicationShortcutDesktop"', wix)
+
+    def test_windows_msi_input_audit_rejects_non_ascii_and_accepts_ascii(self):
+        script = PROJECT_ROOT / "scripts" / "check_windows_msi_inputs.py"
+        publish = self.base_dir / "publish"
+        publish.mkdir()
+        wix = self.base_dir / "test.wxs"
+        wix.write_bytes(b"\xef\xbb\xbf<Wix><Product Name=\"FitVault\" /></Wix>\n")
+
+        ok = subprocess.run(
+            [
+                str(PROJECT_ROOT / ".venv312" / "bin" / "python"),
+                str(script),
+                "--publish-dir",
+                str(publish),
+                "--wix-file",
+                str(wix),
+            ],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(ok.returncode, 0, ok.stdout + ok.stderr)
+
+        (publish / "脉图.txt").write_text("bad\n", encoding="utf-8")
+        bad = subprocess.run(
+            [
+                str(PROJECT_ROOT / ".venv312" / "bin" / "python"),
+                str(script),
+                "--publish-dir",
+                str(publish),
+                "--wix-file",
+                str(wix),
+            ],
+            capture_output=True,
+            text=True,
+        )
+        self.assertNotEqual(bad.returncode, 0)
+        self.assertIn("non-ASCII publish path", bad.stdout)
 
     def test_b_windows_frozen_meipass_and_internal_skill_paths(self):
         meipass = self.base_dir / "Program Files" / "FitVault" / "_MEI12345"

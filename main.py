@@ -432,7 +432,13 @@ def app_icon_file() -> Path:
 
 
 def help_markdown_file() -> Path:
-    return app_base_dir() / "docs" / "脉图帮助说明.md"
+    root = app_base_dir() / "docs"
+    localized_path = root / "脉图帮助说明.md"
+    if localized_path.is_file():
+        return localized_path
+    # Windows MSI uses an ASCII filename so WiX v3 cannot fail on the
+    # package's code page while the document content remains unchanged.
+    return root / "help.md"
 
 
 def load_help_markdown() -> str:
@@ -11987,7 +11993,7 @@ class Api:
         try:
             return _api_success({
                 "markdown": load_help_markdown(),
-                "source": "docs/脉图帮助说明.md",
+                "source": str(help_markdown_file().relative_to(app_base_dir())).replace(os.sep, "/"),
             })
         except FileNotFoundError as exc:
             return _api_error(API_CODE_NOT_FOUND, str(exc))

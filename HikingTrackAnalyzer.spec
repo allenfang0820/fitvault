@@ -1,6 +1,7 @@
 import os
 import platform
 import json
+import shutil
 from scripts.release_version import normalize_release_version
 # Force pyinstaller to use local cache dir to avoid permission error
 os.environ["PYINSTALLER_CONFIG_DIR"] = os.path.join(os.getcwd(), ".pyinstaller_cache")
@@ -59,7 +60,6 @@ _datas = [
     ("track.html", "."),
     ("lib", "lib"),
     ("assets", "assets"),
-    ("docs/脉图帮助说明.md", "docs"),
     (RELEASE_INFO_PATH, "."),
     ("skills/garmin-stats", "skills/garmin-stats"),
     ("skills/coros-stats", "skills/coros-stats"),
@@ -67,6 +67,18 @@ _datas = [
     ("skills/coros-stats.zip", "skills"),
     (MANIFEST_FILENAME, "."),
 ]
+
+# WiX v3/MSI has a legacy code-page boundary on Windows. Keep the Windows
+# publish tree ASCII-only so heat/candle/light cannot fail on a Chinese source
+# filename even when the user-facing document content remains Chinese.
+if platform.system().lower() == "windows":
+    WINDOWS_HELP_DIR = os.path.join(os.getcwd(), "build", "windows_resources", "docs")
+    os.makedirs(WINDOWS_HELP_DIR, exist_ok=True)
+    WINDOWS_HELP_PATH = os.path.join(WINDOWS_HELP_DIR, "help.md")
+    shutil.copyfile("docs/脉图帮助说明.md", WINDOWS_HELP_PATH)
+    _datas.append((WINDOWS_HELP_PATH, "docs"))
+else:
+    _datas.append(("docs/脉图帮助说明.md", "docs"))
 
 
 def _node_runtime_datas():

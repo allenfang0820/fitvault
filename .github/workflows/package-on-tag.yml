@@ -183,6 +183,10 @@ jobs:
           $harvestedFiles = Join-Path $wixWork "PublishedFiles.wxs"
           New-Item -ItemType Directory -Force -Path $wixWork, "release\windows-x64" | Out-Null
           & (Join-Path $wixBin "heat.exe") dir $publishDir -cg PublishedFiles -dr INSTALLFOLDER -ag -sfrag -srd -scom -sreg -var var.SourceDir -out $harvestedFiles
+          & .\.venv312\Scripts\python.exe scripts\check_windows_msi_inputs.py --publish-dir $publishDir --wix-file installer\FitVault.wxs --wix-file $harvestedFiles
+          if ($LASTEXITCODE -ne 0) {
+            throw "Windows MSI input audit failed before candle/light"
+          }
           & (Join-Path $wixBin "candle.exe") -nologo -arch x64 "-dProductVersion=$env:FITVAULT_RELEASE_VERSION" "-dSourceDir=$publishDir" -out "$wixWork\" installer\FitVault.wxs $harvestedFiles
 
           $msiName = "FitVault-V$env:FITVAULT_RELEASE_VERSION-Windows-x64.msi"
