@@ -118,11 +118,13 @@ jobs:
             throw "PyInstaller Windows output is incomplete: $publishDir\FitVault.exe"
           }
 
+          $programFilesX86 = [Environment]::GetEnvironmentVariable("ProgramFiles(x86)")
+          $programFiles = [Environment]::GetEnvironmentVariable("ProgramFiles")
           $wixBinCandidates = @(
-            (Join-Path ${env:ProgramFiles(x86)} "WiX Toolset v3.11\bin"),
-            (Join-Path ${env:ProgramFiles(x86)} "WiX Toolset v3.14\bin"),
-            (Join-Path ${env:ProgramFiles} "WiX Toolset v3.11\bin"),
-            (Join-Path ${env:ProgramFiles} "WiX Toolset v3.14\bin")
+            (Join-Path $programFilesX86 "WiX Toolset v3.11\bin"),
+            (Join-Path $programFilesX86 "WiX Toolset v3.14\bin"),
+            (Join-Path $programFiles "WiX Toolset v3.11\bin"),
+            (Join-Path $programFiles "WiX Toolset v3.14\bin")
           )
           $wixBin = $null
           foreach ($candidate in $wixBinCandidates) {
@@ -165,8 +167,8 @@ jobs:
             }
           }
           if (-not $wixBin) {
-            Write-Host "ProgramFiles(x86)=$($env:ProgramFiles(x86))"
-            Write-Host "ProgramFiles=$($env:ProgramFiles)"
+            Write-Host "ProgramFiles(x86)=$programFilesX86"
+            Write-Host "ProgramFiles=$programFiles"
             Write-Host "PATH heat.exe lookup:"
             Get-Command heat.exe -ErrorAction SilentlyContinue | Format-List * | Out-String | Write-Host
             throw "Missing WiX tool: heat.exe (looked in standard locations and PATH)"
