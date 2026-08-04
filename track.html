@@ -17403,20 +17403,30 @@
 
     async function loadAboutInfo() {
         const versionEl = document.getElementById('about-version');
-        if (!versionEl || versionEl.dataset.loaded === '1') return;
+        if (versionEl && versionEl.dataset.loaded === '1') return;
+        const applyVersion = function(version) {
+            const safeVersion = version || 'V2.0';
+            document.title = '脉图 - FitVault ' + safeVersion;
+            document.querySelectorAll('.boot-splash-version').forEach(function(el) {
+                el.textContent = safeVersion;
+            });
+            if (versionEl) {
+                versionEl.textContent = '版本 ' + safeVersion;
+                versionEl.dataset.loaded = '1';
+            }
+        };
         try {
             if (!window.pywebview || !window.pywebview.api || typeof window.pywebview.api.get_app_info !== 'function') {
-                versionEl.textContent = '版本 V2.0';
+                applyVersion('V2.0');
                 return;
             }
             const res = await window.pywebview.api.get_app_info();
             const data = res && res.data ? res.data : res;
             const version = data && data.version ? String(data.version) : 'V2.0';
-            versionEl.textContent = '版本 ' + version;
-            versionEl.dataset.loaded = '1';
+            applyVersion(version);
         } catch (e) {
             console.warn('loadAboutInfo failed', e);
-            versionEl.textContent = '版本 V2.0';
+            applyVersion('V2.0');
         }
     }
 
@@ -26119,6 +26129,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
 async function bootstrapApplication() {
     markStartupPhase('bootstrap_start');
+    loadAboutInfo();
     console.log('[ARCHITECTURE] 方案 B 已启用：前端计算严格隔离');
     initCpTypeGrid();
     initCesiumViewer();

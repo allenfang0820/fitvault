@@ -2,6 +2,7 @@
 .venv-*/
 .venv*/
 build_dependency_manifest.json
+release_info.json
 __pycache__/
 *.pyc
 *.pyo

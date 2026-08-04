@@ -110,12 +110,41 @@ class TestHelpSingleSource(unittest.TestCase):
     def test_packaging_uses_fitvault_english_name(self):
         self.assertIn("name='FitVault'", self.spec)
         self.assertIn("bundle_identifier='com.mrfang.fitvault'", self.spec)
-        self.assertIn("'CFBundleShortVersionString': '2.0.0'", self.spec)
-        self.assertIn("'CFBundleVersion': '2.0.0'", self.spec)
+        self.assertIn("'CFBundleShortVersionString': RELEASE_VERSION", self.spec)
+        self.assertIn("'CFBundleVersion': RELEASE_VERSION", self.spec)
+        self.assertIn('os.environ.get("FITVAULT_RELEASE_VERSION", "2.0.0")', self.spec)
+        self.assertIn('(RELEASE_INFO_PATH, ".")', self.spec)
         self.assertNotIn("'CFBundleShortVersionString': '1.2.0'", self.spec)
         self.assertNotIn("'CFBundleVersion': '1.2.0'", self.spec)
         self.assertNotIn("name='MaiTu'", self.spec)
         self.assertNotIn("com.mrfang.maitu", self.spec)
+
+    def test_packaged_release_info_controls_display_version(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            (root / main.RELEASE_INFO_FILENAME).write_text(
+                '{"product_version":"2.0.7","display_version":"V2.0.7"}',
+                encoding="utf-8",
+            )
+            with mock.patch.object(main, "app_base_dir", return_value=root):
+                self.assertEqual(main.get_app_version(), "V2.0.7")
+                self.assertEqual(main.Api().get_app_info()["data"]["version"], "V2.0.7")
+
+    def test_help_markdown_current_version_comes_from_release_info(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            docs = root / "docs"
+            docs.mkdir()
+            (docs / "脉图帮助说明.md").write_text(
+                "# 脉图帮助说明\n\n当前正式版本：V2.0\n",
+                encoding="utf-8",
+            )
+            (root / main.RELEASE_INFO_FILENAME).write_text(
+                '{"product_version":"2.0.8"}',
+                encoding="utf-8",
+            )
+            with mock.patch.object(main, "app_base_dir", return_value=root):
+                self.assertIn("当前正式版本：V2.0.8", main.load_help_markdown())
 
     def test_packaging_includes_garmin_auth_dependencies(self):
         requirements = (PROJECT_ROOT / "requirements.txt").read_text(encoding="utf-8")

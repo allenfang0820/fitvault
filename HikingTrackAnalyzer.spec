@@ -1,5 +1,6 @@
 import os
 import platform
+import json
 from scripts.release_version import normalize_release_version
 # Force pyinstaller to use local cache dir to avoid permission error
 os.environ["PYINSTALLER_CONFIG_DIR"] = os.path.join(os.getcwd(), ".pyinstaller_cache")
@@ -27,6 +28,20 @@ write_dependency_manifest(os.getcwd(), portable=True)
 RELEASE_VERSION = normalize_release_version(
     os.environ.get("FITVAULT_RELEASE_VERSION", "2.0.0")
 )
+RELEASE_INFO_FILENAME = "release_info.json"
+RELEASE_INFO_DIR = os.path.join(os.getcwd(), "build", "release_info")
+os.makedirs(RELEASE_INFO_DIR, exist_ok=True)
+RELEASE_INFO_PATH = os.path.join(RELEASE_INFO_DIR, RELEASE_INFO_FILENAME)
+with open(RELEASE_INFO_PATH, "w", encoding="utf-8") as release_info_file:
+    json.dump(
+        {
+            "product_version": RELEASE_VERSION,
+            "display_version": f"V{RELEASE_VERSION}",
+        },
+        release_info_file,
+        ensure_ascii=False,
+        indent=2,
+    )
 
 _hidden = (
     collect_submodules("gpxpy")
@@ -45,6 +60,7 @@ _datas = [
     ("lib", "lib"),
     ("assets", "assets"),
     ("docs/脉图帮助说明.md", "docs"),
+    (RELEASE_INFO_PATH, "."),
     ("skills/garmin-stats", "skills/garmin-stats"),
     ("skills/coros-stats", "skills/coros-stats"),
     ("skills/garmin-stats.zip", "skills"),

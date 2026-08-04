@@ -57,7 +57,8 @@ from metrics_registry import (
 )
 
 DEBUG_MODE = False
-APP_VERSION = "V2.0"
+DEFAULT_APP_VERSION = "V2.0"
+RELEASE_INFO_FILENAME = "release_info.json"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -437,9 +438,40 @@ def help_markdown_file() -> Path:
 def load_help_markdown() -> str:
     path = help_markdown_file()
     try:
-        return path.read_text(encoding="utf-8")
+        markdown = path.read_text(encoding="utf-8")
     except OSError as exc:
         raise FileNotFoundError(f"未找到帮助说明文档: {path}") from exc
+    return markdown.replace("当前正式版本：V2.0", f"当前正式版本：{get_app_version()}", 1)
+
+
+def release_info_file() -> Path:
+    return app_base_dir() / RELEASE_INFO_FILENAME
+
+
+def _load_release_info() -> dict[str, Any]:
+    path = release_info_file()
+    if not path.is_file():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, TypeError) as exc:
+        logger.warning("读取发布版本元数据失败: %s", exc)
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def get_app_version() -> str:
+    info = _load_release_info()
+    display_version = str(info.get("display_version") or "").strip()
+    if re.fullmatch(r"V\d+\.\d+\.\d+", display_version):
+        return display_version
+    product_version = str(info.get("product_version") or "").strip()
+    if re.fullmatch(r"\d+\.\d+\.\d+", product_version):
+        return f"V{product_version}"
+    return DEFAULT_APP_VERSION
+
+
+APP_VERSION = get_app_version()
 
 
 def set_runtime_app_icon() -> None:
@@ -11948,7 +11980,7 @@ class Api:
     def get_app_info(self) -> dict:
         return _api_success({
             "name": "脉图 FitVault",
-            "version": APP_VERSION,
+            "version": get_app_version(),
         })
 
     def get_help_markdown(self) -> dict:
@@ -19826,7 +19858,7 @@ def main() -> None:
     _record_startup_event("api_created")
     hidden_on_startup = sys.platform == "darwin"
     window = webview.create_window(
-        f"脉图 - FitVault {APP_VERSION}",
+        f"脉图 - FitVault {get_app_version()}",
         url=url,
         js_api=api,
         width=1280,
