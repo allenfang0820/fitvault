@@ -558,6 +558,26 @@ class TestFatigueReviewP2SnapshotRealignment(unittest.TestCase):
         self.assertNotIn("温度偏高", encoded)
         self.assertNotIn("热应激", encoded)
 
+    def test_snapshot_cycling_heat_factor_uses_user_language(self):
+        row = self._row(calories=393, include_altitude=False)
+        row["sport_type"] = "cycling"
+        row["weather_json"] = json.dumps({
+            "temperature_c": 30.4,
+            "humidity": 61,
+            "wind_speed_kmh": 12.0,
+        })
+
+        profile = MagicMock(max_hr=186, resting_hr=51, lactate_threshold_hr=166)
+        with patch("profile_backend.get_profile", return_value=profile):
+            snapshot = self._api()._build_fatigue_review_snapshot(row)
+        encoded = json.dumps(snapshot["environment_factors"], ensure_ascii=False)
+
+        self.assertTrue(snapshot["environment_factors"])
+        self.assertIn("气温较高", encoded)
+        self.assertIn("散热和补水", encoded)
+        self.assertNotIn("比跑步同温场景更保守", encoded)
+        self.assertNotIn("跨运动", encoded)
+
     def test_compact_snapshot_carries_backend_environment_factors(self):
         from main import Api
 

@@ -10,6 +10,7 @@
 import json
 import sys
 import unittest
+from pathlib import Path
 
 sys.path.insert(0, "/Users/fanglei/应用开发/AI track")
 
@@ -67,6 +68,22 @@ class TestLapColumnPresetsContract(unittest.TestCase):
         for col in ("lap_no", "lap_distance_km", "elapsed_sec", "avg_speed_kmh",
                     "avg_hr", "avg_power", "max_power", "normalized_power", "total_ascent"):
             self.assertIn(col, cycling_cols, f"骑行圈表缺失 {col}")
+
+    def test_frontend_cycling_lap_columns_map_to_backend_row_fields(self):
+        body = (Path(__file__).resolve().parents[1] / "track.html").read_text(encoding="utf-8")
+        expected_mappings = {
+            "avg_speed_kmh": "avg_speed_mps",
+            "avg_power": "avg_power",
+            "max_power": "max_power",
+            "normalized_power": "normalized_power",
+            "total_ascent": "total_ascent",
+        }
+        for column, row_field in expected_mappings.items():
+            self.assertIn(
+                f"{column}: '{row_field}'",
+                body,
+                f"前端列 {column} 必须读取后端圈字段 {row_field}",
+            )
 
     def test_road_cycling_has_9_columns(self):
         from main import LAP_COLUMN_PRESETS

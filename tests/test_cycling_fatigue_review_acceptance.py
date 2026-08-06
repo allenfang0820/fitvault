@@ -233,6 +233,91 @@ class TestCyclingFatigueReviewAcceptanceFrontend(unittest.TestCase):
         self.assertIn("return 'bad'", aerobic_tone)
         self.assertIn("surging", variability_headline)
 
+    def test_cycling_key_evidence_cards_do_not_label_implemented_metrics_as_waiting(self):
+        render_body = _extract_js_function(self.html, "_renderFatigueReviewMetrics")
+
+        for text in (
+            "subText || ''",
+            "bonkMissingCycling ? (_fatigueReviewMetricMissingReason('bonk_risk', bonk) || '数据不足')",
+            "tloadMissingCycling ? (_fatigueReviewMetricMissingReason('training_load', tloadCycling) || '数据不足')",
+            "bonkMissing ? (_fatigueReviewMetricMissingReason('bonk_risk', bonk) || '数据不足')",
+            "tloadMissing ? (_fatigueReviewMetricMissingReason('training_load', tload) || '数据不足')",
+        ):
+            self.assertIn(text, render_body)
+        self.assertNotIn("'待接入'", render_body)
+
+    def test_key_evidence_placeholders_are_loading_not_waiting_connection(self):
+        for status_id in (
+            "fr-hr-drift-status",
+            "fr-decoupling-status",
+            "fr-bonk-status",
+            "fr-events-status",
+            "fr-efficiency-status",
+            "fr-durability-status",
+            "fr-cadence-stability-status",
+            "fr-training-load-status",
+        ):
+            self.assertIn(f'id="{status_id}">待加载', self.html)
+            self.assertNotIn(f'id="{status_id}">待接入', self.html)
+        self.assertIn("['fr-risk-pill', '风险暂不可用'", self.html)
+        self.assertNotIn("['fr-risk-pill', '风险待接入'", self.html)
+
+    def test_cycling_empty_state_translates_backend_reasons_without_frontend_recompute(self):
+        reason_text = _extract_js_function(self.html, "_fatigueReviewCyclingSignalReasonText")
+        speed_note = _extract_js_function(self.html, "getFatigueReviewSpeedQualityNote")
+        evidence_item = _extract_js_function(self.html, "_fatigueReviewCyclingSignalEvidenceItemText")
+        signal_copy = _extract_js_function(self.html, "_fatigueReviewCyclingSignalCopy")
+
+        for text in (
+            "speed_missing",
+            "缺少可靠速度轴",
+            "speed_derived_low_confidence",
+            "速度由距离/时间推导，置信偏低",
+            "insufficient_aligned_hr_power_points",
+            "心率与功率可对齐样本不足",
+            "insufficient_effective_pedaling_points",
+            "有效踩踏样本不足",
+            "coasting_ratio_high",
+            "滑行或停踩比例较高",
+            "insufficient_cadence_points",
+            "踏频样本不足",
+        ):
+            self.assertIn(text, reason_text)
+
+        for text in (
+            "summary.speed_source",
+            "summary.speed_data_quality",
+            "速度轴不可用时，只展示后端已经判定的可用片段",
+            "不会把缺失速度当成停顿",
+            "速度由距离/时间推导且置信偏低",
+            "涉及停顿过滤的判断会保守显示",
+        ):
+            self.assertIn(text, speed_note)
+
+        for text in (
+            "item.speed_source",
+            "item.speed_data_quality",
+            "item.speed_stop_filter_applied",
+            "速度由距离/时间推导后参与停顿过滤",
+            "未把缺失速度当成停顿",
+            "基于可用片段",
+        ):
+            self.assertIn(text, evidence_item)
+
+        self.assertIn("getFatigueReviewSpeedQualityNote(summary, cyclingSignals, key)", signal_copy)
+        for helper in (reason_text, speed_note, evidence_item, signal_copy):
+            for forbidden in (
+                "curves.",
+                "data.curves",
+                "distance / time",
+                "querySelector",
+                "getOption",
+                "innerText",
+                "power_retention_pct =",
+                "power_per_hr =",
+            ):
+                self.assertNotIn(forbidden, helper)
+
     def test_running_cards_keep_general_semantics(self):
         card_defs = _extract_js_function(self.html, "_fatigueReviewMetricCardDefs")
         running_start = card_defs.find("\n        return [")

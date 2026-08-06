@@ -1722,7 +1722,7 @@ def _build_fatigue_review_environment_factors(
                 category="weather",
                 severity="moderate",
                 label="热环境压力",
-                comment="气温较高,骑行仍需关注散热和补水,但结论应比跑步同温场景更保守。",
+                comment="气温较高,骑行时请关注散热和补水。",
                 basis=basis,
                 confidence="medium",
             ))
@@ -1862,12 +1862,14 @@ def _build_fatigue_review_curve_bundle(row: dict[str, Any]) -> dict[str, Any]:
         ts = record.get("timestamp")
         if start_ts is not None and ts is not None:
             time_curve_sec.append(round((ts - start_ts).total_seconds(), 3))
+    speed_curve_mps, speed_meta = _resolve_review_speed_curve(records)
     bundle = {
         "records": records,
         "distance_curve_m": _sanitize_distance_curve_m([r.get("distance") for r in records]),
         "time_curve_sec": time_curve_sec,
         "hr_curve": [r.get("heart_rate") for r in records],
-        "speed_curve_mps": [float(r.get("speed") or 0.0) for r in records],
+        "speed_curve_mps": speed_curve_mps,
+        **speed_meta,
         "altitude_curve_m": [r.get("altitude") for r in records],
         "cadence_curve": [r.get("cadence") for r in records] or _safe_json_list(row.get("cadence_curve")) or [],
         "power_curve": [r.get("power") for r in records],
@@ -1904,6 +1906,139 @@ def _build_fatigue_review_curve_bundle(row: dict[str, Any]) -> dict[str, Any]:
         bundle["lactate_threshold_hr"] = None
         bundle["profile_ftp_watts"] = None
     return bundle
+
+
+_REVIEW_SPEED_MAX_MPS = 40.0
+_REVIEW_SPEED_MAX_GAP_SEC = 30.0
+
+
+def _resolve_review_speed_curve(
+    records: list[dict[str, Any]],
+) -> tuple[list[float | None], dict[str, Any]]:
+    """Resolve speed without collapsing missing values into observed stops.
+
+    Observed FIT speed (or FIT pace) remains authoritative. Missing speed may
+    be derived from monotonic distance and increasing timestamps. A point that
+    cannot be safely resolved stays None and is counted as missing.
+    """
+    if not isinstance(records, list) or not records:
+        return [], {
+            "speed_source": "missing",
+            "speed_data_quality": "insufficient_axis",
+            "speed_observed_points_count": 0,
+            "speed_derived_points_count": 0,
+            "speed_missing_points_count": 0,
+        }
+
+    curve: list[float | None] = []
+    observed_count = 0
+    derived_count = 0
+    missing_count = 0
+
+    for record in records:
+        raw_speed = _safe_float(record.get("speed"), None)
+        source = str(record.get("speed_source") or "").strip()
+        if raw_speed is not None and 0.0 <= raw_speed <= _REVIEW_SPEED_MAX_MPS:
+            curve.append(round(raw_speed, 6))
+            if source in {"observed", "observed_pace"} or source == "":
+                observed_count += 1
+            else:
+                derived_count += 1
+            continue
+        curve.append(None)
+
+    distance_values = [
+        _safe_float(record.get("distance"), None)
+        for record in records
+    ]
+    distance_values = [
+        value for value in distance_values if value is not None
+    ]
+    has_distance_span = (
+        len(distance_values) >= 2
+        and (max(distance_values) - min(distance_values)) > 0
+    )
+
+    def _derive_between(left_idx: int, right_idx: int) -> float | None:
+        if not has_distance_span:
+            return None
+        if left_idx < 0 or right_idx >= len(records) or left_idx >= right_idx:
+            return None
+        left = records[left_idx]
+        right = records[right_idx]
+        left_ts = left.get("timestamp")
+        right_ts = right.get("timestamp")
+        left_distance = _safe_float(left.get("distance"), None)
+        right_distance = _safe_float(right.get("distance"), None)
+        if (
+            left_ts is None
+            or right_ts is None
+            or left_distance is None
+            or right_distance is None
+        ):
+            return None
+        try:
+            dt_sec = (right_ts - left_ts).total_seconds()
+        except (AttributeError, TypeError):
+            return None
+        delta_distance = right_distance - left_distance
+        if (
+            dt_sec <= 0
+            or dt_sec > _REVIEW_SPEED_MAX_GAP_SEC
+            or delta_distance < 0
+        ):
+            return None
+        speed = delta_distance / dt_sec
+        if speed < 0 or speed > _REVIEW_SPEED_MAX_MPS:
+            return None
+        return round(speed, 6)
+
+    for idx, value in enumerate(curve):
+        if value is not None:
+            continue
+        derived = None
+        if idx > 0:
+            derived = _derive_between(idx - 1, idx)
+        if derived is None and idx + 1 < len(curve):
+            derived = _derive_between(idx, idx + 1)
+        if derived is None:
+            missing_count += 1
+            continue
+        curve[idx] = derived
+        derived_count += 1
+        records[idx]["speed"] = derived
+        records[idx]["speed_source"] = "derived_distance_time"
+
+    for idx, value in enumerate(curve):
+        if value is None:
+            continue
+        if idx < len(records) and records[idx].get("speed") is None:
+            records[idx]["speed"] = value
+
+    if observed_count > 0:
+        source = "observed"
+    elif derived_count > 0:
+        source = "derived_distance_time"
+    else:
+        source = "missing"
+
+    missing_ratio = missing_count / max(len(curve), 1)
+    if missing_count == len(curve):
+        quality = "missing"
+    elif missing_ratio > 0.05:
+        quality = "low_confidence"
+    elif observed_count == 0 and derived_count > 0:
+        quality = "derived"
+    else:
+        quality = "available"
+
+    return curve, {
+        "speed_source": source,
+        "speed_data_quality": quality,
+        "speed_observed_points_count": observed_count,
+        "speed_derived_points_count": derived_count,
+        "speed_missing_points_count": missing_count,
+    }
 
 
 def _build_resolved_payload_v81(
@@ -2843,6 +2978,7 @@ def _fatigue_review_numeric_curve(
     values: Any,
     axis_len: int,
     decimals: int | None = None,
+    preserve_missing: bool = False,
 ) -> list:
     """Normalize a drawable curve to the authoritative distance-axis length."""
     if axis_len <= 0 or not isinstance(values, list) or len(values) != axis_len:
@@ -2850,6 +2986,9 @@ def _fatigue_review_numeric_curve(
     normalized: list[Any] = []
     has_value = False
     for value in values:
+        if value is None and preserve_missing:
+            normalized.append(None)
+            continue
         num = _safe_float(value)
         if num is None:
             normalized.append(None)
@@ -3254,6 +3393,24 @@ def _build_fatigue_review_summary(
         valid_max=250.0,
         ignore_below_or_equal_min_for_invalid_ratio=True,
     )
+    speed_curve = curves_snapshot.get("speed")
+    if not isinstance(speed_curve, list):
+        speed_curve = bundle.get("speed_curve_mps") or []
+    speed_observed_count = _safe_int(bundle.get("speed_observed_points_count") or 0)
+    speed_derived_count = _safe_int(bundle.get("speed_derived_points_count") or 0)
+    speed_missing_count = _safe_int(bundle.get("speed_missing_points_count") or 0)
+    if not (speed_observed_count or speed_derived_count or speed_missing_count):
+        speed_observed_count = sum(
+            1 for value in speed_curve
+            if _safe_float(value, None) is not None
+        )
+        speed_missing_count = max(0, len(speed_curve) - speed_observed_count)
+    speed_source = str(bundle.get("speed_source") or "").strip()
+    if not speed_source:
+        speed_source = "observed" if speed_observed_count else "missing"
+    speed_quality = str(bundle.get("speed_data_quality") or "").strip()
+    if not speed_quality:
+        speed_quality = "available" if speed_observed_count else "missing"
     return {
         "avg_power": _safe_float(row.get("avg_power"), None),
         "max_power": _safe_float(row.get("max_power"), None),
@@ -3271,6 +3428,11 @@ def _build_fatigue_review_summary(
         "power_observed_points_count": _safe_int(power_quality_result.get("observed_points_count") or 0),
         "zero_power_ratio": _safe_float(power_quality_result.get("zero_power_ratio"), 0.0),
         "invalid_power_ratio": _safe_float(power_quality_result.get("invalid_power_ratio"), 0.0),
+        "speed_source": speed_source,
+        "speed_data_quality": speed_quality,
+        "speed_observed_points_count": speed_observed_count,
+        "speed_derived_points_count": speed_derived_count,
+        "speed_missing_points_count": speed_missing_count,
     }
 
 
@@ -4000,6 +4162,39 @@ def _build_cycling_intensity_signal(
     return _cycling_explanation_signal("available", summary_text, reasons, evidence, level=level)
 
 
+def _cycling_speed_stop_filter_context(
+    summary: dict[str, Any] | None,
+    speed_curve: Any,
+    axis_len: int,
+) -> dict[str, Any]:
+    """Decide whether speed may be used as stopped-state evidence.
+
+    Legacy callers without speed metadata retain the old trusted behavior for
+    explicitly supplied speed curves. New snapshots must distinguish missing
+    speed from observed/derived speed before applying this filter.
+    """
+    summary = summary if isinstance(summary, dict) else {}
+    speed_curve = speed_curve if isinstance(speed_curve, list) else []
+    source = str(summary.get("speed_source") or "").strip()
+    quality = str(summary.get("speed_data_quality") or "").strip()
+    has_aligned_curve = len(speed_curve) == axis_len and any(
+        _safe_float(value, None) is not None for value in speed_curve
+    )
+    if not source and not quality:
+        allowed = has_aligned_curve
+    else:
+        allowed = (
+            has_aligned_curve
+            and source in {"observed", "derived_distance_time"}
+            and quality in {"available", "derived"}
+        )
+    return {
+        "speed_source": source or "legacy_unspecified",
+        "speed_data_quality": quality or "legacy_unspecified",
+        "speed_stop_filter_applied": bool(allowed),
+    }
+
+
 def _build_cycling_aerobic_drift_signal(
     summary: dict[str, Any],
     curves_snapshot: dict[str, Any],
@@ -4135,6 +4330,12 @@ def _build_cycling_aerobic_drift_signal(
     speed_curve = curves_snapshot.get("speed") if isinstance(curves_snapshot.get("speed"), list) else []
     if len(speed_curve) != axis_len:
         speed_curve = []
+    speed_filter_context = _cycling_speed_stop_filter_context(
+        summary,
+        speed_curve,
+        axis_len,
+    )
+    speed_stop_filter_applied = bool(speed_filter_context["speed_stop_filter_applied"])
     time_curve = curves_snapshot.get("time") if isinstance(curves_snapshot.get("time"), list) else []
     if len(time_curve) != axis_len:
         time_curve = []
@@ -4166,7 +4367,7 @@ def _build_cycling_aerobic_drift_signal(
         elif hr < 35 or hr > 230:
             reason = "abnormal_hr"
 
-        if reason is None and speed_curve:
+        if reason is None and speed_stop_filter_applied:
             speed = _safe_float(speed_curve[idx], None)
             if speed is not None and speed <= 1.0:
                 reason = "stopped"
@@ -4208,6 +4409,7 @@ def _build_cycling_aerobic_drift_signal(
             "filtered_points_count": filtered_points_count,
             "filter_reasons": filter_reasons or ["insufficient_points"],
             "power_threshold_watts": round(power_threshold, 1),
+            **speed_filter_context,
         })
         return _cycling_explanation_signal(
             "unavailable",
@@ -4229,6 +4431,7 @@ def _build_cycling_aerobic_drift_signal(
             "effective_points_count": effective_count,
             "filtered_points_count": filtered_points_count,
             "filter_reasons": filter_reasons,
+            **speed_filter_context,
         })
         return _cycling_explanation_signal(
             "unavailable",
@@ -4270,6 +4473,7 @@ def _build_cycling_aerobic_drift_signal(
         "power_threshold_watts": round(power_threshold, 1),
         "power_data_quality": power_quality,
         "confidence": confidence,
+        **speed_filter_context,
     })
     return _cycling_explanation_signal(
         "available" if confidence != "low" else "partial",
@@ -4328,6 +4532,12 @@ def _build_effective_pedaling_power_retention(
     speed_curve = curves_snapshot.get("speed") if isinstance(curves_snapshot.get("speed"), list) else []
     if len(speed_curve) != axis_len:
         speed_curve = []
+    speed_filter_context = _cycling_speed_stop_filter_context(
+        summary,
+        speed_curve,
+        axis_len,
+    )
+    speed_stop_filter_applied = bool(speed_filter_context["speed_stop_filter_applied"])
     time_curve = curves_snapshot.get("time") if isinstance(curves_snapshot.get("time"), list) else []
     if len(time_curve) != axis_len:
         time_curve = []
@@ -4352,7 +4562,7 @@ def _build_effective_pedaling_power_retention(
         elif power <= power_threshold:
             reason = "coasting"
 
-        if reason is None and speed_curve:
+        if reason is None and speed_stop_filter_applied:
             speed = _safe_float(speed_curve[idx], None)
             if speed is not None and speed <= 1.0:
                 reason = "stopped"
@@ -4395,6 +4605,7 @@ def _build_effective_pedaling_power_retention(
                 "tail_effective_points_count": len(tail_values),
                 "filtered_points_count": filtered_points_count,
                 "filter_reasons": filter_reasons or ["insufficient_points"],
+                **speed_filter_context,
             },
         }
 
@@ -4413,6 +4624,7 @@ def _build_effective_pedaling_power_retention(
                 "effective_power_points_count": effective_count,
                 "filtered_points_count": filtered_points_count,
                 "filter_reasons": filter_reasons,
+                **speed_filter_context,
             },
         }
 
@@ -4443,6 +4655,7 @@ def _build_effective_pedaling_power_retention(
             "power_threshold_watts": round(power_threshold, 1),
             "power_data_quality": quality,
             "confidence": confidence,
+            **speed_filter_context,
         },
     }
 
@@ -4678,6 +4891,12 @@ def _build_cycling_cadence_signal(
             ["curve_length_mismatch"],
             evidence,
         )
+    speed_filter_context = _cycling_speed_stop_filter_context(
+        summary,
+        speed_curve,
+        axis_len,
+    )
+    speed_stop_filter_applied = bool(speed_filter_context["speed_stop_filter_applied"])
 
     power_curve = curves_snapshot.get("power") if isinstance(curves_snapshot.get("power"), list) else []
     if power_curve and len(power_curve) != axis_len:
@@ -4736,7 +4955,7 @@ def _build_cycling_cadence_signal(
         elif cadence > 250:
             reason = "abnormal_cadence"
 
-        if reason is None and speed_curve:
+        if reason is None and speed_stop_filter_applied:
             speed = _safe_float(speed_curve[idx], None)
             if speed is not None and speed <= 1.0:
                 reason = "stopped"
@@ -4787,6 +5006,7 @@ def _build_cycling_cadence_signal(
             "filtered_points_count": filtered_points_count,
             "filter_reasons": filter_reasons or ["insufficient_points"],
             "zero_cadence_ratio": round(zero_cadence_ratio, 3),
+            **speed_filter_context,
         })
         return _cycling_explanation_signal(
             "unavailable",
@@ -4832,6 +5052,7 @@ def _build_cycling_cadence_signal(
         "filter_reasons": filter_reasons,
         "cadence_data_quality": quality,
         "confidence": confidence,
+        **speed_filter_context,
     }
     evidence.append(cadence_evidence)
 
@@ -4999,6 +5220,7 @@ def _build_fatigue_review_curves_snapshot(
     speed_curve = _fatigue_review_numeric_curve(
         resolved.get("speed_curve") or bundle.get("speed_curve_mps") or [],
         axis_len,
+        preserve_missing=True,
     )
     return {
         "distance": distance,
@@ -7280,6 +7502,7 @@ def _parse_fit_activity_for_sync(file_path: Path) -> dict[str, Any]:
     core = FITCoreEngine.parse_fit_file(resolved_path)
     basic = dict(core.get("basic_info") or {})
     track_data = [dict(point) for point in (core.get("track_data") or [])]
+    sensor_data = [dict(sample) for sample in (core.get("sensor_data") or [])]
     raw_laps = list(core.get("lap_data") or [])
     has_track_points = bool(track_data)
     has_gps = any((pt.get("lat") is not None and pt.get("lon") is not None) for pt in track_data)
@@ -7362,6 +7585,7 @@ def _parse_fit_activity_for_sync(file_path: Path) -> dict[str, Any]:
     is_race = 1 if _is_fit_sport_event_race(sport_event) else 0
     result = {
         "points": track_data,
+        "sensor_data": sensor_data,
         "file_name": file_path.name,
         "filename": payload.get("filename") or file_path.name,
         "title": str(payload.get("title") or payload.get("filename") or file_path.name),
@@ -7507,9 +7731,10 @@ def _parse_fit_activity_for_sync(file_path: Path) -> dict[str, Any]:
             result["strength_materialization_version"] = STRENGTH_MATERIALIZATION_VERSION
             result["strength_materialization_error"] = None
         resolver = MetricsResolver()
+        raw_archive_meta = raw_archive.get("meta")
         resolved = resolver.resolve(
             raw_archive.get("raw") or {},
-            raw_archive.get("meta") or {},
+            raw_archive_meta if isinstance(raw_archive_meta, dict) else {},
         )
         sm = resolved.get("storage_model") or {}
         result["resolved"] = sm
@@ -7615,6 +7840,44 @@ def _parse_fit_activity_for_sync(file_path: Path) -> dict[str, Any]:
             result["hr_zone_distribution"] = hr_zone_json
     except Exception as exc:
         logger.exception("MetricsResolver 解析失败，将使用 legacy 值兜底: %s, error=%s", resolved_path, exc)
+
+    # Some FIT producers split GPS records and sensor records into separate
+    # record_mesgs.  The parser merges same-timestamp sensor facts into GPS
+    # track points; if the SDK-backed resolver cannot produce derivative
+    # curves for that file, keep the available FIT facts via existing columns.
+    existing_hr_curve = _safe_json_list(result.get("hr_curve")) or []
+    existing_hr_count = sum(1 for value in existing_hr_curve if _safe_float(value) is not None and _safe_float(value) > 0)
+    track_hr_vals = [point.get("hr") for point in track_data if point.get("hr") is not None]
+    sensor_hr_vals = [sample.get("hr") for sample in sensor_data if sample.get("hr") is not None]
+    hr_vals = sensor_hr_vals if len(sensor_hr_vals) > len(track_hr_vals) else track_hr_vals
+    if hr_vals and existing_hr_count < 2:
+        result["hr_curve"] = json.dumps(hr_vals, ensure_ascii=False)
+
+    existing_cadence_curve = _safe_json_list(result.get("cadence_curve")) or []
+    existing_cadence_count = sum(
+        1
+        for value in existing_cadence_curve
+        if _safe_float(value) is not None and _safe_float(value) >= 0
+    )
+    cadence_vals = [
+        sample.get("cadence")
+        for sample in (sensor_data or track_data)
+        if sample.get("cadence") is not None and _safe_float(sample.get("cadence")) is not None and _safe_float(sample.get("cadence")) >= 0
+    ]
+    if cadence_vals and existing_cadence_count < 2:
+        result["cadence_curve"] = json.dumps(cadence_vals, ensure_ascii=False)
+    if result.get("hr_curve") and not result.get("hr_zone_distribution"):
+        hr_curve_for_zones = _safe_json_list(result.get("hr_curve")) or []
+        max_hr_for_zones = 0
+        try:
+            prof_for_zones = profile_backend.get_profile()
+            max_hr_for_zones = _safe_int(prof_for_zones.max_hr) if prof_for_zones and prof_for_zones.max_hr else 0
+        except Exception:
+            max_hr_for_zones = 0
+        max_hr_for_zones = max_hr_for_zones or (_safe_int(result.get("max_hr")) or 0)
+        hr_zone_json = _compute_hr_zone_distribution(hr_curve_for_zones, max_hr_for_zones)
+        if hr_zone_json:
+            result["hr_zone_distribution"] = hr_zone_json
 
     return result
 
@@ -8121,7 +8384,7 @@ def _update_activity_sync_row(conn: sqlite3.Connection, activity_id: int, activi
             file_mtime = ?, file_size = ?, advanced_metrics = ?,
             avg_power = ?, max_power = ?, normalized_power = ?, avg_stroke_distance = ?, swolf = ?,
             device_name = ?, device_vendor = ?, device_product_key = ?, device_product_id = ?, device_serial = ?, device_mapping_status = ?,
-            shadow_diff_json = ?, hr_curve = ?, speed_curve = ?,
+            shadow_diff_json = ?, hr_curve = ?, speed_curve = ?, cadence_curve = ?, hr_zone_distribution = ?,
             laps_json = ?, strength_sets_json = ?, strength_summary_json = ?, muscle_heatmap_json = ?,
             min_alt_m = ?, total_descent_m = ?, up_count = ?, down_count = ?, max_single_climb_m = ?, difficulty_score = ?, report_metrics_version = ?,
             avg_grade_pct = ?, max_slope_pct = ?, min_slope_pct = ?, uphill_pct = ?, downhill_pct = ?,
@@ -8185,6 +8448,8 @@ def _update_activity_sync_row(conn: sqlite3.Connection, activity_id: int, activi
             activity.get("shadow_diff_json"),
             activity.get("hr_curve"),
             activity.get("speed_curve"),
+            activity.get("cadence_curve"),
+            activity.get("hr_zone_distribution"),
             activity.get("laps_json"),
             activity.get("strength_sets_json"),
             activity.get("strength_summary_json"),
@@ -15049,10 +15314,12 @@ class Api:
                 self._watch_service.suspended = False
 
     def _apply_title_override(self, new_id: int | None, dst: Path) -> None:
-        """T-IMPORT-FIT-DEDUP (二次): 用文件名 stem 覆盖 activities.title。
+        """Repair only empty or technical FIT titles after import.
 
-        防止 FIT 内部 ``basic_info.title`` 字段被 GBK 误读后写入 activities.title,
-        导致活动列表显示乱码。FIT/ZIP 两条分支统一调用。
+        FIT/ZIP both retain the parser -> title-builder chain. This final
+        step may repair a provider/numeric placeholder, but never writes the
+        source filename directly and never touches protected or readable
+        titles.
 
         Args:
             new_id: ``_sync_single_fit_file`` 返回的 ``activity_id``
@@ -15063,9 +15330,41 @@ class Api:
         try:
             _conn = profile_backend._conn()
             try:
+                row = _conn.execute(
+                    """
+                    SELECT title, title_source, sport_type, sub_sport_type,
+                           region_display, region
+                    FROM activities
+                    WHERE id = ?
+                    LIMIT 1
+                    """,
+                    (int(new_id),),
+                ).fetchone()
+                if not row:
+                    return
+                current_title = str(row["title"] or "").strip()
+                current_source = str(row["title_source"] or "").strip()
+                if current_source in {"user", "manual", "edited"}:
+                    return
+                filename_is_technical = profile_backend._is_technical_activity_title(dst.name)
+                if (
+                    current_title
+                    and not profile_backend._is_technical_activity_title(current_title)
+                    and not filename_is_technical
+                ):
+                    return
+                title, title_source = profile_backend.build_activity_display_title(
+                    current_title=current_title,
+                    title_source=current_source or "filename",
+                    sport_type=row["sport_type"],
+                    sub_sport_type=row["sub_sport_type"],
+                    region_display=row["region_display"] or row["region"] or "",
+                )
+                if title == current_title and title_source == current_source:
+                    return
                 _conn.execute(
-                    "UPDATE activities SET title = ?, title_source = 'filename' WHERE id = ?",
-                    (_clean_fit_activity_title(dst.name, dst.stem), new_id),
+                    "UPDATE activities SET title = ?, title_source = ? WHERE id = ?",
+                    (title, title_source, int(new_id)),
                 )
                 _conn.commit()
             finally:
@@ -17809,10 +18108,23 @@ class Api:
                     window=review_input_window,
                 )
                 _duration_v710 = _safe_int(row.get("duration_sec") or row.get("duration")) or 0
-                _drift_result = _MR_v710._compute_hr_drift(
-                    records=_records_v710,
-                    duration_sec=float(_duration_v710),
-                )
+                _speed_source_v710 = str(bundle.get("speed_source") or "").strip()
+                _speed_quality_v710 = str(bundle.get("speed_data_quality") or "").strip()
+                if (
+                    _speed_source_v710 == "missing"
+                    or _speed_quality_v710 in {"missing", "insufficient_axis"}
+                ):
+                    _drift_result = {
+                        "drift_pct": None,
+                        "level": "unknown",
+                        "confidence": "unavailable",
+                        "reasons": ["speed_missing"],
+                    }
+                else:
+                    _drift_result = _MR_v710._compute_hr_drift(
+                        records=_records_v710,
+                        duration_sec=float(_duration_v710),
+                    )
                 _drift_pct = _drift_result.get("drift_pct")
                 _drift_level = _drift_result.get("level", "unknown")
                 _drift_confidence = _drift_result.get("confidence", "unavailable")

@@ -49,7 +49,10 @@ class FakeFitFile:
                 avg_heart_rate=145,
                 max_heart_rate=158,
                 avg_cadence=178,
+                enhanced_avg_speed=8.12,
                 avg_power=245,
+                max_power=500,
+                normalized_power=260,
                 total_calories=80,
             ),
             FakeMessage(
@@ -60,7 +63,10 @@ class FakeFitFile:
                 avg_heart_rate=148,
                 max_heart_rate=160,
                 avg_cadence=176,
+                avg_speed=8.44,
                 avg_power=250,
+                max_power=520,
+                normalized_power=265,
                 total_calories=82,
             ),
         ]
@@ -83,7 +89,10 @@ class TestFitEngineLapData(unittest.TestCase):
         self.assertEqual(first["total_timer_time"], 300.0)
         self.assertEqual(first["avg_heart_rate"], 145)
         self.assertEqual(first["avg_cadence"], 178)
+        self.assertEqual(first["avg_speed_mps"], 8.12)
         self.assertEqual(first["avg_power"], 245)
+        self.assertEqual(first["max_power"], 500)
+        self.assertEqual(first["normalized_power"], 260)
         self.assertIsNotNone(first["lap_start_time"])
 
     def test_read_lap_data_preserves_pool_swim_cycles_and_lengths(self):
@@ -133,7 +142,9 @@ class TestNormalizeLaps(unittest.TestCase):
 
     def test_normalize_filters_zero_distance_and_time(self):
         raw = [
-            {"total_distance": 1000.0, "total_timer_time": 300.0, "avg_heart_rate": 145, "avg_power": 245, "avg_cadence": 178},
+            {"total_distance": 1000.0, "total_timer_time": 300.0, "avg_heart_rate": 145,
+             "enhanced_avg_speed": 8.12, "avg_power": 245, "max_power": 500,
+             "normalized_power": 260, "avg_cadence": 178},
             {"total_distance": 0, "total_timer_time": 0, "avg_heart_rate": 0, "avg_power": 0, "avg_cadence": 0},
             {"total_distance": 800.0, "total_timer_time": 240.0, "avg_heart_rate": 150, "avg_power": 250, "avg_cadence": 180},
         ]
@@ -141,6 +152,9 @@ class TestNormalizeLaps(unittest.TestCase):
         self.assertEqual(len(normalized), 2)
         self.assertEqual(normalized[0]["distance_m"], 1000.0)
         self.assertEqual(normalized[0]["elapsed_sec"], 300.0)
+        self.assertEqual(normalized[0]["avg_speed_mps"], 8.12)
+        self.assertEqual(normalized[0]["max_power"], 500)
+        self.assertEqual(normalized[0]["normalized_power"], 260)
         self.assertEqual(normalized[1]["distance_m"], 800.0)
 
     def test_normalize_empty_input(self):
@@ -243,6 +257,9 @@ class TestDetailLapsBySportContract(unittest.TestCase):
                 "hr": avg_hr or 150,
             }]
 
+        def _decode_points_json(self, _raw):
+            return []
+
     def test_hiking_without_laps_json_returns_full_activity_summary_lap(self):
         from main import _build_detail_laps
         api = self._FakeApi()
@@ -295,6 +312,43 @@ class TestDetailLapsBySportContract(unittest.TestCase):
         self.assertEqual(len(laps), 1)
         self.assertEqual(laps[0]["lap_no"], 1)
         self.assertEqual(laps[0]["ascent_m"], 1152)
+        self.assertFalse(api.fallback_called)
+
+    def test_cycling_real_laps_json_exposes_detail_table_fields(self):
+        from main import _build_detail_laps
+        api = self._FakeApi()
+        row = {
+            "sport_type": "cycling",
+            "laps_json": json.dumps([{
+                "lap_index": 0,
+                "distance_m": 10000.0,
+                "elapsed_sec": 1232.0,
+                "avg_hr": 129,
+                "max_hr": 171,
+                "avg_speed_mps": 8.12,
+                "avg_power": 179,
+                "max_power": 637,
+                "normalized_power": None,
+                "total_ascent": 85,
+                "total_descent": 24,
+            }]),
+        }
+
+        laps = _build_detail_laps(api, row, "cycling", 10.0, 1232, 129, 179)
+
+        self.assertEqual(len(laps), 1)
+        lap = laps[0]
+        self.assertEqual(lap["source_type"], "fit_sdk")
+        self.assertEqual(lap["lap_index"], 0)
+        self.assertEqual(lap["lap_no"], 1)
+        self.assertEqual(lap["elapsed_sec"], 1232.0)
+        self.assertEqual(lap["avg_speed_mps"], 8.12)
+        self.assertEqual(lap["avg_power"], 179)
+        self.assertEqual(lap["power_w"], 179)
+        self.assertEqual(lap["max_power"], 637)
+        self.assertIsNone(lap["normalized_power"], "无 lap 原生 NP 时不得填 session NP")
+        self.assertEqual(lap["total_ascent"], 85)
+        self.assertEqual(lap["ascent_m"], 85)
         self.assertFalse(api.fallback_called)
 
     def test_running_without_laps_json_keeps_existing_synthetic_fallback(self):

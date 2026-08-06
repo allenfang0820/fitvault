@@ -1,0 +1,95 @@
+name: Garmin FIT SDK update check
+
+on:
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update:
+    name: Check and propose garmin-fit-sdk update
+    runs-on: macos-15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check PyPI for a newer stable FIT SDK
+        id: check
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/check_garmin_fit_sdk_update.py --json > garmin-fit-sdk-update.json
+          cat garmin-fit-sdk-update.json
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          report = json.load(open("garmin-fit-sdk-update.json", encoding="utf-8"))
+          if not report.get("ok"):
+              raise SystemExit(f"update check failed: {report.get('error_code')} {report.get('error')}")
+          print(f"update_available={str(bool(report.get('update_available'))).lower()}")
+          print(f"current={report.get('current_version')}")
+          print(f"latest={report.get('latest_stable_version')}")
+          PY
+
+      - name: Bump contract files
+        if: steps.check.outputs.update_available == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/bump_garmin_fit_sdk_contract.py --version "${{ steps.check.outputs.latest }}" --json
+          python scripts/sync_garmin_fit_sdk_contract.py --json
+
+      - name: Install updated packaging dependencies
+        if: steps.check.outputs.update_available == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m venv .venv312
+          PYTHON=.venv312/bin/python scripts/install_packaging_deps.sh
+
+      - name: Run update gates
+        if: steps.check.outputs.update_available == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH=. .venv312/bin/python -m pytest -q \
+            tests/test_garmin_fit_sdk_contract_sync.py \
+            tests/test_garmin_fit_sdk_update_check.py \
+            tests/test_python312_runtime_check.py \
+            tests/test_packaging_diagnostics.py \
+            tests/test_fit_parser.py \
+            tests/test_fit_sync.py
+          .venv312/bin/python scripts/check_python312_runtime.py
+          .venv312/bin/python -m packaging_diagnostics
+          git diff --check
+
+      - name: Create update pull request
+        if: steps.check.outputs.update_available == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: codex/garmin-fit-sdk-${{ steps.check.outputs.latest }}
+          delete-branch: true
+          title: "Update garmin-fit-sdk to ${{ steps.check.outputs.latest }}"
+          commit-message: "Update garmin-fit-sdk to ${{ steps.check.outputs.latest }}"
+          body: |
+            Automated Garmin FIT SDK update proposal.
+
+            - Current: `${{ steps.check.outputs.current }}`
+            - Latest stable: `${{ steps.check.outputs.latest }}`
+            - Package: `garmin-fit-sdk`
+
+            This PR updates only the Garmin FIT SDK contract and runs the dependency, runtime, packaging, FIT parser, and FIT sync gates defined in `docs/Garmin_FIT_SDK_持续更新治理任务清单.md`.
+
+            Rollback anchor: if this candidate fails review or release validation, restore the last stable version with:
+
+            ```bash
+            python scripts/bump_garmin_fit_sdk_contract.py --version "${{ steps.check.outputs.current }}" --json
+            python scripts/sync_garmin_fit_sdk_contract.py --json
+            ```

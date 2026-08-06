@@ -2,7 +2,7 @@
 
 契约:fit-arch-contrac §V4.0 防腐层 / §2.1 全链路可追溯
 验证:
-  1. 输出结构契约:每圈 7 字段(lap_no/distance_km/pace_sec/hr/cadence/gct_ms/power_w)
+  1. 输出结构契约:每圈含旧展示字段与骑行详情表字段
   2. 正常圈速解析:2 圈完整数据
   3. 空数据降级:laps_json 为空/None/无效JSON/非列表 → []
   4. 配速计算:distance=1000m, elapsed=300s → pace_sec=300
@@ -48,9 +48,11 @@ class TestLapOutputContract(unittest.TestCase):
         self.assertEqual(len(r), 1)
         lap = r[0]
         expected_keys = {
-            "lap_no", "distance_m", "distance_km", "pace_sec", "hr", "max_hr",
+            "lap_index", "lap_no", "distance_m", "distance_km", "elapsed_sec", "pace_sec", "hr", "max_hr",
+            "avg_speed_mps",
             "cadence", "cadence_spm", "gct_ms", "stance_time_balance_pct",
-            "power_w", "ascent_m", "descent_m",
+            "power_w", "avg_power", "max_power", "normalized_power",
+            "ascent_m", "total_ascent", "descent_m", "total_descent",
             "calories", "swolf", "stroke_style", "stroke_distance_m",
             "length_distance_m", "source_type",
         }
@@ -66,9 +68,11 @@ class TestLapOutputContract(unittest.TestCase):
         r = MetricsResolver._build_real_laps_from_row(
             {"laps_json": self._make_laps_json(laps_data)})
         allowed = {
-            "lap_no", "distance_m", "distance_km", "pace_sec", "hr", "max_hr",
+            "lap_index", "lap_no", "distance_m", "distance_km", "elapsed_sec", "pace_sec", "hr", "max_hr",
+            "avg_speed_mps",
             "cadence", "cadence_spm", "gct_ms", "stance_time_balance_pct",
-            "power_w", "ascent_m", "descent_m",
+            "power_w", "avg_power", "max_power", "normalized_power",
+            "ascent_m", "total_ascent", "descent_m", "total_descent",
             "calories", "swolf", "stroke_style", "stroke_distance_m",
             "length_distance_m", "source_type",
         }
@@ -88,9 +92,11 @@ class TestNormalLapsParsing(unittest.TestCase):
     def setUp(self):
         self.laps_data = [
             {"distance_m": 1000.0, "elapsed_sec": 300.0, "avg_hr": 150,
-             "avg_cadence": 85, "avg_power": 220},
+             "avg_cadence": 85, "avg_speed_mps": 3.333, "avg_power": 220,
+             "max_power": 360, "normalized_power": 240, "total_ascent": 12},
             {"distance_m": 1000.0, "elapsed_sec": 310.0, "avg_hr": 155,
-             "avg_cadence": 83, "avg_power": 215},
+             "avg_cadence": 83, "avg_speed_mps": 3.226, "avg_power": 215,
+             "max_power": 350, "normalized_power": 235, "total_ascent": 8},
         ]
         self.row = {"laps_json": json.dumps(self.laps_data)}
         self.result = MetricsResolver._build_real_laps_from_row(self.row)
@@ -101,6 +107,10 @@ class TestNormalLapsParsing(unittest.TestCase):
     def test_lap_no_starts_at_1(self):
         self.assertEqual(self.result[0]["lap_no"], 1)
         self.assertEqual(self.result[1]["lap_no"], 2)
+
+    def test_lap_index_starts_at_0_for_frontend_lap_no_formatting(self):
+        self.assertEqual(self.result[0]["lap_index"], 0)
+        self.assertEqual(self.result[1]["lap_index"], 1)
 
     def test_distance_km_correct(self):
         """1000m → 1.0km"""
@@ -123,6 +133,16 @@ class TestNormalLapsParsing(unittest.TestCase):
     def test_power_correct(self):
         self.assertEqual(self.result[0]["power_w"], 220)
         self.assertEqual(self.result[1]["power_w"], 215)
+        self.assertEqual(self.result[0]["avg_power"], 220)
+        self.assertEqual(self.result[1]["avg_power"], 215)
+        self.assertEqual(self.result[0]["max_power"], 360)
+        self.assertEqual(self.result[1]["max_power"], 350)
+
+    def test_cycling_lap_detail_fields_are_forwarded(self):
+        self.assertAlmostEqual(self.result[0]["avg_speed_mps"], 3.333, places=3)
+        self.assertEqual(self.result[0]["normalized_power"], 240)
+        self.assertEqual(self.result[0]["total_ascent"], 12)
+        self.assertEqual(self.result[0]["ascent_m"], 12)
 
     def test_laps_json_as_list_direct(self):
         """laps_json 已为 list(非 str)时也能直接解析"""

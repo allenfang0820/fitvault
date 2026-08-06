@@ -2178,6 +2178,8 @@ _TECHNICAL_ACTIVITY_TITLE_RE = re.compile(
     re.IGNORECASE,
 )
 _ACTIVITY_FILE_ID_SUFFIX_RE = re.compile(r"^(?P<title>.+?)[_\s]+\d{6,}(?:[-_]\d+)*$")
+_DEVICE_MODEL_TOKEN_RE = re.compile(r"(?<![A-Za-z0-9])(?:[A-Za-z]{1,12}\d{2,}|\d{2,}[A-Za-z]{1,8})(?![A-Za-z0-9])")
+_LONG_NUMERIC_TOKEN_RE = re.compile(r"(?<!\d)\d{6,}(?!\d)")
 
 
 def clean_activity_filename_title(value: Any) -> str:
@@ -2204,7 +2206,23 @@ def _is_technical_activity_title(title: Any) -> bool:
         return True
     if _TECHNICAL_ACTIVITY_TITLE_RE.match(normalized.replace(" ", "-")):
         return True
-    return bool(re.fullmatch(r"[0-9a-f]{16,}", normalized))
+    if re.fullmatch(r"\d{8,}(?:[-_]\d+)*", stem.strip()):
+        return True
+    if re.fullmatch(r"[0-9a-f]{16,}", normalized):
+        return True
+    # Device-export filenames commonly combine a model token, date, time,
+    # and activity id. A date alone is not technical: real event/route
+    # filenames such as "2026都江堰半程马拉松" remain user-readable.
+    has_device_token = _DEVICE_MODEL_TOKEN_RE.search(stem) is not None
+    has_date_token = re.search(r"(?<!\d)\d{4}[-_]\d{2}[-_]\d{2}(?!\d)", stem) is not None
+    if has_device_token and has_date_token:
+        return True
+    tokens = [token for token in re.split(r"[\s_-]+", stem.strip()) if token]
+    has_device_model_token = any(_DEVICE_MODEL_TOKEN_RE.fullmatch(token) for token in tokens)
+    has_long_numeric_token = any(_LONG_NUMERIC_TOKEN_RE.fullmatch(token) for token in tokens)
+    if has_device_model_token and has_long_numeric_token:
+        return True
+    return False
 
 
 def _title_region_prefix(region_display: Any) -> str:
@@ -2229,19 +2247,33 @@ def build_activity_display_title(
     """Build a user-facing activity title without exposing provider temp filenames."""
     source = str(title_source or "").strip()
     title = str(current_title or "").strip()
+    raw_title_is_technical = _is_technical_activity_title(title)
     if title and source in _PROTECTED_ACTIVITY_TITLE_SOURCES:
         return title, source
     if title and source == "filename":
         cleaned_filename_title = clean_activity_filename_title(title)
-        if cleaned_filename_title != title and not _is_technical_activity_title(cleaned_filename_title):
+        if (
+            cleaned_filename_title != title
+            and not raw_title_is_technical
+            and not _is_technical_activity_title(cleaned_filename_title)
+        ):
             return cleaned_filename_title, source
         title = cleaned_filename_title
-    should_replace = not title or source in _AUTO_ACTIVITY_TITLE_SOURCES or _is_technical_activity_title(title)
+    should_replace = (
+        not title
+        or source in _AUTO_ACTIVITY_TITLE_SOURCES
+        or raw_title_is_technical
+        or _is_technical_activity_title(title)
+    )
     if not should_replace:
         return title, source or "fit"
 
     sub = str(sub_sport_type or "").strip().lower()
-    sport_key = sub if sub not in _GENERIC_SUB_SPORT_TYPES else str(sport_type or "").strip().lower()
+    sport_key = (
+        sub
+        if sub not in _GENERIC_SUB_SPORT_TYPES and sub in SPORT_TYPE_CN_MAP
+        else str(sport_type or "").strip().lower()
+    )
     sport_cn = translate_sport_type(sport_key or "unknown")
     region_prefix = _title_region_prefix(region_display)
     if region_prefix:
@@ -2274,6 +2306,7 @@ def backfill_auto_activity_titles(conn: sqlite3.Connection | None = None, limit:
               AND (
                 COALESCE(title_source, '') IN ('auto_sport', 'auto_region_sport')
                 OR TRIM(COALESCE(title, '')) = ''
+                OR COALESCE(title_source, '') IN ('filename', 'file_name', 'fit')
                 OR (
                   COALESCE(title_source, '') = 'filename'
                   AND (

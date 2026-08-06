@@ -369,13 +369,47 @@ P6 自动化补充：
 - `tests/test_cycling_explanation_signals_contract.py::test_p6_downhill_available_power_requires_filter_evidence_for_drop`
 - `tests/test_cycling_explanation_signals_contract.py::test_p6_downhill_coasting_with_insufficient_effective_tail_degrades`
 
-## 10. 剩余风险
+## 10. BRY-FR-04 百锐腾 no-speed 空态文案验收记录（2026-08-06）
+
+本轮验收只补前端对后端事实的中文映射，不新增前端算法：
+
+- 骑行解释卡片继续只读取 `data.cycling_explanation_signals`、`data.summary` 中的后端状态、原因和质量标记。
+- 前端不得从 `curves.speed / curves.power / curves.hr / curves.cadence` 重新计算卡片状态，也不得从距离/时间自行推导速度。
+- 以下后端 reason 必须有用户可读文案：`speed_missing`、`speed_derived_low_confidence`、`insufficient_aligned_hr_power_points`、`insufficient_effective_pedaling_points`、`coasting_ratio_high`、`insufficient_cadence_points`。
+- 当 `summary.speed_source=missing` 或 `summary.speed_data_quality in {missing, insufficient_axis}` 时，卡片说明必须表达“不会把缺失速度当成停顿”。
+- 当 `summary.speed_data_quality=low_confidence` 或 reason 包含 `speed_derived_low_confidence` 时，卡片说明必须表达“速度由距离/时间推导且置信偏低，停顿过滤保守显示”。
+- `available` 卡片可以展示主结论；`partial` 只能以“基于可用片段”的口径展示；`unavailable` 不展示强结论、趋势箭头或假正常状态。
+
+自动化覆盖：
+
+- `tests/test_cycling_fatigue_review_acceptance.py::TestCyclingFatigueReviewAcceptanceFrontend::test_cycling_empty_state_translates_backend_reasons_without_frontend_recompute`
+
+## 11. BRY-FR-05 百锐腾真实样本回放记录（2026-08-06）
+
+只读回放 `/Users/fanglei/Desktop/260805055744.fit`，不导入数据库、不提交真实 FIT 文件。
+
+| 项目 | 回放结果 |
+| --- | --- |
+| 原生 `speed / enhanced_speed` | 0 点 |
+| `summary.speed_source` | `derived_distance_time` |
+| `summary.speed_data_quality` | `derived` |
+| 速度派生 / 缺失点 | 6563 / 1 |
+| 功率 / 心率 / 踏频正值点 | 3679 / 1312 / 4011 |
+| `aerobic_drift_signal` | `available / significant_drift`，有效点 665 |
+| `power_retention_signal` | `available / clear_drop`，有效功率点 2900 |
+| `cadence_signal` | `available / interrupted`，有效踏频点 2809 |
+| `fatigue_zones / collapse_events` | 4 / 0 |
+| 坡度范围 | 约 `-53.19%` 到 `35.71%` |
+
+完成报告：`docs/百锐腾骑行复盘分析卡片缺失修复完成报告.md`。
+
+## 12. 剩余风险
 
 - 已完成本地 pywebview 真实 UI 逐卡片文案验收与后端 snapshot 复核；未做跨浏览器截图回归。
 - 已覆盖下坡比例高但功率不可用样本、坡度极端且有效踩踏证据充足样本、长距离大量下降且功率质量可用样本；仍建议后续结合用户体感复核 `252 / 279` 这类可输出 clear_drop 的真实活动。
 - 当前 P7 不新增算法；有氧漂移仍按 P2 边界保持 partial/unavailable，不输出完整 Pw:Hr 结论。
 
-## 11. P7 最终冻结结论
+## 13. P7 最终冻结结论
 
 P7 执行口径：最终验收与冻结，不新增科学算法、不改 UI 布局、不改 ECharts、不改 DB、不解冻 AI 入口。
 

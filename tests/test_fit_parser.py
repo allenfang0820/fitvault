@@ -227,6 +227,66 @@ class TestFitParser(unittest.TestCase):
         for key in ("lat", "lon", "alt", "time", "hr", "pace", "cadence", "power"):
             self.assertIn(key, track_data[0])
 
+    def test_fit_split_sensor_records_are_preserved_without_fake_gps(self):
+        class SplitSensorFitFile:
+            def get_messages(self, kind):
+                if kind != "record":
+                    return iter([])
+                ts0 = datetime(2026, 8, 4, 21, 57, 36)
+                ts1 = datetime(2026, 8, 4, 21, 57, 37)
+                ts2 = datetime(2026, 8, 4, 21, 57, 38)
+                return iter(
+                    [
+                        FakeMessage(
+                            timestamp=ts0,
+                            position_lat=30.0,
+                            position_long=104.0,
+                            enhanced_altitude=620.0,
+                            distance=10.0,
+                        ),
+                        FakeMessage(
+                            timestamp=ts0,
+                            heart_rate=120,
+                            power=210,
+                            cadence=82,
+                            enhanced_speed=5.2,
+                        ),
+                        FakeMessage(
+                            timestamp=ts1,
+                            heart_rate=121,
+                            power=0,
+                            cadence=0,
+                        ),
+                        FakeMessage(
+                            timestamp=ts2,
+                            position_lat=30.0001,
+                            position_long=104.0001,
+                            enhanced_altitude=621.0,
+                            distance=20.0,
+                            heart_rate=122,
+                            power=215,
+                            cadence=83,
+                        ),
+                    ]
+                )
+
+        track_data = fit_engine.FITCoreEngine._read_track_data(SplitSensorFitFile())
+        sensor_data = fit_engine.FITCoreEngine._read_sensor_data(SplitSensorFitFile())
+
+        self.assertEqual(len(track_data), 2)
+        self.assertTrue(all(point.get("lat") is not None and point.get("lon") is not None for point in track_data))
+        self.assertEqual(track_data[0]["hr"], 120)
+        self.assertEqual(track_data[0]["power"], 210)
+        self.assertEqual(track_data[0]["cadence"], 82)
+
+        self.assertEqual(len(sensor_data), 3)
+        sensor_only = sensor_data[1]
+        self.assertEqual(sensor_only["hr"], 121)
+        self.assertEqual(sensor_only["power"], 0)
+        self.assertEqual(sensor_only["cadence"], 0)
+        self.assertNotIn("lat", sensor_only)
+        self.assertNotIn("lon", sensor_only)
+
     def test_hiking_fit_prefers_human_filename_title(self):
         path = _first_existing(
             [

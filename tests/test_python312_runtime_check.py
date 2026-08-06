@@ -34,9 +34,10 @@ def test_python312_runtime_check_script_contains_release_contracts():
 
 def test_runtime_report_accepts_mocked_healthy_python312_environment():
     runtime_check = _load_runtime_check_module()
+    sdk_version = runtime_check.GARMIN_FIT_SDK_EXPECTED_VERSION
     versions = {
         "garminconnect": "0.3.6",
-        "garmin-fit-sdk": "21.208.0",
+        "garmin-fit-sdk": sdk_version,
         "curl_cffi": "0.6.1",
         "requests": "2.34.2",
         "urllib3": "2.7.0",
@@ -58,7 +59,7 @@ def test_runtime_report_accepts_mocked_healthy_python312_environment():
     assert report["errors"] == []
     assert report["startup_lazy_import_ok"] is True
     assert set(imported) == set(runtime_check.REQUIRED_IMPORTS)
-    assert report["checked_distributions"]["garmin-fit-sdk"]["version"] == "21.208.0"
+    assert report["checked_distributions"]["garmin-fit-sdk"]["version"] == sdk_version
 
 
 def test_runtime_report_fails_missing_distribution_and_startup_lazy_violation():
@@ -88,9 +89,10 @@ def test_runtime_report_fails_missing_distribution_and_startup_lazy_violation():
 
 def test_runtime_report_fails_import_error_without_real_environment_dependency():
     runtime_check = _load_runtime_check_module()
+    sdk_version = runtime_check.GARMIN_FIT_SDK_EXPECTED_VERSION
     versions = {
         "garminconnect": "0.3.6",
-        "garmin-fit-sdk": "21.208.0",
+        "garmin-fit-sdk": sdk_version,
         "curl_cffi": "0.6.1",
         "requests": "2.34.2",
         "urllib3": "2.7.0",

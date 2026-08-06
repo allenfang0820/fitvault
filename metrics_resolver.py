@@ -1236,7 +1236,9 @@ class MetricsResolver:
             row: activities 表行 dict(必须含 laps_json 键)
 
         Returns:
-            list[dict]: 圈速列表,每圈含 lap_no/distance_km/pace_sec/hr/cadence/gct_ms/power_w
+            list[dict]: 圈速列表,同时保留旧字段与骑行详情字段:
+                lap_index/lap_no/distance_m/distance_km/elapsed_sec/
+                avg_speed_mps/avg_power/max_power/normalized_power/total_ascent
             返回 [] 表示无真实数据,调用方应 fallback 到 _build_lap_rows
         """
         raw = row.get("laps_json")
@@ -1257,9 +1259,14 @@ class MetricsResolver:
             elapsed = MetricsResolver._safe_float_zero(lap.get("elapsed_sec"))
             lap_avg_hr = MetricsResolver._safe_int_zero(lap.get("avg_hr"))
             lap_max_hr = MetricsResolver._safe_int_zero(lap.get("max_hr"))
+            lap_avg_speed_mps = MetricsResolver._safe_float_zero(
+                MetricsResolver._first_present(lap.get("avg_speed_mps"), lap.get("enhanced_avg_speed"), lap.get("avg_speed"))
+            )
             lap_avg_cadence = MetricsResolver._safe_int_zero(lap.get("avg_cadence"))
             lap_fractional_cadence = MetricsResolver._safe_float_zero(lap.get("fractional_cadence"))
             lap_avg_power = MetricsResolver._safe_int_zero(lap.get("avg_power"))
+            lap_max_power = MetricsResolver._safe_int_zero(lap.get("max_power"))
+            lap_normalized_power = MetricsResolver._safe_int_zero(lap.get("normalized_power"))
             lap_ascent = MetricsResolver._safe_int_zero(lap.get("total_ascent"))
             lap_descent = MetricsResolver._safe_int_zero(lap.get("total_descent"))
             lap_calories = MetricsResolver._safe_int_zero(lap.get("total_calories"))
@@ -1278,19 +1285,27 @@ class MetricsResolver:
                 cadence_spm = (float(lap_avg_cadence) + (lap_fractional_cadence if lap_fractional_cadence else 0.0)) * 2.0
             pace_sec = int(round(elapsed / (dist_m / 1000.0))) if dist_m > 0 and elapsed > 0 else 0
             rows.append({
+                "lap_index": MetricsResolver._safe_int_zero(lap.get("lap_index")) if lap.get("lap_index") is not None else idx,
                 "lap_no": idx + 1,
                 "distance_m": dist_m if dist_m > 0 else None,
                 "distance_km": round(dist_m / 1000.0, 2) if dist_m > 0 else None,
+                "elapsed_sec": elapsed if elapsed > 0 else None,
                 "pace_sec": pace_sec if pace_sec > 0 else None,
                 "hr": lap_avg_hr if lap_avg_hr else None,
                 "max_hr": lap_max_hr if lap_max_hr else None,
+                "avg_speed_mps": round(lap_avg_speed_mps, 3) if lap_avg_speed_mps > 0 else None,
                 "cadence": lap_avg_cadence if lap_avg_cadence else None,
                 "cadence_spm": round(cadence_spm) if cadence_spm else None,
                 "gct_ms": lap_gct_ms,   # V9.x:从硬编码 None 改为透传 Resolver 解析值
                 "stance_time_balance_pct": round(lap_stance_balance_pct, 1) if lap_stance_balance_pct else None,
                 "power_w": lap_avg_power if lap_avg_power else None,
+                "avg_power": lap_avg_power if lap_avg_power else None,
+                "max_power": lap_max_power if lap_max_power else None,
+                "normalized_power": lap_normalized_power if lap_normalized_power else None,
                 "ascent_m": lap_ascent if lap_ascent else None,
+                "total_ascent": lap_ascent if lap_ascent else None,
                 "descent_m": lap_descent if lap_descent else None,
+                "total_descent": lap_descent if lap_descent else None,
                 "calories": lap_calories if lap_calories else None,
                 "swolf": lap_swolf if lap_swolf else None,
                 "stroke_style": lap_stroke_style if lap_stroke_style else None,
@@ -1353,13 +1368,23 @@ class MetricsResolver:
 
             raw_speed = pt.get("speed")
             pace = pt.get("pace")
-            calc_speed = (1000.0 / pace) if pace and pace > 0 else 0.0
-            final_speed = raw_speed if raw_speed is not None and raw_speed >= 0 else calc_speed
+            raw_speed_num = MetricsResolver._safe_float(raw_speed)
+            pace_num = MetricsResolver._safe_float(pace)
+            if raw_speed is not None and raw_speed_num is not None and raw_speed_num >= 0:
+                final_speed = raw_speed_num
+                speed_source = "observed"
+            elif pace is not None and pace_num is not None and pace_num > 0:
+                final_speed = 1000.0 / pace_num
+                speed_source = "observed_pace"
+            else:
+                final_speed = None
+                speed_source = "missing"
 
             records.append({
                 "timestamp": ts,
                 "heart_rate": pt.get("hr"),
                 "speed": final_speed,
+                "speed_source": speed_source,
                 "altitude": pt.get("altitude") or pt.get("alt"),
                 "distance": cumulative_dist,
                 "power": pt.get("power"),
@@ -2654,7 +2679,12 @@ class MetricsResolver:
             elapsed = MetricsResolver._num(lap.get("total_timer_time"))
             avg_hr = MetricsResolver._num(lap.get("avg_heart_rate"))
             max_hr = MetricsResolver._num(lap.get("max_heart_rate"))
+            avg_speed_mps = MetricsResolver._num(
+                MetricsResolver._first_present(lap.get("avg_speed_mps"), lap.get("enhanced_avg_speed"), lap.get("avg_speed"))
+            )
             avg_power = MetricsResolver._num(lap.get("avg_power"))
+            max_power = MetricsResolver._num(lap.get("max_power"))
+            normalized_power = MetricsResolver._num(lap.get("normalized_power"))
             avg_cadence = MetricsResolver._num(lap.get("avg_cadence"))
             fractional_cadence = MetricsResolver._num(lap.get("avg_fractional_cadence"))
             total_ascent = MetricsResolver._num(lap.get("total_ascent"))
@@ -2688,7 +2718,10 @@ class MetricsResolver:
                 "elapsed_sec": elapsed,
                 "avg_hr": avg_hr if avg_hr else None,
                 "max_hr": max_hr if max_hr else None,
+                "avg_speed_mps": round(avg_speed_mps, 3) if avg_speed_mps > 0 else None,
                 "avg_power": avg_power if avg_power else None,
+                "max_power": max_power if max_power else None,
+                "normalized_power": normalized_power if normalized_power else None,
                 "avg_cadence": avg_cadence if avg_cadence else None,
                 "fractional_cadence": fractional_cadence if fractional_cadence else None,
                 "total_ascent": total_ascent if total_ascent else None,

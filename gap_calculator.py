@@ -38,6 +38,8 @@ class GapCalculator:
     输入: FIT record_mesgs 列表,每条含 altitude / distance / heart_rate / timestamp。
     输出: gap_curve / efficiency_curve / grade_curve / smoothed_altitude 等。"""
 
+    _MIN_GRADE_DISTANCE_DELTA_M = 0.5
+
     def __init__(self) -> None:
         """初始化 GAP 计算器(无状态,旧 smooth_window 已废弃,改用 Butterworth)。"""
         pass
@@ -217,7 +219,7 @@ class GapCalculator:
         """计算点对点的坡度百分比 (%)
 
         基于 Butterworth 平滑后的海拔计算逐段坡度,
-        避免 delta_dist <= 0 时触发除零异常(兜底 1e-5)。
+        避免重复距离或近零距离差把坡度放大成异常值。
 
         Args:
             distance_series: 距离序列(单位 m,单调递增)。
@@ -241,10 +243,12 @@ class GapCalculator:
         delta_alt = np.diff(alt_arr, prepend=alt_arr[0])
         delta_dist = np.diff(dist_arr, prepend=dist_arr[0])
 
-        # 防止除零异常,最小距离差设为极小值
-        delta_dist[delta_dist <= 0] = 1e-5
+        # 防止近零分母放大出极端坡度: 小于 0.5m 的变化按 0 坡度处理
+        delta_dist[delta_dist <= GapCalculator._MIN_GRADE_DISTANCE_DELTA_M] = np.nan
 
-        grade_pct = (delta_alt / delta_dist) * 100.0
+        with np.errstate(divide="ignore", invalid="ignore"):
+            grade_pct = (delta_alt / delta_dist) * 100.0
+        grade_pct = np.nan_to_num(grade_pct, nan=0.0, posinf=0.0, neginf=0.0)
         return grade_pct.tolist()
 
     @staticmethod

@@ -199,6 +199,7 @@ class FITCoreEngine:
             activity_info = FITCoreEngine._read_activity_info(fit)
             lap_data = FITCoreEngine._read_lap_data(fit)
             track_data = FITCoreEngine._read_track_data(fit)
+            sensor_data = FITCoreEngine._read_sensor_data(fit)
             has_gps = bool(track_data)
             if not has_gps:
                 logger.info("FIT 文件未包含 GPS 轨迹，跳过轨迹解析，保留室内运动基础字段: %s", path)
@@ -206,7 +207,7 @@ class FITCoreEngine:
             avg_hr, max_hr = FITCoreEngine._heart_rate_stats(
                 session_info.get("avg_heart_rate"),
                 session_info.get("max_heart_rate"),
-                track_data,
+                sensor_data or track_data,
             )
             start_time, start_time_utc = FITCoreEngine._resolve_start_times(
                 session_info.get("start_time"),
@@ -260,6 +261,7 @@ class FITCoreEngine:
             return {
                 "basic_info": basic_info,
                 "track_data": track_data,
+                "sensor_data": sensor_data,
                 "lap_data": lap_data,
                 "source": "canonical",
             }
@@ -436,6 +438,7 @@ class FITCoreEngine:
 
         返回结构:list[{total_distance, total_timer_time, avg_heart_rate,
                         max_heart_rate, avg_cadence, avg_power, total_calories,
+                        max_power, normalized_power, avg_speed_mps,
                         lap_start_time, lap_index,
                         avg_stance_time, avg_vertical_oscillation,
                         avg_vertical_ratio, avg_stance_time_balance,
@@ -449,6 +452,9 @@ class FITCoreEngine:
                 lap_start = lap_start.replace(tzinfo=timezone.utc)
             # BugFix: Garmin 跑步用 avg_running_cadence,骑行用 avg_cadence,两者字段名不同
             raw_cadence = values.get("avg_running_cadence") or values.get("avg_cadence")
+            avg_speed_mps = FITCoreEngine._float_or_none(
+                FITCoreEngine._first_present(values.get("enhanced_avg_speed"), values.get("avg_speed"))
+            )
             laps.append({
                 "lap_index": values.get("index") or values.get("lap_index") or idx,
                 "total_distance": FITCoreEngine._float_or_none(values.get("total_distance")),
@@ -456,6 +462,7 @@ class FITCoreEngine:
                 "avg_heart_rate": FITCoreEngine._int_or_none(values.get("avg_heart_rate")),
                 "max_heart_rate": FITCoreEngine._int_or_none(values.get("max_heart_rate")),
                 "avg_cadence": FITCoreEngine._int_or_none(raw_cadence),
+                "avg_speed_mps": avg_speed_mps,
                 "avg_power": FITCoreEngine._int_or_none(values.get("avg_power")),
                 "normalized_power": FITCoreEngine._int_or_none(values.get("normalized_power")),
                 "max_power": FITCoreEngine._int_or_none(values.get("max_power")),
@@ -498,8 +505,18 @@ class FITCoreEngine:
                     step_length, power
         """
         rows: list[dict[str, Any]] = []
+        sensor_by_time: dict[str, dict[str, Any]] = {}
         for msg in fit.get_messages("record"):
             values = FITCoreEngine._message_fields_dict(msg)
+            ts = values.get("timestamp")
+            if isinstance(ts, datetime) and ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            time_key = FITCoreEngine._iso_utc(ts) if isinstance(ts, datetime) else None
+            if time_key:
+                sensor_fields = FITCoreEngine._record_sensor_fields(values, ts)
+                if FITCoreEngine._has_sensor_fact(sensor_fields):
+                    existing = sensor_by_time.setdefault(time_key, {"time": time_key, "_ts": ts})
+                    FITCoreEngine._merge_missing_sensor_fields(existing, sensor_fields)
             lat = values.get("position_lat")
             lon = values.get("position_long")
             if lat is None or lon is None:
@@ -508,9 +525,6 @@ class FITCoreEngine:
                 latf, lonf = FITCoreEngine._fit_latlon_to_deg(float(lat), float(lon))
             except (TypeError, ValueError):
                 continue
-            ts = values.get("timestamp")
-            if isinstance(ts, datetime) and ts.tzinfo is None:
-                ts = ts.replace(tzinfo=timezone.utc)
             alt = values.get("enhanced_altitude")
             if alt is None:
                 alt = values.get("altitude")
@@ -551,6 +565,12 @@ class FITCoreEngine:
                 prev = track_data[-1]
                 if abs(prev["lat"] - row["lat"]) < 1e-7 and abs(prev["lon"] - row["lon"]) < 1e-7 and prev.get("time") == row.get("time"):
                     continue
+            sensor = sensor_by_time.get(row.get("time") or "") or {}
+            FITCoreEngine._merge_missing_sensor_fields(row, sensor)
+            if row.get("speed") is None and sensor.get("speed") is not None:
+                speed = FITCoreEngine._float_or_none(sensor.get("speed"))
+                if speed and speed > 0:
+                    row["pace"] = round(1000.0 / speed, 2)
             track_data.append(
                 {
                     "lat": row["lat"],
@@ -573,6 +593,66 @@ class FITCoreEngine:
                 }
             )
         return track_data
+
+    @staticmethod
+    def _record_sensor_fields(values: dict[str, Any], ts: Any = None) -> dict[str, Any]:
+        if ts is None:
+            ts = values.get("timestamp")
+            if isinstance(ts, datetime) and ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+        speed = FITCoreEngine._float_or_none(values.get("enhanced_speed"))
+        if speed is None:
+            speed = FITCoreEngine._float_or_none(values.get("speed"))
+        distance = FITCoreEngine._float_or_none(values.get("distance"))
+        return {
+            "_ts": ts if isinstance(ts, datetime) else None,
+            "time": FITCoreEngine._iso_utc(ts) if isinstance(ts, datetime) else None,
+            "hr": FITCoreEngine._int_or_none(values.get("heart_rate")),
+            "power": FITCoreEngine._int_or_none(values.get("power")),
+            "cadence": FITCoreEngine._int_or_none(values.get("cadence")),
+            "speed": speed,
+            "distance": distance,
+        }
+
+    @staticmethod
+    def _has_sensor_fact(sample: dict[str, Any]) -> bool:
+        return any(sample.get(key) is not None for key in ("hr", "power", "cadence"))
+
+    @staticmethod
+    def _merge_missing_sensor_fields(target: dict[str, Any], source: dict[str, Any]) -> None:
+        for key in ("hr", "power", "cadence", "speed", "distance"):
+            if target.get(key) is None and source.get(key) is not None:
+                target[key] = source[key]
+
+    @staticmethod
+    def _read_sensor_data(fit: Any) -> list[dict[str, Any]]:
+        """提取 record_mesgs 中的传感器事实流，不要求 GPS 坐标。
+
+        该流用于保留百锐腾等设备拆分写入的 HR / power / cadence 事实。
+        它不携带 lat/lon，也不参与地图轨迹点生成；轨迹合法性仍由
+        _read_track_data() 的经纬度规则决定。
+        """
+        by_time: dict[str, dict[str, Any]] = {}
+        without_time: list[dict[str, Any]] = []
+        for msg in fit.get_messages("record"):
+            values = FITCoreEngine._message_fields_dict(msg)
+            sample = FITCoreEngine._record_sensor_fields(values)
+            if not FITCoreEngine._has_sensor_fact(sample):
+                continue
+            time_key = sample.get("time")
+            if not time_key:
+                public_sample = {k: v for k, v in sample.items() if not k.startswith("_") and v is not None}
+                without_time.append(public_sample)
+                continue
+            existing = by_time.setdefault(time_key, {"time": time_key, "_ts": sample.get("_ts")})
+            FITCoreEngine._merge_missing_sensor_fields(existing, sample)
+
+        rows = list(by_time.values()) + without_time
+        rows.sort(key=lambda row: row.get("_ts") or datetime.min.replace(tzinfo=timezone.utc))
+        return [
+            {key: value for key, value in row.items() if not key.startswith("_") and value is not None}
+            for row in rows
+        ]
 
     @staticmethod
     def _heart_rate_stats(session_avg_hr: Any, session_max_hr: Any, track_data: list[dict[str, Any]]) -> tuple[int | None, int | None]:

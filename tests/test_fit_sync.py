@@ -2963,6 +2963,135 @@ class TestFitSync(unittest.TestCase):
         self.assertEqual(item["title"], "西城区 跑步")
         self.assertEqual(item["file_name"], "西城区 跑步_611638502.fit")
 
+    def test_import_title_repair_promotes_numeric_filename_to_sport_title(self):
+        main.ensure_activity_sync_schema()
+        activity = self._activity("260805055744.fit")
+        activity["title"] = "260805055744.fit"
+        activity["title_source"] = "file_name"
+        activity["sport_type"] = "cycling"
+        activity["sub_sport_type"] = "generic"
+        activity["region"] = ""
+        activity["region_display"] = ""
+        persisted = main._persist_sync_activity(activity)
+
+        self.api._apply_title_override(persisted["id"], Path(activity["file_path"]))
+
+        conn = profile_backend._conn()
+        try:
+            row = conn.execute(
+                "SELECT title, title_source FROM activities WHERE id = ?",
+                (persisted["id"],),
+            ).fetchone()
+        finally:
+            conn.close()
+
+        self.assertEqual(row["title"], "骑行")
+        self.assertEqual(row["title_source"], "auto_sport")
+
+    def test_import_title_repair_promotes_provider_device_timestamp_filename(self):
+        main.ensure_activity_sync_schema()
+        filename = "MAGENE_C706_2026-06-28_154456_196852.fit"
+        activity = self._activity(filename)
+        activity["title"] = "MAGENE C706 2026-06-28"
+        activity["title_source"] = "filename"
+        activity["sport_type"] = "cycling"
+        activity["sub_sport_type"] = "navigate"
+        activity["region"] = ""
+        activity["region_display"] = ""
+        persisted = main._persist_sync_activity(activity)
+
+        self.api._apply_title_override(persisted["id"], Path(activity["file_path"]))
+
+        conn = profile_backend._conn()
+        try:
+            row = conn.execute(
+                "SELECT title, title_source FROM activities WHERE id = ?",
+                (persisted["id"],),
+            ).fetchone()
+        finally:
+            conn.close()
+
+        self.assertEqual(row["title"], "骑行")
+        self.assertEqual(row["title_source"], "auto_sport")
+
+    def test_import_title_repair_promotes_provider_device_epoch_id_filename(self):
+        main.ensure_activity_sync_schema()
+        filename = "Magene_C706_1785880546_196852_1785889714943.fit"
+        activity = self._activity(filename)
+        activity["title"] = "Magene C706 1785880546 196852"
+        activity["title_source"] = "filename"
+        activity["sport_type"] = "cycling"
+        activity["sub_sport_type"] = "unknown"
+        activity["region"] = ""
+        activity["region_display"] = ""
+        persisted = main._persist_sync_activity(activity)
+
+        self.api._apply_title_override(persisted["id"], Path(activity["file_path"]))
+
+        conn = profile_backend._conn()
+        try:
+            row = conn.execute(
+                "SELECT title, title_source FROM activities WHERE id = ?",
+                (persisted["id"],),
+            ).fetchone()
+        finally:
+            conn.close()
+
+        self.assertEqual(row["title"], "骑行")
+        self.assertEqual(row["title_source"], "auto_sport")
+
+    def test_region_title_update_promotes_provider_device_epoch_id_filename(self):
+        main.ensure_activity_sync_schema()
+        filename = "Magene_C706_1785880546_196852_1785889714943.fit"
+        title, title_source = profile_backend.build_activity_display_title(
+            current_title="Magene C706 1785880546 196852",
+            title_source="filename",
+            sport_type="cycling",
+            sub_sport_type="unknown",
+            region_display="名山区/中国",
+        )
+
+        self.assertEqual(title, "名山区 骑行")
+        self.assertEqual(title_source, "auto_region_sport")
+        self.assertTrue(profile_backend._is_technical_activity_title(filename))
+        self.assertTrue(
+            profile_backend._can_region_update_activity_title(
+                "filename",
+                "Magene C706 1785880546 196852",
+            )
+        )
+
+    def test_import_title_repair_preserves_readable_filename_and_user_title(self):
+        main.ensure_activity_sync_schema()
+        readable = self._activity("都江堰半程马拉松.fit")
+        readable["title"] = "都江堰半程马拉松"
+        readable["title_source"] = "filename"
+        readable_id = main._persist_sync_activity(readable)["id"]
+
+        user = self._activity("manual.fit")
+        user["title"] = "我的晨骑"
+        user["title_source"] = "user"
+        user["dist_km"] = 12.0
+        user["distance"] = 12.0
+        user_id = main._persist_sync_activity(user)["id"]
+
+        self.api._apply_title_override(readable_id, Path(readable["file_path"]))
+        self.api._apply_title_override(user_id, Path(user["file_path"]))
+
+        conn = profile_backend._conn()
+        try:
+            rows = conn.execute(
+                "SELECT id, title, title_source FROM activities WHERE id IN (?, ?) ORDER BY id",
+                (readable_id, user_id),
+            ).fetchall()
+        finally:
+            conn.close()
+
+        self.assertEqual(
+            [(row["title"], row["title_source"]) for row in rows],
+            [("都江堰半程马拉松", "filename"), ("我的晨骑", "user")],
+        )
+
     def test_activity_detail_does_not_parse_fit_on_display_path(self):
         main.ensure_activity_sync_schema()
         activity = self._activity("detail_display.fit")
@@ -3866,6 +3995,7 @@ class TestFitSync(unittest.TestCase):
             profile_backend.clean_activity_filename_title("雅安市 骑行_23535321841-1-1.fit"),
             "雅安市 骑行",
         )
+        self.assertFalse(profile_backend._is_technical_activity_title("2026成都马拉松.fit"))
         self.assertEqual(profile_backend.clean_activity_filename_title("2026都江堰半程马拉松.fit"), "2026都江堰半程马拉松")
         self.assertEqual(profile_backend.clean_activity_filename_title("环法第21赛段.fit"), "环法第21赛段")
 

@@ -68,6 +68,16 @@ class TestActivityDetailMultiSportContract(unittest.TestCase):
             },
         )
 
+    def test_cycling_lap_contract_matches_backend_columns(self):
+        from main import resolve_lap_columns
+
+        self.assertEqual(
+            resolve_lap_columns("cycling"),
+            self.contract["cycling_detail_lap_columns"],
+        )
+        for field in ("avg_speed_mps", "avg_power", "max_power", "normalized_power", "total_ascent"):
+            self.assertIn(field, self.contract["cycling_detail_lap_row_fields"])
+
     def test_required_samples_have_explicit_detail_and_review_routes(self):
         expected = {
             "running": ("endurance_outdoor", "endurance_outdoor"),
