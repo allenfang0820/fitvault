@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import importlib.metadata
 import logging
 import math
 import os
@@ -59,6 +60,8 @@ from metrics_registry import (
 DEBUG_MODE = False
 DEFAULT_APP_VERSION = "V2.0"
 RELEASE_INFO_FILENAME = "release_info.json"
+GARMIN_FIT_SDK_PACKAGE_NAME = "garmin-fit-sdk"
+DEVICE_NAME_REFRESH_STATE_KEY = "garmin_fit_sdk_device_name_refresh"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -5900,6 +5903,39 @@ _WEATHER_BACKFILL_STATUS: dict[str, Any] = {
 _WEATHER_BACKFILL_THREAD: threading.Thread | None = None
 _WEATHER_BACKFILL_TIMER: threading.Timer | None = None
 
+DEVICE_NAME_REFRESH_STARTUP_DELAY_SEC = 10.0
+DEVICE_NAME_REFRESH_BATCH_LIMIT = 50
+DEVICE_NAME_REFRESH_STATE_SDK_VERSION_KEY = "garmin_fit_sdk_version"
+DEVICE_NAME_REFRESH_STATE_LAST_RUN_AT_KEY = "last_run_at"
+DEVICE_NAME_REFRESH_STATE_LAST_UPDATED_AT_KEY = "last_updated_at"
+DEVICE_NAME_REFRESH_STATE_LAST_SUMMARY_KEY = "last_summary"
+DEVICE_NAME_REFRESH_STATE_LAST_ERROR_KEY = "last_error"
+_DEVICE_NAME_REFRESH_LOCK = threading.Lock()
+_DEVICE_NAME_REFRESH_STATUS: dict[str, Any] = {
+    "running": False,
+    "scheduled": False,
+    "current_sdk_version": "",
+    "last_processed_sdk_version": "",
+    "should_run": False,
+    "mapping_refreshable_count": 0,
+    "garmin_fit_reparse_candidate_count": 0,
+    "coros_mapping_refreshable_count": 0,
+    "missing_file_count": 0,
+    "updated": 0,
+    "mapping_updated": 0,
+    "fit_reparse_updated": 0,
+    "skipped_missing_file": 0,
+    "failed": 0,
+    "limited": False,
+    "started_at": 0.0,
+    "finished_at": 0.0,
+    "scheduled_at": 0.0,
+    "scheduled_delay_sec": 0.0,
+    "error": "",
+}
+_DEVICE_NAME_REFRESH_THREAD: threading.Thread | None = None
+_DEVICE_NAME_REFRESH_TIMER: threading.Timer | None = None
+
 
 def _normalized_power_backfill_status() -> dict[str, Any]:
     with _NP_BACKFILL_LOCK:
@@ -5909,6 +5945,520 @@ def _normalized_power_backfill_status() -> dict[str, Any]:
 def _weather_backfill_status() -> dict[str, Any]:
     with _WEATHER_BACKFILL_LOCK:
         return dict(_WEATHER_BACKFILL_STATUS)
+
+
+def _current_garmin_fit_sdk_version() -> str:
+    try:
+        return str(importlib.metadata.version(GARMIN_FIT_SDK_PACKAGE_NAME)).strip()
+    except Exception:
+        return ""
+
+
+def _device_name_refresh_state() -> dict[str, Any]:
+    state = profile_backend.read_sync_state()
+    raw = state.get(DEVICE_NAME_REFRESH_STATE_KEY)
+    return dict(raw) if isinstance(raw, dict) else {}
+
+
+def _write_device_name_refresh_state(updates: dict[str, Any]) -> None:
+    state = profile_backend.read_sync_state()
+    current = state.get(DEVICE_NAME_REFRESH_STATE_KEY)
+    payload = dict(current) if isinstance(current, dict) else {}
+    payload.update(updates)
+    state[DEVICE_NAME_REFRESH_STATE_KEY] = payload
+    profile_backend.write_sync_state(state)
+
+
+def _build_device_name_refresh_status() -> dict[str, Any]:
+    state = _device_name_refresh_state()
+    current_version = _current_garmin_fit_sdk_version()
+    last_processed = str(state.get(DEVICE_NAME_REFRESH_STATE_SDK_VERSION_KEY) or "").strip()
+    with _DEVICE_NAME_REFRESH_LOCK:
+        status = dict(_DEVICE_NAME_REFRESH_STATUS)
+    status.update({
+        "current_sdk_version": current_version,
+        "last_processed_sdk_version": last_processed,
+        "should_run": bool(current_version) and current_version != last_processed,
+        "state": state,
+    })
+    return status
+
+
+def _device_name_refresh_candidate_sql() -> tuple[str, list[Any]]:
+    where = """
+          deleted_at IS NULL
+          AND CAST(COALESCE(is_mock, 0) AS INTEGER) = 0
+          AND COALESCE(source_type, 'fit_sdk') = 'fit_sdk'
+          AND lower(COALESCE(device_vendor, '')) = 'garmin'
+          AND COALESCE(file_path, '') != ''
+          AND (
+              COALESCE(device_name, '') = ''
+              OR lower(COALESCE(device_name, '')) IN ('unknown', 'unknown device', 'none')
+              OR COALESCE(device_mapping_status, '') != 'resolved'
+          )
+    """
+    return where, []
+
+
+def _query_device_name_refresh_candidates(
+    conn: sqlite3.Connection,
+    limit: int,
+) -> list[dict[str, Any]]:
+    where_sql, params = _device_name_refresh_candidate_sql()
+    rows = conn.execute(
+        f"""
+        SELECT id, file_path, device_name, device_vendor, device_product_key,
+               device_product_id, device_product_name, device_product_hint,
+               device_serial, device_mapping_status
+        FROM activities
+        WHERE {where_sql}
+        ORDER BY COALESCE(start_time, updated_at) DESC, id DESC
+        LIMIT ?
+        """,
+        (*params, max(0, int(limit))),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def _count_device_name_refresh_garmin_reparse_candidates(conn: sqlite3.Connection) -> int:
+    where_sql, params = _device_name_refresh_candidate_sql()
+    row = conn.execute(
+        f"SELECT COUNT(*) FROM activities WHERE {where_sql}",
+        tuple(params),
+    ).fetchone()
+    return int(row[0] if row else 0)
+
+
+def _count_device_name_refresh_missing_file_candidates(conn: sqlite3.Connection) -> int:
+    rows = conn.execute(
+        """
+        SELECT file_path
+        FROM activities
+        WHERE deleted_at IS NULL
+          AND CAST(COALESCE(is_mock, 0) AS INTEGER) = 0
+          AND COALESCE(source_type, 'fit_sdk') = 'fit_sdk'
+          AND lower(COALESCE(device_vendor, '')) = 'garmin'
+          AND (
+              COALESCE(device_name, '') = ''
+              OR lower(COALESCE(device_name, '')) IN ('unknown', 'unknown device', 'none')
+              OR COALESCE(device_mapping_status, '') != 'resolved'
+          )
+        """
+    ).fetchall()
+    missing = 0
+    for row in rows:
+        file_path = str((row[0] if not isinstance(row, sqlite3.Row) else row["file_path"]) or "").strip()
+        if not file_path or not Path(file_path).expanduser().is_file():
+            missing += 1
+    return missing
+
+
+def _extract_device_resolution_from_fit_path(resolved_path: str) -> dict[str, Any]:
+    path = Path(str(resolved_path or "")).expanduser()
+    if not path.is_file():
+        return resolve_device_display_name({}, None)
+    try:
+        from garmin_fit_sdk import Decoder, Stream
+
+        fit_stream = Stream.from_file(str(path))
+        fit_msgs, _ = Decoder(fit_stream).read()
+        return _resolve_device_display_for_sync(list(fit_msgs.get("file_id_mesgs", [])))
+    except Exception:
+        try:
+            from fitparse import FitFile
+
+            fit = FitFile(str(path))
+            file_id_mesgs = []
+            for msg in fit.get_messages("file_id"):
+                file_id_mesgs.append({field.name: field.value for field in msg})
+                break
+            return _resolve_device_display_for_sync(file_id_mesgs)
+        except Exception:
+            return resolve_device_display_name({}, None)
+
+
+def device_name_refresh_after_sdk_upgrade_dry_run(limit: int = DEVICE_NAME_REFRESH_BATCH_LIMIT) -> dict[str, Any]:
+    current_version = _current_garmin_fit_sdk_version()
+    state = _device_name_refresh_state()
+    last_processed = str(state.get(DEVICE_NAME_REFRESH_STATE_SDK_VERSION_KEY) or "").strip()
+    should_run = bool(current_version) and current_version != last_processed
+    if not should_run:
+        return {
+            "ok": True,
+            "current_sdk_version": current_version,
+            "last_processed_sdk_version": last_processed,
+            "should_run": False,
+            "mapping_refreshable_count": 0,
+            "garmin_fit_reparse_candidate_count": 0,
+            "coros_mapping_refreshable_count": 0,
+            "missing_file_count": 0,
+            "samples": [],
+        }
+
+    conn = profile_backend._conn()
+    try:
+        mapping_preview = device_product_mapping_dry_run(limit=limit, conn=conn)
+        total_garmin_candidates = _count_device_name_refresh_garmin_reparse_candidates(conn)
+        missing_file_count = _count_device_name_refresh_missing_file_candidates(conn)
+        candidates = _query_device_name_refresh_candidates(conn, limit)
+        samples: list[dict[str, Any]] = []
+        for row in candidates:
+            file_path = str(row.get("file_path") or "").strip()
+            if not file_path or not Path(file_path).expanduser().is_file():
+                continue
+            identity = extract_device_identity_from_persisted_fields(row)
+            resolution = resolve_device_display_name(identity, conn)
+            if str(resolution.get("mapping_status") or "") != "resolved":
+                continue
+            samples.append(
+                {
+                    "id": int(row.get("id") or 0),
+                    "vendor": str(row.get("device_vendor") or "unknown"),
+                    "from": str(row.get("device_name") or ""),
+                    "to": str(resolution.get("device_name") or ""),
+                    "path": "fit_reparse" if str(row.get("device_vendor") or "").strip().lower() == "garmin" else "mapping_or_profile",
+                    "will_reparse_fit": str(row.get("device_vendor") or "").strip().lower() == "garmin",
+                }
+            )
+        coros_refreshable = sum(
+            int(item.get("refreshable_count") or 0)
+            for item in (mapping_preview.get("by_product_key") or [])
+            if str(item.get("vendor") or "").strip().lower() == "coros"
+        )
+        return {
+            "ok": True,
+            "current_sdk_version": current_version,
+            "last_processed_sdk_version": last_processed,
+            "should_run": True,
+            "mapping_refreshable_count": int(mapping_preview.get("refreshable_count") or 0),
+            "garmin_fit_reparse_candidate_count": total_garmin_candidates,
+            "coros_mapping_refreshable_count": coros_refreshable,
+            "missing_file_count": missing_file_count,
+            "samples": samples[: max(0, int(limit))],
+        }
+    finally:
+        conn.close()
+
+
+def run_device_name_refresh_after_sdk_upgrade_once(
+    limit: int = DEVICE_NAME_REFRESH_BATCH_LIMIT,
+    *,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    budget = max(0, int(limit))
+    current_version = _current_garmin_fit_sdk_version()
+    state = _device_name_refresh_state()
+    last_processed = str(state.get(DEVICE_NAME_REFRESH_STATE_SDK_VERSION_KEY) or "").strip()
+    should_run = bool(current_version) and current_version != last_processed
+    started_at = time.time()
+    result = {
+        "ok": True,
+        "current_sdk_version": current_version,
+        "last_processed_sdk_version": last_processed,
+        "should_run": should_run,
+        "mapping_refreshable_count": 0,
+        "garmin_fit_reparse_candidate_count": 0,
+        "coros_mapping_refreshable_count": 0,
+        "missing_file_count": 0,
+        "updated": 0,
+        "mapping_updated": 0,
+        "fit_reparse_updated": 0,
+        "skipped_missing_file": 0,
+        "failed": 0,
+        "limited": False,
+        "started_at": started_at,
+        "finished_at": 0.0,
+        "error": "",
+        "samples": [],
+    }
+    with _DEVICE_NAME_REFRESH_LOCK:
+        _DEVICE_NAME_REFRESH_STATUS.update({
+            "running": not dry_run and should_run,
+            "scheduled": False,
+            "current_sdk_version": current_version,
+            "last_processed_sdk_version": last_processed,
+            "should_run": should_run,
+            "started_at": started_at,
+            "finished_at": 0.0,
+            "error": "",
+        })
+    if not should_run:
+        result["finished_at"] = time.time()
+        with _DEVICE_NAME_REFRESH_LOCK:
+            _DEVICE_NAME_REFRESH_STATUS.update(result)
+            _DEVICE_NAME_REFRESH_STATUS["running"] = False
+        return result
+    conn = profile_backend._conn()
+    try:
+        mapping_preview = device_product_mapping_dry_run(limit=budget, conn=conn)
+        result["mapping_refreshable_count"] = int(mapping_preview.get("refreshable_count") or 0)
+        result["coros_mapping_refreshable_count"] = sum(
+            int(item.get("refreshable_count") or 0)
+            for item in (mapping_preview.get("by_product_key") or [])
+            if str(item.get("vendor") or "").strip().lower() == "coros"
+        )
+        if dry_run:
+            result["garmin_fit_reparse_candidate_count"] = _count_device_name_refresh_garmin_reparse_candidates(conn)
+            result["missing_file_count"] = _count_device_name_refresh_missing_file_candidates(conn)
+            dry_candidates = _query_device_name_refresh_candidates(conn, budget)
+            for row in dry_candidates:
+                file_path = str(row.get("file_path") or "").strip()
+                if not file_path or not Path(file_path).expanduser().is_file():
+                    continue
+                identity = extract_device_identity_from_persisted_fields(row)
+                resolution = resolve_device_display_name(identity, conn)
+                if str(resolution.get("mapping_status") or "") != "resolved":
+                    continue
+                result["samples"].append(
+                    {
+                        "id": int(row.get("id") or 0),
+                        "vendor": str(row.get("device_vendor") or "unknown"),
+                        "from": str(row.get("device_name") or ""),
+                        "to": str(resolution.get("device_name") or ""),
+                        "path": "fit_reparse" if str(row.get("device_vendor") or "").strip().lower() == "garmin" else "mapping_or_profile",
+                        "will_reparse_fit": str(row.get("device_vendor") or "").strip().lower() == "garmin",
+                    }
+                )
+            result["limited"] = False
+            result["finished_at"] = time.time()
+            with _DEVICE_NAME_REFRESH_LOCK:
+                _DEVICE_NAME_REFRESH_STATUS.update(result)
+                _DEVICE_NAME_REFRESH_STATUS["running"] = False
+            return result
+
+        mapping_result = backfill_device_product_mappings(limit=budget, dry_run=False, conn=conn)
+        mapping_updated = int(mapping_result.get("updated") or 0)
+        result["mapping_updated"] = mapping_updated
+        result["updated"] += mapping_updated
+
+        remaining_budget = max(0, budget - mapping_updated)
+        result["garmin_fit_reparse_candidate_count"] = _count_device_name_refresh_garmin_reparse_candidates(conn)
+        result["missing_file_count"] = _count_device_name_refresh_missing_file_candidates(conn)
+        candidates = _query_device_name_refresh_candidates(conn, remaining_budget)
+        garmin_candidates = [row for row in candidates if str(row.get("device_vendor") or "").strip().lower() == "garmin"]
+        fit_updated = 0
+        skipped_missing_file = 0
+        failed = 0
+        processed = 0
+        for row in garmin_candidates:
+            if processed >= remaining_budget:
+                break
+            processed += 1
+            file_path = str(row.get("file_path") or "").strip()
+            if not file_path or not Path(file_path).expanduser().is_file():
+                skipped_missing_file += 1
+                continue
+            resolution = _extract_device_resolution_from_fit_path(file_path)
+            if str(resolution.get("mapping_status") or "") != "resolved":
+                continue
+            device_name = str(resolution.get("device_name") or "").strip()
+            if not device_name or device_name == "Unknown Device":
+                continue
+            try:
+                conn.execute(
+                    """
+                    UPDATE activities
+                    SET device_name = ?,
+                        device_vendor = ?,
+                        device_product_key = ?,
+                        device_product_id = ?,
+                        device_product_name = ?,
+                        device_product_hint = ?,
+                        device_serial = ?,
+                        device_mapping_status = ?,
+                        updated_at = COALESCE(updated_at, datetime('now'))
+                    WHERE id = ?
+                    """,
+                    (
+                        device_name,
+                        resolution.get("vendor") or "garmin",
+                        resolution.get("product_key") or "",
+                        resolution.get("product_id") or "",
+                        resolution.get("product_name") or "",
+                        resolution.get("product_hint") or "",
+                        resolution.get("serial") or "",
+                        resolution.get("mapping_status") or "resolved",
+                        int(row["id"]),
+                    ),
+                )
+                fit_updated += 1
+                result["updated"] += 1
+            except Exception:
+                failed += 1
+        conn.commit()
+        result["fit_reparse_updated"] = fit_updated
+        result["skipped_missing_file"] = skipped_missing_file
+        result["failed"] = failed
+        result["limited"] = (
+            int(result.get("mapping_refreshable_count") or 0) > mapping_updated
+            or int(result.get("garmin_fit_reparse_candidate_count") or 0) > processed
+        )
+        result["samples"] = [
+            {
+                "id": int(row.get("id") or 0),
+                "vendor": str(row.get("device_vendor") or "unknown"),
+                "from": str(row.get("device_name") or ""),
+                "path": str(row.get("file_path") or ""),
+                "will_reparse_fit": True,
+            }
+            for row in garmin_candidates[: min(len(garmin_candidates), max(0, int(limit)))]
+        ]
+        result["finished_at"] = time.time()
+        if not result["limited"]:
+            _write_device_name_refresh_state({
+                DEVICE_NAME_REFRESH_STATE_SDK_VERSION_KEY: current_version,
+                DEVICE_NAME_REFRESH_STATE_LAST_RUN_AT_KEY: datetime.now().isoformat(),
+                DEVICE_NAME_REFRESH_STATE_LAST_UPDATED_AT_KEY: datetime.now().isoformat(),
+                DEVICE_NAME_REFRESH_STATE_LAST_SUMMARY_KEY: json.dumps(result, ensure_ascii=False, default=str),
+                DEVICE_NAME_REFRESH_STATE_LAST_ERROR_KEY: "",
+            })
+        else:
+            _write_device_name_refresh_state({
+                DEVICE_NAME_REFRESH_STATE_LAST_RUN_AT_KEY: datetime.now().isoformat(),
+                DEVICE_NAME_REFRESH_STATE_LAST_UPDATED_AT_KEY: datetime.now().isoformat(),
+                DEVICE_NAME_REFRESH_STATE_LAST_SUMMARY_KEY: json.dumps(result, ensure_ascii=False, default=str),
+                DEVICE_NAME_REFRESH_STATE_LAST_ERROR_KEY: "",
+            })
+        with _DEVICE_NAME_REFRESH_LOCK:
+            _DEVICE_NAME_REFRESH_STATUS.update(result)
+            _DEVICE_NAME_REFRESH_STATUS["running"] = False
+        return result
+    except Exception as exc:
+        result["ok"] = False
+        result["error"] = str(exc)
+        result["failed"] = result.get("failed", 0) + 1
+        result["finished_at"] = time.time()
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        _write_device_name_refresh_state({
+            DEVICE_NAME_REFRESH_STATE_LAST_RUN_AT_KEY: datetime.now().isoformat(),
+            DEVICE_NAME_REFRESH_STATE_LAST_UPDATED_AT_KEY: datetime.now().isoformat(),
+            DEVICE_NAME_REFRESH_STATE_LAST_SUMMARY_KEY: json.dumps(result, ensure_ascii=False, default=str),
+            DEVICE_NAME_REFRESH_STATE_LAST_ERROR_KEY: str(exc),
+        })
+        with _DEVICE_NAME_REFRESH_LOCK:
+            _DEVICE_NAME_REFRESH_STATUS.update(result)
+            _DEVICE_NAME_REFRESH_STATUS["running"] = False
+        return result
+    finally:
+        conn.close()
+
+
+def _start_device_name_refresh_after_sdk_upgrade_if_needed(
+    limit: int = DEVICE_NAME_REFRESH_BATCH_LIMIT,
+    *,
+    force: bool = False,
+) -> dict[str, Any]:
+    global _DEVICE_NAME_REFRESH_THREAD
+    current_version = _current_garmin_fit_sdk_version()
+    state = _device_name_refresh_state()
+    last_processed = str(state.get(DEVICE_NAME_REFRESH_STATE_SDK_VERSION_KEY) or "").strip()
+    should_run = bool(current_version) and (force or current_version != last_processed)
+    if not should_run:
+        with _DEVICE_NAME_REFRESH_LOCK:
+            _DEVICE_NAME_REFRESH_STATUS.update({
+                "running": False,
+                "scheduled": False,
+                "current_sdk_version": current_version,
+                "last_processed_sdk_version": last_processed,
+                "should_run": False,
+                "error": "",
+            })
+            return dict(_DEVICE_NAME_REFRESH_STATUS)
+
+    with _DEVICE_NAME_REFRESH_LOCK:
+        if _DEVICE_NAME_REFRESH_STATUS.get("running"):
+            return dict(_DEVICE_NAME_REFRESH_STATUS)
+
+    def _run() -> None:
+        global _DEVICE_NAME_REFRESH_TIMER
+        try:
+            run_device_name_refresh_after_sdk_upgrade_once(limit=limit, dry_run=False)
+        finally:
+            with _DEVICE_NAME_REFRESH_LOCK:
+                _DEVICE_NAME_REFRESH_STATUS["scheduled"] = False
+                _DEVICE_NAME_REFRESH_TIMER = None
+
+    _DEVICE_NAME_REFRESH_THREAD = threading.Thread(
+        target=_run,
+        daemon=True,
+        name="device-name-refresh-after-sdk-upgrade",
+    )
+    _DEVICE_NAME_REFRESH_THREAD.start()
+    with _DEVICE_NAME_REFRESH_LOCK:
+        _DEVICE_NAME_REFRESH_STATUS.update({
+            "running": True,
+            "scheduled": False,
+            "current_sdk_version": current_version,
+            "last_processed_sdk_version": last_processed,
+            "should_run": True,
+            "started_at": time.time(),
+            "error": "",
+        })
+        return dict(_DEVICE_NAME_REFRESH_STATUS)
+
+
+def _schedule_device_name_refresh_after_sdk_upgrade_if_needed(
+    delay_sec: float = DEVICE_NAME_REFRESH_STARTUP_DELAY_SEC,
+    *,
+    force: bool = False,
+) -> dict[str, Any]:
+    global _DEVICE_NAME_REFRESH_TIMER
+    current_version = _current_garmin_fit_sdk_version()
+    state = _device_name_refresh_state()
+    last_processed = str(state.get(DEVICE_NAME_REFRESH_STATE_SDK_VERSION_KEY) or "").strip()
+    should_run = bool(current_version) and (force or current_version != last_processed)
+    if not should_run:
+        with _DEVICE_NAME_REFRESH_LOCK:
+            _DEVICE_NAME_REFRESH_STATUS.update({
+                "scheduled": False,
+                "running": False,
+                "current_sdk_version": current_version,
+                "last_processed_sdk_version": last_processed,
+                "should_run": False,
+                "error": "",
+            })
+            return dict(_DEVICE_NAME_REFRESH_STATUS)
+    with _DEVICE_NAME_REFRESH_LOCK:
+        if _DEVICE_NAME_REFRESH_STATUS.get("running"):
+            return dict(_DEVICE_NAME_REFRESH_STATUS)
+        if _DEVICE_NAME_REFRESH_TIMER is not None and _DEVICE_NAME_REFRESH_TIMER.is_alive():
+            status = dict(_DEVICE_NAME_REFRESH_STATUS)
+            status["scheduled"] = True
+            return status
+        _DEVICE_NAME_REFRESH_STATUS.update({
+            "scheduled": True,
+            "scheduled_at": time.time(),
+            "scheduled_delay_sec": float(delay_sec),
+            "current_sdk_version": current_version,
+            "last_processed_sdk_version": last_processed,
+            "should_run": True,
+            "error": "",
+        })
+
+    def _start_scheduled() -> None:
+        global _DEVICE_NAME_REFRESH_TIMER
+        try:
+            _start_device_name_refresh_after_sdk_upgrade_if_needed(limit=DEVICE_NAME_REFRESH_BATCH_LIMIT, force=False)
+        finally:
+            with _DEVICE_NAME_REFRESH_LOCK:
+                _DEVICE_NAME_REFRESH_TIMER = None
+                if not _DEVICE_NAME_REFRESH_STATUS.get("running"):
+                    _DEVICE_NAME_REFRESH_STATUS["scheduled"] = False
+
+    timer = threading.Timer(max(0.0, float(delay_sec)), _start_scheduled)
+    timer.daemon = True
+    with _DEVICE_NAME_REFRESH_LOCK:
+        if _DEVICE_NAME_REFRESH_TIMER is not None and _DEVICE_NAME_REFRESH_TIMER.is_alive():
+            status = dict(_DEVICE_NAME_REFRESH_STATUS)
+            status["scheduled"] = True
+            return status
+        _DEVICE_NAME_REFRESH_TIMER = timer
+        status = dict(_DEVICE_NAME_REFRESH_STATUS)
+    timer.start()
+    return status
 
 
 def _read_normalized_power_fast_from_fit(file_path: Any) -> int | None:
@@ -7672,25 +8222,7 @@ def _parse_fit_activity_for_sync(file_path: Path) -> dict[str, Any]:
     )
 
     # 从 FIT 文件解析设备事实,再通过本地产品映射表生成展示型号
-    device_resolution = resolve_device_display_name({}, None)
-    try:
-        from garmin_fit_sdk import Decoder, Stream
-
-        fit_stream = Stream.from_file(resolved_path)
-        fit_msgs, _ = Decoder(fit_stream).read()
-        device_resolution = _resolve_device_display_for_sync(list(fit_msgs.get("file_id_mesgs", [])))
-    except Exception:
-        try:
-            from fitparse import FitFile
-
-            fit = FitFile(str(resolved_path))
-            file_id_mesgs = []
-            for msg in fit.get_messages("file_id"):
-                file_id_mesgs.append({field.name: field.value for field in msg})
-                break
-            device_resolution = _resolve_device_display_for_sync(file_id_mesgs)
-        except Exception:
-            device_resolution = resolve_device_display_name({}, None)
+    device_resolution = _extract_device_resolution_from_fit_path(resolved_path)
     result["device_name"] = device_resolution.get("device_name") or "Unknown Device"
     result["device_vendor"] = device_resolution.get("vendor") or "unknown"
     result["device_product_key"] = device_resolution.get("product_key") or ""
@@ -12001,6 +12533,7 @@ class Api:
         self._schedule_profile_startup_sync()
         self._schedule_fatigue_review_numeric_prewarm()
         self._schedule_region_enrichment()
+        _schedule_device_name_refresh_after_sdk_upgrade_if_needed()
         return {"ok": True}
 
     def get_startup_timeline(self) -> dict:

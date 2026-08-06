@@ -193,10 +193,12 @@ class TestDeviceNameResolver(unittest.TestCase):
 
     def test_import_device_fallback_still_delegates_to_resolver(self):
         src = inspect.getsource(main._parse_fit_activity_for_sync)
-        self.assertIn("from fitparse import FitFile", src)
-        self.assertIn("_resolve_device_display_for_sync", src)
-        self.assertIn("file_id_mesgs", src)
-        self.assertNotIn('"Garmin Product"', src)
+        helper_src = inspect.getsource(main._extract_device_resolution_from_fit_path)
+        self.assertIn("_extract_device_resolution_from_fit_path", src)
+        self.assertIn("from fitparse import FitFile", helper_src)
+        self.assertIn("_resolve_device_display_for_sync", helper_src)
+        self.assertIn("file_id_mesgs", helper_src)
+        self.assertNotIn('"Garmin Product"', src + helper_src)
 
 
 if __name__ == "__main__":
