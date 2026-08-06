@@ -1,0 +1,9 @@
+{
+  "checked_at": "2026-08-06T15:03:29Z",
+  "current_version": "21.208.0",
+  "latest_stable_version": "21.212.0",
+  "ok": true,
+  "package": "garmin-fit-sdk",
+  "source": "pypi",
+  "update_available": true
+}
