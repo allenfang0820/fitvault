@@ -35,6 +35,8 @@ class TestPackagingDiagnostics(unittest.TestCase):
         self.assertIn("certifi==2026.6.17", constraints)
         self.assertIn("-r requirements.txt -c constraints.txt", shell_script)
         self.assertIn("-r requirements.txt -c constraints.txt", ps_script)
+        self.assertIn("pip install pytest", shell_script)
+        self.assertIn("pip install pytest", ps_script)
         self.assertIn("${PYTHON:-}", shell_script)
         self.assertIn(".venv312/bin/python", shell_script)
         self.assertIn("sys.executable", shell_script)

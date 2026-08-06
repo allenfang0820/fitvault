@@ -24,6 +24,7 @@ print(f"[packaging-deps] python_version={sys.version.split()[0]}")
 PY
 
 "${PYTHON_BIN}" -m pip install -r requirements.txt -c constraints.txt
+"${PYTHON_BIN}" -m pip install pytest
 
 "${PYTHON_BIN}" - <<'PY'
 import importlib

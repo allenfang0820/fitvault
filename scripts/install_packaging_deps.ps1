@@ -22,6 +22,7 @@ Write-Host "[packaging-deps] requested_python=$Python"
 & $Python -c "import sys; print(f'[packaging-deps] python_executable={sys.executable}'); print(f'[packaging-deps] python_version={sys.version.split()[0]}')"
 
 & $Python -m pip install -r requirements.txt -c constraints.txt
+& $Python -m pip install pytest
 
 & $Python -c @"
 import importlib
