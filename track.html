@@ -9837,7 +9837,7 @@
                             </div>
                         </div>
                         <div class="career-section-title" style="margin-top:12px;">
-                            <span>年度结构</span>
+                            <span>年度回顾</span>
                             <span id="career-seasons-status-text" aria-live="polite" hidden></span>
                         </div>
                         <div class="career-season-strip" id="career-season-strip" data-career-seasons>
@@ -12785,15 +12785,15 @@
         const activityId = raw.activity_id == null ? raw.activityId : raw.activity_id;
         const raceId = raw.race_id == null ? raw.raceId : raw.race_id;
         const sportLabel = raw.sport_label == null ? raw.sportLabel : raw.sport_label;
+        const eventType = raw.event_type == null ? raw.eventType : raw.event_type;
+        const highlightReason = raw.highlight_reason == null ? raw.highlightReason : raw.highlight_reason;
         const eventDate = raw.event_date == null ? raw.eventDate : raw.event_date;
         const distanceDisplay = raw.distance_display == null ? raw.distanceDisplay : raw.distance_display;
         const durationDisplay = raw.duration_display == null ? raw.durationDisplay : raw.duration_display;
         const imageRef = normalizeCareerSafeImagePreview(media.image_ref || media.imageRef || '');
         const hasPhoto = media.has_photo == null ? !!media.hasPhoto : !!media.has_photo;
         const slides = Array.isArray(raw.slides)
-            ? raw.slides.map(normalizeCareerHeroBanner).filter(function(slide) {
-                return slide && slide.media && slide.media.hasPhoto && slide.media.imageRef;
-            }).slice(0, 5)
+            ? raw.slides.map(normalizeCareerHeroBanner).filter(Boolean).slice(0, 10)
             : [];
         return {
             mode: String(raw.mode || 'empty'),
@@ -12803,6 +12803,8 @@
             subtitle: String(raw.subtitle || '导入活动后，脉图会在这里展示你的代表瞬间'),
             sport: String(raw.sport || 'unknown'),
             sportLabel: String(sportLabel || '运动'),
+            eventType: String(eventType || ''),
+            highlightReason: String(highlightReason || ''),
             eventDate: String(eventDate || ''),
             city: String(raw.city || ''),
             country: String(raw.country || ''),
@@ -13060,7 +13062,7 @@
 
     function careerHeroSlideSignature(slides) {
         return (Array.isArray(slides) ? slides : []).map(function(slide) {
-            return [slide.activityId || '', slide.raceId || '', slide.media && slide.media.imageRef ? slide.media.imageRef.length : 0].join(':');
+            return [slide.activityId || '', slide.raceId || '', slide.eventType || '', slide.highlightReason || '', slide.media && slide.media.imageRef ? slide.media.imageRef.length : 0].join(':');
         }).join('|');
     }
 
@@ -13164,13 +13166,17 @@
             artEl.setAttribute('data-career-hero-art-text', artText);
         }
         setCareerHeroField('title', activeHero.title || '等待第一个运动瞬间');
-        setCareerHeroField('subtitle', activeHero.subtitle || '导入活动后，脉图会在这里展示你的代表瞬间');
+        const subtitleParts = [activeHero.highlightReason, activeHero.subtitle].filter(Boolean);
+        setCareerHeroField('subtitle', subtitleParts.length ? subtitleParts.join(' · ') : '导入活动后，脉图会在这里展示你的代表瞬间');
         setCareerHeroField('date', formatCareerDate(activeHero.eventDate));
         setCareerHeroField('sport', activeHero.sportLabel || '运动');
         setCareerHeroField('distance', activeHero.distanceDisplay || '--');
         setCareerHeroField('duration', activeHero.durationDisplay || '--');
         const badgeEl = document.getElementById('career-banner-badges');
-        const badges = Array.isArray(activeHero.badges) && activeHero.badges.length ? activeHero.badges : ['运动瞬间'];
+        const badges = Array.isArray(activeHero.badges) && activeHero.badges.length ? activeHero.badges.slice() : ['运动瞬间'];
+        if (activeHero.highlightReason && badges.indexOf(activeHero.highlightReason) < 0) {
+            badges.unshift(activeHero.highlightReason);
+        }
         if (badgeEl) {
             badgeEl.innerHTML = badges.map(function(badge) {
                 return '<span class="career-banner-badge">' + safeHtml(badge) + '</span>';
@@ -13390,7 +13396,7 @@
         const statusEl = document.getElementById('career-seasons-status-text');
         const stripEl = document.getElementById('career-season-strip');
         if (statusEl) statusEl.textContent = '';
-        if (stripEl) stripEl.innerHTML = '<div class="career-season-empty">正在加载年度结构</div>';
+        if (stripEl) stripEl.innerHTML = '<div class="career-season-empty">正在加载年度回顾</div>';
     }
 
     function renderCareerSeasonsError(message) {
@@ -13411,16 +13417,16 @@
         renderCareerSeasonsLoading();
         try {
             if (!window.pywebview || !window.pywebview.api || typeof window.pywebview.api.get_career_seasons !== 'function') {
-                throw new Error('年度结构接口暂不可用');
+                throw new Error('年度回顾接口暂不可用');
             }
             const res = await window.pywebview.api.get_career_seasons(filters || {});
-            const seasons = normalizeCareerSeasons(requireCareerApiData(res, '年度结构加载失败'));
+            const seasons = normalizeCareerSeasons(requireCareerApiData(res, '年度回顾加载失败'));
             appState.career.seasons = seasons;
             appState.career.seasonsLoading = false;
             renderCareerSeasons(seasons);
             return seasons;
         } catch (e) {
-            const message = e && e.message ? e.message : String(e || '年度结构加载失败');
+            const message = e && e.message ? e.message : String(e || '年度回顾加载失败');
             appState.career.seasonsLoading = false;
             appState.career.seasonsError = message;
             renderCareerSeasonsError(message);
@@ -15616,6 +15622,7 @@
             value: item.value == null ? null : item.value,
             valueUnit: String(item.value_unit || ''),
             meta: String(item.meta || ''),
+            highlightReason: String(item.highlight_reason || item.highlightReason || ''),
             priority: Number(item.priority || 0),
             pbBadgeScope: String(item.pb_badge_scope || 'none'),
             improvementSec: item.improvement_sec == null ? null : Number(item.improvement_sec),
@@ -15705,6 +15712,9 @@
 
     function careerTimelineNodeMeta(node) {
         if (!node) return '--';
+        if (node.highlightReason) {
+            return [formatCareerDate(node.date), node.highlightReason].filter(Boolean).join(' · ') || '--';
+        }
         if (node.meta) return [formatCareerDate(node.date), node.meta].filter(Boolean).join(' · ') || '--';
         if (node.type === 'race') {
             return [formatCareerDate(node.date), node.city, node.eventType, node.sport].filter(Boolean).join(' · ') || '--';
@@ -16116,12 +16126,17 @@
         const data = payload && payload.data && typeof payload.data === 'object' ? payload.data : (payload || {});
         const summary = data.summary && typeof data.summary === 'object' ? data.summary : {};
         const status = data.status && typeof data.status === 'object' ? data.status : {};
+        const albums = Array.isArray(data.albums)
+            ? data.albums.map(normalizeCareerMemoryAlbum).filter(function(album) {
+                return album && !album.isEmpty && album.photoCount > 0;
+            })
+            : [];
         return {
-            albums: Array.isArray(data.albums) ? data.albums.map(normalizeCareerMemoryAlbum).filter(Boolean) : [],
+            albums: albums,
             summary: {
-                albumCount: Number(summary.album_count || 0),
+                albumCount: albums.length,
                 photoCount: Number(summary.photo_count || 0),
-                emptyAlbumCount: Number(summary.empty_album_count || 0),
+                emptyAlbumCount: 0,
                 coverCount: Number(summary.cover_count || 0)
             },
             filters: data.filters && typeof data.filters === 'object'

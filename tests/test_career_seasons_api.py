@@ -187,6 +187,8 @@ class TestCareerSeasonsApi(unittest.TestCase):
         conn = sqlite3.connect(":memory:")
         try:
             _create_activity_table(conn)
+            conn.execute("ALTER TABLE activities ADD COLUMN title TEXT")
+            conn.execute("ALTER TABLE activities ADD COLUMN region_country TEXT")
             career_backend.ensure_career_schema(conn)
             _insert_activity(conn, id=1, start_time="2026-01-01T08:00:00+08:00", dist_km=10.0, duration=3600, sport_type="running", region_city="北京")
             _insert_activity(conn, id=2, start_time="2026-02-01T08:00:00+08:00", dist_km=5.0, duration=1800, sport_type="running", region_city="北京")
@@ -223,6 +225,63 @@ class TestCareerSeasonsApi(unittest.TestCase):
             self.assertNotIn("total_memory_count", result["summary"])
             self.assertTrue(result["status"]["data_ready"])
             _assert_forbidden_keys_absent(self, result)
+        finally:
+            conn.close()
+
+    def test_backend_counts_city_and_county_level_places_without_district_overcount(self):
+        conn = sqlite3.connect(":memory:")
+        try:
+            _create_activity_table(conn)
+            conn.execute("ALTER TABLE activities ADD COLUMN title TEXT")
+            conn.execute("ALTER TABLE activities ADD COLUMN region_country TEXT")
+            career_backend.ensure_career_schema(conn)
+            _insert_activity(
+                conn,
+                id=1,
+                title="20260205 0056 海口市 操场跑步",
+                start_time="2026-02-05T08:00:00+08:00",
+                region_city="秀英区",
+                region_country="中国",
+            )
+            _insert_activity(
+                conn,
+                id=2,
+                title="海口市 跑步",
+                start_time="2026-02-06T08:00:00+08:00",
+                region_city="海口市",
+                region_country="中国",
+            )
+            _insert_activity(
+                conn,
+                id=3,
+                title="名山区 骑行",
+                start_time="2026-02-07T08:00:00+08:00",
+                region_city="名山区",
+                region_country="中国",
+            )
+            _insert_activity(
+                conn,
+                id=4,
+                title="雅安市 骑行",
+                start_time="2026-02-08T08:00:00+08:00",
+                region_city="雅安市",
+                region_country="中国",
+            )
+            _insert_activity(
+                conn,
+                id=5,
+                title="奉节县 徒步",
+                start_time="2026-02-09T08:00:00+08:00",
+                region_city="奉节县",
+                region_country="中国",
+            )
+
+            result = career_backend.get_career_seasons(conn=conn)
+
+            season_2026 = result["seasons"][0]
+            self.assertEqual(season_2026["activity_count"], 5)
+            self.assertEqual(season_2026["city_count"], 3)
+            self.assertIn("覆盖 3 城", season_2026["highlights"])
         finally:
             conn.close()
 
@@ -404,7 +463,7 @@ class TestCareerSeasonsApi(unittest.TestCase):
         self.assertIn("function renderCareerSeasons", source)
         self.assertIn('id="career-season-strip"', source)
         self.assertIn("data-career-season-year", source)
-        self.assertIn("requireCareerApiData(res, '年度结构加载失败')", source)
+        self.assertIn("requireCareerApiData(res, '年度回顾加载失败')", source)
 
 
 if __name__ == "__main__":

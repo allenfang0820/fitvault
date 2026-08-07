@@ -1,11 +1,12 @@
 ---
 title: 脉图运动生涯系统（ACS）开发任务清单
-version: v0.2.0
+version: v0.3.0
 status: Status Reconciled Baseline
 source:
   - docs/脉图运动生涯系统（ACS）开发团队交付手册.md
+  - docs/脉图运动生涯系统（ACS）开发契约摘要.md
   - docs/acs_*_completion_report.md
-updated: 2026-07-09
+updated: 2026-08-07
 ---
 
 # 脉图运动生涯系统（ACS）开发任务清单
@@ -17,10 +18,10 @@ updated: 2026-07-09
 ## 0. 总原则
 
 1. `Activity` 是唯一事实源。
-2. `Resolver` 负责识别语义：赛事、PB、首次、里程碑。
-3. `ACS` 只负责组织运动生涯结构。
-4. 所有 ACS 卡片、赛事、PB、成就、记忆必须能回跳 Activity Detail。
-5. 低置信度事件只能进入候选区，不能污染正式时间轴。
+2. `Resolver` 负责识别语义：赛事、PB、首次、里程碑、代表活动。
+3. `ACS` 统一组织活动事件结构，Banner 与时间轴都只消费同一事件池，不允许各自发明规则。
+4. 所有 ACS 卡片、赛事、PB、成就、里程碑、记忆必须能回跳 Activity Detail。
+5. 低置信度事件只能进入候选区，不能污染正式时间轴，也不能伪装成 Banner 主事件。
 6. AI 只能消费 Career Snapshot，不得读取原始 FIT、points、track_json、SQLite schema 或本地文件路径。
 7. macOS / Windows 双系统都必须兼容：路径、SQLite、pywebview、中文文件名、中文标题、打包后读写权限和滚动性能。
 8. Windows 真机、Windows 打包、macOS 打包产物、真实数据人工验收未执行前，不得标记完成。
@@ -133,6 +134,27 @@ updated: 2026-07-09
   - 城市 / 国家足迹、最高海拔、最长单次、最大爬升、活跃年份等统计接入；`best_pb` 数据继续保留供 PB 档案与其他下钻入口使用。
   - 年度结构保留在 Banner 与统计区之后；年度卡片仅在 Overview 展示，覆盖后端返回的全部已有运动年份并按年份倒序排列，标题统一为“{year} 年度”，不展示“高光年 / 赛事年 / 记录年 / 空白年”等阶段评价。
   - 不返回 raw FIT、points、track_json、file_path、storage_ref、本地媒体路径或 SQLite schema。
+- [x] 代码闭环：`ACS-Overview-Highlight-Carousel` 统一活动事件池升级（Banner + Timeline 投影）。
+  - 目标：把 Overview 顶部和时间轴里程碑收敛到同一套活动事件机制上，让 Banner 只是精选投影，Timeline 是全量投影。
+  - 统一事件层：
+    - 赛事、PB、首次、里程碑、年度代表活动、各运动类型代表活动都从同一套事件规则产出。
+    - 同一 Activity 在 Banner 精选中只能出现一次；Timeline 保留赛事、PB、成就、里程碑等正式语义节点，但所有节点都必须来自同一事件规则并携带同一套事件字段。
+    - Banner 精选排序固定为：已确认 / 高置信赛事优先；有安全照片的赛事优先；PB / 记录突破优先于普通成就；年度最长距离、年度最长时长、年度最高海拔、年度最大爬升优先于普通运动类型代表；首次城市 / 国家作为地点类代表事件补位；同层级按代表性分值和时间倒序兜底。
+  - Banner / 轮播投影：
+    - `hero_banner.slides` 最多返回 10 条。
+    - 同一 `event_type` 最多 2 条，避免 10 条里只剩一种运动或一种语义。
+    - 每条 slide 必须包含 `activity_id`、`title`、`subtitle`、`badges`、`detail_link`、`event_type` 和可解释的 `highlight_reason` 字段。
+    - 非赛事 slide 必须明确标注为“代表活动 / 运动瞬间”，不得返回 `race_id` 或让前端误判为赛事。
+    - 赛事类 slide 可展示安全照片或标题艺术字；非赛事 slide 仅展示标题艺术字或数字卡，文案必须直接说明入选原因，例如“年度最长距离 · 140km 骑行”。
+    - 点击任意 slide 回跳 Activity Detail。
+  - 时间轴投影：
+    - Timeline 继续展示全量活动事件，不删除原有赛事、PB、首次、里程碑语义。
+    - Banner 使用的事件类型、标题、原因字段必须与 Timeline 共用，不允许前端分别猜测事件语义。
+  - 测试：
+    - 覆盖有赛事照片、无照片赛事、非赛事 140km 骑行、PB / 成就、城市首次、统一事件去重、同类型限额、10 条上限。
+    - 覆盖 Banner 与 Timeline 共用同一事件语义字段，前端不从 DOM / 标题 / 曲线自行推断赛事或高光。
+    - 更新 `docs/js_api_contract.json`、Overview API 测试和前端渲染测试。
+  - 完成证据：`career_backend.py` 以统一活动事件投影输出赛事、PB、成就、里程碑、年度代表、首次地点和运动类型代表活动；`track.html` 只消费 `event_type` / `highlight_reason`。自动化覆盖照片赛事、无照片赛事、140 km 非赛事骑行、PB / 成就、首次城市、同活动去重、同类型限额和 10 条上限。
 
 ## Phase 5：Timeline Engine
 
@@ -148,6 +170,7 @@ updated: 2026-07-09
   - 赛事
   - PB
   - 里程碑 / 成就
+- [x] 代码闭环：时间轴与 Overview Banner 共享活动事件语义字段，已由 `ACS-Overview-Highlight-Carousel` 统一事件池任务落实。
 - [x] 代码闭环：实现 `get_career_timeline` API。
 - [x] 轻量闭环：500+ 节点采用按月份分段渲染与渐进展开。
   - 后续真实用户数据达到更高规模时，再评估真正虚拟列表或后端分页。
@@ -324,6 +347,7 @@ updated: 2026-07-09
 - [x] 代码闭环：单张赛事 Banner 图片选择器已完成。
 - [x] 真实缩略图与安全预览代码闭环已完成。
 - [x] Race Map / 赛事足迹完整能力代码闭环已完成。
+- [x] 统一活动事件池升级（Banner + Timeline 投影）代码闭环已完成。
 - [ ] 真实 AI Career Insight 未完成。
 - [ ] Windows 打包后验证未完成。
 - [ ] Windows 真机验证运动生涯页面未完成。

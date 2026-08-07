@@ -77,7 +77,8 @@ CAREER_ACTIVITY_RACE_PHOTO_PREVIEW_DIRNAME = "activity_race_photo_preview"
 CAREER_ACTIVITY_RACE_PHOTO_THUMB_DIRNAME = "activity_race_photo_thumb"
 CAREER_BANNER_PHOTO_MAX_BYTES = 15 * 1024 * 1024
 CAREER_RACE_ARCHIVE_COVER_MAX_BYTES = CAREER_BANNER_PHOTO_MAX_BYTES
-CAREER_OVERVIEW_HERO_SLIDE_MAX_COUNT = 5
+CAREER_OVERVIEW_HERO_SLIDE_MAX_COUNT = 10
+CAREER_OVERVIEW_HERO_EVENT_TYPE_MAX_COUNT = 2
 CAREER_ACTIVITY_RACE_PHOTO_MAX_COUNT = 5
 CAREER_BANNER_IMAGE_MIME_BY_SUFFIX = {
     ".jpg": "image/jpeg",
@@ -89,6 +90,14 @@ CAREER_TIMELINE_MILESTONE_TYPES = {"milestone"}
 CAREER_TIMELINE_MILESTONE_ALIASES = {"achievement", "achievements"}
 CAREER_TIMELINE_RECORD_TYPES = {"record"}
 CAREER_TIMELINE_RECORD_FORMAL_EVENT_TYPES = {"activated", "activated_from_rebuild", "record_breaking", "user_confirmed"}
+CAREER_OVERVIEW_HERO_YEARLY_EVENT_TYPES = {
+    "year_longest_distance",
+    "year_longest_duration",
+    "year_highest_altitude",
+    "year_max_ascent",
+}
+CAREER_OVERVIEW_HERO_LOCATION_EVENT_TYPES = {"first_city", "first_country"}
+CAREER_OVERVIEW_HERO_SPORT_EVENT_TYPES = {"sport_representative"}
 RECORD_DERIVED_ACHIEVEMENT_SOURCE = "record_derived"
 RECORD_DERIVED_ACHIEVEMENT_RULE_VERSION = "records-v2-achievement-0.1"
 RECORD_DERIVED_ACHIEVEMENT_FORMAL_EVENT_TYPES = CAREER_TIMELINE_RECORD_FORMAL_EVENT_TYPES
@@ -4888,7 +4897,7 @@ def _activity_summary_from_overview_rows(rows: list[dict[str, Any]]) -> dict[str
         activity_year = _safe_activity_year(_overview_activity_date(row))
         if activity_year is not None:
             years.append(activity_year)
-        city = _overview_activity_city(row)
+        city = _overview_activity_city_or_county(row)
         if city:
             cities.add(city)
         distance_km = _activity_distance_km(row)
@@ -4900,6 +4909,63 @@ def _activity_summary_from_overview_rows(rows: list[dict[str, Any]]) -> dict[str
         "covered_city_count": len(cities),
         "total_distance_km": round(sum(distances), 2) if distances else None,
     }
+
+
+CAREER_CITY_COUNT_DISTRICT_PARENT_HINTS = {
+    "名山区": "雅安市",
+    "秀英区": "海口市",
+    "长乐区": "福州市",
+    "岳麓区": "长沙市",
+    "彭山区": "眉山市",
+    "大兴区": "北京市",
+    "海淀区": "北京市",
+    "通州区": "北京市",
+}
+CAREER_PARENT_CITY_RE = re.compile(r"([\u4e00-\u9fff]{2,12}市)")
+
+
+def _career_activity_country_text(row: dict[str, Any]) -> str:
+    for key in ("region_country", "country", "countryName"):
+        value = str(row.get(key) or "").strip()
+        if value:
+            return value
+    return ""
+
+
+def _career_activity_is_china_location(row: dict[str, Any]) -> bool:
+    country = _career_activity_country_text(row)
+    if country in {"中国", "中华人民共和国", "China", "china", "CN", "cn"}:
+        return True
+    combined = " ".join(
+        str(row.get(key) or "")
+        for key in ("region", "region_display", "region_city", "city", "cityName")
+    )
+    return "中国" in combined or "中华人民共和国" in combined
+
+
+def _career_parent_city_from_activity_text(row: dict[str, Any], raw_place: str) -> str:
+    for key in ("title", "name", "file_name", "filename"):
+        text = str(row.get(key) or "")
+        if not text:
+            continue
+        for match in CAREER_PARENT_CITY_RE.finditer(text):
+            candidate = str(match.group(1) or "").strip()
+            if candidate and candidate != raw_place:
+                return candidate
+    return ""
+
+
+def _career_city_or_county_place(row: dict[str, Any], raw_place: str) -> str:
+    place = " ".join(str(raw_place or "").split()).strip()
+    if not place:
+        return ""
+    if _career_activity_is_china_location(row) and place.endswith("区"):
+        return (
+            _career_parent_city_from_activity_text(row, place)
+            or CAREER_CITY_COUNT_DISTRICT_PARENT_HINTS.get(place)
+            or place
+        )
+    return place
 
 
 def _activity_select_alias(available_columns: set[str], column_name: str) -> str:
@@ -5332,6 +5398,10 @@ def _overview_activity_city(row: dict[str, Any]) -> str:
         if value:
             return value
     return ""
+
+
+def _overview_activity_city_or_county(row: dict[str, Any]) -> str:
+    return _career_city_or_county_place(row, _overview_activity_city(row))
 
 
 def _overview_activity_country(row: dict[str, Any]) -> str:
@@ -6254,7 +6324,7 @@ def _build_hero_banner(
         sport = str(latest_race.get("sport") or _overview_activity_sport(activity_row) or "unknown")
         title = _race_display_title_from_activity(latest_race, activity_row)
         event_date = str(latest_race.get("event_date") or _overview_activity_date(activity_row))
-        city = str(latest_race.get("city") or _overview_activity_city(activity_row))
+        city = str(latest_race.get("city") or _overview_activity_city_or_county(activity_row))
         country = _overview_activity_country(activity_row)
         activity_id = str(latest_race.get("activity_id") or activity_row.get("id") or "")
         media = _hero_photo_media(activity_id, hero_photo_refs)
@@ -6266,6 +6336,8 @@ def _build_hero_banner(
             "subtitle": " · ".join(part for part in (event_date, city or country, _overview_sport_label(sport)) if part),
             "sport": sport,
             "sport_label": _overview_sport_label(sport),
+            "event_type": str(latest_race.get("event_type") or "race"),
+            "highlight_reason": f"赛事记忆 · {str(latest_race.get('event_type_label') or _race_event_type_label(latest_race.get('event_type')))}",
             "event_date": event_date,
             "city": city,
             "country": country,
@@ -6292,7 +6364,7 @@ def _build_hero_banner(
         sport = _overview_activity_sport(row)
         title = _overview_activity_title(row)
         event_date = _overview_activity_date(row)
-        city = _overview_activity_city(row)
+        city = _overview_activity_city_or_county(row)
         country = _overview_activity_country(row)
         activity_id = str(row.get("id") or "")
         return {
@@ -6303,6 +6375,8 @@ def _build_hero_banner(
             "subtitle": " · ".join(part for part in (event_date, city or country, _overview_sport_label(sport)) if part),
             "sport": sport,
             "sport_label": _overview_sport_label(sport),
+            "event_type": "activity_memory",
+            "highlight_reason": "运动瞬间 · 代表活动",
             "event_date": event_date,
             "city": city,
             "country": country,
@@ -6319,45 +6393,113 @@ def _build_hero_banner(
 
 
 def _build_hero_banner_slides(
-    races: list[dict[str, Any]],
+    event_nodes: list[dict[str, Any]],
     activity_rows: list[dict[str, Any]],
     latest_pb: dict[str, Any] | None,
+    hero_photo_refs: dict[str, str] | None = None,
 ) -> list[dict[str, Any]]:
+    race_by_activity: dict[str, dict[str, Any]] = {}
+    for node in event_nodes:
+        if str(node.get("type") or "") != "race":
+            continue
+        activity_id = str(node.get("activity_id") or "").strip()
+        if activity_id and activity_id not in race_by_activity:
+            race_by_activity[activity_id] = node
+
+    def event_type_for(node: dict[str, Any]) -> str:
+        clean = str(node.get("event_type") or node.get("subtype") or node.get("achievement_type") or node.get("type") or "").strip()
+        return clean or "activity_event"
+
+    def event_date_for(node: dict[str, Any], row: dict[str, Any]) -> str:
+        return str(node.get("date") or _overview_activity_date(row)).strip()[:10]
+
+    def hero_event_sort_key(node: dict[str, Any]) -> tuple[int, float, str, str]:
+        node_type = str(node.get("type") or "")
+        event_type = event_type_for(node)
+        activity_id = str(node.get("activity_id") or "").strip()
+        has_photo = bool((hero_photo_refs or {}).get(activity_id))
+        confidence = _safe_float(node.get("confidence")) or 0.0
+        source = str(node.get("source") or "").strip().lower()
+        high_confidence_race = node_type == "race" and (confidence >= 0.95 or source in {"user", "fit", "resolver:user"})
+        priority = 0
+        if node_type == "race":
+            priority = 900
+            if high_confidence_race:
+                priority += 250
+            if has_photo:
+                priority += 100
+        elif node_type == "pb" or event_type == "pb_record":
+            priority = 760
+        elif event_type in {RECORD_BREAKING_EVENT_TYPE, RECORD_CURRENT_BEST_EVENT_TYPE}:
+            priority = 740
+        elif event_type in CAREER_OVERVIEW_HERO_YEARLY_EVENT_TYPES:
+            priority = 620
+        elif event_type in CAREER_OVERVIEW_HERO_LOCATION_EVENT_TYPES:
+            priority = 540
+        elif event_type in CAREER_OVERVIEW_HERO_SPORT_EVENT_TYPES:
+            priority = 460
+        else:
+            priority = 500 if node_type in {"milestone", "achievement"} else 400
+        score = _safe_float(node.get("score")) or _safe_float(node.get("priority")) or 0.0
+        return (priority, score, str(node.get("date") or ""), str(node.get("id") or ""))
+
+    sorted_nodes = sorted(event_nodes, key=hero_event_sort_key, reverse=True)
     slides: list[dict[str, Any]] = []
     seen_activity_ids: set[str] = set()
-    for race in races:
-        activity_id = str(race.get("activity_id") or "").strip()
+    event_type_counts: dict[str, int] = {}
+    for node in sorted_nodes:
+        activity_id = str(node.get("activity_id") or "").strip()
         if not activity_id or activity_id in seen_activity_ids:
             continue
-        media = race.get("media") if isinstance(race.get("media"), dict) else {}
-        image_ref = _sanitize_career_media_preview(media.get("image_ref") if isinstance(media, dict) else "")
-        if not image_ref:
+        event_type = event_type_for(node)
+        if event_type_counts.get(event_type, 0) >= CAREER_OVERVIEW_HERO_EVENT_TYPE_MAX_COUNT:
             continue
         activity_row = _find_activity_row_by_id(activity_rows, activity_id) or {}
-        sport = str(race.get("sport") or _overview_activity_sport(activity_row) or "unknown")
-        title = _race_display_title_from_activity(race, activity_row)
-        event_date = str(race.get("event_date") or _overview_activity_date(activity_row))
-        city = str(race.get("city") or _overview_activity_city(activity_row))
+        if not activity_row and str(node.get("type") or "") != "race":
+            continue
+        race = race_by_activity.get(activity_id) if str(node.get("type") or "") == "race" else None
+        is_race = race is not None
+        sport = str(node.get("sport") or _overview_activity_sport(activity_row) or "unknown")
+        title = (
+            str(node.get("title") or "").strip()
+            or (_race_display_title_from_activity(race, activity_row) if race else "")
+            or _overview_activity_title(activity_row)
+        )
+        event_date = event_date_for(node, activity_row)
+        city = str(node.get("city") or _overview_activity_city_or_county(activity_row))
         country = _overview_activity_country(activity_row)
+        media = _hero_photo_media(activity_id, hero_photo_refs) if is_race else {"has_photo": False, "image_ref": ""}
+        highlight_reason = str(node.get("highlight_reason") or "").strip()
+        if not highlight_reason:
+            if is_race:
+                highlight_reason = f"赛事记忆 · {_race_event_type_label(event_type)}"
+            else:
+                highlight_reason = f"代表活动 · {str(node.get('badge') or node.get('title') or '运动瞬间')}"
+        badges = _hero_badges("race", race, latest_pb if latest_pb and str(latest_pb.get("activity_id")) == activity_id else None) if is_race else ["代表活动"]
+        if highlight_reason and highlight_reason not in badges:
+            badges.append(highlight_reason)
         slides.append({
-            "mode": "photo",
+            "mode": "photo" if media["has_photo"] else "title_art",
             "activity_id": activity_id,
-            "race_id": str(race.get("id") or ""),
+            "race_id": str(race.get("id") or "") if race else "",
             "title": title,
             "subtitle": " · ".join(part for part in (event_date, city or country, _overview_sport_label(sport)) if part),
             "sport": sport,
             "sport_label": _overview_sport_label(sport),
+            "event_type": event_type,
+            "highlight_reason": highlight_reason,
             "event_date": event_date,
             "city": city,
             "country": country,
             "distance_display": _distance_display(_activity_distance_km(activity_row)),
             "duration_display": _duration_display(_activity_duration_sec(activity_row)),
-            "badges": _hero_badges("race", race, latest_pb if latest_pb and str(latest_pb.get("activity_id")) == activity_id else None),
-            "media": {"has_photo": True, "image_ref": image_ref},
+            "badges": [badge for badge in badges if badge][:4],
+            "media": media,
             "art": {"text": title, "tone": "steel_blue", "style": "metallic_gradient"},
             "detail_link": {"activity_id": activity_id, "source": "career"},
         })
         seen_activity_ids.add(activity_id)
+        event_type_counts[event_type] = event_type_counts.get(event_type, 0) + 1
         if len(slides) >= CAREER_OVERVIEW_HERO_SLIDE_MAX_COUNT:
             break
     return slides
@@ -6574,6 +6716,7 @@ def _record_timeline_node(row: dict[str, Any]) -> dict[str, Any] | None:
         "previous_best_value": previous_display,
         "meta": " · ".join(part for part in (_career_sport_label(sport), family) if part),
         "event_type": event_type,
+        "highlight_reason": f"{_record_timeline_event_label(event_type)} · {_record_timeline_title(record_key, event_type)}",
         "sport": sport,
         "family": family,
         "scope_hash": str(row.get("scope_hash") or ""),
@@ -6639,6 +6782,7 @@ def _record_current_best_timeline_node(point: dict[str, Any], definition: Record
         "previous_best_value": "",
         "meta": " · ".join(part for part in (_career_sport_label(definition.sport), _record_definition_family(definition)) if part),
         "sport": definition.sport,
+        "highlight_reason": f"最佳记录 · {definition.display_name}",
         "family": _record_definition_family(definition),
         "scope_hash": scope_hash,
         "decision": "current_best",
@@ -14687,10 +14831,11 @@ def _build_timeline_race_node(
     pb_scope_by_activity: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     year, month, day = _timeline_date_parts(race.get("event_date"))
-    event_type = str(race.get("event_type") or "")
+    event_type = str(race.get("event_type") or "race")
     city = str(race.get("city") or "")
     sport = str(race.get("sport") or "")
     activity_id = str(race.get("activity_id") or "")
+    event_type_label = str(race.get("event_type_label") or _race_event_type_label(event_type))
     pb_badge_scope = (pb_scope_by_activity or {}).get(activity_id, "none")
     card_metrics = race.get("card_metrics") if isinstance(race.get("card_metrics"), list) else []
     result_value = next(
@@ -14709,10 +14854,11 @@ def _build_timeline_race_node(
         "subtype": event_type,
         "activity_id": activity_id,
         "title": race["name"],
-        "badge": event_type,
+        "badge": event_type_label,
         "value": result_value,
         "meta": " · ".join(part for part in (city, _career_sport_label(sport)) if part),
         "event_type": event_type,
+        "highlight_reason": f"赛事记忆 · {event_type_label}",
         "sport": sport,
         "date": race["event_date"],
         "year": year,
@@ -14733,17 +14879,28 @@ def _pb_timeline_title(pb_type: Any) -> str:
 
 
 def _build_timeline_pb_node(record: dict[str, Any]) -> dict[str, Any]:
+    year, month, day = _timeline_date_parts(record.get("event_date"))
+    title = _pb_timeline_title(record.get("pb_type"))
     return {
         "id": record["id"],
-        "type": "pb",
+        "type": "milestone",
+        "subtype": "pb_record",
         "activity_id": record["activity_id"],
-        "title": _pb_timeline_title(record.get("pb_type")),
+        "title": title,
+        "badge": "PB",
         "pb_type": record["pb_type"],
         "sport": record["sport"],
         "date": record["event_date"],
+        "year": year,
+        "month": month,
+        "day": day,
         "value": record["value"],
         "value_unit": record["value_unit"],
         "improvement_sec": record["improvement_sec"],
+        "event_type": "pb_record",
+        "highlight_reason": f"PB 突破 · {title}",
+        "track": "milestone",
+        "priority": 80,
         "confidence": record["confidence"],
         "source": record["source"],
         "detail_link": record["detail_link"],
@@ -14764,6 +14921,9 @@ def _build_timeline_achievement_node(achievement: dict[str, Any]) -> dict[str, A
         "value": str(score) if score not in (None, "") else "",
         "meta": achievement["description"],
         "achievement_type": achievement_type,
+        "event_type": achievement_type or "achievement",
+        "highlight_reason": f"里程碑 · {achievement['title']}",
+        "sport": str(achievement.get("sport") or ""),
         "date": achievement["event_date"],
         "year": year,
         "month": month,
@@ -14811,16 +14971,22 @@ def _timeline_milestone_node(candidate: dict[str, Any]) -> dict[str, Any] | None
     if year is None or month is None or day is None:
         return None
     subtype = str(candidate.get("subtype") or "")
+    title = str(candidate.get("title") or _timeline_milestone_title(subtype, candidate.get("threshold"), candidate.get("sport")))
+    highlight_reason = str(candidate.get("highlight_reason") or "").strip()
+    if not highlight_reason:
+        highlight_reason = f"{str(candidate.get('badge') or '里程碑')} · {title}"
     return {
         "id": str(candidate.get("id") or f"timeline:milestone:{subtype}:{activity_id}"),
         "type": "milestone",
         "subtype": subtype,
         "activity_id": activity_id,
-        "title": str(candidate.get("title") or _timeline_milestone_title(subtype, candidate.get("threshold"), candidate.get("sport"))),
+        "title": title,
         "badge": str(candidate.get("badge") or "里程碑"),
         "value": str(candidate.get("value") or ""),
         "meta": str(candidate.get("meta") or ""),
         "achievement_type": subtype,
+        "event_type": subtype or "milestone",
+        "highlight_reason": highlight_reason,
         "date": event_date,
         "year": year,
         "month": month,
@@ -15189,8 +15355,170 @@ def _timeline_cumulative_candidates(rows: list[dict[str, Any]]) -> list[dict[str
     return candidates
 
 
-def _timeline_activity_milestone_candidates(db: sqlite3.Connection) -> list[dict[str, Any]]:
-    rows = _timeline_activity_rows(db)
+def _timeline_activity_year(row: dict[str, Any]) -> int | None:
+    event_date = _timeline_activity_date(row)
+    if len(event_date) >= 4 and event_date[:4].isdigit():
+        return int(event_date[:4])
+    return None
+
+
+def _timeline_activity_representative_score(row: dict[str, Any]) -> float:
+    return (
+        (_activity_distance_km(row) or 0.0) * 2.0
+        + ((_activity_duration_sec(row) or 0) / 3600.0)
+        + (_timeline_activity_ascent_m(row) / 200.0)
+        + (_timeline_activity_max_alt_m(row) / 1000.0)
+    )
+
+
+def _timeline_activity_yearly_representative_candidates(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    buckets: dict[int, list[dict[str, Any]]] = {}
+    for row in rows:
+        activity_id = _timeline_activity_id(row)
+        year = _timeline_activity_year(row)
+        if not activity_id or year is None:
+            continue
+        buckets.setdefault(year, []).append(row)
+
+    candidates: list[dict[str, Any]] = []
+
+    def add_best(year: int, subtype: str, label: str, value: str, row: dict[str, Any], priority: int) -> None:
+        if not value:
+            return
+        sport_label = _overview_sport_label(_overview_activity_sport(row))
+        candidates.append({
+            "id": f"timeline:milestone:{subtype}:{year}:{_timeline_activity_id(row)}",
+            "subtype": subtype,
+            "activity_id": _timeline_activity_id(row),
+            "date": _timeline_activity_date(row),
+            "title": _overview_activity_title(row),
+            "badge": "年度代表",
+            "value": value,
+            "meta": f"{year} 年 · {sport_label}",
+            "priority": priority,
+            "score": priority,
+            "icon": "sparkles",
+            "sport": _overview_activity_sport(row),
+            "highlight_reason": f"{label} · {value} {sport_label}",
+            "source": "activity_representative",
+        })
+
+    for year, year_rows in buckets.items():
+        distance_rows = [row for row in year_rows if (_activity_distance_km(row) or 0) > 0]
+        if distance_rows:
+            row = max(distance_rows, key=lambda item: (_activity_distance_km(item) or 0.0, _timeline_activity_date(item), _timeline_activity_id(item)))
+            add_best(year, "year_longest_distance", "年度最长距离", _distance_display(_activity_distance_km(row)), row, 74)
+        duration_rows = [row for row in year_rows if (_activity_duration_sec(row) or 0) > 0]
+        if duration_rows:
+            row = max(duration_rows, key=lambda item: (_activity_duration_sec(item) or 0, _timeline_activity_date(item), _timeline_activity_id(item)))
+            add_best(year, "year_longest_duration", "年度最长时长", _duration_display(_activity_duration_sec(row)), row, 72)
+        altitude_rows = [row for row in year_rows if _timeline_activity_max_alt_m(row) > 0]
+        if altitude_rows:
+            row = max(altitude_rows, key=lambda item: (_timeline_activity_max_alt_m(item), _timeline_activity_date(item), _timeline_activity_id(item)))
+            add_best(year, "year_highest_altitude", "年度最高海拔", _timeline_format_m(_timeline_activity_max_alt_m(row)), row, 70)
+        ascent_rows = [row for row in year_rows if _timeline_activity_ascent_m(row) > 0]
+        if ascent_rows:
+            row = max(ascent_rows, key=lambda item: (_timeline_activity_ascent_m(item), _timeline_activity_date(item), _timeline_activity_id(item)))
+            add_best(year, "year_max_ascent", "年度最大爬升", _timeline_format_m(_timeline_activity_ascent_m(row)), row, 70)
+    return candidates
+
+
+def _timeline_activity_location_candidates(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    candidates: list[dict[str, Any]] = []
+    seen_cities: set[str] = set()
+    seen_countries: set[str] = set()
+    for row in rows:
+        activity_id = _timeline_activity_id(row)
+        event_date = _timeline_activity_date(row)
+        if not activity_id or not event_date:
+            continue
+        city = _overview_activity_city_or_county(row)
+        if city and city not in seen_cities:
+            seen_cities.add(city)
+            candidates.append({
+                "id": f"timeline:milestone:first_city:{city}:{activity_id}",
+                "subtype": "first_city",
+                "activity_id": activity_id,
+                "date": event_date,
+                "title": f"首次点亮城市：{city}",
+                "badge": "地点",
+                "value": city,
+                "meta": _timeline_activity_meta(row),
+                "priority": 66,
+                "score": 66,
+                "icon": "map-pin",
+                "sport": _overview_activity_sport(row),
+                "highlight_reason": f"首次到达新城市 · {city}",
+                "source": "activity_representative",
+            })
+        country = _overview_activity_country(row)
+        if country and country not in seen_countries:
+            seen_countries.add(country)
+            candidates.append({
+                "id": f"timeline:milestone:first_country:{country}:{activity_id}",
+                "subtype": "first_country",
+                "activity_id": activity_id,
+                "date": event_date,
+                "title": f"首次点亮国家/地区：{country}",
+                "badge": "地点",
+                "value": country,
+                "meta": _timeline_activity_meta(row),
+                "priority": 68,
+                "score": 68,
+                "icon": "globe",
+                "sport": _overview_activity_sport(row),
+                "highlight_reason": f"首次到达新国家/地区 · {country}",
+                "source": "activity_representative",
+            })
+    return candidates
+
+
+def _timeline_activity_sport_representative_candidates(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    by_sport: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        activity_id = _timeline_activity_id(row)
+        sport = _overview_activity_sport(row)
+        if not activity_id or not _timeline_activity_date(row) or sport in {"unknown", ""}:
+            continue
+        current = by_sport.get(sport)
+        if current is None or _timeline_activity_representative_score(row) > _timeline_activity_representative_score(current):
+            by_sport[sport] = row
+    candidates: list[dict[str, Any]] = []
+    for sport, row in by_sport.items():
+        sport_label = _overview_sport_label(sport)
+        value = _distance_display(_activity_distance_km(row)) or _duration_display(_activity_duration_sec(row)) or _timeline_format_m(_timeline_activity_ascent_m(row))
+        candidates.append({
+            "id": f"timeline:milestone:sport_representative:{sport}:{_timeline_activity_id(row)}",
+            "subtype": "sport_representative",
+            "activity_id": _timeline_activity_id(row),
+            "date": _timeline_activity_date(row),
+            "title": _overview_activity_title(row),
+            "badge": "代表活动",
+            "value": value,
+            "meta": sport_label,
+            "priority": 62,
+            "score": int(round(_timeline_activity_representative_score(row))),
+            "icon": "sparkles",
+            "sport": sport,
+            "highlight_reason": f"{sport_label}代表活动" + (f" · {value}" if value else ""),
+            "source": "activity_representative",
+        })
+    return candidates
+
+
+def _timeline_activity_representative_candidates(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return (
+        _timeline_activity_yearly_representative_candidates(rows)
+        + _timeline_activity_location_candidates(rows)
+        + _timeline_activity_sport_representative_candidates(rows)
+    )
+
+
+def _timeline_activity_milestone_candidates(
+    db: sqlite3.Connection,
+    activity_rows: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    rows = activity_rows if activity_rows is not None else _timeline_activity_rows(db)
     return (
         _timeline_first_activity_candidates(rows)
         + _timeline_first_distance_candidates(rows)
@@ -15199,6 +15527,7 @@ def _timeline_activity_milestone_candidates(db: sqlite3.Connection) -> list[dict
         + _timeline_multi_sport_candidates(rows)
         + _timeline_yearly_candidates(rows)
         + _timeline_cumulative_candidates(rows)
+        + _timeline_activity_representative_candidates(rows)
         + _timeline_first_race_candidates(db)
     )
 
@@ -15230,8 +15559,15 @@ def _dedupe_timeline_milestone_nodes(candidates: list[dict[str, Any]]) -> list[d
     return nodes
 
 
-def _timeline_milestone_nodes(db: sqlite3.Connection, year: int | None = None) -> list[dict[str, Any]]:
-    candidates = _timeline_active_achievement_milestone_candidates(db) + _timeline_activity_milestone_candidates(db)
+def _timeline_milestone_nodes(
+    db: sqlite3.Connection,
+    year: int | None = None,
+    activity_rows: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    candidates = _timeline_active_achievement_milestone_candidates(db) + _timeline_activity_milestone_candidates(
+        db,
+        activity_rows=activity_rows,
+    )
     nodes = _dedupe_timeline_milestone_nodes(candidates)
     if year is not None:
         nodes = [node for node in nodes if node.get("year") == year]
@@ -15340,6 +15676,7 @@ def _build_timeline_nodes_for_type(
     db: sqlite3.Connection,
     node_type: str,
     year: int | None = None,
+    activity_rows: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     nodes: list[dict[str, Any]] = []
     if node_type in ("all", "race"):
@@ -15353,7 +15690,19 @@ def _build_timeline_nodes_for_type(
         races = get_career_races(race_filters, conn=db).get("races", [])
         nodes.extend(_build_timeline_race_node(race, pb_scope_by_activity) for race in races)
     if node_type == "all" or node_type in CAREER_TIMELINE_MILESTONE_TYPES:
-        nodes.extend(_timeline_milestone_nodes(db, year=year))
+        pb_records = get_career_pb(conn=db).get("pb_records", [])
+        nodes.extend(_build_timeline_pb_node(record) for record in pb_records)
+        achievements = get_career_achievements(
+            {
+                "achievement_type": "all",
+                "year": year,
+                "source": "all",
+                "min_score": None,
+            },
+            conn=db,
+        ).get("achievements", [])
+        nodes.extend(_build_timeline_achievement_node(achievement) for achievement in achievements)
+        nodes.extend(_timeline_milestone_nodes(db, year=year, activity_rows=activity_rows))
     if node_type == "all" or node_type in CAREER_TIMELINE_RECORD_TYPES:
         record_nodes = _timeline_record_event_nodes(db, year=year)
         nodes.extend(_merge_timeline_record_nodes(record_nodes))
@@ -15602,6 +15951,10 @@ def _season_activity_rows(conn: sqlite3.Connection, filters: dict[str, Any]) -> 
         return []
     columns = {
         "id": "id",
+        "title": "title",
+        "name": "name",
+        "file_name": "file_name",
+        "filename": "filename",
         "start_time": "start_time",
         "start_time_utc": "start_time_utc",
         "dist_km": "dist_km",
@@ -15612,9 +15965,14 @@ def _season_activity_rows(conn: sqlite3.Connection, filters: dict[str, Any]) -> 
         "sub_sport_type": "sub_sport_type",
         "sport": "sport",
         "activity_type": "activity_type",
+        "region": "region",
+        "region_display": "region_display",
         "region_city": "region_city",
         "city": "city",
         "cityName": "cityName",
+        "region_country": "region_country",
+        "country": "country",
+        "countryName": "countryName",
     }
     select_parts = [
         f"{column} AS {alias}" if _column_exists(conn, "activities", column) else f"NULL AS {alias}"
@@ -15667,7 +16025,7 @@ def _season_activity_city(row: dict[str, Any]) -> str:
     for key in ("region_city", "city", "cityName"):
         city = str(row.get(key) or "").strip()
         if city:
-            return city
+            return _career_city_or_county_place(row, city)
     return ""
 
 
@@ -16956,7 +17314,7 @@ def _career_year_activity_context_by_id(
         activity_id = str(row.get("id") or "").strip()
         if activity_id not in clean_ids:
             continue
-        city = _career_year_safe_moment_text(_overview_activity_city(row), 80)
+        city = _career_year_safe_moment_text(_overview_activity_city_or_county(row), 80)
         country = _career_year_safe_moment_text(_overview_activity_country(row), 80)
         location_label = city or country
         context[activity_id] = {
@@ -17043,7 +17401,7 @@ def _build_career_year_activity_facts(rows: list[dict[str, Any]]) -> dict[str, A
         sport = _overview_activity_sport(row)
         distance_km = _activity_distance_km(row) or 0.0
         duration_seconds = _activity_duration_sec(row) or 0
-        city = _overview_activity_city(row)
+        city = _overview_activity_city_or_county(row)
         ascent_m = _career_year_ascent_m(row) or 0.0
         max_altitude_m = _career_year_max_altitude_m(row)
         activity_id = str(row.get("id") or "").strip()
@@ -25327,7 +25685,8 @@ def get_career_overview(conn: sqlite3.Connection | None = None) -> dict[str, Any
     db = conn or _connect_default()
     try:
         schema = ensure_career_schema(db)
-        activity_summary = _activity_summary(db)
+        activity_rows = _overview_activity_rows(db)
+        activity_summary = _activity_summary_from_overview_rows(activity_rows) if activity_rows else _activity_summary(db)
         race_count = _count_rows(db, "career_race_events", "status = 'active'")
         pb_count = _count_rows(db, "career_pb_records", "status = 'active'")
         achievement_count = _count_rows(db, "career_achievement_events", "status = 'active'")
@@ -25349,14 +25708,11 @@ def get_career_overview(conn: sqlite3.Connection | None = None) -> dict[str, Any
         achievements = achievement_payload.get("achievements", [])
         seasons = _overview_representative_seasons_query(db, limit=3)
         latest_pb = _latest_pb_record(pb_records)
-        race_rows = race_payload.get("races", []) if isinstance(race_payload.get("races"), list) else []
+        timeline_nodes = _build_timeline_nodes_for_type(db, "all", year=None, activity_rows=activity_rows)
         hero_activity_ids = [
-            race.get("activity_id")
-            for race in race_rows
-            if isinstance(race, dict)
-            and _sanitize_career_media_preview(
-                (race.get("media") if isinstance(race.get("media"), dict) else {}).get("image_ref")
-            )
+            node.get("activity_id")
+            for node in timeline_nodes
+            if isinstance(node, dict) and str(node.get("activity_id") or "").strip()
         ]
         if latest_race:
             hero_activity_ids.append(latest_race.get("activity_id"))
@@ -25365,11 +25721,12 @@ def get_career_overview(conn: sqlite3.Connection | None = None) -> dict[str, Any
         hero_activity_rows = _overview_hero_activity_rows(db, hero_activity_ids)
         hero_photo_refs = _load_hero_photo_refs(db)
         hero_banner = _build_hero_banner(hero_activity_rows, latest_race, latest_pb, hero_photo_refs)
-        hero_slides = _build_hero_banner_slides(race_rows, hero_activity_rows, latest_pb)
+        hero_slides = _build_hero_banner_slides(timeline_nodes, activity_rows, latest_pb, hero_photo_refs)
         if hero_slides:
             hero_banner["slides"] = hero_slides
-            if not hero_banner.get("media", {}).get("has_photo"):
-                hero_banner["mode"] = "photo"
+            active_slide = hero_slides[0]
+            hero_banner["event_type"] = str(active_slide.get("event_type") or hero_banner.get("event_type") or "")
+            hero_banner["highlight_reason"] = str(active_slide.get("highlight_reason") or hero_banner.get("highlight_reason") or "")
         return {
             "summary": summary,
             "identity": identity,

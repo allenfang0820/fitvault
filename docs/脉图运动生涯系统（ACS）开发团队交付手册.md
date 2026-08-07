@@ -3,13 +3,13 @@ title: 脉图运动生涯系统（ACS）开发团队交付手册
 aliases:
   - ACS 开发交付手册
   - Athlete Career System 开发团队交付手册
-version: v1.1.0
+version: v1.2.0
 status: Architecture Freeze
 type: System Design Document
 scope: 脉图本地 AI 运动生涯系统
 source:
   - [[我的文档/项目/脉图/荣誉墙产品设计/脉图运动生涯系统（ACS）产品设计规范]]
-updated: 2026-07-09
+updated: 2026-08-07
 ---
 
 # 脉图运动生涯系统（ACS）开发团队交付手册
@@ -124,6 +124,8 @@ ACS
 - `ACS`：负责把语义组织成生涯结构
 - `AI Snapshot`：只负责给 AI 消费，不修改事实
 
+赛事、PB、首次、里程碑、代表活动与 Overview Banner 轮播必须共享同一套活动事件识别与归类机制；时间轴负责全量投影，Banner 负责精选投影。禁止为 Banner 和时间轴分别实现互相冲突的规则。
+
 ## 2.3 AI 只能消费 Snapshot
 
 AI 不得直接读取：
@@ -215,12 +217,19 @@ ACS
 
 Overview V2 的首屏结构如下：
 
-1. 赛事记忆 Banner
-   - 优先展示已绑定照片的赛事记忆。
-   - 若没有赛事照片，使用代表活动或赛事标题生成艺术字 Banner。
-   - 若没有正式赛事但已有普通 Activity，展示“运动记忆”而不是伪装成赛事。
+1. 赛事记忆 Banner / 精彩瞬间轮播
+   - 主 Banner 优先展示已绑定照片的赛事记忆。
+   - 若没有赛事照片，主 Banner 使用赛事标题或代表活动标题生成艺术字 Banner。
+   - 若没有正式赛事但已有普通 Activity，主 Banner 展示“运动记忆”而不是伪装成赛事。
    - 若完全没有 Activity，展示稳定空态。
    - Banner 必须能回跳 Activity Detail。
+   - Banner 事件来源必须与时间轴共用同一套活动事件识别与候选规则，时间轴中的里程碑、首次、PB、成就、年度代表活动都可以成为 Banner 候选，但只能按精选投影进入封面，不得在 Banner 里重新发明一套事件定义。
+   - 若存在足够候选，可生成“精彩瞬间”轮播池，最多 10 条。
+   - 轮播池允许混合赛事与非赛事代表活动，但必须明确标注入选原因，不能把普通 Activity 伪装成赛事。
+   - 赛事类候选优先，非赛事类候选补位；同一 Activity 只出现一次，同一类型最多 2 条。
+   - Banner 精选排序固定为：已确认 / 高置信赛事优先，其次是有安全照片的赛事，再其次是 PB / 记录突破、年度代表活动、首次城市 / 国家与各运动类型代表活动；同层级按代表性分值和时间倒序兜底。
+   - 轮播池建议纳入的非赛事代表活动包括：年度最长距离、年度最长时长、年度最高海拔、年度累计爬升里程碑、PB / 记录突破、成就、首次到达新城市 / 新国家、各运动类型代表活动。
+   - 非赛事卡片一律使用标题艺术字或数字卡，不得渲染成赛事照片。
 
 2. 全量运动统计
    - 总跑步距离
@@ -266,7 +275,7 @@ Overview V2 的首屏结构如下：
 
 ### 职责
 
-按“年份 × 月份 × 赛事”生成时间轴，是 ACS 的核心浏览方式。
+按“年份 × 月份 × 活动事件”生成时间轴，是 ACS 的核心浏览方式。Timeline 是统一活动事件池的全量投影，赛事、PB、首次、里程碑和代表活动都以 Activity-backed event 进入时间轴；Banner 只是从同一事件池中精选少量封面事件。
 
 ### 关键规则
 
@@ -652,6 +661,9 @@ GET /api/career/overview
 - `hero_banner.mode` 支持 `photo`、`title_art`、`empty`。
 - 有安全照片引用时使用 `photo`；没有照片时使用 `title_art`。
 - `image_ref` 只能是应用受控的逻辑引用，不得是本地绝对路径、`file://`、`storage_ref` 或原始文件路径。
+- `hero_banner.slides` 为精彩瞬间轮播池，最多 10 条；赛事优先、非赛事补位；每条都必须携带可回跳的 `activity_id`，并在文案上清晰区分“赛事”与“代表活动”。
+- 每条 slide 必须携带统一活动事件字段：`event_type` 和 `highlight_reason`；同一 `event_type` 最多 2 条。
+- 轮播池中的赛事条目可使用照片或标题艺术字；非赛事条目只能使用标题艺术字或数字卡，不能误导为赛事照片。
 - `strength_total_weight_kg` 只能在 Activity 存在可靠总重量字段或已物化 `strength_summary_json.total_volume_kg` 时聚合；没有可靠来源时必须返回 `null`，并通过 `strength_total_weight_status` 表达 `unavailable` 或 `partial`。
 - `max_altitude_m` 只能聚合未删除 Activity 的 canonical `max_alt_m`；前端不得从轨迹点自行计算最高海拔。
 - Overview 统计卡展示最高海拔；`best_pb` 继续保留在 ViewModel 中供 PB 档案与其他下钻入口使用，并允许为 `null`。
@@ -863,7 +875,7 @@ careerState = {
 
 ## 6.5 页面布局原则
 
-- 首页以赛事记忆 Banner 为第一视觉
+- 首页以统一活动事件池驱动的 Banner 为第一视觉；赛事优先，其次是来自同一事件池的代表活动与里程碑投影
 - 无照片时使用活动标题艺术字 fallback，不显示空图片框
 - Banner 下方展示全量运动统计，不把赛事数 / PB 数 / 成就数作为唯一重点
 - 年度结构放在统计区之后，作为继续浏览的组织入口
@@ -873,6 +885,7 @@ careerState = {
 - 长中文标题必须不溢出，不遮挡 Banner 信息
 - 前端只渲染后端 ViewModel，不从标题、距离、配速或 FIT 字段推断事实
 - 时间轴节点不能只靠颜色区分
+- Banner 与时间轴必须消费同一套活动事件语义字段，不允许前端分别猜测“这是赛事”还是“这是里程碑”
 
 ## 6.6 视觉与交互
 
@@ -882,6 +895,7 @@ careerState = {
 - `title_art` 模式：使用活动或赛事标题生成金属 / 冷光渐变艺术字。
 - `empty` 模式：展示稳定空态，不出现 `undefined`、`NaN` 或空对象。
 - Banner 上可叠加赛事名称、日期、城市/国家、运动类型、距离、成绩、PB/里程碑标签。
+- 非赛事 slide 必须直接显示“为什么入选”，例如“年度最长距离”“首次到达新城市”“PB 突破”，不得被包装成赛事照片。
 - Banner 点击回跳 Activity Detail。
 - 不允许通过 CSS 背景引用本地绝对路径。
 
@@ -932,6 +946,7 @@ Overview Banner 不得伪装成赛事；应以普通 Activity 展示“运动记
 
 - 有赛事但无照片：使用赛事标题生成 `title_art` Banner。
 - 无赛事但有普通 Activity：使用代表活动标题生成 `title_art` Banner。
+- 若当前展示的是“精彩瞬间”轮播池中的非赛事条目，也使用 `title_art` 或数字卡，不得伪装成赛事照片。
 - 不返回本地图片路径。
 - 不渲染空照片卡或破图。
 
@@ -939,8 +954,9 @@ Overview Banner 不得伪装成赛事；应以普通 Activity 展示“运动记
 
 如果同一 Activity 同时命中多个规则：
 
-- 优先保留置信度高的结果
-- 其余保留为候选，不进入主时间轴
+- Timeline 保留可解释的正式赛事、PB、成就与里程碑节点，节点必须共用统一活动事件字段
+- Banner 精选时按 `activity_id` 去重，只保留一个主事件
+- 主事件优先保留置信度高、代表性更强的结果
 
 ## 7.5 重复导入
 

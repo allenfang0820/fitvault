@@ -63,6 +63,7 @@ def _create_activity_table(conn: sqlite3.Connection) -> None:
             dist_km REAL,
             distance REAL,
             sport_type TEXT,
+            total_ascent REAL,
             region_city TEXT,
             max_alt_m REAL,
             deleted_at TEXT,
@@ -176,6 +177,8 @@ class TestCareerOverviewApiClosure(unittest.TestCase):
         conn = sqlite3.connect(":memory:")
         try:
             _create_activity_table(conn)
+            conn.execute("ALTER TABLE activities ADD COLUMN title TEXT")
+            conn.execute("ALTER TABLE activities ADD COLUMN region_country TEXT")
             career_backend.ensure_career_schema(conn)
             _insert_activity(conn, id=1, start_time="2024-03-01T08:00:00+08:00", start_time_utc="", dist_km=10.5, distance=None, region_city="北京", max_alt_m=120.4)
             _insert_activity(conn, id=2, start_time="", start_time_utc="2023-01-01T00:00:00Z", dist_km=None, distance=5000, region_city="上海", max_alt_m=3840.2)
@@ -316,6 +319,62 @@ class TestCareerOverviewApiClosure(unittest.TestCase):
         finally:
             conn.close()
 
+    def test_overview_city_count_collapses_districts_to_city_or_county_level(self):
+        conn = sqlite3.connect(":memory:")
+        try:
+            _create_activity_table(conn)
+            conn.execute("ALTER TABLE activities ADD COLUMN title TEXT")
+            conn.execute("ALTER TABLE activities ADD COLUMN region_country TEXT")
+            career_backend.ensure_career_schema(conn)
+            _insert_activity(
+                conn,
+                id=1,
+                title="20260205 0056 海口市 操场跑步",
+                start_time="2026-02-05T08:00:00+08:00",
+                region_city="秀英区",
+                region_country="中国",
+            )
+            _insert_activity(
+                conn,
+                id=2,
+                title="海口市 跑步",
+                start_time="2026-02-06T08:00:00+08:00",
+                region_city="海口市",
+                region_country="中国",
+            )
+            _insert_activity(
+                conn,
+                id=3,
+                title="名山区 骑行",
+                start_time="2026-02-07T08:00:00+08:00",
+                region_city="名山区",
+                region_country="中国",
+            )
+            _insert_activity(
+                conn,
+                id=4,
+                title="雅安市 骑行",
+                start_time="2026-02-08T08:00:00+08:00",
+                region_city="雅安市",
+                region_country="中国",
+            )
+            _insert_activity(
+                conn,
+                id=5,
+                title="奉节县 徒步",
+                start_time="2026-02-09T08:00:00+08:00",
+                region_city="奉节县",
+                region_country="中国",
+            )
+
+            result = career_backend.get_career_overview(conn)
+
+            self.assertEqual(result["summary"]["activity_count"], 5)
+            self.assertEqual(result["summary"]["covered_city_count"], 3)
+            self.assertEqual(result["career_stats"]["covered_city_count"], 3)
+        finally:
+            conn.close()
+
     def test_overview_is_data_ready_with_only_plain_activities(self):
         conn = sqlite3.connect(":memory:")
         try:
@@ -347,7 +406,7 @@ class TestCareerOverviewApiClosure(unittest.TestCase):
         finally:
             conn.close()
 
-    def test_overview_uses_aggregate_queries_without_materializing_activity_rows(self):
+    def test_overview_event_pool_reads_activity_facts_for_highlight_projection(self):
         conn = sqlite3.connect(":memory:")
         try:
             _create_activity_table(conn)
@@ -355,16 +414,13 @@ class TestCareerOverviewApiClosure(unittest.TestCase):
             _insert_activity(conn, id=1, start_time="2025-01-01T08:00:00+08:00", dist_km=5.0, region_city="北京")
             _insert_activity(conn, id=2, start_time="2026-01-01T08:00:00+08:00", dist_km=10.0, region_city="上海")
 
-            with (
-                mock.patch.object(career_backend, "_overview_activity_rows", side_effect=AssertionError("_overview_activity_rows should not run")),
-                mock.patch.object(career_backend, "_overview_activity_metric_rows", side_effect=AssertionError("_overview_activity_metric_rows should not run")),
-                mock.patch.object(career_backend, "_season_activity_rows", side_effect=AssertionError("_season_activity_rows should not run")),
-            ):
-                result = career_backend.get_career_overview(conn)
+            result = career_backend.get_career_overview(conn)
 
             self.assertEqual(result["summary"]["activity_count"], 2)
             self.assertEqual(result["summary"]["career_start_year"], 2025)
             self.assertEqual([season["year"] for season in result["representative_seasons"]], [2026, 2025])
+            self.assertTrue(result["hero_banner"]["slides"])
+            self.assertTrue(all(slide["activity_id"] for slide in result["hero_banner"]["slides"]))
         finally:
             conn.close()
 
@@ -423,6 +479,11 @@ class TestCareerOverviewApiClosure(unittest.TestCase):
 
             self.assertEqual(result["hero_banner"]["title"], "活动标题已编辑")
             self.assertEqual(result["hero_banner"]["art"]["text"], "活动标题已编辑")
+            slide = next(item for item in result["hero_banner"]["slides"] if item["activity_id"] == "1")
+            self.assertEqual(slide["race_id"], "race:1")
+            self.assertEqual(slide["mode"], "title_art")
+            self.assertEqual(slide["media"], {"has_photo": False, "image_ref": ""})
+            self.assertTrue(slide["highlight_reason"])
             _assert_forbidden_keys_absent(self, result)
         finally:
             conn.close()
@@ -462,6 +523,8 @@ class TestCareerOverviewApiClosure(unittest.TestCase):
                     self.assertEqual(slide["mode"], "photo")
                     self.assertTrue(slide["media"]["has_photo"])
                     self.assertTrue(slide["media"]["image_ref"].startswith("data:image/jpeg;base64,"))
+                    self.assertTrue(slide["event_type"])
+                    self.assertTrue(slide["highlight_reason"])
                     self.assertEqual(slide["detail_link"], {"activity_id": slide["activity_id"], "source": "career"})
                 serialized = json.dumps(result, ensure_ascii=False)
                 self.assertNotIn(str(temp_root), serialized)
@@ -470,6 +533,118 @@ class TestCareerOverviewApiClosure(unittest.TestCase):
             finally:
                 profile_backend.TRACKS_DIR = original_tracks_dir
                 conn.close()
+
+    def test_overview_hero_banner_includes_non_race_year_longest_distance(self):
+        conn = sqlite3.connect(":memory:")
+        try:
+            _create_activity_table(conn)
+            career_backend.ensure_career_schema(conn)
+            _insert_activity(
+                conn,
+                id=1,
+                start_time="2026-06-18T06:00:00+08:00",
+                dist_km=140.0,
+                sport_type="cycling",
+                region_city="杭州",
+            )
+            _insert_activity(
+                conn,
+                id=2,
+                start_time="2026-06-17T06:00:00+08:00",
+                dist_km=30.0,
+                sport_type="cycling",
+                region_city="杭州",
+            )
+
+            result = career_backend.get_career_overview(conn)
+
+            slide = next(item for item in result["hero_banner"]["slides"] if item["activity_id"] == "1")
+            self.assertEqual(slide["event_type"], "year_longest_distance")
+            self.assertIn("年度最长距离", slide["highlight_reason"])
+            self.assertIn("140 km", slide["highlight_reason"])
+            self.assertEqual(slide["race_id"], "")
+            self.assertEqual(slide["mode"], "title_art")
+            self.assertEqual(slide["media"], {"has_photo": False, "image_ref": ""})
+            timeline_nodes = [
+                node
+                for year in career_backend.get_career_timeline({"type": "all"}, conn)["years"]
+                for month in year["months"]
+                for node in month["nodes"]
+            ]
+            shared = next(node for node in timeline_nodes if node["activity_id"] == "1" and node["event_type"] == "year_longest_distance")
+            self.assertEqual(shared["highlight_reason"], slide["highlight_reason"])
+        finally:
+            conn.close()
+
+    def test_overview_hero_banner_projects_pb_and_achievement_events(self):
+        conn = sqlite3.connect(":memory:")
+        try:
+            _create_activity_table(conn)
+            career_backend.ensure_career_schema(conn)
+            _insert_activity(conn, id=1, start_time="2026-05-01T06:00:00+08:00", dist_km=5.0, sport_type="running", region_city="")
+            _insert_activity(conn, id=2, start_time="2026-05-02T06:00:00+08:00", dist_km=None, distance=None, sport_type="unknown", region_city="")
+            _insert_pb(conn, activity_id="1", event_date="2026-05-01", pb_type="running_5k")
+            _insert_achievement(
+                conn,
+                id="achievement:annual:2",
+                activity_id="2",
+                achievement_type="annual_milestone",
+                title="年度运动里程碑",
+                event_date="2026-05-02",
+                score=96,
+                description="完成年度运动目标",
+            )
+
+            slides = career_backend.get_career_overview(conn)["hero_banner"]["slides"]
+
+            self.assertIn("pb_record", {slide["event_type"] for slide in slides})
+            self.assertIn("annual_milestone", {slide["event_type"] for slide in slides})
+            self.assertTrue(all(slide["highlight_reason"] for slide in slides))
+        finally:
+            conn.close()
+
+    def test_overview_hero_banner_caps_slides_and_event_types(self):
+        conn = sqlite3.connect(":memory:")
+        try:
+            _create_activity_table(conn)
+            career_backend.ensure_career_schema(conn)
+            for index in range(1, 15):
+                event_type = "10k" if index <= 4 else f"custom_race_{index}"
+                _insert_activity(
+                    conn,
+                    id=index,
+                    start_time=(
+                        f"2026-12-{index:02d}T06:00:00+08:00"
+                        if index <= 4
+                        else f"2026-01-{index - 4:02d}T06:00:00+08:00"
+                    ),
+                    dist_km=10.0 + index,
+                    sport_type="running",
+                )
+                _insert_race(
+                    conn,
+                    id=f"race:{index}",
+                    activity_id=str(index),
+                    name=f"赛事 {index}",
+                    event_type=event_type,
+                    event_date=(
+                        f"2026-12-{index:02d}"
+                        if index <= 4
+                        else f"2026-01-{index - 4:02d}"
+                    ),
+                )
+
+            slides = career_backend.get_career_overview(conn)["hero_banner"]["slides"]
+
+            self.assertLessEqual(len(slides), 10)
+            counts = {}
+            for slide in slides:
+                counts[slide["event_type"]] = counts.get(slide["event_type"], 0) + 1
+            self.assertTrue(all(count <= 2 for count in counts.values()))
+            self.assertEqual(counts.get("10k"), 2)
+            self.assertEqual(len({slide["activity_id"] for slide in slides}), len(slides))
+        finally:
+            conn.close()
 
     def test_overview_complete_empty_state_is_stable(self):
         conn = sqlite3.connect(":memory:")

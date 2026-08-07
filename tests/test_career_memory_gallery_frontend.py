@@ -171,6 +171,12 @@ class TestCareerMemoryGalleryFrontend(unittest.TestCase):
         self.assertIn("暂无赛事相册", body)
         self.assertNotIn("careerMemoryItemHtml", body)
 
+    def test_memory_normalizer_omits_empty_albums_from_the_wall(self):
+        body = extract_function_body(self.source, "function normalizeCareerMemory(payload)")
+        self.assertIn("!album.isEmpty", body)
+        self.assertIn("album.photoCount > 0", body)
+        self.assertIn("albumCount: albums.length", body)
+
     def test_album_click_expands_photo_grid_and_back_to_wall(self):
         open_body = extract_function_body(self.source, "function openCareerMemoryAlbum(el)")
         close_body = extract_function_body(self.source, "function closeCareerMemoryAlbum()")
