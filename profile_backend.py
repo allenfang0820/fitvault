@@ -79,6 +79,10 @@ PROFILE_SYNC_RETRY_COOLDOWN_SEC = 30 * 60
 ACTIVITY_SOURCE_FILE_STATUSES = ("pending", "parsed", "skipped", "failed")
 ACTIVITY_SOURCE_FILE_ERROR_MAX_LENGTH = 500
 PROFILE_SCHEMA_SENTINEL_KEY = "profile_backend_schema_ready_v20260729_strength_materialization_v1"
+ACTIVITY_START_TIME_EPOCH_REPAIR_KEY = "activity_start_time_epoch_repair_v1"
+ACTIVITY_TITLE_CANONICAL_REPAIR_KEY = "activity_title_canonical_repair_v1"
+MIN_VALID_ACTIVITY_YEAR = 1995
+MAX_VALID_ACTIVITY_YEAR = 2100
 REGION_CACHE_PRECISION = 2
 REGION_ENRICH_LIMIT = 20
 REGION_ENRICH_MAX_REQUESTS = 50
@@ -368,6 +372,180 @@ def mark_app_migration_done(
         """,
         (migration_key, details_json),
     )
+
+
+def _activity_table_columns(conn: sqlite3.Connection) -> set[str]:
+    try:
+        return {str(row[1]) for row in conn.execute("PRAGMA table_info(activities)").fetchall()}
+    except sqlite3.OperationalError:
+        return set()
+
+
+def _parse_activity_timestamp_utc(value: Any) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        try:
+            parsed = datetime.strptime(text[:19].replace("T", " "), "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _is_valid_activity_timestamp(value: Any) -> bool:
+    parsed = _parse_activity_timestamp_utc(value)
+    return bool(parsed and MIN_VALID_ACTIVITY_YEAR <= parsed.year <= MAX_VALID_ACTIVITY_YEAR)
+
+
+def _normalize_activity_timestamp_utc(value: Any) -> str | None:
+    parsed = _parse_activity_timestamp_utc(value)
+    if not parsed or not (MIN_VALID_ACTIVITY_YEAR <= parsed.year <= MAX_VALID_ACTIVITY_YEAR):
+        return None
+    return parsed.isoformat().replace("+00:00", "Z")
+
+
+def _is_suspicious_epoch_activity_start(value: Any) -> bool:
+    text = str(value or "").strip()
+    if not text:
+        return False
+    if text.startswith("1989-12-31") or text.startswith("1989-12-30"):
+        return True
+    parsed = _parse_activity_timestamp_utc(text)
+    return bool(parsed and parsed.year < MIN_VALID_ACTIVITY_YEAR)
+
+
+def _first_valid_point_time_utc(raw: Any) -> str | None:
+    if raw in (None, ""):
+        return None
+    try:
+        data = json.loads(raw) if isinstance(raw, str) else raw
+    except Exception:
+        return None
+    if not isinstance(data, list):
+        return None
+    for point in data[:50]:
+        if not isinstance(point, dict):
+            continue
+        candidate = _normalize_activity_timestamp_utc(point.get("time"))
+        if candidate:
+            return candidate
+    return None
+
+
+def repair_activity_start_time_epoch_rows(
+    conn: sqlite3.Connection,
+    *,
+    dry_run: bool = False,
+    limit: int | None = None,
+) -> dict[str, Any]:
+    """Repair old rows where FIT epoch local_timestamp was persisted as start_time.
+
+    This is an upgrade migration for previously ingested rows.  It deliberately
+    updates only canonical time fields and avoids the import/save lifecycle so
+    titles, regions, source ledgers, and duplicate identity remain untouched.
+    """
+    if not dry_run and app_migration_done(conn, ACTIVITY_START_TIME_EPOCH_REPAIR_KEY):
+        return {
+            "ok": True,
+            "already_done": True,
+            "dry_run": False,
+            "scanned": 0,
+            "fixed": 0,
+            "skipped": 0,
+            "migration_key": ACTIVITY_START_TIME_EPOCH_REPAIR_KEY,
+        }
+
+    columns = _activity_table_columns(conn)
+    result: dict[str, Any] = {
+        "ok": True,
+        "already_done": False,
+        "dry_run": dry_run,
+        "scanned": 0,
+        "fixed": 0,
+        "skipped": 0,
+        "source_counts": {},
+        "migration_key": ACTIVITY_START_TIME_EPOCH_REPAIR_KEY,
+    }
+    if "start_time" not in columns:
+        if not dry_run:
+            mark_app_migration_done(
+                conn,
+                ACTIVITY_START_TIME_EPOCH_REPAIR_KEY,
+                details_json=json.dumps(result, ensure_ascii=False, sort_keys=True),
+            )
+        return result
+
+    select_cols = ["id", "start_time"]
+    for optional in ("start_time_utc", "track_json", "points_json", "deleted_at"):
+        if optional in columns:
+            select_cols.append(optional)
+    where_parts = [
+        "start_time IS NOT NULL",
+        "TRIM(start_time) != ''",
+        "(substr(start_time, 1, 10) IN ('1989-12-31', '1989-12-30') OR CAST(substr(start_time, 1, 4) AS INTEGER) < ?)",
+    ]
+    params: list[Any] = [MIN_VALID_ACTIVITY_YEAR]
+    if "deleted_at" in columns:
+        where_parts.append("(deleted_at IS NULL OR deleted_at = '')")
+    sql = f"""
+        SELECT {", ".join(select_cols)}
+        FROM activities
+        WHERE {" AND ".join(where_parts)}
+        ORDER BY id ASC
+    """
+    if limit is not None and int(limit) > 0:
+        sql += " LIMIT ?"
+        params.append(int(limit))
+
+    rows = conn.execute(sql, tuple(params)).fetchall()
+    for row in rows:
+        item = dict(row)
+        current_start = item.get("start_time")
+        if not _is_suspicious_epoch_activity_start(current_start):
+            continue
+        result["scanned"] += 1
+
+        candidate = _normalize_activity_timestamp_utc(item.get("start_time_utc"))
+        source = "start_time_utc" if candidate else None
+        if not candidate:
+            candidate = _first_valid_point_time_utc(item.get("track_json"))
+            source = "track_json" if candidate else None
+        if not candidate:
+            candidate = _first_valid_point_time_utc(item.get("points_json"))
+            source = "points_json" if candidate else None
+
+        if not candidate or not source:
+            result["skipped"] += 1
+            continue
+
+        result["source_counts"][source] = int(result["source_counts"].get(source, 0)) + 1
+        result["fixed"] += 1
+        if dry_run:
+            continue
+
+        sets = ["start_time = ?"]
+        update_params: list[Any] = [candidate]
+        if "start_time_utc" in columns and not _is_valid_activity_timestamp(item.get("start_time_utc")):
+            sets.append("start_time_utc = ?")
+            update_params.append(candidate)
+        update_params.append(int(item["id"]))
+        conn.execute(
+            f"UPDATE activities SET {', '.join(sets)} WHERE id = ?",
+            tuple(update_params),
+        )
+
+    if not dry_run:
+        mark_app_migration_done(
+            conn,
+            ACTIVITY_START_TIME_EPOCH_REPAIR_KEY,
+            details_json=json.dumps(result, ensure_ascii=False, sort_keys=True),
+        )
+    return result
 
 
 def _sanitize_activity_source_file_error(error: Any) -> str | None:
@@ -2172,14 +2350,42 @@ def translate_sport_type(sport_type: str | None) -> str:
 
 _AUTO_ACTIVITY_TITLE_SOURCES = {"auto", "auto_sport", "auto_region_sport", "garmin_auto", "coros_auto", "region_auto"}
 _PROTECTED_ACTIVITY_TITLE_SOURCES = {"manual", "user", "edited"}
+_FILENAME_LIKE_ACTIVITY_TITLE_SOURCES = {"filename", "file_name", "file", "path", "fit"}
 _GENERIC_SUB_SPORT_TYPES = {"", "unknown", "generic", "other"}
 _TECHNICAL_ACTIVITY_TITLE_RE = re.compile(
     r"^(?:coros[\s_-]*)?(?:activity[\s_-]*fit[\s_-]*files?|activity)(?:[\s_-]+[0-9a-f]{8,})?$",
     re.IGNORECASE,
 )
+_PROVIDER_ACTIVITY_ACTION_TOKENS = {
+    "activity",
+    "activities",
+    "workout",
+    "workouts",
+    "exercise",
+    "record",
+    "fit",
+    "fitfile",
+    "fitfiles",
+    "fit_file",
+    "route",
+    "course",
+}
 _ACTIVITY_FILE_ID_SUFFIX_RE = re.compile(r"^(?P<title>.+?)[_\s]+\d{6,}(?:[-_]\d+)*$")
 _DEVICE_MODEL_TOKEN_RE = re.compile(r"(?<![A-Za-z0-9])(?:[A-Za-z]{1,12}\d{2,}|\d{2,}[A-Za-z]{1,8})(?![A-Za-z0-9])")
 _LONG_NUMERIC_TOKEN_RE = re.compile(r"(?<!\d)\d{6,}(?!\d)")
+
+
+def _normalize_activity_title_source(title_source: Any) -> str:
+    return str(title_source or "").strip().lower()
+
+
+def _is_filename_like_activity_title_source(title_source: Any) -> bool:
+    return _normalize_activity_title_source(title_source) in _FILENAME_LIKE_ACTIVITY_TITLE_SOURCES
+
+
+def _canonical_activity_title_source(title_source: Any) -> str:
+    source = _normalize_activity_title_source(title_source)
+    return "filename" if source in _FILENAME_LIKE_ACTIVITY_TITLE_SOURCES else source
 
 
 def clean_activity_filename_title(value: Any) -> str:
@@ -2200,15 +2406,24 @@ def _is_technical_activity_title(title: Any) -> bool:
     text = str(title or "").strip()
     if not text:
         return True
+    lowered_text = text.lower()
+    if "activity-fit-files" in lowered_text or "activity fit files" in re.sub(r"[_\s]+", " ", lowered_text):
+        return True
     stem = Path(text).stem if text.lower().endswith(".fit") else text
     normalized = re.sub(r"[_\s]+", " ", stem).strip().lower()
+    dash_normalized = re.sub(r"[\s_]+", "-", normalized)
     if "activity-fit-files" in stem.lower() or "activity fit files" in normalized:
         return True
-    if _TECHNICAL_ACTIVITY_TITLE_RE.match(normalized.replace(" ", "-")):
+    if _TECHNICAL_ACTIVITY_TITLE_RE.match(dash_normalized):
         return True
     if re.fullmatch(r"\d{8,}(?:[-_]\d+)*", stem.strip()):
         return True
     if re.fullmatch(r"[0-9a-f]{16,}", normalized):
+        return True
+    tokens = [token.lower() for token in re.split(r"[\s_-]+", stem.strip()) if token]
+    has_action_token = any(token in _PROVIDER_ACTIVITY_ACTION_TOKENS for token in tokens)
+    has_long_numeric_token = any(_LONG_NUMERIC_TOKEN_RE.fullmatch(token) for token in tokens)
+    if has_action_token and has_long_numeric_token:
         return True
     # Device-export filenames commonly combine a model token, date, time,
     # and activity id. A date alone is not technical: real event/route
@@ -2217,9 +2432,7 @@ def _is_technical_activity_title(title: Any) -> bool:
     has_date_token = re.search(r"(?<!\d)\d{4}[-_]\d{2}[-_]\d{2}(?!\d)", stem) is not None
     if has_device_token and has_date_token:
         return True
-    tokens = [token for token in re.split(r"[\s_-]+", stem.strip()) if token]
     has_device_model_token = any(_DEVICE_MODEL_TOKEN_RE.fullmatch(token) for token in tokens)
-    has_long_numeric_token = any(_LONG_NUMERIC_TOKEN_RE.fullmatch(token) for token in tokens)
     if has_device_model_token and has_long_numeric_token:
         return True
     return False
@@ -2245,28 +2458,22 @@ def build_activity_display_title(
     region_display: Any = "",
 ) -> tuple[str, str]:
     """Build a user-facing activity title without exposing provider temp filenames."""
-    source = str(title_source or "").strip()
+    source = _normalize_activity_title_source(title_source)
+    canonical_source = _canonical_activity_title_source(source)
     title = str(current_title or "").strip()
-    raw_title_is_technical = _is_technical_activity_title(title)
     if title and source in _PROTECTED_ACTIVITY_TITLE_SOURCES:
         return title, source
-    if title and source == "filename":
+    if title and _is_filename_like_activity_title_source(source):
         cleaned_filename_title = clean_activity_filename_title(title)
-        if (
-            cleaned_filename_title != title
-            and not raw_title_is_technical
-            and not _is_technical_activity_title(cleaned_filename_title)
-        ):
-            return cleaned_filename_title, source
         title = cleaned_filename_title
+    title_is_technical = _is_technical_activity_title(title)
     should_replace = (
         not title
         or source in _AUTO_ACTIVITY_TITLE_SOURCES
-        or raw_title_is_technical
-        or _is_technical_activity_title(title)
+        or title_is_technical
     )
     if not should_replace:
-        return title, source or "fit"
+        return title, canonical_source or "fit"
 
     sub = str(sub_sport_type or "").strip().lower()
     sport_key = (
@@ -2282,75 +2489,126 @@ def build_activity_display_title(
 
 
 def _can_region_update_activity_title(title_source: Any, current_title: Any = "") -> bool:
-    source = str(title_source or "").strip()
+    source = _normalize_activity_title_source(title_source)
     if source in _PROTECTED_ACTIVITY_TITLE_SOURCES:
         return False
     if source in _AUTO_ACTIVITY_TITLE_SOURCES:
         return True
-    if source == "filename" and _is_technical_activity_title(current_title):
+    if _is_technical_activity_title(current_title):
         return True
     return False
 
 
-def backfill_auto_activity_titles(conn: sqlite3.Connection | None = None, limit: int = 500) -> int:
+def _activity_title_repair_candidates(conn: sqlite3.Connection, limit: int | None = None) -> list[sqlite3.Row]:
+    sql = """
+        SELECT id, title, title_source, sport_type, sub_sport_type, region_display, region
+        FROM activities
+        WHERE COALESCE(deleted_at, '') = ''
+          AND COALESCE(title_source, '') NOT IN ('manual', 'user', 'edited')
+          AND (
+            COALESCE(title_source, '') IN ('auto', 'auto_sport', 'auto_region_sport', 'garmin_auto', 'coros_auto', 'region_auto')
+            OR TRIM(COALESCE(title, '')) = ''
+            OR COALESCE(title_source, '') IN ('filename', 'file_name', 'file', 'path', 'fit')
+            OR lower(COALESCE(title, '')) LIKE '%activity-fit-files%'
+            OR lower(COALESCE(filename, '')) LIKE '%activity-fit-files%'
+            OR lower(COALESCE(file_name, '')) LIKE '%activity-fit-files%'
+            OR (
+              length(TRIM(COALESCE(title, ''))) >= 16
+              AND lower(TRIM(COALESCE(title, ''))) NOT GLOB '*[^0-9a-f]*'
+            )
+          )
+        ORDER BY id DESC
+    """
+    params: tuple[Any, ...] = ()
+    if limit is not None and int(limit) > 0:
+        sql += " LIMIT ?"
+        params = (int(limit),)
+    return conn.execute(sql, params).fetchall()
+
+
+def _repair_activity_titles(
+    conn: sqlite3.Connection,
+    *,
+    dry_run: bool = False,
+    limit: int | None = None,
+) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "ok": True,
+        "dry_run": dry_run,
+        "scanned": 0,
+        "updated": 0,
+        "unchanged": 0,
+        "source_counts": {},
+    }
+    rows = _activity_title_repair_candidates(conn, limit=limit)
+    for row in rows:
+        result["scanned"] += 1
+        current_title = row["title"]
+        current_source = row["title_source"]
+        title, title_source = build_activity_display_title(
+            current_title=current_title,
+            title_source=current_source,
+            sport_type=row["sport_type"],
+            sub_sport_type=row["sub_sport_type"],
+            region_display=row["region_display"] or row["region"] or "",
+        )
+        if title == (current_title or "") and title_source == (current_source or ""):
+            result["unchanged"] += 1
+            continue
+        source_key = _canonical_activity_title_source(current_source) or "missing"
+        result["source_counts"][source_key] = int(result["source_counts"].get(source_key, 0)) + 1
+        result["updated"] += 1
+        if dry_run:
+            continue
+        conn.execute(
+            """
+            UPDATE activities
+            SET title = ?, title_source = ?, updated_at = updated_at
+            WHERE id = ?
+            """,
+            (title, title_source, int(row["id"])),
+        )
+    return result
+
+
+def repair_activity_title_canonical_rows(
+    conn: sqlite3.Connection,
+    *,
+    dry_run: bool = False,
+    limit: int | None = None,
+) -> dict[str, Any]:
+    if not dry_run and app_migration_done(conn, ACTIVITY_TITLE_CANONICAL_REPAIR_KEY):
+        return {
+            "ok": True,
+            "already_done": True,
+            "dry_run": False,
+            "scanned": 0,
+            "updated": 0,
+            "unchanged": 0,
+            "source_counts": {},
+            "migration_key": ACTIVITY_TITLE_CANONICAL_REPAIR_KEY,
+        }
+    result = _repair_activity_titles(conn, dry_run=dry_run, limit=limit)
+    result["already_done"] = False
+    result["migration_key"] = ACTIVITY_TITLE_CANONICAL_REPAIR_KEY
+    if not dry_run:
+        mark_app_migration_done(
+            conn,
+            ACTIVITY_TITLE_CANONICAL_REPAIR_KEY,
+            details_json=json.dumps(result, ensure_ascii=False, sort_keys=True),
+        )
+    return result
+
+
+def backfill_auto_activity_titles(conn: sqlite3.Connection | None = None, limit: int | None = 500) -> int:
     """Upgrade legacy technical titles to display titles; preserve real/manual titles."""
     owns_conn = conn is None
     db = conn or _conn()
-    updated = 0
     try:
-        rows = db.execute(
-            """
-            SELECT id, title, title_source, sport_type, sub_sport_type, region_display, region
-            FROM activities
-            WHERE COALESCE(deleted_at, '') = ''
-              AND (
-                COALESCE(title_source, '') IN ('auto_sport', 'auto_region_sport')
-                OR TRIM(COALESCE(title, '')) = ''
-                OR COALESCE(title_source, '') IN ('filename', 'file_name', 'fit')
-                OR (
-                  COALESCE(title_source, '') = 'filename'
-                  AND (
-                    COALESCE(title, '') GLOB '*_[0-9][0-9][0-9][0-9][0-9][0-9]*'
-                    OR COALESCE(title, '') GLOB '* [0-9][0-9][0-9][0-9][0-9][0-9]*'
-                  )
-                )
-                OR lower(COALESCE(title, '')) LIKE '%activity-fit-files%'
-                OR (
-                  length(TRIM(COALESCE(title, ''))) >= 16
-                  AND lower(TRIM(COALESCE(title, ''))) NOT GLOB '*[^0-9a-f]*'
-                )
-                OR lower(COALESCE(filename, '')) LIKE 'coros___activity-fit-files%'
-                OR lower(COALESCE(file_name, '')) LIKE 'coros___activity-fit-files%'
-              )
-            ORDER BY id DESC
-            LIMIT ?
-            """,
-            (int(limit),),
-        ).fetchall()
-        for row in rows:
-            current_title = row["title"]
-            current_source = row["title_source"]
-            title, title_source = build_activity_display_title(
-                current_title=current_title,
-                title_source=current_source,
-                sport_type=row["sport_type"],
-                sub_sport_type=row["sub_sport_type"],
-                region_display=row["region_display"] or row["region"] or "",
-            )
-            if title == (current_title or "") and title_source == (current_source or ""):
-                continue
-            db.execute(
-                """
-                UPDATE activities
-                SET title = ?, title_source = ?, updated_at = updated_at
-                WHERE id = ?
-                """,
-                (title, title_source, int(row["id"])),
-            )
-            updated += 1
+        result = _repair_activity_titles(db, dry_run=False, limit=limit)
         if owns_conn:
             db.commit()
-        return updated
+        return int(result.get("updated") or 0)
     except sqlite3.OperationalError:
         if owns_conn:
             db.rollback()

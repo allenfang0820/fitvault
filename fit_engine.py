@@ -8,8 +8,12 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+import profile_backend
+
 SEMICIRCLE_SCALE = 180.0 / (1 << 31)
 _FITPARSE_DEPS: tuple[Any, type[Exception]] | None = None
+_MIN_VALID_ACTIVITY_YEAR = 1995
+_MAX_VALID_ACTIVITY_YEAR = 2100
 
 
 def fitvault_log_dir() -> Path:
@@ -433,6 +437,12 @@ class FITCoreEngine:
         return info
 
     @staticmethod
+    def _is_plausible_activity_datetime(value: datetime | None) -> bool:
+        if not isinstance(value, datetime):
+            return False
+        return _MIN_VALID_ACTIVITY_YEAR <= value.year <= _MAX_VALID_ACTIVITY_YEAR
+
+    @staticmethod
     def _read_lap_data(fit: Any) -> list[dict[str, Any]]:
         """提取 FIT lap_mesgs,字段命名与 MetricsResolver._normalize_laps 入参保持一致。
 
@@ -667,11 +677,13 @@ class FITCoreEngine:
 
     @staticmethod
     def _resolve_start_times(start_time: datetime | None, local_timestamp: datetime | None, track_data: list[dict[str, Any]]) -> tuple[str | None, str | None]:
-        start_time_utc = FITCoreEngine._iso_utc(start_time)
+        start_time_utc = FITCoreEngine._iso_utc(start_time) if FITCoreEngine._is_plausible_activity_datetime(start_time) else None
+        if not FITCoreEngine._is_plausible_activity_datetime(start_time):
+            start_time = None
         if start_time is None and track_data:
             return track_data[0].get("time"), track_data[0].get("time")
         if start_time is None:
-            if local_timestamp is None:
+            if not FITCoreEngine._is_plausible_activity_datetime(local_timestamp):
                 return None, None
             if local_timestamp.tzinfo is None:
                 local_timestamp = local_timestamp.replace(tzinfo=datetime.now().astimezone().tzinfo)
@@ -683,30 +695,40 @@ class FITCoreEngine:
         else:
             start_utc = start_utc.astimezone(timezone.utc)
 
-        if local_timestamp is None:
+        if not FITCoreEngine._is_plausible_activity_datetime(local_timestamp):
             return start_utc.isoformat().replace("+00:00", "Z"), start_time_utc
         if local_timestamp.tzinfo is not None:
-            return local_timestamp.isoformat(), start_time_utc
+            local_utc = local_timestamp.astimezone(timezone.utc)
+            if abs(local_utc - start_utc) <= timedelta(hours=14):
+                return local_timestamp.isoformat(), start_time_utc
+            return start_utc.isoformat().replace("+00:00", "Z"), start_time_utc
 
         delta = local_timestamp - start_utc.replace(tzinfo=None)
         if abs(delta) <= timedelta(hours=14) and (delta.total_seconds() % 60 == 0):
             local_tz = timezone(delta)
             return local_timestamp.replace(tzinfo=local_tz).isoformat(), start_time_utc
-        return local_timestamp.isoformat(), start_time_utc
+        return start_utc.isoformat().replace("+00:00", "Z"), start_time_utc
 
     @staticmethod
     def _derive_title(path: Path, sport_name: Any, session_label: Any) -> tuple[str, str]:
         file_title = FITCoreEngine._clean_filename_title(path)
         sport_title = FITCoreEngine._clean_text(sport_name)
         session_title = FITCoreEngine._clean_text(session_label)
-        # 文件名通常是用户可读标题(如"四姑娘山二峰登顶"),sport.name 常只是泛化运动名(如"登山")。
-        # 只要文件名明显比 sport.name 更具体,就优先文件名,避免概览页显示成"登山/跑步"。
-        if file_title and sport_title and len(file_title) > len(sport_title):
+        # 统一规则：先看更像“真实活动标题”的证据，再看文件名，再看泛化运动名。
+        # 1) session_label 若存在且不是技术占位 / 泛化运动名，优先作为 provider/sync 标题。
+        if session_title and not profile_backend._is_technical_activity_title(session_title):
+            if not sport_title or session_title != sport_title:
+                return session_title, "session_label"
+        # 2) 文件名若是可读标题，保留它；若是技术文件名，则交给后续 title-builder 转成运动标题。
+        if file_title and (
+            not sport_title
+            or len(file_title) > len(sport_title)
+            or profile_backend._is_technical_activity_title(sport_title)
+        ):
             return file_title, "filename"
+        # 3) 没有可读文件名时，再回退到运动名。
         if sport_title:
             return sport_title, "sport_name"
-        if file_title:
-            return file_title, "filename"
         if session_title:
             return session_title, "session_label"
         return path.name, "file_name"

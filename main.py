@@ -5551,8 +5551,24 @@ def ensure_activity_sync_schema() -> None:
         conn = profile_backend._conn()
         try:
             swim_schema = career_backend.apply_swim_canonical_facts_schema_migration(conn, dry_run=False)
+            start_time_repair = profile_backend.repair_activity_start_time_epoch_rows(conn)
+            title_repair = profile_backend.repair_activity_title_canonical_rows(conn)
+            if int(start_time_repair.get("fixed") or 0) > 0:
+                logger.info(
+                    "活动起始时间 epoch 占位修复完成: fixed=%s skipped=%s sources=%s",
+                    start_time_repair.get("fixed"),
+                    start_time_repair.get("skipped"),
+                    start_time_repair.get("source_counts"),
+                )
+            if int(title_repair.get("updated") or 0) > 0:
+                logger.info(
+                    "活动标题统一修复完成: updated=%s unchanged=%s sources=%s",
+                    title_repair.get("updated"),
+                    title_repair.get("unchanged"),
+                    title_repair.get("source_counts"),
+                )
             if profile_backend.app_migration_done(conn, ACTIVITY_SYNC_SCHEMA_SENTINEL_KEY):
-                if swim_schema.get("added_columns"):
+                if swim_schema.get("added_columns") or not start_time_repair.get("already_done") or not title_repair.get("already_done"):
                     conn.commit()
                 _ACTIVITY_SYNC_SCHEMA_READY_FOR = cache_key
                 return

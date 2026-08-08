@@ -113,6 +113,36 @@ class TestFitParser(unittest.TestCase):
             with self.subTest(sport=sport, sub_sport=sub_sport):
                 self.assertEqual(fit_engine.FITCoreEngine._resolve_activity_type(sport, sub_sport), expected)
 
+    def test_session_label_title_beats_technical_filename(self):
+        title, source = fit_engine.FITCoreEngine._derive_title(
+            Path("23811652091_ACTIVITY.fit"),
+            "cycling",
+            "Morning Ride",
+        )
+
+        self.assertEqual(title, "Morning Ride")
+        self.assertEqual(source, "session_label")
+
+    def test_zwift_epoch_local_timestamp_does_not_override_session_start(self):
+        start_time, start_time_utc = fit_engine.FITCoreEngine._resolve_start_times(
+            datetime(2026, 8, 1, 11, 11, 57),
+            datetime(1989, 12, 31, 0, 0, 0),
+            [{"time": "2026-08-01T11:11:57Z"}],
+        )
+
+        self.assertEqual(start_time, "2026-08-01T11:11:57Z")
+        self.assertEqual(start_time_utc, "2026-08-01T11:11:57Z")
+
+    def test_invalid_session_and_local_start_time_falls_back_to_first_track_point(self):
+        start_time, start_time_utc = fit_engine.FITCoreEngine._resolve_start_times(
+            datetime(1989, 12, 31, 0, 0, 0),
+            datetime(1989, 12, 31, 0, 0, 0),
+            [{"time": "2026-08-01T11:11:57Z"}],
+        )
+
+        self.assertEqual(start_time, "2026-08-01T11:11:57Z")
+        self.assertEqual(start_time_utc, "2026-08-01T11:11:57Z")
+
     def test_gpx_activity_type_metadata_is_preserved_for_mountaineering(self):
         gpx_text = """<?xml version="1.0" encoding="UTF-8"?>
 <gpx version="1.1" creator="unit-test">

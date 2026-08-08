@@ -214,6 +214,97 @@ class TestFitSync(unittest.TestCase):
         finally:
             conn.close()
 
+    def test_start_time_epoch_repair_runs_even_when_activity_schema_sentinel_done(self):
+        points_from_track = [{"time": "2026-08-02T02:03:04Z", "lat": 30.0, "lon": 104.0}]
+        conn = profile_backend._conn()
+        try:
+            profile_backend.mark_app_migration_done(
+                conn,
+                main.ACTIVITY_SYNC_SCHEMA_SENTINEL_KEY,
+                details_json='{"test":"schema already done"}',
+            )
+            conn.execute(
+                "DELETE FROM app_migrations WHERE key = ?",
+                (profile_backend.ACTIVITY_START_TIME_EPOCH_REPAIR_KEY,),
+            )
+            conn.execute(
+                """
+                INSERT INTO activities
+                    (file_name, filename, title, title_source, start_time, start_time_utc,
+                     track_json, points_json, sport_type, dist_km, duration_sec)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "23811652091_ACTIVITY.fit",
+                    "23811652091_ACTIVITY.fit",
+                    "Zwift Ride",
+                    "filename",
+                    "1989-12-31T00:00:00",
+                    "2026-08-01T11:11:57Z",
+                    json.dumps([{"time": "2026-08-01T11:11:57Z"}]),
+                    json.dumps([{"time": "2026-08-01T11:11:57Z"}]),
+                    "cycling",
+                    38.27731,
+                    3662,
+                ),
+            )
+            conn.execute(
+                """
+                INSERT INTO activities
+                    (file_name, filename, title, title_source, start_time, start_time_utc,
+                     track_json, points_json, sport_type, dist_km, duration_sec)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "legacy_track_time.fit",
+                    "legacy_track_time.fit",
+                    "Legacy Track Time",
+                    "filename",
+                    "1989-12-31T00:00:00",
+                    "",
+                    json.dumps(points_from_track),
+                    json.dumps([]),
+                    "cycling",
+                    12.0,
+                    1200,
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        main._ACTIVITY_SYNC_SCHEMA_READY_FOR = None
+        main.ensure_activity_sync_schema()
+
+        conn = profile_backend._conn()
+        try:
+            rows = {
+                row["file_name"]: dict(row)
+                for row in conn.execute(
+                    """
+                    SELECT file_name, title, start_time, start_time_utc
+                    FROM activities
+                    WHERE file_name IN ('23811652091_ACTIVITY.fit', 'legacy_track_time.fit')
+                    """
+                ).fetchall()
+            }
+            self.assertEqual(rows["23811652091_ACTIVITY.fit"]["start_time"], "2026-08-01T11:11:57Z")
+            self.assertEqual(rows["23811652091_ACTIVITY.fit"]["start_time_utc"], "2026-08-01T11:11:57Z")
+            self.assertEqual(rows["23811652091_ACTIVITY.fit"]["title"], "Zwift Ride")
+            self.assertEqual(rows["legacy_track_time.fit"]["start_time"], "2026-08-02T02:03:04Z")
+            self.assertEqual(rows["legacy_track_time.fit"]["start_time_utc"], "2026-08-02T02:03:04Z")
+            self.assertTrue(
+                profile_backend.app_migration_done(
+                    conn,
+                    profile_backend.ACTIVITY_START_TIME_EPOCH_REPAIR_KEY,
+                )
+            )
+            second = profile_backend.repair_activity_start_time_epoch_rows(conn)
+            self.assertTrue(second["already_done"])
+            self.assertEqual(second["fixed"], 0)
+        finally:
+            conn.close()
+
     def test_sync_local_fit_files_recovers_after_temporary_db_lock(self):
         fit_path = self.temp_dir / "locked.fit"
         fit_path.write_bytes(b"x" * 8192)
@@ -2988,6 +3079,31 @@ class TestFitSync(unittest.TestCase):
         self.assertEqual(row["title"], "骑行")
         self.assertEqual(row["title_source"], "auto_sport")
 
+    def test_import_title_repair_promotes_legacy_file_name_source_to_region_title(self):
+        main.ensure_activity_sync_schema()
+        activity = self._activity("23811652091_ACTIVITY.fit")
+        activity["title"] = "23811652091_ACTIVITY.fit"
+        activity["title_source"] = "file_name"
+        activity["sport_type"] = "cycling"
+        activity["sub_sport_type"] = "virtual_activity"
+        activity["region"] = "Temotu/所罗门群岛"
+        activity["region_display"] = "Temotu/所罗门群岛"
+        persisted = main._persist_sync_activity(activity)
+
+        self.api._apply_title_override(persisted["id"], Path(activity["file_path"]))
+
+        conn = profile_backend._conn()
+        try:
+            row = conn.execute(
+                "SELECT title, title_source FROM activities WHERE id = ?",
+                (persisted["id"],),
+            ).fetchone()
+        finally:
+            conn.close()
+
+        self.assertEqual(row["title"], "Temotu 骑行")
+        self.assertEqual(row["title_source"], "auto_region_sport")
+
     def test_import_title_repair_promotes_provider_device_timestamp_filename(self):
         main.ensure_activity_sync_schema()
         filename = "MAGENE_C706_2026-06-28_154456_196852.fit"
@@ -4025,6 +4141,57 @@ class TestFitSync(unittest.TestCase):
 
         self.assertEqual(row["title"], "都江堰半程马拉松")
         self.assertEqual(row["title_source"], "filename")
+
+    def test_title_backfill_repair_updates_legacy_file_name_source(self):
+        main.ensure_activity_sync_schema()
+        conn = profile_backend._conn()
+        try:
+            conn.execute(
+                """
+                INSERT INTO activities
+                    (file_name, filename, title, title_source, sport_type, sub_sport_type,
+                     region, region_display, start_time, start_time_utc, dist_km, duration_sec)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "23811652091_ACTIVITY.fit",
+                    "23811652091_ACTIVITY.fit",
+                    "23811652091_ACTIVITY.fit",
+                    "file_name",
+                    "cycling",
+                    "virtual_activity",
+                    "Temotu/所罗门群岛",
+                    "Temotu/所罗门群岛",
+                    "2026-08-01T11:11:57Z",
+                    "2026-08-01T11:11:57Z",
+                    38.27731,
+                    3662,
+                ),
+            )
+            conn.commit()
+            conn.execute(
+                "DELETE FROM app_migrations WHERE key = ?",
+                (profile_backend.ACTIVITY_TITLE_CANONICAL_REPAIR_KEY,),
+            )
+            conn.commit()
+            repair = profile_backend.repair_activity_title_canonical_rows(conn, dry_run=True)
+            self.assertEqual(repair["updated"], 1)
+            self.assertEqual(repair["source_counts"].get("filename"), 1)
+            repair = profile_backend.repair_activity_title_canonical_rows(conn, dry_run=False)
+            self.assertEqual(repair["updated"], 1)
+            activity_id = conn.execute(
+                "SELECT id FROM activities WHERE file_name = ?",
+                ("23811652091_ACTIVITY.fit",),
+            ).fetchone()[0]
+            row = conn.execute(
+                "SELECT title, title_source FROM activities WHERE id = ?",
+                (activity_id,),
+            ).fetchone()
+        finally:
+            conn.close()
+
+        self.assertEqual(row["title"], "Temotu 骑行")
+        self.assertEqual(row["title_source"], "auto_region_sport")
 
     def test_region_enrichment_marks_failure_and_increments_attempt_count(self):
         main.ensure_activity_sync_schema()
